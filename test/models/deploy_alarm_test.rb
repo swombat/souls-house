@@ -82,6 +82,15 @@ class DeployAlarmTest < ActiveSupport::TestCase
     assert_empty @notices
   end
 
+  test "newest automatic run superseded and red (#313) is not a latched failure" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @jobs[1] = { "jobs" => [ { "steps" => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "failure" },
+                                            { "name" => HouseDeploy::SUPERSEDED_STEP, "conclusion" => "success" } ] } ] }
+
+    assert_equal "ok", check(T0).state
+    assert_empty @notices
+  end
+
   test "a cancelled automatic run is not a failure" do
     @auto_runs = [ auto_run(1, MASTER_A, conclusion: "cancelled") ]
 

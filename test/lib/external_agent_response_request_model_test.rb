@@ -30,6 +30,44 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
       telemetry: { runtime: { provider: Agents::Sandbox.chaos_provider_for(@agent), model: model } } }.to_json
   end
 
+  test "source hints are persisted through both reserved and legacy dispatch paths" do
+    [ true, false ].each do |live_activity|
+      sent = nil
+      stub_request(:post, "https://agent.example.com/trigger")
+        .with { |request| sent = JSON.parse(request.body) }
+        .to_return(status: 200, body: ok_body(@opus))
+      AgentRuntimeInteraction.stub(:live_activity_enabled?, live_activity) do
+        ResidentTurn.stub(:enabled?, false) do
+          result = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat,
+            wake_source_kinds: [ "human", "peer" ]).call
+          assert_equal 200, result[:status]
+        end
+      end
+      interaction = @chat.agent_runtime_interactions.order(:id).last
+      assert_equal [ "human", "peer" ], interaction.wake_source_kinds
+      assert_includes interaction.request_text, "requests from both a human and a fellow resident"
+      assert_includes sent.fetch("request"), "requests from both a human and a fellow resident"
+      refute_includes sent.fetch("request"), "The user pressed the agent button"
+    end
+  end
+
+  test "dispatch preserves reserved provenance instead of replacing it with caller hints" do
+    interaction = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat,
+      wake_source_kinds: [ "peer" ])
+    sent = nil
+    stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| sent = JSON.parse(request.body) }
+      .to_return(status: 200, body: ok_body(@opus))
+    ResidentTurn.stub(:enabled?, false) do
+      result = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, interaction: interaction,
+        wake_source_kinds: [ "human" ]).call
+      assert_equal 200, result[:status]
+    end
+    assert_equal [ "peer" ], interaction.reload.wake_source_kinds
+    assert_includes sent.fetch("request"), "A fellow resident requested"
+    refute_includes sent.fetch("request"), "This trigger is itself the user asking"
+  end
+
   test "the selected model is sent to Chaos, told to the resident and recorded" do
     @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
     sent = nil

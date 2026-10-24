@@ -65,4 +65,26 @@ class Agents::ProviderSubscriptionUsagesControllerTest < ActionDispatch::Integra
     assert_response :success
   end
 
+  test "shows a guest resident's usage in the account it visits" do
+    visited = accounts(:personal_account)
+    visited.guest_memberships.create!(agent: @agent, added_by: @user)
+    client = Object.new
+    client.define_singleton_method(:usage) do |provider:, model:, refresh:|
+      { "provider" => provider, "status" => "available", "windows" => [ { "id" => "session", "remaining_percent" => 41 } ] }
+    end
+
+    AgentProviderAuthClient.stub(:new, client) do
+      get account_agent_provider_subscription_usage_path(visited, @agent), as: :json
+    end
+
+    assert_response :success
+    assert_equal 41, response.parsed_body.dig("windows", 0, "remaining_percent")
+  end
+
+  test "does not show usage for a resident that is not present in the account" do
+    get account_agent_provider_subscription_usage_path(accounts(:personal_account), @agent), as: :json
+
+    assert_response :not_found
+  end
+
 end

@@ -36,7 +36,8 @@ class PendingWake < ApplicationRecord
   # its busy check and this write. A source is one of: message: (a human message that named or
   # addressed the resident, or a resident's handoff), requester_agent: (a
   # sibling's knock) or user: (a person's button or API call).
-  def self.queue!(chat:, agent:, requested_by:, message: nil, user: nil, requester_agent: nil)
+  def self.queue!(chat:, agent:, requested_by:, message: nil, user: nil, requester_agent: nil, wake_source_kinds: nil)
+    wake_source_kinds ||= WakeProvenance.for(message: message, user: user, requester_agent: requester_agent)
     now = Time.current
     wake = open.find_by(chat: chat, agent: agent)
     if wake
@@ -48,9 +49,10 @@ class PendingWake < ApplicationRecord
       # A resident's message stands on its author's seat in the room, which
       # lock_revocation_rows! locks through requester_agent.
       wake.sources.create!(kind: "message", message: message, user: message.user,
-                           requester_agent: message.user ? nil : message.agent)
+                           requester_agent: message.user ? nil : message.agent, wake_source_kinds: wake_source_kinds)
     else
-      wake.sources.create!(kind: "trigger", user: requester_agent ? nil : user, requester_agent: requester_agent)
+      wake.sources.create!(kind: "trigger", user: requester_agent ? nil : user, requester_agent: requester_agent,
+        wake_source_kinds: wake_source_kinds)
     end
     # A run that ended while this transaction was open could not see the
     # wake; this job, after the commit, can. See PendingWakeJob for the rule.
@@ -82,7 +84,7 @@ class PendingWake < ApplicationRecord
       next wake.drop!(reason) if reason
 
       begin
-        result = chat.trigger_agent_response!(agent)
+        result = chat.trigger_agent_response!(agent, wake_source_kinds: wake.standing_source_kinds)
       rescue Agent::RuntimeAvailability::Unavailable => error
         next wake.drop!("unavailable:#{error.code}")
       rescue Chat::AlreadyResponding
@@ -145,6 +147,11 @@ class PendingWake < ApplicationRecord
 
   def standing_source?
     sources.includes(:message, :user, :requester_agent).any? { |source| source.standing?(chat) }
+  end
+
+  def standing_source_kinds
+    sources.includes(:message, :user, :requester_agent).select { |source| source.standing?(chat) }
+      .flat_map { |source| source.wake_source_kinds.presence || [ "unknown" ] }.uniq
   end
 
   # Checked when the released run claims, under this row's lock: the run

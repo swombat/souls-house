@@ -1,11 +1,23 @@
 <script>
-  import { useSync } from '$lib/use-sync';
+  import { createDynamicSync } from '$lib/use-sync';
   import UnestimatedCosts from '$lib/components/agents/UnestimatedCosts.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
   let { account, agents = [], cost_report: costReport = {} } = $props();
 
-  useSync(Object.fromEntries(agents.map((agent) => [`Agent:${agent.id}`, 'cost_report'])));
+  // Broad Agent markers include health/bookkeeping writes. Only these narrow
+  // account lanes may recompute the report; roster catch-up discovers new homes.
+  const updateCostsSync = createDynamicSync();
+  $effect(() => {
+    updateCostsSync(
+      account?.id
+        ? {
+            [`HomeResidentRoster:${account.id}`]: ['agents', 'cost_report'],
+            [`AccountCostActivity:${account.id}`]: ['cost_report'],
+          }
+        : {}
+    );
+  });
 
   function dollars(value) {
     if (value === null || value === undefined) return '—';

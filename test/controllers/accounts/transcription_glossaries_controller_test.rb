@@ -9,7 +9,9 @@ class Accounts::TranscriptionGlossariesControllerTest < ActionDispatch::Integrat
   end
 
   test "a member sees the glossary with built-in terms" do
-    get account_transcription_glossary_path(@account)
+    get account_transcription_glossary_path(@account), headers: {
+      "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest
+    }
 
     assert_response :success
     terms = inertia_shared_props.fetch("terms").map { |term| term.fetch("term") }
@@ -55,6 +57,47 @@ class Accounts::TranscriptionGlossariesControllerTest < ActionDispatch::Integrat
     post account_transcription_glossary_path(other), params: { term: "Leak" }
     assert_response :not_found
     assert_empty other.transcription_glossary_terms
+  end
+
+  test "navbar partial evaluates neither glossary builder" do
+    glossary = TranscriptionGlossary.new(@account)
+    glossary.stub(:entries, -> { flunk "terms evaluated" }) do
+      glossary.stub(:suppressed, -> { flunk "removed evaluated" }) do
+        TranscriptionGlossary.stub(:new, glossary) do
+          %w[account room_activity accounts,expired_subscriptions reply_attention rooms,current_room].each do |props|
+            partial_get(props)
+            assert_not response.parsed_body.fetch("props").key?("terms")
+            assert_not response.parsed_body.fetch("props").key?("removed")
+          end
+        end
+      end
+    end
+  end
+
+  test "terms and removed are independently lazy" do
+    glossary = TranscriptionGlossary.new(@account)
+    glossary.stub(:suppressed, -> { flunk "removed evaluated for terms" }) do
+      TranscriptionGlossary.stub(:new, glossary) { partial_get("terms") }
+    end
+    assert response.parsed_body.fetch("props").key?("terms")
+    assert_not response.parsed_body.fetch("props").key?("removed")
+    glossary.stub(:entries, -> { flunk "terms evaluated for removed" }) do
+      TranscriptionGlossary.stub(:new, glossary) { partial_get("removed") }
+    end
+    assert response.parsed_body.fetch("props").key?("removed")
+    assert_not response.parsed_body.fetch("props").key?("terms")
+  end
+
+  private
+
+  def partial_get(props)
+    get account_transcription_glossary_path(@account), headers: {
+      "X-Inertia" => "true",
+      "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "accounts/transcription_glossary",
+      "X-Inertia-Partial-Data" => props
+    }
+    assert_response :success
   end
 
 end

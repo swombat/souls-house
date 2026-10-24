@@ -20,6 +20,7 @@ const base = {
 
 function mount(attributes) {
   return render(IntegrationConnection, {
+    open: true,
     account: { id: 'selected-house' },
     services: [],
     connection: { ...base, ...attributes },
@@ -69,8 +70,22 @@ describe('Tailscale sign-in on the account screen', () => {
       can_manage: true,
       can_provision: true,
       residents: [
-        { id: 'mira', name: 'Mira', enabled: true, access_update_url: '/access/mira', tailnet_url: '/t/mira', integrations_url: '/r/mira' },
-        { id: 'lume', name: 'Lume', enabled: true, access_update_url: '/access/lume', tailnet_url: '/t/lume', integrations_url: '/r/lume' },
+        {
+          id: 'mira',
+          name: 'Mira',
+          enabled: true,
+          access_update_url: '/access/mira',
+          tailnet_url: '/t/mira',
+          integrations_url: '/r/mira',
+        },
+        {
+          id: 'lume',
+          name: 'Lume',
+          enabled: true,
+          access_update_url: '/access/lume',
+          tailnet_url: '/t/lume',
+          integrations_url: '/r/lume',
+        },
         { id: 'off', name: 'Off', enabled: false, access_update_url: '/access/off', tailnet_url: null },
       ],
     });
@@ -85,5 +100,89 @@ describe('Tailscale sign-in on the account screen', () => {
   it('adds nothing to other providers', () => {
     mount({ can_manage: true, can_provision: true });
     expect(screen.queryByTestId('tailnet-sign-ins')).not.toBeInTheDocument();
+  });
+});
+
+describe('a signed-in Telegram connection', () => {
+  const telegram = {
+    provider: 'telegram',
+    label: 'Telegram',
+    management_scope: 'personal',
+    identity: 'Ada Example (@ada_example)',
+    can_manage: true,
+    can_provision: true,
+    comms: {
+      availability: { state: 'unavailable', reason: 'connector restarting' },
+      search_all_dialogs: true,
+      chats: 5,
+      synced_chats: 3,
+    },
+  };
+
+  it('shows who it is signed in as, the synced chats and the availability', () => {
+    mount({ ...telegram, can_delegate: true });
+    const status = screen.getByTestId('telegram-status');
+    expect(status).toHaveTextContent('Ada Example (@ada_example)');
+    expect(status).toHaveTextContent('3 of 5 chats synced');
+    expect(status).toHaveTextContent('safely restart');
+    expect(status).toHaveTextContent('Reason: connector restarting');
+    expect(screen.getByLabelText(/Let residents search beyond the synced chats/)).toBeChecked();
+  });
+
+  it('keeps the search setting to the owner', () => {
+    mount({ ...telegram, can_delegate: false, comms: { ...telegram.comms, availability: { state: 'ok' } } });
+    expect(screen.queryByLabelText(/Let residents search beyond the synced chats/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('a WhatsApp disconnect the connector has not confirmed', () => {
+  const whatsapp = { provider: 'whatsapp', label: 'WhatsApp', management_scope: 'personal', can_manage: true };
+
+  it('says the linked device may still be there, and how to remove it now', () => {
+    mount({ ...whatsapp, status: 'revoked', comms: { chats: 3, unpair_pending: { attempts: 2 } } });
+    expect(screen.getByTestId('unpair-pending')).toHaveTextContent(
+      'the WhatsApp connector has not yet confirmed removing the linked device'
+    );
+    expect(screen.getByTestId('unpair-pending')).toHaveTextContent('Settings, Linked devices');
+  });
+
+  it('says nothing once the connector confirmed', () => {
+    mount({ ...whatsapp, status: 'revoked', comms: { chats: 3 } });
+    expect(screen.queryByTestId('unpair-pending')).not.toBeInTheDocument();
+  });
+});
+
+describe('a WhatsApp connection waiting to be linked', () => {
+  const whatsapp = { provider: 'whatsapp', label: 'WhatsApp', management_scope: 'personal', can_manage: true };
+
+  it('offers the owner the pairing on its own page', () => {
+    globalThis.fetch = vi.fn(() => new Promise(() => {}));
+    mount({ ...whatsapp, status: 'pairing', can_delegate: true });
+    expect(screen.getByTestId('whatsapp-link-page-link')).toHaveAttribute(
+      'href',
+      '/accounts/selected-house/service_connections/svc_test/pairing/link'
+    );
+  });
+
+  it('offers nobody else the page', () => {
+    globalThis.fetch = vi.fn(() => new Promise(() => {}));
+    mount({ ...whatsapp, status: 'pairing', can_delegate: false });
+    expect(screen.queryByTestId('whatsapp-link-page-link')).not.toBeInTheDocument();
+  });
+});
+
+describe('the compact row', () => {
+  it('keeps the controls closed until the row is opened', () => {
+    render(IntegrationConnection, {
+      account: { id: 'selected-house' },
+      services: [],
+      connection: { ...base, can_manage: true, can_provision: true },
+    });
+    expect(screen.getByRole('button', { name: 'Show details for Shared Dropbox' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument();
   });
 });

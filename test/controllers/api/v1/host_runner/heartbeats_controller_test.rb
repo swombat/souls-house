@@ -32,6 +32,14 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
     assert_equal "pending", @placement.reload.state
   end
 
+  test "seed roles are kept only as the known role names" do
+    enroll!
+    body = JSON.generate(facts: { provider_server_id: 4242, seed_roles: [ "identity", "repo", "work", "chaos", { "x" => 1 } ] })
+    post PATH, params: body, headers: signed_runner_headers(@key, path: PATH, body:, runner_id: @enrollment.public_id)
+    assert_response :ok
+    assert_equal %w[identity repo work], @enrollment.reload.last_facts["seed_roles"]
+  end
+
   test "before enrollment the runner is indistinguishable from an unknown one" do
     beat
     assert_response :unauthorized

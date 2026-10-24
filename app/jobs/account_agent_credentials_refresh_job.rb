@@ -4,7 +4,7 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
 
   retry_on Agents::Sandbox::SandboxError, wait: 5.minutes, attempts: 3
 
-  def perform(account_id, agent_id = nil)
+  def perform(account_id, agent_id = nil, manifest_only: false)
     account = Account.find(account_id)
     scope = account.agents.externally_hosted
     scope = scope.where(id: agent_id) if agent_id.present?
@@ -17,11 +17,24 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
 
       sandbox = Agents::Sandbox.new(agent)
 
-      if sandbox.active_turn?
-        self.class.set(wait: 5.minutes).perform_later(account.id, agent.id)
-      else
-        sandbox.recreate!
-        mark_service_accesses_reconciled!(agent)
+      # Serialize manifest writers with each other and with real rebuilds.
+      # Grant changes may still commit while Docker writes; reconcile only
+      # the unchanged rows from the manifest's snapshot, never a fresh query.
+      agent.with_lock do
+        if manifest_only
+          manifest = Agents::ServiceManifest.new(agent)
+          if sandbox.refresh_service_manifest!(yaml: manifest.to_yaml)
+            manifest.mark_reconciled!
+            next
+          end
+        end
+
+        if sandbox.active_turn?
+          defer!(account, agent, manifest_only: manifest_only)
+        else
+          sandbox.recreate!
+          mark_service_accesses_reconciled!(agent)
+        end
       end
     end
   end
@@ -46,8 +59,13 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
     RemoteRefreshSettleJob.set(wait: RemoteRefreshSettleJob::RECHECK_AFTER).perform_later(agent.placement.id)
   end
 
-  def defer!(account, agent)
-    self.class.set(wait: 5.minutes).perform_later(account.id, agent.id)
+  def defer!(account, agent, manifest_only: false)
+    job = self.class.set(wait: 5.minutes)
+    if manifest_only
+      job.perform_later(account.id, agent.id, manifest_only: true)
+    else
+      job.perform_later(account.id, agent.id)
+    end
   end
 
   def mark_service_accesses_reconciled!(agent)

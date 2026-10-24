@@ -1,5 +1,6 @@
 <script>
   import { accountAgentProviderSubscriptionUsagePath } from '@/routes';
+  import AgentSubscriptionReconnect from './AgentSubscriptionReconnect.svelte';
   import {
     displayUsageWindows,
     predictedUsage,
@@ -8,7 +9,7 @@
     resetDescription,
   } from '$lib/subscription-usage';
 
-  let { accountId, agentId, modelId, subscription, usageUrl } = $props();
+  let { accountId, agentId, modelId, subscription, usageUrl, canReconnect = false } = $props();
 
   let usage = $state(null);
   let loading = $state(true);
@@ -93,6 +94,9 @@
       Usage unavailable
     {:else if subscription.connection?.status !== 'connected'}
       Subscription not connected
+      {#if canReconnect && subscription.id}
+        <AgentSubscriptionReconnect {accountId} subscriptionAgent={subscription} />
+      {/if}
     {:else if !subscription.available || !windows.length}
       Usage unavailable
     {:else}

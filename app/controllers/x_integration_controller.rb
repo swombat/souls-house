@@ -1,6 +1,6 @@
 class XIntegrationController < ApplicationController
 
-  before_action :set_integration, except: %i[show create]
+  before_action :set_integration, except: %i[show create app]
   before_action :require_manager, except: :show
 
   def show
@@ -25,6 +25,13 @@ class XIntegrationController < ApplicationController
     session[:x_oauth_account_id] = current_account.to_param
 
     integration = current_account.x_integration || current_account.create_x_integration!(enabled: false)
+    unless integration.app_available?
+      redirect_to x_page_path, alert: "Add this account's X app before connecting"
+      return
+    end
+    # The authorisation is for the app as it is now; the callback's tokens
+    # are kept only if the app hasn't changed (or been removed) meanwhile.
+    session[:x_oauth_app_generation] = integration.app_generation
 
     redirect_to integration.authorization_url(state: state, redirect_uri: x_redirect_uri, code_challenge: code_challenge),
                 allow_other_host: true
@@ -40,6 +47,7 @@ class XIntegrationController < ApplicationController
     expires_at = session.delete(:x_oauth_state_expires_at)
     code_verifier = session.delete(:x_oauth_code_verifier)
     session.delete(:x_oauth_account_id)
+    app_generation = session.delete(:x_oauth_app_generation)
 
     unless expected_state == params[:state] && Time.current.to_i < expires_at.to_i
       redirect_to x_page_path, alert: "Invalid or expired authorization"
@@ -51,7 +59,7 @@ class XIntegrationController < ApplicationController
       return
     end
 
-    @integration.exchange_code!(code: params[:code], redirect_uri: x_redirect_uri, code_verifier: code_verifier)
+    @integration.exchange_code!(code: params[:code], redirect_uri: x_redirect_uri, code_verifier: code_verifier, app_generation: app_generation)
 
     redirect_to x_page_path, notice: "X/Twitter connected successfully"
   rescue XApi::Error => e
@@ -63,6 +71,23 @@ class XIntegrationController < ApplicationController
 
     @integration.update!(integration_params)
     redirect_to x_page_path, notice: "Settings updated"
+  end
+
+  # The account's own X app. Saving a different one, or removing it,
+  # disconnects the handle: its tokens belong to the app that issued them.
+  def app
+    integration = current_account.x_integration || current_account.create_x_integration!(enabled: false)
+
+    if request.delete?
+      integration.remove_own_app!
+      redirect_to x_page_path, notice: "X app removed; the handle is disconnected"
+    else
+      app_params = params.require(:x_app).permit(:client_id, :client_secret)
+      integration.set_own_app!(client_id: app_params[:client_id], client_secret: app_params[:client_secret])
+      redirect_to x_page_path, notice: "X app saved. Connect the handle to finish."
+    end
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    redirect_to x_page_path, alert: e.message
   end
 
   def destroy
@@ -113,8 +138,11 @@ class XIntegrationController < ApplicationController
       enabled: integration.enabled?,
       connected: integration.connected?,
       x_username: integration.x_username,
-      daily_post_limit: integration.daily_post_limit,
-      posts_last_24_hours: integration.persisted? ? integration.tweet_logs.counting_toward_limit.where(created_at: 24.hours.ago..).count : 0,
+      app_source: integration.app_source,
+      house_app_allowed: integration.house_app_allowed?,
+      own_app: integration.own_app?,
+      own_client_id: integration.client_id,
+      callback_url: x_redirect_uri,
       outcome_unknown_count: integration.persisted? ? integration.tweet_logs.outcome_unknown.count : 0
     }
   end

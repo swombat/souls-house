@@ -50,7 +50,10 @@ module Chat::QuietRhythmRun
   # The sidebar refreshes its list when the chat broadcasts. A flag or a new
   # seat changes whether a run is listed without touching the chat itself.
   def announce_listing_change
-    touch if persisted? && !destroyed? && rhythm_run?
+    return unless persisted? && !destroyed? && rhythm_run?
+    touch
+    # Rooms spin only for listed conversations (RoomActivity).
+    refresh_room_activity
   rescue StandardError => error
     # The flag or seat has committed; a missed list refresh is not a failure.
     Rails.logger.warn("[Chat] #{id} listing refresh failed: #{error.class}")

@@ -16,13 +16,13 @@ module Api
 
         require_api_feature_enabled :agents, unless: -> { current_api_agent }
 
-        DISABLED = "Field swarm search isn't enabled for this account. It is a test feature a site admin " \
-          "turns on per account (Site Admin → Accounts); ask the people who run this house."
+        DISABLED = "Field swarm search isn't enabled for this account. It comes with the Life and Work plans, or a site " \
+          "admin can turn it on per account (Site Admin → Accounts); ask the people who run this house."
 
         def create
           response.headers["Cache-Control"] = "no-store"
           account = current_api_agent ? current_api_account : human_request_account!
-          return render(json: { error: DISABLED }, status: :forbidden) unless account.field_swarm_enabled?
+          return render(json: { error: DISABLED }, status: :forbidden) unless account.field_swarm_allowed?
           return unless (tags = tag_params)
 
           render json: FieldSwarm.new(

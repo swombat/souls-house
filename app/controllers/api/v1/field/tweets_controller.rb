@@ -45,7 +45,7 @@ module Api
 
         def stream
           source = current_api_account.field_tweet_source
-          render json: { enabled: FieldTweets.enabled?, source: source&.status_json }
+          render json: { enabled: FieldTweets.enabled?, funding: FieldTweets.funding_for(current_api_account), source: source&.status_json }
         end
 
         private

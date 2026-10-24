@@ -27,4 +27,10 @@ class ChangelogTest < ActiveSupport::TestCase
     assert_includes Changelog.recent(today: newest + 13).map { |e| e[:date] }, newest.iso8601
   end
 
+  test "clipped keeps only entries with a clip, newest first, up to the limit" do
+    with_clip = Changelog.entries.select { |entry| entry[:clip] }
+    assert_equal with_clip.first(3), Changelog.clipped(3)
+    assert_equal with_clip, Changelog.clipped(with_clip.size + 5)
+  end
+
 end

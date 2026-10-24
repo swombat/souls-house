@@ -14,13 +14,16 @@ class AgentsController < ApplicationController
     render inertia: "agents/index", props: {
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
-      agents: Agents::ResidentDirectory.new(current_account).call,
+      # Directory-only hints must not rebuild cards or claim journal-stat jobs.
+      agents: -> { Agents::ResidentDirectory.new(current_account).call },
       can_end_guest_memberships: current_account.owned_by?(Current.user),
+      # The reconnect endpoints require the account owner; offer the button to the same people.
+      can_manage_provider_subscription: current_account.owned_by?(Current.user),
       guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
       away_memberships: GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).as_json,
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
         .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
-      grouped_models: grouped_models,
+      grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       account: current_account.as_json
@@ -60,24 +63,25 @@ class AgentsController < ApplicationController
   end
 
   def edit
-    interactions_pagy, interactions = pagy(
-      :offset,
-      @agent.agent_runtime_interactions.includes(:chat).recent,
-      limit: 25
-    )
-
-    catalog = @agent.subagent_catalog
+    interaction_data = nil
+    load_interactions = -> {
+      interaction_data ||= pagy(:offset, @agent.agent_runtime_interactions.includes(:chat).recent, limit: 25)
+    }
+    catalog = nil
+    load_catalog = -> { catalog ||= @agent.subagent_catalog }
     render inertia: "agents/edit", props: {
-      portability: portability_props,
-      agent: @agent.as_json,
-      house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
-      subagent_catalog: catalog.options,
-      subagent_providers: catalog.providers,
-      subagent_catalog_empty_reason: catalog.empty_reason,
-      telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
-      telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
-      memories: memories_for_display,
-      grouped_models: grouped_models,
+      portability: -> { portability_props },
+      agent: -> { @agent.as_json },
+      house_allowance: -> { HouseInference::Allowance.presentation(@agent) },
+      subagent_catalog: -> { load_catalog.call.options },
+      subagent_providers: -> { load_catalog.call.providers },
+      subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
+      # Count/provider partials must not mint another registration token.
+      telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
+      telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username } },
+      telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
+      memories: -> { memories_for_display },
+      grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       active_tab: params[:tab],
@@ -88,12 +92,12 @@ class AgentsController < ApplicationController
       hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),
-      provider_subscription: Agents::ProviderSubscriptionPresentation.call(@agent),
-      service_connections: service_connections_for_agent,
-      can_manage_provider_subscription: current_account.ai_credentials_manageable_by?(Current.user),
-      interactions: interactions.map(&:as_session_json),
-      interactions_pagination: pagy_to_hash(interactions_pagy),
-      cost_report: AgentInteractionCostReport.new(agent: @agent).call,
+      provider_subscription: -> { Agents::ProviderSubscriptionPresentation.call(@agent) },
+      service_connections: -> { service_connections_for_agent },
+      can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+      interactions: -> { load_interactions.call.last.map(&:as_session_json) },
+      interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
+      cost_report: -> { AgentInteractionCostReport.new(agent: @agent).call },
       account: current_account.as_json
     }
   end

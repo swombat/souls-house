@@ -12,6 +12,7 @@ an accepted policy.
 | [0003 Mobile auth and API](0003-mobile-auth-and-api.md)           | Browser OAuth/PKCE; explicit authorised API context                     | Validation spike and #94 review gates outstanding                 |
 | [0004 Chat synchronization](0004-chat-synchronization.md)         | Transactional revisions, retry-safe sends, authoritative reconciliation | #94 B implementation plan approved; consultation and tests remain |
 | [0005 Native client boundaries](0005-native-client-boundaries.md) | SwiftUI and Compose; repositories and durable outboxes                  | Toolchain, persistence and dependency validation outstanding      |
+| [0006 WeSpeaker voice embeddings](0006-wespeaker-voice-embeddings.md) | Replace ECAPA for measured efficiency, not proven quality superiority | Authorised direction; implementation, calibration and review pending |
 
 Use `NNNN-short-title.md` with **Status / Context / Decision / Consequences**,
 date, and links to the originating issue/PR. Amend clarity with review; when the

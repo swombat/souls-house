@@ -1,6 +1,8 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/svelte';
 import { router, useForm } from '@inertiajs/svelte';
 import { get } from 'svelte/store';
+const { subscribe, unsubscribe } = vi.hoisted(() => ({ subscribe: vi.fn(), unsubscribe: vi.fn() }));
+vi.mock('$lib/cable', () => ({ subscribeToModel: subscribe }));
 import RhythmsIndex from './index.svelte';
 import RhythmForm from './form.svelte';
 import RhythmShow from './show.svelte';
@@ -47,13 +49,13 @@ function rhythmFixture(overrides = {}) {
     occurrences: [],
     can_manage: true,
     can_resume: false,
-    start_request_key: 'key-1',
     ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  subscribe.mockReturnValue(unsubscribe);
   globalThis.fetch = vi.fn(() =>
     Promise.resolve({
       ok: true,
@@ -188,14 +190,51 @@ test("a resident's pause is shown with who holds it, and only they can lift it",
   expect(screen.getByRole('button', { name: /Start one now/ })).toBeDisabled();
 });
 
-test('starting one now sends the request key so a double click cannot start two', async () => {
-  render(RhythmShow, { account, rhythm: rhythmFixture() });
+test('a manual start keeps its client key across live refresh and failed retry, rotating only after success', async () => {
+  const { rerender } = render(RhythmShow, { account, rhythm: rhythmFixture() });
   await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
-  expect(router.post).toHaveBeenCalledWith(
-    '/accounts/acc/rhythms/r1/start',
-    { request_key: 'key-1' },
-    expect.any(Object)
-  );
+  const first = router.post.mock.calls.at(-1);
+  expect(first[0]).toBe('/accounts/acc/rhythms/r1/start');
+  expect(first[1].request_key).toMatch(/^[0-9a-f-]{36}$/);
+  await rerender({ account, rhythm: rhythmFixture({ title: 'Changed elsewhere' }) });
+  first[2].onFinish();
+  await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
+  const retry = router.post.mock.calls.at(-1);
+  expect(retry[1].request_key).toBe(first[1].request_key);
+  retry[2].onSuccess();
+  retry[2].onFinish();
+  await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
+  expect(router.post.mock.calls.at(-1)[1].request_key).not.toBe(first[1].request_key);
+});
+
+test('empty lists subscribe to their current account without reconnecting on prop refresh', async () => {
+  const { rerender, unmount } = render(RhythmsIndex, { account, rhythms: [] });
+  expect(subscribe).toHaveBeenCalledWith('RhythmActivity', 'acc', ['rhythms']);
+  await rerender({ account: { ...account }, rhythms: [rhythmFixture()] });
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  await rerender({ account: { id: 'other' }, rhythms: [] });
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  expect(subscribe).toHaveBeenLastCalledWith('RhythmActivity', 'other', ['rhythms']);
+  unmount();
+  expect(unsubscribe).toHaveBeenCalledTimes(2);
+});
+
+test('live detail changes preserve an unfinished pause reason and render deletion safely', async () => {
+  const { rerender } = render(RhythmShow, { account, rhythm: rhythmFixture() });
+  expect(subscribe).toHaveBeenCalledWith('RhythmActivity', 'acc', ['rhythm']);
+  await fireEvent.click(screen.getByRole('button', { name: /^Pause$/ }));
+  await fireEvent.input(screen.getByPlaceholderText('Reason (optional)'), { target: { value: 'Still thinking' } });
+  await rerender({ account, rhythm: rhythmFixture({ title: 'Live title', next_run_at: null }) });
+  expect(screen.getByDisplayValue('Still thinking')).toBeInTheDocument();
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  await rerender({ account, rhythm: null });
+  expect(screen.getByText('This rhythm has been deleted')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Start one now/ })).not.toBeInTheDocument();
+});
+
+test('editing a rhythm deliberately does not subscribe over a draft', () => {
+  render(RhythmForm, { account, residents, timezones: [], rhythm: rhythmFixture() });
+  expect(subscribe).not.toHaveBeenCalled();
 });
 
 test('occurrences show late, manual and failure states honestly', () => {
@@ -333,4 +372,57 @@ describe('a saved model pin can always be seen and reset', () => {
     const data = await resetAndSubmit(select);
     expect(data.rhythm.resident_models).toEqual({ lume: 'default' });
   });
+});
+
+test('the show page says where the rhythm opens, and when its room has been removed', () => {
+  const { unmount } = render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ room_choice: 'resident_default', opens_in: { id: 'b', name: 'Build' } }),
+  });
+  expect(screen.getByTestId('rhythm-opens-in')).toHaveTextContent("Build (the account's default room)");
+  unmount();
+
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ room_choice: 'room', room_removed: true, opens_in: { id: 'b', name: 'Build' } }),
+  });
+  expect(screen.getByTestId('rhythm-opens-in')).toHaveTextContent('Build');
+  expect(screen.getByText(/has been removed, so it opens in the account's default room/)).toBeInTheDocument();
+});
+
+test('the form offers the account default, Main and each room, and a room can be chosen', async () => {
+  render(RhythmForm, {
+    account,
+    residents,
+    timezones: [{ value: 'Madrid', label: 'Madrid', identifier: 'Europe/Madrid' }],
+    room_options: { rooms: [{ id: 'pl', name: 'Planning' }], default_room: { id: 'b', name: 'Build' } },
+  });
+  const select = screen.getByLabelText('Opens in');
+  expect(
+    within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  ).toEqual(["The account's default room (now Build)", 'Main', 'Planning']);
+  expect(select.value).toBe('resident_default');
+  await fireEvent.change(select, { target: { value: 'room:pl' } });
+  expect(select.value).toBe('room:pl');
+});
+
+test('the rhythm room picker uses the account name for Main', () => {
+  render(RhythmForm, {
+    account,
+    residents,
+    timezones: [{ value: 'Madrid', label: 'Madrid', identifier: 'Europe/Madrid' }],
+    room_options: {
+      rooms: [{ id: 'pl', name: 'Planning' }],
+      main_room: { id: null, name: 'General' },
+      default_room: { id: null, name: 'General' },
+    },
+  });
+  const select = screen.getByLabelText('Opens in');
+  expect(
+    within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  ).toEqual(["The account's default room (now General)", 'General', 'Planning']);
 });

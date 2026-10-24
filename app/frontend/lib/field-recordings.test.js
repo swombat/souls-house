@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   groupSpeakers,
-  partsWithOwnEnrolment,
+  automaticParts,
   speakerKeys,
   activeWordIndex,
   allowanceLine,
@@ -10,6 +10,7 @@ import {
   formatDuration,
   guessSpeakers,
   parseNameMatch,
+  speakerQueryMatches,
   preflightProblem,
   recordingStatusLine,
   speakerNames,
@@ -234,6 +235,46 @@ describe('one voice heard as two speakers', () => {
     expect(groups[0].speaker.talk_ms).toBeNull();
   });
 
+  it('a merged card keeps its automatic parts whichever part stands for it', () => {
+    const human = {
+      id: 'h',
+      label: 'H',
+      position: 0,
+      voice_id: 'v1',
+      named: true,
+      auto_named: null,
+      talk_ms: 9000,
+      clip_start_ms: 0,
+      clip_end_ms: 9000,
+    };
+    const automatic = {
+      id: 'm',
+      label: 'M',
+      position: 1,
+      voice_id: 'v1',
+      named: true,
+      auto_named: { confidence: 84 },
+      talk_ms: 1000,
+      clip_start_ms: 0,
+      clip_end_ms: 1000,
+    };
+
+    const humanFirst = groupSpeakers([human, automatic])[0];
+    expect(humanFirst.speaker.id).toBe('h');
+    expect(humanFirst.speaker.auto_named).toBeNull();
+    expect(automaticParts(humanFirst.parts).map((part) => part.id)).toEqual(['m']);
+
+    const automaticFirst = groupSpeakers([
+      { ...automatic, talk_ms: 9000, clip_end_ms: 9000 },
+      { ...human, talk_ms: 1000, clip_end_ms: 1000 },
+    ])[0];
+    expect(automaticFirst.speaker.id).toBe('m');
+    expect(automaticParts(automaticFirst.parts).map((part) => part.id)).toEqual(['m']);
+
+    expect(automaticParts([{ ...automatic, named: false }])).toEqual([]);
+    expect(automaticParts(undefined)).toEqual([]);
+  });
+
   it('joins consecutive turns of one voice, not of different people', () => {
     const words = [
       w(0, 300, 'Hello', 'speaker_0'),
@@ -247,15 +288,15 @@ describe('one voice heard as two speakers', () => {
   });
 });
 
-describe('partsWithOwnEnrolment', () => {
-  it('keeps a pending sample or remembering on a part that is not the representative', () => {
-    const parts = [
-      { id: 'a', pending_enrolment: { id: 'e1' } },
-      { id: 'b', pending_enrolment: { id: 'e2' } },
-      { id: 'c', remembering: true },
-      { id: 'd' },
-    ];
-    expect(partsWithOwnEnrolment(parts, { id: 'b' }).map((part) => part.id)).toEqual(['a', 'c']);
-    expect(partsWithOwnEnrolment([{ id: 'a', pending_enrolment: { id: 'e1' } }], { id: 'a' })).toEqual([]);
+describe('speakerQueryMatches', () => {
+  it('matches everything on an empty query', () => {
+    expect(speakerQueryMatches('Anna', '')).toBe(true);
+    expect(speakerQueryMatches('Anna', '   ')).toBe(true);
+  });
+
+  it('matches a substring regardless of case and accents', () => {
+    expect(speakerQueryMatches('José Martín', 'mart')).toBe(true);
+    expect(speakerQueryMatches('José Martín', 'JOSE')).toBe(true);
+    expect(speakerQueryMatches('Anna', 'bob')).toBe(false);
   });
 });

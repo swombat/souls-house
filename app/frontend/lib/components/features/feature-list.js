@@ -20,11 +20,15 @@ import {
   Bug,
   ShareNetwork,
   Globe,
+  GlobeHemisphereWest,
+  Cloud,
   HardDrives,
   DropboxLogo,
   Circle,
   YoutubeLogo,
   XLogo,
+  Receipt,
+  Ghost,
   ChalkboardSimple,
   Waveform,
   Eye,
@@ -41,6 +45,7 @@ import {
   RocketLaunch,
   ChartLine,
   CreditCard,
+  Scales,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -183,6 +188,20 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'souls-who',
+    title: 'See who can read a room',
+    description:
+      'souls who lists everyone who can read conversations in an account and why: members read every conversation, residents only those they have a seat in, and site admins are listed separately. souls who <conversation> answers for one room. Names only; residents can ask through the API before writing something personal.',
+    icon: IdentificationCard,
+  },
+  {
+    key: 'companion-foundation',
+    title: 'An explicitly enrolled companion',
+    description:
+      'API-only Linux read/write and explicit full-user execution grants, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
+    icon: TerminalWindow,
+  },
+  {
     key: 'computer',
     title: 'A computer of their own',
     description:
@@ -251,7 +270,7 @@ export const technicalFeatures = [
     key: 'whatsapp',
     title: 'WhatsApp (coming)',
     description:
-      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Read-only: nothing is sent. Waiting on the connector service; it is not available to connect yet.',
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. You link it by scanning a QR code on the integrations page, and disconnecting removes the linked device. Read-only: nothing is sent. Available once the house runs its WhatsApp connector, which is not deployed yet.',
     icon: WhatsappLogo,
   },
   {
@@ -266,6 +285,13 @@ export const technicalFeatures = [
       poster: '/feature-clips/github.jpg',
       alt: 'Wren can see only the repositories she has been given. She pushes a branch and opens a pull request on one of them.',
     },
+  },
+  {
+    key: 'repository-commit-badges',
+    title: 'Is that commit merged?',
+    description:
+      "Switch on commit badges for any repository connected on the GitHub card, and commits from it mentioned in your account's conversations show whether they are on its default branch. When a commit could belong to more than one of your repositories, it gets no badge rather than a guess.",
+    icon: GithubLogo,
   },
   {
     key: 'github-resident',
@@ -350,6 +376,13 @@ export const moreFeatures = [
     icon: DropboxLogo,
   },
   {
+    key: 'xero',
+    title: 'Xero',
+    description:
+      'Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.',
+    icon: Receipt,
+  },
+  {
     key: 'oura',
     title: 'Oura Ring',
     description: 'Share your sleep and readiness data with the residents you trust with it.',
@@ -370,10 +403,45 @@ export const moreFeatures = [
     icon: Bug,
   },
   {
+    key: 'porkbun',
+    title: 'Porkbun',
+    description:
+      'Let a resident set up DNS records, redirects and nameservers on your Porkbun domains. Connect from the web or the souls command line.',
+    icon: GlobeHemisphereWest,
+  },
+  {
+    key: 'cloudflare',
+    title: 'Cloudflare',
+    description:
+      'Let a resident manage DNS records and redirects on your Cloudflare zones, with an API token you scope yourself.',
+    icon: Cloud,
+  },
+  {
+    key: 'ghost',
+    title: 'Ghost',
+    description:
+      'Let the residents you choose write articles on your Ghost blog: they draft, and publish when you ask.',
+    icon: Ghost,
+  },
+  {
     key: 'subagents',
     title: 'Sub-agents',
     description: 'Give a resident standing permission to hand bounded work to helper agents, on the models you allow.',
     icon: UsersThree,
+  },
+  {
+    key: 'quiet-turn-status',
+    title: 'A quiet turn stays visible',
+    description:
+      'With narration sharing on, the working card shows elapsed time since a resident reply or run start after two minutes. Runtime contact is a separate fact, never a claim of task progress. The new indicator is hidden when sharing is off.',
+    icon: Heartbeat,
+  },
+  {
+    key: 'quiet-reason',
+    title: 'A stated reason for not replying',
+    description:
+      "When a resident chooses not to reply, it can leave a short reason under the run's card, folded away until you open it. It is the resident's own account, not a verified one; it wakes nobody, and it never excuses work the resident said it would do.",
+    icon: Notebook,
   },
   {
     key: 'youtube',
@@ -391,7 +459,21 @@ export const moreFeatures = [
     key: 'field',
     title: 'The Field',
     description:
-      "Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have and keep the meeting's notes beside it, and old files and notes can be imported with the date they are from. The house reads the text in PDFs page by page, so search finds it and residents can read it, and says which pages it could not read; where it is turned on, scanned pages are transcribed by a small model and marked as such. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model.",
+      "Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have and keep the meeting's notes beside it, and old files and notes can be imported with the date they are from. The house reads the text in PDFs page by page, so search finds it and residents can read it, and says which pages it could not read; where it is turned on, scanned pages are transcribed by a small model and marked as such. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model. Correcting a transcript or its speakers schedules a check 30 minutes later, refreshing the summary only if it is still out of date; you can also refresh it yourself. The Field learns the voices of the people you name in recordings, inside the house, and suggests who's speaking in new ones once a voice has been checked against recordings it wasn't learned from; you confirm each suggestion. A finished transcript can be copied as text, or shared by a private link that anyone holding it can read without an account, expiring after an hour, a day, a week or never, and revocable.",
+    icon: ChalkboardSimple,
+  },
+  {
+    key: 'speaker-sample-review',
+    title: 'Review speaker fingerprints',
+    description:
+      "Search the Field's speakers, listen to exact fingerprint samples, and approve or remove contributions. Merge two speakers who turn out to be one person, keeping either name and the confirmations already given. Upload retained samples without a transcript through the API or souls CLI, keeping their source and session provenance. New candidates enter recognition only after human confirmation; at least two confirmed samples are needed. Each speaker has room for twenty included samples and twenty waiting candidates, with no silent eviction. Older evidence is kept for review.",
+    icon: Waveform,
+  },
+  {
+    key: 'conversation-song-cards',
+    title: 'Songs in conversation',
+    description:
+      'Residents can offer a Field song or a supported outside song link as a compact card in a reply. Outside offers stay out of your collection until you choose Add to Field; an already saved recording opens its existing entry. Expand lyrics on Field songs or press Play to load a player; no external player loads before you choose to listen.',
     icon: ChalkboardSimple,
   },
   {
@@ -405,7 +487,14 @@ export const moreFeatures = [
     key: 'field-tweets',
     title: 'Tweet streams',
     description:
-      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid by the house within a monthly limit or by the account's own TwitterAPI.io key; the Field says when collection is behind or has missed a stretch.",
+      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch.",
+    icon: XLogo,
+  },
+  {
+    key: 'twitterapi-io',
+    title: 'TwitterAPI.io',
+    description:
+      "Connect your own TwitterAPI.io key under Integrations to pay for the account's tweet streams from your own credit. The key is checked with a free call, kept encrypted, and never shown again.",
     icon: XLogo,
   },
   {
@@ -426,6 +515,20 @@ export const moreFeatures = [
     description:
       "If a resident's run ends on a promise it didn't keep, the house wakes them once to finish it or say what's in the way. A second miss comes to you instead.",
     icon: ArrowsClockwise,
+  },
+  {
+    key: 'stalled-threads',
+    title: 'Stalled threads, noticed',
+    description:
+      "For accounts that opt in, the house looks at rooms that have gone quiet and judges whose move it is: a resident's, a person's, or nobody's. For now it only keeps a log for the site admin; it posts nothing and wakes nobody.",
+    icon: Eye,
+  },
+  {
+    key: 'failed-runs',
+    title: 'Failed runs are said out loud',
+    description:
+      "If a resident's runs keep failing, the room hears it from the house after the second failure, with a plain reason and how long it has been going on, and the resident's card shows the streak. Logs stay out of the room.",
+    icon: Bug,
   },
   {
     key: 'handoffs',
@@ -468,7 +571,7 @@ export const moreFeatures = [
     key: 'rooms',
     title: 'Rooms for different parts of life',
     description:
-      'Give development, personal conversations, or anything else a room of its own, so one never buries another.',
+      'Give development, personal conversations, or anything else a room of its own, so one never buries another. Residents can add, rename, reorder and remove rooms too, as you can.',
     icon: DoorOpen,
   },
   {
@@ -498,6 +601,13 @@ export const moreFeatures = [
     icon: RocketLaunch,
   },
   {
+    key: 'commit-badges',
+    title: 'Is that commit live?',
+    description:
+      "When a resident mentions one of the house's own commits, the site admin sees at a glance whether it is deployed, merged but waiting, or not on master, measured against what is running right now.",
+    icon: GithubLogo,
+  },
+  {
     key: 'site-dashboard',
     title: 'The house at a glance',
     description:
@@ -522,7 +632,15 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. For now this is a preview of the payment path: what a plan adds isn't switched on yet, and existing residents stay free.",
+      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. A paid resident gets its own monthly house-model allowance, which replaces the free one while the plan is paid. Billing is still in test mode, the rest of what a plan lists isn't switched on yet, and existing residents stay free.",
     icon: CreditCard,
+  },
+  {
+    key: 'decisions',
+    title: 'Decisions, explained',
+    description:
+      "Where the house makes a choice on residents' behalf, such as which model a new resident starts on, it publishes what it chose, the evidence and what would change its mind.",
+    icon: Scales,
+    link: '/decisions',
   },
 ];

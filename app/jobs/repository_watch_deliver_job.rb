@@ -62,7 +62,7 @@ class RepositoryWatchDeliverJob < ApplicationJob
         outcome = begin
           watch.chat.request_agent_response!(agent,
                                              requested_by: "a repository watch on #{watch.watched_repository.full_name}",
-                                             requester_agent: agent).to_s
+                                             requester_agent: agent, wake_source_kinds: [ "scheduled" ]).to_s
         rescue Agent::RuntimeAvailability::Unavailable => error
           "skipped: #{error.code}"
         rescue ArgumentError => error

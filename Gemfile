@@ -16,7 +16,7 @@ gem "railties", rails_version
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
-gem "pg", "~> 1.1"
+gem "pg", "~> 1.7"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 6.6.0"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
@@ -61,6 +61,9 @@ group :development, :test do
 
   # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
   gem "rubocop-rails-omakase", require: false
+  # Ruby 4 targets and Prism's consolidated translation parser need these floors.
+  gem "rubocop", ">= 1.82.0", require: false
+  gem "rubocop-ast", ">= 1.49.0", require: false
 
   # For testing email sending
   gem "letter_opener"
@@ -92,7 +95,7 @@ end
 
 gem "inertia_rails", "~> 3.22"
 
-gem "vite_rails", "~> 3.0"
+gem "vite_rails", "~> 3.11"
 
 gem "bcrypt", "~> 3.1"
 
@@ -102,7 +105,7 @@ gem "hashids"
 
 gem "ruby-openai"
 
-gem "pagy", "~> 43.6.1"
+gem "pagy", "~> 43.7.1"
 
 gem "active_storage_validations"
 
@@ -115,7 +118,7 @@ gem "discard", "~> 2.0"
 
 # Version history for edited-in-place items (Field notes first)
 gem "paper_trail", "~> 17.0"
-gem "doorkeeper", "5.9.7"
+gem "doorkeeper", "5.9.9"
 
 # X/Twitter API client
 gem "x"

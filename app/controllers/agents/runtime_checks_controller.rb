@@ -19,7 +19,7 @@ class Agents::RuntimeChecksController < ApplicationController
     chat.agents << @agent unless chat.agents.exists?(@agent.id)
     result = ExternalAgentResponseRequest.new(
       agent: @agent, chat: chat, requested_by: Current.user.email_address,
-      initiation_reason: "Owner-requested runtime test"
+      initiation_reason: "Owner-requested runtime test", wake_source_kinds: WakeProvenance.for(user: Current.user)
     ).call
     render json: {
       status: result[:status].to_i.between?(200, 299) ? "runtime_reachable" : "transport_failed",

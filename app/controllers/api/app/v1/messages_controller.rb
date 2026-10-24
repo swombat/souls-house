@@ -178,7 +178,12 @@ module Api
         end
 
         def find_submission(client_message_id)
-          @chat.messages.find_by(user: current_user, client_message_id: client_message_id)
+          # A concurrent twin can commit after our first lookup. If this send
+          # then fails validation without writing, Rails still caches that
+          # initial nil; retry resolution must observe the committed row.
+          Message.uncached do
+            @chat.messages.find_by(user: current_user, client_message_id: client_message_id)
+          end
         end
 
         # Authority for a file is the upload's: made by this user for this

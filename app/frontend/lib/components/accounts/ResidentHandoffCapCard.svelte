@@ -5,24 +5,26 @@
   import { Label } from '$lib/components/shadcn/label/index.js';
   import * as Card from '$lib/components/shadcn/card';
   import { accountPath } from '@/routes';
+  import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
 
   let { accountId, cap, canManage = false } = $props();
 
-  let value = $state(String(cap));
-  let saving = $state(false);
-  const parsed = $derived(Number(value));
-  const valid = $derived(value !== '' && Number.isInteger(parsed) && parsed >= 0 && parsed <= 50);
+  const draft = createAccountSettingDraft(
+    () => accountId,
+    () => cap
+  );
+  const parsed = $derived(Number(draft.value));
+  const valid = $derived(draft.value !== '' && Number.isInteger(parsed) && parsed >= 0 && parsed <= 50);
   const changed = $derived(valid && parsed !== cap);
 
   function save(event) {
     event.preventDefault();
-    if (!changed || saving) return;
+    if (!changed || draft.saving) return;
 
-    saving = true;
-    router.put(
-      accountPath(accountId),
-      { account: { resident_handoff_cap: parsed } },
-      { preserveScroll: true, onFinish: () => (saving = false) }
+    draft.save(
+      (value, options) =>
+        router.put(accountPath(accountId), { account: { resident_handoff_cap: Number(value) } }, options),
+      (response) => response.props.resident_handoff_cap
     );
   }
 </script>
@@ -48,10 +50,10 @@
             max="50"
             step="1"
             class="w-32"
-            bind:value
+            bind:value={draft.value}
             data-testid="resident-handoff-cap" />
         </div>
-        <Button type="submit" disabled={!changed || saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button type="submit" disabled={!changed || draft.saving}>{draft.saving ? 'Saving…' : 'Save'}</Button>
       </form>
     {:else}
       <p class="text-sm" data-testid="resident-handoff-cap-readonly">

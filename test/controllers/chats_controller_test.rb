@@ -516,12 +516,28 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Select valid residents from this account", flash[:alert]
   end
 
-  test "should destroy chat" do
-    assert_difference "Chat.count", -1 do
+  test "legacy DELETE cannot destroy a chat, its messages or their attached blob" do
+    message = @chat.messages.create!(role: "user", user: @user, content: "Keep this message")
+    message.attachments.attach(
+      io: file_fixture("test_image.png").open,
+      filename: "test_image.png",
+      content_type: "image/png"
+    )
+    blob = message.attachments.first.blob
+
+    assert_no_difference [ "Chat.count", "Message.count", "ActiveStorage::Blob.count" ] do
       delete account_chat_path(@account, @chat)
     end
 
-    assert_redirected_to account_chats_path(@account)
+    assert_response :not_found
+    assert Chat.exists?(@chat.id)
+    assert Message.exists?(message.id)
+    assert ActiveStorage::Blob.exists?(blob.id)
+    assert message.reload.attachments.attached?
+    assert_equal "Keep this message", message.content
+    assert_equal blob.id, message.attachments.first.blob.id
+    assert_equal "Test Conversation", @chat.reload.title
+    assert_not @chat.reload.discarded?
   end
 
   test "should scope chats to current account" do
@@ -872,6 +888,39 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ match.to_param ], results.pluck("id")
     assert_equal @chat.to_param, results.sole.fetch("chat_id")
     assert_includes results.sole.fetch("snippet"), "Ruby on Rails"
+  end
+
+  test "search paginates matching messages newest first within the current account" do
+    # Search has a fixed limit of 20, so 41 matches exercise a partial third page.
+    newest_at = 1.hour.ago
+    messages = 41.times.map do |i|
+      @chat.messages.create!(
+        content: "Pagy regression match #{i}", role: "user", user: @user,
+        created_at: newest_at - i.minutes, suppress_automatic_dispatch: true
+      )
+    end
+    other_user = User.create!(email_address: "pagedsearchother@example.com")
+    other_chat = other_user.personal_account.chats.create!(model_id: "openrouter/auto")
+    other_chat.messages.create!(
+      content: "Pagy regression match from another account", role: "user", user: other_user,
+      created_at: newest_at + 1.minute, suppress_automatic_dispatch: true
+    )
+
+    [ [ 1, 0, 20, nil, 2 ], [ 2, 20, 20, 1, 3 ], [ 3, 40, 1, 2, nil ] ].each do |page, offset, size, previous_page, next_page|
+      @inertia_props = nil # The helper memoizes props across requests.
+      get search_account_chats_path(@account), params: { q: "Pagy regression match", page: page }
+
+      assert_response :success
+      props = inertia_shared_props
+      assert_equal messages.slice(offset, size).map(&:to_param), props.fetch("results").pluck("id"),
+        "Search page #{page} should contain only its ordered account-scoped matches"
+      assert_equal({
+        "count" => 41, "page" => page, "pages" => 3, "last" => 3,
+        "from" => offset + 1, "to" => offset + size,
+        "prev" => previous_page, "next" => next_page,
+        "series" => [ "1", "2", "3" ], "per_page" => "20"
+      }, props.fetch("pagination"))
+    end
   end
 
   test "search with empty query returns no results" do

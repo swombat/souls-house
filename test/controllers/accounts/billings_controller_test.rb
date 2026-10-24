@@ -26,14 +26,14 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert props.dig("billing", "configured")
     assert props.dig("billing", "can_pay")
     assert_match(/@/, props.dig("billing", "contact_email"))
-    assert_equal %w[starter studio], props["tiers"].map { |tier| tier["id"] }
+    assert_equal %w[conversation life work], props["tiers"].map { |tier| tier["id"] }
     resident = props["residents"].find { |row| row["id"] == @agent.to_param }
     assert_equal "complimentary", resident.dig("entitlement", "state")
   end
 
   test "checkout sends the owner to Stripe with tax, VAT ID collection and the resident in metadata" do
     Billing.stub(:client, @stripe) do
-      post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "starter" },
+      post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "conversation" },
         headers: { "X-Inertia" => "true" }
     end
 
@@ -41,11 +41,11 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", response.headers["X-Inertia-Location"]
     params, opts = @stripe.checkout_sessions.sole
     assert_equal "subscription", params[:mode]
-    assert_equal [ { price: FakeStripe::Helpers::STARTER_PRICE, quantity: 1 } ], params[:line_items]
+    assert_equal [ { price: FakeStripe::Helpers::CONVERSATION_PRICE, quantity: 1 } ], params[:line_items]
     assert_equal @agent.id.to_s, params.dig(:subscription_data, :metadata, :agent_id)
     assert params.dig(:automatic_tax, :enabled)
     assert params.dig(:tax_id_collection, :enabled)
-    assert_equal "souls-house-checkout-#{@agent.id}-first-starter", opts[:idempotency_key]
+    assert_equal "souls-house-checkout-#{@agent.id}-first-conversation", opts[:idempotency_key]
     assert_equal "cus_test_1", BillingCustomer.find_by!(account: @account).stripe_customer_id
     assert ResidentEntitlement.find_by!(agent: @agent).pending?
   end
@@ -58,23 +58,23 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a second checkout, for another plan or the same one later, expires the first so only one can be paid" do
-    start_checkout("starter")
+    start_checkout("conversation")
     travel 2.hours do
-      start_checkout("studio")
+      start_checkout("life")
     end
 
     assert_equal [ "cs_test_1" ], @stripe.expired_sessions
     assert_equal "expired", @stripe.session_states.dig("cs_test_1", :status)
     assert_equal "open", @stripe.session_states.dig("cs_test_2", :status)
     assert_equal "cs_test_2", ResidentEntitlement.find_by!(agent: @agent).checkout_session_id
-    assert_equal "souls-house-checkout-#{@agent.id}-cs_test_1-studio", @stripe.checkout_sessions.last[1][:idempotency_key]
+    assert_equal "souls-house-checkout-#{@agent.id}-cs_test_1-life", @stripe.checkout_sessions.last[1][:idempotency_key]
   end
 
   test "a paid checkout the webhook hasn't confirmed yet blocks a new one" do
-    start_checkout("starter")
+    start_checkout("conversation")
     @stripe.session_states["cs_test_1"] = { status: "complete", subscription: "sub_pending" }
 
-    start_checkout("studio")
+    start_checkout("life")
 
     assert_redirected_to account_billing_path(@account)
     assert_match(/still being confirmed/, flash[:alert])
@@ -83,12 +83,12 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "once that paid subscription has ended, a new checkout is allowed" do
-    start_checkout("starter")
+    start_checkout("conversation")
     @stripe.session_states["cs_test_1"] = { status: "complete", subscription: "sub_old" }
     ResidentSubscription.create!(agent: @agent, account: @account, stripe_subscription_id: "sub_old",
-      tier: "starter", stripe_status: "canceled")
+      tier: "conversation", stripe_status: "canceled")
 
-    start_checkout("studio")
+    start_checkout("life")
 
     assert_response :conflict
     assert_equal 2, @stripe.checkout_sessions.size
@@ -97,10 +97,10 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "checkout refuses a resident that already has a live subscription" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
     ResidentSubscription.create!(agent: @agent, account: @account, stripe_subscription_id: "sub_1",
-      tier: "starter", stripe_status: "active")
+      tier: "conversation", stripe_status: "active")
 
     Billing.stub(:client, @stripe) do
-      post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "studio" }
+      post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "life" }
     end
 
     assert_redirected_to account_billing_path(@account)

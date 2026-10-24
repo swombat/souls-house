@@ -19,11 +19,25 @@
     rhythmPath,
     rhythmPreviewPath,
     rhythmsPath,
+    roomChoiceFromSelect,
+    roomSelectValue,
     submittableValues,
     zoneIdentifier,
   } from '$lib/rhythms';
 
-  let { account, rhythm = null, residents = [], timezones = [] } = $props();
+  let {
+    account,
+    rhythm = null,
+    residents = [],
+    timezones = [],
+    room_options = { rooms: [], default_room: null },
+  } = $props();
+
+  const defaultRoomName = $derived(room_options?.default_room?.name ?? 'Main');
+  const mainRoomName = $derived(room_options?.main_room?.name ?? 'Main');
+  // A named room that was removed: the select shows it as gone until another
+  // choice is made, and the rhythm falls back to the account default.
+  const removedRoom = $derived(rhythm?.room_removed ? true : false);
 
   const editing = $derived(Boolean(rhythm?.id));
 
@@ -190,6 +204,37 @@
       {/each}
       {#each [...errorsFor('resident_ids'), ...errorsFor('agents'), ...errorsFor('resident_models')] as error}<p
           class="text-sm text-destructive">
+          {error}
+        </p>{/each}
+    </section>
+
+    <section class="space-y-2">
+      <Label for="rhythm_room">Opens in</Label>
+      <select
+        id="rhythm_room"
+        class={selectClass}
+        value={roomSelectValue($form.rhythm)}
+        onchange={(event) => ($form.rhythm = { ...$form.rhythm, ...roomChoiceFromSelect(event.currentTarget.value) })}>
+        <option value="resident_default">The account's default room (now {defaultRoomName})</option>
+        <option value="main">{mainRoomName}</option>
+        {#each room_options?.rooms ?? [] as room (room.id)}
+          <option value={`room:${room.id}`}>{room.name}</option>
+        {/each}
+        {#if removedRoom && $form.rhythm.room_choice === 'room' && !$form.rhythm.room_id}
+          <option value="room:">A room that has been removed</option>
+        {/if}
+      </select>
+      {#if removedRoom && $form.rhythm.room_choice === 'room' && !$form.rhythm.room_id}
+        <p class="text-xs text-destructive">
+          The room this rhythm opened in has been removed, so it opens in the account's default room ({defaultRoomName})
+          until you choose another.
+        </p>
+      {:else}
+        <p class="text-xs text-muted-foreground">
+          Following the account's default means a change to that default moves this rhythm with it.
+        </p>
+      {/if}
+      {#each [...errorsFor('room'), ...errorsFor('room_choice')] as error}<p class="text-sm text-destructive">
           {error}
         </p>{/each}
     </section>

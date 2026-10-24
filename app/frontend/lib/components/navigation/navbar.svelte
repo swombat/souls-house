@@ -18,6 +18,7 @@
   import MobileNavMenu from '$lib/components/navigation/MobileNavMenu.svelte';
   import SiteAdminMenu from '$lib/components/navigation/SiteAdminMenu.svelte';
   import UserAccountMenu from '$lib/components/navigation/UserAccountMenu.svelte';
+  import AccountHoverSwitcher from '$lib/components/navigation/AccountHoverSwitcher.svelte';
   import ChatRoomsNavMenu from '$lib/components/navigation/ChatRoomsNavMenu.svelte';
   import * as logging from '$lib/logging';
   import { DEFAULT_SITE_NAME } from '$lib/branding';
@@ -27,7 +28,41 @@
   const updateAttentionSync = createDynamicSync();
   $effect(() => {
     const id = $page.props?.user?.id;
-    updateAttentionSync(id ? { [`ReplyAttention:${id}`]: 'reply_attention' } : {});
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    // Membership changes already invalidate this private stream. Refresh the
+    // subscription set too, including newly confirmed or removed accounts.
+    if (id) subs[`ReplyAttention:${id}`] = ['reply_attention', 'accounts', 'expired_subscriptions'];
+    // The room switchers' working spinners, here so they update on any page.
+    if (accountId) subs[`RoomActivity:${accountId}`] = 'room_activity';
+    updateAttentionSync(subs);
+  });
+
+  const updateSubscriptionSync = createDynamicSync();
+  $effect(() => {
+    const subs = {};
+    if ($page.props?.user?.id) {
+      // Subscribe even when an account has no expiries yet. The summary spans
+      // every confirmed account, not only the account currently being viewed.
+      for (const account of $page.props?.accounts || []) {
+        subs[`Account:${account.id}`] = ['accounts', 'expired_subscriptions'];
+        if (account.id === $page.props?.account?.id) {
+          subs[`Account:${account.id}`].push('account', 'is_account_admin');
+        }
+      }
+    }
+    updateSubscriptionSync(subs);
+  });
+
+  const updateRoomNavigationSync = createDynamicSync();
+  $effect(() => {
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    // Watch even an empty account: its first room turns Chats into a menu.
+    if ($page.props?.user?.id && accountId) {
+      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name'];
+    }
+    updateRoomNavigationSync(subs);
   });
 
   function handleLogout(event) {
@@ -141,13 +176,20 @@
             <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
           </Link>
           <!-- Remount when the destination changes, like the account-scoped links below, so the click handler cannot keep the previous account's URL. -->
-          {#key accountNameHref}
-            <Link
-              href={accountNameHref}
-              class="block truncate max-w-[45vw] md:max-w-[16rem]"
-              title={currentAccount.name}
-              data-testid="nav-account-name">{currentAccount.name}</Link>
-          {/key}
+          <!-- On a computer, hovering the name lists the other accounts; clicking it still opens this account's chats. -->
+          <AccountHoverSwitcher
+            {currentAccount}
+            {accounts}
+            replyAttention={$page.props?.reply_attention || {}}
+            expiredSubscriptions={$page.props?.expired_subscriptions || {}}>
+            {#key accountNameHref}
+              <Link
+                href={accountNameHref}
+                class="block truncate max-w-[45vw] md:max-w-[16rem]"
+                title={accounts.length > 1 ? undefined : currentAccount.name}
+                data-testid="nav-account-name">{currentAccount.name}</Link>
+            {/key}
+          </AccountHoverSwitcher>
         </div>
       {:else}
         <Link href="/" class="flex min-w-0 items-center gap-2">
@@ -211,6 +253,7 @@
       {/if}
       <UserAccountMenu
         replyAttention={$page.props?.reply_attention || {}}
+        expiredSubscriptions={$page.props?.expired_subscriptions || {}}
         allowAccountCreation={siteSettings?.allow_account_creation !== false}
         {currentUser}
         {currentAccount}

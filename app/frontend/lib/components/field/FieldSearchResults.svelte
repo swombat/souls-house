@@ -6,11 +6,11 @@
   import SearchExcerpt from '$lib/components/field/SearchExcerpt.svelte';
   import { formatWhen } from '$lib/field';
   import { tweetBadge } from '$lib/field-tweets';
-  import { File, Microphone, Notepad, XLogo } from 'phosphor-svelte';
+  import { File, Microphone, MusicNotes, Notepad, XLogo } from 'phosphor-svelte';
 
   let { search, query = '', filterTags = [], currentKey = null, onSelect, onMore } = $props();
 
-  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet' };
+  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet', song: 'Song' };
 </script>
 
 {#if search.error}
@@ -35,6 +35,8 @@
             <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {:else if result.kind === 'tweet'}
             <XLogo class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
+          {:else if result.kind === 'song'}
+            <MusicNotes class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {:else}
             <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {/if}
@@ -44,6 +46,13 @@
               {kindLabel[result.kind]} · {formatWhen(result.date)}
               {#if result.tags.length}· {result.tags.join(', ')}{/if}
             </p>
+            {#if result.kind === 'song' && (result.artist || result.lyrics_state === 'missing')}
+              <p class="text-xs text-muted-foreground">
+                {[result.artist, result.lyrics_state === 'missing' ? 'No lyrics yet' : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            {/if}
             {#if result.kind === 'tweet'}
               <p class="text-xs text-muted-foreground">
                 @{result.author_handle}

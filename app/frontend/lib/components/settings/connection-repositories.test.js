@@ -106,6 +106,33 @@ function mount(attributes = {}) {
 }
 
 describe('GitHub card repositories', () => {
+  it('switches commit badges per repository, for people who can manage the connection', async () => {
+    mount({
+      repositories: [
+        { ...installed, commit_badges: false },
+        { ...manual, commit_badges: true },
+      ],
+    });
+    const site = screen.getByRole('switch', { name: 'Commit badges for swombat/site' });
+    expect(site).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('switch', { name: 'Commit badges for other/tool' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+
+    await fireEvent.click(site);
+    expect(router.patch).toHaveBeenCalledWith(
+      '/accounts/house/repositories/rInstalled',
+      { commit_badges: true },
+      expect.objectContaining({ preserveScroll: true })
+    );
+  });
+
+  it('shows commit badges read-only to a member who cannot manage the connection', () => {
+    mount({ can_manage_repositories: false, repositories: [{ ...installed, commit_badges: true }] });
+    expect(screen.getByRole('switch', { name: 'Commit badges for swombat/site' })).toBeDisabled();
+  });
+
   it('lists each repository with its hook status, last delivery and reason', () => {
     mount();
     const site = screen.getByTestId('repository-swombat/site');
@@ -206,12 +233,18 @@ describe('GitHub card repositories', () => {
 
 describe('placement on the integration card', () => {
   it('appears on GitHub connections that carry repositories', () => {
-    render(IntegrationConnection, { account: { id: 'house' }, services: [], connection: connectionWith({}) });
+    render(IntegrationConnection, {
+      open: true,
+      account: { id: 'house' },
+      services: [],
+      connection: connectionWith({}),
+    });
     expect(screen.getByRole('heading', { name: 'Repositories' })).toBeInTheDocument();
   });
 
   it('adds nothing to other providers', () => {
     render(IntegrationConnection, {
+      open: true,
       account: { id: 'house' },
       services: [],
       connection: connectionWith({ provider: 'dropbox', repositories: undefined }),

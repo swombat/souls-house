@@ -7,9 +7,16 @@
 #   field_tweets_account_monthly_usd_ceiling: house spend per account per
 #     UTC calendar month (default $1).
 #   field_tweets_site_monthly_usd_ceiling: house spend across all accounts
-#     (default $0, so house-paid collection is shut until set).
+#     (default $10).
 #   own key: the source's own_monthly_usd_limit; no house ceiling, the same
 #     import cap and retry limits.
+#
+# Who pays (Daniel, 2026-10-14): the account's own TwitterAPI.io integration
+# (a ServiceConnection, Settings → Integrations) when it has one; otherwise
+# the house key, but only for accounts a site admin has granted it
+# (accounts.field_tweets_house_key, like the shared AI credentials);
+# otherwise nobody, and nothing is collected. An account with an integration
+# never falls back to the house, even while its key is refused.
 #
 # Every page is reserved before it is asked for, under one lock, at the most
 # a page can cost, so two workers can't both take the last of a ceiling.
@@ -38,6 +45,44 @@ module FieldTweets
   def house_available?
     enabled? && house_key.present? && setting.field_tweets_house_halted_at.nil? &&
       setting.field_tweets_site_monthly_usd_ceiling.to_d.positive?
+  end
+
+  def house_available_for?(account) = account.field_tweets_house_key? && house_available?
+
+  NO_FUNDING = "You need to set up a TwitterAPI.io integration first"
+
+  # The account's own TwitterAPI.io connection, if it has a working one.
+  def integration_for(account)
+    account.service_connections.account_managed.connected.where(provider: "twitterapi_io").order(:id).last
+  end
+
+  # "own", "house" or nil (nobody pays, nothing is collected).
+  def funding_for(account)
+    return "own" if integration_for(account)
+    return "house" if account.field_tweets_house_key?
+
+    nil
+  end
+
+  def key_for(account, funding)
+    case funding
+    when "own" then integration_for(account)&.credential_payload_hash&.dig("api_key").presence
+    when "house" then house_key
+    end
+  end
+
+  # A change to who pays (an integration added, removed or given a new key;
+  # the house grant turned on or off) is a person's act: a stream stopped
+  # for its key, or waiting for someone to pay, tries again now. Paused
+  # streams stay paused. Not called for edits that change nothing about
+  # paying (ServiceConnection#tweet_funding_changed?).
+  def integration_changed!(account)
+    source = FieldTweetSource.find_by(account_id: account.id) or return
+    if source.state == "needs_attention"
+      source.resume!
+    elsif source.state == "active"
+      source.update!(next_attempt_at: Time.current)
+    end
   end
 
   def daily_import_cap = setting.field_tweets_daily_import_cap
@@ -74,8 +119,14 @@ module FieldTweets
     FieldTweetCall.transaction do
       FieldTweetCall.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{FieldTweetCall.connection.quote(LOCK_KEY)}))")
 
-      if source.house_paid?
-        raise LimitReached, "Tweet collection paid by the house is off" unless house_available?
+      # Read fresh under the lock: a grant revoked or an integration removed
+      # since the run began stops the next page, not just the next run.
+      account = Account.find(source.account_id)
+      funding = funding_for(account)
+      raise LimitReached, NO_FUNDING if funding.nil?
+
+      if funding == "house"
+        raise LimitReached, "Tweet collection paid by the house is off" unless house_available_for?(account)
 
         house = FieldTweetCall.where(funding: "house")
         if spent_this_month(house.where(account_id: source.account_id), now: now) + reserve > setting.field_tweets_account_monthly_usd_ceiling.to_d
@@ -94,7 +145,7 @@ module FieldTweets
       end
 
       FieldTweetCall.create!(account_id: source.account_id, field_tweet_source_id: source.id,
-        funding: source.funding, status: "reserved", charge_usd: reserve, retry: retry_call)
+        funding: funding, status: "reserved", charge_usd: reserve, retry: retry_call)
     end
   end
 
@@ -103,6 +154,7 @@ module FieldTweets
     {
       enabled: setting.field_tweets_enabled,
       house_key_configured: house_key.present?,
+      house_key_accounts: Account.where(field_tweets_house_key: true).count,
       house_halted_at: setting.field_tweets_house_halted_at&.iso8601,
       house_halt_reason: setting.field_tweets_house_halt_reason,
       site_monthly_usd_ceiling: setting.field_tweets_site_monthly_usd_ceiling.to_s,

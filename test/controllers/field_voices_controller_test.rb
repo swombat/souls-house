@@ -5,7 +5,8 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
 
   include FieldRecordingHelpers
 
-  SECRET_PRINT = "BIOMETRIC-#{SecureRandom.hex(8)}".freeze
+  # A print with distinctive values, so any leak of it would show.
+  SECRET_VECTOR_SEED = 7
 
   setup do
     @user = users(:user_1)
@@ -23,10 +24,30 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     inertia_props["props"]
   end
 
+  test "a manager sees paused conversion and can explicitly retry it" do
+    Setting.instance.update!(voice_embedding_profile: FieldVoiceprints::Profiles::WESPEAKER)
+    @account.update!(voice_conversion_status: "blocked", voice_conversion_error: "Retained audio is unavailable.")
+    get account_field_voices_path(@account)
+    assert_equal "blocked", props.dig("voice_conversion", "state")
+    assert_equal "Retained audio is unavailable.", props.dig("voice_conversion", "message")
+    assert_enqueued_with(job: FieldVoices::ConvertProfileJob, args: [ @account.id ]) do
+      post retry_conversion_account_field_voices_path(@account)
+    end
+    assert_redirected_to account_field_voices_path(@account)
+    foreign = Account.create!(name: "Unrelated conversion fixture", account_type: :team)
+    assert_not foreign.accessible_by?(@user)
+    assert_no_enqueued_jobs(only: FieldVoices::ConvertProfileJob) do
+      post retry_conversion_account_field_voices_path(foreign)
+      assert_response :not_found
+    end
+  end
+
   test "forgetting works with recognition off, and so does forgetting everything" do
-    store_print!(@voice, print: SECRET_PRINT)
+    @account.update!(recognise_voices: false)
+    store_print!(@voice)
     delete forget_account_field_voice_path(@account, @voice)
     assert_nil FieldVoiceprint.find_by(field_voice: @voice)
+    assert_not @voice.reload.remember?
 
     store_print!(@voice)
     other = @account.field_voices.create!(name: "Priya")
@@ -35,45 +56,38 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, FieldVoiceprint.where(account: @account).count
   end
 
-  test "remembering needs both gates and a ticked box" do
-    post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
-    assert_equal 0, FieldVoiceEnrolment.count, "gate shut"
-
-    with_recognition(@account) do
-      post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "0" } }
-      assert_equal 0, FieldVoiceEnrolment.count, "box not ticked"
-
-      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }) do
-        post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
-      end
-      assert_equal 1, FieldVoiceEnrolment.count
-
-      get account_field_recording_path(@account, @recording)
-      shown = props
-      assert shown["speakers"].first.dig("pending_enrolment", "sample_url").present?
-      assert shown["recognition_enabled"]
-
-      delete account_field_voice_enrolment_path(@account, FieldVoiceEnrolment.last)
-      assert_equal 0, FieldVoiceEnrolment.count, "'not them' throws the sample away"
-    end
-  end
-
-  test "another account's voice or speaker can't be reached" do
+  test "another account's voice can't be forgotten or remembered" do
     theirs = accounts(:another_team).field_voices.create!(name: "Them")
+    store_print!(theirs)
     delete forget_account_field_voice_path(@account, theirs)
     assert_response :not_found
+    assert theirs.reload.remembered?
 
-    their_recording = long_ready_recording(account: accounts(:another_team), user: @user)
-    post account_field_recording_speaker_enrolments_path(@account, their_recording, their_recording.speakers.first),
-      params: { enrolment: { consent: "1" } }
+    theirs.forget!
+    post remember_account_field_voice_path(@account, theirs)
     assert_response :not_found
+    assert_not theirs.reload.remember?
   end
 
   test "a member who can manage the account turns recognition on and off" do
-    patch recognition_account_field_voices_path(@account), params: { recognise_voices: true }
-    assert @account.reload.recognise_voices
+    assert @account.recognise_voices, "on by default"
     patch recognition_account_field_voices_path(@account), params: { recognise_voices: false }
     assert_not @account.reload.recognise_voices
+    patch recognition_account_field_voices_path(@account), params: { recognise_voices: true }
+    assert @account.reload.recognise_voices
+  end
+
+  test "naming on a clear match is on by default, and a manager turns it off and on, with or without recognition" do
+    assert @account.auto_name_voices, "on by default"
+    patch recognition_account_field_voices_path(@account), params: { auto_name_voices: false }
+    assert_equal [ true, false ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    patch recognition_account_field_voices_path(@account), params: { recognise_voices: false, auto_name_voices: true }
+    assert_equal [ false, true ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    patch recognition_account_field_voices_path(@account), params: {}
+    assert_response :bad_request
+
+    get account_field_voices_path(@account)
+    assert_equal true, props["auto_name_voices"]
   end
 
   test "the Voices page lists names and what is remembered" do
@@ -83,15 +97,20 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     shown = props
     assert_equal "field/voices", inertia_props["component"]
     tomas = shown["voices"].find { |v| v["name"] == "Tomás" }
+    assert tomas["remember"]
     assert tomas["remembered"]
+    assert tomas["guessing"], "the print is validated on the samples it is built from"
+    assert_equal 2, tomas["recordings"]
     assert_equal 12, tomas["sample_seconds"]
+    assert tomas["learned_at"].present?
     assert_equal 1, tomas["used_in"]
-    assert_equal 30, shown["backup_retention_days"]
+    assert_not shown.key?("backup_retention_days")
     assert shown["house_recognition"]
   end
 
   test "no print ever reaches a page or the resident API" do
-    store_print!(@voice, print: SECRET_PRINT)
+    secret = voice_vector(3, noise: 0.37, seed: SECRET_VECTOR_SEED)
+    store_print!(@voice, vector: secret)
     resident = agents(:research_assistant)
     key = ApiKey.generate_for(@user, name: "Field tests", agent: resident)
     headers = { "Authorization" => "Bearer #{key.raw_token}" }
@@ -110,7 +129,7 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
       bodies << response.body
 
       bodies.each do |body|
-        assert_not_includes body, SECRET_PRINT
+        secret.first(5).each { |value| assert_not_includes body, value.to_s }
         assert_no_match(/&quot;print&quot;|"print"\s*:/, body)
       end
     end
@@ -122,6 +141,72 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert @voice.reload.discarded?
     assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
     assert_equal "Speaker 1", @speaker.reload.display_name
+  end
+
+  test "the actual roster usage follows naming un-naming and relinking" do
+    get account_field_voices_path(@account)
+    assert_equal 1, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+
+    @speaker.unname!
+    get account_field_voices_path(@account)
+    assert_equal 0, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+
+    other = @account.field_voices.create!(name: "Other speaker")
+    @speaker.name_as!(other, by: @user)
+    get account_field_voices_path(@account)
+    assert_equal 0, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+    assert_equal 1, props["voices"].find { |voice| voice["id"] == other.to_param }["used_in"]
+  end
+
+  test "recording member options and my voice follow explicit member linking" do
+    team = accounts(:team_account)
+    recording = long_ready_recording(account: team, user: @user)
+    member = users(:existing_user)
+    get account_field_recording_path(team, recording)
+    assert_includes props["members_without_voice"].map { |row| row["user_id"] }, member.id
+    assert_nil props["my_voice_id"]
+
+    FieldVoice.for_member!(account: team, user: member, by: @user)
+    mine = FieldVoice.for_member!(account: team, user: @user, by: @user)
+    get account_field_recording_path(team, recording)
+    assert_not_includes props["members_without_voice"].map { |row| row["user_id"] }, member.id
+    assert_equal mine.to_param, props["my_voice_id"]
+    assert props["voices"].find { |row| row["id"] == mine.to_param }["member"]
+  end
+
+  test "remembering again after a forget learns afresh from people's namings and brings nothing back" do
+    store_print!(@voice)
+    FieldVoice.find(@voice.id).forget!
+    with_recognition(@account) do
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        post remember_account_field_voice_path(@account, @voice)
+      end
+    end
+    assert_redirected_to account_field_voices_path(@account)
+    assert @voice.reload.remember?
+    assert_not @voice.remembered?, "the forgotten print doesn't come back"
+  end
+
+  test "merging one speaker into another keeps the chosen name and opens the kept speaker" do
+    other = @account.field_voices.create!(name: "Tomás Ruiz")
+    post merge_account_field_voice_path(@account, @voice), params: { into: other.to_param, name: "Tomás Ruiz" }
+    assert_redirected_to account_field_voices_path(@account, voice: other.to_param)
+    assert @voice.reload.discarded?
+    assert_equal other, @speaker.reload.field_voice
+  end
+
+  test "a refused merge comes back as an error, and another account's voice is not found" do
+    other = @account.field_voices.create!(name: "Priya")
+    post merge_account_field_voice_path(@account, @voice), params: { into: other.to_param, name: "Someone else" }
+    assert_response :redirect
+    assert @voice.reload.kept?
+
+    theirs = accounts(:another_team).field_voices.create!(name: "Them")
+    post merge_account_field_voice_path(@account, @voice), params: { into: theirs.to_param }
+    assert @voice.reload.kept?
+    assert theirs.reload.kept?
+    post merge_account_field_voice_path(@account, theirs), params: { into: @voice.to_param }
+    assert_response :not_found
   end
 
 end

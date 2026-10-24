@@ -10,6 +10,16 @@
 #     schedule: at 5am every day
 
 production:
+  abandoned_app_uploads:
+    class: AbandonedAppUploadsJob
+    queue: default
+    schedule: every hour at minute 20
+
+  companion_sweep:
+    class: CompanionSweepJob
+    queue: default
+    schedule: every minute
+
   # Says when production stops following master (DeployAlarm).
   deploy_alarm_check:
     class: DeployAlarmCheckJob
@@ -21,10 +31,11 @@ production:
     queue: default
     schedule: every minute
 
-  field_voice_enrolment_sweep:
-    class: FieldVoices::EnrolmentSweepJob
+  # Xero refresh tokens die after 60 days unused (Services::XeroAdapter).
+  xero_keep_alive:
+    class: Services::XeroKeepAliveJob
     queue: default
-    schedule: every 15 minutes
+    schedule: every day at 4:40am
 
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
@@ -33,6 +44,14 @@ production:
 
   # Queues tweet stream runs that are due (FieldTweets::Sync). Does nothing
   # while Setting#field_tweets_enabled is off.
+  # Judges quiet rooms for the stalled-thread sweeper (StalledThreadSweeper).
+  # Does nothing while Setting#stalled_sweep_minutes is 0. Shadow only: it
+  # records verdicts and wakes nobody.
+  stalled_thread_sweep:
+    class: StalledThreadSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   field_tweets_sweep:
     class: FieldTweets::SweepJob
     queue: default
@@ -51,6 +70,13 @@ production:
   # Retries unfinished Stripe events and imposes lapsed grace deadlines.
   billing_sweep:
     class: Billing::SweepJob
+    queue: default
+    schedule: every 5 minutes
+
+  # Retries WhatsApp disconnects the comms connector has not confirmed
+  # (ServiceConnection#unpair_pending?).
+  comms_unpair_retry:
+    class: CommsUnpairJob
     queue: default
     schedule: every 5 minutes
 

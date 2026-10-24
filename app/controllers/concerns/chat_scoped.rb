@@ -11,8 +11,7 @@ module ChatScoped
   private
 
   def set_chat
-    # Use with_discarded to allow admins to find discarded chats for restore
-    @chat = current_account.chats.with_discarded.find(params[:chat_id])
+    @chat = current_account.chats.kept.find(params[:chat_id])
   end
 
 end

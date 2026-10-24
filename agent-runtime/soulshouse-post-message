@@ -98,7 +98,11 @@ def main() -> int:
         with urllib.request.urlopen(request, timeout=120) as response:
             payload = response.read().decode("utf-8")
             print(payload)
-            return 0 if 200 <= response.status < 300 else 1
+            if not 200 <= response.status < 300:
+                return 1
+            if run_id:
+                withdraw_silence_notice()
+            return 0
     except urllib.error.HTTPError as error:
         print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
         print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
@@ -106,6 +110,19 @@ def main() -> int:
     except Exception as error:
         print(f"souls.house post failed: {error}", file=sys.stderr)
     return 1
+
+
+def withdraw_silence_notice() -> None:
+    """A visible post in the run's own conversation answers any pending
+    "you've been quiet" notice; drop it so it can't land just after the post.
+    souls.house stays the authority and the runtime re-reads it."""
+    path = os.environ.get("SOULSHOUSE_STEER_FILE")
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def normalize_newlines(content: str) -> str:

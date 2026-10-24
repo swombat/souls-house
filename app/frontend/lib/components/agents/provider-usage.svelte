@@ -4,6 +4,7 @@
   let usage = $derived(subscription.usage);
   let usageLoading = $derived(subscription.usageLoading);
   let usageError = $derived(subscription.usageError);
+  let usageStale = $derived(subscription.usageStale);
   let displayWindows = $derived(subscription.displayWindows);
   const loadUsage = (...args) => subscription.loadUsage(...args);
 </script>
@@ -11,6 +12,17 @@
 <div class="mt-3 space-y-1.5">
   {#if usageLoading && !usage}
     <p class="text-xs text-muted-foreground">Loading subscription usage…</p>
+  {:else if usageStale}
+    <div class="flex items-center gap-2">
+      <p class="text-xs text-muted-foreground">Connection changed; refresh usage when needed.</p>
+      <button
+        class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+        type="button"
+        disabled={usageLoading}
+        onclick={() => loadUsage(true)}>
+        {usageLoading ? 'Refreshing…' : 'Refresh usage'}
+      </button>
+    </div>
   {:else if usage?.status === 'unknown' || usageError}
     <div class="flex items-center gap-2">
       <p class="text-xs text-muted-foreground">Usage temporarily unavailable</p>

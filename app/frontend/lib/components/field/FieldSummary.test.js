@@ -42,4 +42,32 @@ describe('FieldSummary refresh', () => {
     await fireEvent.click(screen.getByTestId('summary-refresh'));
     expect(screen.queryByTestId('summary-error')).toBeNull();
   });
+
+  it('keeps the old text and permits manual refresh while stale', async () => {
+    render(FieldSummary, { props: { ...props, freshness: 'stale' } });
+    expect(screen.getByTestId('field-summary').textContent).toContain(props.text);
+    expect(screen.getByTestId('summary-stale').textContent).toContain('out of date');
+    expect(screen.getByTestId('summary-refresh').disabled).toBe(false);
+    await fireEvent.click(screen.getByTestId('summary-refresh'));
+    expect(router.post).toHaveBeenCalledWith(props.url, {}, expect.any(Object));
+  });
+
+  it('does not assert an untracked summary is current', () => {
+    render(FieldSummary, { props: { ...props, freshness: 'unknown' } });
+    expect(screen.getByTestId('summary-unknown').textContent).toContain("source wasn't tracked");
+    expect(screen.getByTestId('summary-refresh').disabled).toBe(false);
+  });
+
+  it('only disables refresh while a new summary is actually pending', () => {
+    render(FieldSummary, { props: { ...props, freshness: 'stale', pending: true } });
+    expect(screen.getByTestId('summary-pending').textContent).toContain('Writing');
+    expect(screen.getByTestId('summary-refresh').disabled).toBe(true);
+  });
+
+  it('removes the stale label when the refreshed result is current', async () => {
+    const view = render(FieldSummary, { props: { ...props, freshness: 'stale' } });
+    await view.rerender({ ...props, freshness: 'current', text: 'A new summary.' });
+    expect(screen.queryByTestId('summary-stale')).toBeNull();
+    expect(screen.getByTestId('field-summary').textContent).toContain('A new summary.');
+  });
 });

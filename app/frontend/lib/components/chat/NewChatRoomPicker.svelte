@@ -7,6 +7,7 @@
   let { roomId = $bindable('main') } = $props();
 
   const rooms = $derived($page.props.rooms || []);
+  const mainName = $derived($page.props.main_room_name);
 </script>
 
 {#if rooms.length > 0}
@@ -14,10 +15,10 @@
     <span>Room</span>
     <Select.Root type="single" bind:value={roomId}>
       <Select.Trigger class="h-7 w-40 text-xs" aria-label="Room for this conversation" data-testid="new-chat-room">
-        {roomName(roomId, rooms)}
+        {roomName(roomId, rooms, mainName)}
       </Select.Trigger>
       <Select.Content sideOffset={4}>
-        {#each destinations(rooms) as option (option.id)}
+        {#each destinations(rooms, mainName) as option (option.id)}
           <Select.Item value={option.id} label={option.name}>{option.name}</Select.Item>
         {/each}
       </Select.Content>

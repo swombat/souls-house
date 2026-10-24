@@ -9,15 +9,57 @@
   let startConfirmed = $state(false);
   let pending = $state(null);
   let error = $state('');
+  let refreshing = $state(false);
+  let refreshGeneration = 0;
+  let cancelRefresh;
   let controller;
+  let exportUrl = $derived(portability?.export_url);
 
-  onDestroy(() => controller?.abort());
+  $effect(() => {
+    // A preserved component can move to another resident without unmounting.
+    exportUrl;
+    invalidateRefresh();
+  });
+
+  function invalidateRefresh() {
+    refreshGeneration++;
+    cancelRefresh?.();
+    cancelRefresh = null;
+    refreshing = false;
+  }
+
+  onDestroy(() => {
+    invalidateRefresh();
+    controller?.abort();
+  });
+
+  function refreshStatus() {
+    if (!portability?.can_manage || pending || refreshing) return;
+    const generation = ++refreshGeneration;
+    refreshing = true;
+    router.reload({
+      only: ['portability'],
+      preserveState: true,
+      preserveScroll: true,
+      onCancelToken: (token) => {
+        if (generation === refreshGeneration) cancelRefresh = () => token.cancel();
+        else token.cancel();
+      },
+      onFinish: () => {
+        if (generation !== refreshGeneration) return;
+        cancelRefresh = null;
+        refreshing = false;
+      },
+    });
+  }
 
   async function changeRuntime(action) {
     const stopping = action === 'stop';
     const url = stopping ? portability?.stop_url : portability?.activate_url;
     if (!portability?.can_manage || !url || pending || !(stopping ? stopConfirmed : startConfirmed)) return;
 
+    // A status response started before this mutation must never replace its result.
+    invalidateRefresh();
     pending = action;
     error = '';
     controller = new AbortController();
@@ -66,6 +108,14 @@
   </div>
   <ResidentPortabilityWarning />
   {#if portability?.can_manage}
+    <div class="space-y-2">
+      <p class="text-sm text-muted-foreground">
+        Export readiness is a snapshot. Refresh explicitly to check changes made elsewhere.
+      </p>
+      <Button type="button" variant="outline" disabled={!!pending || refreshing} onclick={refreshStatus}>
+        {refreshing ? 'Refreshing status…' : 'Refresh export status'}
+      </Button>
+    </div>
     <div class="space-y-2">
       <h3 class="font-medium">Export this resident</h3>
       {#if portability.export_ready && portability.export_url}

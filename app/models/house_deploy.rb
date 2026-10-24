@@ -149,22 +149,26 @@ class HouseDeploy
     [ runs, nil ]
   end
 
-  # deployed / superseded / not_deployed for a finished successful run; nil
-  # while running or when the run itself failed (its conclusion says so).
+  # deployed / superseded / not_deployed for a finished successful run. A
+  # superseded host outcome fails the GitHub job (#313: green with nothing
+  # shipped looked like a deploy), so a failed run is read too, but only to
+  # name superseded; any other failure is nil and its conclusion says so.
+  # nil while running.
   # A finished attempt never changes, so its outcome is cached per attempt.
   # (A rerun keeps the run id, so caching by id alone would show the first
   # attempt's outcome for every later one.)
   def self.automatic_outcome(run)
-    return nil unless run[:status] == "completed" && run[:conclusion] == "success"
+    return nil unless run[:status] == "completed" && %w[success failure].include?(run[:conclusion])
 
     attempt = (run[:attempt] || 1).to_i
-    Rails.cache.fetch([ "house_deploy/automatic_outcome", run[:id], attempt ], expires_in: 1.day, skip_nil: true) do
+    Rails.cache.fetch([ "house_deploy/automatic_outcome", run[:id], attempt, run[:conclusion] ], expires_in: 1.day, skip_nil: true) do
       status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs/#{run[:id]}/attempts/#{attempt}/jobs", nil)
       next nil unless status == 200 && body.is_a?(Hash)
 
       ran = Array(body["jobs"]).flat_map { |job| Array(job["steps"]) }
         .select { |step| step["conclusion"] == "success" }.map { |step| step["name"] }
-      if ran.include?(DEPLOYED_STEP) then "deployed"
+      if run[:conclusion] == "failure" then ("superseded" if ran.include?(SUPERSEDED_STEP))
+      elsif ran.include?(DEPLOYED_STEP) then "deployed"
       elsif ran.include?(SUPERSEDED_STEP) then "superseded"
       else "not_deployed"
       end

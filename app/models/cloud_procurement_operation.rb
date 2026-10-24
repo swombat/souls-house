@@ -24,7 +24,7 @@ class CloudProcurementOperation < ApplicationRecord
   # Only these free the placement for another purchase.
   RESOLVED_STATES = %w[refused deleted].freeze
   UNRESOLVED_STATES = (STATES - RESOLVED_STATES).freeze
-  SERVER_TYPES = %w[cx23 cx33].freeze
+  SERVER_TYPES = %w[cx23 cx33 cx43].freeze
   EU_LOCATIONS = %w[fsn1 nbg1 hel1].freeze
 
   belongs_to :agent_placement

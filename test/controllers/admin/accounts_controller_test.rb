@@ -99,6 +99,62 @@ class Admin::AccountsControllerTest < ActionDispatch::IntegrationTest
 
   # === Selected Account Tests ===
 
+  test "accounts-only partial does not evaluate selected account usage or schedule journal stats" do
+    post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
+    account = accounts(:personal_account)
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "external", journal_stats_requested_at: nil)
+    headers = {
+      "X-Inertia" => "true",
+      "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "admin/accounts",
+      "X-Inertia-Partial-Data" => "accounts"
+    }
+
+    Admin::AccountUsageReport.stub :new, ->(*) { flunk "accounts-only reload evaluated the usage report" } do
+      Agents::ResidentDirectory.stub :new, ->(*) { flunk "accounts-only reload evaluated the resident directory" } do
+        assert_no_enqueued_jobs(only: AgentJournalStatsJob) do
+          get admin_accounts_path, params: { account_id: account.to_param }, headers: headers
+        end
+      end
+    end
+
+    assert_response :success
+    props = response.parsed_body.fetch("props")
+    assert_includes props.fetch("accounts").pluck("id"), account.to_param
+    assert_not props.key?("selected_account")
+    assert_nil agent.reload.journal_stats_requested_at
+  end
+
+  test "selected-account partial still evaluates and renders the requested usage report" do
+    post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
+    account = accounts(:personal_account)
+    directory = Minitest::Mock.new
+    directory.expect :call, [ { id: "synthetic-resident-card" } ]
+    headers = {
+      "X-Inertia" => "true",
+      "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "admin/accounts",
+      "X-Inertia-Partial-Data" => "selected_account"
+    }
+
+    Agents::ResidentDirectory.stub :new, ->(selected) {
+      assert_equal account.id, selected.id
+      directory
+    } do
+      get admin_accounts_path, params: { account_id: account.to_param }, headers: headers
+    end
+
+    assert_response :success
+    props = response.parsed_body.fetch("props")
+    selected = props.fetch("selected_account")
+    assert_equal account.to_param, selected.fetch("id")
+    assert_equal [ { "id" => "synthetic-resident-card" } ], selected.fetch("usage").fetch("resident_cards")
+    assert selected.fetch("usage").key?("activity")
+    assert_not props.key?("accounts")
+    directory.verify
+  end
+
   test "selected account includes usage and storage refresh is admin only" do
     post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
     account = accounts(:personal_account)

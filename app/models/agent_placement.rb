@@ -3,7 +3,11 @@ require "uri"
 class AgentPlacement < ApplicationRecord
 
   BACKENDS = %w[local hetzner_cloud].freeze
-  STATES = %w[pending ready failed retired].freeze
+  # staged: an archive import's VM intent, waiting for Activate. It has no
+  # server, no admission and no cap slot, and as a VM placement it is never
+  # run by the local runtime (RuntimeLocation).
+  STATES = %w[staged pending ready failed retired].freeze
+  KINDS = %w[birth archive_import github_import].freeze
 
   belongs_to :agent, inverse_of: :placement
   # Who created the resident whose birth admitted this placement (#246).
@@ -14,6 +18,9 @@ class AgentPlacement < ApplicationRecord
   validates :agent_id, uniqueness: true
   validates :backend, inclusion: { in: BACKENDS }
   validates :state, inclusion: { in: STATES }
+  validates :kind, inclusion: { in: KINDS }, allow_nil: true
+  validates :kind, absence: true, if: -> { backend == "local" }
+  validate :staged_holds_nothing, if: -> { state == "staged" }
   # Confirmed hosting geography, set when procurement verifies a server.
   validates :location, inclusion: { in: CloudProcurementOperation::EU_LOCATIONS }, allow_nil: true
   validates :location, absence: true, if: -> { backend == "local" }
@@ -28,6 +35,7 @@ class AgentPlacement < ApplicationRecord
   validate :runtime_endpoint_is_https
 
   def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
+  def staged? = state == "staged"
   def cleanup_requested? = cleanup_requested_at.present?
 
   # Records why this placement's server must go. Never deletes anything
@@ -39,6 +47,12 @@ class AgentPlacement < ApplicationRecord
   end
 
   private
+
+  def staged_holds_nothing
+    errors.add(:state, "staged is only for a VM archive import") unless backend == "hetzner_cloud" && kind == "archive_import"
+    errors.add(:state, "staged holds no server") if provider_server_id.present? || location.present?
+    errors.add(:state, "staged is not admitted") if admitted_by_setting_at.present? || birth_deadline_at.present?
+  end
 
   def runtime_endpoint_is_https
     return if runtime_endpoint.nil?

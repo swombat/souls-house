@@ -224,6 +224,53 @@ module Agents
       container_exists? && !running?
     end
 
+    # Never starts or recreates a container. Each rename is atomic; updating the
+    # boot source first also preserves the new manifest across a later restart.
+    def refresh_service_manifest!(yaml:)
+      return false unless running?
+
+      verify_resources!
+      script = <<~'SHELL'
+        exec >/dev/null 2>&1
+        set -eu
+        umask 077
+        source_stage=
+        trap 'rm -f -- "$source_stage"' EXIT
+        trap 'exit 1' HUP INT TERM
+        source_stage=$(mktemp /run/.helixkit-source.yml.XXXXXX)
+        cat > "$source_stage"
+        mv -fT -- "$source_stage" /run/helixkit-source.yml
+        # Open the root-owned source before dropping privileges. Root must not
+        # write into the agent-owned live directory, even through a stage.
+        gosu agent sh -c '
+          set -eu
+          umask 077
+          live_stage=
+          trap '\''rm -f -- "$live_stage"'\'' EXIT
+          trap '\''exit 1'\'' HUP INT TERM
+          live_stage=$(mktemp /run/helixkit/.services.yml.XXXXXX)
+          cat > "$live_stage"
+          mv -fT -- "$live_stage" /run/helixkit/services.yml
+        ' < /run/helixkit-source.yml
+      SHELL
+
+      begin
+        _stdout, _stderr, status = Open3.capture3(
+          "docker", "exec", "-i", "-u", "0", agent.container_name,
+          "sh", "-c", script, stdin_data: yaml
+        )
+        raise SandboxError unless status.success?
+      rescue StandardError
+        begin
+          return false unless running?
+        rescue StandardError
+          # An unverifiable state is not a safe stopped-container fallback.
+        end
+        raise SandboxError, "Failed to refresh service manifest", cause: nil
+      end
+      true
+    end
+
     # Verification only. No SQL writes, interactive approvals or project code.
     # A site operator grants trust through Chaos's supported interactive screen.
     def imported_runtime_trusted?
@@ -627,12 +674,17 @@ module Agents
       agent.update!(endpoint_url: "http://#{host}:#{port}")
     end
 
+    # A resident's first boot on a new image can take ~40s (tailnet, home import,
+    # settings preparation); at 30s Lume's rollout on 2026-10-14 was failed and
+    # left paused although the container came up healthy 11s later.
+    HEALTH_WAIT_SECONDS = 90
+
     def wait_for_health!
-      30.times do
+      HEALTH_WAIT_SECONDS.times do
         return true if healthy?
         sleep 1
       end
-      raise SandboxError, "container did not become healthy within 30s"
+      raise SandboxError, "container did not become healthy within #{HEALTH_WAIT_SECONDS}s"
     end
 
     def agent_slug

@@ -21,7 +21,7 @@ class Billing::ProcessStripeEventJobTest < ActiveJob::TestCase
       assert_equal 1, @event.attempts
 
       @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1",
-        price: FakeStripe::Helpers::STARTER_PRICE, status: "active")
+        price: FakeStripe::Helpers::CONVERSATION_PRICE, status: "active")
       Billing::ProcessStripeEventJob.perform_now(@event.id)
       assert_equal "processed", @event.reload.status
       assert ResidentEntitlement.find_by!(agent: @agent).active?

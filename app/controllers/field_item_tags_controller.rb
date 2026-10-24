@@ -1,5 +1,5 @@
 # Adding and removing tags on one Field item from the page. The item is named
-# by its page key ("file-abc", "recording-abc", "note-abc"). JSON.
+# by its page key ("file-abc", "recording-abc", "note-abc", "song-abc"). JSON.
 class FieldItemTagsController < ApplicationController
 
   require_feature_enabled :agents
@@ -8,7 +8,8 @@ class FieldItemTagsController < ApplicationController
     "file" => ->(account) { account.field_files.kept },
     "recording" => ->(account) { account.field_recordings.kept },
     "note" => ->(account) { account.whiteboards.active },
-    "tweet" => ->(account) { account.field_tweets.kept }
+    "tweet" => ->(account) { account.field_tweets.kept },
+    "song" => ->(account) { account.field_songs.kept }
   }.freeze
 
   def update

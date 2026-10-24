@@ -18,7 +18,7 @@
     accountAgentTelegramTestPath,
     accountAgentTelegramWebhookPath,
   } from '@/routes';
-  import { useSync } from '$lib/use-sync';
+  import { useSync, createDynamicSync } from '$lib/use-sync';
 
   import AgentAppearancePanel from '$lib/components/agents/AgentAppearancePanel.svelte';
   import AgentEditHeader from '$lib/components/agents/AgentEditHeader.svelte';
@@ -34,7 +34,7 @@
   let {
     agent,
     house_allowance: houseAllowance = null,
-    telegram_deep_link: telegramDeepLink = null,
+    telegram_configuration: telegramConfiguration = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
     grouped_models = {},
     colour_options = [],
@@ -61,14 +61,24 @@
   } = $props();
 
   useSync({
-    [`Agent:${agent.id}`]: [
-      'agent',
-      'memories',
-      'interactions',
-      'interactions_pagination',
-      'cost_report',
-      'portability',
-    ],
+    [`Agent:${agent.id}`]: ['agent', 'memories', 'interactions', 'interactions_pagination', 'cost_report'],
+  });
+
+  const updateIntegrationSync = createDynamicSync();
+  $effect(() => {
+    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
+  });
+  const updateProviderSync = createDynamicSync();
+  $effect(() => {
+    updateProviderSync({
+      [`ProviderPresentation:${account.id}`]: ['provider_subscription', 'can_manage_provider_subscription'],
+    });
+  });
+  const updateTelegramSync = createDynamicSync();
+  $effect(() => {
+    updateTelegramSync({
+      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count'],
+    });
   });
 
   let selectedModel = $state(agent.model_id);
@@ -230,7 +240,7 @@
             {form}
             {agent}
             {account}
-            {telegramDeepLink}
+            {telegramConfiguration}
             {telegramSubscriberCount}
             {sendingTestNotification}
             {registeringWebhook}

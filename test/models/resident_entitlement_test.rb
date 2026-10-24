@@ -11,7 +11,7 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     @now = Time.zone.parse("2026-10-11 12:00")
   end
 
-  def subscription(id, status, tier: "starter")
+  def subscription(id, status, tier: "conversation")
     ResidentSubscription.create!(agent: @agent, account: @account, stripe_subscription_id: id,
       tier: tier, stripe_status: status)
   end
@@ -33,14 +33,14 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
   end
 
   test "a paid subscription becomes current and activates the plan" do
-    sub = subscription("sub_1", "active", tier: "studio")
+    sub = subscription("sub_1", "active", tier: "life")
     assert entitlement.apply_subscription!(sub, now: @now)
 
     entitlement.reload
     assert entitlement.active?
     assert entitlement.paid?
     assert_equal "stripe", entitlement.source
-    assert_equal "studio", entitlement.tier
+    assert_equal "life", entitlement.tier
     assert_equal sub, entitlement.current_subscription
   end
 
@@ -97,7 +97,7 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     entitlement.apply_subscription!(old, now: @now)
     assert entitlement.reload.held?
 
-    replacement = subscription("sub_new", "active", tier: "studio")
+    replacement = subscription("sub_new", "active", tier: "life")
     entitlement.apply_subscription!(replacement, now: @now + 1.day)
     assert entitlement.reload.active?
     assert_equal replacement, entitlement.current_subscription
@@ -107,7 +107,7 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     old.update!(stripe_status: "unpaid")
     assert_not entitlement.apply_subscription!(old, now: @now + 2.days)
     assert entitlement.reload.active?
-    assert_equal "studio", entitlement.tier
+    assert_equal "life", entitlement.tier
   end
 
   test "a complimentary resident that subscribes and later cancels returns to complimentary" do

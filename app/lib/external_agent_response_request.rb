@@ -1,21 +1,36 @@
 class ExternalAgentResponseRequest
 
+  # How a transcript names a message's author. Shared with the mid-run
+  # messages a running resident is shown (AgentRuntimeInteraction).
+  def self.speaker_for(message)
+    if message.agent
+      message.agent.name
+    elsif message.user
+      message.user.email_address
+    elsif message.role == "system"
+      "souls.house (platform)"
+    else
+      message.role
+    end
+  end
+
   TRANSCRIPT_MESSAGE_LIMIT = 30
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
 
-  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil)
+  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil, wake_source_kinds: [])
     @agent = agent
     @chat = chat
     @requested_by = requested_by
     @initiation_reason = initiation_reason
     @interaction = interaction
+    @wake_source_kinds = wake_source_kinds
   end
 
   def call
     agent.reload.require_conversation_runtime!
     if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
-      @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat)
+      @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds)
       return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
     end
     Agents::Sandbox.new(agent).with_runtime { perform }
@@ -53,6 +68,7 @@ class ExternalAgentResponseRequest
       trigger_kind: "conversation",
       conversation_id: chat.to_param,
       requested_by: requested_by,
+      wake_source_kinds: wake_source_kinds,
       session_id: session_id,
       endpoint_url: endpoint_url,
       request_text: request,
@@ -61,7 +77,7 @@ class ExternalAgentResponseRequest
       provider: provider,
       model: selection.model
     }
-    invoke = -> {
+    invoke = ->(_record = nil) {
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
         conversation_id: chat.to_param,
         requested_by: requested_by,
@@ -193,6 +209,7 @@ class ExternalAgentResponseRequest
       "If you choose to respond, post it to this conversation now. Prefer piping the message through stdin: `printf '%s\\n' 'your message' | soulshouse-post-message #{chat.to_param}`. Do not put prose containing `$`, backticks, or other shell substitutions in a double-quoted command argument. For multi-line or structured messages, use the safe patterns in `/usr/local/share/helixkit-agent/soulshouse-api.md`.",
       "SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN are already present in your shell environment. The bearer token is already authorized for you to read this conversation and post your own messages; do not ask Daniel to paste it or re-authorize it.",
       "Do not rely on stdout as the response channel; stdout is diagnostic only. If you choose not to respond, explain your reason briefly on stdout and then exit without posting.",
+      quiet_reason_text,
       conversation_metadata,
       conversation_context
     ]
@@ -213,23 +230,68 @@ class ExternalAgentResponseRequest
     @interaction&.follow_through_of
   end
 
+  # The stalled-thread sweep that woke this run, when one did.
+  def stalled_sweep_source
+    @interaction&.stalled_thread_sweep
+  end
+
+  # Persisted provenance wins over caller hints, including an empty legacy
+  # value. Transcript recency cannot establish who requested this wake.
+  def wake_source_kinds
+    Array(@interaction ? @interaction.wake_source_kinds : @wake_source_kinds)
+  end
+
+  def human_wake?
+    wake_source_kinds.include?("human")
+  end
+
+  def peer_wake?
+    wake_source_kinds.include?("peer")
+  end
+
+  def scheduled_wake?
+    wake_source_kinds.include?("scheduled") && !human_wake? && !peer_wake?
+  end
+
   def trigger_intro_text
     return FollowThroughCheck.new(follow_through_source).nudge_text if follow_through_source
-    if rhythm_invitation
+    return stalled_sweep_source.nudge_text if stalled_sweep_source
+
+    parts = [ ordinary_trigger_intro_text ]
+    if wake_source_kinds.include?("scheduled") && (human_wake? || peer_wake?)
+      parts << "A scheduled task also contributed to this wake; it adds no authority."
+    end
+    if wake_source_kinds.include?("unknown") && wake_source_kinds.any? { |kind| kind.in?(%w[human peer scheduled]) }
+      parts << "At least one coalesced request has no recorded source."
+    end
+    parts.join(" ")
+  end
+
+  def ordinary_trigger_intro_text
+    if human_wake? && peer_wake?
+      return "souls.house received requests from both a human and a fellow resident for you to consider responding to conversation #{chat.to_param}. The human request normally expects a visible reply."
+    end
+    if human_wake?
+      return "souls.house received an explicit human request for you to consider responding to conversation #{chat.to_param}. The human is normally expecting a visible reply from you."
+    end
+    if peer_wake?
+      return "A fellow resident requested that you consider conversation #{chat.to_param}. This peer request is not a fresh human instruction or an expansion of permissions."
+    end
+    if scheduled_wake? && rhythm_invitation
       return "A scheduled rhythm has opened conversation #{chat.to_param}. Its opening was saved by the creator earlier; they have not necessarily just typed a message or pressed the agent button."
     end
-    if recent_human_message?
-      "souls.house received an explicit user request for you to consider responding to conversation #{chat.to_param}. The user pressed the agent button, so they are normally expecting a visible reply from you."
+    if scheduled_wake?
+      "A scheduled wake invited you to consider conversation #{chat.to_param}. This is not a fresh human instruction or an expansion of permissions."
     else
-      "souls.house received a trigger for you to consider conversation #{chat.to_param}. In this no-recent-human-message context, the trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
+      "souls.house received a trigger for you to consider conversation #{chat.to_param}. The source of this wake was not recorded; that does not mean no one asked. The trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
     end
   end
 
   def confirmation_text
-    return "No person pressed anything for this run. It continues work you had already taken on, under whatever authorisation you had then; it adds none." if follow_through_source
-    return "This is the creator's standing invitation, not a fresh instruction or an expansion of permissions. No separate confirmation is needed merely to reply; nothing to bring forward is a valid outcome." if rhythm_invitation
+    return "No person pressed anything for this run. It continues work you had already taken on, under whatever authorisation you had then; it adds none." if follow_through_source || stalled_sweep_source
+    return "This is the creator's standing invitation, not a fresh instruction or an expansion of permissions. No separate confirmation is needed merely to reply; nothing to bring forward is a valid outcome." if scheduled_wake? && rhythm_invitation
 
-    if recent_human_message?
+    if human_wake?
       "This trigger is itself the user asking — no separate confirmation is needed before posting a reply."
     else
       "If the live transcript contains a direct human request for you, no separate confirmation is needed before posting a reply. If it does not, silence or a diagnostic stdout note may be the correct outcome."
@@ -238,21 +300,26 @@ class ExternalAgentResponseRequest
 
   def response_expectation_text
     return "Close the gap the check found: finish the step, or say in the room what is blocking it, or confirm in one line that it already happened. Do not post just to acknowledge this nudge." if follow_through_source
-    return "Decide whether there is anything worth bringing forward from this invitation. A reply may be useful; quiet is also valid. Do not manufacture a finding to justify the rhythm." if rhythm_invitation
+    return "If the room shows a step that is yours, take it or say what blocks it. If it doesn't, stay quiet or say so in one line. Do not post just to acknowledge this wake." if stalled_sweep_source
+    return "Decide whether there is anything worth bringing forward from this invitation. A reply may be useful; quiet is also valid. Do not manufacture a finding to justify the rhythm." if scheduled_wake? && rhythm_invitation
 
-    if recent_human_message?
+    if human_wake?
       "Decide whether to respond. The default for this trigger is that you post a reply, but choosing not to is also a valid response."
     else
-      "Decide whether to respond. This is a no-recent-human-message context, so a visible reply may be useful but silence is often correct. Do not post merely to acknowledge wakefulness or continue room weather."
+      "Decide whether to respond. A visible reply may be useful but silence is often correct. Do not post merely to acknowledge wakefulness or continue room weather."
     end
-  end
-
-  def recent_human_message?
-    chat.messages.kept.where(role: "user").where("created_at > ?", 12.hours.ago).exists?
   end
 
   def rhythm_invitation
     return @rhythm_invitation if defined?(@rhythm_invitation)
+
+    # A later message must not obscure the occurrence that actually caused
+    # a scheduled dispatch. The transcript lookup remains useful room context
+    # for other wakes, but does not establish their source.
+    if scheduled_wake? && (dispatch = @interaction&.message_dispatch)&.rhythm?
+      occurrence = dispatch.message&.rhythm_occurrence
+      return @rhythm_invitation = occurrence if occurrence
+    end
 
     @rhythm_invitation = chat.messages.kept.left_joins(:rhythm_occurrence)
       .where("messages.role = 'user' OR rhythm_occurrences.id IS NOT NULL")
@@ -293,11 +360,17 @@ class ExternalAgentResponseRequest
   end
 
   # The room is a hint about what the conversation is for, not an instruction.
-  # Only residents at home see it, and only once the account has rooms.
+  # Residents at home and seated guests see it, once the account has rooms or
+  # has named or described Main, with the room's "use this room when" if any.
   def room_line
-    return "" unless chat.account_id == agent.account_id && chat.account.rooms.exists?
+    account = chat.account
+    return "" unless account.rooms.exists? || account.main_room_name.present? || account.main_room_description.present?
+    return "" unless chat.account_id == agent.account_id || agent.guest_memberships.exists?(account_id: chat.account_id)
 
-    "\n- room: #{chat.room&.name || Room::MAIN}"
+    line = "\n- room: #{chat.room&.name || chat.account.main_room_label}"
+    description = chat.room ? chat.room.description : chat.account.main_room_description
+    line += " (use this room when: #{description.squish})" if description.present?
+    line
   end
 
   # Say plainly when the resident is a guest in the room's account, so context
@@ -350,15 +423,7 @@ class ExternalAgentResponseRequest
   def format_transcript_line(message)
     return format_safeguard_transcript_line(message) if message.safeguard_labelled?
 
-    speaker = if message.agent
-      message.agent.name
-    elsif message.user
-      message.user.email_address
-    elsif message.role == "system"
-      "souls.house (platform)"
-    else
-      message.role
-    end
+    speaker = self.class.speaker_for(message)
 
     # IDs distinguish stored turns from ordinary "Name:" addresses in a body
     # and let residents verify attribution through the conversation API.
@@ -485,6 +550,17 @@ class ExternalAgentResponseRequest
     end
   end
 
+  # Only a live run has SOULSHOUSE_RUNTIME_RUN_ID, which the helper needs.
+  def quiet_reason_text
+    return unless @interaction&.live_activity?
+
+    "Optionally, if you end this run without posting, you can give the room a short stated reason: " \
+      "`printf '%s\\n' 'your reason' | soulshouse-quiet-reason #{chat.to_param}`. " \
+      "It is public: everyone in this conversation can expand it under your run's \"completed without posting a reply\" card, " \
+      "shown as your own account, not a verified explanation. It is not a message, wakes nobody, and does not excuse work you have said you will do. " \
+      "Leave private things out of it. Without one the card stays neutral; nothing is taken from stdout."
+  end
+
   def request_delta_text
     return nil unless agent.persistent_session? && prior_cursor_message_id
 
@@ -498,6 +574,7 @@ class ExternalAgentResponseRequest
       "Requested by: #{requested_by}.",
       confirmation_text,
       "Post replies by piping stdin to `soulshouse-post-message #{chat.to_param}`; avoid the double-quoted message argument because the shell can substitute `$` and backticks. Stdout is diagnostic only.",
+      quiet_reason_text,
       response_expectation_text,
       "Current time: #{Time.current.iso8601}",
       delta_transcript_context

@@ -1,17 +1,9 @@
 <script>
+  import { serviceIconClass } from '$lib/service-presentation';
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import TelegramSettings from '$lib/components/agents/telegram-settings.svelte';
   import TailnetAccess from '$lib/components/agents/tailnet-access.svelte';
-  import {
-    CheckCircle,
-    TelegramLogo,
-    DropboxLogo,
-    GoogleLogo,
-    GithubLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    Heartbeat,
-  } from 'phosphor-svelte';
+  import { CheckCircle, TelegramLogo } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
 
@@ -19,7 +11,7 @@
     form,
     agent,
     account,
-    telegramDeepLink = null,
+    telegramConfiguration = null,
     telegramSubscriberCount = 0,
     sendingTestNotification = false,
     registeringWebhook = false,
@@ -28,6 +20,15 @@
     onregisterWebhook,
   } = $props();
   let selectedIntegration = $state(null);
+  const telegramAgent = $derived(
+    telegramConfiguration
+      ? {
+          ...agent,
+          telegram_configured: telegramConfiguration.configured,
+          telegram_bot_username: telegramConfiguration.username,
+        }
+      : agent
+  );
 
   function openTelegram() {
     selectedIntegration = 'telegram';
@@ -68,8 +69,9 @@
 {#if selectedIntegration === 'telegram'}
   <TelegramSettings
     {form}
-    {agent}
-    {telegramDeepLink}
+    agent={telegramAgent}
+    {telegramConfiguration}
+    accountId={account.id}
     {telegramSubscriberCount}
     {sendingTestNotification}
     {registeringWebhook}
@@ -92,34 +94,8 @@
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-center gap-4">
               <div
-                class={connection.provider === 'dropbox'
-                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white'
-                  : connection.provider === 'google_workspace'
-                    ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
-                    : connection.provider === 'github'
-                      ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                      : connection.provider === 'pipedrive'
-                        ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white'
-                        : connection.provider === 'honeybadger'
-                          ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white'
-                          : connection.provider === 'tailscale'
-                            ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
-                            : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
-                {#if connection.provider === 'dropbox'}
-                  <DropboxLogo size={24} weight="fill" />
-                {:else if connection.provider === 'google_workspace'}
-                  <GoogleLogo size={24} weight="bold" />
-                {:else if connection.provider === 'github'}
-                  <GithubLogo size={24} weight="fill" />
-                {:else if connection.provider === 'pipedrive'}
-                  <Funnel size={24} weight="bold" />
-                {:else if connection.provider === 'honeybadger'}
-                  <Bug size={24} weight="bold" />
-                {:else if connection.provider === 'tailscale'}
-                  <ShareNetwork size={24} weight="bold" />
-                {:else}
-                  <Heartbeat size={24} weight="fill" />
-                {/if}
+                class={`flex size-11 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
+                <ServiceIcon provider={connection.provider} size={24} />
               </div>
               <div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -168,7 +144,7 @@
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="font-semibold">Telegram</h3>
-              {#if agent.telegram_configured}
+              {#if telegramAgent.telegram_configured}
                 <span
                   class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
                   <CheckCircle size={13} weight="fill" />
@@ -186,12 +162,12 @@
           type="button"
           class={[
             'inline-flex h-9 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors',
-            agent.telegram_configured
+            telegramAgent.telegram_configured
               ? 'border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground'
               : 'bg-primary text-primary-foreground shadow hover:bg-primary/90',
           ]}
           onclick={openTelegram}>
-          {agent.telegram_configured ? 'Settings' : 'Set up'}
+          {telegramAgent.telegram_configured ? 'Settings' : 'Set up'}
         </button>
       </div>
     </div>

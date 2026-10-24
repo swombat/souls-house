@@ -196,6 +196,10 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         "memory_total_kib": memory_total_kib(),
         "uptime_seconds": uptime_seconds(),
         "runner_version": SIGNATURE_VERSION,
+        # The house sends an archive import's per-role seeds only to a runner
+        # that says it can seed each role into its own volume. A runner from
+        # before roles would put every role into identity.
+        "seed_roles": list(SEED_ROLES),
     }
 
 
@@ -799,14 +803,18 @@ class ResidentHost:
         _require(isinstance(digest, str) and SEED_DIGEST_RE.match(digest), "bad sha256")
         size = payload.get("bytes")
         _require(isinstance(size, int) and not isinstance(size, bool) and 0 < size <= SEED_MAX_BYTES, "bad bytes")
-        root = self._volume_mountpoint(volume_name(name, "identity"))
+        # A birth seeds identity only and names no role; an archive import
+        # seeds identity, repo and work, one command each.
+        role = payload.get("role", "identity")
+        _require(role in SEED_ROLES, "bad role")
+        root = self._volume_mountpoint(volume_name(name, role))
         marker = os.path.join(root, SEED_MARKER)
         if os.path.lexists(marker):
             if read_seed_marker(marker) == digest:
                 return {"state": "seeded", "sha256": digest, "already": True}
-            raise SeedRefused("identity volume was seeded from a different archive")
+            raise SeedRefused(f"{role} volume was seeded from a different archive")
         if os.listdir(root):
-            raise SeedRefused("identity volume is not empty and has no seed marker")
+            raise SeedRefused(f"{role} volume is not empty and has no seed marker")
         if self.fetch_seed is None:
             raise CommandFailed("no way to fetch seed archives on this runner")
         spool_dir = os.path.join(self.state_dir, "seeds")
@@ -882,6 +890,7 @@ IMAGE_CHUNK = 1024 * 1024
 SEED_PATH = "/api/v1/host_runner/seeds/{id}"
 SEED_DIGEST_RE = re.compile(r"\A[0-9a-f]{64}\Z")
 SEED_MARKER = ".souls-house-seed"
+SEED_ROLES = ("identity", "repo", "work")
 SEED_STAGING = ".souls-house-seed-staging"
 SEED_MAX_BYTES = 64 * 1024 * 1024
 SEED_MAX_UNPACKED = 256 * 1024 * 1024

@@ -1,5 +1,6 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
+  import { createDynamicSync } from '$lib/use-sync';
   import { PushPin, PushPinSlash, X, ArrowCounterClockwise } from 'phosphor-svelte';
   import { Button } from '$lib/components/shadcn/button';
   import { Input } from '$lib/components/shadcn/input';
@@ -12,6 +13,29 @@
 
   let term = $state('');
   let submitting = $state(false);
+  let draftGeneration = 0;
+  let requestGeneration = 0;
+  let draftAccount;
+
+  const updateGlossarySync = createDynamicSync();
+  $effect(() => {
+    const id = account?.id;
+    if (draftAccount !== id) {
+      draftAccount = id;
+      draftGeneration++;
+      requestGeneration++;
+      term = '';
+      submitting = false;
+    }
+    updateGlossarySync(
+      id
+        ? {
+            [`GlossaryActivity:${id}`]: ['terms', 'removed'],
+            [`HomeResidentRoster:${id}`]: ['terms'],
+          }
+        : {}
+    );
+  });
 
   const SOURCE_LABELS = {
     manual: 'Added',
@@ -20,20 +44,38 @@
     harvested: 'Learned',
   };
 
-  function addTerm(value = term) {
+  function addTerm(value = term, fromInput = true) {
     const trimmed = value.trim();
     if (!trimmed || submitting) return;
+    const id = account.id;
+    const generation = draftGeneration;
+    const request = ++requestGeneration;
+    const current = () => account.id === id && requestGeneration === request;
     submitting = true;
     router.post(
       path,
       { term: trimmed },
       {
         preserveScroll: true,
-        onSuccess: () => {
-          if (value === term) term = '';
+        onSuccess: (response) => {
+          // A refused write can redirect through onSuccess too. Only our own
+          // acknowledged addition may clear this exact input generation.
+          if (
+            current() &&
+            fromInput &&
+            draftGeneration === generation &&
+            response.component === 'accounts/transcription_glossary' &&
+            response.props.account?.id === id &&
+            !response.props.flash?.alert &&
+            Object.keys(response.props.errors ?? {}).length === 0 &&
+            response.props.flash?.notice?.startsWith('Added "')
+          ) {
+            term = '';
+            draftGeneration++;
+          }
         },
         onFinish: () => {
-          submitting = false;
+          if (current()) submitting = false;
         },
       }
     );
@@ -71,7 +113,12 @@
             event.preventDefault();
             addTerm();
           }}>
-          <Input bind:value={term} maxlength={49} placeholder="e.g. a product or place name" aria-label="Word or phrase" />
+          <Input
+            bind:value={term}
+            oninput={() => draftGeneration++}
+            maxlength={49}
+            placeholder="e.g. a product or place name"
+            aria-label="Word or phrase" />
           <Button type="submit" disabled={submitting || !term.trim()}>Add</Button>
         </form>
         {#if $page.props.errors?.term}
@@ -83,7 +130,9 @@
     <section class="space-y-3">
       <div>
         <h2 class="text-xl font-semibold">In the glossary</h2>
-        <p class="text-sm text-muted-foreground">Pinned words go first. Transcription uses the first {keyterm_limit}.</p>
+        <p class="text-sm text-muted-foreground">
+          Pinned words go first. Transcription uses the first {keyterm_limit}.
+        </p>
       </div>
 
       {#if terms.length === 0}
@@ -137,7 +186,7 @@
             {#each removed as entry (entry.term)}
               <div class="flex items-center justify-between gap-4 px-5 py-3">
                 <span class="truncate text-muted-foreground line-through">{entry.term}</span>
-                <Button variant="ghost" size="sm" onclick={() => addTerm(entry.term)}>
+                <Button variant="ghost" size="sm" onclick={() => addTerm(entry.term, false)}>
                   <ArrowCounterClockwise class="mr-1 size-4" /> Restore
                 </Button>
               </div>

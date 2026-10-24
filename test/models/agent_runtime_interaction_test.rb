@@ -170,6 +170,38 @@ class AgentRuntimeInteractionTest < ActiveSupport::TestCase
     assert_not interaction.as_chat_activity_json.key?(:stderr)
   end
 
+  test "a stated quiet reason shows only on a cleanly finished run with no linked reply, never from stdout" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Quiet reason")
+    run = chat.agent_runtime_interactions.create!(agent: agent, trigger_kind: "conversation",
+      started_at: 1.minute.ago, run_id: SecureRandom.uuid, execution_state: "running",
+      dispatch_claimed_at: 1.minute.ago, activity_token_expires_at: 20.minutes.from_now,
+      stdout: "I chose not to post because reasons.")
+
+    assert_nil run.as_chat_activity_json[:quiet_reason]
+
+    run.record_quiet_reason!("Already answered upthread.")
+    assert_nil run.as_chat_activity_json[:quiet_reason], "not while running"
+
+    run.finish_execution!("completed")
+    assert_equal "Already answered upthread.", run.as_chat_activity_json.dig(:quiet_reason, :text)
+
+    chat.messages.create!(role: "assistant", agent: agent, content: "Changed my mind.", runtime_interaction: run)
+    assert_nil run.reload.as_chat_activity_json[:quiet_reason], "a later reply hides it"
+
+    failed = chat.agent_runtime_interactions.create!(agent: agent, trigger_kind: "conversation",
+      started_at: 1.minute.ago, run_id: SecureRandom.uuid, execution_state: "running",
+      quiet_reason: "Stated before failing.", quiet_reason_at: Time.current)
+    failed.finish_execution!("failed")
+    assert_nil failed.as_chat_activity_json[:quiet_reason]
+
+    silent = chat.agent_runtime_interactions.create!(agent: agent, trigger_kind: "conversation",
+      started_at: 1.minute.ago, run_id: SecureRandom.uuid, execution_state: "running",
+      stdout: "No reply needed: Mira has it.")
+    silent.finish_execution!("completed")
+    assert_nil silent.as_chat_activity_json[:quiet_reason], "stdout is never extracted"
+  end
+
   test "record_result! maps chaos session and usage fields from the response body" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Runtime log")

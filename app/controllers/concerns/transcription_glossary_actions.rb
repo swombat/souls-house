@@ -21,9 +21,17 @@ module TranscriptionGlossaryActions
     glossary = TranscriptionGlossary.new(account)
     {
       keyterm_limit: TranscriptionGlossary::KEYTERM_LIMIT,
-      terms: glossary.entries.map(&:as_json),
-      removed: glossary.suppressed.map { |record| record.as_json.merge(removed_at: record.suppressed_at) }
+      terms: glossary_terms(glossary),
+      removed: glossary_removed(glossary)
     }
+  end
+
+  def glossary_terms(glossary)
+    glossary.entries.map(&:as_json)
+  end
+
+  def glossary_removed(glossary)
+    glossary.suppressed.map { |record| record.as_json.merge(removed_at: record.suppressed_at) }
   end
 
   # Pins or unpins an active term. A built-in term gets a row so the pin

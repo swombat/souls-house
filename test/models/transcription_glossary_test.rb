@@ -21,6 +21,37 @@ class TranscriptionGlossaryTest < ActiveSupport::TestCase
     assert_equal [ "souls.house" ], @glossary.suppressed.map(&:normalized_term)
   end
 
+  test "home built-ins follow arrival rename active transfer and deletion without guest discovery" do
+    other = accounts(:team_account)
+    resident = @account.agents.create!(name: "New vocabulary resident", runtime: "offline")
+    assert_includes @glossary.keyterms, resident.name
+    resident.update!(name: "Renamed vocabulary resident")
+    refute_includes @glossary.keyterms, "New vocabulary resident"
+    assert_includes @glossary.keyterms, resident.name
+    resident.update!(active: false)
+    refute_includes @glossary.keyterms, resident.name
+    resident.update!(active: true, account: other)
+    refute_includes @glossary.keyterms, resident.name
+    assert_includes TranscriptionGlossary.new(other).keyterms, resident.name
+    resident.destroy!
+    refute_includes TranscriptionGlossary.new(other).keyterms, "Renamed vocabulary resident"
+  end
+
+  test "an empty account excludes invalid built-ins and deduplicates normalized names" do
+    empty = Account.create!(name: "Empty glossary", account_type: :team)
+    glossary = TranscriptionGlossary.new(empty)
+    Setting.stub(:instance, Setting.new(site_name: "one two three four five six")) do
+      assert_empty glossary.entries
+    end
+    empty.agents.create!(name: "  Shared Name  ", runtime: "offline")
+    empty.agents.create!(name: "shared name", runtime: "offline")
+    empty.agents.create!(name: "bad <name>", runtime: "offline")
+    Setting.stub(:instance, Setting.new(site_name: "SHARED NAME")) do
+      assert_equal 1, glossary.entries.size
+      assert_equal "shared name", TranscriptionGlossaryTerm.normalize(glossary.keyterms.first)
+    end
+  end
+
   test "an explicit add lifts a tombstone and makes the term manual" do
     @account.transcription_glossary_terms.create!(term: "Lumet", source: "harvested", sightings_count: 3)
     @glossary.remove!("lumet", by: @user)

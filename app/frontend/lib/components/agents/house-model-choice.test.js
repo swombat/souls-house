@@ -34,8 +34,14 @@ describe('House model choice', () => {
 
   it('points people with their own key at the full list', () => {
     render(HouseModelChoice, { models, value: 'house/claude-haiku-5.5' });
-    expect(screen.queryByRole('link')).toBeNull();
     expect(screen.getByText(/You can choose any model below/)).toBeTruthy();
+  });
+
+  it('links to the public decision behind the two choices, in a new tab', () => {
+    render(HouseModelChoice, { models, value: 'house/claude-haiku-5.5' });
+    const link = screen.getByRole('link', { name: 'Why these two?' });
+    expect(link.getAttribute('href')).toBe('/decisions/free-resident-model');
+    expect(link.getAttribute('target')).toBe('_blank');
   });
 
   it('switches to DeepSeek when chosen', async () => {

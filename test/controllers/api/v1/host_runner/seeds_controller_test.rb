@@ -35,6 +35,24 @@ class Api::V1::HostRunner::SeedsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "no-store", response.headers["Cache-Control"]
   end
 
+  test "an archive import's staged role is served by its digest, and only for its own placement" do
+    @placement.update!(kind: "archive_import")
+    @enrollment.update!(last_facts: { "seed_roles" => AgentImportStage::ROLES })
+    AgentImportStage::ROLES.each do |role|
+      bytes = Zlib.gzip("#{role} home")
+      @agent.import_stages.create!(role:, archive: bytes, sha256: Digest::SHA256.hexdigest(bytes), bytes: bytes.bytesize)
+    end
+    Agents::VmSeed.new(@agent).issue!.each_value { |command| command.deliver!(now: Time.current) }
+    repo = @agent.import_stages.find_by!(role: "repo")
+    fetch(repo.sha256)
+    assert_response :ok
+    assert_equal repo.archive, response.body.b
+
+    @placement.update!(kind: "birth")
+    fetch(@agent.import_stages.find_by!(role: "work").sha256)
+    assert_response :not_found
+  end
+
   test "a digest nobody asked for is not served and spends no nonce" do
     issue
     assert_no_difference -> { RunnerRequestNonce.count } do

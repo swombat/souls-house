@@ -1,5 +1,7 @@
 class ChatAgent < ApplicationRecord
 
+  include RhythmListingActivity
+
   SUMMARY_COOLDOWN = 5.minutes
 
   belongs_to :chat
@@ -8,9 +10,14 @@ class ChatAgent < ApplicationRecord
 
   validates :agent_id, uniqueness: { scope: :chat_id }
   validate :agent_takes_part_in_account, on: :create
+  # A new seat starts on the room's model for this resident, if it has one.
+  before_create :seed_model_from_room
 
   # A second seat ends a quiet rhythm run's solitude (Chat::QuietRhythmRun).
   after_create_commit -> { chat.announce_listing_change }
+  # Leaving one resident can make a rhythm run quiet again: off the list, so
+  # its room stops spinning for it.
+  after_destroy_commit -> { chat.refresh_room_activity if chat.rhythm_run? }
 
   scope :closed_for_initiation, -> { where.not(closed_for_initiation_at: nil) }
   scope :open_for_initiation, -> { where(closed_for_initiation_at: nil) }
@@ -57,6 +64,13 @@ class ChatAgent < ApplicationRecord
   end
 
   private
+
+  def seed_model_from_room
+    return if model_id.present? || chat.nil? || agent.nil?
+    return unless agent.account_id == chat.account_id
+
+    self.model_id = RoomModelDefault.model_for(account_id: chat.account_id, room_id: chat.room_id, agent: agent)
+  end
 
   # A seat needs a resident hosted in the room's account, or a guest there.
   # The guest check share-locks the membership row until this seat commits;

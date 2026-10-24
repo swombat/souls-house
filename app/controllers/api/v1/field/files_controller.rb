@@ -110,6 +110,9 @@ module Api
             note: file.note,
             summary_short: file.summary_short,
             summary_long: file.summary_long,
+            summary_freshness: file.summary_freshness,
+            summary_pending: file.summary_pending?,
+            summary_failed: file.summary_failed?,
             # true when the summaries cover only the readable part of a PDF
             # (text_extraction says which part).
             summary_partial: file.summary_partial?,

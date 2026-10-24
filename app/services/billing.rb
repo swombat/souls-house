@@ -21,6 +21,14 @@ module Billing
     secret_key.present? && Tier.all.any?(&:purchasable?)
   end
 
+  # Where refund requests under the 30-day guarantee go: the house's own mail address.
+  # ApplicationMailer first: it loads the mail gem, which a lazily loaded app
+  # (development) hasn't done yet when a public page asks.
+  def self.contact_email
+    from = ApplicationMailer.default[:from]
+    ::Mail::Address.new(from).address
+  end
+
   def self.test_mode?
     secret_key.to_s.start_with?("sk_test_", "rk_test_")
   end

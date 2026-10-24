@@ -39,7 +39,7 @@ module FieldSummaries
 
   def enabled? = live && HouseInference::Offering.configured?
 
-  # => { short:, long: }. Raises UtilityInference::Error when the call fails
+  # => { short:, long:, input_digest: }. Raises UtilityInference::Error when the call fails
   # or the answer can't be used.
   #
   # Haiku often answers the short one in six or seven words however the prompt
@@ -49,7 +49,10 @@ module FieldSummaries
   # long the shorter answer is trimmed to five words.
   def summarize(item, inference: UtilityInference)
     user = user_prompt(item)
-    summary = parse(ask(inference, user))
+    # Capture once: a transcript edited during inference must not become the
+    # provenance of the answer to the earlier prompt. Re-asks reuse this input.
+    digest = input_digest(user)
+    summary = parse(ask(inference, user)).merge(input_digest: digest)
     return summary if short_fits?(summary[:short])
 
     second = begin
@@ -63,6 +66,9 @@ module FieldSummaries
   end
 
   def ask(inference, user) = inference.house_chat(model: MODEL, provider: PROVIDER, system: SYSTEM, user: user)
+
+  def input_digest(user) = Digest::SHA256.hexdigest([ SYSTEM, user ].to_json)
+  def current_input_digest(item) = input_digest(user_prompt(item))
 
   def shorten_request(short)
     "\nAn earlier answer's short summary, #{short.to_json}, has #{short.split.size} words. " \

@@ -31,6 +31,14 @@ class FieldSwarmTest < ActiveSupport::TestCase
     FieldSwarm.new(account: @account, question: "What was the business worth?", tags: [ "research" ], agent: @agent, **options)
   end
 
+  # The first live search quoted exactly but named the wrong speakers in its
+  # extracts; the wrapper now ties names to the transcript's line labels.
+  test "the reader wrapper names speakers only from the transcript's labels" do
+    assert_includes FieldSwarm::SYSTEM, "name a speaker only when the"
+    assert_includes FieldSwarm::SYSTEM, "[11:46] Bob: ..."
+    assert_includes FieldSwarm::SYSTEM, "who asked, and who was asked"
+  end
+
   test "each verdict comes back, relevant items first, with a locator on the known passage" do
     result = with_reader(@reader) { swarm.call }
     verdicts = result[:items].map { |item| [ item[:title], item[:verdict] ] }
@@ -241,6 +249,35 @@ class FieldSwarmTest < ActiveSupport::TestCase
       assert_raises(FieldSwarm::LimitReached) { with_reader(@reader) { swarm.call } }
     end
     assert_equal 2, FieldSwarmSearch.count
+  end
+
+  test "a Work plan in force allows swarm search without the admin switch, metered by the month" do
+    @account.update!(field_swarm_enabled: false)
+    entitlement = ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "pending",
+      tier: "work")
+    with_reader(@reader) { assert_raises(FieldSwarm::Disabled) { swarm.call } }
+
+    entitlement.update!(state: "active")
+    assert @account.field_swarm_allowed?
+    assert_equal 100, @account.field_swarm_monthly_limit
+    with_reader(@reader) { swarm.call }
+
+    @account.stub(:field_swarm_monthly_limit, 1) do
+      assert_raises(FieldSwarm::LimitReached) { with_reader(@reader) { swarm.call } }
+    end
+    assert_equal 1, FieldSwarmSearch.where(account: @account).count
+  end
+
+  test "Conversation doesn't include swarm search" do
+    @account.update!(field_swarm_enabled: false)
+    ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "active",
+      tier: "conversation")
+    assert_not @account.field_swarm_allowed?
+    with_reader(->(**) { flunk "no reader should run" }) { assert_raises(FieldSwarm::Disabled) { swarm.call } }
+  end
+
+  test "the admin switch has no monthly limit, only the daily cap" do
+    assert_nil @account.field_swarm_monthly_limit
   end
 
   test "a search refused before any reader is sent doesn't use up one of the day's searches" do

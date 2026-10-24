@@ -21,6 +21,17 @@ uses ActiveSupport local-time conversion: a DST gap moves forward and a repeated
 time fires once. The first scheduled occurrence is strictly in the future.
 The title suffix uses the scheduled date, not the worker's current date.
 
+A rhythm also chooses where its conversations open, as one of three explicit
+choices (`room_choice`): `resident_default` follows the account's resident
+default room (the default for new rhythms, so changing the account's default
+moves its rhythms with it; with no default they open in Main); `main` opens in
+Main on purpose; `room` opens in the named room (`room_id`, a public room id).
+A room of another account, or a value that is not a room id, is refused. A
+named room that is removed leaves the choice as `room` with no room: the rhythm
+falls back to the account default and its page says so until another choice is
+made. `opens_in` in the rhythm's JSON is where the next occurrence will open.
+Conversations already opened are not moved.
+
 The server computes previews. The browser does not calculate the schedule.
 “Start one now” creates a clearly marked manual occurrence without shifting the
 regular schedule; a request key prevents double submission.

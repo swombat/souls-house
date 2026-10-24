@@ -30,13 +30,29 @@ class TelegramAgentTriggerJobTest < ActiveJob::TestCase
     request.verify
   end
 
-  test "serializes triggers for the same Telegram subscription" do
-    assert_equal 1, TelegramAgentTriggerJob.concurrency_limit
+  test "triggers for one Telegram subscription share a concurrency key" do
     assert_equal(
       "telegram-subscription-#{@subscription.id}",
       TelegramAgentTriggerJob.concurrency_key.call(@subscription, @message)
     )
-    assert_equal 35.minutes, TelegramAgentTriggerJob.concurrency_duration
+  end
+
+  test "sends nothing for a paused, inactive or tokenless agent" do
+    {
+      paused: { paused: true },
+      inactive: { active: false },
+      tokenless: { trigger_bearer_token: nil }
+    }.each do |label, attrs|
+      @agent.reload.update!(attrs)
+      sent = false
+
+      ExternalAgentTelegramRequest.stub :new, ->(**) { sent = true; flunk "#{label} agent was sent a request" } do
+        TelegramAgentTriggerJob.new.perform(@subscription.reload, @message)
+      end
+
+      refute sent, "#{label} agent was sent a request"
+      @agent.update!(paused: false, active: true, trigger_bearer_token: "tr_valid")
+    end
   end
 
 end

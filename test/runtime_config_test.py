@@ -40,14 +40,29 @@ class RuntimeConfigTest(unittest.TestCase):
             calls = []
             def run(home, *args):
                 calls.append(args)
+                if args == ('--help',):
+                    return 'Commands:\n  bootstrap  Inspect\n  migrate    Import legacy TOML\n  get  Inspect\n'
                 return json.dumps({'agent_compaction_control': 'disabled', 'hook_approval_policy': 'on-request',
                                    'model_providers': {'gemini': {'name': 'resident custom'}}}) if args == ('get',) else ''
             s.prepare(home, run)
-            self.assertEqual(calls[:2], [('migrate', '--dry-run'), ('migrate',)])
+            self.assertEqual(calls[:3], [('--help',), ('migrate', '--dry-run'), ('migrate',)])
             edits = [a for a in calls if a[0] == 'set']
             self.assertEqual([a[1] for a in edits], ['model_providers.openrouter'])
             self.assertEqual(calls[-1], ('doctor',))
             self.assertEqual(tomllib.loads((home/'config.toml').read_text()), {'storage_url':'sqlite:///kept.sqlite'})
+
+    def test_binary_without_migrate_skips_it(self):
+        # seuros/chaos#110 removed `config migrate` with the TOML layers.
+        with tempfile.TemporaryDirectory() as td:
+            calls = []
+            def run(home, *args):
+                calls.append(args)
+                if args == ('--help',):
+                    return 'Commands:\n  bootstrap  Inspect\n  doctor  Diagnose\n  get  Inspect\n'
+                return '{}' if args == ('get',) else ''
+            s.prepare(Path(td), run)
+            self.assertNotIn('migrate', [a[0] for a in calls])
+            self.assertEqual(calls[-1], ('doctor',))
 
     def test_environment_storage_is_preserved_as_a_reference(self):
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"CHAOS_STORAGE_URL":"postgres://private"}):
@@ -109,6 +124,9 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.assertEqual(set(tomllib.loads((self.home/'config.toml').read_text())), {'storage_url'})
 
     def test_legacy_choices_custom_provider_and_second_boot(self):
+        # Only binaries that still import legacy TOML settings (before seuros/chaos#110).
+        if not s.offers_migrate(self.home, s.command):
+            self.skipTest('this Chaos has no config migrate; legacy TOML import is gone')
         for choice in ['disabled','bounded']:
             with self.subTest(choice=choice):
                 home = self.home/choice;home.mkdir()

@@ -185,8 +185,11 @@ module Agents
             { "id" => access.id, "enabled" => access.enabled?, "revision" => access.service_connection.credential_revision.to_s }
           end
           command = start!(agent)
+          # The exact image this restart carries. Settlement releases turns
+          # only for a done answer that names it (settle_refresh!).
+          image = JSON.parse(command.payload_json.to_s)["image"]
           placement.update!(refresh_command_id: command.id, refresh_requested_at: Time.current,
-            refresh_snapshot: { "accesses" => accesses, "recoveries" => 0 }, refresh_last_error: nil)
+            refresh_snapshot: { "accesses" => accesses, "recoveries" => 0, "image" => image }, refresh_last_error: nil)
           command
         end
       end
@@ -194,14 +197,15 @@ module Agents
 
     # Settles a refresh. Only known state opens turn admission again:
     #
-    #   * the start (or the recovery start) answered done: services whose
-    #     revision is still the one the restart carried are reconciled, and
-    #     the hold is released
+    #   * the start (or the recovery start) answered done and named the exact
+    #     image the restart carried: services whose revision is still the one
+    #     the restart carried are reconciled, and the hold is released
     #   * no answer yet: past REFRESH_ANSWER_WITHIN the error becomes visible,
     #     but the hold stays; that start may still run
-    #   * unknown, failed or refused: the error is visible on the services and
+    #   * unknown, failed or refused, or done naming another image or none:
+    #     the error is visible on the services and
     #     the resident, the hold stays, and one tracked recovery start is
-    #     queued. Runner commands run in order, so its done answer is known
+    #     queued, pinned to the same image. Runner commands run in order, so its done answer is known
     #     state. If the recovery doesn't end done either, only an audited
     #     operator release (release_refresh_hold!) opens admission
     #
@@ -216,7 +220,8 @@ module Agents
         command = RunnerCommand.find_by(id: placement.refresh_command_id)
         snapshot = refresh_snapshot(placement)
         agent = placement.agent
-        if command&.state == "done"
+        confirmed = command&.state == "done" && refresh_image_confirmed?(command, snapshot)
+        if confirmed
           reconcile_refreshed_services!(agent, snapshot, now)
           placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
             refresh_last_error: nil)
@@ -230,15 +235,33 @@ module Agents
           return :held
         end
 
-        state = command&.state || "missing"
-        record_refresh_problem!(placement, agent, snapshot, state, command&.result&.dig("error"), now)
+        if command&.state == "done"
+          record_refresh_problem!(placement, agent, snapshot, "wrong image",
+            "the runner confirmed #{command.result.to_h.dig('result', 'image').presence || 'no image'}", now)
+        else
+          state = command&.state || "missing"
+          record_refresh_problem!(placement, agent, snapshot, state, command&.result&.dig("error"), now)
+        end
         return :held if command.nil? || snapshot["recoveries"] >= REFRESH_RECOVERIES
+        return :held if snapshot["image"] == "invalid"
 
-        recovery = start!(agent)
+        recovery = snapshot["image"] ? start!(agent, image: snapshot["image"]) : start!(agent)
         placement.update!(refresh_command_id: recovery.id, refresh_requested_at: now,
           refresh_snapshot: snapshot.merge("recoveries" => snapshot["recoveries"] + 1))
         :recovering
       end
+    end
+
+    # A refresh recorded before it carried its image (in flight across the
+    # deploy that added this) settles as before. Every other one needs the
+    # runner's own answer to name exactly that image.
+    def refresh_image_confirmed?(command, snapshot)
+      return true if snapshot["image"].nil?
+      # The "invalid" sentinel (or anything not an image ID) never matches,
+      # even an answer that is equally malformed.
+      return false unless IMAGE_ID.match?(snapshot["image"])
+
+      command.result.to_h.dig("result", "image") == snapshot["image"]
     end
 
     # An installation admin's explicit release of a refresh hold that never
@@ -263,7 +286,11 @@ module Agents
       raw = placement.refresh_snapshot
       raw = { "accesses" => raw } if raw.is_a?(Array)
       raw = {} unless raw.is_a?(Hash)
-      { "accesses" => Array(raw["accesses"]), "recoveries" => raw["recoveries"].to_i }
+      image = raw["image"].to_s
+      { "accesses" => Array(raw["accesses"]), "recoveries" => raw["recoveries"].to_i }.tap do |snapshot|
+        # A malformed recorded image fails closed: it can never be confirmed.
+        snapshot["image"] = IMAGE_ID.match?(image) ? image : "invalid" if raw.key?("image")
+      end
     end
 
     def reconcile_refreshed_services!(agent, snapshot, now)
@@ -284,8 +311,9 @@ module Agents
     def record_refresh_problem!(placement, agent, snapshot, state, detail, now)
       error = "VM restart with new credentials #{state}: #{detail || 'no detail'}".first(255)
       ids = snapshot["accesses"].map { |entry| entry["id"] }
-      agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
+      affected = agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
         provisioning_error_code: "vm_restart_#{state.tr(' ', '_')}", updated_at: now)
+      IntegrationStatus.refresh!(agent.account_id) if affected.positive?
       agent.update!(sandbox_last_error: error, sandbox_last_error_at: now)
       placement.update!(refresh_last_error: error)
     end

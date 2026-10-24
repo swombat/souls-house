@@ -71,7 +71,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "External prompt")
     chat.messages.create!(role: "user", content: "Can you see this transcript?")
-    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
     text = request.send(:request_text)
 
     assert_includes text, "SOULSHOUSE_BEARER_TOKEN"
@@ -79,7 +79,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "/usr/local/share/helixkit-agent/soulshouse-api.md"
     assert_includes text, "Prefer piping the message through stdin"
     assert_includes text, "Do not put prose containing `$`, backticks"
-    assert_includes text, "explicit user request"
+    assert_includes text, "explicit human request"
     assert_includes text, "normally expecting a visible reply"
     assert_includes text, "final answer in this Chaos runtime is diagnostic stdout only"
     assert_includes text, "must post it to souls.house yourself before exiting"
@@ -110,6 +110,25 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes text, "decide and act now"
     refute_includes text, "Do not ask for a second confirmation"
     refute_includes text, "asking you to act"
+    # No live run, no run id for the helper: the optional quiet reason isn't offered.
+    refute_includes text, "soulshouse-quiet-reason"
+  end
+
+  test "a live run is offered the optional, public quiet reason" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Quiet offer")
+    chat.messages.create!(role: "user", content: "Anyone?")
+    run = chat.agent_runtime_interactions.create!(agent: agent, trigger_kind: "conversation",
+      started_at: Time.current, run_id: SecureRandom.uuid, execution_state: "queued")
+    text = ExternalAgentResponseRequest.new(agent: agent, chat: chat, interaction: run).send(:request_text)
+
+    assert_includes text, "soulshouse-quiet-reason #{chat.to_param}"
+    assert_includes text, "It is public"
+    assert_includes text, "not a verified explanation"
+    assert_includes text, "wakes nobody"
+    assert_includes text, "does not excuse work you have said you will do"
+    assert_includes text, "nothing is taken from stdout"
+    assert_includes text, "explain your reason briefly on stdout"
   end
 
   test "request text includes the sub-agent policy section only when enabled" do
@@ -156,30 +175,140 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes delta, "DeepSeek V4 Pro 0813"
   end
 
-  test "quiet guidance depends on human recency rather than legacy title prefixes" do
+  test "fresh and resumed guidance depends on wake provenance not human recency or title" do
     agent = agents(:research_assistant)
-    [ "Quiet room", "[AGENT-ONLY] Quiet room" ].each do |title|
-      chat = agent.account.chats.create!(model_id: "openrouter/auto", title: title)
-      chat.agents << agent
-      chat.messages.create!(role: "user", content: "An old request", created_at: 13.hours.ago)
-      chat.messages.create!(role: "assistant", agent: agent, content: "Room quiet.")
+    agent.update!(persistent_session: true)
+    cases = {
+      [] => "The source of this wake was not recorded",
+      [ "unknown" ] => "The source of this wake was not recorded",
+      [ "human" ] => "explicit human request",
+      [ "peer" ] => "A fellow resident requested",
+      [ "scheduled" ] => "A scheduled wake invited",
+      [ "human", "peer" ] => "requests from both a human and a fellow resident",
+      [ "scheduled", "human" ] => "explicit human request",
+      [ "scheduled", "peer" ] => "A fellow resident requested",
+      [ "human", "unknown" ] => "explicit human request"
+    }
+    [ false, true ].each do |recent|
+      chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Quiet room")
+      first = chat.messages.create!(role: "user", content: "An old request", created_at: 13.hours.ago,
+        suppress_automatic_dispatch: true)
+      AgentRuntimeInteraction.create!(agent: agent, chat: chat, trigger_kind: "conversation",
+        started_at: 1.minute.ago, last_included_message_id: first.id,
+        chaos_session_id: "source-matrix", transport_status: 200, runtime_status: "ok")
+      chat.messages.create!(role: "user", content: "A current request",
+        suppress_automatic_dispatch: true) if recent
 
-      text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+      cases.each do |kinds, source_text|
+        request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: kinds)
+        [ :request_text, :request_delta_text ].each do |builder|
+          text = request.send(builder)
+          assert_includes text, source_text
+          if kinds.include?("scheduled") && (kinds.include?("human") || kinds.include?("peer"))
+            assert_includes text, "A scheduled task also contributed"
+          end
+          if kinds.include?("unknown") && kinds.include?("human")
+            assert_includes text, "At least one coalesced request has no recorded source"
+          end
+          refute_includes text, "The user pressed the agent button"
+          refute_includes text, "no-recent-human-message"
+          refute_includes text, "agent_only:"
+          if kinds.include?("human")
+            assert_includes text, "This trigger is itself the user asking"
+            assert_includes text, "default for this trigger is that you post a reply"
+            assert_includes text, "choosing not to is also a valid response"
+          else
+            assert_includes text, "If the live transcript contains a direct human request for you"
+            assert_includes text, "A visible reply may be useful but silence is often correct"
+            assert_includes text, "Do not post merely to acknowledge wakefulness"
+            refute_includes text, "default for this trigger is that you post a reply"
+          end
+        end
+      end
+    end
+  end
 
-      refute_includes text, "agent_only:"
-      assert_includes text, "the trigger is an invitation to inspect the live state"
-      assert_includes text, "If the live transcript contains a direct human request for you"
-      assert_includes text, "a visible reply may be useful but silence is often correct"
-      assert_includes text, "Do not post merely to acknowledge wakefulness or continue room weather"
-      refute_includes text, "normally expecting a visible reply"
-      refute_includes text, "The default for this trigger is that you post a reply"
+  test "persisted source including legacy empty source wins over initializer hints" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Persisted source")
+    interaction = AgentRuntimeInteraction.create!(agent: agent, chat: chat,
+      trigger_kind: "conversation", started_at: Time.current, wake_source_kinds: [ "peer" ])
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, interaction: interaction,
+      wake_source_kinds: [ "human" ])
+    assert_includes request.send(:request_text), "A fellow resident requested"
+    interaction.update!(wake_source_kinds: [])
+    assert_includes request.send(:request_text), "The source of this wake was not recorded"
+    refute_includes request.send(:request_text), "This trigger is itself the user asking"
+  end
 
-      chat.messages.create!(role: "user", content: "A current request")
-      text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
-      assert_includes text, "normally expecting a visible reply"
-      assert_includes text, "The default for this trigger is that you post a reply"
-      assert_includes text, "choosing not to is also a valid response"
-      refute_includes text, "agent_only:"
+  test "rhythm context does not override human peer or unknown wake provenance" do
+    agent = agents(:research_assistant)
+    agent.update!(persistent_session: true)
+    rhythm = Rhythm.create!(account: agent.account, creator: users(:user_1), agents: [ agent ],
+      title: "Returning", opening: "Saved invitation", cadence: "daily",
+      time_of_day: "09:00", timezone: "UTC")
+    occurrence = rhythm.fire!(manual: true, request_key: SecureRandom.uuid).occurrence
+    AgentRuntimeInteraction.create!(agent: agent, chat: occurrence.chat, trigger_kind: "conversation",
+      started_at: 1.minute.ago, last_included_message_id: occurrence.message.id,
+      chaos_session_id: "rhythm-source", transport_status: 200, runtime_status: "ok")
+    [ [ "human" ], [ "peer" ], [ "human", "peer" ], [ "scheduled", "human" ],
+      [ "scheduled", "peer" ], [], [ "scheduled" ] ].each do |kinds|
+      request = ExternalAgentResponseRequest.new(agent: agent, chat: occurrence.chat, wake_source_kinds: kinds)
+      [ :request_text, :request_delta_text ].each do |builder|
+        text = request.send(builder)
+        assert_includes text, "RHYTHM INVITATION (platform provenance)"
+        if kinds == [ "scheduled" ]
+          assert_includes text, "A scheduled rhythm has opened"
+          assert_includes text, "creator's standing invitation"
+          assert_includes text, "Do not manufacture a finding to justify the rhythm"
+        else
+          refute_includes text, "A scheduled rhythm has opened"
+          refute_includes text, "creator's standing invitation"
+          refute_includes text, "Do not manufacture a finding to justify the rhythm"
+          assert_includes text, "explicit human request" if kinds.include?("human") && !kinds.include?("peer")
+          assert_includes text, "A fellow resident requested" if kinds.include?("peer") && !kinds.include?("human")
+        end
+      end
+    end
+    occurrence.chat.messages.create!(role: "user", user: users(:user_1), content: "Later human message",
+      suppress_automatic_dispatch: true)
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: occurrence.chat, wake_source_kinds: [ "scheduled" ])
+    [ :request_text, :request_delta_text ].each do |builder|
+      assert_includes request.send(builder), "A scheduled wake invited"
+      refute_includes request.send(builder), "This trigger is itself the user asking"
+    end
+    interaction = AgentRuntimeInteraction.create!(agent: agent, chat: occurrence.chat,
+      trigger_kind: "conversation", started_at: Time.current,
+      message_dispatch: occurrence.message.message_dispatch, wake_source_kinds: [ "scheduled" ])
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: occurrence.chat, interaction: interaction)
+    [ :request_text, :request_delta_text ].each do |builder|
+      assert_includes request.send(builder), "A scheduled rhythm has opened"
+      assert_includes request.send(builder), "RHYTHM INVITATION (platform provenance)"
+    end
+  end
+
+  test "follow through and stalled sweep guidance wins in both builders even with human source" do
+    agent = agents(:research_assistant)
+    agent.update!(persistent_session: true)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Continuation")
+    message = chat.messages.create!(role: "user", content: "A human request", suppress_automatic_dispatch: true)
+    original = AgentRuntimeInteraction.create!(agent: agent, chat: chat, trigger_kind: "conversation",
+      started_at: 2.minutes.ago, finished_at: 1.minute.ago, last_included_message_id: message.id,
+      chaos_session_id: "continuation-source", transport_status: 200, runtime_status: "ok")
+    sweep = StalledThreadSweep.create!(account: agent.account, chat: chat, message: message,
+      outcome: "would_wake", quiet_minutes: 30)
+    [ { follow_through_of: original }, { stalled_thread_sweep: sweep } ].each do |origin|
+      interaction = AgentRuntimeInteraction.create!(**origin, agent: agent, chat: chat,
+        trigger_kind: "conversation", started_at: Time.current, wake_source_kinds: [ "human" ])
+      request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, interaction: interaction)
+      [ :request_text, :request_delta_text ].each do |builder|
+        text = request.send(builder)
+        assert_includes text, origin.key?(:follow_through_of) ? "FOLLOW-THROUGH CHECK" : "STALLED-THREAD CHECK"
+        assert_includes text, "grants no new permissions"
+        assert_includes text, "No person pressed anything for this run"
+        refute_includes text, "This trigger is itself the user asking"
+        refute_includes text, "default for this trigger is that you post a reply"
+      end
     end
   end
 
@@ -645,6 +774,28 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes metadata, "- room: Main"
   end
 
+  test "conversation metadata uses the account's name and description for Main" do
+    agent = agents(:research_assistant)
+    agent.account.rooms.create!(name: "Life")
+    agent.account.update!(main_room_name: "General", main_room_description: "builds and everything else")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Unroomed")
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: General (use this room when: builds and everything else)"
+  end
+
+  test "a configured Main is named in metadata even when it is the account's only room" do
+    agent = agents(:research_assistant)
+    agent.account.rooms.destroy_all
+    agent.account.update!(main_room_name: "Build", main_room_description: "technical work")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Only Main")
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build (use this room when: technical work)"
+  end
+
   test "conversation metadata has no room line while the account has no rooms at all" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "No rooms yet")
@@ -654,16 +805,37 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes metadata, "- room:"
   end
 
-  test "conversation metadata has no room line for a guest resident, even where the account has rooms" do
+  test "conversation metadata names the room for a seated guest resident too" do
     agent = agents(:research_assistant)
     guest_account = accounts(:team_account)
-    guest_account.rooms.create!(name: "Life")
+    build = guest_account.rooms.create!(name: "Build")
     guest_account.guest_memberships.create!(agent: agent, added_by: users(:user_1))
-    chat = guest_account.chats.create!(model_id: "openrouter/auto", title: "Guest room", agents: [ agent ])
+    chat = guest_account.chats.create!(model_id: "openrouter/auto", title: "Guest room", agents: [ agent ], room: build)
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build"
+  end
+
+  test "conversation metadata has no room line in an account the resident is not a guest of" do
+    agent = agents(:research_assistant)
+    other_account = accounts(:team_account)
+    other_account.rooms.create!(name: "Build")
+    chat = other_account.chats.create!(model_id: "openrouter/auto", title: "Former guest room")
 
     metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
 
     refute_includes metadata, "- room:"
+  end
+
+  test "the room line carries the room's use-this-room-when, on one line" do
+    agent = agents(:research_assistant)
+    build = agent.account.rooms.create!(name: "Build", description: "technical work:\nPRs, deploys, bugs")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Roomed", room: build)
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build (use this room when: technical work: PRs, deploys, bugs)"
   end
 
 end

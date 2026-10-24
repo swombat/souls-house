@@ -90,7 +90,11 @@ class RuntimeActivityIngestion
         action: "runtime_activity_changed", run_id: run.run_id, revision: run.live_activity_json[:revision]
       })
     end
-    { accepted: true, share_narration: run.narration_shared && run.agent.reload.share_working_narration? }
+    {
+      accepted: true, share_narration: run.narration_shared && run.agent.reload.share_working_narration?,
+      last_resident_post_at: run.last_resident_post_at&.iso8601(3), server_time: Time.current.iso8601(3),
+      messages_since_transcript: run.messages_since_transcript
+    }
   end
 
   private

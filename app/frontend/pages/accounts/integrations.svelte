@@ -1,23 +1,14 @@
 <script>
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import IntegrationConnect from '$lib/components/settings/integration-connect.svelte';
   import IntegrationConnection from '$lib/components/settings/integration-connection.svelte';
   import { serviceDescription, serviceIconClass } from '$lib/service-presentation';
+  import { startsOpen } from '$lib/connection-summary';
+  import { untrack } from 'svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
+  import { createDynamicSync } from '$lib/use-sync';
 
-  import {
-    DropboxLogo,
-    GithubLogo,
-    XLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    GoogleLogo,
-    Heartbeat,
-    ArrowLeft,
-    ArrowRight,
-    Plus,
-    Pulse,
-  } from 'phosphor-svelte';
+  import { XLogo, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
 
   let {
     account,
@@ -26,6 +17,13 @@
     focused_service: focusedService = null,
     can_manage_account: canManageAccount = false,
   } = $props();
+
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({
+      [`IntegrationStatus:${account.id}`]: ['connections', 'can_manage_account', 'services'],
+    });
+  });
 
   let groups = $derived([
     {
@@ -43,6 +41,22 @@
       connections: connections.filter((connection) => connection.management_scope === 'personal'),
     },
   ]);
+
+  // Each integration is a compact row; its switches open underneath. Rows
+  // that need something done start open. Several can be open at once.
+  // A row's starting state is latched when it first appears, so a WhatsApp
+  // row that opened for pairing stays open once the pairing succeeds.
+  let openRows = $state({});
+  $effect(() => {
+    const fresh = connections.filter((connection) => untrack(() => openRows[connection.id]) === undefined);
+    for (const connection of fresh) openRows[connection.id] = startsOpen(connection);
+  });
+  const isOpen = (connection) => openRows[connection.id] ?? startsOpen(connection);
+  const toggle = (connection) => (openRows[connection.id] = !isOpen(connection));
+  let allOpen = $derived(connections.length > 0 && connections.every(isOpen));
+  function setAll(value) {
+    openRows = Object.fromEntries(connections.map((connection) => [connection.id, value]));
+  }
 </script>
 
 <svelte:head><title>Integrations</title></svelte:head>
@@ -66,6 +80,53 @@
       {/key}
     </div>
   {:else}
+    <section class="space-y-6" aria-labelledby="existing-heading">
+      <div class="flex items-end justify-between gap-4 border-b pb-3">
+        <div>
+          <h2 id="existing-heading" class="text-xl font-semibold">Your integrations</h2>
+          <p class="text-sm text-muted-foreground">
+            Everything already connected, and which residents can use it. Tap one to change it.
+          </p>
+        </div>
+        {#if connections.length > 1}
+          <button
+            type="button"
+            class="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onclick={() => setAll(!allOpen)}>
+            {allOpen ? 'Close all' : 'Open all'}
+          </button>
+        {/if}
+      </div>
+      {#if connections.length === 0}
+        <div class="rounded-xl border bg-card p-8 text-center">
+          <p class="font-medium">Nothing connected yet</p>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Pick a service below. Once it's connected it appears here, with a switch for each resident.
+          </p>
+        </div>
+      {/if}
+      {#each groups as group (group.key)}
+        {#if group.connections.length > 0}
+          <div class="space-y-2" aria-labelledby={`group-${group.key}`}>
+            <div>
+              <h3 id={`group-${group.key}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </h3>
+              <p class="text-sm text-muted-foreground">{group.hint}</p>
+            </div>
+            {#each group.connections as connection (connection.id)}
+              <IntegrationConnection
+                {connection}
+                {account}
+                {services}
+                open={isOpen(connection)}
+                onToggle={() => toggle(connection)} />
+            {/each}
+          </div>
+        {/if}
+      {/each}
+    </section>
+
     <section
       id="connect-new"
       aria-labelledby="connect-new-heading"
@@ -85,21 +146,7 @@
               class="group flex h-full items-start gap-3 rounded-xl border bg-card p-4 transition hover:border-foreground/30 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <span
                 class={`flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(service.key)}`}>
-                {#if service.key === 'dropbox'}
-                  <DropboxLogo size={22} weight="fill" />
-                {:else if service.key === 'google_workspace'}
-                  <GoogleLogo size={22} weight="bold" />
-                {:else if service.key === 'github'}
-                  <GithubLogo size={22} weight="fill" />
-                {:else if service.key === 'pipedrive'}
-                  <Funnel size={22} weight="bold" />
-                {:else if service.key === 'honeybadger'}
-                  <Bug size={22} weight="bold" />
-                {:else if service.key === 'tailscale'}
-                  <ShareNetwork size={22} weight="bold" />
-                {:else}
-                  <Heartbeat size={22} weight="fill" />
-                {/if}
+                <ServiceIcon provider={service.key} size={22} />
               </span>
               <span class="min-w-0 flex-1">
                 <span class="flex items-center justify-between gap-2 font-medium">
@@ -142,42 +189,13 @@
                 <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
               </span>
               <span class="mt-0.5 block text-sm text-muted-foreground">
-                Let this account's residents post to one connected X handle, with a daily limit. Managed on the X page.
+                Let this account's residents post to one connected X handle, through the account's own X app (or the
+                house's, for accounts a site admin belongs to). Managed on the X page.
               </span>
             </span>
           </a>
         </li>
       </ul>
-    </section>
-
-    <section class="space-y-6" aria-labelledby="existing-heading">
-      <div class="border-b pb-3">
-        <h2 id="existing-heading" class="text-xl font-semibold">Your integrations</h2>
-        <p class="text-sm text-muted-foreground">Everything already connected, and which residents can use it.</p>
-      </div>
-      {#if connections.length === 0}
-        <div class="rounded-xl border bg-card p-8 text-center">
-          <p class="font-medium">Nothing connected yet</p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Pick a service above. Once it's connected it appears here, with a switch for each resident.
-          </p>
-        </div>
-      {/if}
-      {#each groups as group (group.key)}
-        {#if group.connections.length > 0}
-          <div class="space-y-3" aria-labelledby={`group-${group.key}`}>
-            <div>
-              <h3 id={`group-${group.key}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {group.title}
-              </h3>
-              <p class="text-sm text-muted-foreground">{group.hint}</p>
-            </div>
-            {#each group.connections as connection (connection.id)}
-              <IntegrationConnection {connection} {account} {services} />
-            {/each}
-          </div>
-        {/if}
-      {/each}
     </section>
   {/if}
 </AccountSettingsLayout>

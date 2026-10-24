@@ -1,5 +1,6 @@
 <script>
   import FieldSummary from '$lib/components/field/FieldSummary.svelte';
+  import { tick } from 'svelte';
   import { Link, router } from '@inertiajs/svelte';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button, buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -20,11 +21,54 @@
   const statusLine = $derived(recordingStatusLine(recording));
   const troubled = $derived(recording.status === 'rejected' || recording.status === 'failed');
 
-  function startEditing() {
+  async function startEditing({ focusTitle = false } = {}) {
     title = recording.title || '';
     note = recording.note || '';
     recordedOn = recordedDay(recording.recorded_at);
     editing = true;
+    if (!focusTitle) return;
+    await tick();
+    const input = document.getElementById('recording-edit-title');
+    input?.focus();
+    input?.select();
+  }
+
+  // The title is a shortcut to the same form as Edit: double-click it with a
+  // mouse, or press and hold it on a touch screen.
+  const HOLD_MS = 500;
+  const HOLD_SLOP_PX = 10;
+  let hold = null;
+  let touching = false;
+
+  function titlePointerDown(event) {
+    touching = event.pointerType === 'touch';
+    if (!touching) return;
+    clearHold();
+    hold = {
+      x: event.clientX,
+      y: event.clientY,
+      timer: setTimeout(() => {
+        hold = null;
+        window.getSelection?.()?.removeAllRanges();
+        startEditing({ focusTitle: true });
+      }, HOLD_MS),
+    };
+  }
+
+  // A finger drifting a little is still a hold; scrolling is not.
+  function titlePointerMove(event) {
+    if (hold && Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > HOLD_SLOP_PX) clearHold();
+  }
+
+  function clearHold() {
+    if (hold) clearTimeout(hold.timer);
+    hold = null;
+  }
+
+  function titleDoubleClick() {
+    // A double-click also selects a word; the form replaces the heading anyway.
+    window.getSelection?.()?.removeAllRanges();
+    startEditing({ focusTitle: true });
   }
 
   // The day part of recorded_at as the server sent it (in the app's zone),
@@ -101,7 +145,19 @@
       </form>
     {:else}
       <div>
-        <h2 class="text-xl font-semibold break-words">{recording.title}</h2>
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <h2
+          class="text-xl font-semibold break-words cursor-text pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]"
+          title="Double-click to edit"
+          data-testid="field-recording-title"
+          ondblclick={titleDoubleClick}
+          onpointerdown={titlePointerDown}
+          onpointermove={titlePointerMove}
+          onpointerup={clearHold}
+          onpointercancel={clearHold}
+          oncontextmenu={(event) => touching && event.preventDefault()}>
+          {recording.title}
+        </h2>
         <p class="text-sm text-muted-foreground mt-1">
           {#if recording.uploader_name}
             Brought by {recording.uploader_name}{recording.uploader_kind === 'resident' ? ' (resident)' : ''} ·
@@ -115,6 +171,7 @@
           text={recording.summary_long}
           pending={recording.summary_pending}
           failed={recording.summary_failed}
+          freshness={recording.summary_freshness}
           url={recording.resummarize_url}
           testid="field-recording-summary" />
       {/if}
@@ -168,7 +225,7 @@
         </Button>
       {/if}
       {#if !editing}
-        <Button size="sm" variant="ghost" onclick={startEditing}>
+        <Button size="sm" variant="ghost" onclick={() => startEditing()}>
           <PencilSimple class="size-4" /> Edit
         </Button>
       {/if}

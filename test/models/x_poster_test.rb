@@ -10,7 +10,7 @@ class XPosterTest < ActiveSupport::TestCase
   setup do
     @agent = agents(:research_assistant)
     @integration = XIntegration.create!(
-      account: @agent.account, enabled: true, x_username: "househandle",
+      account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
       access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now
     )
   end
@@ -81,19 +81,24 @@ class XPosterTest < ActiveSupport::TestCase
     assert_not_requested :post, TWEETS_URL
   end
 
-  test "the daily ceiling counts posted, pending and unknown posts but not definite failures" do
-    @integration.update!(daily_post_limit: 3)
-    create_log(status: "posted", tweet_id: "1")
-    create_log(status: "outcome_unknown")
-    create_log(status: "failed")
-    create_log(status: "posted", tweet_id: "2", created_at: 25.hours.ago)
-    stub_x_post(id: "1005")
+  test "an account with no X app of its own and no site admin is refused before reserving" do
+    @integration.update_columns(client_id: nil, client_secret: nil)
+    assert_not @agent.account.includes_site_admin?
 
-    post!("Third", key: "k3")
-    error = assert_raises(XPoster::Refused) { post!("Fourth", key: "k4") }
+    error = assert_raises(XPoster::Refused) { post!("No app", key: "k1") }
 
-    assert_equal "daily_limit_reached", error.code
-    assert_equal :too_many_requests, error.http_status
+    assert_equal "no_x_app", error.code
+    assert_equal :forbidden, error.http_status
+    assert_equal 0, @integration.tweet_logs.count
+    assert_not_requested :post, TWEETS_URL
+  end
+
+  test "there is no daily ceiling" do
+    stub = stub_x_post(id: "1005")
+    25.times { |i| create_log(status: "posted", tweet_id: (5000 + i).to_s) }
+
+    assert_equal "posted", post!("Twenty-sixth today", key: "k26").log.status
+    assert_requested stub, times: 1
   end
 
   test "over-length text by X's weighted count is refused before reserving" do
@@ -204,10 +209,10 @@ class XPosterTest < ActiveSupport::TestCase
     poster = XPoster.new(agent: @agent)
     agent = @agent
     test_case = self
-    poster.define_singleton_method(:refreshed_access_token) do |log|
-      token = super(log)
+    poster.define_singleton_method(:token_ready?) do |log|
+      ready = super(log)
       test_case.travel(TweetLog::PENDING_RESOLVABLE_AFTER + 1.minute) { log.reload.resolve!(resolution: "not_posted", by: agent) }
-      token
+      ready
     end
 
     log = poster.post!(text: "Gap", idempotency_key: "k1").log
@@ -216,7 +221,46 @@ class XPosterTest < ActiveSupport::TestCase
     assert_not_requested :post, TWEETS_URL
   end
 
-  test "a refused connection is a definite failure that does not count toward the ceiling" do
+  {
+    "removing the app" => [ ->(integration) { integration.remove_own_app! }, "disconnected" ],
+    "replacing the app" => [ ->(integration) { integration.set_own_app!(client_id: "app-b", client_secret: "secret-b") }, "disconnected" ],
+    "disconnecting" => [ ->(integration) { integration.disconnect! }, "disconnected" ],
+    "switching posting off" => [ ->(integration) { integration.update!(enabled: false) }, "posting_disabled" ]
+  }.each do |change, (act, reason)|
+    test "#{change} in the gap after the token step and before the send stops the send" do
+      stub_x_post(id: "2004")
+      poster = XPoster.new(agent: @agent)
+      integration_id = @integration.id
+      poster.define_singleton_method(:token_ready?) do |log|
+        ready = super(log)
+        act.call(XIntegration.find(integration_id))
+        ready
+      end
+
+      log = poster.post!(text: "Gap", idempotency_key: "k1").log
+
+      assert_equal "failed", log.status
+      assert_equal reason, log.failure_reason
+      assert_not_requested :post, TWEETS_URL
+    end
+  end
+
+  test "the bearer sent is the one on the integration at send time, not one read earlier" do
+    stub_x_post(id: "2005")
+    poster = XPoster.new(agent: @agent)
+    integration_id = @integration.id
+    poster.define_singleton_method(:token_ready?) do |log|
+      ready = super(log)
+      XIntegration.find(integration_id).update!(access_token: "rotated-token")
+      ready
+    end
+
+    poster.post!(text: "Rotated", idempotency_key: "k1")
+
+    assert_requested :post, TWEETS_URL, headers: { "Authorization" => "Bearer rotated-token" }, times: 1
+  end
+
+  test "a refused connection is a definite failure" do
     unreachable = Object.new
     %i[use_ssl= open_timeout= read_timeout= write_timeout= max_retries=].each { |name| unreachable.define_singleton_method(name) { |_| nil } }
     unreachable.define_singleton_method(:start) { raise Errno::ECONNREFUSED }
@@ -226,7 +270,7 @@ class XPosterTest < ActiveSupport::TestCase
 
     assert_equal "failed", log.status
     assert_equal "unreachable", log.failure_reason
-    assert_equal 0, @integration.tweet_logs.counting_toward_limit.count
+    assert_not_requested :post, TWEETS_URL
   end
 
   test "X's 401, 403 and 429 become clear failure reasons" do

@@ -1,10 +1,7 @@
-# The account's tweet stream: which public handle it follows, what is
-# included, and whose TwitterAPI.io key pays. Account managers only: it
-# spends money and may hold a key.
-#
-# The key is write-only. It can be set, replaced or removed here and is never
-# sent back to any page or API (FieldTweetSource#status_json says only
-# whether there is one).
+# The account's tweet stream: which public handle it follows and what is
+# included. Account managers only: it spends money. The key that pays is the
+# account's TwitterAPI.io integration (Settings → Integrations), or the
+# house's for accounts granted it; following needs one of the two.
 class FieldTweetSourcesController < ApplicationController
 
   require_feature_enabled :agents
@@ -13,6 +10,8 @@ class FieldTweetSourcesController < ApplicationController
   before_action :set_source, except: :create
 
   def create
+    return back(alert: "#{FieldTweets::NO_FUNDING}.") if FieldTweets.funding_for(current_account).nil?
+
     source = current_account.build_field_tweet_source(source_params.merge(created_by: Current.user))
     if source.save
       FieldTweets::SyncJob.perform_later(source.id)
@@ -25,12 +24,7 @@ class FieldTweetSourcesController < ApplicationController
   # handle can't change: following someone else is removing and adding, so
   # one handle's window never carries over to another.
   def update
-    attributes = source_params.except(:handle)
-    attributes[:api_key] = nil if params.dig(:field_tweet_source, :remove_api_key).to_s == "true"
-    key_changed = attributes.key?(:api_key)
-    if @source.update(attributes)
-      # A new key is a new chance: a source stopped for its old key resumes.
-      @source.resume! if key_changed && @source.state == "needs_attention"
+    if @source.update(source_params.except(:handle))
       back notice: "Saved."
     else
       back alert: @source.errors.full_messages.to_sentence
@@ -66,10 +60,7 @@ class FieldTweetSourcesController < ApplicationController
   end
 
   def source_params
-    attributes = params.require(:field_tweet_source).permit(:handle, :include_replies, :include_quotes, :include_reposts, :api_key, :own_monthly_usd_limit)
-    # An empty key field means "leave it as it is", not "remove it".
-    attributes.delete(:api_key) if attributes[:api_key].blank?
-    attributes
+    params.require(:field_tweet_source).permit(:handle, :include_replies, :include_quotes, :include_reposts, :own_monthly_usd_limit)
   end
 
   def back(**flash)

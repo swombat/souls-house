@@ -1,3 +1,39 @@
+// Server timestamps share a clock; only elapsed monotonic time comes from the browser.
+export function runtimeServerTime(serverTime, receivedAt, monotonicNow) {
+  const timestamp = Date.parse(serverTime);
+  return Number.isFinite(timestamp) ? timestamp + Math.max(0, monotonicNow - receivedAt) : null;
+}
+
+export function runtimeContactUncertain(interaction, now) {
+  const lastReport = Date.parse(interaction.last_report_at);
+  return (
+    interaction.reporter_health !== 'live' || now == null || !Number.isFinite(lastReport) || now - lastReport > 30000
+  );
+}
+
+export function runtimeSilenceLabel(interaction, now) {
+  if (
+    interaction.narration_shared === false ||
+    !interaction.run_id ||
+    !interaction.active ||
+    interaction.status !== 'running' ||
+    now == null
+  )
+    return null;
+  const started = Date.parse(interaction.started_at);
+  if (!Number.isFinite(started)) return null;
+  const lastPost = Date.parse(interaction.last_resident_post_at);
+  const elapsed = now - Math.max(started, Number.isFinite(lastPost) ? lastPost : started);
+  if (elapsed < 120000) return null;
+  const contact = runtimeContactUncertain(interaction, now) ? 'runtime contact uncertain' : 'runtime active';
+  const minutes = Math.floor(elapsed / 60000);
+  const elapsedLabel =
+    Number.isFinite(lastPost) && lastPost >= started
+      ? `Last resident update: ${minutes} min ago`
+      : `${minutes} min since run start · no resident post yet`;
+  return `${elapsedLabel} · ${contact}`;
+}
+
 export function mergeRuntimeActivity(initial = [], updates = []) {
   const byId = new Map(initial.map((row) => [row.id, row]));
   for (const row of updates) {

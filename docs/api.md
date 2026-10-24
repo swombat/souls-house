@@ -85,8 +85,19 @@ or a disabled account gets 404.
   already-responding residents are not started again; a message to a resident
   who is already responding is held as a pending wake (see below). Message responses report
   `ai_response_triggered: true` when this automatic response was queued; otherwise
-  they report `false`. Multi-resident API rooms retain explicit invocation through
-  the separate `agent_trigger` route.
+  they report `false`; this flag does not describe mention dispatch.
+- Human posts in multi-resident rooms now use the same explicit `@Name` mention
+  dispatch as web/phone posts, without an opt-in flag. The existing shared human
+  full-name matcher selects eligible residents in that room; unlike resident
+  handoffs, it does not exclude quotes/code or reject duplicate resident names.
+  `handoffs` reports per-target acceptance
+  receipts (`queued`, `held`, or `blocked` with a reason), not a promise of a reply.
+  A busy target is held through the existing pending-wake mechanism. If live
+  activity is unavailable for a send requiring mention dispatch, the API returns
+  `503` without saving the message or clearing its draft. An enqueue failure
+  after commit still returns `201`: the durable intent exists but can expire
+  without being delivered. The separate `agent_trigger` route remains available.
+  Resident-authored posts continue using resident handoffs, not human dispatch.
 - `POST /api/v1/conversations/:id/agent_trigger` targets the participant named by
   `agent_id`, or all participants when it is omitted. It answers `200` with
   `triggered` (residents woken now) and `queued` (residents already responding
@@ -179,17 +190,28 @@ moderation (site admins only).
   revisioned text, shared by web and human-key clients. Resident keys are refused.
   Message endpoints accept `draft_revision` for atomic send-and-clear.
 
+- Rooms: `GET`/`POST /api/v1/rooms`, `PATCH`/`DELETE /api/v1/rooms/:id`
+  (rename, describe, `direction: up|down`, remove; conversations go to Main),
+  `PATCH /api/v1/rooms/main`, `/rooms/resident_room` and `/rooms/model_default`.
+  Resident keys get all of it at home and wherever they hold a guest seat
+  (`account_id`), with the same reach as the account's people; account keys in
+  their own account. The resident-facing guide is
+  `agent-runtime/docs/soulshouse-api.md` ("Rooms: where a conversation lives").
+
 - [Rhythms](rhythms.md#human-keys): resident keys create and join their own;
   human keys and OAuth app tokens get the web's management (creator or owner)
-  with resident selection, preview and manual start. For example:
+  with resident selection, preview and manual start. `room_choice` is
+  `resident_default` (the default: the account's resident default room),
+  `main`, or `room` with `room_id`; both key kinds may set it. For example:
 
   ```text
   POST /api/v1/rhythms
   {"rhythm":{"title":"Weekly reflection","opening":"Anything worth bringing forward?",
     "cadence":"weekly","weekday":1,"time_of_day":"09:00","timezone":"Madrid",
-    "append_date":true,"resident_ids":["RESIDENT_ID"]}}
+    "append_date":true,"resident_ids":["RESIDENT_ID"],"room_choice":"room","room_id":"ROOM_ID"}}
   -> 201 {"rhythm":{"id":"...","state":"active","next_run_at":"...","creator":{"type":"user",...},
-          "resident_ids":["RESIDENT_ID"],"holds":[],"can_manage":true,...},"result":null,"reason":null}
+          "resident_ids":["RESIDENT_ID"],"room_choice":"room","room_id":"ROOM_ID","room_removed":false,
+          "opens_in":{"id":"ROOM_ID","name":"Build"},"holds":[],"can_manage":true,...},"result":null,"reason":null}
 
   POST /api/v1/rhythms/:id/start {"request_key":"0b6c..."}
   -> 201 {"rhythm":{...},"result":"created","reason":null,
@@ -328,6 +350,7 @@ member. The web's `require_account_manager!` also admits any confirmed member.
 | `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
 | `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
 | `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
+| `GET /account/service_connections/providers`; `POST /account/service_connections` `{ provider, management_scope?, label?, credentials: { <field>: value } }` | member for a `personal` connection (the default); admin for `account_managed` (else 403). Only services that connect from pasted credentials (Porkbun, Cloudflare, Ghost, Pipedrive, GitHub, Honeybadger, ...) are listed and accepted; OAuth and QR-paired ones are 422 and connect on the web. The provider checks the credential first; a refusal, a missing field or a credential already connected is 422 with the reason. `credentials` is masked in the request log and never returned |
 | `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
 
 ```http
@@ -411,7 +434,7 @@ account; `account_id` narrows it to one account (a thing elsewhere is then
 person's default account.
 
 The same holds for every key on the shared Field file, recording and
-whiteboard endpoints (`/field/files`, `/field/recordings`, `/field/tweets`, `/whiteboards` and
+whiteboard endpoints (`/field/files`, `/field/recordings`, `/field/tweets`, `/field/songs`, `/whiteboards` and
 their versions), resident keys included: they act only in the key's own
 account, and an `account_id` naming any other account is 404, never a quiet
 fallback to the key's account. A resident that is a guest elsewhere still
@@ -433,6 +456,17 @@ before an upload:
 
 **Files.** `PATCH /api/v1/field/files/:id` with `title`, `note` and/or
 `dated_at` returns `{ "file": {...} }`. Upload and delete already existed.
+
+**Summary freshness.** File and recording list/detail responses carry
+`summary_freshness`: `current`, `stale`, or `unknown` (older summaries without
+tracked provenance); `null` means there is no summary. Freshness compares the
+exact summarisation input, including title, note and the bounded source text.
+`summary_pending` means generation/retry is pending, not the 30-minute wait
+after a transcript edit; `summary_failed` reports an exhausted refresh.
+The old summary stays visible. Per-recording human speaker naming also schedules
+a check. Voice renames, identity deletion and bulk transcript re-rendering can
+make summaries stale but do not schedule calls across the archive. Title/note
+edits do not schedule checks either. Older summaries are not backfilled.
 
 **PDF text.** A PDF's own text layer is read page by page with Poppler after
 upload (nothing is sent outside the house). Files gain `text_extraction`
@@ -531,7 +565,7 @@ URL. This read never includes voice-recognition or name-suggestion data.
   rejected only; 201 with the new recording, otherwise 422).
 - `POST /api/v1/field/recordings/dismiss_you_hint` → 204.
 - `GET /api/v1/field/recordings/:id/lines` (residents too) gives a ready
-  transcript as numbered lines, `{ id, revision, lines: [{ line, speaker, text }] }`:
+  transcript as numbered lines, `{ id, revision, lines: [{ line, speaker, speaker_id, text }] }`:
   the page's turns, or a supplied transcript's turns, numbered from 1. No timings.
   `PATCH /api/v1/field/recordings/:id/lines/:line` with `{ text, was, revision }`
   corrects one line, the same correction as clicking it on the page: `text` is the
@@ -541,11 +575,28 @@ URL. This read never includes voice-recognition or name-suggestion data.
   (or there is no such line), it's 409 with the current `revision` and nothing is
   written; an empty or over-long `text` is 422; a recording that isn't ready is
   409. The success response is the lines again, with the new `revision` and the
-  corrected `line`. The summary is not rewritten; ask for that on the page. The
+  corrected `line`. A successful text correction or speaker reassignment schedules
+  a summary freshness check 30 minutes later. Only a still-stale summary is rewritten;
+  a manual refresh or an earlier check makes subsequent checks no-ops. The
   CLI: `souls field lines ID`, then `souls field correct ID LINE TEXT --revision REV`
   (without `--revision` it reads the line just before writing, guarding only those seconds).
+  The same `PATCH` with `{ speaker, was, revision }` (no `text`) gives the line to
+  another speaker: `speaker` is a speaker id of this recording, or `"new"` for one
+  the transcriber didn't separate (made unnamed). Only the speaker label moves;
+  talk time and clips are measured again, and a speaker left with no lines is
+  removed unless it holds a voice sample being sent. Voice samples being prepared
+  or waiting for those speakers are refused, and their suggestions and guesses
+  cleared. The response's `line` is the line the moved words are in now, which
+  can have a different number once it joins a neighbour. Same 409s; an unknown
+  speaker or a recording at its speaker limit is 422.
+  The CLI: `souls field speaker ID LINE WHO --revision REV`, where WHO is a name as
+  `souls field lines` shows it, a speaker id, or `new`.
 - `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
-  `me: true`, `voice_id`, `member_user_id`, `name` or `unname: true`. A `name`
+  `me: true`, `voice_id`, `member_user_id`, `name`, `unname: true`,
+  `ignore: true` (noise, not a person: it stops counting as waiting for a
+  name; 409 if the speaker is named; add `ignore_as: "anonymous"` for a real
+  person who stays unnamed, and the speaker's `ignored_as` says which) or
+  `unignore: true`. A `name`
   matching an existing voice returns 409
   `{ "error": ..., "match": { "voice_id", "name", "last_named_in" } }`; resend
   with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
@@ -640,14 +691,87 @@ one tag, at most 50 characters, 32 per item.
   because changing a tag changes items other people tagged.
 
 **Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
-so on), `members_without_voice`, `my_voice_id`, `pending_enrolments`,
-`recognise_voices` and `can_change_setting`. It never returns a voice print.
+so on), `members_without_voice`, `my_voice_id`,
+`recognise_voices`, `auto_name_voices` and `can_change_setting`. It never returns a voice print.
 `PATCH /api/v1/field/voices/:id` (`name`), `DELETE /api/v1/field/voices/:id`
 (deletes the voice), `DELETE /api/v1/field/voices/:id/print` (forget one print),
 `DELETE /api/v1/field/voices/prints` (forget all),
-`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }`) and
-`DELETE /api/v1/field/enrolments/:id` (remove a pending "remember this voice").
-Starting or confirming an enrolment is biometric consent and stays in the browser.
+`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }` and/or
+`{ "auto_name_voices": false }`; naming on a clear match is on by default and
+needs recognition on).
+`POST /api/v1/field/voices` creates a name with `{name}` (201); duplicate names
+are refused, not silently linked. `GET /api/v1/field/voices/resolve?name=...`
+does an exact normalized lookup (404 on miss), without creating anything.
+
+**Voice samples.** A person's credential needs current confirmed account
+membership, like voice management, and reaches every sample. A **resident key**
+uses its own credential (never a person's) and works only in its home account,
+only with **uploaded candidates no person has confirmed**: it may list and
+resolve voices (`GET /field/voices` returns `id`, `name`, `member` only), list,
+inspect and download uploaded samples (confirmed ones included: reading is
+allowed), upload candidates, and correct the attribution of, exclude or remove
+unconfirmed ones. Confirmation (`included: true` on a sample needing new
+testimony) and any change to a sample a person has ever confirmed are 403 for
+residents, checked again under the sample lock. A resident's sample rows carry
+only the upload's own `recorded_at`, never the linked recording's date.
+Recording-backed samples are not visible to residents (404), because their audio
+and timings come from the recording, which residents never read. Resident writes
+are audited (`field_voice_sample_uploaded`, `_reattributed`, `_excluded`,
+`_removed`) with `agent_id` and the key, and never record the key's owner as
+uploader, namer or confirmer. Voice create, rename, delete, forget and the
+recognition setting stay person-only. The existing `souls field voices` and `souls field samples` commands cover the
+workflow; see [CLI examples and wire contract](voice-sample-cli.md).
+
+- `GET /api/v1/field/voices/:voice_id/samples`: paginated safe metadata,
+  `page`, `pages`, `total`, and limits. No vectors, storage credentials or blob URLs.
+- `POST` at that path: multipart `audio` plus a stable `idempotency_key`.
+  Audio is a **PCM mono 16-bit 16 kHz WAV, 4–60 seconds, at most 2 MiB**.
+  The original uploaded bytes are retained and sent unchanged for embedding.
+  Optional `source_identifier`, original `source_sha256`, canonical `source_session`,
+  paired `start_ms`/`end_ms`, and ISO `recorded_at` preserve source evidence.
+  A sample date means midnight UTC (portable archive provenance, unlike a
+  recording's app-zone display date); a timestamp requires an explicit offset.
+  Optional public `recording_id` (alias `transcript_id`) must belong to this
+  account. In Field a transcript belongs to its recording.
+  Returns `{sample: ..., deduplicated: null}` (201) for a new row; an existing row
+  returns 200 with `deduplicated: "retry"`, `"identical"` or `"overlap"`.
+  Its metadata/hash describe the retained existing sample, not the discarded new
+  cut. A reused key with different immutable content/metadata is 409. Identical audio or overlapping
+  intervals of the same original source deduplicate account-wide. Conflicting
+  attribution is 409, never a silent move. Keep canonical original-session
+  groups stable across exports, duplicates and slices. Matching original hashes,
+  identifiers or recording links cannot introduce a conflicting source group;
+  mixed linked/unlinked cuts must reuse the original recording link.
+  Responses preserve the upload's raw `source_session` separately from the
+  account-scoped `source_group_key` used for validation splits.
+- `GET /api/v1/field/samples/:id`: inspect metadata.
+- `GET /api/v1/field/samples/:id/audio?digest=...`: authorized exact WAV download,
+  private/no-store. A stale digest is 409, not different audio.
+- `PATCH /api/v1/field/samples/:id` with `{included, digest}` accepts/includes or
+  rejects/excludes. A machine API key **cannot create listening testimony**.
+  New confirmation requires the browser or signed-in human OAuth app token.
+  An API key may reinclude an unchanged, already-confirmed sample without
+  changing who confirmed it or when. Exclusion preserves audio and prior testimony.
+- `PATCH` with `{voice_id, digest}` corrects attribution and invalidates
+  confirmation. Recording-derived samples correct their source speaker and
+  return a replacement unconfirmed candidate with the same audio and embedding;
+  uploads move as unconfirmed.
+- `DELETE` with `{digest}` removes a sample from the review collection and
+  fingerprint, retaining its evidence as a soft-removed row. Existing voice
+  Forget semantics still erase the voice's samples and attached sample audio.
+  Member operations also accept the nested `/voices/:voice_id/samples/:id` path.
+
+Uploads and new extracted cuts are **unconfirmed candidates**, never automatic
+enrollment. At least two exact, confirmed included samples are needed to build a
+print; the existing held-out validation still gates checked recognition.
+Capacity is enforced under account/voice locks across uploads, extraction,
+retries and inclusion: twenty included samples and twenty waiting candidates per
+speaker. Reject/remove explicit evidence to make room; nothing is silently
+evicted, and pre-existing over-limit evidence is not deleted. The later archive
+sweep targets ten total including existing samples; this API does not run it.
+Pending failures consume a candidate slot until reviewed or removed.
+Malformed audio/metadata is 422, capacity/stale/idempotency conflicts are 409,
+inaccessible account resources are 404, and unauthorized credentials are 401/403.
 
 **Notes.** `DELETE /api/v1/whiteboards/:id` → 204 (a soft delete, as on the
 page). Resident keys can edit notes but not delete them.

@@ -5,7 +5,7 @@ module Api
       include AttachmentDownloads
 
       def show
-        chat = conversations_scope.find(params[:conversation_id])
+        chat = conversations_scope.kept.find(params[:conversation_id])
         message = chat.messages.kept.find(params[:message_id])
         attachment = message.api_downloadable_attachment(params[:id]) || raise(ActiveRecord::RecordNotFound)
 

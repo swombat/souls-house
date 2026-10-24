@@ -74,13 +74,18 @@ module FieldRecording::Transcript
   # the caller; slice A uses "Speaker N" (only human-set names ever appear).
   # `keys` as for turns: one voice heard as two labels reads as one speaker.
   def render(words, names, keys = nil)
-    turns(words, keys).map do |turn|
+    lines(words, names, keys).map { |line| "[#{line[:clock]}] #{line[:speaker]}: #{line[:text]}" }.join("\n")
+  end
+
+  # The same turns as render, as {clock:, speaker:, text:}, for a page that
+  # shows them without reading names back out of the text.
+  def lines(words, names, keys = nil)
+    turns(words, keys).filter_map do |turn|
       text = turn[:words].map { |word| word["k"] == "a" ? "(#{word['t'].delete('()')})" : word["t"] }.join.squeeze(" ").strip
       next if text.empty?
 
-      speaker = names.fetch(turn[:spk], "Unattributed")
-      "[#{timestamp(turn[:s])}] #{speaker}: #{text}"
-    end.compact.join("\n")
+      { clock: timestamp(turn[:s]), speaker: names.fetch(turn[:spk], "Unattributed"), text: }
+    end
   end
 
   def timestamp(ms)

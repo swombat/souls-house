@@ -27,7 +27,15 @@
     open = true;
   }
   $effect(() => {
-    updateSync({ [`Account:${account.id}`]: 'visual_tags' });
+    updateSync({ [`Account:${account.id}`]: ['visual_tags', 'account', 'can_manage'] });
+  });
+  let editingAccount = account.id;
+  $effect(() => {
+    if (editingAccount !== account.id) {
+      editingAccount = account.id;
+      editing = null;
+      open = false;
+    }
   });
 </script>
 

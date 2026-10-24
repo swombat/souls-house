@@ -14,6 +14,17 @@ on:
         required: false
         type: string
         default: ''
+      # Chaos/both only: upstream migration changes the owner has reviewed, as
+      # the "migration_changes" entries a refused run printed (path@blob,...).
+      accept_migrations:
+        required: false
+        type: string
+        default: ''
+      # Clear the latch left by this exact failed/interrupted host job first.
+      acknowledge_failed_job:
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -37,6 +48,8 @@ jobs:
     env:
       OPERATION: ${{ inputs.operation }}
       EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      ACCEPT_MIGRATIONS: ${{ inputs.accept_migrations }}
+      ACKNOWLEDGE_JOB: ${{ inputs.acknowledge_failed_job }}
       DEPLOY_HOST: ${{ vars.HOUSE_DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.HOUSE_DEPLOY_PORT }}
     steps:
@@ -56,6 +69,15 @@ jobs:
             [[ "$OPERATION" == rails && "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 2
             request="rails expect $EXPECTED_REVISION"
           fi
+          ACCEPT_MIGRATIONS="$(tr -d ' \n\r\t' <<<"$ACCEPT_MIGRATIONS")"
+          if [[ -n "$ACCEPT_MIGRATIONS" ]]; then
+            [[ "$OPERATION" == chaos || "$OPERATION" == both ]] || { echo 'accept_migrations is for Chaos updates only'; exit 2; }
+            [[ "$ACCEPT_MIGRATIONS" =~ ^[A-Za-z0-9_./,@-]+$ ]] || { echo 'accept_migrations must be path@blob entries separated by commas'; exit 2; }
+            request="$OPERATION accept $ACCEPT_MIGRATIONS"
+          fi
+          if [[ -n "$ACKNOWLEDGE_JOB" ]]; then
+            [[ "$ACKNOWLEDGE_JOB" =~ ^[0-9a-f]{32}$ ]] || { echo 'acknowledge_failed_job must be a 32-character host job id'; exit 2; }
+          fi
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           umask 077
           directory="$(mktemp -d)"
@@ -70,6 +92,12 @@ jobs:
               -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
               "house-deploy-trigger@$DEPLOY_HOST" "$1"
           }
+          if [[ -n "$ACKNOWLEDGE_JOB" ]]; then
+            # Assigned on its own line so a host refusal stops the run (set -e);
+            # inside printf's arguments the failure would be swallowed.
+            acknowledged="$(remote "acknowledge $ACKNOWLEDGE_JOB")"
+            printf 'Acknowledged: %s\n' "$acknowledged"
+          fi
           receipt="$(remote "$request")"
           printf '%s\n' "$receipt"
           id="$(jq -er '.id' <<<"$receipt")"
@@ -95,9 +123,15 @@ jobs:
               superseded)
                 printf '\nMaster moved on; nothing deployed:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
                 echo outcome=superseded >> "$GITHUB_OUTPUT"
-                exit 0 ;;
+                # Red in Actions: GitHub success with nothing shipped is the
+                # hole in #313. The host still deploys nothing; the marker
+                # step below still names this as superseded, not a crash.
+                exit 1 ;;
               failed|partial|interrupted)
                 printf '\nNot complete:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                if changes="$(jq -er '.migration_changes // empty | join(",")' <<<"$receipt")"; then
+                  printf '\nUpstream changed migrations residents already applied. After review, rerun Update Chaos with\n- acknowledge_failed_job: `%s`\n- accept_migrations: `%s`\n' "$id" "$changes" >> "$GITHUB_STEP_SUMMARY"
+                fi
                 exit 1 ;;
               starting|running) sleep 20 ;;
               *) echo 'Unknown host state'; exit 1 ;;
@@ -105,11 +139,12 @@ jobs:
           done
           echo "Wait expired; job $id may still be running on the host. Inspect before retrying."
           exit 1
-      # Marker steps: the Deployments page reads which of these ran to tell a
-      # real deploy from a superseded one (both leave the job successful).
+      # Marker steps: the Deployments page reads which of these ran. A real
+      # deploy leaves the job green. Superseded is red (nothing shipped) and
+      # still named, so it is not confused with a host crash.
       - name: Deployment verified
         if: steps.request.outputs.outcome == 'deployed'
         run: echo deployed
       - name: Master moved on, nothing deployed
-        if: steps.request.outputs.outcome == 'superseded'
+        if: failure() && steps.request.outputs.outcome == 'superseded'
         run: echo superseded

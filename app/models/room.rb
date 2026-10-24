@@ -1,5 +1,6 @@
 # A place an account's conversations live. Conversations without a room are in
-# Main, which is not a row: it cannot be renamed, removed or emptied by mistake.
+# Main, which is not a row: it cannot be removed or emptied by mistake. Its name
+# and description are account settings (Account#main_room_label).
 class Room < ApplicationRecord
 
   include Broadcastable
@@ -16,10 +17,17 @@ class Room < ApplicationRecord
   validates :name, presence: true, length: { maximum: 40 },
     format: { without: /\0/, message: "must not contain NUL" }
   validates :name, uniqueness: { scope: :account_id, case_sensitive: false }
+  # "Use this room when…": a guideline for residents, not an instruction.
+  validates :description, length: { maximum: 280 },
+    format: { without: /\0/, message: "must not contain NUL" }
   validate :name_is_not_main
   validate :account_cannot_change, on: :update
-  before_validation -> { self.name = name.strip if name.is_a?(String) }
+  before_validation -> {
+    self.name = name.strip if name.is_a?(String)
+    self.description = description.strip.presence if description.is_a?(String)
+  }
   before_create -> { self.position = (account.rooms.maximum(:position) || -1) + 1 }
+  after_commit :broadcast_navigation
 
   scope :ordered, -> { order(:position, :id) }
 
@@ -39,6 +47,12 @@ class Room < ApplicationRecord
     { "id" => to_param, "name" => name }
   end
 
+  # The room as a place to choose, with what it is for. Main has no row, so
+  # callers listing destinations put Account#main_room_json first.
+  def directory_json
+    as_json.merge("description" => description)
+  end
+
   # Swap with the neighbour in the given direction (-1 up, +1 down).
   def move!(direction)
     siblings = account.rooms.ordered.to_a
@@ -46,22 +60,33 @@ class Room < ApplicationRecord
     other = siblings[index + direction] if index && (index + direction).between?(0, siblings.size - 1)
     return unless other
 
-    transaction do
+    transaction do |transaction|
       siblings.each_with_index { |room, i| room.update_column(:position, i) }
       mine = index
       update_column(:position, mine + direction)
       other.update_column(:position, mine)
+      # These position writes bypass model callbacks. Defer the single marker
+      # to the outer commit too, so a rolled-back move never reaches the UI.
+      transaction.after_commit { broadcast_navigation }
     end
   end
 
   private
+
+  def broadcast_navigation
+    return if skip_broadcast
+
+    ActionCable.server.broadcast("RoomNavigation:#{account.to_param}", { action: "refresh" })
+  end
 
   def move_chats_to_main
     account.chats.with_discarded.where(room_id: id).find_each { |chat| chat.room = nil; chat.save!(validate: false) }
   end
 
   def name_is_not_main
-    errors.add(:name, "#{MAIN} is the default room") if name.to_s.casecmp?(MAIN)
+    return unless name.to_s.casecmp?(MAIN) || (account && name.to_s.casecmp?(account.main_room_label))
+
+    errors.add(:name, "#{account&.main_room_label || MAIN} is the default room")
   end
 
   def account_cannot_change

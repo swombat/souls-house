@@ -39,6 +39,17 @@ class RhythmSeatModelsTest < ActiveSupport::TestCase
     assert_equal "anthropic/claude-opus-5.5", Agents::ModelSelection.for(@agent, chat: chat).model_id
   end
 
+  test "a rhythm's default choice wins over the room's model" do
+    build = @account.rooms.create!(name: "Build")
+    RoomModelDefault.set!(account: @account, room: build, agent: @agent, model_id: "anthropic/claude-fable-5.1")
+    @rhythm.update!(room_choice: "room", room: build)
+
+    chat = @rhythm.fire!(now: @now).occurrence.chat
+    assert_equal build, chat.room
+    assert_nil seat_for(chat, @agent).model_id
+    assert_equal "anthropic/claude-opus-5.5", Agents::ModelSelection.for(@agent, chat: chat).model_id
+  end
+
   test "a model off the resident's list is a validation error and changes nothing" do
     @rhythm.resident_models = { @agent.id => "openai/gpt-6.1-sol" }
     assert_not @rhythm.save

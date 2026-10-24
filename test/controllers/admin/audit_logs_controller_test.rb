@@ -81,24 +81,32 @@ class Admin::AuditLogsControllerTest < ActionDispatch::IntegrationTest
 
   # === Pagination Tests ===
 
-  test "should handle pagination with Pagy" do
+  test "should paginate filtered audit logs newest first across first middle and last pages" do
     sign_in(@site_admin_user)
+    newest_at = 1.hour.ago
+    logs = 5.times.map do |i|
+      AuditLog.create!(
+        user: @user_1, account: @personal_account, action: "pagy_regression",
+        created_at: newest_at - i.minutes
+      )
+    end
+    AuditLog.create!(action: "unrelated_pagy_regression", created_at: newest_at + 1.minute)
 
-    get admin_audit_logs_path, params: { per_page: 5 }
-    assert_response :success
+    [ [ 1, 0, 2, nil, 2 ], [ 2, 2, 2, 1, 3 ], [ 3, 4, 1, 2, nil ] ].each do |page, offset, size, previous_page, next_page|
+      @inertia_props = nil # The helper memoizes props across requests.
+      get admin_audit_logs_path, params: { audit_action: "pagy_regression", per_page: 2, page: page }
 
-    props = inertia_shared_props
-    pagination = props["pagination"]
-
-    # Verify pagination structure
-    assert pagination.is_a?(Hash), "Pagination should be a hash"
-    assert pagination.key?("count"), "Pagination should have count"
-    assert pagination.key?("page"), "Pagination should have page"
-    assert pagination.key?("pages"), "Pagination should have pages"
-    assert pagination.key?("per_page"), "Pagination should have per_page"
-
-    # Verify per_page parameter works
-    assert_equal "5", pagination["per_page"], "Per page should respect per_page param"
+      assert_response :success
+      props = inertia_shared_props
+      assert_equal logs.slice(offset, size).map(&:to_param), props.fetch("audit_logs").pluck("id"),
+        "Audit page #{page} should contain only its ordered filtered logs"
+      assert_equal({
+        "count" => 5, "page" => page, "pages" => 3, "last" => 3,
+        "from" => offset + 1, "to" => offset + size,
+        "prev" => previous_page, "next" => next_page,
+        "series" => [ "1", "2", "3" ], "per_page" => "2"
+      }, props.fetch("pagination"))
+    end
   end
 
   test "should handle pagination with large per_page value" do

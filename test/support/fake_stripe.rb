@@ -80,12 +80,14 @@ class FakeStripe
 
   module Helpers
 
-    STARTER_PRICE = "price_test_starter".freeze
-    STUDIO_PRICE = "price_test_studio".freeze
+    CONVERSATION_PRICE = "price_test_conversation".freeze
+    LIFE_PRICE = "price_test_life".freeze
+    WORK_PRICE = "price_test_work".freeze
 
     STRIPE_ENV = {
       "STRIPE_SECRET_KEY" => "sk_test_fake", "STRIPE_WEBHOOK_SECRET" => "whsec_test_fake",
-      "STRIPE_PRICE_STARTER" => STARTER_PRICE, "STRIPE_PRICE_STUDIO" => STUDIO_PRICE
+      "STRIPE_PRICE_CONVERSATION" => CONVERSATION_PRICE, "STRIPE_PRICE_LIFE" => LIFE_PRICE,
+      "STRIPE_PRICE_WORK" => WORK_PRICE
     }.freeze
 
     def self.included(base)

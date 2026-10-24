@@ -4,20 +4,20 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm field_tweets_house_key refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
                        .order(created_at: :desc)
 
-    # Admin can view any account, not just ones they belong to
-    # So we bypass the AccountScoping concern's current_account method
-    selected_account_id = params[:account_id]
-    @selected_account = Account.includes(memberships: :user).find(selected_account_id) if selected_account_id.present?
-
     render inertia: "admin/accounts", props: {
       accounts: accounts_json,
-      selected_account: @selected_account ? selected_account_json(@selected_account) : nil
+      selected_account: -> {
+        # Admin can view any account, not just ones they belong to.
+        if params[:account_id].present?
+          selected_account_json(Account.includes(memberships: :user).find(params[:account_id]))
+        end
+      }
     }
   end
 
@@ -84,6 +84,18 @@ class Admin::AccountsController < ApplicationController
       notice: enabled ? "Field swarm search turned on" : "Field swarm search turned off"
   end
 
+  # The house's TwitterAPI.io key, for an account without its own
+  # integration (FieldTweets.funding_for). Off for every account until
+  # turned on here; the house ceilings still apply.
+  def field_tweets_house_key
+    enabled = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:field_tweets_house_key))
+    @account.update!(field_tweets_house_key: enabled)
+    FieldTweets.integration_changed!(@account)
+    audit(:admin_update_field_tweets_house_key, @account, account_id: @account.id, field_tweets_house_key: enabled)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: enabled ? "This account's tweet streams may use the house TwitterAPI.io key" : "This account's tweet streams no longer use the house key"
+  end
+
   private
 
   def accounts_json
@@ -100,6 +112,8 @@ class Admin::AccountsController < ApplicationController
     ).merge(
       "use_system_ai_credentials" => account.use_system_ai_credentials?,
       "field_swarm_enabled" => account.field_swarm_enabled?,
+      "field_tweets_house_key" => account.field_tweets_house_key?,
+      "field_tweets_own_integration" => FieldTweets.integration_for(account).present?,
       "field_swarm" => field_swarm_costs(account),
       "usage" => Admin::AccountUsageReport.new(account).call,
       "memberships" => account.memberships.map { |membership| membership_json(membership) }

@@ -1,5 +1,7 @@
 class ReplyExpectation < ApplicationRecord
 
+  include RhythmListingActivity
+
   DIRECT_MENTION_VERSION = "direct-mention-v1"
 
   belongs_to :message

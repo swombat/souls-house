@@ -18,18 +18,39 @@ module Internal
         refuse(error.code, error.status)
       end
 
+      rescue_from CommsEvents::SequenceGap do |error|
+        Rails.logger.warn("[comms] refused sequence_gap connection=#{connection_param.first(40)}")
+        render json: { error: "sequence_gap", committed_seq: error.committed_seq }, status: :conflict
+      end
+
       rescue_from ActiveRecord::RecordInvalid do
         refuse(:invalid_record, :unprocessable_entity)
       end
 
       def create
+        # A disconnected connection has no secret to verify with. It answers
+        # 410 so a connector that never received the unpair (the owner's
+        # disconnect failed to reach it) stops collecting and deletes the
+        # connection's store. The answer says only that the connection is
+        # revoked, and only to the private network.
+        return refuse(:connection_revoked, :gone) if connection.status == "revoked"
+
         nonce = CommsSignature.verify!(
           secret: connection.credential_payload_hash["callback_secret"],
           expected_connection_id: connection.public_id,
           method: request.request_method, path: request.path, body: raw_body, headers: request.headers
         )
-        CommsEvents.receive!(connection, event, nonce:)
-        head :no_content
+        result = CommsEvents.receive!(connection, event, nonce:)
+        # An event that carried a sequence number is acknowledged with the
+        # highest sequence Rails has committed for this connection; the
+        # connector marks its outbox delivered only up to that (§5a). An
+        # obsolete lifecycle event is acknowledged with the reason it was
+        # skipped.
+        if result
+          render json: result.compact
+        else
+          head :no_content
+        end
       end
 
       private

@@ -360,6 +360,16 @@ test.describe('browser contracts', () => {
     await expect(page).toHaveURL(`/accounts/${switchedAccountId}/chats`);
     await page.locator('nav').getByTestId('nav-home-logo').click();
     await expect(page).toHaveURL(/\/$/);
+
+    // On a computer, resting the mouse on the account name lists the other accounts; no click needed.
+    await page.goto(`/accounts/${setup.empty_account_id}/chats`);
+    const switcher = page.getByTestId('nav-account-switcher-panel');
+    await expect(switcher).toBeHidden();
+    await page.locator('nav').getByTestId('nav-account-name').hover();
+    await expect(switcher).toBeVisible();
+    await switcher.getByRole('link', { name: `E2E ${setup.run_id} Team` }).click();
+    await expect(page).toHaveURL(`/accounts/${switchedAccountId}/chats`);
+    await expect(page.locator('nav').getByTestId('nav-account-name')).toHaveText(`E2E ${setup.run_id} Team`);
   });
 
   test('user can commit a new resident without an inline promotion step', async ({ page }) => {
@@ -509,6 +519,17 @@ test.describe('browser contracts', () => {
       await expect(page.getByRole('heading', { name: control, exact: true })).toBeVisible();
       currentModel = label;
     }
+
+    await page.getByRole('button', { name: currentModel, exact: true }).click();
+    const filter = page.getByRole('combobox', { name: 'Find a model' });
+    await expect(filter).toBeFocused();
+    await filter.fill('no such model anywhere');
+    await expect(page.getByTestId('model-filter-empty')).toBeVisible();
+    await filter.fill('anthropic opus 5.5');
+    await expect(page.getByRole('option').first()).toHaveText('Claude Opus 5.5');
+    await expect(page.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(0);
+    await filter.press('Enter');
+    await expect(page.getByRole('button', { name: 'Claude Opus 5.5', exact: true })).toBeVisible();
   });
 
   test('agent settings can be edited and saved', async ({ page, request }) => {

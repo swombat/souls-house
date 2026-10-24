@@ -33,6 +33,32 @@ class Api::App::V1::ReadApiTest < ActionDispatch::IntegrationTest
 
   # --- conversations ---------------------------------------------------------
 
+  test "a discarded parent hides native history changes and attachments until restored" do
+    message = @chat.messages.create!(role: "user", user: @user, content: "Retained native content")
+    message.attachments.attach(io: StringIO.new("Retained bytes"), filename: "note.txt", content_type: "text/plain")
+    attachment = message.attachments_attachments.sole
+    base = "/api/app/v1/conversations/#{@chat.to_param}"
+    paths = [
+      "#{base}/messages",
+      "#{base}/changes?since=0",
+      "#{base}/messages/#{message.to_param}/attachments/#{attachment.id}"
+    ]
+    @chat.discard!
+
+    paths.each do |path|
+      get path, headers: bearer(@tokens)
+      assert_response :not_found
+      refute_includes response.body, "Retained native content"
+    end
+
+    @chat.undiscard!
+    get paths.first, headers: bearer(@tokens)
+    assert_response :success
+    assert_includes response.body, "Retained native content"
+    get paths.last, headers: bearer(@tokens)
+    assert_response :redirect
+  end
+
   test "conversations lists kept chats regardless of title, active before archived" do
     archived = @account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Old")
     archived.update!(archived_at: Time.current)

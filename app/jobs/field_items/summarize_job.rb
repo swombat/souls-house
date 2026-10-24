@@ -12,15 +12,20 @@ module FieldItems
 
     def perform(item, inference: UtilityInference)
       return unless FieldSummaries.enabled?
-      return unless item.claim_summary!
+      claim = item.claim_summary!
+      return unless claim
 
+      write_summary(item, claim:, inference:)
+    end
+
+    def write_summary(item, claim:, inference: UtilityInference)
       summary = begin
         FieldSummaries.summarize(item, inference:)
       rescue UtilityInference::Error
-        item.release_summary_claim!
+        item.release_summary_claim!(claim:)
         return
       end
-      item.store_summary!(**summary)
+      item.store_summary!(**summary, claim:)
     end
 
   end

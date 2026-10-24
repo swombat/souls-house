@@ -24,13 +24,16 @@ class DeviceStreamsControllerTest < ActionDispatch::IntegrationTest
   test "browser controls expose revoke erase and one-time credential" do
     get account_device_stream_path(@account, @stream.stream_key)
     assert_response :success
-    assert_select "h2", text: "Delete all and close"
-    assert_no_match(/permanent/i, response.body)
-    assert_match(/samples stay stored/, response.body)
-    post credential_account_device_stream_path(@account, @stream.stream_key)
+    assert_equal "device_streams/show", inertia_component
+    assert_equal credential_account_device_stream_path(@account, @stream.stream_key), inertia_shared_props.dig("urls", "credential")
+    assert_no_match(/permanent/i, File.read(Rails.root.join("app/frontend/pages/device_streams/show.svelte")))
+    assert_match(/samples stay stored/, File.read(Rails.root.join("app/frontend/pages/device_streams/show.svelte")))
+    post credential_account_device_stream_path(@account, @stream.stream_key), headers: { "Accept" => "application/json" }
     assert_response :success
     assert_equal "no-store", response.headers["Cache-Control"]
-    assert_match(/shd_[0-9a-f]{64}/, response.body)
+    assert_equal "application/json", response.media_type
+    assert_match(/\Ashd_[0-9a-f]{64}\z/, response.parsed_body["token"])
+    assert_equal "http://www.example.com/api/v1/streams/#{@stream.stream_key}/samples", response.parsed_body["endpoint"]
     credential = @stream.device_stream_credentials.last
     get account_device_stream_path(@account, @stream.stream_key)
     assert_no_match(/shd_[0-9a-f]{64}/, response.body)
@@ -66,10 +69,10 @@ class DeviceStreamsControllerTest < ActionDispatch::IntegrationTest
     other = DeviceStream.create!(account: accounts(:personal_account), subject_user: @subject, name: "Other account stream")
     get account_device_streams_path(@account)
     assert_response :success
-    assert_select "h1", text: "Device streams — #{@account.name}"
-    assert_select "select[name=account_id]", count: 0
-    assert_select "form[action=?]", account_device_streams_path(@account)
-    assert_select "a[href=?]", account_device_stream_path(@account, @stream.stream_key)
+    assert_equal "device_streams/index", inertia_component
+    assert_equal @account.to_param, inertia_shared_props.dig("account", "id")
+    assert_equal account_device_streams_path(@account), inertia_shared_props["create_url"]
+    assert_equal [ account_device_stream_path(@account, @stream.stream_key) ], inertia_shared_props["streams"].map { |stream| stream["url"] }
     assert_no_match other.name, response.body
     post account_device_streams_path(@account), params: { name: "From index" }
     assert_response :redirect
@@ -87,13 +90,39 @@ class DeviceStreamsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @stream.reload.erased_at
   end
 
+  test "reader controls leave out a retired resident unless it already reads" do
+    retired = agents(:other_account_agent)
+    retired.update!(active: false)
+
+    get account_device_stream_path(@account, @stream.stream_key)
+    assert_not_includes inertia_shared_props["agents"].map { |agent| agent["id"] }, retired.to_param
+
+    @stream.update!(reader_agent_ids: [ retired.id ])
+    @inertia_props = nil
+    get account_device_stream_path(@account, @stream.stream_key)
+    assert_includes inertia_shared_props["agents"].map { |agent| agent["id"] }, retired.to_param
+  end
+
   test "reader controls show only residents of the stream account" do
     get account_device_stream_path(@account, @stream.stream_key)
-    assert_select "input[name=?][value=?]", "reader_agent_ids[]", agents(:other_account_agent).to_param
-    assert_select "input[name=?][value=?]", "reader_agent_ids[]", agents(:research_assistant).to_param, count: 0
+    agent_ids = inertia_shared_props["agents"].map { |agent| agent["id"] }
+    assert_includes agent_ids, agents(:other_account_agent).to_param
+    assert_not_includes agent_ids, agents(:research_assistant).to_param
     patch account_device_stream_path(@account, @stream.stream_key),
       params: { enabled: "1", reader_agent_ids: [ agents(:research_assistant).to_param ] }
     assert_response :unprocessable_entity
+    assert_empty @stream.reload.reader_agent_ids
+  end
+
+  test "inertia rejection redirects back with the reason as a flash alert" do
+    path = account_device_stream_path(@account, @stream.stream_key)
+    patch path,
+      params: { enabled: "1", reader_agent_ids: [ agents(:research_assistant).to_param ] },
+      headers: { "X-Inertia" => "true", "Referer" => "http://www.example.com#{path}" },
+      as: :json
+    assert_response :see_other
+    assert_redirected_to path
+    assert_equal "Readers must belong to this account", flash[:alert]
     assert_empty @stream.reload.reader_agent_ids
   end
 
@@ -107,12 +136,14 @@ class DeviceStreamsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     get device_streams_path
     assert_response :success
-    assert_select "a[href=?]", device_stream_path(@stream.stream_key)
-    assert_select "form", count: 0
+    assert_equal [ device_stream_path(@stream.stream_key) ], inertia_shared_props["streams"].map { |stream| stream["url"] }
+    assert_nil inertia_shared_props["create_url"]
     get device_stream_path(@stream.stream_key)
     assert_response :success
-    assert_select "input[name=?]", "reader_agent_ids[]", count: 0
-    assert_select "form[action*=?]", "/credential", count: 0
+    @inertia_props = nil
+    assert_equal false, inertia_shared_props["can_configure"]
+    assert_empty inertia_shared_props["agents"]
+    assert_nil inertia_shared_props.dig("urls", "credential")
     assert_no_match agents(:other_account_agent).name, response.body
     delete revoke_device_stream_path(@stream.stream_key), params: { credential_id: credential.to_param }
     assert credential.reload.revoked_at

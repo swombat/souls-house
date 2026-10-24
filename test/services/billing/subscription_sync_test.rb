@@ -15,21 +15,21 @@ class Billing::SubscriptionSyncTest < ActiveSupport::TestCase
 
   test "records the subscription from Stripe's current copy and activates the resident" do
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1",
-      price: FakeStripe::Helpers::STUDIO_PRICE, status: "active", period_end: Time.zone.parse("2026-11-11"))
+      price: FakeStripe::Helpers::LIFE_PRICE, status: "active", period_end: Time.zone.parse("2026-11-11"))
 
     subscription = sync("sub_1")
 
-    assert_equal "studio", subscription.tier
+    assert_equal "life", subscription.tier
     assert_equal "active", subscription.stripe_status
     assert_equal Time.zone.parse("2026-11-11"), subscription.current_period_end
     entitlement = ResidentEntitlement.find_by!(agent: @agent)
     assert entitlement.active?
-    assert_equal "studio", entitlement.tier
+    assert_equal "life", entitlement.tier
   end
 
   test "out-of-order and duplicate events converge on Stripe's current state" do
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1",
-      price: FakeStripe::Helpers::STARTER_PRICE, status: "past_due")
+      price: FakeStripe::Helpers::CONVERSATION_PRICE, status: "past_due")
     # An older 'active' event processed after the 'past_due' one still reads past_due.
     sync("sub_1")
     sync("sub_1")
@@ -41,7 +41,7 @@ class Billing::SubscriptionSyncTest < ActiveSupport::TestCase
 
   test "refuses a subscription that belongs to another customer" do
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_someone_else",
-      price: FakeStripe::Helpers::STARTER_PRICE, status: "active")
+      price: FakeStripe::Helpers::CONVERSATION_PRICE, status: "active")
 
     assert_raises(Billing::InvalidSubscription) { sync("sub_1") }
     assert_not ResidentSubscription.exists?(stripe_subscription_id: "sub_1")

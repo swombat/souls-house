@@ -26,7 +26,53 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_equal life.to_param, inertia_shared_props["resident_room_id"]
 
     rows = inertia_shared_props.fetch("rooms")
-    assert_equal [ life.as_json.merge("conversation_count" => 2), work.as_json.merge("conversation_count" => 0) ], rows
+    assert_equal [ life.directory_json, work.directory_json ], rows
+    assert_equal({ life.to_param => 2 }, inertia_shared_props.fetch("room_counts"))
+  end
+
+  test "counts and resident preference refresh independently of room metadata" do
+    life = @account.rooms.create!(name: "Life")
+    work = @account.rooms.create!(name: "Work")
+    chat = @account.chats.create!(title: "In Life", model_id: "openrouter/auto", room: life)
+    @account.update!(resident_room: life)
+    get account_rooms_path(@account)
+    assert_response :success
+    version = inertia_props.fetch("version")
+    headers = {
+      "X-Inertia" => "true",
+      "X-Inertia-Version" => version,
+      "X-Inertia-Partial-Component" => "accounts/rooms",
+      "X-Inertia-Partial-Data" => "room_counts,main_count,resident_room_id"
+    }
+
+    chat.update!(room: work)
+    @account.update!(resident_room: work)
+    get account_rooms_path(@account), headers: headers
+    assert_response :success
+    props = response.parsed_body.fetch("props")
+    assert_equal({ work.to_param => 1 }, props.fetch("room_counts"))
+    assert_equal 0, props.fetch("main_count")
+    assert_equal work.to_param, props.fetch("resident_room_id")
+    assert_not props.key?("rooms")
+    assert_not props.key?("current_room")
+
+    chat.update!(room: nil)
+    get account_rooms_path(@account), headers: headers
+    assert_response :success
+    props = response.parsed_body.fetch("props")
+    assert_empty props.fetch("room_counts")
+    assert_equal 1, props.fetch("main_count")
+    assert_not props.key?("rooms")
+
+    work.update!(name: "Office")
+    get account_rooms_path(@account), headers: headers.merge("X-Inertia-Partial-Data" => "rooms,current_room")
+    assert_response :success
+    props = response.parsed_body.fetch("props")
+    assert_equal [ life.directory_json, work.directory_json ], props.fetch("rooms")
+    assert_equal "main", props.fetch("current_room")
+    assert_not props.key?("room_counts")
+    assert_not props.key?("main_count")
+    assert_not props.key?("resident_room_id")
   end
 
   test "create adds a room scoped to the account, requires a manager, and reports validation errors" do
@@ -63,6 +109,10 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_rooms_path(@account)
     assert_equal "Renamed", room.reload.name
 
+    patch account_room_path(@account, room), params: { room: { name: "Renamed", description: "home things" } }
+    assert_redirected_to account_rooms_path(@account)
+    assert_equal "home things", room.reload.description
+
     patch account_room_path(@account, room), params: { room: { name: "Main" } }
     follow_redirect!
     assert inertia_shared_props.fetch("errors").fetch("name").present?
@@ -77,6 +127,29 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     patch account_room_path(@account, room), params: { room: { name: "Nope" } }
     assert_response :not_found
     assert_equal "Renamed", room.reload.name
+  end
+
+  test "a manager renames and describes Main; members cannot; clashes are reported" do
+    @account.rooms.create!(name: "Life")
+
+    patch account_main_room_path(@account), params: { main_room: { name: "General", description: "builds go here" } }
+    assert_redirected_to account_rooms_path(@account)
+    @account.reload
+    assert_equal "General", @account.main_room_label
+    assert_equal "builds go here", @account.main_room_description
+    assert AuditLog.exists?(action: "update_main_room", account: @account)
+
+    patch account_main_room_path(@account), params: { main_room: { name: "life" } }
+    follow_redirect!
+    assert inertia_shared_props.fetch("errors").fetch("main_room_name").present?
+    assert_equal "General", @account.reload.main_room_label
+    assert_equal({ "id" => nil, "name" => "General", "description" => "builds go here" }, inertia_shared_props["main_room"])
+    assert_equal "General", inertia_shared_props["main_room_name"]
+
+    memberships(:team_member).update_columns(confirmed_at: nil)
+    patch account_main_room_path(@account), params: { main_room: { name: "Nope" } }
+    assert_response :not_found
+    assert_equal "General", @account.reload.main_room_label
   end
 
   test "reorder moves a room up or down among its siblings" do

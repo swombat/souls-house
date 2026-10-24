@@ -21,7 +21,9 @@
 # - delivered: a run of the recipient's that read the transcript included
 #   this message (the same cursor PendingWake#unseen_messages? reads). A run
 #   that started before the message and never re-read has not delivered it;
-# - blocked, with a reason: it will not be delivered by this request.
+# - blocked, with a reason: it will not be delivered by this request. A woken
+#   run refused as already running is not a reason: the request is knocked
+#   again (BUSY_RETRY) until it expires.
 #
 # Delivered wins: a request blocked or held whose message a later run reads
 # becomes delivered. Silence after delivered is the recipient's choice.
@@ -38,6 +40,11 @@ class MessageHandoff < ApplicationRecord
   # A request whose job never ran (a lost enqueue) is recorded, not retried,
   # as for a human's mention (MessageDispatch::EXPIRY, consultation BjAPDe).
   EXPIRY = 10.minutes
+  # A woken run the recipient's runtime refused as already running (its last
+  # turn not yet let go, e.g. still journalling after its reply) is not an
+  # answer: the request goes back to pending and knocks again after this,
+  # until EXPIRY gives up on it as not_started_in_time.
+  BUSY_RETRY = 1.minute
   LOOP_CAP_REASON = "loop_cap".freeze
   # The account set its cap to 0.
   HANDOFFS_OFF_REASON = "handoffs_off".freeze
@@ -87,8 +94,8 @@ class MessageHandoff < ApplicationRecord
 
     chat.lock!
     cap = chat.account.resident_handoff_cap
-    counted = since_last_human_message(chat)
-      .where("reason IS NULL OR reason NOT IN (?)", [ LOOP_CAP_REASON, HANDOFFS_OFF_REASON ]).count
+    # Stalled-thread sweeper wakes share this budget (StalledThreadWake).
+    counted = counted_since_last_human_message(chat) + StalledThreadWake.wakes_in_chain(chat).count
     capped = []
     handoffs = recipients.map do |recipient_id, source|
       handoff = new(message: message, chat: chat, requester_agent_id: message.agent_id,
@@ -106,6 +113,11 @@ class MessageHandoff < ApplicationRecord
     end
     announce_loop_cap!(chat, message, capped, cap) if capped.any?
     handoffs
+  end
+
+  # Handoffs since the last person's message that used the loop budget.
+  def self.counted_since_last_human_message(chat)
+    since_last_human_message(chat).where("reason IS NULL OR reason NOT IN (?)", [ LOOP_CAP_REASON, HANDOFFS_OFF_REASON ]).count
   end
 
   # Handoffs written since the room's last message from a person.
@@ -174,7 +186,7 @@ class MessageHandoff < ApplicationRecord
       next block!(reason) if reason
 
       begin
-        result = chat.trigger_agent_response!(recipient_agent)
+        result = chat.trigger_agent_response!(recipient_agent, wake_source_kinds: WakeProvenance.for(message: message))
         update!(status: "triggered", runtime_interaction: result.is_a?(AgentRuntimeInteraction) ? result : nil)
       rescue Chat::AlreadyResponding
         wake = PendingWake.queue!(chat: chat, agent: recipient_agent, requested_by: "#{requester_label}'s message", message: message)
@@ -201,7 +213,10 @@ class MessageHandoff < ApplicationRecord
       end
     when "triggered"
       run = runtime_interaction
-      block!(run.execution_state.presence ? "run_#{run.execution_state}" : "run_ended") if run&.finished_at
+      return unless run&.finished_at
+      return retry_after_busy! if run.execution_state == "busy"
+
+      block!(run.execution_state.presence ? "run_#{run.execution_state}" : "run_ended")
     end
   end
 
@@ -287,6 +302,12 @@ class MessageHandoff < ApplicationRecord
 
   def deliver!
     update!(status: "delivered", reason: nil, delivered_at: Time.current)
+  end
+
+  def retry_after_busy!
+    update!(status: "pending", runtime_interaction: nil)
+    handoff = self
+    ActiveRecord.after_all_transactions_commit { MessageHandoffJob.set(wait: BUSY_RETRY).perform_later(handoff) }
   end
 
   def block!(reason)

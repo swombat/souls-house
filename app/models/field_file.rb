@@ -12,6 +12,7 @@ class FieldFile < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldTaggable
+  include FieldActivityBroadcasting
 
   MAX_FILE_SIZE = 100.megabytes
   MAX_FILE_SIZE_LABEL = "100 MB"

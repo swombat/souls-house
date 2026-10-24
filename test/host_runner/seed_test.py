@@ -38,12 +38,18 @@ HOME = archive([("soul.md", b"# soul\n"), ("memory", None), ("memory/.keep", b""
 
 
 class VolumeDocker:
-    """docker volume create/inspect against a real temp directory."""
+    """docker volume create/inspect against real temp directories. With
+    volumes_root, each volume name gets its own directory, so a seed that
+    lands in the wrong volume is visible."""
 
-    def __init__(self, mountpoint, fail=()):
+    def __init__(self, mountpoint, fail=(), volumes_root=None):
         self.mountpoint = mountpoint
+        self.volumes_root = volumes_root
         self.calls = []
         self.fail = set(fail)
+
+    def path_for(self, name):
+        return os.path.join(self.volumes_root, name) if self.volumes_root else self.mountpoint
 
     def __call__(self, argv, timeout=120):
         self.calls.append(argv)
@@ -51,10 +57,10 @@ class VolumeDocker:
         if verb in self.fail:
             return False, "boom"
         if verb == "volume create":
-            os.makedirs(self.mountpoint, exist_ok=True)
+            os.makedirs(self.path_for(argv[-1]), exist_ok=True)
             return True, argv[-1]
         if verb == "volume inspect":
-            return True, self.mountpoint
+            return True, self.path_for(argv[-1])
         return False, f"unexpected {argv}"
 
 
@@ -103,6 +109,54 @@ class SeedHomeTest(unittest.TestCase):
             self.assertEqual(self.payload()["sha256"], handle.read().strip())
         self.assertFalse(os.path.exists(os.path.join(self.volume, runner.SEED_STAGING)))
         self.assertIn(["docker", "volume", "create", "agent-1-identity"], self.docker.calls)
+
+    def test_a_role_seeds_its_own_volume_under_the_same_rules(self):
+        result = self.run_seed(self.host(), self.payload(role="repo"))
+        self.assertEqual("done", result["outcome"], result)
+        self.assertIn(["docker", "volume", "create", "agent-1-repo"], self.docker.calls)
+        self.assertNotIn(["docker", "volume", "create", "agent-1-identity"], self.docker.calls)
+        other = archive([("README.md", b"# someone else\n")])
+        refused = self.run_seed(self.host(other), self.payload(other, role="repo"), cid="c" * 32)
+        self.assertEqual("refused", refused["outcome"])
+        self.assertIn("repo volume was seeded from a different archive", refused["error"])
+
+    def test_with_separate_volumes_a_failed_identity_seed_never_lets_another_role_into_identity(self):
+        # Mira's regression for #444: identity's fetch fails and leaves its
+        # volume empty; repo and work must still land in their own volumes.
+        volumes = os.path.join(self.tmp.name, "separate")
+        self.docker = VolumeDocker(None, volumes_root=volumes)
+        repo = archive([("README.md", b"repo\n")])
+        work = archive([("notes.md", b"work\n")])
+        failed = self.run_seed(self.host(ok=False), self.payload(role="identity"), cid="1" * 32)
+        self.assertEqual("failed", failed["outcome"])
+        self.assertEqual("done", self.run_seed(self.host(repo), self.payload(repo, role="repo"), cid="2" * 32)["outcome"])
+        self.assertEqual("done", self.run_seed(self.host(work), self.payload(work, role="work"), cid="3" * 32)["outcome"])
+        self.assertEqual([], os.listdir(os.path.join(volumes, "agent-1-identity")))
+        self.assertTrue(os.path.exists(os.path.join(volumes, "agent-1-repo", "README.md")))
+        self.assertTrue(os.path.exists(os.path.join(volumes, "agent-1-work", "notes.md")))
+        self.assertEqual("done", self.run_seed(self.host(), self.payload(role="identity"), cid="4" * 32)["outcome"])
+        self.assertTrue(os.path.exists(os.path.join(volumes, "agent-1-identity", "soul.md")))
+
+    def test_with_separate_volumes_identical_digests_seed_every_role_volume(self):
+        volumes = os.path.join(self.tmp.name, "same")
+        self.docker = VolumeDocker(None, volumes_root=volumes)
+        empty = archive([("keep", b"")])
+        for index, role in enumerate(runner.SEED_ROLES):
+            result = self.run_seed(self.host(empty), self.payload(empty, role=role), cid=str(index) * 32)
+            self.assertEqual("done", result["outcome"], role)
+            self.assertFalse(result["result"]["already"], role)
+            self.assertTrue(os.path.exists(os.path.join(volumes, f"agent-1-{role}", runner.SEED_MARKER)), role)
+
+    def test_the_runner_reports_that_it_seeds_each_role_into_its_own_volume(self):
+        facts = runner.collect_facts(server_id_reader=lambda: 1, command_runner=lambda argv: "27.0")
+        self.assertEqual(["identity", "repo", "work"], facts["seed_roles"])
+
+    def test_an_unknown_role_is_refused_before_any_volume_is_touched(self):
+        for role in ("chaos", "state", "../identity", 1, None):
+            result = self.run_seed(self.host(), self.payload(role=role), cid=hashlib.md5(repr(role).encode()).hexdigest())
+            self.assertEqual("refused", result["outcome"], role)
+        self.assertEqual([], self.docker.calls)
+        self.assertEqual([], self.served)
 
     def test_a_new_command_with_the_same_digest_after_a_lost_answer_is_done_without_fetching(self):
         self.run_seed(self.host(), self.payload())

@@ -34,6 +34,15 @@ class Api::V1::Field::FilesControllerTest < ActionDispatch::IntegrationTest
     assert_match(/attachment; filename=/, Base64.decode64(token))
   end
 
+  test "an older untracked file summary is unknown to residents" do
+    @human_file.update_columns(summary_short: "Old file", summary_long: "An older summary.", summarized_at: Time.current)
+    get api_v1_field_file_path(@human_file), headers: @headers
+    body = response.parsed_body["file"]
+    assert_equal "unknown", body["summary_freshness"]
+    assert_equal "An older summary.", body["summary_long"]
+    assert_not body.key?("summary_input_digest")
+  end
+
   test "a resident cannot reach another account's Field" do
     other = accounts(:another_team).field_files.create!(file: upload)
     get api_v1_field_file_path(other), headers: @headers

@@ -21,6 +21,8 @@ class TranscriptionGlossaryTerm < ApplicationRecord
   validate :within_scribe_limits
 
   before_validation :normalize
+  after_save :refresh_glossary, if: -> { (saved_changes.keys - [ "updated_at" ]).any? }
+  after_destroy :refresh_glossary
 
   scope :active, -> { where(suppressed_at: nil) }
   scope :suppressed, -> { where.not(suppressed_at: nil) }
@@ -55,6 +57,11 @@ class TranscriptionGlossaryTerm < ApplicationRecord
   end
 
   private
+
+  def refresh_glossary
+    # Capture both homes now: a later save/touch/destroy must not erase them.
+    GlossaryActivity.refresh!(destroyed? ? [ account_id ] : [ account_id, *Array(saved_change_to_account_id) ])
+  end
 
   def normalize
     self.term = self.class.clean(term)

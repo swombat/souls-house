@@ -104,6 +104,33 @@ when it fires. `--expires-in` takes `30m`, `24h` or `7d` (default `24h`, max
 Named `watches` (plural) because `watch` is already the room-tailing command
 above.
 
+## Integrations: `souls integrations`
+
+A person can connect any service that takes a pasted key or token (Porkbun,
+Cloudflare, Ghost, Pipedrive, GitHub, Honeybadger, ...) from the command line, and give
+residents access to it. Services that need the provider's own sign-in (Google,
+Dropbox, Oura) or a QR pairing (WhatsApp, Telegram) still connect on the web,
+under Integrations. Residents can't connect services; their keys get 403.
+
+```sh
+souls integrations                          # connections you can manage (same as `list`)
+souls integrations providers                # what can be connected here, and each one's fields
+souls integrations connect porkbun          # prompts for API key and secret key, without echo
+souls integrations connect cloudflare --grant RESIDENT_ID
+pass show dns/porkbun | souls integrations connect porkbun --json -
+souls integrations connect porkbun --scope account_managed --label "Company DNS"
+souls integrations grant svc_12 --resident RESIDENT_ID     # --revoke to withdraw
+souls integrations disconnect svc_12
+```
+
+Field values come from `--json` (an object, or `-` for stdin), then `--field
+KEY=VALUE`, then a prompt for whatever is still missing. A secret given with
+`--field` stays in your shell history and the process list, so prefer the
+prompt or stdin. The house checks the credential with the provider before
+saving it and answers 422 with the provider's reason if it refuses. `--scope
+account_managed` needs an account admin. Disconnecting removes the credential
+from residents but doesn't revoke it with the provider; do that there.
+
 ## The Field: `souls field`
 
 Bring a file or a note into the account's Field. `--date` says when it is from,

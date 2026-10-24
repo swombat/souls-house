@@ -9,39 +9,28 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
     management_scope = params.require(:management_scope)
     authorize_management_scope!(definition, management_scope)
-    result = definition.adapter.connection_attributes(
-      credentials: credential_params(definition).to_h,
-      user: Current.user
-    )
-    existing = current_account.service_connections.find_by(
-      provider: definition.key,
-      credential_fingerprint: result.fetch(:credential_fingerprint)
-    )
-    if existing
-      raise Services::AdapterError, "That credential is already connected as #{existing.display_label}"
-    end
-
-    connection = current_account.service_connections.new(
-      connected_by_user: Current.user,
-      provider: definition.key,
-      external_subject_id: result.fetch(:external_subject_id),
-      external_identity: result[:external_identity],
-      label: result[:label],
+    connection = ServiceConnection.connect_with_credentials!(
+      account: current_account,
+      user: Current.user,
+      definition: definition,
       management_scope: management_scope,
-      credential_kind: result.fetch(:credential_kind),
-      credential_fingerprint: result.fetch(:credential_fingerprint),
-      credential_metadata: result.fetch(:credential_metadata),
-      status: result.fetch(:status, "connected")
+      credentials: credential_params(definition)
     )
-    connection.credential_payload_hash = result.fetch(:credential_payload)
-    connection.save!
-    definition.adapter.start_pairing(connection) if definition.connection_method == "pairing"
 
     audit(:connect_service, connection,
           provider: connection.provider,
           management_scope: connection.management_scope,
           external_identity: connection.external_identity,
           authority_summary: connection.credential_metadata["authority_summary"])
+    # Telegram's sign-in and WhatsApp's pairing have their own focused
+    # pages (they are also on the Integrations card).
+    if connection.provider == "telegram" && connection.status == "pairing"
+      return redirect_to account_service_connection_login_path(current_account, connection.public_id)
+    end
+    if connection.provider == "whatsapp" && connection.status == "pairing"
+      return redirect_to link_account_service_connection_pairing_path(current_account, connection.public_id)
+    end
+
     redirect_to account_integrations_path(current_account),
                 notice: connection.status == "pairing" ? "Scan the pairing code to link #{definition.name}" : "#{definition.name} connected"
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, ArgumentError, ActiveRecord::RecordInvalid => e
@@ -57,6 +46,14 @@ class Accounts::ServiceConnectionsController < ApplicationController
     attributes = connection_params
     if attributes.key?(:freely_provisionable) && !@connection.owner?(Current.user)
       attributes.delete(:freely_provisionable)
+    end
+    # Searching a Telegram account beyond its synced dialogs is the owner's
+    # choice alone (proposal 2026-10-11 §7).
+    search_all = attributes.delete(:search_all_dialogs)
+    if !search_all.nil? && @connection.provider == "telegram" && @connection.owner?(Current.user)
+      attributes[:credential_metadata] = @connection.credential_metadata.to_h.merge(
+        "search_all_dialogs" => ActiveModel::Type::Boolean.new.cast(search_all) == true
+      )
     end
     @connection.update!(attributes)
     audit(:update_service_connection, @connection,
@@ -87,7 +84,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
   end
 
   def connection_params
-    params.require(:service_connection).permit(:label, :enabled_for_new_agents, :freely_provisionable)
+    params.require(:service_connection).permit(:label, :enabled_for_new_agents, :freely_provisionable, :search_all_dialogs)
   end
 
   # Each credentials provider declares its own fields; nothing else passes.

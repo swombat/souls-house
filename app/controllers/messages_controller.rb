@@ -107,16 +107,17 @@ class MessagesController < ApplicationController
   private
 
   def set_chat
-    @chat = current_account.chats.find(params[:chat_id])
+    @chat = current_account.chats.kept.find(params[:chat_id])
   end
 
   def set_message
     # Only delete may find an already-discarded message, so a repeat is a no-op.
     @message = (action_name == "destroy" ? Message : Message.kept).find(params[:id])
+    chats = action_name == "destroy" ? Chat.all : Chat.kept
     @chat = if Current.user.site_admin
-      Chat.find(@message.chat_id)
+      chats.find(@message.chat_id)
     else
-      Chat.where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
+      chats.where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
     end
   end
 

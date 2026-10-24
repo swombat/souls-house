@@ -25,6 +25,24 @@ for (const role of ['primary_user', 'secondary_user']) {
       await expect(page.getByRole('heading', { name: 'Your integrations', exact: true })).toBeVisible();
       const shared = page.getByRole('article').filter({ hasText: 'Team files' });
       await expect(shared).toBeVisible();
+      // Connected integrations come before the picker, each one a compact row
+      // that says who has access; the switches open underneath it.
+      const existingTop = (await page.getByRole('heading', { name: 'Your integrations', exact: true }).boundingBox()).y;
+      const pickerTop = (
+        await page.getByRole('heading', { name: 'Connect a new integration', exact: true }).boundingBox()
+      ).y;
+      expect(existingTop).toBeLessThan(pickerTop);
+      await expect(shared.getByTestId('connection-access-summary')).toBeVisible();
+      await expect(shared.getByRole('switch')).toHaveCount(0);
+      const toggle = shared.getByRole('button', { name: 'Show details for Team files', exact: true });
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await toggle.click();
+      await expect(shared.getByRole('button', { name: 'Hide details for Team files', exact: true })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+      await expect(shared.getByRole('heading', { name: 'Resident access' })).toBeVisible();
+      expect(await shared.getByRole('switch').count()).toBeGreaterThan(0);
       if (role === 'secondary_user') {
         await expect(shared.getByText('Managed by account admins')).toBeVisible();
         await expect(shared.getByRole('button', { name: 'Disconnect' })).toHaveCount(0);
@@ -43,6 +61,10 @@ for (const role of ['primary_user', 'secondary_user']) {
       await page.screenshot({ path: testInfo.outputPath(`${role}-desktop.png`), fullPage: true });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.screenshot({ path: testInfo.outputPath(`${role}-mobile.png`), fullPage: true });
+      // Collapsed, a row is short enough that a phone shows several at once.
+      await page.getByRole('button', { name: 'Hide details for Team files', exact: true }).click();
+      expect((await shared.boundingBox()).height).toBeLessThan(140);
+      await page.screenshot({ path: testInfo.outputPath(`${role}-mobile-collapsed.png`), fullPage: true });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       for (const legacy of ['personal_services', 'services']) {
         await page.goto(`${base}/${legacy}?connect=github`);

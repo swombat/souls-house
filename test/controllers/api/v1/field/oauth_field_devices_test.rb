@@ -46,6 +46,8 @@ class Api::V1::Field::OauthFieldDevicesTest < ActionDispatch::IntegrationTest
       patch api_v1_field_recording_speaker_path(@recording, @speaker), params: { name: "Priya" }, headers: @headers, as: :json
       assert_response :success
       assert_equal @team, @speaker.reload.field_voice.account, "the new voice belongs to the recording's account"
+      assert_equal "human", @speaker.naming_source, "a person in the native app is a person's decision"
+      assert @speaker.training_label?
 
       patch api_v1_field_file_path(@file), params: { note: "From my agent" }, headers: @headers, as: :json
       assert_response :success
@@ -79,6 +81,7 @@ class Api::V1::Field::OauthFieldDevicesTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert @team.field_recordings.exists?(title: "Standup")
 
+    [ @team, @personal ].each { |account| account.update!(recognise_voices: false) } # on by default
     patch recognition_api_v1_field_voices_path(account_id: @team.to_param), params: { recognise_voices: true },
       headers: @headers, as: :json
     assert_response :success

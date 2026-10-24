@@ -82,6 +82,7 @@ class FieldSwarm
     "recording" => "field_recordings.title",
     "file" => "concat_ws(' ', field_files.title, field_files.indexed_filename)",
     "tweet" => "field_tweets.author_handle",
+    "song" => "concat_ws(' ', field_songs.title, field_songs.artist)",
     "note" => "whiteboards.name"
   }.freeze
 
@@ -105,6 +106,7 @@ class FieldSwarm
     "recording" => %w[note notes transcript_text],
     "file" => %w[note extracted_text],
     "tweet" => %w[text],
+    "song" => %w[note lyrics],
     "note" => %w[summary content]
   }.freeze
   SEPARATOR = "\n\n"
@@ -164,7 +166,7 @@ class FieldSwarm
   end
 
   def call
-    raise Disabled, "Field swarm search is not enabled for this account" unless @account.field_swarm_enabled?
+    raise Disabled, "Field swarm search is not enabled for this account" unless @account.field_swarm_allowed?
 
     started = monotonic
     search = admit!
@@ -271,6 +273,10 @@ class FieldSwarm
     @account.with_lock do
       if FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_day).count >= MAX_SEARCHES_PER_ACCOUNT_PER_DAY
         raise LimitReached, "This account has used its #{MAX_SEARCHES_PER_ACCOUNT_PER_DAY} swarm searches for today (UTC)"
+      end
+      if (monthly = @account.field_swarm_monthly_limit) &&
+          FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_month).count >= monthly
+        raise LimitReached, "This account has used its plan's #{monthly} swarm searches for this month (UTC)"
       end
 
       FieldSwarmSearch.create!(account: @account, agent: @agent, user: @user, tags: @tags, grep: @grep,

@@ -24,12 +24,6 @@ module Api
             role: "assistant",
             agent: current_api_agent
           )
-        else
-          chat.messages.build(
-            content: params[:content],
-            role: "user",
-            user: current_api_user
-          )
         end
         if current_api_agent
           message.handoff_recipient_ids = handoff_recipient_ids(chat)
@@ -37,16 +31,18 @@ module Api
         elsif params.key?(:recipient_agent_ids)
           return render json: { errors: [ "recipient_agent_ids is for residents' posts; a person's @mention wakes a resident" ] }, status: :unprocessable_entity
         end
-        message.attachments.attach(params[:files]) if params[:files].present?
+        message.attachments.attach(params[:files]) if current_api_agent && params[:files].present?
+        stone_revisions = []
         if params.key?(:stone_revision_ids)
           ids = params[:stone_revision_ids]
           unless ids.is_a?(Array) && ids.length <= 10 && ids.all? { |id| id.is_a?(String) }
             return render json: { errors: [ "stone_revision_ids must be an array of at most 10 IDs" ] }, status: :unprocessable_entity
           end
-          message.stone_revisions = ids.uniq.map do |id|
+          stone_revisions = ids.uniq.map do |id|
             StoneRevision.joins(:stone).where(stones: { chat_id: chat.id, withdrawn_at: nil }).find(id)
           end
         end
+        message.stone_revisions = stone_revisions if current_api_agent
         if params[:runtime_run_id].present?
           return head :forbidden unless current_api_agent
           interaction = chat.agent_runtime_interactions.find_by!(
@@ -57,7 +53,8 @@ module Api
           message.runtime_interaction = interaction
         end
 
-        if message.content.blank? && !message.attachments.attached?
+        content = current_api_agent ? message.content : params[:content]
+        if content.blank? && (current_api_agent ? !message.attachments.attached? : params[:files].blank?)
           return render json: { errors: [ "Content or at least one file is required" ] }, status: :unprocessable_entity
         end
 
@@ -66,21 +63,36 @@ module Api
           current_api_user.confirmed_accounts.find(chat.account_id)
           ConversationDraft.for(chat: chat, user: current_api_user)
         end
-        saved = if draft
-          draft.send_message!(message, revision: params[:draft_revision])
-        else
+        saved = if current_api_agent
           SafeguardConversationPost.save(message)
+        else
+          result = Messages::PostFromHuman.new(
+            chat: chat, user: current_api_user, content: content,
+            files: params[:files], stone_revisions: stone_revisions,
+            draft: draft, draft_revision: params[:draft_revision]
+          ).call
+          message = result.message
+          if result.dispatch_unavailable?
+            return render json: {
+              errors: [ "Residents cannot be woken right now; the message was not sent" ],
+              retryable: true
+            }, status: :service_unavailable
+          end
+          result.created?
         end
         unless saved
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
 
-        render json: {
+        body = {
           message: message.as_json,
           draft: draft&.as_json,
           ai_response_triggered: !!message.single_resident_response_triggered,
-          handoffs: current_api_agent ? message.handoff_receipts : []
-        }, status: :created
+          handoffs: current_api_agent ? message.handoff_receipts : Messages::HumanMentionReceipts.new(message, sole_resident: result.sole_resident).call
+        }
+        # A resident's own reflexes, judged after the post committed (docs/reflexes.md).
+        body[:reflexes] = ReflexCheck.after_post(message).map(&:as_json) if current_api_agent
+        render json: body, status: :created
       rescue ConversationDraft::Conflict => error
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
       end

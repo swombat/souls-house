@@ -606,6 +606,17 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
   # Auto-trigger mentioned agents tests
 
+  test "a web human mention dispatches only the lowest-ID namesake" do
+    first = @account.agents.create!(name: "Namesake", system_prompt: "Test", runtime: "external")
+    second = @account.agents.create!(name: "namesake", system_prompt: "Test", runtime: "external")
+    chat = @account.chats.create!(manual_responses: true, agents: [ second, first ])
+
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
+      post account_chat_messages_path(@account, chat), params: { message: { content: "@NAMESAKE hello" } }
+    end
+    assert_equal [ first.id ], chat.messages.last.message_dispatch.target_agent_ids
+  end
+
   test "should auto-trigger mentioned agents in group chat" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)

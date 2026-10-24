@@ -33,14 +33,26 @@ def command(home, *args):
     return result.stdout
 
 
+def offers_migrate(home, run):
+    return any(line.split()[:1] == ["migrate"] for line in run(home, "--help").splitlines())
+
+
 def prepare(home, run=command):
     home = Path(home).resolve()
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
     # Explicit migration is retryable; never recreate legacy TOML after cleanup.
-    run(home, "migrate", "--dry-run")
-    run(home, "migrate")
+    # Chaos removed `config migrate` with its TOML layers (seuros/chaos#110);
+    # only binaries that still offer it have legacy files left to import.
+    if offers_migrate(home, run):
+        run(home, "migrate", "--dry-run")
+        run(home, "migrate")
     bootstrap = home / "config.toml"
-    settings = tomllib.loads(bootstrap.read_text()) if bootstrap.exists() else {}
+    try:
+        settings = tomllib.loads(bootstrap.read_text()) if bootstrap.exists() else {}
+    except tomllib.TOMLDecodeError:
+        # Never overwrite a bootstrap file we cannot read; an operator must look.
+        raise RuntimeError("Chaos bootstrap config is unreadable; settings are not ready; "
+                           "inspect privately before retrying") from None
     if not settings.get("storage_url"):
         destination = ("env:CHAOS_STORAGE_URL" if os.environ.get("CHAOS_STORAGE_URL") else
                        (home / "chaos.sqlite").as_uri().replace("file:", "sqlite:", 1))

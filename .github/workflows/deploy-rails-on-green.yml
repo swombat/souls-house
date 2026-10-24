@@ -9,8 +9,9 @@ run-name: Deploy Rails ${{ github.event.workflow_run.head_sha }}
 #
 # The request carries the commit CI tested. The host deploys master as it
 # clones it, and only if that clone is exactly the tested commit; otherwise it
-# reports "superseded" and deploys nothing, and the newer commit's own CI run
-# deploys it. Waiting in the deploy queue can't let an untested commit through.
+# reports "superseded", deploys nothing, and the GitHub job fails. The newer
+# commit's own CI run deploys it if that run is green. Waiting in the deploy
+# queue can't let an untested commit through.
 on:
   workflow_run:
     workflows: [CI]

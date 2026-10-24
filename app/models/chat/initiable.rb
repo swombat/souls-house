@@ -36,7 +36,7 @@ module Chat::Initiable
       end.tap do |chat|
         invited_agents.each_with_index do |invited_agent, index|
           delay = (index + 1).minutes
-          ManualAgentResponseJob.set(wait: delay).perform_later(chat, invited_agent)
+          ManualAgentResponseJob.set(wait: delay).perform_later(chat, invited_agent, wake_source_kinds: [ "peer" ])
         end
       end
     end

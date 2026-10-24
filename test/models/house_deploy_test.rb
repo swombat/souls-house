@@ -135,6 +135,35 @@ class HouseDeployTest < ActiveSupport::TestCase
     assert_equal({ 11 => "deployed", 12 => "superseded", 13 => "not_deployed" }, outcomes)
   end
 
+  test "a superseded automatic run is red in Actions (#313) and still named superseded" do
+    run = ->(id) {
+      { "id" => id, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "completed",
+        "conclusion" => "failure", "display_title" => "Deploy Rails #{"b" * 40}", "created_at" => "2026-10-08T07:0#{id}:00Z" }
+    }
+    steps = {
+      14 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "failure" },
+              { "name" => "Deployment verified", "conclusion" => "skipped" },
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "success" } ],
+      15 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "failure" },
+              { "name" => "Deployment verified", "conclusion" => "skipped" },
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "skipped" } ]
+    }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      if (id = path[%r{/runs/(\d+)/attempts/1/jobs}, 1])
+        [ 200, {}, { "jobs" => [ { "name" => "deploy / deploy", "steps" => steps.fetch(id.to_i) } ] } ]
+      elsif path.include?("deploy-rails-on-green.yml/runs")
+        [ 200, {}, { "workflow_runs" => [ run.(14), run.(15) ] } ]
+      else
+        [ 200, {}, { "workflow_runs" => [] } ]
+      end
+    }
+
+    outcomes = HouseDeploy.status[:runs].to_h { |r| [ r[:id], r[:outcome] ] }
+
+    # 15 is a real failure: no outcome, its conclusion speaks.
+    assert_equal({ 14 => "superseded", 15 => nil }, outcomes)
+  end
+
   test "a rerun's outcome comes from its own attempt, not the cached first attempt" do
     original_cache = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new

@@ -5,8 +5,11 @@
   import { Plus, Waves } from 'phosphor-svelte';
   import RhythmCard from '$lib/components/rhythms/RhythmCard.svelte';
   import { newRhythmPath } from '$lib/rhythms';
+  import { createDynamicSync } from '$lib/use-sync';
 
   let { account, rhythms = [] } = $props();
+  const updateSync = createDynamicSync();
+  $effect(() => updateSync({ [`RhythmActivity:${account.id}`]: ['rhythms'] }));
 
   const newRhythm = () => router.visit(newRhythmPath(account.id));
 </script>

@@ -106,19 +106,13 @@ class ChatsController < ApplicationController
   end
 
   def update
-    @chat = current_account.chats.find(params[:id])
+    @chat = current_account.chats.kept.find(params[:id])
 
     if @chat.update(chat_params)
       redirect_to chat_view_path(@chat)
     else
       redirect_back_or_to chat_view_path(@chat), alert: @chat.errors.full_messages.to_sentence
     end
-  end
-
-  def destroy
-    audit("destroy_chat", @chat)
-    @chat.destroy!
-    redirect_to account_chats_path(current_account)
   end
 
   def search
@@ -169,8 +163,7 @@ class ChatsController < ApplicationController
   end
 
   def set_chat
-    # Use with_discarded to allow admins to find discarded chats for restore
-    @chat = current_account.chats.with_discarded.find(params[:id])
+    @chat = current_account.chats.kept.find(params[:id])
   end
 
   def chat_params

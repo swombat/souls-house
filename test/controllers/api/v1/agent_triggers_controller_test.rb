@@ -45,6 +45,7 @@ module Api
         json = JSON.parse(response.body)
         assert_equal 1, json["triggered"].length
         assert_equal "Research Assistant", json["triggered"].first["name"]
+        assert_equal [ "human" ], @group_chat.agent_runtime_interactions.order(:id).last.wake_source_kinds
       end
 
       test "resident JSON request triggers only the named participant" do
@@ -54,7 +55,7 @@ module Api
           assert_difference -> { AgentRuntimeInteraction.count }, 1 do
             assert_enqueued_with(job: ManualAgentResponseJob, args: ->(args) { args.first(2) == [ @group_chat, @agent1 ] }) do
               post api_v1_conversation_agent_trigger_url(@group_chat),
-                   params: { agent_id: @agent1.to_param },
+                   params: { agent_id: @agent1.to_param, wake_source_kinds: [ "human" ] },
                    headers: { "Authorization" => "Bearer #{resident_token}" }, as: :json
             end
           end
@@ -62,6 +63,7 @@ module Api
         assert_response :success
         assert_equal [ { "id" => @agent1.to_param, "name" => @agent1.name } ], response.parsed_body["triggered"]
         assert_equal @agent1, @group_chat.agent_runtime_interactions.order(:id).last.agent
+        assert_equal [ "peer" ], @group_chat.agent_runtime_interactions.order(:id).last.wake_source_kinds
       end
 
       test "resident knock on a busy participant queues one wake, released when the run ends" do
@@ -101,7 +103,8 @@ module Api
       test "trigger all wakes the free participant and queues the busy one" do
         AgentRuntimeInteraction.reserve!(agent: @agent1, chat: @group_chat)
 
-        assert_enqueued_with(job: AllAgentsResponseJob, args: [ @group_chat, [ @agent2.id ] ]) do
+        assert_enqueued_with(job: AllAgentsResponseJob,
+          args: [ @group_chat, [ @agent2.id ], { wake_source_kinds: [ "human" ] } ]) do
           post api_v1_conversation_agent_trigger_url(@group_chat),
                headers: { "Authorization" => "Bearer #{@token}" }, as: :json
         end

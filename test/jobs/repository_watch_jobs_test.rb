@@ -35,6 +35,7 @@ class RepositoryWatchJobsTest < ActiveSupport::TestCase
     assert_nil house_lines.sole.agent_id
     assert_equal house_lines.sole, delivery.message
     assert_equal "queued", delivery.woken[@resident.id.to_s]
+    assert_equal [ "scheduled" ], PendingWake.open.find_by!(chat: @chat, agent: @resident).standing_source_kinds
     assert delivery.completed?
   end
 

@@ -6,6 +6,9 @@
 #   name: "Priya"          a new voice; if a voice of that name exists, the
 #                          page is asked "same Priya?" unless link_existing
 #   unname: true           back to "Speaker N"
+#   ignore: true           noise, not a person: stops asking for a name
+#     ignore_as: "anonymous"   with ignore: a person who stays unnamed, not noise
+#   unignore: true         asks again
 #
 # with: [<speaker id>, ...] applies the naming (or unnaming) to other speakers
 # on this recording linked to the same voice as this one: the transcriber
@@ -19,11 +22,18 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
+      :ignore, :ignore_as, :unignore,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
-      recognition: %i[voice_id print_generation decision_generation], with: [])
+      recognition: %i[voice_id print_generation decision_generation cohort], with: [])
     companion_ids = decode_ids(attributes[:with])
 
-    if truthy?(attributes[:unname])
+    if truthy?(attributes[:ignore])
+      reason = ignore_reason(attributes)
+      return out_of_date("Choose noise or anonymous.") unless reason
+      return out_of_date(NAMED_MEANWHILE) unless @speaker.ignore!(by: Current.user, as: reason)
+    elsif truthy?(attributes[:unignore])
+      @speaker.unignore!
+    elsif truthy?(attributes[:unname])
       with_companions(companion_ids) do |companions|
         @speaker.unname!
         companions.each(&:unname!)
@@ -63,6 +73,7 @@ class FieldRecordingSpeakersController < ApplicationController
   end
 
   STALE_GROUP = "This person changed since the page loaded. Please look again."
+  NAMED_MEANWHILE = "This speaker was named since the page loaded. Please look again."
 
   def decode_ids(ids) = Array(ids).filter_map { |id| FieldRecordingSpeaker.decode_id(id.to_s) }
 
@@ -131,6 +142,12 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def match_json(voice)
     { voice_id: voice.to_param, name: voice.name, last_named_in: voice.last_named_in&.title }.to_json
+  end
+
+  # "noise" unless the request says otherwise; nil for a reason we don't know.
+  def ignore_reason(attributes)
+    reason = attributes[:ignore_as].presence || "noise"
+    reason if FieldRecordingSpeaker::IGNORED_AS.include?(reason)
   end
 
   def truthy?(value) = ActiveModel::Type::Boolean.new.cast(value) == true

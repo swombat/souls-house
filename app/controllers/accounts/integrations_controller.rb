@@ -24,8 +24,10 @@ class Accounts::IntegrationsController < ApplicationController
         tailnet_visible = tailnet_visible?(connection)
         json = connection.as_connection_json(current_user: Current.user).merge(
           can_delegate: connection.owner?(Current.user),
-          residents: agents.map do |agent|
+          residents: agents.filter_map do |agent|
             access = accesses[[ agent.id, connection.id ]]
+            next unless agent.offered_for_sharing?(granted: access&.enabled? || false)
+
             {
               id: agent.to_param,
               name: agent.name,

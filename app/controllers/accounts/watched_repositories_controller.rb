@@ -1,5 +1,5 @@
-# Connect or disconnect a repository for watches from the GitHub card on the
-# Integrations page. Same authority as Api::V1::RepositoriesController: only
+# Connect or disconnect a repository for watches, or switch its commit
+# badges, from the GitHub card on the Integrations page. Same authority as Api::V1::RepositoriesController: only
 # a member who can manage or provision the GitHub connection.
 class Accounts::WatchedRepositoriesController < ApplicationController
 
@@ -17,6 +17,22 @@ class Accounts::WatchedRepositoriesController < ApplicationController
     redirect_back fallback_location: account_integrations_path(current_account), notice: connected_notice(repository)
   rescue WatchedRepository::ConnectError => error
     redirect_back_or_to account_integrations_path(current_account), alert: error.message
+  end
+
+  # PATCH /accounts/:account_id/repositories/:id {commit_badges}
+  # Whether commits from this repository mentioned in chat carry a badge.
+  def update
+    repository = current_account.watched_repositories.live.find(params[:id])
+    unless repositories_manageable?(repository.service_connection)
+      redirect_back_or_to account_integrations_path(current_account), alert: "You cannot change this repository"
+      return
+    end
+
+    enabled = ActiveModel::Type::Boolean.new.cast(params[:commit_badges]) || false
+    repository.update!(commit_badges: enabled)
+    audit("repository.commit_badges", repository, full_name: repository.full_name, enabled: enabled)
+    redirect_back fallback_location: account_integrations_path(current_account),
+                  notice: "Commit badges #{enabled ? 'on' : 'off'} for #{repository.full_name}"
   end
 
   # DELETE /accounts/:account_id/repositories/:id

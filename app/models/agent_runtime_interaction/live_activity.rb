@@ -23,7 +23,8 @@ module AgentRuntimeInteraction::LiveActivity
 
     # A deadline (a message dispatch's expiry) caps the preparation window, so
     # a run reserved late cannot start later than its request allowed.
-    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil)
+    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil,
+      stalled_thread_sweep: nil, wake_source_kinds: [])
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
@@ -42,6 +43,8 @@ module AgentRuntimeInteraction::LiveActivity
             narration_shared: agent.share_working_narration?,
             response_chain_agent_ids: response_chain_agent_ids,
             follow_through_of: follow_through_of,
+            stalled_thread_sweep: stalled_thread_sweep,
+            wake_source_kinds: wake_source_kinds,
             enqueue_dispatch: enqueue
           )
         end
@@ -61,6 +64,7 @@ module AgentRuntimeInteraction::LiveActivity
   def claim_dispatch!
     return claim_released_wake! if released_pending_wake
     return claim_handoff! if message_handoffs.exists?
+    return claim_stalled_sweep! if stalled_thread_sweep_id
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
@@ -78,7 +82,10 @@ module AgentRuntimeInteraction::LiveActivity
     wake = released_pending_wake
     wake.with_lock do
       reason = wake.claim_refusal_reason
-      next claim_dispatch_unchecked! unless reason
+      unless reason
+        update!(wake_source_kinds: wake.standing_source_kinds) if dispatch_claimed_at.nil?
+        next claim_dispatch_unchecked!
+      end
 
       # A run already claimed (a duplicate delivery) is left alone.
       refused = with_lock do
@@ -110,6 +117,25 @@ module AgentRuntimeInteraction::LiveActivity
         true
       end
       handoffs.zip(reasons).each { |handoff, reason| handoff.refuse_claim!(reason) } if refused
+      false
+    end
+  end
+
+  # A run the stalled-thread sweeper woke starts only while every gate that
+  # allowed it still stands (StalledThreadWake.refusal_reason): waking and the
+  # sweep switched on, the account opted in, the resident seated, available
+  # and not paused. The agent row is locked for the check, so a pause either
+  # lands first and stops the run, or lands after the claim. Lock order:
+  # agent, then this interaction.
+  def claim_stalled_sweep!
+    agent.with_lock do
+      next claim_dispatch_unchecked! unless StalledThreadWake.refusal_reason(chat: chat, agent: agent)
+
+      with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+      end
       false
     end
   end
@@ -207,6 +233,8 @@ module AgentRuntimeInteraction::LiveActivity
       }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label },
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
+      server_time: Time.current.iso8601(3),
+      last_resident_post_at: (last_resident_post_at&.iso8601(3) if ongoing),
       last_report_at: latest&.last_report_at&.iso8601,
       reply_count: replies, reply_label: replies.positive? ? "#{replies} #{'reply'.pluralize(replies)} posted" : "No linked reply",
       detail_dropped: attempts.sum(&:dropped_count),

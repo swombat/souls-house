@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ghcr.io/swombat/souls-house-ci@sha256:b61d66ed73763418d053768ad9d628e0e0c93f17416f1210f5e814eb42494566
+      image: ghcr.io/swombat/souls-house-ci@sha256:d673b57ec1f1c04993918ee2bcae5be0883ba6571081f983c84d0db2fce993b4
       options: --ipc=host
     strategy:
       fail-fast: false
@@ -33,9 +33,11 @@ jobs:
           - { suite: components, shard: 1, total: 1 }
     services:
       postgres:
-        # Docker Official Image mirror: avoid Docker Hub's shared-runner
-        # anonymous pull quota. Pin the verified Linux/amd64 PG17 manifest.
-        image: public.ecr.aws/docker/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
+        # Docker Official Image via Google's Hub mirror: public ECR's
+        # anonymous data-limit has blocked shared-runner pulls
+        # (`toomanyrequests`) before any step, so a later docker login
+        # cannot help. Same verified Linux/amd64 PG17 manifest.
+        image: mirror.gcr.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -139,8 +141,9 @@ jobs:
       - name: Runtime and build contracts
         # Exercise the real synthetic HTTP protocol rather than skip it on CI.
         run: |
-          python3 -m pip install 'Flask==3.1.2' 'PyYAML==6.0.2'
+          python3 -m pip install 'Flask==3.1.2' 'PyYAML==6.0.2' 'numpy==2.5.4'
           python3 -m unittest discover -s test -p '*_test.py'
+          python3 -m unittest discover -s scripts/voice-calibration -p 'test_*.py'
       - name: CI contracts
         run: python3 -m unittest discover -s test/ci -p '*_test.py'
       - name: CLI contracts
@@ -156,6 +159,17 @@ jobs:
         run: |
           python3 -m pip install 'cryptography==46.0.3'
           python3 -m unittest discover -s test/host_runner -p '*_test.py'
+      - uses: actions/setup-python@v6
+        if: ${{ !cancelled() }}
+        with:
+          python-version: '3.13'
+      - name: Telegram connector (unit, replay, two-process lease)
+        if: ${{ !cancelled() }}
+        working-directory: services/telegram-connector
+        # requirements.txt pins the whole tree; --no-deps as in the Docker build.
+        run: |
+          python3 -m pip install --no-deps -r requirements.txt
+          python3 -m unittest discover -s tests -t . -p '*test*.py'
 
   result:
     name: CI result

@@ -53,11 +53,8 @@ class GithubIntegrationController < ApplicationController
       return
     end
 
-    repos = @integration.fetch_repos
-    repos_list = (repos || []).map { |r| { full_name: r["full_name"], private: r["private"] } }
-
     render inertia: "settings/github_select_repo", props: {
-      repos: repos_list,
+      repos: -> { (@integration.fetch_repos || []).map { |r| { full_name: r["full_name"], private: r["private"] } } },
       current_repo: @integration.repository_full_name
     }
   end

@@ -42,8 +42,10 @@ class FieldResummaryTest < ActiveJob::TestCase
 
   test "the new summary replaces the old one once written" do
     @recording.request_resummary!
-    assert @recording.claim_summary!
-    assert @recording.store_summary!(short: "Paulina and Dan", long: "Paulina tells Dan she wants to belong again.")
+    claim = @recording.claim_summary!
+    assert claim
+    assert @recording.store_summary!(short: "Paulina and Dan", long: "Paulina tells Dan she wants to belong again.",
+      input_digest: FieldSummaries.current_input_digest(@recording), claim:)
     @recording.reload
     assert_equal "Paulina tells Dan she wants to belong again.", @recording.summary_long
     assert_not @recording.summary_pending?

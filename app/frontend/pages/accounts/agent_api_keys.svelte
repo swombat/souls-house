@@ -10,9 +10,16 @@
   import { accountAgentApiKeysPath } from '@/routes';
   import AgentProviderSubscriptionPanel from '$lib/components/agents/AgentProviderSubscriptionPanel.svelte';
   import { siteName } from '$lib/branding';
+  import { createDynamicSync } from '$lib/use-sync';
 
   // Read as props, not once from $page.props, so a save re-renders the "Set" badges.
   let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, subscription_agents = [] } = $props();
+  const updateProviderSync = createDynamicSync();
+  $effect(() => {
+    updateProviderSync({
+      [`ProviderPresentation:${account.id}`]: ['subscription_agents', 'can_manage_ai_credentials'],
+    });
+  });
   const providerSections = [
     {
       title: 'OpenRouter',

@@ -13,6 +13,8 @@
   import SafeguardNoticeBand from '$lib/components/chat/SafeguardNoticeBand.svelte';
 
   import { Streamdown } from 'svelte-streamdown';
+  import CommitRef from '$lib/components/chat/CommitRef.svelte';
+  import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { siteName } from '$lib/branding';
 
@@ -45,6 +47,12 @@
 
 {#snippet expressionTag({ token })}
   <span class="expression-tag">{token.text}</span>
+{/snippet}
+
+{#snippet commitRefs({ token, streamdown })}
+  {#if token.type === 'commitRef'}
+    <CommitRef {token} theme={streamdown.theme} live={message.streaming !== true} />
+  {/if}
 {/snippet}
 
 <div class="space-y-1">
@@ -88,6 +96,8 @@
                 content={message.content}
                 parseIncompleteMarkdown={message.streaming === true}
                 inlineCitation={expressionTag}
+                extensions={commitRefExtensions}
+                children={commitRefs}
                 baseTheme="shadcn"
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
@@ -124,6 +134,10 @@
           <time class="text-muted-foreground/70" datetime={message.created_at}>· {formatTime(message.created_at)}</time
           ></span>
         <span>{message.content}</span>
+        {#if /^\/(?![\/\\])/.test(message.notice_link?.path ?? '')}
+          <a class="ml-1 underline hover:text-foreground" href={message.notice_link.path}
+            >{message.notice_link.label}</a>
+        {/if}
       </p>
     </div>
   {:else}
@@ -156,6 +170,7 @@
                   {/if}
                   <AssistantMessageSection
                     message={section}
+                    {accountId}
                     streamingThinking={sectionThinking[section.id] ||
                       (section.id === message.id ? streamingThinking : '')}
                     {isGroupChat}

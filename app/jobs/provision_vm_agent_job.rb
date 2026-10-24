@@ -193,13 +193,26 @@ class ProvisionVmAgentJob < ApplicationJob
     placement.update!(first_backup_command_id: command.id)
   end
 
+  # A birth is oriented. An archive import is not (docs/2026-10-10-vm-imports.md,
+  # "After seeding"): it arrives with its own home, and only now, after its
+  # first verified backup, does Activate's request take effect. Imported
+  # schedules stay off until someone turns them on.
   def finish!(agent)
     now = Time.current
-    agent.update!(runtime: "external", health_state: "healthy", consecutive_health_failures: 0,
+    attributes = { runtime: "external", health_state: "healthy", consecutive_health_failures: 0,
       runtime_ready_at: now, identity_seeded_at: agent.identity_seeded_at || now,
-      sandbox_last_error: nil, sandbox_last_error_at: nil)
-    OrientNewAgentJob.perform_later(agent.id)
+      sandbox_last_error: nil, sandbox_last_error_at: nil }
+    if archive_import?(agent)
+      # Direct columns, as the local activation does: no model-change orientation callbacks.
+      agent.update_columns(attributes.merge(active: true, paused: false, scheduled_wakes_enabled: false, updated_at: now))
+      HomeResidentRoster.refresh!([ agent.account_id ])
+    else
+      agent.update!(attributes)
+      OrientNewAgentJob.perform_later(agent.id)
+    end
   end
+
+  def archive_import?(agent) = Agents::RemoteRuntime.placement_for(agent)&.kind == "archive_import"
 
   # The birth stops here: no start, no orientation. The resident keeps its
   # record and says why; the server goes to cleanup, which keeps it counted
@@ -207,8 +220,14 @@ class ProvisionVmAgentJob < ApplicationJob
   def fail_birth!(agent, placement, reason)
     return if agent.nil?
 
-    agent.update!(health_state: "unhealthy", sandbox_last_error: "VM birth failed: #{reason}".first(1000),
-      sandbox_last_error_at: Time.current)
+    if archive_import?(agent)
+      # Still inactive and paused, its stage kept; Activate can be asked again.
+      agent.update!(runtime: "offline", health_state: "unhealthy",
+        sandbox_last_error: "Activation on its own server failed: #{reason}".first(1000), sandbox_last_error_at: Time.current)
+    else
+      agent.update!(health_state: "unhealthy", sandbox_last_error: "VM birth failed: #{reason}".first(1000),
+        sandbox_last_error_at: Time.current)
+    end
     return if placement.nil?
 
     placement.update!(state: "failed") unless %w[failed retired].include?(placement.state)

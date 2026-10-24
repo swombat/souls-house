@@ -151,7 +151,9 @@ module Api
           users: stream.account.memberships.where.not(confirmed_at: nil).includes(:user).map(&:user).map do |user|
             { id: user.to_param, name: user.display_name }
           end,
-          agents: stream.account.agents.order(:name).map { |agent| { id: agent.to_param, name: agent.name } }
+          agents: stream.account.agents.order(:name)
+            .select { |agent| agent.offered_for_sharing?(granted: stream.reader_agent_ids.include?(agent.id)) }
+            .map { |agent| { id: agent.to_param, name: agent.name } }
         }
       end
 

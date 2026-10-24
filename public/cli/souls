@@ -13,12 +13,14 @@ Credentials, first match wins:
     --token / --url flags
     SOULS_TOKEN / SOULS_URL
     SOULSHOUSE_BEARER_TOKEN / SOULSHOUSE_APP_URL   (set inside a resident runtime)
+    HELIXKIT_BEARER_TOKEN / HELIXKIT_APP_URL      (legacy aliases)
     ~/.config/souls/config.json, written by `souls login` (profile via --profile)
 
 Run `souls help` for the commands, `souls help <command>` for one of them.
 """
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import os
@@ -110,6 +112,9 @@ def resolve_credentials(args):
         elif os.environ.get("SOULSHOUSE_BEARER_TOKEN"):
             token, source = os.environ["SOULSHOUSE_BEARER_TOKEN"], "SOULSHOUSE_BEARER_TOKEN"
             url = url or os.environ.get("SOULSHOUSE_APP_URL")
+        elif os.environ.get("HELIXKIT_BEARER_TOKEN"):
+            token, source = os.environ["HELIXKIT_BEARER_TOKEN"], "HELIXKIT_BEARER_TOKEN"
+            url = url or os.environ.get("HELIXKIT_APP_URL")
     if not token:
         config = load_config()
         name = profile_name or config.get("default_profile") or "default"
@@ -131,6 +136,14 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _opener = urllib.request.build_opener(_StripAuthOnRedirect())
+
+
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_no_redirect_opener = urllib.request.build_opener(_RefuseRedirect())
 
 
 def encode_multipart(fields, files):
@@ -163,6 +176,7 @@ class Client:
         self.token = token
         self.account = account
         self.verbose = verbose
+        self.allow_redirects = True
 
     def origin(self, url):
         parts = urllib.parse.urlsplit(url)
@@ -205,7 +219,8 @@ class Client:
         if self.verbose:
             print(f"> {method.upper()} {url}", file=sys.stderr)
         try:
-            with _opener.open(req, timeout=self.timeout) as resp:
+            opener = _opener if self.allow_redirects else _no_redirect_opener
+            with opener.open(req, timeout=self.timeout) as resp:
                 body = resp.read()
                 status = resp.status
         except urllib.error.HTTPError as err:
@@ -587,6 +602,47 @@ def cmd_residents(client, args):
         emit(client.get("agents"))
 
 
+def cmd_who(client, args):
+    """Who can read here, and why. With a conversation id, that one
+    conversation; without, the whole account (--account for another)."""
+    if args.room:
+        data = client.get(f"conversations/{args.room}/who")
+        if args.json:
+            emit(data)
+            return
+        conv = data.get("conversation") or {}
+        print(f"# Who can read {conv.get('title') or '(untitled)'} ({conv.get('id')}) in {(data.get('account') or {}).get('name')}")
+        for reader in data.get("readers") or []:
+            extra = " · site admin" if reader.get("site_admin") else ""
+            if reader.get("closed_for_initiation"):
+                extra += " · won't start conversations here"
+            print(f"- {reader.get('name')} ({reader.get('kind', '?').replace('_', ' ')}): {reader.get('why')}{extra}")
+    else:
+        data = client.get("who")
+        if args.json:
+            emit(data)
+            return
+        print(f"# Who can read conversations in {(data.get('account') or {}).get('name')}")
+        print("\nPeople (members, including logins an agent drives):")
+        for person in data.get("people") or []:
+            extra = " · site admin" if person.get("site_admin") else ""
+            print(f"- {person.get('name')} ({person.get('role')}): {person.get('reads')}{extra}")
+        print("\nResidents:")
+        for resident in data.get("residents") or []:
+            kind = "guest resident" if resident.get("kind") == "guest_resident" else "resident"
+            paused = " · paused" if resident.get("paused") else ""
+            if resident.get("active") is False:
+                paused += " · inactive"
+            print(f"- {resident.get('name')} ({kind}): {resident.get('reads')} ({resident.get('seats', 0)} seats){paused}")
+        admins = data.get("site_admins") or []
+        if admins:
+            print("\nSite admins who are not members:")
+            for admin in admins:
+                print(f"- {admin.get('name')}: {admin.get('reads')}")
+    if data.get("not_covered"):
+        print(f"\n{data['not_covered']}")
+
+
 def cmd_field_upload(client, args):
     if not os.path.isfile(args.file):
         raise CliError(f"no such file: {args.file}", EXIT_USAGE)
@@ -648,6 +704,58 @@ def cmd_field_correct(client, args):
     print(f"{line.get('line', args.line):>4}  {speaker}{line.get('text', '')}")
 
 
+def resolve_speaker(lines, who):
+    """WHO as `souls field lines` shows it (a name, case-insensitive), a
+    speaker id, or "new". The ids come from the lines themselves: a resident
+    reading the recording sees names, not ids."""
+    if who.strip().lower() == "new":
+        return "new"
+    seen, said = {}, {}
+    for entry in lines:
+        if entry.get("speaker_id") and entry.get("speaker"):
+            seen.setdefault(entry["speaker_id"], entry["speaker"])
+            said.setdefault(entry["speaker_id"], []).append(entry["line"])
+    if who in seen:
+        return who
+    wanted = who.strip().casefold()
+    # A shared name doesn't prove a shared person: a voice named "Speaker 2"
+    # and an unnamed second speaker both read "Speaker 2", and /lines carries
+    # no identity to tell them apart. So a name that fits two ids is refused.
+    matches = [speaker_id for speaker_id, name in seen.items() if name.casefold() == wanted]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        options = "; ".join(f"{speaker_id} (lines {', '.join(map(str, said[speaker_id][:5]))})"
+                            for speaker_id in matches)
+        raise CliError(f"more than one speaker reads {who!r}: {options}. "
+                       f"Give the id of the one you mean", EXIT_USAGE)
+    names = sorted(set(seen.values()), key=str.casefold)
+    raise CliError(f"no one called {who!r} speaks in this recording; "
+                   f"choose one of: {', '.join(names) or '(nobody named)'}, or 'new'", EXIT_USAGE)
+
+
+def cmd_field_speaker(client, args):
+    data = client.get(f"field/recordings/{args.recording}/lines")
+    if args.revision is not None and args.revision != data["revision"]:
+        raise CliError(f"the transcript has changed since revision {args.revision} (it is now "
+                       f"{data['revision']}); read the lines again", EXIT_CONFLICT)
+    line = next((entry for entry in data["lines"] if entry["line"] == args.line), None)
+    if line is None:
+        raise CliError(f"recording {args.recording} has no line {args.line} (it has {len(data['lines'])})", EXIT_USAGE)
+    speaker = resolve_speaker(data["lines"], args.who)
+    was = line["text"] if args.was is None else args.was
+    revision = data["revision"] if args.revision is None else args.revision
+    data = client.patch(f"field/recordings/{args.recording}/lines/{args.line}",
+                        json_body={"speaker": speaker, "was": was, "revision": revision})
+    if args.json:
+        emit(data)
+        return
+    moved = data.get("line") or {}
+    name = f"{moved['speaker']}: " if moved.get("speaker") else ""
+    print(f"revision {data.get('revision')}")
+    print(f"{moved.get('line', args.line):>4}  {name}{moved.get('text', '')}")
+
+
 FIELD_DATE_TARGETS = {
     "recording": ("field/recordings", "recorded_at"),
     "file": ("field/files", "dated_at"),
@@ -666,6 +774,109 @@ def cmd_field_date(client, args):
         note = client.get(f"{path}/{args.id}").get("whiteboard") or {}
         body["lock_version"] = note.get("lock_version")
     emit(client.patch(f"{path}/{args.id}", json_body=body))
+
+
+def voice_resource_id(value):
+    """Public IDs are opaque strings, not numbers or paths."""
+    if not value.strip() or value in (".", ".."):
+        raise CliError("a nonblank public resource ID is required", EXIT_USAGE)
+    return urllib.parse.quote(value, safe="")
+
+
+def voice_client(client):
+    parts = urllib.parse.urlsplit(client.url)
+    if (parts.scheme not in ("http", "https") or not parts.hostname or
+            parts.username is not None or parts.password is not None or parts.query or parts.fragment):
+        raise CliError("house URL must be HTTP(S), without userinfo, query or fragment", EXIT_USAGE)
+    # Unlike general attachment downloads, these endpoints must serve their own
+    # audio. Refuse even same-origin redirects rather than replaying a mutation.
+    client.allow_redirects = False
+
+
+def cmd_field_voices(client, args):
+    voice_client(client)
+    path = "field/voices"
+    action = args.voice_action or "list"
+    if action == "list":
+        result = client.get(path)
+    elif action == "resolve":
+        # The server owns exact name normalization. Never create on a miss.
+        result = client.get(path + "/resolve", query=[("name", args.name)])
+    elif action == "create":
+        result = client.post(path, json_body={"name": args.name})
+    elif action == "rename":
+        result = client.patch(path + "/" + voice_resource_id(args.voice), json_body={"name": args.name})
+    else:
+        result = client.delete(path + "/" + voice_resource_id(args.voice))
+    emit(result)
+
+
+def sample_upload(client, args):
+    if not os.path.isfile(args.file):
+        raise CliError("audio file does not exist or is not a regular file", EXIT_USAGE)
+    for name in ("source_identifier", "source_session", "idempotency_key"):
+        if not getattr(args, name).strip():
+            raise CliError(f"--{name.replace('_', '-')} must not be blank", EXIT_USAGE)
+    digest = args.source_sha256
+    if args.source_file:
+        hasher = hashlib.sha256()
+        with open(args.source_file, "rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        original_digest = hasher.hexdigest()
+        if digest and digest.lower() != original_digest:
+            raise CliError("--source-sha256 does not match --source-file", EXIT_USAGE)
+        digest = original_digest
+    if not digest or len(digest) != 64 or any(c not in "0123456789abcdefABCDEF" for c in digest):
+        raise CliError("give the original file's --source-sha256 (64 hex digits), or --source-file to hash it",
+                       EXIT_USAGE)
+    if (args.start_ms is None) != (args.end_ms is None):
+        raise CliError("--start-ms and --end-ms must be given together", EXIT_USAGE)
+    if args.start_ms is not None and not (0 <= args.start_ms < args.end_ms):
+        raise CliError("require 0 <= --start-ms < --end-ms", EXIT_USAGE)
+    fields = [("source_identifier", args.source_identifier), ("source_sha256", digest.lower()),
+              ("source_session", args.source_session), ("idempotency_key", args.idempotency_key)]
+    fields += [(name, getattr(args, name)) for name in ("start_ms", "end_ms", "recorded_at", "recording_id")
+               if getattr(args, name) is not None]
+    path = f"field/voices/{voice_resource_id(args.voice)}/samples"
+    return client.post(path, fields=fields, files=[("audio", args.file)])
+
+
+def cmd_field_samples(client, args):
+    voice_client(client)
+    action = args.sample_action
+    if action == "list":
+        emit(client.get(f"field/voices/{voice_resource_id(args.voice)}/samples"))
+        return
+    if action == "upload":
+        emit(sample_upload(client, args))
+        return
+    path = f"field/samples/{voice_resource_id(args.sample)}"
+    if action == "inspect":
+        result = client.get(path)
+    elif action == "download":
+        # Require a destination so machine-readable stdout is never audio.
+        body = client.get(path + "/audio", query=[("digest", args.digest)], raw=True)
+        with open(args.output, "wb") as target:
+            target.write(body)
+        result = {"output": args.output, "bytes": len(body)}
+    elif action in ("accept", "reject"):
+        if action == "accept" and not args.listened:
+            raise CliError("accept requires --listened after you listen; new human confirmation requires "
+                           "a human OAuth app-token or browser, not a CLI API key", EXIT_USAGE)
+        try:
+            result = client.patch(path, json_body={"included": action == "accept", "digest": args.digest})
+        except CliError as err:
+            if action == "accept" and err.status in (401, 403):
+                raise CliError(f"{err}; confirmation requires a human OAuth app-token or the browser; "
+                               "--listened does not upgrade a CLI API key",
+                               err.code, body=err.body, status=err.status) from None
+            raise
+    elif action == "correct":
+        result = client.patch(path, json_body={"voice_id": args.voice, "digest": args.digest})
+    else:
+        result = client.delete(path, json_body={"digest": args.digest})
+    emit(result)
 
 
 def cmd_glossary(client, args):
@@ -809,7 +1020,109 @@ def cmd_watches_cancel(client, args):
     emit(client.delete(f"watches/{args.id}"))
 
 
+
+# ---------------------------------------------------------------- integrations
+
+
+def cmd_integrations(client, args):
+    emit(client.get("account/service_connections"))
+
+
+def cmd_integrations_providers(client, args):
+    emit(client.get("account/service_connections/providers"))
+
+
+def parse_field_args(pairs):
+    values = {}
+    for position, pair in enumerate(pairs or [], start=1):
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            # Never echo the argument: a secret pasted without KEY= would land in stderr.
+            raise CliError(f"--field #{position} isn't KEY=VALUE (not shown, in case it holds a secret)", EXIT_USAGE)
+        values[key.strip()] = value
+    return values
+
+
+def cmd_integrations_connect(client, args):
+    """souls integrations connect PROVIDER -> POST /api/v1/account/service_connections.
+
+    Values come from --json - (an object on stdin), then --field KEY=VALUE, then
+    a prompt for anything still missing (secrets without echo). Putting a secret
+    in --field leaves it in shell history and the process list, so prefer the
+    prompt or stdin. --grant RESIDENT_ID gives residents access afterwards."""
+    providers = client.get("account/service_connections/providers").get("providers", [])
+    provider = next((item for item in providers if item.get("key") == args.provider), None)
+    if provider is None:
+        known = ", ".join(item.get("key", "?") for item in providers) or "none"
+        raise CliError(f"{args.provider} can't be connected from the command line here (can: {known})", EXIT_USAGE)
+
+    values = {}
+    if args.json_input:
+        raw = sys.stdin.read() if args.json_input == "-" else args.json_input
+        try:
+            loaded = json.loads(raw)
+        except ValueError as err:
+            raise CliError(f"--json is not valid JSON: {err}", EXIT_USAGE)
+        if not isinstance(loaded, dict):
+            raise CliError("--json must be an object of field values", EXIT_USAGE)
+        values.update({str(k): str(v) for k, v in loaded.items()})
+    values.update(parse_field_args(args.field))
+
+    fields = provider.get("credential_fields", [])
+    allowed = {field["key"] for field in fields}
+    unknown = sorted(set(values) - allowed)
+    if unknown:
+        # Name only the provider's own fields: an unknown key may be a secret
+        # typed in the wrong place.
+        raise CliError(f"{len(unknown)} field name(s) aren't {args.provider}'s (not shown, in case they hold a secret); "
+                       f"its fields are: {', '.join(sorted(allowed)) or 'none'}", EXIT_USAGE)
+
+    missing = [field for field in fields if not values.get(field["key"])]
+    if missing and not args.json_input and sys.stdin.isatty():
+        import getpass
+        for field in missing:
+            if field.get("help"):
+                print(f"{field.get('label', field['key'])}: {field['help']}", file=sys.stderr)
+            prompt = f"{field.get('label', field['key'])}: "
+            values[field["key"]] = (getpass.getpass(prompt) if field.get("type") == "password" else input(prompt)).strip()
+        missing = [field for field in fields if not values.get(field["key"])]
+    if missing:
+        raise CliError("missing " + ", ".join(field["key"] for field in missing) +
+                       ": pass --json - with an object on stdin, or run in a terminal to be prompted", EXIT_USAGE)
+
+    body = {"provider": args.provider, "management_scope": args.scope, "credentials": values}
+    if args.label:
+        body["label"] = args.label
+    result = client.post("account/service_connections", json_body=body)
+    connection = result.get("service_connection", {})
+    grants = []
+    for resident in args.grant or []:
+        grants.append(client.patch(f"residents/{resident}/service_accesses/{connection.get('id')}",
+                                   json_body={"enabled": True}).get("service_connection"))
+    if grants:
+        result["granted"] = [{"resident_id": resident, "enabled": bool(grant and grant.get("enabled"))}
+                             for resident, grant in zip(args.grant, grants)]
+    emit(result)
+
+
+def cmd_integrations_grant(client, args):
+    """souls integrations grant CONNECTION_ID --resident ID [--revoke]
+    -> PATCH /api/v1/residents/:id/service_accesses/:connection_id."""
+    emit(client.patch(f"residents/{args.resident}/service_accesses/{args.id}",
+                      json_body={"enabled": not args.revoke}))
+
+
+def cmd_integrations_disconnect(client, args):
+    emit(client.delete(f"account/service_connections/{args.id}"))
+
+
 # ---------------------------------------------------------------- parser
+
+class VoiceArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        print(json.dumps({"error": message, "exit_code": EXIT_USAGE, "status": None}), file=sys.stderr)
+        self.exit(EXIT_USAGE)
+
 
 COMMAND_GROUPS = [
     ("Setup", ["login", "logout", "config", "whoami", "accounts"]),
@@ -817,8 +1130,9 @@ COMMAND_GROUPS = [
                "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
     ("Attention", ["attention", "dismiss", "invitations"]),
     ("Repository watches", ["repos", "watches"]),
+    ("Integrations", ["integrations"]),
     ("Field", ["field"]),
-    ("Other", ["residents", "glossary", "download", "api"]),
+    ("Other", ["residents", "who", "glossary", "download", "api"]),
 ]
 
 
@@ -945,6 +1259,10 @@ def build_parser():
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
 
+    p = add("who", cmd_who, "Who can read conversations here, and why; give a conversation id for one room")
+    p.add_argument("room", nargs="?", metavar="CONVERSATION_ID")
+    p.add_argument("--json", action="store_true")
+
     p = add("repos", cmd_repos, "Connected repositories: list, connect, or disconnect (souls repos --help)")
     rsub = p.add_subparsers(dest="repos_command", metavar="list|connect|disconnect")
     rp = rsub.add_parser("list", parents=[common], help="Connected repositories you may watch")
@@ -988,6 +1306,42 @@ def build_parser():
     wp.add_argument("id")
     wp.set_defaults(func=cmd_watches_cancel)
 
+    p = add("integrations", cmd_integrations,
+            "Service connections: list, providers, connect, grant, disconnect (souls help integrations)",
+            epilog="Connect anything that takes a pasted key (Porkbun, Cloudflare, Pipedrive, GitHub, Honeybadger, ...);\n"
+                   "OAuth and QR-paired services still connect on the web. Examples:\n"
+                   "  souls integrations providers\n"
+                   "  souls integrations connect porkbun                 # prompts for the keys, no echo\n"
+                   "  souls integrations connect cloudflare --grant RESIDENT_ID\n"
+                   "  pass porkbun.json | souls integrations connect porkbun --json -\n"
+                   "  souls integrations grant svc_12 --resident RESIDENT_ID   (--revoke to withdraw)\n"
+                   "  souls integrations disconnect svc_12",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    isub = p.add_subparsers(dest="integrations_command", metavar="list|providers|connect|grant|disconnect")
+    ip = isub.add_parser("list", parents=[common], help="Connections you can manage in this account")
+    ip.set_defaults(func=cmd_integrations)
+    ip = isub.add_parser("providers", parents=[common], help="Services you can connect here, and the fields each asks for")
+    ip.set_defaults(func=cmd_integrations_providers)
+    ip = isub.add_parser("connect", parents=[common], help="Connect a service from its API key or token")
+    ip.add_argument("provider", help="e.g. porkbun, cloudflare, pipedrive")
+    ip.add_argument("--field", action="append", metavar="KEY=VALUE",
+                    help="a field value (repeatable); secrets here land in shell history, so prefer the prompt or --json -")
+    ip.add_argument("--json", dest="json_input", metavar="JSON",
+                    help="field values as a JSON object, or - to read it from stdin")
+    ip.add_argument("--scope", default="personal", choices=["personal", "account_managed"],
+                    help="who owns it: you (default) or the account (admins)")
+    ip.add_argument("--label", help="a name for the connection")
+    ip.add_argument("--grant", action="append", metavar="RESIDENT_ID", help="give this resident access too (repeatable)")
+    ip.set_defaults(func=cmd_integrations_connect)
+    ip = isub.add_parser("grant", parents=[common], help="Give a resident access to a connection, or withdraw it")
+    ip.add_argument("id", metavar="CONNECTION_ID")
+    ip.add_argument("--resident", required=True, metavar="RESIDENT_ID")
+    ip.add_argument("--revoke", action="store_true", help="withdraw access instead")
+    ip.set_defaults(func=cmd_integrations_grant)
+    ip = isub.add_parser("disconnect", parents=[common], help="Disconnect a service (removes its credential from residents)")
+    ip.add_argument("id", metavar="CONNECTION_ID")
+    ip.set_defaults(func=cmd_integrations_disconnect)
+
     p = add("field", None,
             "The Field: upload a file, write a note, change a date, or correct a transcript line (souls help field)",
             epilog="--date is when the thing is from, for old material: an ISO 8601 date or time\n"
@@ -999,7 +1353,51 @@ def build_parser():
                    "  souls field date recording REC_ID 2019-03-14\n"
                    "Recordings take recorded_at instead: see docs/api.md.",
             formatter_class=argparse.RawDescriptionHelpFormatter)
-    fsub = p.add_subparsers(dest="field_command", metavar="upload|note|date|lines|correct")
+    fsub = p.add_subparsers(dest="field_command", metavar="upload|note|date|lines|correct|speaker|voices|samples")
+
+    fp = fsub.add_parser("voices", parents=[common], help="Manage voices (human credentials; JSON output)")
+    fp.set_defaults(func=cmd_field_voices, voice_action="list")
+    vsub = fp.add_subparsers(dest="voice_action", parser_class=VoiceArgumentParser)
+    for action in ("list", "create", "resolve", "rename", "delete"):
+        vp = vsub.add_parser(action, parents=[common])
+        vp.set_defaults(func=cmd_field_voices)
+        if action in ("rename", "delete"):
+            vp.add_argument("voice", metavar="VOICE_ID")
+        if action in ("create", "resolve", "rename"):
+            vp.add_argument("name", metavar="NAME")
+
+    fp = fsub.add_parser("samples", parents=[common],
+                         help="Manage voice samples (human credentials; JSON output)",
+                         epilog="Accept requires --listened. New human confirmation requires an OAuth app-token "
+                                "or browser; API keys may only reinclude unchanged already-confirmed samples.")
+    fp.set_defaults(func=cmd_field_samples, sample_action=None)
+    ssub = fp.add_subparsers(dest="sample_action", parser_class=VoiceArgumentParser)
+    for action in ("list", "upload", "inspect", "download", "accept", "reject", "correct", "delete"):
+        sp = ssub.add_parser(action, parents=[common])
+        sp.set_defaults(func=cmd_field_samples)
+        if action in ("list", "upload"):
+            sp.add_argument("voice", metavar="VOICE_ID")
+        else:
+            sp.add_argument("sample", metavar="SAMPLE_ID", help="opaque public sample ID, for any sample kind")
+        if action == "upload":
+            sp.add_argument("file", metavar="AUDIO_FILE", help="prepared audio clip to upload")
+            sp.add_argument("--source-identifier", required=True, help="stable source identifier")
+            sp.add_argument("--source-session", required=True, help="canonical source group; same for sibling clips")
+            sp.add_argument("--source-sha256", help="SHA-256 of the ORIGINAL file, not the prepared clip")
+            sp.add_argument("--source-file", help="hash this original file; never infer the hash from AUDIO_FILE")
+            sp.add_argument("--idempotency-key", required=True, help="reuse this key on retry of the same upload")
+            sp.add_argument("--start-ms", type=int)
+            sp.add_argument("--end-ms", type=int)
+            sp.add_argument("--recorded-at", metavar="ISO_DATE")
+            sp.add_argument("--recording-id", help="optional existing recording's public ID")
+        if action in ("download", "accept", "reject", "correct", "delete"):
+            sp.add_argument("--digest", required=True, help="current sample digest from inspect/list")
+        if action == "download":
+            sp.add_argument("-o", "--output", required=True, help="audio destination file (stdout stays JSON)")
+        if action == "accept":
+            sp.add_argument("--listened", action="store_true", help="you listened to this exact sample; never an agent proxy")
+        if action == "correct":
+            sp.add_argument("--voice", required=True, help="correct target voice's public ID")
 
     fp = fsub.add_parser("upload", parents=[common], help="Upload a file (a document, an old transcript)")
     fp.add_argument("file", metavar="FILE")
@@ -1047,6 +1445,23 @@ def build_parser():
     fp.add_argument("--revision", help="the revision you read it at (default: the current one)")
     fp.add_argument("--json", action="store_true", help="print the house's JSON (the whole transcript)")
     fp.set_defaults(func=cmd_field_correct)
+
+    fp = fsub.add_parser("speaker", parents=[common],
+                         help="Give one line of a recording's transcript to another speaker (the words stay)",
+                         epilog="WHO is a name as `souls field lines` shows it, a speaker id, or 'new' for a\n"
+                                "voice the transcriber didn't separate (it reads as \"Speaker N\" until someone\n"
+                                "names it). Only when you know who said it. Pass the revision `souls field\n"
+                                "lines` printed to be refused (exit 6) if the transcript changed since.\n"
+                                "  souls field lines KJkAjl\n"
+                                "  souls field speaker KJkAjl 14 Sanda --revision 3f2a9c1d0b7e4a65",
+                         formatter_class=argparse.RawDescriptionHelpFormatter)
+    fp.add_argument("recording", metavar="RECORDING_ID")
+    fp.add_argument("line", type=int, metavar="LINE", help="the line's number")
+    fp.add_argument("who", metavar="WHO", help="a speaker's name, a speaker id, or new")
+    fp.add_argument("--was", help="the line as you read it (default: as it reads now)")
+    fp.add_argument("--revision", help="the revision you read it at (default: the current one)")
+    fp.add_argument("--json", action="store_true", help="print the house's JSON (the whole transcript)")
+    fp.set_defaults(func=cmd_field_speaker)
 
     p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")
     p.add_argument("glossary_command", nargs="?", choices=["list", "add", "remove", "pin", "unpin"],
@@ -1106,6 +1521,8 @@ def main(argv=None):
         else:
             print_overview(parser, sub)
         return EXIT_OK
+    voice_command = args.command == "field" and args.field_command in ("voices", "samples")
+    token = None
     try:
         if args.command == "field" and not args.field_command:
             sub.choices["field"].print_help()
@@ -1113,13 +1530,20 @@ def main(argv=None):
         if args.command in ("login", "logout"):
             args.func(None, args)
             return EXIT_OK
+        if voice_command and args.field_command == "samples" and not args.sample_action:
+            raise CliError("give a samples subcommand: list, upload, inspect, download, accept, reject, correct, delete",
+                           EXIT_USAGE)
         url, token, _source = resolve_credentials(args)
         client = Client(url, token, account=args.account, verbose=args.verbose, timeout=http_timeout())
         args.func(client, args)
         sys.stdout.flush()
         return EXIT_OK
     except CliError as err:
-        print(f"souls: {err}", file=sys.stderr)
+        if voice_command:
+            message = str(err).replace(token, "[REDACTED]") if token else str(err)
+            print(json.dumps({"error": message, "exit_code": err.code, "status": err.status}), file=sys.stderr)
+        else:
+            print(f"souls: {err}", file=sys.stderr)
         return err.code
     except KeyboardInterrupt:
         return 130
@@ -1129,6 +1553,14 @@ def main(argv=None):
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
         return EXIT_OK
+    except (OSError, ValueError):
+        if not voice_command:
+            raise
+        # Do not echo filenames, URLs or exception values that could contain a
+        # credential. Local I/O failures still have a stable machine-readable exit.
+        print(json.dumps({"error": "cannot read/write a local file or invalid request configuration",
+                          "exit_code": EXIT_USAGE, "status": None}), file=sys.stderr)
+        return EXIT_USAGE
 
 
 if __name__ == "__main__":

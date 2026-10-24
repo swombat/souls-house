@@ -26,7 +26,7 @@ class RhythmProvenanceTest < ActiveSupport::TestCase
   end
 
   test "runtime context clearly distinguishes standing invitation and includes off switch" do
-    request = ExternalAgentResponseRequest.new(agent: @agent, chat: @occurrence.chat)
+    request = ExternalAgentResponseRequest.new(agent: @agent, chat: @occurrence.chat, wake_source_kinds: [ "scheduled" ])
     text = request.send(:request_text)
     assert_includes text, "scheduled rhythm"
     assert_includes text, "RHYTHM INVITATION"

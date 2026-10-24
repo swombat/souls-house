@@ -25,6 +25,38 @@ class RoomTest < ActiveSupport::TestCase
     end
   end
 
+  test "a room cannot take the name the account gave Main, and Main cannot take a room's name" do
+    @account.update!(main_room_name: "General")
+    room = @account.rooms.new(name: "general")
+    assert_not room.valid?
+    assert_includes room.errors[:name], "General is the default room"
+    assert_not @account.rooms.new(name: "Main").valid?, "Main stays reserved as the default's alias"
+
+    @account.rooms.create!(name: "Life")
+    @account.main_room_name = "LIFE"
+    assert_not @account.valid?
+    assert @account.errors[:main_room_name].any?
+  end
+
+  test "Main's name and description are stripped, bounded, and blank or Main means the default" do
+    @account.update!(main_room_name: "  General  ", main_room_description: "  anything  ")
+    assert_equal "General", @account.main_room_label
+    assert_equal({ "id" => nil, "name" => "General", "description" => "anything" }, @account.main_room_json)
+    assert @account.main_room_named?("main")
+    assert @account.main_room_named?(" general ")
+
+    @account.update!(main_room_name: "Main", main_room_description: " ")
+    assert_nil @account.main_room_name
+    assert_nil @account.main_room_description
+    assert_equal "Main", @account.main_room_label
+
+    @account.main_room_name = "x" * 41
+    assert_not @account.valid?
+    @account.main_room_name = nil
+    @account.main_room_description = "x" * 281
+    assert_not @account.valid?
+  end
+
   test "name uniqueness is case-insensitive and scoped to the account" do
     @account.rooms.create!(name: "Life")
 
@@ -42,6 +74,19 @@ class RoomTest < ActiveSupport::TestCase
   test "name is stripped before validation and save" do
     room = @account.rooms.create!(name: "  Spaced out  ")
     assert_equal "Spaced out", room.name
+  end
+
+  test "description says what the room is for: optional, stripped, bounded, never NUL" do
+    room = @account.rooms.create!(name: "Build", description: "  technical work  ")
+    assert_equal "technical work", room.description
+    assert_equal({ "id" => room.to_param, "name" => "Build", "description" => "technical work" }, room.directory_json)
+    assert_equal({ "id" => room.to_param, "name" => "Build" }, room.as_json, "conversation JSON keeps its shape")
+
+    room.update!(description: "   ")
+    assert_nil room.description
+
+    assert_not @account.rooms.new(name: "Long", description: "x" * 281).valid?
+    assert_not @account.rooms.new(name: "Nul", description: "a\0b").valid?
   end
 
   test "position auto-increments per account starting at zero" do

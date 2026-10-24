@@ -24,6 +24,7 @@ class Agents::RuntimeChecksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "runtime_reachable", response.parsed_body["status"]
     assert response.parsed_body["conversation_id"].present?
     assert_requested trigger
+    assert_equal [ "human" ], @agent.agent_runtime_interactions.order(:id).last.wake_source_kinds
   end
 
   test "orientation retains journal verification for an existing promoted resident" do

@@ -1,8 +1,11 @@
 <script>
   import { createProviderSubscription } from '$lib/provider-subscription.svelte';
-  let { agent } = $props();
+  let { agent, account = { id: 'synthetic-account' } } = $props();
   export const subscription = createProviderSubscription(() => ({
-    account: { id: 'synthetic-account' },
+    account,
     subscriptionAgent: agent,
   }));
 </script>
+
+<p data-testid="provider-status">{subscription.agent.connection?.status || 'none'}</p>
+<p data-testid="provider-name">{subscription.agent.name}</p>

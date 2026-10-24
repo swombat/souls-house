@@ -9,9 +9,9 @@ class Messages::BaseController < ApplicationController
   def set_message_and_chat
     @message = Message.kept.find(params[:message_id])
     @chat = if Current.user.site_admin
-      Chat.find(@message.chat_id)
+      Chat.kept.find(@message.chat_id)
     else
-      current_account.chats.find(@message.chat_id)
+      current_account.chats.kept.find(@message.chat_id)
     end
   end
 

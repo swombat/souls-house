@@ -53,6 +53,8 @@ module Api
           if recovery.is_a?(Hash)
             result["recovered_backup"] = recovery.slice("command_id", "container_name", "unpaused", "tools_stopped")
           end
+          roles = value["seed_roles"]
+          result["seed_roles"] = roles & AgentImportStage::ROLES if roles.is_a?(Array)
           result
         end
 

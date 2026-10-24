@@ -7,10 +7,13 @@ class Accounts::TranscriptionGlossariesController < ApplicationController
   before_action :set_account
 
   def show
+    glossary = TranscriptionGlossary.new(@account)
     render inertia: "accounts/transcription_glossary", props: {
       account: @account,
       path: account_transcription_glossary_path(@account),
-      **glossary_payload(@account)
+      keyterm_limit: TranscriptionGlossary::KEYTERM_LIMIT,
+      terms: -> { glossary_terms(glossary) },
+      removed: -> { glossary_removed(glossary) }
     }
   end
 

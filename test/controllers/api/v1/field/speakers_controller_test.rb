@@ -57,6 +57,36 @@ class Api::V1::Field::SpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Speaker 1", response.parsed_body.dig("speaker", "name")
   end
 
+  test "ignore and unignore; a named speaker can't be ignored" do
+    name_speaker({ ignore: true })
+    assert_response :success
+    assert response.parsed_body.dig("speaker", "ignored")
+    assert_not @speaker.reload.unnamed?
+
+    name_speaker({ unignore: true })
+    assert_response :success
+    assert_not response.parsed_body.dig("speaker", "ignored")
+
+    name_speaker({ me: true })
+    name_speaker({ ignore: true })
+    assert_response :conflict
+    assert_nil @speaker.reload.ignored_at
+  end
+
+  test "ignore as anonymous; an unknown reason is refused" do
+    name_speaker({ ignore: true, ignore_as: "anonymous" })
+    assert_response :success
+    assert response.parsed_body.dig("speaker", "ignored")
+    assert_equal "anonymous", response.parsed_body.dig("speaker", "ignored_as")
+
+    name_speaker({ ignore: true, ignore_as: "boring" })
+    assert_response :unprocessable_entity
+    assert_equal "anonymous", @speaker.reload.ignored_as
+
+    name_speaker({ unignore: true })
+    assert_nil response.parsed_body.dig("speaker", "ignored_as")
+  end
+
   test "a member of the account who has no voice yet" do
     team = accounts(:team_account)
     member = team.memberships.where.not(user: @user).where.not(confirmed_at: nil).first.user
@@ -91,6 +121,39 @@ class Api::V1::Field::SpeakersControllerTest < ActionDispatch::IntegrationTest
     name_speaker({ voice_id: elsewhere.to_param })
     assert_response :not_found
     assert_nil @speaker.reload.field_voice
+  end
+
+
+  # Provenance (spec 2026-10-19 §5): an API key is a machine, whatever it says.
+  test "a naming through an API key is recorded as machine and can't teach a voice print" do
+    name_speaker({ name: "Priya" })
+    assert_response :success
+    assert_equal "machine", @speaker.reload.naming_source
+    assert_equal @user, @speaker.named_by
+    assert_not @speaker.training_label?
+  end
+
+  test "a client can't claim to be a person" do
+    name_speaker({ name: "Priya", naming_source: "human", source: "human", applied_by: "human" })
+    assert_response :success
+    assert_equal "machine", @speaker.reload.naming_source
+  end
+
+  test "a machine naming confirmed by a person in the browser becomes theirs" do
+    name_speaker({ name: "Priya" })
+    voice = @speaker.reload.field_voice
+    sign_in @user
+    patch account_field_recording_speaker_path(@account, @recording, @speaker), params: { speaker: { voice_id: voice.to_param } }
+    assert_equal "human", @speaker.reload.naming_source
+    assert @speaker.training_label?
+  end
+
+  test "a person's browser naming later overwritten through an API key is a machine's again" do
+    sign_in @user
+    patch account_field_recording_speaker_path(@account, @recording, @speaker), params: { speaker: { name: "Priya" } }
+    assert_equal "human", @speaker.reload.naming_source
+    name_speaker({ name: "Tomás" })
+    assert_equal "machine", @speaker.reload.naming_source
   end
 
 end

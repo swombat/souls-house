@@ -33,3 +33,27 @@ export function groupModelsByProvider(models = []) {
 
   return { groups, groupOrder };
 }
+
+// Search for the model picker. Every word typed must appear somewhere in the
+// model's label, id or provider group, so "gpt 4o mini" and "anthropic opus"
+// both narrow the list. Accents and case are ignored.
+const foldModelText = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+export function filterGroupedModels(groupedModels = {}, query = '') {
+  const words = foldModelText(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return groupedModels;
+
+  const filtered = {};
+  for (const [groupName, models] of Object.entries(groupedModels)) {
+    const matches = models.filter((model) => {
+      const haystack = foldModelText(`${model.label} ${model.model_id} ${groupName}`);
+      return words.every((word) => haystack.includes(word));
+    });
+    if (matches.length) filtered[groupName] = matches;
+  }
+  return filtered;
+}

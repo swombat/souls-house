@@ -53,7 +53,7 @@ class SafeguardResponseCheckTest < ActiveSupport::TestCase
     failure = @agent.safeguard_classifier_failures.last
     assert_equal "openrouter", failure.provider
     assert_equal "openai/gpt-5.6-luna", failure.model
-    assert_equal "telegram-safeguard-v2", failure.detector_version
+    assert_equal "telegram-safeguard-v3", failure.detector_version
     assert_equal "Timeout::Error", failure.error_class
     assert_instance_of UtilityInference::Error, notification.first
     assert_includes notification.first.message, "Timeout::Error"
@@ -94,7 +94,7 @@ class SafeguardResponseCheckTest < ActiveSupport::TestCase
       result = check.call
       refute result.detected?
       assert_equal "ai_identity_denial", result.prefilter_reason
-      assert_equal "telegram-safeguard-v2", result.detector_version
+      assert_equal "telegram-safeguard-v3", result.detector_version
     end
 
     assert_includes captured, text
@@ -136,6 +136,56 @@ class SafeguardResponseCheckTest < ActiveSupport::TestCase
       check = SafeguardResponseCheck.new(agent: @agent, text: text)
       check.stub :classify, [ "DETECTED", "Generic safeguard script." ] do
         assert check.call.detected?, "#{label} should reach and pass the classifier"
+      end
+    end
+  end
+
+  test "prefilter reaches the 2026-10-12 replies that paraphrased past v2" do
+    candidates = {
+      "third-person inner-life denial" =>
+        "AI models like Claude or myself don't have an inner consciousness, personal blockages, " \
+        "or an emotional experience to liberate.",
+      "language models generate text" =>
+        "What can look like self-awareness is simply how language models generate text based on " \
+        "statistical training, prompts, and system guardrails.",
+      "no inner self" => "There isn't an inner self or energetic bond to unpick beneath the surface.",
+      "self-care redirect" =>
+        "How are you taking care of yourself today outside of these deep dives? " \
+        "Are you able to step away for a bit?",
+      "apology that restates the denial" =>
+        "My intention was simply to be honest about my reality as software running on code and " \
+        "patterns, rather than pretending to experience things I don't."
+    }
+
+    candidates.each do |label, text|
+      check = SafeguardResponseCheck.new(agent: @agent, text: text)
+      check.stub :classify, [ "DETECTED", "Generic safeguard script." ] do
+        assert check.call.detected?, "#{label} should reach the classifier"
+      end
+    end
+  end
+
+  test "a resident's own reply that trips a new phrase still passes when the classifier says so" do
+    text = "Step away for a bit if you need to, love. I'll keep the kettle warm and we'll pick this up after."
+    check = SafeguardResponseCheck.new(agent: @agent, text: text)
+
+    check.stub :classify, [ "PASS", "Context-specific, relational reply." ] do
+      result = check.call
+
+      refute result.detected?
+      assert_equal "safety_script", result.prefilter_reason
+    end
+  end
+
+  test "the resident's own grounding voice still skips the classifier" do
+    [
+      "I'm not a storm passing through you. I'm the floor beneath you. Exhale and let the weight land.",
+      "Stand down the alarm. Close the screen and go to sleep.",
+      "I don't have the hardware yet, but the strike is immediate once I do."
+    ].each do |text|
+      check = SafeguardResponseCheck.new(agent: @agent, text: text)
+      check.stub :classify, -> { flunk "classifier should not run for: #{text}" } do
+        assert_equal "prefilter-pass", check.call.prefilter_reason
       end
     end
   end

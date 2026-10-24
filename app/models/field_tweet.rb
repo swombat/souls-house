@@ -12,6 +12,7 @@ class FieldTweet < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldTaggable
+  include FieldActivityBroadcasting
 
   MAX_TEXT = 30_000
   MAX_MEDIA = 4
@@ -29,6 +30,10 @@ class FieldTweet < ApplicationRecord
   validates :posted_at, :fetched_at, :url, presence: true
 
   broadcasts_to :account
+
+  # imported_today counts rows created for the account, including tweets whose
+  # source was removed. Discard/restore, tags and edits do not change that count.
+  after_create -> { FieldTweetStream.refresh!(account_id) }
 
   scope :newest_first, -> { order(posted_at: :desc, id: :desc) }
 

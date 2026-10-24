@@ -13,6 +13,7 @@
     Gear,
     Check,
     Plus,
+    WarningCircle,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -20,12 +21,14 @@
   import { editUserPath, editUserPasswordPath, accountPath, newAccountPath } from '@/routes';
   import Avatar from '$lib/components/Avatar.svelte';
   import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
+  import ExpiredSubscriptionsBadge from './ExpiredSubscriptionsBadge.svelte';
 
   let {
     currentUser,
     currentAccount = null,
     accounts = [],
     replyAttention = {},
+    expiredSubscriptions = {},
     allowAccountCreation = true,
     currentTheme = 'system',
     onThemeChange = () => {},
@@ -59,6 +62,7 @@
       <span class="text-xs font-normal text-muted-foreground hidden md:inline"> Account </span>
     {/if}
     <ReplyAttentionBadge count={replyAttention.total} />
+    <ExpiredSubscriptionsBadge count={expiredSubscriptions.total} />
   </DropdownMenu.Trigger>
   <DropdownMenu.Content
     bind:ref={content}
@@ -77,7 +81,10 @@
             class={account.id === currentAccount?.id ? 'bg-accent' : ''}>
             <Check class="size-4 {account.id === currentAccount?.id ? 'opacity-100' : 'opacity-0'}" />
             <span class="min-w-0 truncate">{account.name}</span>
-            <span class="ml-auto shrink-0"><ReplyAttentionBadge count={replyAttention.accounts?.[account.id]} /></span>
+            <span class="ml-auto flex shrink-0 gap-1">
+              <ReplyAttentionBadge count={replyAttention.accounts?.[account.id]} />
+              <ExpiredSubscriptionsBadge count={expiredSubscriptions.accounts?.[account.id]} />
+            </span>
           </DropdownMenu.Item>
         {/each}
         <DropdownMenu.Separator />
@@ -94,7 +101,10 @@
                 {currentAccount?.name}
               </div>
             </div>
-            <span class="shrink-0"><ReplyAttentionBadge count={replyAttention.total} /></span>
+            <span class="flex shrink-0 gap-1">
+              <ReplyAttentionBadge count={replyAttention.total} />
+              <ExpiredSubscriptionsBadge count={expiredSubscriptions.total} />
+            </span>
             <CaretRight class="size-4" />
           </DropdownMenu.Item>
         {:else}
@@ -104,6 +114,23 @@
               {currentAccount?.name}
             </div>
           </DropdownMenu.GroupHeading>
+        {/if}
+        {#if expiredSubscriptions.items?.length}
+          <DropdownMenu.Separator />
+          <DropdownMenu.GroupHeading>
+            <div class="text-xs font-normal text-muted-foreground">Expired subscriptions</div>
+          </DropdownMenu.GroupHeading>
+          {#each expiredSubscriptions.items as item (`${item.agent_id}:${item.provider}`)}
+            <DropdownMenu.Item onclick={() => router.visit(item.url)}>
+              <WarningCircle class="size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm truncate">{item.agent_name} · {item.provider_name}</div>
+                {#if accounts.length > 1}
+                  <div class="text-xs text-muted-foreground truncate">{item.account_name}</div>
+                {/if}
+              </div>
+            </DropdownMenu.Item>
+          {/each}
         {/if}
         <DropdownMenu.Separator />
         <DropdownMenu.GroupHeading>

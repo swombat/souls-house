@@ -83,6 +83,77 @@ module Agents
       assert_equal 0, RunnerCommand.where(kind: "seed_home").count
     end
 
+    def stage_import!(seed_roles: AgentImportStage::ROLES)
+      @enrollment.update!(last_facts: { "seed_roles" => seed_roles }) if seed_roles
+      @placement.update!(kind: "archive_import")
+      AgentImportStage::ROLES.to_h do |role|
+        bytes = Zlib.gzip("#{role} home")
+        [ role, @agent.import_stages.create!(role:, archive: bytes, sha256: Digest::SHA256.hexdigest(bytes), bytes: bytes.bytesize) ]
+      end
+    end
+
+    test "an archive import seeds each role from its staged tarball and is done only when all three are" do
+      stages = stage_import!
+      issued = VmSeed.new(@agent).issue!
+      assert_equal %w[identity repo work], issued.keys
+      issued.each do |role, command|
+        assert_equal({ "container_name" => "hk-agent-seed-test", "sha256" => stages[role].sha256,
+                       "bytes" => stages[role].bytes, "role" => role }, JSON.parse(command.payload_json))
+      end
+      assert_nil @placement.reload.seed_archive
+      assert_equal issued, VmSeed.new(@agent).issue!
+
+      answer(issued["identity"], "done")
+      answer(issued["repo"], "done")
+      assert VmSeed.new(@agent).status.pending?
+      assert_nil @placement.reload.seeded_at
+      answer(issued["work"], "done")
+      assert VmSeed.new(@agent).status.done?
+      assert @placement.reload.seeded_at
+    end
+
+    test "a failed role is retried alone with the same bytes, and a refused role is not retryable" do
+      stage_import!
+      issued = VmSeed.new(@agent).issue!
+      answer(issued["identity"], "done")
+      answer(issued["repo"], "failed", error: "could not fetch seed archive: house answered 502")
+      seed = VmSeed.new(@agent)
+      assert seed.status.failed?
+      assert_match(/\Arepo failed:/, seed.status.error)
+      assert seed.retryable?
+      again = seed.issue!
+      assert_equal issued["identity"], again["identity"]
+      assert_equal issued["work"], again["work"]
+      assert_not_equal issued["repo"], again["repo"]
+      assert_equal @agent.import_stages.find_by!(role: "repo").sha256, JSON.parse(again["repo"].payload_json)["sha256"]
+      assert_equal "repo", again["repo"].seed_role
+      assert_equal 2, VmSeed.new(@agent).status.attempts
+
+      answer(again["work"], "refused", error: "work volume is not empty and has no seed marker")
+      assert_not VmSeed.new(@agent).retryable?
+    end
+
+    test "a runner that has not said it seeds each role into its own volume gets no import seed at all" do
+      # A runner from before roles ignores role and writes identity: an empty
+      # identity volume would take the repo home, and identical digests would
+      # report all three done with repo and work never written.
+      [ nil, %w[identity], %w[identity repo] ].each do |roles|
+        stage_import!(seed_roles: roles)
+        @enrollment.update!(last_facts: {}) if roles.nil?
+        error = assert_raises(VmSeed::Unavailable) { VmSeed.new(@agent).issue! }
+        assert_match(/newer runner/, error.message)
+        assert_equal 0, RunnerCommand.where(kind: "seed_home").count, roles.inspect
+        @agent.import_stages.delete_all
+      end
+    end
+
+    test "an archive import with a role missing from its stage is unavailable and queues nothing" do
+      stage_import!
+      @agent.import_stages.find_by!(role: "work").destroy!
+      assert_raises(VmSeed::Unavailable) { VmSeed.new(@agent).issue! }
+      assert_equal 0, RunnerCommand.where(kind: "seed_home").count
+    end
+
     test "an oversized archive is refused before anything is stored" do
       stub_const = VmSeed::MAX_BYTES
       VmSeed.send(:remove_const, :MAX_BYTES)

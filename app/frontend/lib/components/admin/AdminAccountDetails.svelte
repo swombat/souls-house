@@ -50,6 +50,12 @@
     router.patch(`/admin/accounts/${account.id}/field_swarm`, { account: { field_swarm_enabled: enabled } });
   }
 
+  function setTweetsHouseKey(enabled) {
+    router.patch(`/admin/accounts/${account.id}/field_tweets_house_key`, {
+      account: { field_tweets_house_key: enabled },
+    });
+  }
+
   function dollars(value) {
     return value == null ? '—' : `$${Number(value).toFixed(4)}`;
   }
@@ -205,6 +211,33 @@
           aria-label="Founding or family account"
           checked={account.founding}
           onCheckedChange={setFounding} />
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card class="mb-8">
+    <CardHeader>
+      <CardTitle>Tweet streams</CardTitle>
+      <CardDescription>
+        Accounts pay for their tweet streams with their own TwitterAPI.io integration. Turn this on to let this account
+        use the house's key instead while it has none, within the house ceilings in Settings.
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div class="flex items-center justify-between gap-6 rounded-md border p-4">
+        <div class="space-y-1">
+          <Label for={`field-tweets-house-key-${account.id}`}>Use the house TwitterAPI.io key</Label>
+          <p class="text-sm text-muted-foreground">
+            {account.field_tweets_own_integration
+              ? 'This account has its own integration, which pays first.'
+              : 'This account has no integration of its own.'}
+          </p>
+        </div>
+        <Switch
+          id={`field-tweets-house-key-${account.id}`}
+          aria-label="Use the house TwitterAPI.io key"
+          checked={account.field_tweets_house_key}
+          onCheckedChange={setTweetsHouseKey} />
       </div>
     </CardContent>
   </Card>

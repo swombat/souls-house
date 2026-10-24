@@ -78,6 +78,56 @@ class Agents::PortabilityControllerTest < ActionDispatch::IntegrationTest
     assert @agent.paused?
   end
 
+  test "activating a copy staged for its own server admits it and queues its provisioning, never touching anything local" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", kind: "archive_import", state: "staged")
+    policy = Agents::VmBirthPolicy.new(setting: Setting.instance, procurement_config: CloudProcurement::Config.new(image_id: 1, ssh_key_ids: [ 2 ], locations: [ "fsn1" ], rails_url: "https://house.test", runner_commands: true), api_token: "t")
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 3)
+    policy.define_singleton_method(:vm_backups_available?) { true }
+    Agents::VmBirthPolicy.stub(:current, policy) do
+      Agents::Sandbox.stub(:new, ->(*) { flunk "a staged copy must never reach the local sandbox" }) do
+        Agents::Portability::Transport.stub(:new, ->(*) { flunk "a staged copy has no local volumes" }) do
+          post portability_activate_account_agent_path(@account, @agent), params: { confirmed: false }
+          assert_response :unprocessable_entity
+          assert @agent.placement.reload.staged?
+
+          assert_enqueued_with(job: ProvisionVmAgentJob, args: [ @agent.id ]) do
+            post portability_activate_account_agent_path(@account, @agent), params: { confirmed: true }
+          end
+          assert_response :see_other
+          post portability_activate_account_agent_path(@account, @agent), params: { confirmed: true }
+          assert_response :unprocessable_entity
+          assert_equal Agents::VmBirthPolicy::ALREADY_ACTIVATING, response.parsed_body["error"]
+        end
+      end
+    end
+    placement = @agent.placement.reload
+    assert_equal "pending", placement.state
+    assert_equal users(:user_1), placement.birth_requested_by
+    assert AuditLog.exists?(action: "vm_import_activation_admitted", auditable: @agent)
+    @agent.reload
+    refute @agent.active?, "active only once ready"
+    assert @agent.paused?
+  end
+
+  test "a copy whose last start on its own server failed is refused plainly, not as already starting" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", kind: "archive_import", state: "retired")
+    post portability_activate_account_agent_path(@account, @agent), params: { confirmed: true }
+    assert_response :unprocessable_entity
+    assert_match(/last start on its own server failed/, response.parsed_body["error"])
+  end
+
+  test "with the switch off a staged copy is refused at activation and stays staged" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", kind: "archive_import", state: "staged")
+    Setting.instance.update!(new_residents_on_vm: false)
+    Agents::Sandbox.stub(:new, ->(*) { flunk "never local" }) do
+      post portability_activate_account_agent_path(@account, @agent), params: { confirmed: true }
+    end
+    assert_response :unprocessable_entity
+    assert_equal Agents::VmBirthPolicy::IMPORT_SWITCHED_OFF, response.parsed_body["error"]
+    assert @agent.placement.reload.staged?
+    refute @agent.reload.active?
+  end
+
   test "stop rejects unknown idle probe and retains disabled admission without killing" do
     @agent.update_columns(active: true, paused: false, scheduled_wakes_enabled: true)
     transport = Object.new

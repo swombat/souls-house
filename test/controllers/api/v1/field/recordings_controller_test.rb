@@ -40,18 +40,49 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     body = response.parsed_body
     assert_equal [ { "line" => 1, "speaker" => "Priya", "text" => "hello" },
-                   { "line" => 2, "speaker" => "Speaker 2", "text" => "there" } ], body["lines"]
+                   { "line" => 2, "speaker" => "Speaker 2", "text" => "there" } ], body["lines"].map { |line| line.except("speaker_id") }
+    assert_equal @recording.speakers.in_order.map(&:to_param), body["lines"].map { |line| line["speaker_id"] }
     assert_equal @recording.transcript_revision, body["revision"]
     %w[locator first last "s" "e"].each { |key| assert_not_includes response.body, key }
 
     patch line_api_v1_field_recording_path(@recording, line: 2), headers: @headers,
       params: { text: "Dan", was: "there", revision: body["revision"] }, as: :json
     assert_response :success
-    assert_equal({ "line" => 2, "speaker" => "Speaker 2", "text" => "Dan" }, response.parsed_body["line"])
+    assert_equal({ "line" => 2, "speaker" => "Speaker 2", "text" => "Dan" }, response.parsed_body["line"].except("speaker_id"))
     @recording.reload
     assert_equal response.parsed_body["revision"], @recording.transcript_revision
     assert_includes @recording.transcript_text, "Speaker 2: Dan"
     assert_equal [ 2000, 2600 ], @recording.transcript_words.last.values_at("s", "e"), "the replaced word keeps its time"
+  end
+
+  test "a resident gives a line to another speaker, or to someone new" do
+    get lines_api_v1_field_recording_path(@recording), headers: @headers
+    body = response.parsed_body
+    first, second = body["lines"].map { |line| line["speaker_id"] }
+
+    patch line_api_v1_field_recording_path(@recording, line: 2), headers: @headers,
+      params: { speaker: "new", was: "there", revision: body["revision"] }, as: :json
+    assert_response :success
+    @recording.reload
+    assert_equal [ "speaker_0", "speaker_2" ], @recording.speakers.in_order.map(&:label), "the emptied speaker goes"
+    assert_includes @recording.transcript_text, "Speaker 3: there"
+    assert_equal first, response.parsed_body["lines"].first["speaker_id"]
+    assert_not_equal second, response.parsed_body["line"]["speaker_id"]
+
+    patch line_api_v1_field_recording_path(@recording, line: 2), headers: @headers,
+      params: { speaker: first, was: "there", revision: response.parsed_body["revision"] }, as: :json
+    assert_response :success
+    assert_equal 1, response.parsed_body["lines"].size, "one speaker's words are one line"
+    assert_equal response.parsed_body["lines"].first, response.parsed_body["line"], "the line the moved words are in now"
+    assert_equal [ "speaker_0" ], @recording.reload.speakers.map(&:label)
+
+    patch line_api_v1_field_recording_path(@recording, line: 1), headers: @headers,
+      params: { speaker: "nobody", was: "hello there", revision: @recording.transcript_revision }, as: :json
+    assert_response :unprocessable_entity
+    patch line_api_v1_field_recording_path(@recording, line: 1), headers: @headers,
+      params: { speaker: "new", was: "hello there", revision: "0000000000000000" }, as: :json
+    assert_response :conflict
+    assert_equal [ "speaker_0" ], @recording.reload.speakers.map(&:label)
   end
 
   test "a correction against an old revision, a moved line or a missing line is refused and changes nothing" do
@@ -112,6 +143,29 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     @recording.update!(notes: "- Ask Priya about the board pack")
     get api_v1_field_recording_path(@recording), headers: @headers
     assert_equal "- Ask Priya about the board pack", response.parsed_body.dig("recording", "notes")
+  end
+
+  test "summary freshness reaches both resident list and detail without exposing provenance" do
+    @recording.update_columns(summary_short: "Board call", summary_long: "An earlier board call.", summarized_at: Time.current)
+    get api_v1_field_recordings_path, headers: @headers
+    listed = response.parsed_body["recordings"].find { |r| r["id"] == @recording.to_param }
+    assert_equal "unknown", listed["summary_freshness"]
+    assert_equal "An earlier board call.", listed["summary_long"]
+
+    get api_v1_field_recording_path(@recording), headers: @headers
+    body = response.parsed_body["recording"]
+    assert_equal "unknown", body["summary_freshness"]
+    assert_equal false, body["summary_pending"]
+    assert_not body.key?("summary_input_digest")
+    assert_not body.key?("summary_claim_token")
+
+    @recording.update_columns(summary_input_digest: FieldSummaries.current_input_digest(@recording))
+    get api_v1_field_recording_path(@recording), headers: @headers
+    assert_equal "current", response.parsed_body.dig("recording", "summary_freshness")
+
+    @recording.update!(transcript_text: "#{@recording.transcript_text}\nA correction.")
+    get api_v1_field_recording_path(@recording), headers: @headers
+    assert_equal "stale", response.parsed_body.dig("recording", "summary_freshness")
   end
 
   test "two diarized speakers linked to one voice are one speaker to a resident" do

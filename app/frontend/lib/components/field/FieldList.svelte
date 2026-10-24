@@ -8,14 +8,14 @@
 
   const COMPACT_AFTER = 10;
 
-  let { items = [], pagination, filterTags = [], currentKey = null, onSelect, onPage } = $props();
+  let { items = [], pagination, filterTags = [], currentKey = null, emptyText = null, onSelect, onPage } = $props();
 
   const compact = $derived(pagination.total > COMPACT_AFTER);
 </script>
 
 {#if items.length === 0}
   <p class="text-sm text-muted-foreground p-4">
-    {filterTags.length ? `Nothing here carries ${filterTags.join(' and ')}.` : 'Nothing here yet.'}
+    {filterTags.length ? `Nothing here carries ${filterTags.join(' and ')}.` : emptyText || 'Nothing here yet.'}
   </p>
 {/if}
 {#if pagination.pages > 1}

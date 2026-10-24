@@ -235,6 +235,118 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  # An archive import staged for its own server, as Portability::Import
+  # leaves it (#438), with three staged role homes.
+  def staged_import!(name: "Imported copy")
+    agent = @account.agents.create!(name:, model_id: HouseInference::Offering::OFFERINGS.keys.first, runtime: "provisioning",
+      active: false, paused: true, scheduled_wakes_enabled: false, home_profile: "house",
+      portability_custody: { "export_id" => SecureRandom.uuid })
+    AgentPlacement.create!(agent:, backend: "hetzner_cloud", kind: "archive_import", state: "staged")
+    Agents::HostedProvisioning.new(agent:, user: @user).prepare!(started_at: Time.current)
+    agent.update_columns(runtime: "offline")
+    AgentImportStage::ROLES.each do |role|
+      bytes = Zlib.gzip("#{role} home")
+      agent.import_stages.create!(role:, archive: bytes, sha256: Digest::SHA256.hexdigest(bytes), bytes: bytes.bytesize)
+    end
+    agent.reload
+  end
+
+  test "a whole archive activation: admitted at Activate, three roles seeded, started, backed up, then active with no orientation" do
+    with_house do
+      agent = staged_import!
+      placement = agent.placement
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+      run_job(agent)
+      assert_empty @client.creates, "a staged copy orders nothing"
+
+      Agents::VmBirthPolicy.current.admit_import!(placement:, requested_by: @user)
+      placement.reload
+      assert_equal "pending", placement.state
+      assert placement.vm_birth?
+      assert_equal @user, placement.birth_requested_by
+      assert_in_delta 45.minutes.from_now, placement.birth_deadline_at, 5
+      assert_equal 1, Agents::VmBirthPolicy.current.vm_count
+
+      run_job(agent)
+      assert_equal 1, @client.creates.size
+      boot_and_enroll!(agent)
+      operation(agent).runner_enrollment.update!(last_facts: { "seed_roles" => AgentImportStage::ROLES })
+      run_job(agent)
+      seeds = RunnerCommand.where(agent_placement_id: placement.id, kind: "seed_home").order(:id)
+      assert_equal %w[identity repo work], seeds.map(&:seed_role)
+      seeds.each { |command| command.deliver!(now: Time.current); command.record_result!({ "outcome" => "done" }, now: Time.current) }
+
+      run_job(agent)
+      assert_equal "ready", placement.reload.state
+      answer_latest(placement, "start_resident")
+      run_job(agent)
+      @backups.state = "verified"
+      assert_no_enqueued_jobs(only: OrientNewAgentJob) { run_job(agent) }
+      assert agent.runtime_ready_at
+      assert agent.active?
+      assert_not agent.paused?
+      assert_not agent.scheduled_wakes_enabled?
+      assert_equal "external", agent.runtime
+      assert Agents::RemoteRuntime.enrollment_for(agent)
+      assert_equal 1, @client.creates.size
+    end
+  end
+
+  test "an archive activation that fails stays inactive with its stage kept, and cleanup frees the slot" do
+    with_house do
+      agent = staged_import!
+      Agents::VmBirthPolicy.current.admit_import!(placement: agent.placement, requested_by: @user)
+      @client.on_create = ->(_) { raise HetznerCloudClient::Error.new("no capacity", status: 412, code: "resource_unavailable") }
+      assert_enqueued_with(job: VmCleanupJob) { run_job(agent) }
+      assert_match(/\AActivation on its own server failed: /, agent.sandbox_last_error)
+      assert_not agent.active?
+      assert agent.paused?
+      assert_equal "offline", agent.runtime
+      assert_equal 3, agent.import_stages.count
+      VmCleanupJob.perform_now(agent.placement.id)
+      assert_equal "retired", agent.placement.reload.state
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+    end
+  end
+
+  test "an archive activation on a runner that cannot seed roles fails plainly and seeds nothing" do
+    with_house do
+      agent = staged_import!
+      Agents::VmBirthPolicy.current.admit_import!(placement: agent.placement, requested_by: @user)
+      run_job(agent)
+      boot_and_enroll!(agent)
+      assert_enqueued_with(job: VmCleanupJob) { run_job(agent) }
+      assert_match(/newer runner/, agent.sandbox_last_error)
+      assert_equal 0, RunnerCommand.where(agent_placement_id: agent.placement.id, kind: "seed_home").count
+      assert_not agent.active?
+      assert_equal 3, agent.import_stages.count
+    end
+  end
+
+  test "admission at Activate re-checks the switch and the cap under the lock and refuses a second Activate" do
+    with_house do
+      agent = staged_import!
+      policy = Agents::VmBirthPolicy.current
+
+      @setting.update!(new_residents_on_vm: false)
+      error = assert_raises(Agents::VmBirthPolicy::Refused) { policy.admit_import!(placement: agent.placement, requested_by: @user) }
+      assert_equal Agents::VmBirthPolicy::IMPORT_SWITCHED_OFF, error.message
+      assert agent.placement.reload.staged?
+
+      @setting.update!(new_residents_on_vm: true, vm_resident_limit: 1)
+      born!
+      error = assert_raises(Agents::VmBirthPolicy::Refused) { policy.admit_import!(placement: agent.placement, requested_by: @user) }
+      assert_equal Agents::VmBirthPolicy::LIMIT_REFUSAL, error.message
+      assert agent.placement.reload.staged?
+
+      @setting.update!(vm_resident_limit: 2)
+      policy.admit_import!(placement: agent.placement, requested_by: @user)
+      error = assert_raises(Agents::VmBirthPolicy::Refused) { policy.admit_import!(placement: agent.placement, requested_by: @user) }
+      assert_equal Agents::VmBirthPolicy::ALREADY_ACTIVATING, error.message
+      assert_equal 2, policy.vm_count
+    end
+  end
+
   test "switching the setting off after admission does not strand the birth" do
     with_house do
       agent = born!

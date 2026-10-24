@@ -6,7 +6,15 @@
   // (after a transcript has been corrected, say). With a mouse the refresh
   // button shows on hover; on touch, tapping the summary shows it. The old
   // summary stays until the new one arrives, by the page's own refresh.
-  let { text, pending = false, failed = false, url = null, testid = 'field-summary', children } = $props();
+  let {
+    text,
+    pending = false,
+    failed = false,
+    freshness = null,
+    url = null,
+    testid = 'field-summary',
+    children,
+  } = $props();
 
   let finePointer = $state(true);
   $effect(() => {
@@ -56,12 +64,14 @@
       {text}
       {@render children?.()}
     </p>
-    {#if url && (finePointer || revealed || working || failed)}
+    {#if url && (finePointer || revealed || working || failed || freshness === 'stale' || freshness === 'unknown')}
       <button
         type="button"
         class="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted disabled:cursor-default {finePointer &&
         !working &&
-        !failed
+        !failed &&
+        freshness !== 'stale' &&
+        freshness !== 'unknown'
           ? 'opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100'
           : ''}"
         aria-label="Write the summary again"
@@ -80,6 +90,12 @@
   {:else if failed}
     <p class="text-xs text-destructive mt-1" data-testid="summary-failed">
       A new summary couldn't be written; this is the old one. Try again?
+    </p>
+  {:else if freshness === 'stale'}
+    <p class="text-xs text-muted-foreground mt-1" data-testid="summary-stale">Summary is out of date.</p>
+  {:else if freshness === 'unknown'}
+    <p class="text-xs text-muted-foreground mt-1" data-testid="summary-unknown">
+      This summary's source wasn't tracked. Refresh to check it against the current text.
     </p>
   {/if}
 </div>

@@ -17,6 +17,7 @@
     GoogleLogo,
     Circle,
     Plugs,
+    Receipt,
   } from 'phosphor-svelte';
   import { agentIconFor } from '$lib/agent-icons';
   import { editAccountAgentPath } from '@/routes';
@@ -30,6 +31,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    xero: Receipt,
   };
   function diskSize(bytes) {
     if (bytes == null) return '—';
@@ -38,9 +40,26 @@
     return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
   }
 
-  let { agent, accountId, onupgrade, ondisable, showActions = true, admin = false } = $props();
+  let {
+    agent,
+    accountId,
+    onupgrade,
+    ondisable,
+    showActions = true,
+    admin = false,
+    canManageProviderSubscription = false,
+  } = $props();
   let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
   let IconComponent = $derived(agentIconFor(agent.icon));
+  let failedRuns = $derived(agent.failed_runs);
+  // The streak start in the reader's own clock; a date only when it isn't today.
+  function sinceLabel(iso) {
+    if (!iso) return '';
+    const since = new Date(iso);
+    const time = since.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (since.toDateString() === new Date().toDateString()) return time;
+    return `${since.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+  }
 </script>
 
 <Card
@@ -81,6 +100,25 @@
     </div>
   </CardHeader>
   <CardContent>
+    {#if failedRuns && !agent.deprecated}
+      <div
+        class="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        data-testid="failed-runs">
+        <p class="font-medium">
+          Last {failedRuns.capped ? `${failedRuns.count}+` : failedRuns.count} runs failed{failedRuns.since
+            ? ` (since ${sinceLabel(failedRuns.since)})`
+            : ''}
+        </p>
+        {#if failedRuns.runtime_unavailable}
+          <p class="mt-0.5">{agent.name}'s runtime isn't starting, so a new message won't get a reply.</p>
+        {/if}
+        {#if showActions && !admin}
+          <a
+            class="underline mt-0.5 inline-block"
+            href={editAccountAgentPath(accountId, agent.id, { tab: 'interactions' })}>See the runs</a>
+        {/if}
+      </div>
+    {/if}
     {#if !agent.deprecated}
       <div class="text-xs text-muted-foreground mb-4 flex flex-wrap gap-x-3 gap-y-0.5">
         <span
@@ -133,7 +171,8 @@
         usageUrl={admin ? `/admin/agents/${agent.id}/provider_subscription_usage` : undefined}
         agentId={agent.id}
         modelId={agent.model_id}
-        subscription={agent.provider_subscription} />
+        subscription={agent.provider_subscription}
+        canReconnect={canManageProviderSubscription && !admin} />
     {/if}
 
     <ResidentActivity days={agent.activity || []} />

@@ -7,7 +7,6 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
   include FieldRecordingHelpers
   include ApiHumanKeyHelpers
 
-  SECRET_PRINT = "BIOMETRIC-#{SecureRandom.hex(8)}".freeze
 
   setup do
     Setting.instance.update!(allow_agents: true)
@@ -21,14 +20,22 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a person lists voices and what is remembered, never the print" do
-    store_print!(@voice, print: SECRET_PRINT)
+    secret = voice_vector(3, noise: 0.37, seed: 7)
+    store_print!(@voice, vector: secret)
     get api_v1_field_voices_path, headers: @headers
     assert_response :success
     tomas = response.parsed_body["voices"].find { |v| v["name"] == "Tomás" }
+    assert tomas["remember"]
     assert tomas["remembered"]
+    assert tomas["guessing"]
+    assert_equal 2, tomas["recordings"]
+    assert_equal 12, tomas["sample_seconds"]
     assert_equal 1, tomas["used_in"]
-    assert_not_includes response.body, SECRET_PRINT
-    assert_equal [], response.parsed_body["pending_enrolments"]
+    secret.first(5).each { |value| assert_not_includes response.body, value.to_s }
+    assert_no_match(/"print"\s*:/, response.body)
+    assert_not response.parsed_body.key?("pending_enrolments"), "there are no enrolments any more"
+    assert response.parsed_body["recognise_voices"], "on by default"
+    assert_not response.parsed_body["house_recognition"], "no voice service configured here"
     assert response.parsed_body["can_change_setting"]
   end
 
@@ -42,11 +49,17 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Tomás G", @voice.reload.name
   end
 
-  test "forget one print, forget all, delete a voice" do
+  test "forget one voice, remember it again, forget all, delete a voice" do
     store_print!(@voice)
     delete forget_api_v1_field_voice_path(@voice), headers: @headers
     assert_response :no_content
     assert_nil FieldVoiceprint.find_by(field_voice: @voice)
+    assert_not @voice.reload.remember?
+
+    post remember_api_v1_field_voice_path(@voice), headers: @headers
+    assert_response :no_content
+    assert @voice.reload.remember?
+    assert_not @voice.remembered?, "nothing forgotten comes back"
 
     store_print!(@voice)
     store_print!(@account.field_voices.create!(name: "Priya"))
@@ -70,24 +83,43 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
-  test "a pending enrolment can be removed" do
-    enrolment = FieldVoiceEnrolment.create!(account: @account, field_voice: @voice, field_recording_speaker: @speaker,
-      start_generation: 0, sample_ms: 12_000, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION,
-      consented_by: @user, expires_at: 10.minutes.from_now)
-    get api_v1_field_voices_path, headers: @headers
-    assert_equal [ enrolment.to_param ], response.parsed_body["pending_enrolments"].map { |e| e["id"] }
+  test "naming on a clear match can be turned off and on, alone or with recognition" do
+    patch recognition_api_v1_field_voices_path, params: { recognise_voices: true }, headers: @headers, as: :json
+    patch recognition_api_v1_field_voices_path, params: { auto_name_voices: false }, headers: @headers, as: :json
+    assert_response :success
+    assert_equal [ true, false ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    assert_equal false, response.parsed_body["auto_name_voices"]
 
-    delete api_v1_field_enrolment_path(enrolment), headers: resident_headers(@user, agents(:research_assistant))
-    assert_response :forbidden
-    delete api_v1_field_enrolment_path(enrolment), headers: @headers
-    assert_response :no_content
-    assert_nil FieldVoiceEnrolment.find_by(id: enrolment.id)
+    patch recognition_api_v1_field_voices_path, params: { recognise_voices: false, auto_name_voices: true }, headers: @headers, as: :json
+    assert_equal [ false, true ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+
+    get api_v1_field_voices_path, headers: @headers
+    assert_equal true, response.parsed_body["auto_name_voices"]
   end
 
-  test "resident keys are refused, other accounts' voices are 404, and former members reach nothing" do
+  test "resident keys list and resolve home voices only; lifecycle stays a person's; other accounts' voices are 404" do
     resident = resident_headers(@user, agents(:research_assistant))
+    accounts(:team_account).field_voices.create!(name: "Team only")
     get api_v1_field_voices_path, headers: resident
+    assert_response :success
+    rows = response.parsed_body.fetch("voices")
+    assert_includes rows.map { |row| row["id"] }, @voice.to_param
+    assert_not_includes rows.map { |row| row["name"] }, "Team only"
+    assert_equal %w[id member name], rows.first.keys.sort
+    assert_not response.parsed_body.key?("members_without_voice")
+    get resolve_api_v1_field_voices_path, params: { name: @voice.name }, headers: resident
+    assert_response :success
+    get resolve_api_v1_field_voices_path, params: { name: "Team only" }, headers: resident
+    assert_response :not_found
+    get api_v1_field_voices_path, params: { account_id: accounts(:team_account).to_param }, headers: resident
+    assert_response :not_found
+    post api_v1_field_voices_path, params: { name: "Resident made" }, headers: resident, as: :json
     assert_response :forbidden
+    patch api_v1_field_voice_path(@voice), params: { name: "Renamed" }, headers: resident, as: :json
+    assert_response :forbidden
+    delete api_v1_field_voice_path(@voice), headers: resident
+    assert_response :forbidden
+    assert @voice.reload.kept?
     delete forget_all_api_v1_field_voices_path, headers: resident
     assert_response :forbidden
     patch recognition_api_v1_field_voices_path, params: { recognise_voices: true }, headers: resident, as: :json
@@ -98,6 +130,10 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert theirs.reload.kept?
 
+    post remember_api_v1_field_voice_path(@voice), headers: resident
+    assert_response :forbidden
+
+    @account.update!(recognise_voices: false)
     end_membership!(@user, @account)
     patch recognition_api_v1_field_voices_path, params: { recognise_voices: true }, headers: @headers, as: :json
     assert_response :not_found

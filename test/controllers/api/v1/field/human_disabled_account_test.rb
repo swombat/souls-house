@@ -44,6 +44,7 @@ class Api::V1::Field::HumanDisabledAccountTest < ActionDispatch::IntegrationTest
       [ :get, api_v1_field_voices_path ],
       [ :patch, api_v1_field_voice_path(@voice), { name: "Tom" } ],
       [ :delete, forget_api_v1_field_voice_path(@voice) ],
+      [ :post, remember_api_v1_field_voice_path(@voice) ],
       [ :delete, forget_all_api_v1_field_voices_path ],
       [ :patch, recognition_api_v1_field_voices_path, { recognise_voices: true } ],
       [ :delete, api_v1_field_voice_path(@voice) ],

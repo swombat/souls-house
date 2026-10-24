@@ -205,6 +205,25 @@ module Agents::Portability
     def graph = manifest["memory_backend"] == "native" ? json("memory/checkpoint.json") : nil
     def legacy = json("memory/legacy.json")
 
+    # Writes one root's tree (resident/<root>/...) as a tar to io, relative to
+    # the root. The same bytes restore a local volume and seed a VM's.
+    def write_role_tar(root, io)
+      raise Error, "Unsupported archive root" unless ROOTS.include?(root)
+
+      Gem::Package::TarWriter.new(io) do |tar|
+        prefix = "resident/#{root}/"
+        entries.each do |path, item|
+          next unless path.start_with?(prefix)
+          relative = path.delete_prefix(prefix)
+          if item["type"] == "directory"
+            tar.mkdir(relative, item["mode"])
+          else
+            tar.add_file_simple(relative, item["mode"], item["size"]) { |destination| File.open(File.join(stage, path), "rb") { |input| IO.copy_stream(input, destination) } }
+          end
+        end
+      end
+    end
+
     def preview(account)
       { name: manifest.dig("metadata", "name"), export_id: manifest["export_id"], source_resident_id: manifest["source_resident_id"], created_at: manifest["created_at"], files_count: entries.count { |_, v| v["type"] == "file" }, graph_nodes: graph&.dig("payload", "nodes")&.length || 0, graph_edges: graph&.dig("payload", "edges")&.length || 0, warnings: WARNINGS, duplicate: account.agents.where("portability_custody ->> 'export_id' = ?", manifest["export_id"]).exists? }
     end

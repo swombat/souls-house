@@ -67,9 +67,12 @@ If CI passed, it calls the same transport with `operation: rails` and
 `expected_revision` set to the commit CI tested. The forced command accepts
 `rails expect <40-hex sha>`; the worker clones `master` exactly as for a manual
 press and deploys only if that clone is the expected commit. Otherwise the job
-ends in the terminal state `superseded` with nothing deployed, and the newer
-commit's own CI run deploys it. Queue time behind another deployment can't let
-an untested commit through.
+ends in the terminal host state `superseded` with nothing deployed, and the
+GitHub job is red. The newer commit's own CI run deploys it if that run is
+green; if the successor skipped (CI not green), production stays put until a
+later green master deploys. Queue time behind another deployment can't let an
+untested commit through. Treating superseded as GitHub success is the hole in
+issue #313: two close merges can both look green while nothing ships.
 
 Chaos, resident rebuilds and **Deploy both** stay manual. Set the repository
 variable `AUTO_DEPLOY_RAILS` to `false` to stop automatic deploys. Until the
@@ -171,8 +174,33 @@ Never clear locks while a worker runs. Inspect the fixed units with
 `systemctl status house-deploy-{rails,chaos,both,runtime}`. Stopping/cancelling GitHub does
 not cancel the host deployment. Host timeout or restart produces `interrupted`,
 not success. Failed and interrupted requests block further deployments.
-Inspect resident/container state before clearing
-`/var/lib/house-deploy/current.json` to allow another request.
+Inspect resident/container state, then clear the latch from GitHub: rerun the
+workflow with **acknowledge_failed_job** set to the failed run's host job id
+(shown as "Host job" in its summary). Only that exact job is released, and only
+once its service has exited; a running or successful job cannot be
+acknowledged. No host shell or sudo is needed.
+
+### Upstream migration changes (Update Chaos / Deploy both)
+
+Before restarting anyone, Update Chaos compares every `*.sql` migration file
+under a `migrat*` path in the residents' Chaos revision with the new release.
+A resident's runtime refuses to open its database if a migration it already
+applied is missing or different, so an edited, renamed or deleted migration
+would take every resident down mid-rollout. Additions are always fine.
+
+When it refuses, the run summary lists each change as `path@blob`, where blob
+is the version residents have. If you've reviewed them (e.g. a deleted file
+from a crate the binary never linked), rerun **Update Chaos** with:
+
+- **acknowledge_failed_job**: the refused run's host job id
+- **accept_migrations**: the listed entries, comma-separated, unchanged
+
+Only the listed entries are accepted, each at that exact blob. Anything else
+still stops the rollout. The acceptance applies to that run only and is
+recorded in its status.
+
+First used 2026-10-14: seuros/chaos#110 deleted the never-linked
+`chaos-daemon` crate (`srv/daemon/migrations/001_init.sql@1cbbda87…`).
 
 A failed resident recreation is left inactive/paused for operator repair, with
 its image reconciled to Docker's actual image when the container can be inspected. Its

@@ -34,9 +34,21 @@ class Agents::VmBirthPolicyTest < ActiveSupport::TestCase
     assert_nil policy.refusal(kind: :import)
   end
 
-  test "with the switch on, imports are refused before anything else is looked at" do
+  test "with the switch on, GitHub imports are refused before anything else is looked at" do
     @setting.update!(new_residents_on_vm: true, vm_resident_limit: 5)
     assert_equal Agents::VmBirthPolicy::IMPORT_REFUSAL, policy(token: nil).refusal(kind: :import)
+  end
+
+  test "with the switch on, an archive import is not refused: it is staged and admitted at Activate" do
+    @setting.update!(new_residents_on_vm: true, vm_resident_limit: 0)
+    assert_nil policy(token: nil, backups: false).refusal(kind: :archive_import)
+  end
+
+  test "a staged archive import holds no cap slot" do
+    @setting.update!(new_residents_on_vm: true, vm_resident_limit: 1)
+    AgentPlacement.create!(agent: agents(:research_assistant), backend: "hetzner_cloud", kind: "archive_import", state: "staged")
+    assert_equal 0, policy.vm_count
+    assert_nil policy.refusal
   end
 
   test "with the switch on, an unconfigured house refuses births with the configuration reason" do
@@ -121,18 +133,6 @@ class Agents::VmBirthPolicyTest < ActiveSupport::TestCase
       attributes: { name: "Local birth", system_prompt: "Hello", model_id: "openrouter/auto" })
     assert_difference "Agent.count", 1 do
       assert_enqueued_with(job: ProvisionAgentJob) { birth.create! }
-    end
-  end
-
-  test "an archive import is refused before the archive is even read" do
-    @setting.update!(new_residents_on_vm: true)
-    archive = Object.new
-    archive.define_singleton_method(:validate!) { flunk "a refused import must not read the archive" }
-    assert_no_difference [ "Agent.count", "ApiKey.count" ] do
-      error = assert_raises(Agents::Portability::Error) do
-        Agents::Portability::Import.call(archive, account: @account, user: @user, name: "Copy")
-      end
-      assert_equal Agents::VmBirthPolicy::IMPORT_REFUSAL, error.message
     end
   end
 

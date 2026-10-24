@@ -70,6 +70,7 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     file.reload
     assert_equal "Orchard replanting plan", file.summary_short
     assert_equal "A plan for replanting the north orchard with pears next spring.", file.summary_long
+    assert_equal "current", file.summary_freshness
     assert file.summarized_at
     assert_nil file.summary_claimed_at
     assert_equal updated_at, file.updated_at, "a summary is not an edit"
@@ -79,6 +80,7 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     assert_equal "anthropic", call[:provider]
     assert_includes call[:user], "north orchard"
     assert_includes call[:user], "for the spring"
+    assert_equal FieldSummaries.input_digest(call[:user]), file.summary_input_digest
   end
 
   test "a ready recording is summarised from its transcript" do

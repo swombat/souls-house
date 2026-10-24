@@ -238,20 +238,20 @@ module Api
       end
 
       def rhythm_params
-        params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
-          :weekday, :month_day, :month, :timezone).to_h.symbolize_keys
+        Rhythm.public_room_attributes(params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
+          :weekday, :month_day, :month, :timezone, :room_choice, :room_id).to_h.symbolize_keys)
       end
 
       # The web form's parameters: resident_ids are resolved against the
       # account's eligible residents and accepted guests, failing closed (404).
       def human_rhythm_params(account)
         permitted = params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
-          :weekday, :month_day, :month, :timezone, resident_ids: [], resident_models: {})
+          :weekday, :month_day, :month, :timezone, :room_choice, :room_id, resident_ids: [], resident_models: {})
         if permitted.key?(:resident_ids)
           permitted[:resident_ids] = Rhythm.selectable_resident_ids(account, permitted.delete(:resident_ids))
         end
         models = permitted.delete(:resident_models)
-        attributes = permitted.to_h.symbolize_keys
+        attributes = Rhythm.public_room_attributes(permitted.to_h.symbolize_keys)
         attributes[:resident_models] = Rhythm.decode_resident_models(models) if models
         attributes
       end

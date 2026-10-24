@@ -11,9 +11,12 @@ contract suites. A failure in one suite does not cancel the others. Tests are no
 filtered to changed paths and failures are not allowed to pass silently.
 
 Each application job has a fresh PostgreSQL 17 service and isolated test instance.
-The service uses the Docker Official Image mirror on Public ECR, pinned to its
-verified Linux/amd64 PG17 manifest. This avoids Docker Hub's unauthenticated
-pull quota on shared GitHub runners without adding a registry credential.
+The service uses the Docker Official Image via Google's Hub mirror
+(`mirror.gcr.io/library/postgres`), pinned to its verified Linux/amd64 PG17
+manifest. Public ECR's anonymous data-limit has blocked that pull on shared
+runners (`toomanyrequests`) before any workflow step, so a later docker login
+cannot help, and authenticating Docker Hub would not have fetched this image.
+The GCR mirror is pulled anonymously; no registry credential is added.
 Ruby comes from `.ruby-version`; Bun comes from `package.json`. Dependencies use
 the committed lockfiles. `config/environments/test.rb` uses public, test-only
 encryption keys; they must never be used for real data. Browser suites use the normal ownership-checked runners,

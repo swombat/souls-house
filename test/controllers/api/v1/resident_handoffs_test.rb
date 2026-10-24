@@ -132,7 +132,9 @@ module Api
           post_as_lume content: "@Mira ready"
           perform_enqueued_jobs(only: MessageHandoffJob)
 
-          assert_enqueued_with(job: AllAgentsResponseJob, args: ->(args) { !args.last.include?(@mira.id) && args.last.include?(third.id) }) do
+          assert_enqueued_with(job: AllAgentsResponseJob, args: ->(args) {
+            !args[1].include?(@mira.id) && args[1].include?(third.id) && args.last == { wake_source_kinds: [ "peer" ] }
+          }) do
             knock
           end
         end

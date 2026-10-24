@@ -221,10 +221,16 @@ class RunnerEnrollment < ApplicationRecord
       raise Refused.new(:seed_not_requested, 404) unless wanted
 
       archive = AgentPlacement.uncached { AgentPlacement.where(id: placement.id).pick(:seed_sha256, :seed_archive) }
-      raise Refused.new(:seed_not_requested, 404) unless archive && archive[0] == sha256 && archive[1].present?
+      bytes = archive[1] if archive && archive[0] == sha256
+      # An archive import's role homes are staged on its resident
+      # (AgentImportStage), each named by its own digest.
+      if bytes.blank? && placement.kind == "archive_import"
+        bytes = AgentImportStage.uncached { AgentImportStage.where(agent_id: placement.agent_id, sha256:).pick(:archive) }
+      end
+      raise Refused.new(:seed_not_requested, 404) if bytes.blank?
 
       consume_nonce!(nonce, now)
-      archive[1]
+      bytes
     end
   end
 

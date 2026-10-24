@@ -19,13 +19,18 @@ class ApplicationController < ActionController::Base
         account: current_account&.as_json,
         visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
         rooms: -> { current_account ? current_account.rooms.map(&:as_json) : [] },
+        main_room_name: -> { current_account&.main_room_label || Room::MAIN },
         current_room: -> { current_account ? selected_room_key : RoomSelection::MAIN },
-        accounts: Current.user.confirmed_accounts.map(&:as_json),
+        accounts: -> { Current.user.confirmed_accounts.map(&:as_json) },
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
+        room_activity: -> { RoomActivity.summary_for(current_account) },
+        expired_subscriptions: -> { ExpiredProviderSubscriptions.summary_for(Current.user) },
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
         token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 },
+        # Which repositories chat commit badges are measured against (CommitBadges).
+        commit_badges: -> { CommitBadges.config_for(current_account, Current.user) },
         # Site Admin pages only: whether production still follows master.
         deploy_alarm: -> { site_admin_page? ? DeployAlarm.payload : nil }
       }

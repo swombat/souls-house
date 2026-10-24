@@ -161,6 +161,37 @@ class MessageHandoffTest < ActiveSupport::TestCase
     assert_equal [ "delivered", nil ], [ handoff.reload.status, handoff.reason ]
   end
 
+  test "a woken run refused as already running knocks again later instead of blocking, until the request expires" do
+    handoff = post_as_lume("@Mira, approved at abc123, please merge").handoffs.sole
+    live { handoff.dispatch! }
+    run = handoff.reload.runtime_interaction
+    run.update_columns(transport_status: 409, runtime_status: "already_running")
+    run.finish_execution!("busy")
+
+    assert_enqueued_with(job: MessageHandoffJob, args: [ handoff ]) do
+      MessageHandoff.sync!(chat: @chat, agent: @mira)
+    end
+    assert_equal [ "pending", nil, nil, "queued" ], [ handoff.reload.status, handoff.reason, handoff.runtime_interaction, handoff.receipt_state ]
+
+    live { handoff.dispatch! }
+    retried = handoff.reload.runtime_interaction
+    assert_equal "triggered", handoff.status
+    assert_not_equal run, retried
+
+    retried.update_columns(last_included_message_id: handoff.message_id, transport_status: 200, runtime_status: "ok")
+    retried.finish_execution!("completed")
+    MessageHandoff.sync!(chat: @chat, agent: @mira)
+    assert_equal "delivered", handoff.reload.status
+
+    late = post_as_lume("@Mira, one more").handoffs.sole
+    live { late.dispatch! }
+    late.reload.runtime_interaction.finish_execution!("busy")
+    MessageHandoff.sync!(chat: @chat, agent: @mira)
+    late.update_columns(created_at: (MessageHandoff::EXPIRY + 1.minute).ago)
+    live { late.dispatch! }
+    assert_equal [ "blocked", "not_started_in_time" ], [ late.reload.status, late.reason ]
+  end
+
   test "a message already read by the time the job runs is delivered without a wake" do
     handoff = post_as_lume("@Mira look").handoffs.sole
     seen = AgentRuntimeInteraction.reserve!(agent: @mira, chat: @chat)

@@ -4,17 +4,20 @@ Run: python3 -m unittest discover -s test/cli -p '*_test.py'
 """
 
 import contextlib
+import hashlib
 import importlib.machinery
 import importlib.util
 import io
 import json
 import os
+import socket
 import stat
 import sys
 import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
@@ -89,6 +92,16 @@ class FakeHouse:
 
 class CliTestCase(unittest.TestCase):
     def setUp(self):
+        connect = socket.create_connection
+
+        def local_connection(address, *args, **kwargs):
+            if address[0] not in ("127.0.0.1", "::1", "localhost"):
+                raise AssertionError("CLI contract tests may only connect to loopback")
+            return connect(address, *args, **kwargs)
+
+        guard = mock.patch("socket.create_connection", side_effect=local_connection)
+        guard.start()
+        self.addCleanup(guard.stop)
         self.house = FakeHouse()
         self.addCleanup(self.house.close)
         self.config_dir = tempfile.mkdtemp()
@@ -96,7 +109,7 @@ class CliTestCase(unittest.TestCase):
 
     def run_cli(self, *argv, stdin="", env=None, tty=False):
         environ = {k: v for k, v in os.environ.items()
-                   if not k.startswith(("SOULS_", "SOULSHOUSE_"))}
+                   if not k.startswith(("SOULS_", "SOULSHOUSE_", "HELIXKIT_"))}
         environ.update(self.env if env is None else env)
         out, err = io.StringIO(), io.StringIO()
         fake_stdin = io.StringIO(stdin)
@@ -259,6 +272,36 @@ class ReadingTest(CliTestCase):
         self.assertEqual([json.loads(line)["id"] for line in out.splitlines()], ["m2"])
 
 
+class WhoTest(CliTestCase):
+    def test_who_lists_the_account_with_reasons(self):
+        self.house.route("GET", "/api/v1/who", body={
+            "account": {"id": "a1", "name": "Nexus"},
+            "people": [{"name": "Daniel", "kind": "person", "role": "owner",
+                        "reads": "every conversation in this account", "site_admin": True}],
+            "residents": [{"id": "r1", "name": "Claude", "kind": "resident",
+                           "reads": "only the conversations it has a seat in", "seats": 12, "paused": False}],
+            "site_admins": [],
+            "not_covered": "Telegram conversations are separate."})
+        code, out, _ = self.run_cli("who", "--account", "a1")
+        self.assertEqual(code, 0)
+        self.assertIn("account_id=a1", self.house.requests[-1]["query"])
+        self.assertIn("- Daniel (owner): every conversation in this account · site admin", out)
+        self.assertIn("- Claude (resident): only the conversations it has a seat in (12 seats)", out)
+        self.assertIn("Telegram", out)
+
+    def test_who_for_one_conversation_and_json(self):
+        body = {"conversation": {"id": "c1", "title": "Build"}, "account": {"name": "Nexus"},
+                "readers": [{"name": "Mira", "kind": "resident", "why": "seat in this conversation",
+                             "closed_for_initiation": True}]}
+        self.house.route("GET", "/api/v1/conversations/c1/who", body=body)
+        code, out, _ = self.run_cli("who", "c1")
+        self.assertEqual(code, 0)
+        self.assertIn("# Who can read Build (c1) in Nexus", out)
+        self.assertIn("- Mira (resident): seat in this conversation · won't start conversations here", out)
+        code, out, _ = self.run_cli("who", "c1", "--json")
+        self.assertEqual(json.loads(out), body)
+
+
 class ApiEscapeHatchTest(CliTestCase):
     def test_api_sends_json_query_and_relative_paths(self):
         self.house.route("POST", "/api/v1/conversations/c1/stones", body={"stone": {"id": "s1"}})
@@ -417,6 +460,74 @@ class FieldTest(CliTestCase):
         self.assertIn("has no line 9 (it has 2)", err)
         self.assertEqual([r["method"] for r in self.house.requests], ["GET"])
 
+    SPEAKER_LINES = {"id": "KJkAjl", "revision": "rev1",
+                     "lines": [{"line": 1, "speaker": "Sanda", "speaker_id": "spA", "text": "Cinquante kilos."},
+                               {"line": 2, "speaker": "Ioan", "speaker_id": "spB", "text": "Non, soixante-dix."},
+                               {"line": 3, "speaker": None, "speaker_id": None, "text": "[laughter]"}]}
+
+    def test_speaker_by_name_sends_the_id_with_was_and_revision(self):
+        self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=self.SPEAKER_LINES)
+        self.house.route("PATCH", "/api/v1/field/recordings/KJkAjl/lines/2", body={
+            "revision": "rev2", "lines": [],
+            "line": {"line": 2, "speaker": "Sanda", "speaker_id": "spA", "text": "Non, soixante-dix."}})
+        code, out, _ = self.run_cli("field", "speaker", "KJkAjl", "2", "sanda")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["revision rev2", "   2  Sanda: Non, soixante-dix."])
+        self.assertEqual(json.loads(self.last()["body"]),
+                         {"speaker": "spA", "was": "Non, soixante-dix.", "revision": "rev1"})
+
+    def test_speaker_accepts_an_id_or_new(self):
+        for who, sent in (("spB", "spB"), ("New", "new")):
+            self.house.requests.clear()
+            self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=self.SPEAKER_LINES)
+            self.house.route("PATCH", "/api/v1/field/recordings/KJkAjl/lines/1", body={
+                "revision": "rev2", "lines": [], "line": {"line": 1, "speaker": "Speaker 3", "text": "Cinquante kilos."}})
+            code, _, _ = self.run_cli("field", "speaker", "KJkAjl", "1", who, "--revision", "rev1")
+            self.assertEqual(code, 0, who)
+            self.assertEqual(json.loads(self.last()["body"]),
+                             {"speaker": sent, "was": "Cinquante kilos.", "revision": "rev1"}, who)
+
+    def test_speaker_nobody_by_that_name_is_a_usage_error_naming_who_speaks(self):
+        self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=self.SPEAKER_LINES)
+        code, _, err = self.run_cli("field", "speaker", "KJkAjl", "1", "Anna")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("Ioan, Sanda, or 'new'", err)
+        self.assertEqual([r["method"] for r in self.house.requests], ["GET"])
+
+    def test_speaker_stale_revision_is_a_conflict_without_a_write(self):
+        # Even when the line it names has since merged away.
+        self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=self.SPEAKER_LINES)
+        for line in ("1", "9"):
+            code, _, err = self.run_cli("field", "speaker", "KJkAjl", line, "Ioan", "--revision", "rev0")
+            self.assertEqual(code, souls.EXIT_CONFLICT, line)
+            self.assertIn("has changed since revision rev0", err)
+        self.assertEqual({r["method"] for r in self.house.requests}, {"GET"})
+
+    def test_speaker_server_conflict_is_a_conflict(self):
+        self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=self.SPEAKER_LINES)
+        self.house.route("PATCH", "/api/v1/field/recordings/KJkAjl/lines/1", status=409,
+                         body={"error": "The transcript has changed", "revision": "rev2"})
+        code, _, err = self.run_cli("field", "speaker", "KJkAjl", "1", "Ioan")
+        self.assertEqual(code, souls.EXIT_CONFLICT)
+        self.assertIn("The transcript has changed", err)
+
+    def test_speaker_a_name_two_speakers_share_is_refused_listing_their_ids(self):
+        # A voice someone named "Speaker 2" and an unnamed second speaker read the
+        # same; /lines can't say whether they are one person.
+        lines = {"id": "KJkAjl", "revision": "rev1",
+                 "lines": [{"line": 1, "speaker": "Speaker 2", "speaker_id": "named", "text": "One."},
+                           {"line": 2, "speaker": "Speaker 2", "speaker_id": "unnamed", "text": "Two."},
+                           {"line": 3, "speaker": "Other", "speaker_id": "other", "text": "Three."}]}
+        self.house.route("GET", "/api/v1/field/recordings/KJkAjl/lines", body=lines)
+        code, _, err = self.run_cli("field", "speaker", "KJkAjl", "3", "Speaker 2")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("named (lines 1); unnamed (lines 2)", err)
+        self.assertEqual([r["method"] for r in self.house.requests], ["GET"])
+        self.house.route("PATCH", "/api/v1/field/recordings/KJkAjl/lines/3", body={
+            "revision": "rev2", "lines": [], "line": {"line": 3, "speaker": "Speaker 2", "text": "Three."}})
+        code, _, _ = self.run_cli("field", "speaker", "KJkAjl", "3", "unnamed")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"])["speaker"], "unnamed")
 
 class OriginTest(CliTestCase):
     def test_a_foreign_absolute_url_is_refused_before_any_request(self):
@@ -544,7 +655,7 @@ class CaptionTest(CliTestCase):
         class OpenPipe(io.StringIO):
             def read(self, *a):
                 raise AssertionError("stdin must not be read")
-        environ = {k: v for k, v in os.environ.items() if not k.startswith(("SOULS_", "SOULSHOUSE_"))}
+        environ = {k: v for k, v in os.environ.items() if not k.startswith(("SOULS_", "SOULSHOUSE_", "HELIXKIT_"))}
         environ.update(self.env)
         pipe = OpenPipe()
         pipe.isatty = lambda: False
@@ -715,6 +826,349 @@ class GlossaryTest(CliTestCase):
         self.assertEqual(code, souls.EXIT_USAGE)
         self.assertEqual(self.house.requests, [])
         self.assertIn("exactly one TERM", err)
+
+
+class IntegrationsTest(CliTestCase):
+    """souls integrations list|providers|connect|grant|disconnect."""
+
+    PROVIDERS = {"providers": [
+        {"key": "porkbun", "name": "Porkbun", "management_scopes": ["personal", "account_managed"],
+         "credential_fields": [{"key": "api_key", "label": "API key", "type": "password"},
+                               {"key": "secret_key", "label": "Secret API key", "type": "password"}]},
+        {"key": "pipedrive", "name": "Pipedrive CRM", "management_scopes": ["personal"],
+         "credential_fields": [{"key": "company_domain", "label": "Company domain", "type": "text"},
+                               {"key": "api_token", "label": "Personal API token", "type": "password"}]},
+    ]}
+
+    def setUp(self):
+        super().setUp()
+        self.house.route("GET", "/api/v1/account/service_connections/providers", body=self.PROVIDERS)
+        self.house.route("POST", "/api/v1/account/service_connections", status=201,
+                         body={"service_connection": {"id": "svc_9", "provider": "porkbun", "label": "Porkbun (acme)"}})
+
+    def posted(self):
+        return [json.loads(r["body"]) for r in self.house.requests
+                if (r["method"], r["path"]) == ("POST", "/api/v1/account/service_connections")]
+
+    def test_bare_and_list_read_the_account_connections(self):
+        self.house.route("GET", "/api/v1/account/service_connections", body={"service_connections": []})
+        for argv in (("integrations",), ("integrations", "list")):
+            code, _, _ = self.run_cli(*argv)
+            self.assertEqual(code, 0)
+            self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/api/v1/account/service_connections"))
+
+    def test_connect_reads_secrets_as_json_on_stdin(self):
+        code, out, _ = self.run_cli("integrations", "connect", "porkbun", "--json", "-",
+                                    stdin='{"api_key": "pk1_a", "secret_key": "sk1_b"}')
+        self.assertEqual(code, 0)
+        self.assertEqual(self.posted(), [{"provider": "porkbun", "management_scope": "personal",
+                                          "credentials": {"api_key": "pk1_a", "secret_key": "sk1_b"}}])
+        self.assertEqual(json.loads(out)["service_connection"]["id"], "svc_9")
+
+    def test_connect_prompts_for_missing_secrets_without_echo_in_a_terminal(self):
+        with mock.patch("getpass.getpass", side_effect=["sk1_hidden"]) as hidden:
+            code, _, _ = self.run_cli("integrations", "connect", "porkbun", "--field", "api_key=pk1_a", tty=True)
+        self.assertEqual(code, 0)
+        hidden.assert_called_once()
+        self.assertEqual(self.posted()[0]["credentials"], {"api_key": "pk1_a", "secret_key": "sk1_hidden"})
+
+    def test_connect_without_a_terminal_names_what_is_missing_and_sends_nothing(self):
+        code, _, err = self.run_cli("integrations", "connect", "porkbun", "--field", "api_key=pk1_a")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("missing secret_key", err)
+        self.assertEqual(self.posted(), [])
+
+    def test_connect_refuses_unknown_fields_and_unknown_providers_before_posting(self):
+        code, _, err = self.run_cli("integrations", "connect", "porkbun", "--field", "password=x", "--field", "api_key=a",
+                                    "--field", "secret_key=b")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("its fields are: api_key, secret_key", err)
+        self.assertNotIn("password", err)
+        code, _, err = self.run_cli("integrations", "connect", "dropbox", "--json", "{}")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("can: porkbun, pipedrive", err)
+        self.assertEqual(self.posted(), [])
+
+    def test_connect_passes_scope_label_and_grants_each_resident(self):
+        self.house.route("PATCH", "/api/v1/residents/r1/service_accesses/svc_9",
+                         body={"service_connection": {"id": "svc_9", "enabled": True}})
+        code, out, _ = self.run_cli("integrations", "connect", "porkbun", "--scope", "account_managed", "--label", "DNS",
+                                    "--grant", "r1", "--json", '{"api_key": "a", "secret_key": "b"}')
+        self.assertEqual(code, 0)
+        body = self.posted()[0]
+        self.assertEqual((body["management_scope"], body["label"]), ("account_managed", "DNS"))
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": True})
+        self.assertEqual(json.loads(out)["granted"], [{"resident_id": "r1", "enabled": True}])
+
+    def test_rejected_credential_input_never_echoes_what_was_typed(self):
+        secret = "sk1_SYNTHETIC_SECRET_9f3a"
+        for argv, stdin in (
+            (("integrations", "connect", "porkbun", "--field", secret), ""),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"%s": "x", "api_key": "a", "secret_key": "b"}' % secret),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"api_key": "a", "secret_key": "b", "oops": "%s"}' % secret),
+        ):
+            code, out, err = self.run_cli(*argv, stdin=stdin)
+            self.assertEqual(code, souls.EXIT_USAGE)
+            self.assertNotIn(secret, out + err)
+        self.assertEqual(self.posted(), [])
+
+    def test_grant_and_revoke_patch_the_resident_access(self):
+        self.house.route("PATCH", "/api/v1/residents/r1/service_accesses/svc_9",
+                         body={"service_connection": {"id": "svc_9"}})
+        self.run_cli("integrations", "grant", "svc_9", "--resident", "r1")
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": True})
+        self.run_cli("integrations", "grant", "svc_9", "--resident", "r1", "--revoke")
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": False})
+
+    def test_disconnect_deletes_the_connection(self):
+        self.house.route("DELETE", "/api/v1/account/service_connections/svc_9", body={"disconnected": {"id": "svc_9"}})
+        code, _, _ = self.run_cli("integrations", "disconnect", "svc_9")
+        self.assertEqual(code, 0)
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("DELETE", "/api/v1/account/service_connections/svc_9"))
+
+
+class VoiceSamplesTest(CliTestCase):
+    """Only local fake HTTP servers and synthetic credentials."""
+
+    def audio(self, name="clip.wav", data=b"RIFF prepared clip"):
+        path = os.path.join(self.config_dir, name)
+        with open(path, "wb") as target:
+            target.write(data)
+        return path
+
+    def upload_args(self, *extra):
+        return ("field", "samples", "upload", "v1", self.audio(),
+                "--source-identifier", "archive/call#1", "--source-session", "canonical/call",
+                "--idempotency-key", "fixed-retry-key", *extra)
+
+    def test_voices_list_create_rename_delete_and_bare_list(self):
+        for method, path, argv, payload in (
+            ("GET", "/api/v1/field/voices", ("list",), None),
+            ("GET", "/api/v1/field/voices", (), None),
+            ("POST", "/api/v1/field/voices", ("create", "A name"), {"name": "A name"}),
+            ("PATCH", "/api/v1/field/voices/v1", ("rename", "v1", "New name"), {"name": "New name"}),
+            ("DELETE", "/api/v1/field/voices/v1", ("delete", "v1"), None),
+        ):
+            with self.subTest(argv=argv):
+                self.house.route(method, path, body={"ok": True})
+                code, out, err = self.run_cli("field", "voices", *argv)
+                self.assertEqual((code, err), (0, ""))
+                self.assertEqual(json.loads(out), {"ok": True})
+                self.assertEqual((self.last()["method"], self.last()["path"]), (method, path))
+                self.assertEqual(json.loads(self.last()["body"]) if payload else None, payload)
+
+    def test_resolve_sends_literal_name_as_query_without_creating(self):
+        self.house.route("GET", "/api/v1/field/voices/resolve", status=404, body={"error": "No exact match"})
+        name = "  Zoë & /?+#  "
+        code, out, err = self.run_cli("field", "voices", "resolve", name)
+        self.assertEqual(code, souls.EXIT_NOT_FOUND)
+        self.assertEqual(out, "")
+        self.assertEqual(json.loads(err)["status"], 404)
+        self.assertEqual(urllib.parse.parse_qs(self.last()["query"]), {"name": [name]})
+        self.assertEqual([r["method"] for r in self.house.requests], ["GET"])
+
+    def test_public_ids_are_url_encoded_without_assuming_the_sample_kind(self):
+        opaque = "standalone/é ?#%"
+        path = "/api/v1/field/samples/" + urllib.parse.quote(opaque, safe="")
+        self.house.route("GET", path, body={"sample": {"id": opaque}})
+        code, out, _ = self.run_cli("field", "samples", "inspect", opaque)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["sample"]["id"], opaque)
+        self.assertEqual(self.last()["path"], path)
+        self.assertEqual(self.last()["query"], "")
+
+    def test_list_is_voice_scoped_and_account_option_reaches_leaf(self):
+        self.house.route("GET", "/api/v1/field/voices/v1/samples", body={"samples": []})
+        code, out, _ = self.run_cli("field", "samples", "list", "v1", "--account", "a /+")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"samples": []})
+        self.assertEqual(urllib.parse.parse_qs(self.last()["query"]), {"account_id": ["a /+"]})
+
+    def test_upload_hashes_only_explicit_original_file_and_preserves_metadata(self):
+        original = b"original uncut recording, NOT clip bytes"
+        source = self.audio("original.wav", original)
+        self.house.route("POST", "/api/v1/field/voices/v1/samples", status=201, body={"sample": {"id": "s1"}})
+        code, out, err = self.run_cli(*self.upload_args(
+            "--source-file", source, "--start-ms", "0", "--end-ms", "2300",
+            "--recorded-at", "2020-02-03", "--recording-id", "r1"))
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(json.loads(out)["sample"]["id"], "s1")
+        req = self.last()
+        self.assertEqual(req["headers"]["authorization"], "Bearer hx_test")
+        self.assertTrue(req["headers"]["content-type"].startswith("multipart/form-data; boundary="))
+        body = req["body"]
+        self.assertIn(b'name="audio"; filename="clip.wav"', body)
+        self.assertIn(b"RIFF prepared clip", body)
+        self.assertNotIn(original, body)
+        for name, value in (
+            ("source_identifier", "archive/call#1"), ("source_session", "canonical/call"),
+            ("source_sha256", hashlib.sha256(original).hexdigest()), ("idempotency_key", "fixed-retry-key"),
+            ("start_ms", "0"), ("end_ms", "2300"), ("recorded_at", "2020-02-03"), ("recording_id", "r1"),
+        ):
+            self.assertIn(f'name="{name}"\r\n\r\n{value}\r\n'.encode(), body)
+
+    def test_retry_keeps_the_supplied_idempotency_key_and_hash(self):
+        attempts = []
+
+        def upload(req):
+            attempts.append(req)
+            return (503, {"error": "retry later"}, {}) if len(attempts) == 1 else (200, {"sample": {"id": "s1"}}, {})
+        self.house.routes[("POST", "/api/v1/field/voices/v1/samples")] = upload
+        argv = self.upload_args("--source-sha256", "A" * 64)
+        self.assertEqual(self.run_cli(*argv)[0], souls.EXIT_ERROR)
+        self.assertEqual(len(attempts), 1, "no hidden automatic retry")
+        self.assertEqual(self.run_cli(*argv)[0], 0)
+        for req in attempts:
+            self.assertIn(b'name="idempotency_key"\r\n\r\nfixed-retry-key\r\n', req["body"])
+            self.assertIn(b'name="source_sha256"\r\n\r\n' + b"a" * 64 + b"\r\n", req["body"])
+            self.assertNotIn(b'name="start_ms"', req["body"])
+            self.assertNotIn(b'name="recorded_at"', req["body"])
+
+    def test_upload_refuses_missing_hash_invalid_ranges_and_source_hash_mismatch(self):
+        source = self.audio("original.wav", b"original")
+        for extra in (
+            (), ("--source-sha256", "bad"), ("--source-sha256", "0" * 64, "--start-ms", "1"),
+            ("--source-sha256", "0" * 64, "--start-ms", "5", "--end-ms", "5"),
+            ("--source-sha256", "0" * 64, "--start-ms", "-1", "--end-ms", "5"),
+            ("--source-sha256", "0" * 64, "--source-file", source),
+            ("--source-file", "/nonexistent/original.wav"),
+        ):
+            with self.subTest(extra=extra):
+                code, out, err = self.run_cli(*self.upload_args(*extra))
+                self.assertEqual(code, souls.EXIT_USAGE)
+                self.assertEqual(out, "")
+                self.assertEqual(json.loads(err)["exit_code"], souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+
+    def test_upload_prints_server_deduplication_receipt_unchanged(self):
+        for reason in ("retry", "identical", "overlap"):
+            receipt = {"sample": {"id": "existing", "content_sha256": "b" * 64}, "deduplicated": reason}
+            self.house.route("POST", "/api/v1/field/voices/v1/samples", status=200, body=receipt)
+            code, out, err = self.run_cli(*self.upload_args("--source-sha256", "a" * 64))
+            self.assertEqual((code, err), (0, ""))
+            self.assertEqual(json.loads(out), receipt)
+
+    def test_accept_requires_listening_and_does_not_claim_confirmation(self):
+        code, out, err = self.run_cli("field", "samples", "accept", "s1", "--digest", "digest")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("--listened", json.loads(err)["error"])
+        self.assertEqual(self.house.requests, [])
+        self.house.route("PATCH", "/api/v1/field/samples/s1", status=403, body={"error": "OAuth human required"})
+        code, out, err = self.run_cli("field", "samples", "accept", "s1", "--digest", "digest", "--listened")
+        self.assertEqual(code, souls.EXIT_AUTH)
+        self.assertEqual(out, "")
+        self.assertIn("OAuth", json.loads(err)["error"])
+        self.assertIn("does not upgrade", json.loads(err)["error"])
+        self.assertEqual(json.loads(self.last()["body"]), {"included": True, "digest": "digest"})
+        self.assertNotIn("confirmed_by", self.last()["body"].decode())
+
+    def test_reject_correct_delete_use_only_the_requested_operation(self):
+        for action, options, method, payload in (
+            ("reject", ("--digest", "d1"), "PATCH", {"included": False, "digest": "d1"}),
+            ("correct", ("--voice", "another-opaque-id", "--digest", "d1"), "PATCH",
+             {"voice_id": "another-opaque-id", "digest": "d1"}),
+            ("delete", ("--digest", "d1"), "DELETE", {"digest": "d1"}),
+        ):
+            self.house.route(method, "/api/v1/field/samples/s1", body={"ok": True})
+            code, out, _ = self.run_cli("field", "samples", action, "s1", *options)
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out), {"ok": True})
+            self.assertEqual(json.loads(self.last()["body"]) if payload else None, payload)
+
+    def test_download_writes_binary_and_outputs_json_receipt(self):
+        self.house.route("GET", "/api/v1/field/samples/s1/audio", body=b"\x00audio\xff")
+        target = os.path.join(self.config_dir, "download.wav")
+        code, out, err = self.run_cli("field", "samples", "download", "s1", "--digest", "d /+#", "-o", target)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(json.loads(out), {"output": target, "bytes": 7})
+        with open(target, "rb") as audio:
+            self.assertEqual(audio.read(), b"\x00audio\xff")
+        self.assertEqual(urllib.parse.parse_qs(self.last()["query"]), {"digest": ["d /+#"]})
+
+    def test_voice_requests_refuse_cross_origin_and_same_origin_redirects(self):
+        other = FakeHouse()
+        self.addCleanup(other.close)
+        other.route("GET", "/stolen", body={"ok": True})
+        self.house.route("GET", "/same", body={"ok": True})
+        for location in (other.url + "/stolen", "/same"):
+            for action, path, options in (
+                ("inspect", "/api/v1/field/samples/s1", ()),
+                ("download", "/api/v1/field/samples/s1/audio",
+                 ("--digest", "d1", "-o", os.path.join(self.config_dir, "redirect.wav"))),
+            ):
+                self.house.route("GET", path, status=302, body=b"", headers={"Location": location})
+                code, out, err = self.run_cli("field", "samples", action, "s1", *options)
+                self.assertEqual(code, souls.EXIT_ERROR)
+                self.assertEqual(out, "")
+                self.assertEqual(json.loads(err)["status"], 302)
+        self.assertEqual(other.requests, [])
+        self.assertFalse(any(req["path"] == "/same" for req in self.house.requests))
+
+    def test_api_errors_are_json_and_redact_the_bearer(self):
+        for status, expected in ((401, souls.EXIT_AUTH), (403, souls.EXIT_AUTH), (404, souls.EXIT_NOT_FOUND),
+                                 (409, souls.EXIT_CONFLICT), (422, souls.EXIT_INVALID), (500, souls.EXIT_ERROR)):
+            self.house.route("GET", "/api/v1/field/voices", status=status, body={"error": "bad hx_test"})
+            code, out, err = self.run_cli("field", "voices", "list")
+            self.assertEqual(code, expected)
+            self.assertEqual(out, "")
+            self.assertNotIn("hx_test", err)
+            self.assertEqual(json.loads(err)["status"], status)
+
+    def test_legacy_environment_alias_is_isolated_and_supported(self):
+        self.house.route("GET", "/api/v1/field/voices", body={"voices": []})
+        env = {"XDG_CONFIG_HOME": self.config_dir, "HELIXKIT_BEARER_TOKEN": "hx_legacy_dummy",
+               "HELIXKIT_APP_URL": self.house.url}
+        code, _, _ = self.run_cli("field", "voices", "list", env=env)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["headers"]["authorization"], "Bearer hx_legacy_dummy")
+
+    def test_missing_required_upload_option_is_json_usage_error(self):
+        parser, _ = souls.build_parser()
+        error = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stderr(error):
+            parser.parse_args(["field", "samples", "upload", "v1", self.audio()])
+        self.assertEqual(raised.exception.code, souls.EXIT_USAGE)
+        self.assertEqual(json.loads(error.getvalue())["exit_code"], souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+
+    def test_accept_with_human_app_token_only_sends_included_and_digest(self):
+        self.house.route("PATCH", "/api/v1/field/samples/s1", body={"sample": {"included": True}})
+        env = dict(self.env, SOULS_TOKEN="oauth_dummy_human")
+        code, out, err = self.run_cli("field", "samples", "accept", "s1", "--digest", "d1",
+                                    "--listened", env=env)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(json.loads(out), {"sample": {"included": True}})
+        self.assertEqual(self.last()["headers"]["authorization"], "Bearer oauth_dummy_human")
+        self.assertEqual(json.loads(self.last()["body"]), {"included": True, "digest": "d1"})
+
+    def test_api_key_can_reinclude_an_unchanged_already_confirmed_sample(self):
+        self.house.route("PATCH", "/api/v1/field/samples/s1",
+                         body={"sample": {"included": True, "confirmed_by": "original human"}})
+        code, out, err = self.run_cli("field", "samples", "accept", "s1", "--digest", "d1", "--listened")
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(json.loads(out)["sample"]["confirmed_by"], "original human")
+        self.assertEqual(json.loads(self.last()["body"]), {"included": True, "digest": "d1"})
+
+    def test_correct_and_delete_require_an_explicit_digest(self):
+        parser, _ = souls.build_parser()
+        for argv in (["correct", "s1", "--voice", "v2"], ["delete", "s1"]):
+            error = io.StringIO()
+            with self.assertRaises(SystemExit) as raised, contextlib.redirect_stderr(error):
+                parser.parse_args(["field", "samples", *argv])
+            self.assertEqual(raised.exception.code, souls.EXIT_USAGE)
+            self.assertIn("--digest", json.loads(error.getvalue())["error"])
+        self.assertEqual(self.house.requests, [])
+
+    def test_missing_credentials_and_invalid_json_have_stable_errors(self):
+        code, _, err = self.run_cli("field", "voices", env={"XDG_CONFIG_HOME": self.config_dir})
+        self.assertEqual(code, souls.EXIT_AUTH)
+        self.assertEqual(json.loads(err)["status"], None)
+        self.assertEqual(self.house.requests, [])
+        self.house.route("GET", "/api/v1/field/voices", body=b"<not-json>")
+        code, out, err = self.run_cli("field", "voices")
+        self.assertEqual(code, souls.EXIT_ERROR)
+        self.assertEqual(out, "")
+        self.assertIn("expected JSON", json.loads(err)["error"])
 
 
 class RepositoryWatchesTest(CliTestCase):

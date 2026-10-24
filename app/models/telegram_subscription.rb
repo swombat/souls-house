@@ -9,6 +9,9 @@ class TelegramSubscription < ApplicationRecord
 
   scope :active, -> { where(blocked: false) }
 
+  after_save :refresh_subscriber_count
+  after_destroy -> { TelegramPresentation.refresh!(agent_id) }, if: -> { blocked == false }
+
   def subscriber_name
     user.full_name.presence || user.email_address
   end
@@ -26,6 +29,25 @@ class TelegramSubscription < ApplicationRecord
 
   def request_runtime_reset!
     increment!(:runtime_session_generation)
+  end
+
+  private
+
+  def refresh_subscriber_count
+    if previously_new_record?
+      TelegramPresentation.refresh!(agent_id) if blocked == false
+      return
+    end
+    return unless saved_change_to_blocked? || saved_change_to_agent_id?
+
+    old_blocked = saved_change_to_blocked? ? blocked_before_last_save : blocked
+    old_agent_id = saved_change_to_agent_id? ? agent_id_before_last_save : agent_id
+    return if old_agent_id == agent_id && (old_blocked == false) == (blocked == false)
+
+    ids = []
+    ids << old_agent_id if old_blocked == false
+    ids << agent_id if blocked == false
+    TelegramPresentation.refresh!(ids)
   end
 
 end

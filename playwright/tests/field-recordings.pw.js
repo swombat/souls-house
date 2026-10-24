@@ -45,7 +45,6 @@ const recording = {
   show_url: '/accounts/acct1/field/recordings/r1',
   created_at: '2026-10-08T07:00:00Z',
   audio_url: '/rails/active_storage/blobs/x/board-call.m4a',
-  words,
   language_code: 'eng',
   transcript_revision: 'rev1',
   ready_at: '2026-10-08T07:04:00Z',
@@ -90,6 +89,7 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
   const component = await mount(RecordingPage, {
     props: {
       recording,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [
         { id: 'v1', name: 'Sam', member: true },
@@ -158,10 +158,76 @@ test('a transcript brought with its audio shows turns, times only where given, a
   await page.screenshot({ path: 'tmp/field-recording-supplied.png', fullPage: true });
 });
 
+test('an unnamed speaker can be dismissed as noise or kept anonymous, switched, and undone', async ({
+  mount,
+  page,
+}) => {
+  const sent = [];
+  await page.route('**/accounts/acct1/field/recordings/r1/speakers/*', async (route) => {
+    sent.push({ url: route.request().url(), method: route.request().method(), body: route.request().postDataJSON() });
+    await route.fulfill({ json: {} });
+  });
+  const props = {
+    recording,
+    transcript: { revision: 'rev1', words },
+    voices: [],
+    members_without_voice: [],
+    my_voice_id: null,
+    show_you_hint: false,
+    account,
+  };
+  let component = await mount(RecordingPage, { props: { ...props, speakers } });
+
+  const cards = page.getByTestId('speaker-card');
+  await expect(cards.nth(0).getByTestId('speaker-dismiss')).toHaveCount(0);
+  await cards.nth(1).getByTestId('speaker-dismiss').click();
+  await page.getByTestId('speaker-ignore').click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0].method).toBe('PATCH');
+  expect(sent[0].url).toContain('/speakers/s2');
+  expect(sent[0].body).toEqual({ speaker: { ignore: true, ignore_as: 'noise' } });
+
+  await cards.nth(1).getByTestId('speaker-dismiss').click();
+  await page.getByTestId('speaker-anonymous').click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1].body).toEqual({ speaker: { ignore: true, ignore_as: 'anonymous' } });
+  await component.unmount();
+
+  const noise = { ...speakers[1], ignored: true, ignored_as: 'noise', suggestion: null };
+  component = await mount(RecordingPage, { props: { ...props, speakers: [speakers[0], noise] } });
+  let card = page.locator('[data-testid="speaker-card"][data-ignored="noise"]');
+  await expect(card).toContainText('Dismissed as noise');
+  await expect(card.getByTestId('speaker-dismiss')).toHaveCount(0);
+  await expect(card.getByTestId('speaker-chip')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-recording-ignored.png', fullPage: true });
+  await card.getByTestId('speaker-switch-dismissal').click();
+  await expect.poll(() => sent.length).toBe(3);
+  expect(sent[2].body).toEqual({ speaker: { ignore: true, ignore_as: 'anonymous' } });
+  await card.getByTestId('speaker-unignore').click();
+  await expect.poll(() => sent.length).toBe(4);
+  expect(sent[3].body).toEqual({ speaker: { unignore: true } });
+  await component.unmount();
+
+  const anonymous = { ...speakers[1], ignored: true, ignored_as: 'anonymous', suggestion: null };
+  component = await mount(RecordingPage, { props: { ...props, speakers: [speakers[0], anonymous] } });
+  card = page.locator('[data-testid="speaker-card"][data-ignored="anonymous"]');
+  await expect(card).toContainText('Staying anonymous');
+  await expect(card).not.toContainText('Dismissed as noise');
+  await expect(card.getByTestId('speaker-chip')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-recording-anonymous.png', fullPage: true });
+  await card.getByTestId('speaker-switch-dismissal').click();
+  await expect.poll(() => sent.length).toBe(5);
+  expect(sent[4].body).toEqual({ speaker: { ignore: true, ignore_as: 'noise' } });
+  await card.getByTestId('speaker-unignore').click();
+  await expect.poll(() => sent.length).toBe(6);
+  expect(sent[5].body).toEqual({ speaker: { unignore: true } });
+});
+
 test('the "is one of these you?" hint shows when asked for', async ({ mount, page }) => {
   const component = await mount(RecordingPage, {
     props: {
       recording,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [],
       members_without_voice: [],
@@ -172,6 +238,57 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   });
   await expect(component).toContainText('Is one of these you?');
   await page.screenshot({ path: 'tmp/field-recording-hint.png', fullPage: true });
+});
+
+test('with more than ten people to choose from, the speaker picker can be filtered', async ({ mount, page }) => {
+  const names = ['Priya', 'Tomás', 'Ines', 'Jo', 'Kwame', 'Lena', 'Marta', 'Noor', 'Oskar', 'Pau', 'Rosa'];
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      transcript: { revision: 'rev1', words },
+      speakers,
+      voices: [{ id: 'v1', name: 'Sam' }, ...names.map((name, i) => ({ id: `p${i}`, name }))],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  const filter = page.getByTestId('speaker-filter');
+  const choices = page.getByTestId('speaker-choices');
+  await expect(choices).toContainText('Rosa');
+  await filter.fill('tomas');
+  await expect(choices).toContainText('Tomás');
+  await expect(choices).not.toContainText('Rosa');
+  await expect(page.getByTestId('speaker-choice-me')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-speaker-filter.png' });
+  await filter.fill('Zed');
+  await expect(page.getByTestId('speaker-filter-empty')).toBeVisible();
+  await expect(page.getByText('Add someone new')).toBeVisible();
+});
+
+test('a short speaker list has no filter box', async ({ mount, page }) => {
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      transcript: { revision: 'rev1', words },
+      speakers,
+      voices: [
+        { id: 'v1', name: 'Sam' },
+        { id: 'v2', name: 'Priya' },
+      ],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  await expect(page.getByTestId('speaker-choices')).toContainText('Priya');
+  await expect(page.getByTestId('speaker-filter')).toHaveCount(0);
 });
 
 test('one voice heard as two speakers shows as one card, with its parts', async ({ mount, page }) => {
@@ -193,7 +310,8 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   ];
   const component = await mount(RecordingPage, {
     props: {
-      recording: { ...recording, words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }] },
+      recording,
+      transcript: { revision: 'rev1', words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }] },
       speakers: twice,
       voices: [{ id: 'v1', name: 'Sam' }],
       members_without_voice: [],
@@ -213,50 +331,6 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   await expect(sam.getByTestId('speaker-part-unlink').first()).toHaveText('Not Sam');
   await expect(component).toContainText('(laughter) Agreed.');
   await page.screenshot({ path: 'tmp/field-recording-merged-voice.png', fullPage: true });
-});
-
-test('a merged card keeps a voice sample waiting on a part that does not stand for it', async ({ mount, page }) => {
-  const part = (id, label, position, extra) => ({
-    id,
-    label,
-    position,
-    default_name: `Speaker ${position + 1}`,
-    name: 'Sam',
-    named: true,
-    voice_id: 'v1',
-    naming_source: 'human',
-    can_remember: true,
-    remembered: false,
-    remembering: false,
-    pending_enrolment: null,
-    ...extra,
-  });
-  await mount(RecordingPage, {
-    props: {
-      recording,
-      speakers: [
-        part('s1', 'speaker_0', 0, {
-          talk_ms: 60_000,
-          pending_enrolment: { id: 'e9', sample_ms: 12_000, sample_url: '/rails/active_storage/blobs/z/sample.wav' },
-        }),
-        part('s2', 'speaker_1', 1, { talk_ms: 600_000, clip_start_ms: 6400, clip_end_ms: 7000 }),
-      ],
-      voices: [{ id: 'v1', name: 'Sam' }],
-      members_without_voice: [],
-      my_voice_id: null,
-      recognition_enabled: true,
-      account,
-    },
-  });
-
-  const sam = page.getByTestId('speaker-card');
-  await expect(sam).toHaveCount(1);
-  const own = sam.getByTestId('speaker-part-enrolment');
-  await expect(own).toContainText('From Speaker 1');
-  await expect(own.getByTestId('voice-preview')).toContainText('12 s of clear speech');
-  await expect(own.getByRole('button', { name: 'Use it' })).toBeVisible();
-  await expect(own.getByRole('button', { name: 'Not them' })).toBeVisible();
-  await expect(sam.getByTestId('remember-voice')).toHaveCount(1);
 });
 
 const fieldProps = (recordings) => ({
@@ -547,6 +621,7 @@ async function mountPlayer(mount, page) {
   const component = await mount(RecordingPage, {
     props: {
       recording: playable,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [],
       members_without_voice: [],
@@ -702,6 +777,77 @@ test('a failed request keeps the text too', async ({ mount, page }) => {
   await expect(page.getByTestId('line-editor')).toHaveValue('Shall we start with the venue, Dan?');
 });
 
+// Giving a line to the right person: the speaker's name over a line opens
+// "Who said this?" with the other people in the recording and "Someone new".
+
+async function captureSpeakerPatches(page, reply = null) {
+  const sent = [];
+  await page.route('**/accounts/acct1/field/recordings/r1/line_speaker', async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill(reply || { status: 200, contentType: 'application/json', body: '{}' });
+  });
+  return sent;
+}
+
+test("with a mouse, a line's speaker shows a caret on hover and gives the line to someone else", async ({
+  mount,
+  page,
+}) => {
+  const sent = await captureSpeakerPatches(page);
+  await mountPlayer(mount, page);
+  const speaker = page.getByTestId('line-speaker').nth(1);
+  await expect(speaker).toHaveText('Speaker 2');
+  await speaker.hover();
+  await speaker.click();
+
+  const menu = page.getByTestId('line-speaker-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText(['Sam', 'Someone new']);
+  await expect(page.getByTestId('line-editor')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-line-speaker-desktop.png' });
+
+  await menu.getByRole('menuitem', { name: 'Sam' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toEqual({
+    line: { first: 2, last: 7, was: 'Shall we start with the venue?', revision: 'rev1', speaker: 's1' },
+  });
+  await expect(menu).toHaveCount(0);
+});
+
+test('Escape or a click elsewhere closes the speaker menu and sends nothing', async ({ mount, page }) => {
+  const sent = await captureSpeakerPatches(page);
+  await mountPlayer(mount, page);
+  await page.getByTestId('line-speaker').first().click();
+  await expect(page.getByTestId('line-speaker-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(0);
+  await page.getByTestId('line-speaker').first().click();
+  await page.getByRole('heading', { name: recording.title }).click();
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(0);
+  expect(sent).toEqual([]);
+});
+
+test("opening another line's speaker menu closes the first", async ({ mount, page }) => {
+  await mountPlayer(mount, page);
+  // The open menu lies over the lines below it, so go to the line above.
+  await page.getByTestId('line-speaker').nth(1).click();
+  await page.getByTestId('line-speaker').first().click();
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(1);
+  await expect(page.getByTestId('line-speaker-menu').getByRole('menuitem').first()).toHaveText('Speaker 2');
+});
+
+test('a refused move says why', async ({ mount, page }) => {
+  await captureSpeakerPatches(page, {
+    status: 422,
+    contentType: 'application/json',
+    body: JSON.stringify({ props: { errors: { line_speaker: 'The transcript changed since the page loaded.' } } }),
+  });
+  await mountPlayer(mount, page);
+  await page.getByTestId('line-speaker').first().click();
+  await page.getByTestId('line-speaker-new').click();
+  await expect(page.getByTestId('line-speaker-error')).toBeVisible();
+});
+
 test.describe('on a phone', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
@@ -724,6 +870,22 @@ test.describe('on a phone', () => {
     await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
     await page.getByTestId('line-save').tap();
     await expect.poll(() => sent.length).toBe(1);
+  });
+
+  test("tapping a line's speaker offers the others and someone new", async ({ mount, page }) => {
+    const sent = await captureSpeakerPatches(page);
+    await mountPlayer(mount, page);
+    await page.getByTestId('line-speaker').first().tap();
+
+    const menu = page.getByTestId('line-speaker-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveText(['Speaker 2', 'Someone new']);
+    await expect(page.getByTestId('line-menu')).toHaveCount(0);
+    await page.screenshot({ path: 'tmp/field-line-speaker-mobile.png' });
+
+    await page.getByTestId('line-speaker-new').tap();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0].line).toMatchObject({ first: 0, last: 1, was: 'Morning everyone.', speaker: 'new' });
   });
 
   test('pressing and holding a line edits it straight away', async ({ mount, page }) => {
@@ -801,6 +963,7 @@ const recognitionSpeakers = [
 
 const recognitionProps = (enabled) => ({
   recording,
+  transcript: { revision: 'rev1', words },
   speakers: recognitionSpeakers,
   voices: [
     { id: 'v1', name: 'Sam', member: true },
@@ -814,7 +977,7 @@ const recognitionProps = (enabled) => ({
   account,
 });
 
-test('with recognition on, speakers get the recognition chip, the remember offer and the preview', async ({
+test('with recognition on, an undecided speaker gets the recognition chip and nothing asks to remember a voice', async ({
   mount,
   page,
 }) => {
@@ -826,34 +989,32 @@ test('with recognition on, speakers get the recognition chip, the remember offer
   await expect(chip).toContainText('(82)');
   await expect(chip.getByRole('button', { name: "That's Tomás" })).toBeVisible();
 
-  await expect(page.getByTestId('remember-voice')).toHaveText("Remember Priya's voice…");
-  await expect(page.getByTestId('voice-preview')).toContainText('This is what will be remembered as Ana.');
-  await expect(page.getByTestId('voice-preview')).toContainText('14 s of clear speech');
-  await expect(page.getByTestId('voice-preview').getByRole('button', { name: 'Use it' })).toBeVisible();
-  await expect(component).toContainText('This Field remembers your voice');
+  // Voices are learned from namings now: no consent panel, no sample preview.
+  await expect(page.getByTestId('remember-voice')).toHaveCount(0);
+  await expect(page.getByTestId('voice-preview')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Voices this Field knows' })).toBeVisible();
   await expect(component).not.toContainText('thinks');
   await expect(component).not.toContainText('voice print');
   await page.screenshot({ path: 'tmp/field-recognition-show.png', fullPage: true });
+});
 
-  await page.getByTestId('remember-voice').click();
-  const panel = page.getByTestId('remember-voice-panel');
-  await expect(panel).toContainText(
-    "Remember Priya's voice so this Field can suggest them in later recordings. Only tick this if Priya has agreed."
+test('a voice not checked yet shows only as a hint: "Maybe Tomás?", said as unchecked, still confirmable', async ({
+  mount,
+  page,
+}) => {
+  const props = recognitionProps(true);
+  const hinted = props.speakers.map((speaker) =>
+    speaker.recognition ? { ...speaker, recognition: { ...speaker.recognition, checked: false } } : speaker
   );
-  await expect(page.getByTestId('remember-voice-consent')).not.toBeChecked();
-  await expect(page.getByTestId('remember-voice-continue')).toBeDisabled();
-  await panel.getByText('What this means').click();
-  await expect(page.getByTestId('voice-meaning')).toContainText('voice print');
-  await expect(page.getByTestId('voice-meaning')).toContainText('The Voices page says how long');
-  await page.getByTestId('remember-voice-consent').check();
-  await expect(page.getByTestId('remember-voice-continue')).toBeEnabled();
-  await page.screenshot({ path: 'tmp/field-recognition-remember.png', fullPage: true });
+  await mount(RecordingPage, { props: { ...props, speakers: hinted } });
 
-  // Closing and reopening starts unticked again.
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await page.getByTestId('remember-voice').click();
-  await expect(page.getByTestId('remember-voice-consent')).not.toBeChecked();
+  const chip = page.getByTestId('speaker-recognition');
+  await expect(chip).toHaveAttribute('data-checked', 'false');
+  await expect(chip).toContainText('Maybe Tomás?');
+  await expect(chip).toContainText("hasn't been checked against other recordings yet");
+  await expect(chip).not.toContainText('sounds like the Tomás this Field remembers');
+  await expect(chip.getByRole('button', { name: "That's Tomás" })).toBeVisible();
+  await page.screenshot({ path: 'tmp/field-recognition-hint.png', fullPage: true });
 });
 
 test('with recognition off, the transcript page has no recognition, remember offer or preview', async ({
@@ -876,44 +1037,60 @@ const voices = [
     name: 'Sam',
     member: true,
     used_in: 4,
+    remember: true,
     remembered: true,
+    recordings: 3,
     sample_seconds: 22,
-    remembered_at: '2026-10-08T08:00:00Z',
-    remembered_by: 'Sam Rivers',
+    guessing: true,
+    learned_at: '2026-10-08T08:00:00Z',
   },
   {
     id: 'v2',
     name: 'Priya',
     member: false,
     used_in: 1,
+    remember: false,
     remembered: false,
+    recordings: 0,
     sample_seconds: null,
-    remembered_at: null,
-    remembered_by: null,
+    guessing: false,
+    learned_at: null,
   },
 ];
 
-test('the Voices page, house gate on: the switch, Forget and the backup days', async ({ mount, page }) => {
+test('the Voices page, house gate on: the switch, Forget and the backups line', async ({ mount, page }) => {
   const component = await mount(VoicesPage, {
     props: {
       voices,
       recognise_voices: false,
       house_recognition: true,
       can_change_setting: true,
-      backup_retention_days: 30,
       account,
     },
   });
-  await expect(component).toContainText('Voices this Field knows');
+  await expect(component).toContainText('Account settings');
+  await expect(page.getByRole('heading', { name: 'Voices', exact: true })).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeEnabled();
-  await expect(component).toContainText("Suggest who's speaking from voices this Field remembers");
-  await expect(component).toContainText('Remembered voices are kept but not used while this is off.');
+  await expect(component).toContainText("Learn voices from the names people give, and suggest who's speaking");
+  await expect(component).toContainText('Learned voices are kept but not used while this is off.');
+  await expect(page.getByTestId('voices-forget-all')).toBeHidden();
+  await page.getByTestId('voices-danger-zone').locator('summary').click();
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
+  // The roster is compact; what was learned, and Forget or Remember, are on
+  // the selected speaker's detail (the first listed until one is picked).
+  await expect(page.getByTestId('voice-row').first()).toContainText('Recognising');
+  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Forgotten');
+  const detail = page.getByTestId('voice-detail');
+  await expect(detail).toContainText('Voice learned from 3 recordings, 22 s · suggesting');
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
-  await expect(page.getByTestId('voice-row').first()).toContainText('Voice remembered (22 s sample, by Sam Rivers');
-  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Name only');
-  await expect(page.getByTestId('voice-meaning-backups')).toContainText('after 30 days');
+  await expect(page.getByTestId('voice-remember')).toHaveCount(0);
+  await page.getByTestId('voice-row').nth(1).click();
+  await expect(detail).toContainText('Voice forgotten, not learning');
+  await expect(page.getByTestId('voice-remember')).toHaveCount(1);
+  await expect(page.getByTestId('voice-forget')).toHaveCount(0);
+  await expect(page.getByTestId('voice-meaning')).toContainText('speaker nobody has named yet');
+  await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await expect(component).not.toContainText('thinks');
   await page.screenshot({ path: 'tmp/field-voices-on.png', fullPage: true });
 });
@@ -928,15 +1105,16 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
       recognise_voices: true,
       house_recognition: false,
       can_change_setting: true,
-      backup_retention_days: null,
       account,
     },
   });
-  await expect(component).toContainText("Voice recognition isn't available in this house yet.");
+  await expect(component).toContainText("Voice recognition isn't running in this house right now.");
   await expect(page.getByTestId('voices-switch')).toHaveCount(0);
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
+  await expect(page.getByTestId('voices-forget-all')).toBeHidden();
+  await page.getByTestId('voices-danger-zone').locator('summary').click();
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
-  await expect(page.getByTestId('voice-meaning-backups')).toHaveCount(0);
+  await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await page.screenshot({ path: 'tmp/field-voices-house-off.png', fullPage: true });
 });
 
@@ -976,6 +1154,25 @@ test('while a new summary is being written, the old one stays and the page says 
   await expect(page.getByTestId('field-recording-summary')).toHaveText(summarised.summary_long);
   await expect(page.getByTestId('summary-pending')).toHaveText('Writing a new summary…');
   await expect(page.getByTestId('summary-refresh')).toBeDisabled();
+});
+
+test('a stale summary stays visible with manual refresh available during the delayed wait', async ({ mount, page }) => {
+  const sent = await captureResummaries(page);
+  await mount(RecordingViewer, { props: { recording: { ...summarised, summary_freshness: 'stale' } } });
+  await expect(page.getByTestId('field-recording-summary')).toHaveText(summarised.summary_long);
+  await expect(page.getByTestId('summary-stale')).toHaveText('Summary is out of date.');
+  await expect(page.getByTestId('summary-pending')).toHaveCount(0);
+  await expect(page.getByTestId('summary-refresh')).toBeVisible();
+  await expect(page.getByTestId('summary-refresh')).toBeEnabled();
+  await page.screenshot({ path: 'tmp/field-summary-stale.png' });
+  await page.getByTestId('summary-refresh').click();
+  await expect.poll(() => sent).toEqual(['POST']);
+});
+
+test('an older untracked summary says its source is unknown', async ({ mount, page }) => {
+  await mount(RecordingViewer, { props: { recording: { ...summarised, summary_freshness: 'unknown' } } });
+  await expect(page.getByTestId('summary-unknown')).toContainText("source wasn't tracked");
+  await expect(page.getByTestId('summary-refresh')).toBeEnabled();
 });
 
 test('with no way to redo it, there is no button', async ({ mount, page }) => {

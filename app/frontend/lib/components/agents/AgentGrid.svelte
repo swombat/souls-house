@@ -1,7 +1,15 @@
 <script>
   import AgentCard from '$lib/components/agents/AgentCard.svelte';
 
-  let { agents = [], accountId, onUpgrade, onDisable, showActions = true, admin = false } = $props();
+  let {
+    agents = [],
+    accountId,
+    onUpgrade,
+    onDisable,
+    showActions = true,
+    admin = false,
+    canManageProviderSubscription = false,
+  } = $props();
   let showDisabled = $state(false);
   let active = $derived(agents.filter((agent) => agent.active && !agent.deprecated));
   let disabled = $derived(agents.filter((agent) => !agent.active && !agent.deprecated));
@@ -11,7 +19,14 @@
 {#snippet cards(residents)}
   <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
     {#each residents as agent (agent.id)}
-      <AgentCard {agent} {accountId} {showActions} {admin} onupgrade={onUpgrade} ondisable={onDisable} />
+      <AgentCard
+        {agent}
+        {accountId}
+        {showActions}
+        {admin}
+        {canManageProviderSubscription}
+        onupgrade={onUpgrade}
+        ondisable={onDisable} />
     {/each}
   </div>
 {/snippet}
