@@ -2099,6 +2099,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_090000) do
     t.string "tier", null: false
     t.string "state", default: "pending", null: false
     t.string "stripe_subscription_id"
+    t.string "stripe_payment_method_id"
     t.jsonb "birth_attributes", default: {}, null: false
     t.boolean "open_beginning", default: false, null: false
     t.text "last_error"

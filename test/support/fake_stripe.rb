@@ -61,6 +61,11 @@ class FakeStripe
     @create_fault = [ error, created ]
   end
 
+  # Search hasn't indexed anything yet (Stripe's search lags by up to a minute).
+  def search_lags!
+    @search_lags = true
+  end
+
   # The next subscription update raises error and changes nothing.
   def fail_next_subscription_update(error = Stripe::APIConnectionError.new("timed out"))
     @update_fault = error
@@ -105,7 +110,7 @@ class FakeStripe
       },
       search: lambda { |params|
         order_id = params[:query][/birth_order_id'\]:'(\d+)'/, 1]
-        found = @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order_id") == order_id }
+        found = @search_lags ? [] : @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order_id") == order_id }
         Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
       },
       update: lambda { |id, params|

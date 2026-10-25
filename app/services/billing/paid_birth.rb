@@ -7,13 +7,16 @@
 #
 #   start!       records the draft as an order, then opens the plan's
 #                subscription at Stripe (first invoice open). The Stripe call
-#                carries an idempotency key per order, so an uncertain answer
-#                (timeout, network) is retried with the same key and finds the
-#                same subscription; the order and its draft are kept meanwhile.
-#   payment      the client secret to pay the order's first invoice, opening
-#                the subscription if that never succeeded. If the invoice is
-#                already paid it completes the order instead, so a retry after
-#                payment never pays twice.
+#                carries an idempotency key per order and the card it used is
+#                stored, so an uncertain answer (timeout, network) is resolved
+#                by replaying the identical call: Stripe returns the
+#                subscription it made, or makes it now. Either way it is the
+#                order's one subscription. A search that finds nothing is never
+#                taken as proof that nothing was made.
+#   payment      resumes an order: the client secret to pay its first invoice
+#                (resolving an uncertain create first), or, if it is already
+#                paid or born, completes and links it, so a retry after payment
+#                never pays twice and a lost confirmation is recovered.
 #   complete!    once Stripe says the subscription is paid: (1) bears the
 #                resident through the ordinary birth, committed locally, then
 #                (2) links it: names the committed resident on the
@@ -63,32 +66,32 @@ module Billing
       settle_earlier!(account, creator)
       order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id,
         birth_attributes: attributes.to_h, open_beginning: open_beginning)
-      subscription = open_subscription!(order, payment_method)
+      order.update!(stripe_payment_method_id: payment_method.id)
+      subscription = open_subscription!(order)
       [ order, client_secret(subscription), payment_method.id ]
     end
 
     # Returns { client_secret:, payment_method_id: } to pay the first invoice,
     # or { paid: true } when it is already paid (the order is completed).
     def payment(order)
+      # Born already: the payment went through and only the answer (or the
+      # link to Stripe) was lost. Finish linking; the browser then confirms.
+      if order.born?
+        complete!(order)
+        return { paid: true }
+      end
       raise Refused, "This resident is no longer waiting for payment." unless order.pending? || order.failed?
 
-      if order.stripe_subscription_id.present?
-        remote = @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
-        if remote.status.in?(PAID)
-          complete!(order)
-          return { paid: true }
-        end
+      remote = resolve_subscription!(order)
+      if remote.status.in?(PAID)
+        complete!(order)
+        return { paid: true }
       end
       raise Refused, "This resident is no longer waiting for payment." unless order.pending?
 
       payment_method = current_payment_method!(order.account)
-      remote_subscription(order) if order.stripe_subscription_id.blank?
-      subscription = if order.stripe_subscription_id.present?
-        @client.v1.subscriptions.update(order.stripe_subscription_id,
-          { default_payment_method: payment_method.id, expand: [ "latest_invoice.confirmation_secret" ] })
-      else
-        open_subscription!(order, payment_method)
-      end
+      subscription = @client.v1.subscriptions.update(remote.id,
+        { default_payment_method: payment_method.id, expand: [ "latest_invoice.confirmation_secret" ] })
       { client_secret: client_secret(subscription), payment_method_id: payment_method.id }
     end
 
@@ -130,16 +133,17 @@ module Billing
         raise(Refused, "Add a card to pay for the plan first.")
     end
 
-    # Opens (or, after an uncertain answer, finds again through the same
-    # idempotency key) the order's subscription. Stripe's answer is recorded
-    # before anything else can happen to the order.
-    def open_subscription!(order, payment_method)
+    # Opens the order's subscription, or, replayed after an uncertain answer
+    # with the same key and the same stored card, returns the one Stripe made
+    # the first time. Stripe's answer is recorded before anything else can
+    # happen to the order.
+    def open_subscription!(order)
       tier = order.tier_record
       customer = BillingCustomer.find_by!(account: order.account)
       subscription = @client.v1.subscriptions.create({
         customer: customer.stripe_customer_id,
         items: [ { price: tier.price_id } ],
-        default_payment_method: payment_method.id,
+        default_payment_method: order.stripe_payment_method_id,
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
@@ -154,13 +158,29 @@ module Billing
       raise Uncertain.new(order)
     end
 
+    # The order's subscription for certain: retrieved by its id, or, if
+    # opening it had an uncertain answer, by replaying that call.
+    def resolve_subscription!(order)
+      if order.stripe_subscription_id.present?
+        @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
+      else
+        open_subscription!(order)
+      end
+    end
+
     # One open order per person and account. An earlier unpaid one is
     # replaced (its subscription cancelled). An earlier paid one is never
     # replaced: it is completed, and the new request is refused, so nobody
     # pays twice for one intention.
     def settle_earlier!(account, creator)
       ResidentBirthOrder.where(account: account, creator: creator, state: %w[pending failed]).find_each do |earlier|
-        remote = remote_subscription(earlier)
+        # Resolved for certain (replayed if it was uncertain): a search miss
+        # is not proof that Stripe made nothing.
+        remote = begin
+          resolve_subscription!(earlier)
+        rescue Uncertain
+          raise Refused, "Stripe is still confirming your earlier request. Try again in a minute."
+        end
         if (remote && remote.status.in?(PAID)) || earlier.failed?
           name = earlier.resident_name
           begin
@@ -181,8 +201,10 @@ module Billing
       end
     end
 
-    # The order's subscription, found through its metadata if opening it had
-    # an uncertain answer (the id was never recorded).
+    # The order's subscription as Stripe knows it, found through its metadata
+    # if the id was never recorded. Only for checks that may safely see
+    # nothing yet: a recent subscription can be missing from search for a
+    # minute. The sweeper uses it after expires_at, long past that.
     def remote_subscription(order)
       if order.stripe_subscription_id.present?
         return @client.v1.subscriptions.retrieve(order.stripe_subscription_id)

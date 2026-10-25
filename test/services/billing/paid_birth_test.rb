@@ -260,6 +260,61 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert order.reload.born?
   end
 
+  test "a born order whose answer or link was lost is resumed into linking, not refused" do
+    order, = start!
+    @stripe.set_subscription_status("sub_new_1", "active")
+    @stripe.fail_next_subscription_update
+    assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    assert order.reload.born?
+
+    assert_no_difference "Agent.count" do
+      assert_equal({ paid: true }, paid_birth.payment(order))
+    end
+    assert_equal order.agent_id.to_s, @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    assert ResidentEntitlement.paid_for?(order.agent)
+  end
+
+  test "an uncertain order is resolved by replaying its call, never by trusting a search miss" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    earlier = ResidentBirthOrder.sole
+    @stripe.search_lags!
+
+    later, = start!(name: "Bea")
+
+    earlier.reload
+    assert_equal "sub_new_1", earlier.stripe_subscription_id, "the replay found what Stripe made"
+    assert earlier.abandoned?
+    assert_includes @stripe.cancelled_subscriptions, "sub_new_1", "the earlier subscription is cancelled, not left open"
+    assert later.pending?
+    assert_equal "sub_new_2", later.stripe_subscription_id
+  end
+
+  test "an uncertain order that was in fact paid is completed, not replaced" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    @stripe.set_subscription_status("sub_new_1", "active")
+    @stripe.search_lags!
+
+    assert_raises(Billing::PaidBirth::Refused) { start!(name: "Bea") }
+    assert ResidentBirthOrder.find_by!(stripe_subscription_id: "sub_new_1").born?
+    assert_equal 1, @stripe.created_subscriptions.size
+  end
+
+  test "the replay uses the card the order was opened with, so its parameters match" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    assert_equal "pm_visa", order.stripe_payment_method_id
+    @stripe.put_payment_method("pm_mastercard", brand: "mastercard", last4: "4444")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_mastercard")
+
+    result = paid_birth.payment(order)
+    assert_equal "pm_mastercard", result[:payment_method_id], "paying then uses the card now on the account"
+    assert_equal 1, @stripe.created_subscriptions.size
+    assert_equal "pm_visa", @stripe.created_subscriptions.sole.first[:default_payment_method]
+  end
+
   test "births that don't pay are refused in an account that pays" do
     error = assert_raises(Billing::BirthGate::Refused) do
       Agents::HostedBirth.new(account: @account, creator: @owner,

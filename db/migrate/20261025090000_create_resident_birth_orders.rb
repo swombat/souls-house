@@ -12,6 +12,9 @@ class CreateResidentBirthOrders < ActiveRecord::Migration[8.1]
       t.string :tier, null: false
       t.string :state, null: false, default: "pending"
       t.string :stripe_subscription_id, index: { unique: true }
+      # The card the subscription was opened with, so an uncertain create can
+      # be replayed with identical parameters under the same idempotency key.
+      t.string :stripe_payment_method_id
       # The draft: name, soul seed, model, appearance. Cleared once the
       # resident is born or the order is abandoned.
       t.jsonb :birth_attributes, null: false, default: {}
