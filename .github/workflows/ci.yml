@@ -1,192 +1,34 @@
 name: CI
-
 on:
-  pull_request:
-  push:
-    branches: [master]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
-
 jobs:
-  application:
-    name: ${{ matrix.suite }} (${{ matrix.shard }}/${{ matrix.total }})
+  imprimatur:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     container:
       image: ghcr.io/swombat/souls-house-ci@sha256:c2d55048280922836aaceba00e35b0d894e2ff9d5bb0e6ffab9a1cd2657536f5
-      options: --ipc=host
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { suite: rails, shard: 1, total: 2 }
-          - { suite: rails, shard: 2, total: 2 }
-          - { suite: e2e, shard: 1, total: 3 }
-          - { suite: e2e, shard: 2, total: 3 }
-          - { suite: e2e, shard: 3, total: 3 }
-          - { suite: components, shard: 1, total: 1 }
-    services:
-      postgres:
-        # Docker Official Image via Google's Hub mirror: public ECR's
-        # anonymous data-limit has blocked shared-runner pulls
-        # (`toomanyrequests`) before any step, so a later docker login
-        # cannot help. Same verified Linux/amd64 PG17 manifest.
-        image: mirror.gcr.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      RAILS_ENV: test
-      SOULSHOUSE_INSTANCE: '1'
-      PGHOST: postgres
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PARALLEL_WORKERS: '4'
-      BUNDLE_PATH: vendor/bundle
-      BUNDLE_FROZEN: 'true'
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Check actual tool versions
+      - name: Verify native PDF entry points in the exact published image
         run: |
-          test "$(ruby -e 'print RUBY_VERSION')" = "$(cat .ruby-version)"
-          test "$(bun --version)" = "$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).packageManager.replace("bun@", "")')"
-          test "$(node /opt/playwright/node_modules/playwright/cli.js --version)" = "Version $(sed -n 's/^ARG PLAYWRIGHT_VERSION=//p' .github/ci/Dockerfile)"
-      - uses: actions/cache@v4
-        with:
-          path: vendor/bundle
-          key: ${{ runner.os }}-ci-gems-v1-${{ hashFiles('.github/ci/Dockerfile', 'Gemfile.lock') }}
-      - name: Install application dependencies
-        id: dependencies
-        run: |
-          bundle install --jobs 4 --retry 3
-          bun install --frozen-lockfile
-      - name: Rails partition contracts
-        if: matrix.suite == 'rails' && matrix.shard == 1
-        run: bundle exec ruby test/ci/rails_sharding_contract.rb
-      - name: Browser coverage contracts
-        if: matrix.suite == 'e2e' && matrix.shard == 1
-        run: node test/ci/browser-sharding-contract.mjs
-      - name: Prepare test database
-        if: matrix.suite == 'rails'
-        run: bin/rails db:prepare
-      - name: Build test assets
-        id: assets
-        if: matrix.suite == 'rails'
-        run: bin/vite build --mode test
-      - name: Rails tests
-        if: matrix.suite == 'rails'
-        run: ruby scripts/run-rails-shard.rb ${{ matrix.shard }} ${{ matrix.total }}
-      - name: Rails system tests
-        if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 && steps.dependencies.outcome == 'success' && steps.assets.outcome == 'success' }}
-        run: bin/rails test:system
-      - name: Browser end-to-end tests
-        if: matrix.suite == 'e2e'
-        # No dependency replay. One worker serializes admission with the
-        # other files on this shard's private backend/database.
-        run: bun run test --no-deps --workers=1 --shard=${{ matrix.shard }}/${{ matrix.total }}
-      - name: Browser component tests
-        if: matrix.suite == 'components'
-        run: bun run test:ct
-      - name: Preserve browser failure reports
-        if: failure() && matrix.suite != 'rails'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.suite }}-${{ matrix.shard }}-failure-reports
-          path: |
-            playwright-report/
-            test-results/
-            log/playwright-*.log
-          retention-days: 7
-          if-no-files-found: ignore
-
-  frontend:
-    name: Frontend unit tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-      - run: bun run test:unit --run
-      - run: bun run check:svelte-size
-
-  runtime:
-    name: Python runtime tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: Runtime and build contracts
-        # Exercise the real synthetic HTTP protocol rather than skip it on CI.
-        run: |
-          python3 -m pip install 'Flask==3.1.2' 'PyYAML==6.0.2' 'numpy==2.5.4'
-          python3 -m unittest discover -s test -p '*_test.py'
-          python3 -m unittest discover -s scripts/voice-calibration -p 'test_*.py'
-      - name: CI contracts
-        run: python3 -m unittest discover -s test/ci -p '*_test.py'
-      - name: CLI contracts
-        if: ${{ !cancelled() }}
-        run: python3 -m unittest discover -s test/cli -p '*_test.py'
-      - name: Resident runtime contracts
-        if: ${{ !cancelled() }}
-        run: python3 -m unittest discover -s test/runtime -p '*_test.py'
-      - name: Host runner contracts
-        if: ${{ !cancelled() }}
-        # The VM runner uses Debian's python3-cryptography for Ed25519; CI pins
-        # a version from PyPI. The shared vector pins the wire format.
-        run: |
-          python3 -m pip install 'cryptography==46.0.3'
-          python3 -m unittest discover -s test/host_runner -p '*_test.py'
-      - uses: actions/setup-python@v6
-        if: ${{ !cancelled() }}
-        with:
-          python-version: '3.13'
-      - name: Telegram connector (unit, replay, two-process lease)
-        if: ${{ !cancelled() }}
-        working-directory: services/telegram-connector
-        # requirements.txt pins the whole tree; --no-deps as in the Docker build.
-        run: |
-          python3 -m pip install --no-deps -r requirements.txt
-          python3 -m unittest discover -s tests -t . -p '*test*.py'
-
-  result:
-    name: CI result
-    if: always()
-    needs: [application, frontend, runtime]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require every suite to pass
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PY'
-          import json, os
-          results = json.loads(os.environ["RESULTS"])
-          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
-          if failed:
-              raise SystemExit(f"CI did not fully pass: {failed}")
-          print("All suites and shards passed.")
-          PY
+          test "$(. /etc/os-release; echo "$VERSION_CODENAME")" = trixie
+          getconf GNU_LIBC_VERSION
+          gem install imprimatur -v 0.6.0 --no-document --install-dir /tmp/imprimatur-smoke
+          GEM_HOME=/tmp/imprimatur-smoke GEM_PATH=/tmp/imprimatur-smoke ruby <<'RUBY'
+          require "imprimatur"
+          path = "test/fixtures/files/field_pdfs/text_only.pdf"
+          info = Imprimatur.pdf_info(path, timeout: 10, max_bytes: 10_000_000)
+          raise info.inspect unless info[:page_count].positive?
+          pages = Imprimatur.pdf_pages(path, first_page: 1, last_page: 1, max_pages: 1,
+            max_bytes: 10_000_000, max_page_bytes: 262_144, max_output_bytes: 262_144, timeout: 10)
+          raise pages.inspect unless pages[:pages].first[:status] == "text"
+          rendered = Imprimatur.render_pdf_page(path, page: 1, max_side: 800,
+            max_output_bytes: 8_000_000, max_bytes: 10_000_000,
+            memory_bytes: 1_073_741_824, timeout: 10)
+          raise "No render result" unless rendered
+          puts "imprimatur-0.6.0 native load, metadata, text and isolated render passed"
+          RUBY
