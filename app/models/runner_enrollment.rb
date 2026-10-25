@@ -222,10 +222,10 @@ class RunnerEnrollment < ApplicationRecord
 
       archive = AgentPlacement.uncached { AgentPlacement.where(id: placement.id).pick(:seed_sha256, :seed_archive) }
       bytes = archive[1] if archive && archive[0] == sha256
-      # An archive import's role homes, and a GitHub import's reviewed
-      # identity, are staged on its resident (AgentImportStage), each named by
-      # its own digest.
-      if bytes.blank? && %w[archive_import github_import].include?(placement.kind)
+      # An archive import's or a migration's role homes, and a GitHub
+      # import's reviewed identity, are staged on its resident
+      # (AgentImportStage), each named by its own digest.
+      if bytes.blank? && %w[archive_import github_import migration].include?(placement.kind)
         bytes = AgentImportStage.uncached { AgentImportStage.where(agent_id: placement.agent_id, sha256:).pick(:archive) }
       end
       raise Refused.new(:seed_not_requested, 404) if bytes.blank?

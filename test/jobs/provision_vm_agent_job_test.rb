@@ -1319,4 +1319,177 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  # #426, slice 3A: an existing house resident moving to its own server.
+
+  # A stopped house resident's three volumes, as Portability::Transport
+  # captures them.
+  class HouseTransport
+
+    def stopped! = true
+
+    def capture(root, output)
+      Gem::Package::TarWriter.new(output) do |tar|
+        tar.mkdir(".", 0755)
+        files = { "#{root}.md" => "#{root} as lived on the house" }
+        files["soul.md"] = "A soul with days behind it" if root == "identity"
+        files.each { |name, body| tar.add_file_simple("./#{name}", 0644, body.bytesize) { |file| file.write(body) } }
+      end
+    end
+
+  end
+
+  # A resident that has been running on the house since lived_since, then
+  # stopped through Portability (inactive, paused, offline).
+  def house_resident!(name: "House resident", lived_since: 3.days.ago.change(usec: 0), scheduled_wakes_enabled: true)
+    agent = @account.agents.create!(name:, model_id: HouseInference::Offering::OFFERINGS.keys.first, runtime: "offline",
+      active: false, paused: true, scheduled_wakes_enabled:, home_profile: "house", uuid: SecureRandom.uuid_v7)
+    agent.update_columns(runtime_ready_at: lived_since, identity_seeded_at: lived_since)
+    agent.reload
+  end
+
+  def migration(agent) = Agents::VmMigration.new(agent)
+
+  def stage_move!(agent)
+    Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
+      migration(agent).stage!(requested_by: @user, transport: HouseTransport.new)
+    end
+  end
+
+  test "a move is refused, with nothing changed, unless the house can make servers and the resident is stopped" do
+    with_house do
+      agent = house_resident!
+      @setting.update!(new_residents_on_vm: false)
+      assert_equal Agents::VmMigration::SWITCHED_OFF, migration(agent).refusal
+      @setting.update!(new_residents_on_vm: true, vm_resident_limit: 0)
+      assert_equal Agents::VmMigration::AT_LIMIT, migration(agent).refusal
+      @setting.update!(vm_resident_limit: 2)
+
+      agent.update_columns(active: true, paused: false)
+      assert_match(/inactive, paused/, migration(agent).refusal)
+      error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
+      assert_match(/inactive, paused/, error.message)
+      agent.update_columns(active: false, paused: true)
+
+      never = house_resident!(name: "Never ran")
+      never.update_columns(runtime_ready_at: nil)
+      assert_equal Agents::VmMigration::NEVER_LIVED, migration(never).refusal
+
+      assert_nil agent.reload.placement
+      assert_empty agent.import_stages
+      assert agent.runtime_ready_at
+    end
+  end
+
+  test "staging copies the stopped home into three stages, moves runtime_ready_at aside, and nothing can run it" do
+    with_house do
+      lived_since = 3.days.ago.change(usec: 0)
+      agent = house_resident!(lived_since:)
+      placement = stage_move!(agent)
+      agent.reload
+
+      assert_equal %w[hetzner_cloud migration staged], [ placement.backend, placement.kind, placement.state ]
+      assert_equal lived_since, placement.house_runtime_ready_at
+      assert_nil agent.runtime_ready_at
+      assert_equal %w[identity repo work], agent.import_stages.order(:role).pluck(:role)
+      identity = Zlib::GzipReader.wrap(StringIO.new(agent.import_stages.find_by(role: "identity").archive)) do |gz|
+        Gem::Package::TarReader.new(gz).each.to_h { |entry| [ entry.full_name, entry.file? ? entry.read : nil ] }
+      end
+      assert_equal "identity as lived on the house", identity["identity.md"]
+      assert_not Agents::RuntimeLocation.local?(agent), "the house never runs a resident staged to move"
+      assert_not Agents::RuntimeLocation.dispatchable?(agent)
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count, "staging buys nothing and takes no slot"
+      assert AuditLog.exists?(action: "vm_migration_staged", auditable: agent)
+
+      assert_equal Agents::VmMigration::ALREADY_PLACED, migration(agent).refusal
+      run_job(agent)
+      assert_empty @client.creates
+    end
+  end
+
+  test "a whole move: seeded per role, no turn before its verified backup, then running with nothing reset" do
+    with_house do
+      agent = house_resident!(scheduled_wakes_enabled: true)
+      placement = stage_move!(agent)
+      migration(agent.reload).activate!(requested_by: @user)
+      assert_equal "pending", placement.reload.state
+      assert_equal 1, Agents::VmBirthPolicy.current.vm_count
+
+      run_job(agent)
+      boot_and_enroll!(agent)
+      roles_enrolled!(agent)
+      run_job(agent)
+      seed_all!(placement)
+      run_job(agent)
+      assert_equal "ready", placement.reload.state
+      answer_latest(placement, "start_resident")
+      run_job(agent)
+      run_job(agent)
+      assert_nil Agents::RemoteRuntime.enrollment_for(agent.reload), "ready and started, but not yet backed up: no turn"
+      assert agent.paused?
+
+      @backups.state = "verified"
+      assert_no_enqueued_jobs(only: OrientNewAgentJob) { run_job(agent) }
+      assert agent.runtime_ready_at
+      assert agent.active?
+      assert_not agent.paused?
+      assert agent.scheduled_wakes_enabled?, "its own schedule choice is kept"
+      assert_equal 3.days.ago.to_date, agent.identity_seeded_at.to_date, "not re-seeded as new"
+      assert Agents::RemoteRuntime.enrollment_for(agent)
+      assert AuditLog.exists?(action: "vm_migration_ready", auditable: agent)
+      error = assert_raises(Agents::VmMigration::Refused) { migration(agent).return_to_house!(requested_by: @user) }
+      assert_equal Agents::VmMigration::CUT_OVER, error.message
+    end
+  end
+
+  test "a failed move stays paused, can't go back until its server is gone, then returns to the house as it was" do
+    with_house do
+      lived_since = 3.days.ago.change(usec: 0)
+      agent = house_resident!(lived_since:)
+      placement = stage_move!(agent)
+      migration(agent.reload).activate!(requested_by: @user)
+      @client.on_create = ->(_) { raise HetznerCloudClient::Error.new("no capacity", status: 412, code: "resource_unavailable") }
+      assert_enqueued_with(job: VmCleanupJob) { run_job(agent) }
+      assert_match(/\AMoving to its own server failed: .*Its home is still on the house, untouched/, agent.sandbox_last_error)
+      assert agent.paused?
+      assert_not agent.active?
+      assert_nil agent.runtime_ready_at
+
+      error = assert_raises(Agents::VmMigration::Refused) { migration(agent).return_to_house!(requested_by: @user) }
+      assert_equal Agents::VmMigration::STILL_RUNNING, error.message
+      assert_equal "failed", placement.reload.state
+
+      VmCleanupJob.perform_now(placement.id)
+      assert_equal "retired", placement.reload.state
+      generation = placement.generation
+      migration(agent).return_to_house!(requested_by: @user)
+      placement.reload
+      agent.reload
+      assert_equal [ "local", nil, "ready" ], [ placement.backend, placement.kind, placement.state ]
+      assert_equal generation + 1, placement.generation
+      assert_nil placement.house_runtime_ready_at
+      assert_equal lived_since, agent.runtime_ready_at
+      assert_empty agent.import_stages
+      assert agent.paused?
+      assert Agents::RuntimeLocation.local?(agent)
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+      assert AuditLog.exists?(action: "vm_migration_returned_to_house", auditable: agent)
+      assert_nil migration(agent).refusal, "it can be staged again"
+    end
+  end
+
+  test "a staged move returns to the house at once, and with the switch off a move stays staged" do
+    with_house do
+      agent = house_resident!
+      stage_move!(agent)
+      @setting.update!(new_residents_on_vm: false)
+      error = assert_raises(Agents::VmMigration::Refused) { migration(agent.reload).activate!(requested_by: @user) }
+      assert_equal Agents::VmBirthPolicy::MIGRATION_SWITCHED_OFF, error.message
+      assert_equal "staged", agent.placement.reload.state
+
+      migration(agent).return_to_house!(requested_by: @user)
+      assert Agents::RuntimeLocation.local?(agent.reload)
+      assert agent.runtime_ready_at
+    end
+  end
+
 end

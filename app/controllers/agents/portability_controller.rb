@@ -64,6 +64,11 @@ class Agents::PortabilityController < ApplicationController
     # (docs/2026-10-10-vm-imports.md). The confirmation above is its trust
     # boundary, recorded with who asked.
     return activate_on_vm!(agent) if agent.placement&.kind == "archive_import"
+    # A resident staged to move to its own server (#426) is started only by
+    # its move (Agents::VmMigration) or after Return to house, never here.
+    if agent.placement&.migration?
+      raise Agents::Portability::Error, "This resident is staged to move to its own server. Return it to the house to start it here"
+    end
     raise Agents::Portability::Error, "Only stopped inactive native residents can activate here" unless !agent.imported_home? && agent.externally_hosted? && !agent.active? && agent.paused?
     activation_error = nil
     agent.with_lock do

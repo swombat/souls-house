@@ -299,7 +299,8 @@ class ProvisionVmAgentJob < ApplicationJob
     placement.update!(first_backup_command_id: command.id)
   end
 
-  # A birth is oriented. An archive import is not (docs/2026-10-10-vm-imports.md,
+  # A birth is oriented. A migration, an archive import and a GitHub import
+  # are not. An archive import (docs/2026-10-10-vm-imports.md,
   # "After seeding"): it arrives with its own home, and only now, after its
   # first verified backup, does Activate's request take effect. Imported
   # schedules stay off until someone turns them on.
@@ -308,7 +309,15 @@ class ProvisionVmAgentJob < ApplicationJob
     attributes = { runtime: "external", health_state: "healthy", consecutive_health_failures: 0,
       runtime_ready_at: now, identity_seeded_at: agent.identity_seeded_at || now,
       sandbox_last_error: nil, sandbox_last_error_at: nil }
-    if archive_import?(agent) || github_import?(agent.placement)
+    if migration?(agent.placement)
+      # A resident that already lived on the house (#426): no orientation and
+      # nothing reset. Its own schedule choice is kept, and runtime_ready_at
+      # is set afresh only now, after its first verified backup here.
+      agent.update_columns(attributes.merge(active: true, paused: false, updated_at: now))
+      HomeResidentRoster.refresh!([ agent.account_id ])
+      AuditLog.create!(action: "vm_migration_ready", account: agent.account, auditable: agent,
+        data: { "placement_id" => agent.placement.id, "generation" => agent.placement.generation })
+    elsif archive_import?(agent) || github_import?(agent.placement)
       # Direct columns, as the local activation does: no model-change orientation callbacks.
       agent.update_columns(attributes.merge(active: true, paused: false, scheduled_wakes_enabled: false, updated_at: now))
       agent.github_resident_import&.update!(status: "ready", last_error: nil)
@@ -321,6 +330,7 @@ class ProvisionVmAgentJob < ApplicationJob
 
   def archive_import?(agent) = Agents::RemoteRuntime.placement_for(agent)&.kind == "archive_import"
   def github_import?(placement) = placement&.kind == "github_import"
+  def migration?(placement) = placement&.kind == "migration"
 
   # The birth stops here: no start, no orientation. The resident keeps its
   # record and says why; the server goes to cleanup, which keeps it counted
@@ -328,7 +338,14 @@ class ProvisionVmAgentJob < ApplicationJob
   def fail_birth!(agent, placement, reason)
     return if agent.nil?
 
-    if archive_import?(agent)
+    if migration?(placement)
+      # Still inactive and paused, its stage kept and its house home untouched
+      # (#426). It is not started on the house here: a person chooses between
+      # trying the move again and Return to house (Agents::VmMigration).
+      agent.update_columns(active: false, paused: true, runtime: "offline", health_state: "unhealthy",
+        sandbox_last_error: "Moving to its own server failed: #{reason}. Its home is still on the house, untouched".first(1000),
+        sandbox_last_error_at: Time.current, updated_at: Time.current)
+    elsif archive_import?(agent)
       # Still inactive and paused, its stage kept; Activate can be asked again.
       agent.update!(runtime: "offline", health_state: "unhealthy",
         sandbox_last_error: "Activation on its own server failed: #{reason}".first(1000), sandbox_last_error_at: Time.current)

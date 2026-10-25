@@ -16,6 +16,10 @@ module Agents
   # A GitHub import (placement kind github_import) seeds identity only, from
   # the reviewed checkout staged at import (Agents::GithubImportStage), with
   # the payload a birth has. No other imported home is seeded on a VM.
+  #
+  # A migration (placement kind migration, #426) is seeded exactly as an
+  # archive import is: its three roles were staged from its own stopped house
+  # home (Agents::VmMigration), and the house volumes stay as they were.
   class VmSeed
 
     # Matches SEED_MAX_BYTES in host-runner/souls_house_runner.py.
@@ -114,7 +118,7 @@ module Agents
       placement
     end
 
-    def import?(placement) = placement.kind == "archive_import"
+    def import?(placement) = AgentPlacement::STAGED_ROLE_KINDS.include?(placement.kind)
     def github?(placement) = placement.kind == "github_import"
     def staged?(placement) = import?(placement) || github?(placement)
 

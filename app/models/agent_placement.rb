@@ -3,11 +3,15 @@ require "uri"
 class AgentPlacement < ApplicationRecord
 
   BACKENDS = %w[local hetzner_cloud].freeze
-  # staged: an archive import's VM intent, waiting for Activate. It has no
-  # server, no admission and no cap slot, and as a VM placement it is never
-  # run by the local runtime (RuntimeLocation).
+  # staged: an archive import's or a migration's VM intent, waiting for
+  # Activate. It has no server, no admission and no cap slot, and as a VM
+  # placement it is never run by the local runtime (RuntimeLocation).
   STATES = %w[staged pending ready failed retired].freeze
-  KINDS = %w[birth archive_import github_import].freeze
+  # migration: an existing house resident moving to its own server (#426),
+  # seeded per role like an archive import from its own stopped house home.
+  KINDS = %w[birth archive_import github_import migration].freeze
+  # Kinds seeded per role from AgentImportStage rows.
+  STAGED_ROLE_KINDS = %w[archive_import migration].freeze
 
   belongs_to :agent, inverse_of: :placement
   # Who created the resident whose birth admitted this placement (#246).
@@ -21,6 +25,7 @@ class AgentPlacement < ApplicationRecord
   validates :kind, inclusion: { in: KINDS }, allow_nil: true
   validates :kind, absence: true, if: -> { backend == "local" }
   validate :staged_holds_nothing, if: -> { state == "staged" }
+  validates :house_runtime_ready_at, absence: true, unless: -> { kind == "migration" }
   # Confirmed hosting geography, set when procurement verifies a server.
   validates :location, inclusion: { in: CloudProcurementOperation::EU_LOCATIONS }, allow_nil: true
   validates :location, absence: true, if: -> { backend == "local" }
@@ -36,6 +41,7 @@ class AgentPlacement < ApplicationRecord
 
   def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
   def staged? = state == "staged"
+  def migration? = backend == "hetzner_cloud" && kind == "migration"
   def cleanup_requested? = cleanup_requested_at.present?
 
   # Records why this placement's server must go. Never deletes anything
@@ -49,7 +55,9 @@ class AgentPlacement < ApplicationRecord
   private
 
   def staged_holds_nothing
-    errors.add(:state, "staged is only for a VM archive import") unless backend == "hetzner_cloud" && kind == "archive_import"
+    unless backend == "hetzner_cloud" && STAGED_ROLE_KINDS.include?(kind)
+      errors.add(:state, "staged is only for a VM archive import or migration")
+    end
     errors.add(:state, "staged holds no server") if provider_server_id.present? || location.present?
     errors.add(:state, "staged is not admitted") if admitted_by_setting_at.present? || birth_deadline_at.present?
   end
