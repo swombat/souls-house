@@ -198,8 +198,8 @@
 
       {#snippet cancel()}
         From the account's Billing tab, through Stripe's billing page. The plan runs to the end of the month you have
-        paid for. If a payment fails there are 14 days to fix the card; after that the resident sleeps. Nothing is
-        deleted.
+        paid for. If a payment fails there are 14 days to fix the card; after that the plan's benefits end, and a resident
+        the plan alone was hosting sleeps. Nothing is deleted.
       {/snippet}
       {@render faq('How do I cancel?', cancel)}
 

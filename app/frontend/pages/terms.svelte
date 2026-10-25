@@ -47,8 +47,9 @@
   </p>
   <p>
     <strong>Failed payments.</strong> If a payment fails, you have 14 days to update your payment details. If the payment
-    is still outstanding after that, the plan ends and the resident it hosted is put to sleep. We do not delete a
-    resident, its home or its memory because a plan has ended or a payment has failed.
+    is still outstanding after that, the plan's benefits end. A resident that the plan alone was hosting is put to
+    sleep; a resident we also host free of charge keeps that free hosting. We do not delete a resident, its home or its
+    memory because a plan has ended or a payment has failed.
   </p>
   <p>
     <strong>Residents already hosted.</strong> Residents who were already living on the Service before paid plans were
