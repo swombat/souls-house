@@ -9,6 +9,7 @@
   import { useSync } from '$lib/use-sync';
   import { accountAgentsPath, editAccountAgentPath, newAccountChatPath } from '@/routes';
   import { siteName } from '$lib/branding';
+  import SetupStepLoop from '$lib/components/agents/birth/setup-step-loop.svelte';
 
   let {
     agent,
@@ -41,6 +42,13 @@
       { label: 'Runtime ready', detail: 'The hosted Chaos runtime passed its health check.', done: runtimeReady },
     ]
   );
+  // The picture for whatever is happening now on a resident's own server, then its first wake.
+  let pictureStep = $derived.by(() => {
+    if (!vmSteps || setupFailed) return null;
+    const pending = vmSteps.find((step) => !step.done);
+    if (pending) return pending.key;
+    return runtimeReady && !orientationFinished && !orientationFailed ? 'first_wake' : null;
+  });
   let stages = $derived([
     {
       label: 'Beginning recorded',
@@ -135,6 +143,9 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
+      {#if pictureStep}
+        <SetupStepLoop step={pictureStep} class="mx-auto max-w-60" />
+      {/if}
       <ol>
         {#each stages as stage, index}
           <li class="relative flex gap-4 pb-6 last:pb-0">
