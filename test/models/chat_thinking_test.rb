@@ -219,7 +219,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "google/gemma-4-31b-it",
       "minimax/minimax-m2",
       "minimax/minimax-m2.7",
-      "moonshotai/kimi-coding",
       "moonshotai/kimi-k2-0905",
       "moonshotai/kimi-k2-thinking",
       "moonshotai/kimi-k2.5",
@@ -236,13 +235,27 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "qwen/qwen3.7-max",
       "z-ai/glm-4.5",
       "z-ai/glm-4.6",
-      "z-ai/glm-4.6-coding",
       "z-ai/glm-4.7",
-      "z-ai/glm-5.1",
-      "z-ai/glm-5.1-coding"
+      "z-ai/glm-5.1"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end
+  end
+
+  test "coding-plan aliases no route serves are not offered" do
+    model_ids = Chat::MODELS.map { |model| model[:model_id] }
+
+    %w[moonshotai/kimi-coding z-ai/glm-5.1-coding z-ai/glm-4.6-coding].each do |model_id|
+      assert_not_includes model_ids, model_id
+    end
+  end
+
+  test "Claude Opus 4.1 stays on OpenRouter because Anthropic retired its direct ID" do
+    config = Chat.model_config("anthropic/claude-opus-4.1")
+
+    assert_nil config[:provider_model_id]
+    assert_equal({ provider: :openrouter, model_id: "anthropic/claude-opus-4.1" },
+      ResolvesProvider.resolve_provider("anthropic/claude-opus-4.1"))
   end
 
   test "Top Models uses Grok 4.7 as the xAI recommendation" do
@@ -267,9 +280,9 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "meta-llama/llama-4-maverick",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3.1-pro",
-      "qwen/qwen3.7-max",
+      "qwen/qwen3.8-max-0902",
       "xiaomi/mimo-v2.6-pro",
-      "z-ai/glm-5.2"
+      "z-ai/glm-5.3"
     ], top_model_ids
 
     assert_equal "OpenAI", Chat.model_config("openai/gpt-5.5")[:group]
@@ -290,7 +303,12 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "qwen/qwen3.7-flash",
       "qwen/qwen3.8-2.4t-a95b",
       "qwen/qwen3.8-omni-flash",
-      "x-ai/grok-4.6"
+      "qwen/qwen3.8-max-0902",
+      "qwen/qwen3.8-max-prime",
+      "qwen/qwen3.7-plus",
+      "x-ai/grok-4.6",
+      "z-ai/glm-5.3",
+      "z-ai/glm-5.3-prime"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end
@@ -302,8 +320,11 @@ class ChatThinkingTest < ActiveSupport::TestCase
     # Verify we have thinking models
     assert thinking_models.any?, "Should have at least one thinking-capable model"
 
-    # Verify all Claude 4+ models have requires_direct_api flag
-    claude_4_models = thinking_models.select { |m| m[:model_id].match?(/claude-(opus|sonnet)-4/) }
+    # Claude 4+ models with a direct route keep thinking on it. Opus 4.1 has
+    # none left (Anthropic retired its ID) and thinks through OpenRouter.
+    claude_4_models = thinking_models.select do |m|
+      m[:model_id].match?(/claude-(opus|sonnet)-4/) && m[:model_id] != "anthropic/claude-opus-4.1"
+    end
     claude_4_models.each do |model|
       assert_equal true, model.dig(:thinking, :requires_direct_api),
                    "#{model[:model_id]} should require direct API"

@@ -50,9 +50,9 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Top Models" },
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "Top Models", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Top Models", thinking: { supported: true } },
-    { model_id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Top Models", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
     { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Top Models", thinking: { supported: true } },
-    { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Top Models", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Top Models", thinking: { supported: true } },
 
     # OpenAI
     { model_id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI", provider_model_id: "gpt-6-astra", thinking: { supported: true } },
@@ -262,11 +262,11 @@ module Chat::ModelSelection
       provider_model_id: "claude-haiku-4-5-20251001"
     },
     {
+      # Anthropic retired the direct ID; OpenRouter still serves it via Bedrock.
       model_id: "anthropic/claude-opus-4.1",
       label: "Claude Opus 4.1",
       group: "Anthropic",
-      provider_model_id: "claude-opus-4-1-20250805",
-      thinking: { supported: true, requires_direct_api: true }
+      thinking: { supported: true }
     },
 
     # Google
@@ -446,7 +446,6 @@ module Chat::ModelSelection
     { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3", label: "Kimi K3", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2.7-code", label: "Kimi K2.7 Code", group: "Moonshot / Kimi" },
-    { model_id: "moonshotai/kimi-coding", label: "Kimi Coding", group: "Moonshot / Kimi" },
     { model_id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2.5", label: "Kimi K2.5", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", group: "Moonshot / Kimi", thinking: { supported: true } },
@@ -491,14 +490,28 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct", group: "Meta" },
 
     # Qwen
+    { model_id: "qwen/qwen3.8-max-prime", label: "Qwen3.8 Max Prime", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-2.4t-a95b", label: "Qwen3.8 2.4T A95B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-omni-flash", label: "Qwen3.8 Omni Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-27b", label: "Qwen3.8 27B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.6-flash", label: "Qwen3.6 Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.6-27b", label: "Qwen3.6 27B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.6-35b-a3b", label: "Qwen3.6 35B A3B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.5-plus-20260420", label: "Qwen3.5 Plus (2026-04-20)", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-plus-02-15", label: "Qwen3.5 Plus (02-15)", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.5-flash-02-23", label: "Qwen3.5 Flash (02-23)", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-397b-a17b", label: "Qwen3.5 397B A17B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-122b-a10b", label: "Qwen3.5 122B A10B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-35b-a3b", label: "Qwen3.5 35B A3B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-27b", label: "Qwen3.5 27B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-9b", label: "Qwen3.5 9B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3-coder-next", label: "Qwen3 Coder Next", group: "Qwen" },
     { model_id: "qwen/qwen3-coder-flash", label: "Qwen3 Coder Flash", group: "Qwen" },
 
     # Xiaomi (OpenRouter)
@@ -507,13 +520,22 @@ module Chat::ModelSelection
     { model_id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash", group: "Xiaomi", thinking: { supported: true } },
 
     # Z.ai
+    { model_id: "z-ai/glm-5.3-prime", label: "GLM 5.3 Prime", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flashx", label: "GLM 5.3 FlashX", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.1", label: "GLM 5.1", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-5.1-coding", label: "GLM 5.1 Coding", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5-turbo", label: "GLM 5 Turbo", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5v-turbo", label: "GLM 5V Turbo", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5", label: "GLM 5", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-4.7", label: "GLM 4.7", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.7-flash", label: "GLM 4.7 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-4.6", label: "GLM 4.6", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-4.6-coding", label: "GLM 4.6 Coding", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-4.5", label: "GLM 4.5", group: "Z.ai", thinking: { supported: true } }
+    { model_id: "z-ai/glm-4.6v", label: "GLM 4.6V", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5", label: "GLM 4.5", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5-air", label: "GLM 4.5 Air", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5v", label: "GLM 4.5V", group: "Z.ai", thinking: { supported: true } }
   ].freeze
 
   REASONING_OPTIONS = {
