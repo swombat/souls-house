@@ -14,7 +14,10 @@ module Billing
     end
 
     def call
-      agent = agent_for(fetch)
+      first = fetch
+      return complete_birth_order(first) if unborn?(first)
+
+      agent = agent_for(first)
 
       ApplicationRecord.transaction do
         ApplicationRecord.connection.execute(
@@ -32,6 +35,21 @@ module Billing
 
     def fetch
       @client.v1.subscriptions.retrieve(@stripe_subscription_id)
+    end
+
+    # A subscription bought as the last step of creating a resident names its
+    # birth order until the resident exists. Its events complete the birth
+    # (if it is paid), which then brings the subscription in itself. Returns
+    # nil while the resident isn't born.
+    def unborn?(remote)
+      remote.metadata && remote.metadata["agent_id"].blank? && remote.metadata["birth_order_id"].present?
+    end
+
+    def complete_birth_order(remote)
+      order = ResidentBirthOrder.find_by(id: remote.metadata["birth_order_id"], stripe_subscription_id: remote.id) ||
+        raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} names no birth order here")
+      PaidBirth.new(client: @client).complete!(order)
+      order.born? ? ResidentSubscription.find_by(stripe_subscription_id: remote.id) : nil
     end
 
     def agent_for(remote)

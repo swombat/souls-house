@@ -232,6 +232,47 @@ what is lapsed, not just house tokens.
 - Nothing is ever deleted automatically. After 90 days held, site admins get
   a notice, and any further step is a human decision.
 
+## Who pays, and paying at creation (2026-10-25)
+
+Daniel, `oewbQY` 2026-10-25: billing is switched on per account, at account
+creation.
+
+- **Site switch** `settings.billing_enabled` (Admin, Settings, Billing). Every
+  account created while it is on gets `accounts.billing_required`. Accounts that
+  already exist are never changed by the switch, in either direction: they got
+  in early, and their residents, old and new, stay on the house. A site admin
+  can flip `billing_required` on one account (audited).
+- **Every new resident in a billing account needs a plan.** The plan pays for
+  hosting, so this holds on every funding route, own keys included. The free
+  house grant isn't given there; the plan's allowance replaces it.
+- **Paying is the creation wizard's last step**, *Plan*, after Review: choose
+  the plan; pay with the account's saved card (shown as brand, last four and
+  expiry, with "Use a different card"), or add one in Stripe's embedded setup
+  form (`ui_mode: embedded_page`, `mode: setup`; billing address and tax ID
+  collected; the card becomes the customer's default). One button commits both
+  the seed and the money: "Create Aria · $20/month + VAT".
+- **Nothing is born before money clears.** The draft is held in a
+  `resident_birth_orders` row; `Billing::PaidBirth` creates the subscription
+  with `payment_behavior: default_incomplete` and `metadata.birth_order_id`,
+  the browser confirms its first invoice with Stripe.js
+  (`confirmCardPayment`, which handles 3-D Secure), and once Stripe reports it
+  paid the resident is born through the ordinary `HostedBirth` (`paid: true`),
+  named on the subscription (`metadata.agent_id`) and synced, so the plan is in
+  force from its first moment. The browser's confirm and the webhook both
+  complete the order; its row lock makes the birth happen once.
+- **Failure modes.** A decline or an unfinished bank check leaves the order
+  pending for another try, with the same or another card. Asking again for a
+  different resident replaces the earlier unpaid order and cancels its
+  subscription. An order unpaid at `expires_at` (23 hours, inside Stripe's own
+  expiry of an incomplete subscription) is abandoned by the sweeper, its
+  subscription cancelled and its draft cleared. A birth that fails *after*
+  payment rolls back, keeps the order as `failed` with its draft, reports to
+  the site admins, and can be retried; the payment is never lost track of.
+- **Only the account's owner can pay.** Other members see who pays instead of a
+  card form. Every other route to a new resident in a billing account (a birth
+  through the API, an archive or GitHub import) is refused with a plain reason
+  before anything is committed, until those routes can pay too.
+
 ## Acceptance tests
 
 1. Failed or abandoned first checkout grants nothing (no allowance, no state change).

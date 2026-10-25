@@ -8,9 +8,12 @@ class FakeStripe
     def retrieve(id, *) = handlers.fetch(:retrieve).call(id)
     def create(params = {}, opts = {}) = handlers.fetch(:create).call(params, opts)
     def expire(id, *) = handlers.fetch(:expire).call(id)
+    def update(id, params = {}, *) = handlers.fetch(:update).call(id, params)
+    def cancel(id, *) = handlers.fetch(:cancel).call(id)
   end
 
-  attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states
+  attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states,
+    :created_subscriptions, :subscription_updates, :cancelled_subscriptions, :customer_updates
 
   def initialize
     @subscriptions = {}
@@ -20,10 +23,39 @@ class FakeStripe
     @expired_sessions = []
     # Checkout session id => { status:, subscription: }, as Stripe would report it.
     @session_states = {}
+    @customers = {}
+    @customer_updates = []
+    @payment_methods = {}
+    @created_subscriptions = []
+    @subscription_updates = []
+    @cancelled_subscriptions = []
   end
 
+  # A card Stripe would hold for a customer, by payment method id.
+  def put_payment_method(id, brand: "visa", last4: "4242", exp_month: 10, exp_year: 2030)
+    @payment_methods[id] = { id: id, object: "payment_method",
+      card: { brand: brand, last4: last4, exp_month: exp_month, exp_year: exp_year } }
+  end
+
+  # A customer's default card, as invoice_settings.default_payment_method.
+  def put_customer(id, default_payment_method: nil)
+    @customers[id] = { id: id, object: "customer", invoice_settings: { default_payment_method: default_payment_method } }
+  end
+
+  # What a finished embedded card form reports when re-read.
+  def complete_setup_session(id, payment_method:)
+    @session_states[id] = @session_states.fetch(id).merge(status: "complete", setup_intent: { payment_method: payment_method })
+  end
+
+  # The first invoice of a subscription is paid (or not).
+  def set_subscription_status(id, status)
+    @subscriptions.fetch(id)[:status] = status
+  end
+
+  def subscription(id) = @subscriptions.fetch(id)
+
   def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false)
-    @subscriptions[id] = Stripe::StripeObject.construct_from(
+    @subscriptions[id] = {
       id: id,
       object: "subscription",
       status: status,
@@ -31,20 +63,63 @@ class FakeStripe
       cancel_at_period_end: cancel_at_period_end,
       metadata: { agent_id: agent.id.to_s },
       items: { object: "list", data: [ { price: { id: price }, current_period_end: period_end.to_i } ] }
-    )
+    }
   end
 
   def v1 = self
 
   def subscriptions_service
-    Service.new(retrieve: ->(id) { @subscriptions.fetch(id) { raise Stripe::InvalidRequestError.new("No such subscription", "id") } })
+    Service.new(
+      retrieve: ->(id) { construct(stored_subscription(id)) },
+      create: lambda { |params, opts|
+        @created_subscriptions << [ params, opts ]
+        id = "sub_new_#{@created_subscriptions.size}"
+        @subscriptions[id] = {
+          id: id, object: "subscription", status: "incomplete", customer: params[:customer],
+          cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
+          default_payment_method: params[:default_payment_method],
+          items: { object: "list", data: params[:items].map { |item| { price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
+        }
+        construct(with_invoice(@subscriptions[id]))
+      },
+      update: lambda { |id, params|
+        @subscription_updates << [ id, params ]
+        stored = stored_subscription(id)
+        stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
+        stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
+        construct(with_invoice(stored))
+      },
+      cancel: lambda { |id|
+        @cancelled_subscriptions << id
+        stored_subscription(id)[:status] = "canceled"
+        construct(stored_subscription(id))
+      }
+    )
   end
 
   def customers
-    Service.new(create: lambda { |params, opts|
-      @created_customers << [ params, opts ]
-      Stripe::StripeObject.construct_from(id: "cus_test_#{@created_customers.size}")
-    })
+    Service.new(
+      create: lambda { |params, opts|
+        @created_customers << [ params, opts ]
+        id = "cus_test_#{@created_customers.size}"
+        put_customer(id)
+        Stripe::StripeObject.construct_from(id: id)
+      },
+      retrieve: lambda { |id|
+        customer = @customers.fetch(id) { put_customer(id) }
+        method = customer.dig(:invoice_settings, :default_payment_method)
+        construct(customer.merge(invoice_settings: { default_payment_method: method && @payment_methods.fetch(method) }))
+      },
+      update: lambda { |id, params|
+        @customer_updates << [ id, params ]
+        customer = @customers.fetch(id) { put_customer(id) }
+        if (method = params.dig(:invoice_settings, :default_payment_method))
+          put_payment_method(method) unless @payment_methods.key?(method)
+          customer[:invoice_settings] = { default_payment_method: method }
+        end
+        construct(customer)
+      }
+    )
   end
 
   def checkout
@@ -52,8 +127,8 @@ class FakeStripe
       create: lambda { |params, opts|
         @checkout_sessions << [ params, opts ]
         id = "cs_test_#{@checkout_sessions.size}"
-        @session_states[id] = { status: "open", subscription: nil }
-        Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}")
+        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer] }
+        Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
       },
       retrieve: lambda { |id|
         Stripe::StripeObject.construct_from({ id: id }.merge(@session_states.fetch(id)))
@@ -77,6 +152,21 @@ class FakeStripe
   end
 
   def subscriptions = subscriptions_service
+
+  private
+
+  def stored_subscription(id)
+    @subscriptions.fetch(id) { raise Stripe::InvalidRequestError.new("No such subscription", "id") }
+  end
+
+  def with_invoice(subscription)
+    subscription.merge(latest_invoice: { id: "in_#{subscription[:id]}", status: "open",
+      confirmation_secret: { type: "payment_intent", client_secret: "pi_#{subscription[:id]}_secret" } })
+  end
+
+  def construct(hash) = Stripe::StripeObject.construct_from(hash.deep_dup)
+
+  public
 
   module Helpers
 

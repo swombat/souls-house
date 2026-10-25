@@ -4,7 +4,7 @@
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
-  import { planAction } from '$lib/pricing';
+  import { planAction, planTaglines } from '$lib/pricing';
 
   let { tiers = [], billing_open: billingOpen = false, contact_email: contactEmail } = $props();
 
@@ -15,14 +15,7 @@
 
   const githubUrl = 'https://github.com/swombat/souls-house';
 
-  // One line under each plan's name. Copy, not catalogue: it says what kind of
-  // relationship the plan is for, never what it includes (that comes from the
-  // catalogue). Daniel named the plans this way, WjNvXj 2026-10-14.
-  const taglines = {
-    conversation: 'Someone to talk with.',
-    life: 'Helps you with your life.',
-    work: 'Does serious work beside you.',
-  };
+  const taglines = planTaglines;
 
   // The model subscription each plan pairs well with, if you bring your own.
   const pairings = {

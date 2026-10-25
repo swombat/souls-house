@@ -6,6 +6,7 @@ module Billing
   class NotConfigured < StandardError; end
   class InvalidSubscription < StandardError; end
   class AlreadySubscribed < StandardError; end
+  class NotReady < StandardError; end
 
   GRACE_PERIOD = 14.days
 
@@ -15,6 +16,12 @@ module Billing
 
   def self.webhook_secret
     Rails.application.credentials.dig(:stripe, :webhook_secret).presence || ENV["STRIPE_WEBHOOK_SECRET"].presence
+  end
+
+  # Public by design: Stripe.js needs it in the browser to mount Stripe's own
+  # card form.
+  def self.publishable_key
+    Rails.application.credentials.dig(:stripe, :publishable_key).presence || ENV["STRIPE_PUBLISHABLE_KEY"].presence
   end
 
   def self.configured?

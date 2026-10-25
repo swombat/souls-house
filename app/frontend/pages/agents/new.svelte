@@ -5,6 +5,8 @@
   import AppearanceStep from '$lib/components/agents/birth/appearance-step.svelte';
   import BeginningStep from '$lib/components/agents/birth/beginning-step.svelte';
   import BirthScene from '$lib/components/agents/birth/birth-scene.svelte';
+  import PlanStep from '$lib/components/agents/birth/plan-step.svelte';
+  import { payForResident, payAgain } from '$lib/paid-birth';
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { useForm, router } from '@inertiajs/svelte';
@@ -27,17 +29,33 @@
     vm_birth_refusal: vmBirthRefusal = null,
     ai_api_keys_configured: keysConfigured = {},
     can_manage_ai_credentials: canManageKeys = false,
+    billing = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
-  const steps = ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review'];
+  // In an account that pays per resident, a sixth step chooses the plan and
+  // pays for it; the resident is created only once the payment clears.
+  const steps = billing
+    ? ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review', 'Plan']
+    : ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review'];
   const captions = [
-    'Five small steps, a few minutes.',
+    billing ? 'Six small steps, a few minutes.' : 'Five small steps, a few minutes.',
     'A name and a colour to start with. Both can change later.',
     'A few words for them to grow from.',
     'The model they think with.',
-    'Everything is ready when you are.',
+    billing ? 'Look it over before choosing their plan.' : 'Everything is ready when you are.',
+    'Their plan, and how it is paid.',
   ];
+  const reviewStep = 4;
+  const lastStep = steps.length - 1;
+
+  let tier = $state(null);
+  let paymentMethod = $state(billing?.payment_method || null);
+  let payPhase = $state(null);
+  let payError = $state(null);
+  let lastPayment = $state(null);
+  let paidPending = $state(null);
+  let chosenTier = $derived(billing?.tiers?.find((candidate) => candidate.id === tier) || null);
 
   let step = $state(0);
   let selectedModel = $state(default_model_id);
@@ -87,9 +105,17 @@
     step === 0 ||
       (step === 1 && $form.agent.name.trim().length > 0) ||
       (step === 2 && ($form.agent.system_prompt.trim().length > 0 || openBeginning)) ||
-      (step === 3 && Boolean(selectedModel) && (!houseOffered || keyPath !== null) && ownKeyReady)
+      (step === 3 && Boolean(selectedModel) && (!houseOffered || keyPath !== null) && ownKeyReady) ||
+      (step === reviewStep && Boolean(billing) && formComplete && acknowledged)
   );
-  let canCreate = $derived(step === steps.length - 1 && formComplete && acknowledged && !$form.processing);
+  let paying = $derived(payPhase !== null);
+  let canCreate = $derived(
+    step === lastStep &&
+      formComplete &&
+      acknowledged &&
+      !$form.processing &&
+      (!billing || (billing.can_pay && Boolean(chosenTier) && Boolean(paymentMethod) && !paying && !paidPending))
+  );
 
   onMount(() => {
     const saved = localStorage.getItem(draftKey);
@@ -104,7 +130,8 @@
         keyPath = draft.key_path === 'house' || draft.key_path === 'own' ? draft.key_path : null;
         openBeginning = draft.open_beginning === true;
         $form.agent.open_beginning = openBeginning;
-        step = Math.min(Math.max(draft.step || 0, 0), steps.length - 1);
+        // A draft never reopens past Review: the seed is acknowledged afresh each visit.
+        step = Math.min(Math.max(draft.step || 0, 0), reviewStep);
       } catch {
         localStorage.removeItem(draftKey);
       }
@@ -138,8 +165,48 @@
     if (step > 0) step -= 1;
   }
 
+  function draftAgent() {
+    return {
+      ...$form.agent,
+      model_id: selectedModel,
+      open_beginning: openBeginning,
+      system_prompt: openBeginning ? '' : $form.agent.system_prompt,
+      scheduled_wakes_enabled: true,
+    };
+  }
+
+  async function payAndCreate() {
+    payError = null;
+    const key = keyPath !== 'house' ? providerKey.trim() : '';
+    const onPhase = (phase) => (payPhase = phase);
+    try {
+      const retrying = lastPayment && lastPayment.order?.tier === tier;
+      const result = retrying
+        ? await payAgain({ billing, payment: lastPayment, onPhase })
+        : await payForResident({
+            billing,
+            agent: draftAgent(),
+            tier,
+            providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
+            onPhase,
+          });
+      localStorage.removeItem(draftKey);
+      if (result.redirectTo) {
+        router.visit(result.redirectTo);
+      } else {
+        paidPending = result.order || { resident_name: $form.agent.name };
+        payPhase = null;
+      }
+    } catch (error) {
+      if (error.payment) lastPayment = error.payment;
+      payError = error.message;
+      payPhase = null;
+    }
+  }
+
   function createAgent() {
     if (!canCreate) return;
+    if (billing) return payAndCreate();
 
     $form.agent.model_id = selectedModel;
     $form.agent.open_beginning = openBeginning;
@@ -232,6 +299,16 @@
     </Alert>
   {/if}
 
+  {#if paidPending}
+    <Alert class="mb-6" data-testid="paid-pending">
+      <AlertTitle>Payment received</AlertTitle>
+      <AlertDescription>
+        Stripe is still confirming it. {paidPending.resident_name || 'Your resident'} will be created as soon as it does,
+        and will appear with your residents. You can leave this page.
+      </AlertDescription>
+    </Alert>
+  {/if}
+
   {#if $form.errors.base}
     <Alert variant="destructive" class="mb-6">
       <AlertTitle>Could not create the resident</AlertTitle>
@@ -258,7 +335,7 @@
             bind:selectedModel
             bind:keyPath
             bind:providerKey />
-        {:else}
+        {:else if step === reviewStep}
           <ReviewStep
             {form}
             {grouped_models}
@@ -266,6 +343,8 @@
             {openBeginning}
             bind:acknowledged
             onedit={() => (step = 2)} />
+        {:else}
+          <PlanStep {billing} residentName={$form.agent.name} bind:tier bind:paymentMethod {payError} busy={paying} />
         {/if}
       </div>
     {/key}
@@ -275,7 +354,7 @@
         {#if step === 0}
           <Button type="button" variant="ghost" onclick={cancel}>Cancel</Button>
         {:else}
-          <Button type="button" variant="outline" onclick={back}>
+          <Button type="button" variant="outline" onclick={back} disabled={paying}>
             <ArrowLeft class="mr-2 size-4" />
             Back
           </Button>
@@ -291,6 +370,15 @@
         <Button type="button" onclick={createAgent} disabled={!canCreate}>
           {#if $form.processing}
             Preparing…
+          {:else if payPhase === 'starting'}
+            Starting the plan…
+          {:else if payPhase === 'paying'}
+            Confirming payment…
+          {:else if payPhase === 'confirming'}
+            Preparing {$form.agent.name}…
+          {:else if billing && chosenTier}
+            <Check class="mr-2 size-4" />
+            Create {$form.agent.name} · ${chosenTier.monthly_usd}/month + VAT
           {:else}
             <Check class="mr-2 size-4" />
             Create resident and commit this seed

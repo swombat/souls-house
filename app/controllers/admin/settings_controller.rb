@@ -46,7 +46,7 @@ class Admin::SettingsController < ApplicationController
   def billing_status
     {
       accounts_required: Account.where(billing_required: true).count,
-      payment_open: false,
+      payment_open: Billing.configured?,
       configured: Billing.configured?,
       test_mode: Billing.test_mode?
     }

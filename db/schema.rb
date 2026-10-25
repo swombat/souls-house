@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_25_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2092,6 +2092,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_080000) do
     t.index ["watched_repository_id"], name: "index_repository_watches_on_watched_repository_id"
   end
 
+  create_table "resident_birth_orders", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "creator_id", null: false
+    t.bigint "agent_id"
+    t.string "tier", null: false
+    t.string "state", default: "pending", null: false
+    t.string "stripe_subscription_id"
+    t.jsonb "birth_attributes", default: {}, null: false
+    t.boolean "open_beginning", default: false, null: false
+    t.text "last_error"
+    t.datetime "expires_at", null: false
+    t.datetime "born_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
+    t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
+    t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
+    t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
+    t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
+    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
+  end
+
   create_table "resident_entitlements", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.bigint "account_id", null: false
@@ -2946,6 +2968,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_080000) do
   add_foreign_key "repository_watches", "chats", on_delete: :cascade
   add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
+  add_foreign_key "resident_birth_orders", "accounts"
+  add_foreign_key "resident_birth_orders", "agents"
+  add_foreign_key "resident_birth_orders", "users", column: "creator_id"
   add_foreign_key "resident_entitlements", "accounts"
   add_foreign_key "resident_entitlements", "agents"
   add_foreign_key "resident_entitlements", "resident_subscriptions", column: "current_subscription_id"

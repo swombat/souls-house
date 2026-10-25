@@ -62,3 +62,26 @@ test('a draft without a model uses the house default', async () => {
   await waitFor(() => expect(JSON.parse(localStorage.getItem(draftKey)).model_id).toBe(houseModel));
   expect(JSON.parse(localStorage.getItem(draftKey)).name).toBe('Uncommitted resident');
 });
+
+test('an account that pays per resident gets a sixth step, Plan, and a draft reopens no later than Review', async () => {
+  // jsdom has no Web Animations; the step change runs Svelte transitions.
+  Element.prototype.animate ||= function () {
+    const animation = { cancel() {}, finished: Promise.resolve(), onfinish: null };
+    setTimeout(() => animation.onfinish?.());
+    return animation;
+  };
+  localStorage.setItem(
+    draftKey,
+    JSON.stringify({ name: 'Aria', system_prompt: 'Be curious.', key_path: 'house', step: 5 })
+  );
+  render(NewResident, {
+    ...props,
+    billing: { can_pay: true, tiers: [], payment_method: null, contact_email: 'hello@souls.house' },
+  });
+
+  expect(screen.getByText('Six small steps, a few minutes.', { exact: false })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Go to step 6: Plan' })).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Go to step 5: Review' })).toHaveAttribute('aria-current', 'step')
+  );
+});

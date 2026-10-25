@@ -21,6 +21,12 @@ module Billing
       StripeEvent.retryable(now).find_each { |event| ProcessStripeEventJob.perform_later(event.id) }
 
       ResidentEntitlement.grace_expired(now).find_each { |entitlement| entitlement.expire_grace!(now: now) }
+
+      ResidentBirthOrder.expired(now).find_each do |order|
+        PaidBirth.new.abandon_expired!(order)
+      rescue Stripe::StripeError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", birth_order_id: order.id })
+      end
     end
 
   end

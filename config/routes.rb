@@ -129,6 +129,15 @@ Rails.application.routes.draw do
       post :checkout
       post :portal
     end
+    resource :billing_card, only: :create, module: :accounts do
+      post :complete
+    end
+    resources :birth_orders, only: :create, module: :accounts do
+      member do
+        post :payment
+        post :confirm
+      end
+    end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]

@@ -1,9 +1,10 @@
 require "test_helper"
 require_relative "../support/github_import_fixtures"
 
-# Until paying at creation is open, an account that pays for new residents
-# can't create one by any route, and is told why before anything is committed.
-# Accounts that don't pay are unaffected.
+# An account that pays for new residents can create one only by paying for it
+# in the creation wizard (Billing::PaidBirth). Every other route is refused,
+# with the reason, before anything is committed; with Stripe not configured,
+# the wizard says so up front. Accounts that don't pay are unaffected.
 class BillingBirthGateTest < ActionDispatch::IntegrationTest
 
   include GithubImportFixtures
@@ -46,7 +47,7 @@ class BillingBirthGateTest < ActionDispatch::IntegrationTest
     headers = { "Authorization" => "Bearer #{token}" }
 
     get catalogue_api_v1_residents_url, headers: headers
-    assert_equal Billing::BirthGate::NOT_OPEN, response.parsed_body.fetch("birth_refusal")
+    assert_equal Billing::BirthGate::NEEDS_PLAN, response.parsed_body.fetch("birth_refusal")
 
     assert_no_difference "Agent.count" do
       post api_v1_residents_url, headers: headers, as: :json, params: {
@@ -54,7 +55,7 @@ class BillingBirthGateTest < ActionDispatch::IntegrationTest
       }
     end
     assert_response :unprocessable_entity
-    assert_equal Billing::BirthGate::NOT_OPEN, response.parsed_body.fetch("error")
+    assert_equal Billing::BirthGate::NEEDS_PLAN, response.parsed_body.fetch("error")
   end
 
   test "an archive import is refused before the upload is read" do

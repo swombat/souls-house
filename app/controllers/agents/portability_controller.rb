@@ -104,7 +104,7 @@ class Agents::PortabilityController < ApplicationController
 
   def create
     raise Agents::Portability::Error unless params[:confirmed].to_s == "true"
-    if (refusal = Billing::BirthGate.refusal(current_account))
+    if (refusal = Billing::BirthGate.import_refusal(current_account))
       raise Agents::Portability::Error, refusal
     end
     Agents::Portability::Archive.with_upload(params[:archive]) do |archive|

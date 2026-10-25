@@ -36,11 +36,12 @@ class AgentsController < ApplicationController
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
-      vm_birth_refusal: Billing::BirthGate.refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :birth),
+      vm_birth_refusal: Billing::BirthGate.wizard_refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :birth),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       ai_api_keys_configured: current_account.ai_api_keys_configured,
       can_manage_ai_credentials: current_account.ai_credentials_manageable_by?(Current.user),
+      billing: -> { birth_billing_props },
       account: current_account.as_json
     }
   end
@@ -128,6 +129,34 @@ class AgentsController < ApplicationController
   end
 
   private
+
+  # The Plan step, for an account that pays per resident; nil otherwise.
+  def birth_billing_props
+    return nil unless Billing::BirthGate.requires_plan?(current_account)
+
+    can_pay = current_account.owned_by?(Current.user)
+    payment_method, payment_method_error = nil, false
+    if can_pay && Billing.configured?
+      begin
+        payment_method = Billing::PaymentMethod.new(account: current_account).current&.as_json
+      rescue Stripe::StripeError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing" })
+        payment_method_error = true
+      end
+    end
+    {
+      can_pay: can_pay,
+      test_mode: Billing.test_mode?,
+      publishable_key: Billing.publishable_key,
+      tiers: Billing::Tier.all.select(&:purchasable?).as_json,
+      payment_method: payment_method,
+      payment_method_error: payment_method_error,
+      contact_email: Billing.contact_email,
+      card_setup_url: account_billing_card_path(current_account),
+      card_setup_complete_url: complete_account_billing_card_path(current_account),
+      birth_orders_url: account_birth_orders_path(current_account)
+    }
+  end
 
   def portability_props
     can_manage = current_account.owned_by?(Current.user)

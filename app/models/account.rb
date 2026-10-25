@@ -55,6 +55,7 @@ class Account < ApplicationRecord
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
+  has_many :resident_birth_orders, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.

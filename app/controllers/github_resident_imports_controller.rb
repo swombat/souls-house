@@ -13,7 +13,7 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def create
-    if (refusal = Billing::BirthGate.refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :import))
+    if (refusal = Billing::BirthGate.import_refusal(current_account) || Agents::VmBirthPolicy.current.refusal(kind: :import))
       return redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ refusal ] } }
     end
 
