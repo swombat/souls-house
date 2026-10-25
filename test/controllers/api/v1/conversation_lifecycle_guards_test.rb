@@ -30,7 +30,7 @@ class Api::V1::ConversationLifecycleGuardsTest < ActionDispatch::IntegrationTest
     @chat.unarchive!
     patch api_v1_conversation_path(@chat), params: { web_access: true }, headers: @headers, as: :json
     assert_response :not_found
-    patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4" }, headers: @headers, as: :json
+    patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4.8" }, headers: @headers, as: :json
     assert_response :not_found
     @chat.reload
     assert_not @chat.web_access
@@ -85,7 +85,7 @@ class Api::V1::ConversationLifecycleGuardsTest < ActionDispatch::IntegrationTest
         fork: -> { post api_v1_conversation_fork_path(room, narrowing), headers: @headers, as: :json },
         assign: -> { post api_v1_conversation_agent_assignment_path(bare, narrowing), params: { agent_id: agents(:other_account_agent).to_param }, headers: @headers, as: :json },
         web_access: -> { patch api_v1_conversation_path(room, narrowing), params: { web_access: true }, headers: @headers, as: :json },
-        model: -> { patch api_v1_conversation_path(room, narrowing), params: { model_id: "anthropic/claude-opus-4" }, headers: @headers, as: :json },
+        model: -> { patch api_v1_conversation_path(room, narrowing), params: { model_id: "anthropic/claude-opus-4.8" }, headers: @headers, as: :json },
         edit: -> { patch api_v1_conversation_message_path(room, mine, narrowing), params: { content: "Changed" }, headers: @headers, as: :json },
         delete: -> { delete api_v1_conversation_message_path(room, mine, narrowing), headers: @headers, as: :json },
         dismiss: -> { post api_v1_conversation_reply_dismissal_path(room, narrowing), params: { message_id: flagged.to_param }, headers: @headers, as: :json },
@@ -162,7 +162,7 @@ class Api::V1::ConversationLifecycleGuardsTest < ActionDispatch::IntegrationTest
       -> { patch api_v1_conversation_message_path(@chat, @message), params: { content: "Edited" }, headers: @headers, as: :json },
       -> { delete api_v1_conversation_message_path(@chat, @message), headers: @headers, as: :json },
       -> { patch api_v1_conversation_path(@chat), params: { web_access: true }, headers: @headers, as: :json },
-      -> { patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4" }, headers: @headers, as: :json },
+      -> { patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4.8" }, headers: @headers, as: :json },
       -> { get api_v1_conversations_path, params: { filter: "archived" }, headers: @headers },
       -> { get api_v1_conversations_path, params: { filter: "deleted" }, headers: @headers }
     ]
