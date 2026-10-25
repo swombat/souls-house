@@ -76,7 +76,7 @@ test('an account that pays per resident gets a sixth step, Plan, and a draft reo
   );
   render(NewResident, {
     ...props,
-    billing: { can_pay: true, tiers: [], payment_method: null, contact_email: 'hello@souls.house' },
+    billing: { can_pay: true, tiers: [], payment_method: null, contact_email: 'hello@example.com' },
   });
 
   expect(screen.getByText('Six small steps, a few minutes.', { exact: false })).toBeInTheDocument();

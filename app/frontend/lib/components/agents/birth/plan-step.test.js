@@ -39,7 +39,7 @@ const billing = {
   publishable_key: 'pk_test_1',
   tiers,
   payment_method: null,
-  contact_email: 'hello@souls.house',
+  contact_email: 'hello@example.com',
   card_setup_url: '/accounts/a/billing_card',
   card_setup_complete_url: '/accounts/a/billing_card/complete',
   birth_orders_url: '/accounts/a/birth_orders',
