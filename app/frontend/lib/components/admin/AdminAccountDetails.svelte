@@ -4,12 +4,11 @@
   import { Badge } from '$lib/components/shadcn/badge';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
-  import { Label } from '$lib/components/shadcn/label/index.js';
-  import { Switch } from '$lib/components/shadcn/switch/index.js';
   import InfoCard from '$lib/components/InfoCard.svelte';
   import Avatar from '$lib/components/Avatar.svelte';
   import AdminAccountUsage from './AdminAccountUsage.svelte';
   import AdminXPostingCard from './AdminXPostingCard.svelte';
+  import AdminAccountSwitch from './AdminAccountSwitch.svelte';
 
   let { account, formatDate } = $props();
   let teamName = $state(account.name || '');
@@ -187,46 +186,30 @@
       </CardDescription>
     </CardHeader>
     <CardContent>
-      <div class="flex items-center justify-between gap-6 rounded-md border p-4">
-        <div class="space-y-1">
-          <Label for={`shared-ai-credentials-${account.id}`}>Use shared keys as fallback</Label>
-          <p class="text-sm text-muted-foreground">
-            New accounts start with this disabled. Account owners cannot change it themselves.
-          </p>
-        </div>
-        <Switch
-          id={`shared-ai-credentials-${account.id}`}
-          aria-label="Use shared keys as fallback"
-          checked={account.use_system_ai_credentials}
-          onCheckedChange={setSharedAiCredentials} />
-      </div>
-      <div class="mt-3 flex items-center justify-between gap-6 rounded-md border p-4">
-        <div class="space-y-1">
-          <Label for={`founding-${account.id}`}>Founding or family account</Label>
-          <p class="text-sm text-muted-foreground">
-            Kept out of growth numbers on the site dashboard and costed as its own band.
-          </p>
-        </div>
-        <Switch
-          id={`founding-${account.id}`}
-          aria-label="Founding or family account"
-          checked={account.founding}
-          onCheckedChange={setFounding} />
-      </div>
-      <div class="mt-3 flex items-center justify-between gap-6 rounded-md border p-4">
-        <div class="space-y-1">
-          <Label for={`billing-required-${account.id}`}>New residents need a plan</Label>
-          <p class="text-sm text-muted-foreground">
-            Set when the account is created, from the site's billing switch. Residents the account already has stay on
-            the house either way.
-          </p>
-        </div>
-        <Switch
-          id={`billing-required-${account.id}`}
-          aria-label="New residents need a plan"
-          checked={account.billing_required}
-          onCheckedChange={setBillingRequired} />
-      </div>
+      <AdminAccountSwitch
+        id={`shared-ai-credentials-${account.id}`}
+        label="Use shared keys as fallback"
+        checked={account.use_system_ai_credentials}
+        onCheckedChange={setSharedAiCredentials}>
+        New accounts start with this disabled. Account owners cannot change it themselves.
+      </AdminAccountSwitch>
+      <AdminAccountSwitch
+        id={`founding-${account.id}`}
+        label="Founding or family account"
+        checked={account.founding}
+        onCheckedChange={setFounding}
+        class="mt-3">
+        Kept out of growth numbers on the site dashboard and costed as its own band.
+      </AdminAccountSwitch>
+      <AdminAccountSwitch
+        id={`billing-required-${account.id}`}
+        label="New residents need a plan"
+        checked={account.billing_required}
+        onCheckedChange={setBillingRequired}
+        class="mt-3">
+        Set when the account is created, from the site's billing switch. Residents the account already has stay on the
+        house either way.
+      </AdminAccountSwitch>
     </CardContent>
   </Card>
 
@@ -239,21 +222,15 @@
       </CardDescription>
     </CardHeader>
     <CardContent>
-      <div class="flex items-center justify-between gap-6 rounded-md border p-4">
-        <div class="space-y-1">
-          <Label for={`field-tweets-house-key-${account.id}`}>Use the house TwitterAPI.io key</Label>
-          <p class="text-sm text-muted-foreground">
-            {account.field_tweets_own_integration
-              ? 'This account has its own integration, which pays first.'
-              : 'This account has no integration of its own.'}
-          </p>
-        </div>
-        <Switch
-          id={`field-tweets-house-key-${account.id}`}
-          aria-label="Use the house TwitterAPI.io key"
-          checked={account.field_tweets_house_key}
-          onCheckedChange={setTweetsHouseKey} />
-      </div>
+      <AdminAccountSwitch
+        id={`field-tweets-house-key-${account.id}`}
+        label="Use the house TwitterAPI.io key"
+        checked={account.field_tweets_house_key}
+        onCheckedChange={setTweetsHouseKey}>
+        {account.field_tweets_own_integration
+          ? 'This account has its own integration, which pays first.'
+          : 'This account has no integration of its own.'}
+      </AdminAccountSwitch>
     </CardContent>
   </Card>
 
@@ -268,20 +245,14 @@
       </CardDescription>
     </CardHeader>
     <CardContent>
-      <div class="flex items-center justify-between gap-6 rounded-md border p-4">
-        <div class="space-y-1">
-          <Label for={`field-swarm-${account.id}`}>Allow field swarm search</Label>
-          <p class="text-sm text-muted-foreground">
-            On for {account.field_swarm?.enabled_accounts ?? 0} account(s). Every search and reader call is recorded with
-            its reported cost.
-          </p>
-        </div>
-        <Switch
-          id={`field-swarm-${account.id}`}
-          aria-label="Allow field swarm search"
-          checked={account.field_swarm_enabled}
-          onCheckedChange={setFieldSwarm} />
-      </div>
+      <AdminAccountSwitch
+        id={`field-swarm-${account.id}`}
+        label="Allow field swarm search"
+        checked={account.field_swarm_enabled}
+        onCheckedChange={setFieldSwarm}>
+        On for {account.field_swarm?.enabled_accounts ?? 0} account(s). Every search and reader call is recorded with its
+        reported cost.
+      </AdminAccountSwitch>
       <div class="mt-3 overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="text-left text-muted-foreground">
