@@ -316,6 +316,7 @@ Rails.application.routes.draw do
         patch :convert
         patch :shared_ai_credentials
         patch :founding
+        patch :billing_required
         patch :field_swarm
         patch :field_tweets_house_key
         patch :x_posting_house_app

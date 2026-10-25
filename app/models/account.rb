@@ -112,6 +112,9 @@ class Account < ApplicationRecord
   # A new account has no references to convert. Existing accounts retain their
   # explicit profile until the locked conversion activation changes it.
   before_create { self.voice_embedding_profile = FieldVoiceprints::Profiles.configured }
+  # Accounts created while the site's billing switch is on pay for each new
+  # resident. Existing accounts are never changed by the switch.
+  before_create { self.billing_required = true if Setting.instance.billing_enabled? }
   after_create :create_default_visual_tags
   after_save -> { FieldTweetStream.refresh!(id) }, if: :saved_change_to_field_tweets_house_key?
   before_destroy :mark_memberships_for_skip_check, prepend: true

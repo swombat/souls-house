@@ -23,6 +23,8 @@ module Agents
       default_model = self.class.default_model_id(account: account, creator: creator)
       agent = account.agents.new({ model_id: default_model }.merge(attributes))
 
+      Billing::BirthGate.refuse!(account)
+
       # With new residents on their own VM, a birth either gets one or is
       # refused here, before anything is committed.
       policy = VmBirthPolicy.current

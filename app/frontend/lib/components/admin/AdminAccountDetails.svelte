@@ -43,6 +43,10 @@
     router.patch(`/admin/accounts/${account.id}/founding`, { account: { founding: enabled } });
   }
 
+  function setBillingRequired(required) {
+    router.patch(`/admin/accounts/${account.id}/billing_required`, { account: { billing_required: required } });
+  }
+
   function setFieldSwarm(enabled) {
     router.patch(`/admin/accounts/${account.id}/field_swarm`, { account: { field_swarm_enabled: enabled } });
   }
@@ -208,6 +212,20 @@
           aria-label="Founding or family account"
           checked={account.founding}
           onCheckedChange={setFounding} />
+      </div>
+      <div class="mt-3 flex items-center justify-between gap-6 rounded-md border p-4">
+        <div class="space-y-1">
+          <Label for={`billing-required-${account.id}`}>New residents need a plan</Label>
+          <p class="text-sm text-muted-foreground">
+            Set when the account is created, from the site's billing switch. Residents the account already has stay on
+            the house either way.
+          </p>
+        </div>
+        <Switch
+          id={`billing-required-${account.id}`}
+          aria-label="New residents need a plan"
+          checked={account.billing_required}
+          onCheckedChange={setBillingRequired} />
       </div>
     </CardContent>
   </Card>

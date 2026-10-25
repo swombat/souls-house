@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm field_tweets_house_key x_posting_house_app refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding billing_required field_swarm field_tweets_house_key x_posting_house_app refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -64,6 +64,17 @@ class Admin::AccountsController < ApplicationController
     audit(:admin_update_founding_account, @account, account_id: @account.id, founding: founding)
     redirect_back_or_to admin_accounts_path(account_id: @account),
       notice: founding ? "Marked as a founding account" : "No longer a founding account"
+  end
+
+  # Whether new residents in this account need a plan. Set at account creation
+  # from the site's billing switch; residents the account already has stay on
+  # the house either way.
+  def billing_required
+    required = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:billing_required))
+    @account.update!(billing_required: required)
+    audit(:admin_update_account_billing_required, @account, account_id: @account.id, billing_required: required)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: required ? "New residents in this account now need a plan" : "New residents in this account are on the house"
   end
 
   def refresh_storage

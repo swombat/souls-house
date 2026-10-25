@@ -14,6 +14,8 @@ class Setting < ApplicationRecord
 
   # Field OCR covers only files brought in after it was (last) turned on.
   before_save { self.field_ocr_enabled_at = Time.current if field_ocr_enabled_changed?(to: true) }
+  # When billing was (last) switched on: accounts created since then pay.
+  before_save { self.billing_enabled_at = Time.current if billing_enabled_changed?(to: true) }
   after_save :refresh_tweet_streams, if: :tweet_stream_changed?
   after_save :refresh_glossaries, if: :saved_change_to_site_name?
 

@@ -70,6 +70,21 @@ test('says plainly when the switch is on and births are being refused', () => {
   );
 });
 
+test('switches billing on for new accounts and says who pays now', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, billing_enabled: false },
+    billing: { accounts_required: 2, payment_open: false, configured: true, test_mode: true },
+  });
+  expect(screen.getByTestId('billing-status')).toHaveTextContent('2 accounts pay for new residents now.');
+  expect(screen.getByTestId('billing-status')).toHaveTextContent("those accounts can't create residents");
+  expect(screen.getByTestId('billing-status')).toHaveTextContent('Stripe is in test mode.');
+  const toggle = screen.getByLabelText('New accounts pay for their residents');
+  await fireEvent.click(toggle);
+  await fireEvent.submit(toggle.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[billing_enabled]')).toBe('true');
+});
+
 test('turns on scanned-page transcription with a daily ceiling, and says what is sent', async () => {
   render(Settings, {
     setting: {

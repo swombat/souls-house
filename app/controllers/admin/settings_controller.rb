@@ -11,6 +11,7 @@ class Admin::SettingsController < ApplicationController
       follow_through_residents: -> { follow_through_residents },
       stalled_sweep_accounts: -> { stalled_sweep_accounts },
       vm_births: -> { Agents::VmBirthPolicy.current.as_json },
+      billing: -> { billing_status },
       field_ocr: -> { FieldOcr.status_json },
       field_tweets: -> { FieldTweets.status_json }
     }
@@ -42,6 +43,15 @@ class Admin::SettingsController < ApplicationController
 
   private
 
+  def billing_status
+    {
+      accounts_required: Account.where(billing_required: true).count,
+      payment_open: false,
+      configured: Billing.configured?,
+      test_mode: Billing.test_mode?
+    }
+  end
+
   def setting_params
     params.require(:setting).permit(
       :site_name,
@@ -57,6 +67,7 @@ class Admin::SettingsController < ApplicationController
       :stalled_sweep_wake,
       :new_residents_on_vm,
       :vm_resident_limit,
+      :billing_enabled,
       :field_ocr_enabled,
       :field_ocr_daily_usd_ceiling,
       :field_tweets_enabled,

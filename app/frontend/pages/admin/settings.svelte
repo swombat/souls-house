@@ -8,6 +8,7 @@
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
+  import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
   import FieldTweetsSettingsCard from '$lib/components/admin/FieldTweetsSettingsCard.svelte';
 
@@ -16,6 +17,7 @@
     follow_through_residents = [],
     stalled_sweep_accounts = [],
     vm_births = {},
+    billing = {},
     field_ocr = {},
     field_tweets = {},
   } = $props();
@@ -50,6 +52,7 @@
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
     formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
     formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
+    formData.append('setting[billing_enabled]', form.billing_enabled ?? false);
     formData.append('setting[field_ocr_enabled]', form.field_ocr_enabled ?? false);
     formData.append('setting[field_ocr_daily_usd_ceiling]', form.field_ocr_daily_usd_ceiling ?? 1);
     formData.append('setting[field_tweets_enabled]', form.field_tweets_enabled ?? false);
@@ -127,6 +130,8 @@
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
+
+      <BillingSettingsCard {form} status={billing} />
 
       <FieldOcrSettingsCard {form} status={field_ocr} />
 
