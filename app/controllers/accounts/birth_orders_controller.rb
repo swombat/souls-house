@@ -14,6 +14,14 @@ class Accounts::BirthOrdersController < ApplicationController
   rescue_from Billing::PaidBirth::Refused, Agents::HostedProvisioning::ConfigurationError, Billing::NotConfigured do |error|
     render json: { error: error.message }, status: :unprocessable_entity
   end
+  # An uncertain answer from Stripe: the order and its draft are kept, and the
+  # browser retries the same order through its payment URL.
+  rescue_from Billing::PaidBirth::Uncertain do |error|
+    render json: { error: error.message, order: error.order.as_json,
+                   payment_url: payment_account_birth_order_path(current_account, error.order),
+                   confirm_url: confirm_account_birth_order_path(current_account, error.order) },
+      status: :service_unavailable
+  end
   rescue_from Stripe::StripeError do |error|
     Rails.error.report(error, handled: true, context: { subsystem: "billing" })
     render json: { error: "Stripe couldn't complete that just now. Please try again." }, status: :bad_gateway
@@ -34,8 +42,12 @@ class Accounts::BirthOrdersController < ApplicationController
 
   # A fresh secret to pay again, after a decline or with a different card.
   def payment
-    client_secret, payment_method_id = Billing::PaidBirth.new.payment(@order)
-    render json: payment_json(@order, client_secret, payment_method_id)
+    result = Billing::PaidBirth.new.payment(@order)
+    if result[:paid]
+      render json: payment_json(@order, nil, nil).merge(paid: true)
+    else
+      render json: payment_json(@order, result[:client_secret], result[:payment_method_id])
+    end
   end
 
   def confirm

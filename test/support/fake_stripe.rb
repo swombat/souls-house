@@ -10,6 +10,7 @@ class FakeStripe
     def expire(id, *) = handlers.fetch(:expire).call(id)
     def update(id, params = {}, *) = handlers.fetch(:update).call(id, params)
     def cancel(id, *) = handlers.fetch(:cancel).call(id)
+    def search(params = {}, *) = handlers.fetch(:search).call(params)
   end
 
   attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states,
@@ -54,6 +55,17 @@ class FakeStripe
 
   def subscription(id) = @subscriptions.fetch(id)
 
+  # Fault injection. The next subscription create raises error; with
+  # created: true Stripe made the subscription anyway (a lost response).
+  def fail_next_subscription_create(error = Stripe::APIConnectionError.new("timed out"), created: true)
+    @create_fault = [ error, created ]
+  end
+
+  # The next subscription update raises error and changes nothing.
+  def fail_next_subscription_update(error = Stripe::APIConnectionError.new("timed out"))
+    @update_fault = error
+  end
+
   def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false)
     @subscriptions[id] = {
       id: id,
@@ -72,17 +84,36 @@ class FakeStripe
     Service.new(
       retrieve: ->(id) { construct(stored_subscription(id)) },
       create: lambda { |params, opts|
+        if (existing = @subscriptions.values.find { |sub| sub[:idempotency_key] && sub[:idempotency_key] == opts[:idempotency_key] })
+          next construct(with_invoice(existing))
+        end
+        if @create_fault
+          error, created = @create_fault
+          @create_fault = nil
+          raise error unless created
+        end
         @created_subscriptions << [ params, opts ]
         id = "sub_new_#{@created_subscriptions.size}"
         @subscriptions[id] = {
           id: id, object: "subscription", status: "incomplete", customer: params[:customer],
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
-          default_payment_method: params[:default_payment_method],
+          default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
           items: { object: "list", data: params[:items].map { |item| { price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
         }
+        raise error if error
         construct(with_invoice(@subscriptions[id]))
       },
+      search: lambda { |params|
+        order_id = params[:query][/birth_order_id'\]:'(\d+)'/, 1]
+        found = @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order_id") == order_id }
+        Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
+      },
       update: lambda { |id, params|
+        if @update_fault
+          error = @update_fault
+          @update_fault = nil
+          raise error
+        end
         @subscription_updates << [ id, params ]
         stored = stored_subscription(id)
         stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]

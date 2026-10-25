@@ -19,6 +19,8 @@
     tier = $bindable(null),
     paymentMethod = $bindable(null),
     payError = null,
+    // The money was taken but the house hasn't finished: no decline wording.
+    payPaid = false,
     busy = false,
   } = $props();
 
@@ -210,10 +212,15 @@
 
     {#if payError}
       <Alert variant="destructive" data-testid="plan-pay-error">
-        <AlertTitle>The payment didn't go through</AlertTitle>
-        <AlertDescription>
-          {payError} Nothing was created. You can try again, or use a different card.
-        </AlertDescription>
+        {#if payPaid}
+          <AlertTitle>Almost there</AlertTitle>
+          <AlertDescription>{payError}</AlertDescription>
+        {:else}
+          <AlertTitle>The payment didn't go through</AlertTitle>
+          <AlertDescription>
+            {payError} Nothing was created. You can try again, or use a different card.
+          </AlertDescription>
+        {/if}
       </Alert>
     {/if}
   {/if}

@@ -4,7 +4,7 @@ const stripe = { confirmCardPayment: vi.fn() };
 const postJson = vi.fn();
 vi.mock('$lib/stripe', () => ({ loadStripe: vi.fn(async () => stripe), postJson: (...args) => postJson(...args) }));
 
-const { payForResident } = await import('./paid-birth.js');
+const { payForResident, payAgain } = await import('./paid-birth.js');
 
 const billing = { publishable_key: 'pk_test_1', birth_orders_url: '/accounts/a/birth_orders' };
 const started = {
@@ -74,4 +74,46 @@ test('when Stripe is slow to confirm, it says so rather than failing', async () 
   const result = await payForResident({ billing, agent: {}, tier: 'conversation', pollMs: 0 });
   expect(result.redirectTo).toBeNull();
   expect(result.order).toBe(started.order);
+});
+
+test('a confirmation that keeps failing after payment keeps the order, marked paid, to resume', async () => {
+  const offline = Object.assign(new Error('Failed to fetch'), {});
+  postJson.mockResolvedValueOnce(started).mockRejectedValue(offline);
+  stripe.confirmCardPayment.mockResolvedValue({ paymentIntent: { status: 'succeeded' } });
+
+  const error = await payForResident({ billing, agent: {}, tier: 'conversation', pollMs: 0 }).catch((e) => e);
+
+  expect(error.message).toMatch(/payment went through/);
+  expect(error.payment.paid).toBe(true);
+  expect(error.payment.confirm_url).toBe(started.confirm_url);
+});
+
+test('resuming an order that is already paid goes straight to confirming, never paying again', async () => {
+  postJson
+    .mockResolvedValueOnce({ ...started, client_secret: null, payment_method_id: null, paid: true })
+    .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/born' });
+
+  const result = await payAgain({ billing, payment: { ...started, paid: true }, pollMs: 0 });
+
+  expect(postJson).toHaveBeenNthCalledWith(1, started.payment_url);
+  expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  expect(result.redirectTo).toBe('/born');
+});
+
+test('an uncertain start keeps the order it made, so a retry resumes it', async () => {
+  const uncertain = Object.assign(new Error("Stripe didn't answer in time."), {
+    data: {
+      error: "Stripe didn't answer in time.",
+      order: started.order,
+      payment_url: started.payment_url,
+      confirm_url: started.confirm_url,
+    },
+  });
+  postJson.mockRejectedValueOnce(uncertain);
+
+  const error = await payForResident({ billing, agent: {}, tier: 'conversation', pollMs: 0 }).catch((e) => e);
+
+  expect(error.payment.payment_url).toBe(started.payment_url);
+  expect(error.payment.paid).toBeUndefined();
+  expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
 });

@@ -149,10 +149,10 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     @stripe.put_payment_method("pm_mastercard", brand: "mastercard", last4: "4444")
     @stripe.put_customer("cus_1", default_payment_method: "pm_mastercard")
 
-    client_secret, payment_method = paid_birth.payment(order)
+    result = paid_birth.payment(order)
 
-    assert_equal "pi_sub_new_1_secret", client_secret
-    assert_equal "pm_mastercard", payment_method
+    assert_equal "pi_sub_new_1_secret", result[:client_secret]
+    assert_equal "pm_mastercard", result[:payment_method_id]
     assert_equal "pm_mastercard", @stripe.subscription("sub_new_1")[:default_payment_method]
   end
 
@@ -171,6 +171,93 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
       paid_birth.abandon_expired!(late)
     end
     assert late.reload.born?
+  end
+
+  test "an uncertain answer opening the subscription keeps the order and its draft; paying again finds it" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    assert order.pending?
+    assert_equal "Aria", order.resident_name
+    assert_nil order.stripe_subscription_id
+
+    result = paid_birth.payment(order)
+    assert_equal "pi_sub_new_1_secret", result[:client_secret]
+    assert_equal "sub_new_1", order.reload.stripe_subscription_id
+    assert_equal 1, @stripe.created_subscriptions.size, "the subscription Stripe made is found, not made again"
+  end
+
+  test "an uncertain answer where Stripe made nothing opens the subscription on retry" do
+    @stripe.fail_next_subscription_create(created: false)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+
+    result = paid_birth.payment(order)
+    assert_equal "sub_new_1", order.reload.stripe_subscription_id
+    assert_equal "pi_sub_new_1_secret", result[:client_secret]
+    assert_equal 1, @stripe.created_subscriptions.size
+  end
+
+  test "the webhook teaches an order the subscription id it never heard back" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    @stripe.set_subscription_status("sub_new_1", "active")
+
+    assert_difference "Agent.count", 1 do
+      Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+    end
+    order = ResidentBirthOrder.sole
+    assert order.born?
+    assert_equal "sub_new_1", order.stripe_subscription_id
+    assert ResidentEntitlement.find_by!(agent: order.agent).active?
+  end
+
+  test "Stripe names the resident only after it is committed, and a failed naming is retried" do
+    order, = start!
+    @stripe.set_subscription_status("sub_new_1", "active")
+    @stripe.fail_next_subscription_update
+
+    assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    order.reload
+    assert order.born?, "the birth committed before Stripe was told"
+    assert Agent.exists?(order.agent_id)
+    assert_nil @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    assert_not ResidentEntitlement.paid_for?(order.agent)
+
+    Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+    assert_equal order.agent_id.to_s, @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    assert ResidentEntitlement.paid_for?(order.agent)
+  end
+
+  test "a birth rolled back after payment is never named at Stripe" do
+    order, = start!
+    @stripe.set_subscription_status("sub_new_1", "active")
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 0)
+
+    assert_raises(Agents::HostedProvisioning::ConfigurationError) { paid_birth.complete!(order) }
+    assert_nil @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    assert_empty @stripe.subscription_updates
+  end
+
+  test "once paid, asking for another resident finishes the paid one and charges nothing more" do
+    first, = start!
+    @stripe.set_subscription_status("sub_new_1", "active")
+
+    error = assert_raises(Billing::PaidBirth::Refused) { start!(name: "Bea") }
+    assert_match(/already gone through/, error.message)
+    assert_equal 1, @stripe.created_subscriptions.size
+    assert first.reload.born?
+    assert_equal 0, ResidentBirthOrder.where(state: "pending").count
+  end
+
+  test "paying again on an order already paid completes it instead" do
+    order, = start!
+    @stripe.set_subscription_status("sub_new_1", "active")
+
+    assert_difference "Agent.count", 1 do
+      assert_equal({ paid: true }, paid_birth.payment(order))
+    end
+    assert order.reload.born?
   end
 
   test "births that don't pay are refused in an account that pays" do

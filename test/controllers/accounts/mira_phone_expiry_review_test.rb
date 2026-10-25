@@ -2,6 +2,7 @@ require "test_helper"
 require "support/telegram_comms_helpers"
 
 class MiraPhoneExpiryReviewTest < ActiveSupport::TestCase
+
   include TelegramCommsHelpers
 
   test "a code response delivered after the attempt expired does not revive it" do
@@ -13,4 +14,5 @@ class MiraPhoneExpiryReviewTest < ActiveSupport::TestCase
 
     assert_equal "expired", connection.reload.login_state["error"]
   end
+
 end

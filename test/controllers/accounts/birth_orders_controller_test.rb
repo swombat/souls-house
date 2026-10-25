@@ -81,6 +81,32 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "an uncertain Stripe answer returns the order to resume, and resuming pays the same subscription" do
+    @stripe.put_payment_method("pm_visa")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_visa")
+    @stripe.fail_next_subscription_create(created: true)
+
+    Billing.stub(:client, @stripe) do
+      post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation" }, as: :json
+      assert_response :service_unavailable
+      body = response.parsed_body
+      assert_equal "pending", body.dig("order", "state")
+      payment_url = body.fetch("payment_url")
+
+      post payment_url, as: :json
+      assert_response :success
+      assert_equal "pi_sub_new_1_secret", response.parsed_body.fetch("client_secret")
+
+      @stripe.set_subscription_status("sub_new_1", "active")
+      post payment_url, as: :json
+      assert_response :success
+      assert response.parsed_body.fetch("paid")
+      assert_nil response.parsed_body["client_secret"]
+    end
+    assert_equal 1, @stripe.created_subscriptions.size
+    assert ResidentBirthOrder.sole.born?
+  end
+
   test "only the owner can pay, and the reasons come back as JSON" do
     Billing.stub(:client, @stripe) do
       post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation" }, as: :json

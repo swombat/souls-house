@@ -46,8 +46,13 @@ module Billing
     end
 
     def complete_birth_order(remote)
-      order = ResidentBirthOrder.find_by(id: remote.metadata["birth_order_id"], stripe_subscription_id: remote.id) ||
-        raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} names no birth order here")
+      order = ResidentBirthOrder.find_by(id: remote.metadata["birth_order_id"])
+      if order.nil? || order.stripe_subscription_id.present? && order.stripe_subscription_id != remote.id
+        raise InvalidSubscription, "Subscription #{@stripe_subscription_id} names no birth order here"
+      end
+      # Opening the subscription had no certain answer, so the order never
+      # learned its id: this event is how it does.
+      order.update!(stripe_subscription_id: remote.id) if order.stripe_subscription_id.blank?
       PaidBirth.new(client: @client).complete!(order)
       order.born? ? ResidentSubscription.find_by(stripe_subscription_id: remote.id) : nil
     end

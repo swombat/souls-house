@@ -188,7 +188,9 @@
     const key = keyPath !== 'house' ? providerKey.trim() : '';
     const onPhase = (phase) => (payPhase = phase);
     try {
-      const retrying = lastPayment && lastPayment.order?.tier === tier;
+      // Once an order exists, retries resume it; only an unpaid one may be
+      // replaced by choosing a different plan.
+      const retrying = lastPayment && (lastPayment.paid || lastPayment.order?.tier === tier);
       const result = retrying
         ? await payAgain({ billing, payment: lastPayment, onPhase })
         : await payForResident({
@@ -353,7 +355,14 @@
             bind:acknowledged
             onedit={() => (step = 2)} />
         {:else}
-          <PlanStep {billing} residentName={$form.agent.name} bind:tier bind:paymentMethod {payError} busy={paying} />
+          <PlanStep
+            {billing}
+            residentName={$form.agent.name}
+            bind:tier
+            bind:paymentMethod
+            {payError}
+            payPaid={Boolean(lastPayment?.paid)}
+            busy={paying} />
         {/if}
       </div>
     {/key}
