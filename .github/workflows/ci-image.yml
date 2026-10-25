@@ -60,7 +60,7 @@ jobs:
             bun --version
             node --version
             python3 -c "import sys, yaml, tomllib; assert sys.version_info >= (3, 11)"
-            for tool in python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe pdfinfo pdftotext pdftoppm sh date sleep; do
+            for tool in python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep; do
               command -v "$tool"
             done
             node /opt/playwright/node_modules/playwright/cli.js --version

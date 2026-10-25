@@ -1,4 +1,4 @@
-# A PDF's own text, read page by page with Poppler (PdfText) so residents can
+# A PDF's own text, read page by page with Imprimatur (PdfText) so residents can
 # read it and Field search and summaries cover it. Only the text layer the PDF
 # already carries is read here, inside the house; a scanned page comes out
 # `empty` (a page without a text layer). Once a PDF has text it is summarised
@@ -93,8 +93,6 @@ module FieldFile::PdfExtraction
     update_columns(pdf_status: status, pdf_status_reason: reason&.truncate(500), pdf_coverage: coverage,
       extracted_text: joined, text_extracted_at: Time.current)
   end
-
-
 
   def pdf_extraction_json
     return nil unless pdf_status
@@ -209,51 +207,38 @@ module FieldFile::PdfExtraction
     rows = []
 
     (1..listed).each_slice(PdfText::BATCH_PAGES) { |numbers| rows.concat(read_batch(path, numbers, deadline)) }
-    images = image_pages(path, listed, deadline)
-    rows.each { |row| row[:has_images] = images&.include?(row[:page_number]) }
-
     { page_count: info[:pages], listed: listed, pages: rows }
-  rescue PdfText::Encrypted => e
-    { status: "encrypted", reason: e.message }
-  rescue PdfText::Error => e
+  rescue Imprimatur::PasswordRequired
+    { status: "encrypted", reason: "The PDF needs a password to open" }
+  rescue Imprimatur::UnsupportedDocument
+    { status: "failed", reason: "Not a PDF the house can open" }
+  rescue Imprimatur::Error, SystemCallError, IOError => e
     { status: "failed", reason: e.message }
   end
 
-  # Which pages hold a picture, for FieldOcr; nil when that can't be told
-  # (then a page with a little text of its own isn't sent).
-  def image_pages(path, listed, deadline)
-    timeout = deadline.allow(PdfText::INFO_TIMEOUT) or return nil
-    PdfText.image_pages(path, 1, listed, timeout: timeout)
-  rescue PdfText::CommandFailed
-    nil
-  end
-
-  # One pdftotext run for the batch; if that fails, each page on its own so
-  # one bad page doesn't lose the rest. Pages the deadline doesn't reach are
-  # skipped; what was read is kept.
+  # The native reader keeps healthy pages when another page is damaged.
+  # Pages the deadline doesn't reach are skipped; what was read is kept.
   def read_batch(path, numbers, deadline)
     timeout = deadline.allow(PdfText::BATCH_TIMEOUT)
     return numbers.map { |n| page_row(n, "skipped", reason: TOO_LONG) } unless timeout
 
-    PdfText.pages(path, numbers.first, numbers.last, timeout: timeout).each_with_index.map do |page, i|
-      text_row(numbers.first + i, page)
+    PdfText.pages(path, numbers.first, numbers.last, timeout: timeout).map do |page|
+      text_row(page[:page], page)
     end
-  rescue PdfText::CommandFailed
-    numbers.map do |n|
-      timeout = deadline.allow(PdfText::PAGE_TIMEOUT)
-      next page_row(n, "skipped", reason: TOO_LONG) unless timeout
-
-      text_row(n, PdfText.pages(path, n, n, timeout: timeout).first)
-    rescue PdfText::CommandFailed => e
-      page_row(n, "failed", reason: e.message)
-    end
+  rescue Imprimatur::Error, SystemCallError, IOError => e
+    numbers.map { |n| page_row(n, "failed", reason: e.message) }
   end
 
   def text_row(number, page)
-    return page_row(number, "empty") if page.text.strip.empty?
-
-    reason = "Text cut at #{PdfText::MAX_PAGE_BYTES / 1.kilobyte} kB; the rest of this page was not read" if page.truncated
-    page_row(number, "text", text: page.text, reason: reason)
+    status = page[:status]
+    status = "empty" if status == "text" && page[:text].strip.empty?
+    reason = page[:reason]
+    if page[:truncated]
+      reason = "Text cut at #{PdfText::MAX_PAGE_BYTES / 1.kilobyte} kB; the rest of this page was not read"
+    end
+    row = page_row(number, status, text: page[:text], reason: reason)
+    row[:has_images] = page[:images].positive? unless page[:images].nil?
+    row
   end
 
   def page_row(number, status, text: nil, reason: nil)

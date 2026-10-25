@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Synthetic PDFs from test/fixtures/files/field_pdfs (generate.sh). Poppler
+# Synthetic PDFs from test/fixtures/files/field_pdfs (generate.sh). Imprimatur
 # runs for real; nothing leaves the machine.
 class FieldFilePdfExtractionTest < ActiveSupport::TestCase
 
@@ -117,25 +117,6 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert_includes file.extracted_text, "apricots"
   end
 
-  test "a huge advertised page count materialises rows for the read pages only" do
-    file = pdf("text_only.pdf")
-    calls = 0
-    blank = ->(_path, first, last, **) { calls += 1; (first..last).map { PdfText::Page.new(text: "", truncated: false) } }
-    PdfText.stub(:info, { pages: 10_000, permissions_only: false }) do
-      PdfText.stub(:pages, blank) { file.extract_pdf! }
-    end
-    file.reload
-
-    assert_equal FieldFile::PdfExtraction::MAX_PAGES, file.pages.count
-    assert_equal FieldFile::PdfExtraction::MAX_PAGES / PdfText::BATCH_PAGES, calls
-    json = file.pdf_extraction_json
-    assert_equal 10_000, json[:page_count]
-    assert_equal 9_500, json[:pages_skipped]
-    assert_equal 500, json[:pages_without_text]
-    assert_equal "partial", json[:status]
-    assert_equal "9500 pages not read (a limit was reached)", json[:reason]
-  end
-
   test "pages not reached within the time budget are skipped, and what was read is kept" do
     file = pdf("mixed.pdf")
     ticks = [ 0, 0, 0, 10_000 ].each
@@ -150,45 +131,56 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert_includes file.extracted_text, "walnut"
   end
 
-  test "the budget holds through the page-by-page fallback: no command outlives it" do
+  test "an expired native read marks its pages failed rather than blank" do
     file = pdf("text_only.pdf")
-    now = 0.0
-    timeouts = []
-    slow = lambda do |_path, _first, _last, timeout:, **|
-      timeouts << [ timeout, FieldFile::PdfExtraction::TIME_BUDGET - now ]
-      now += timeout + PdfText::KILL_GRACE
-      raise PdfText::CommandFailed, "pdftotext took too long"
-    end
-    PdfText.stub(:info, { pages: 60, permissions_only: false }) do
-      PdfText.stub(:pages, slow) { file.extract_pdf!(clock: -> { now }) }
-    end
+    with_constant(PdfText, :BATCH_TIMEOUT, 0) { file.extract_pdf! }
     file.reload
 
-    assert timeouts.all? { |given, left| given <= left }, "every command fits in what was left: #{timeouts.inspect}"
-    assert_operator now, :<=, FieldFile::PdfExtraction::TIME_BUDGET + PdfText::KILL_GRACE
-    assert_equal 60, file.pages.count
     assert_equal "partial", file.pdf_status
-    statuses = file.pages.map(&:native_status).tally
-    assert_equal 60, statuses["failed"].to_i + statuses["skipped"].to_i
-    assert_operator statuses["skipped"].to_i, :>, 0
-    assert_equal "Reading the file took too long", file.pages.last.native_reason
+    assert_equal %w[failed failed], file.pages.map(&:native_status)
+    assert file.pages.all? { it.native_reason.present? }
+    assert_empty file.extracted_text
   end
 
-  test "when a batch fails, pages are read one by one and a failing page fails alone" do
-    file = pdf("mixed.pdf")
-    real_pages = PdfText.method(:pages)
-    failing = lambda do |path, first, last, **options|
-      raise PdfText::CommandFailed, "pdftotext took too long" if first != last || first == 2
-
-      real_pages.(path, first, last, **options)
+  test "a damaged content stream fails alone without losing healthy pages" do
+    bytes = Imprimatur.pdf do |doc|
+      doc.paragraph("Healthy first page")
+      doc.page_break
+      doc.paragraph("Broken second page")
+      doc.page_break
+      doc.paragraph("Healthy third page")
     end
-    PdfText.stub(:pages, failing) { file.extract_pdf! }
+    streams = bytes.to_enum(:scan, /\bstream\r?\n/).map { Regexp.last_match.end(0) }
+    bytes.setbyte(streams.fetch(1), 0) # Damage Flate data without moving the xref.
+    file = generated_pdf(bytes)
+    file.extract_pdf!
     file.reload
 
     assert_equal "partial", file.pdf_status
     assert_equal "1 page could not be read", file.pdf_status_reason
-    assert_equal %w[text failed empty empty], file.pages.map(&:native_status)
-    assert_equal "pdftotext took too long", file.pages.second.native_reason
+    assert_equal %w[text failed text], file.pages.map(&:native_status)
+    assert file.pages.second.native_reason.present?
+    assert_includes file.extracted_text, "Healthy first page"
+    assert_includes file.extracted_text, "Healthy third page"
+  end
+
+  test "a thrown decompression limit preserves healthy pages in the batch" do
+    file = generated_pdf(Imprimatur.pdf do |doc|
+      doc.paragraph("Healthy first page")
+      doc.page_break
+      doc.paragraph("x" * 2000)
+      doc.page_break
+      doc.paragraph("Healthy third page")
+    end)
+    with_constant(PdfText, :MAX_INFLATED_BYTES, 1024) { file.extract_pdf! }
+    file.reload
+
+    assert_equal "partial", file.pdf_status
+    assert_equal %w[text failed text], file.pages.map(&:native_status)
+    assert file.pages.second.native_reason.present?
+    assert_includes file.extracted_text, "Healthy first page"
+    assert_includes file.extracted_text, "Healthy third page"
+    assert_equal 1, file.pdf_extraction_json[:pages_failed]
   end
 
   test "a page's text over the per-page limit is kept as a prefix and marked cut" do
@@ -208,13 +200,14 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
   end
 
   test "a page is cut on a character boundary" do
+    file = generated_pdf(Imprimatur.pdf { it.paragraph("é" * 4) })
     with_constant(PdfText, :MAX_PAGE_BYTES, 5) do
-      page = PdfText.clean(("é" * 4).b)
-      assert_equal "éé", page.text
-      assert page.truncated
-      assert page.text.valid_encoding?
+      file.extract_pdf!
     end
-    assert_not PdfText.clean("short").truncated
+    page = file.reload.pages.sole
+    assert_equal "éé", page.native_text
+    assert page.native_reason.present?
+    assert page.native_text.valid_encoding?
   end
 
   test "text past the search limit is flagged, not silently complete" do
@@ -237,24 +230,6 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
       assert cut
       assert joined.valid_encoding?
     end
-  end
-
-  test "commands' stdout and stderr are capped in files, not buffered from pipes" do
-    noisy = [ "sh", "-c", "head -c 2000000 /dev/zero; head -c 2000000 /dev/zero >&2" ]
-    result = PdfText.run(noisy, timeout: 10, max_bytes: 1_000)
-
-    assert_operator result.stdout.bytesize, :<=, 1_000
-    assert_operator result.stderr.bytesize, :<=, PdfText::STDERR_LIMIT
-    assert_not result.success, "the child is stopped when it writes past the cap"
-  end
-
-  test "commands are killed at their timeout" do
-    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    result = PdfText.run([ "sleep", "30" ], timeout: 1, max_bytes: 1_000)
-
-    assert result.killed
-    assert_equal "took too long", result.failure
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 1 + PdfText::KILL_GRACE + 2
   end
 
   test "the summary prompt says which pages weren't read, outside the material" do
@@ -295,27 +270,21 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert mixed.summary_partial?
   end
 
-  test "a huge PDF with readable text gets a summary prompt naming the unread tail as one range" do
-    file = pdf("text_only.pdf")
-    one_readable = lambda do |_path, first, last, **|
-      (first..last).map { |n| PdfText::Page.new(text: n == 1 ? "Orchard ledger, page one." : "", truncated: false) }
-    end
-    PdfText.stub(:info, { pages: 10_000, permissions_only: false }) do
-      PdfText.stub(:pages, one_readable) { file.extract_pdf! }
-    end
+  test "a summary describes an unread tail as a range without expanding it" do
+    file = pdf("mixed.pdf")
+    with_constant(FieldFile::PdfExtraction, :MAX_PAGES, 1) { file.extract_pdf! }
     file.reload
     assert_includes FieldFile.summary_readable, file
 
     prompt = FieldSummaries.user_prompt(file)
-    assert_includes prompt, "This is the text of a PDF of 10000 pages."
-    assert_includes prompt, "Pages 2-500 no text of their own (blank or scanned) and were not read."
-    assert_includes prompt, "Pages 501-10000 were not read (a limit was reached)."
-    assert_includes prompt.split("<material>", 2).last, "Orchard ledger, page one."
+    assert_includes prompt, "This is the text of a PDF of 4 pages."
+    assert_includes prompt, "Pages 2-4 were not read (a limit was reached)."
+    assert_includes prompt.split("<material>", 2).last, "Orchard ledger, page one"
 
     # The tail is described from its ends, never expanded: a page count far
     # too large to enumerate still describes at once.
     file.update_columns(pdf_page_count: 2_000_000_000)
-    assert_includes file.pdf_summary_coverage, "Pages 501-2000000000 were not read (a limit was reached)."
+    assert_includes file.pdf_summary_coverage, "Pages 2-2000000000 were not read (a limit was reached)."
   end
 
   test "page lists join row pages and the tail" do
@@ -352,6 +321,11 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
 
   def pdf(name)
     @account.field_files.create!(file: upload(name, "application/pdf"), uploaded_by: @user)
+  end
+
+  def generated_pdf(bytes)
+    @account.field_files.create!(uploaded_by: @user,
+      file: { io: StringIO.new(bytes), filename: "generated.pdf", content_type: "application/pdf" })
   end
 
   def upload(name, type)

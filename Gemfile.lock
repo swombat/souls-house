@@ -162,6 +162,14 @@ GEM
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     image_processing (2.2.0)
+    imprimatur (0.6.1)
+      rb_sys (~> 0.9.130)
+    imprimatur (0.6.1-aarch64-linux-gnu)
+    imprimatur (0.6.1-aarch64-linux-musl)
+    imprimatur (0.6.1-arm64-darwin)
+    imprimatur (0.6.1-x86_64-darwin)
+    imprimatur (0.6.1-x86_64-linux-gnu)
+    imprimatur (0.6.1-x86_64-linux-musl)
     inertia_rails (3.23.0)
       railties (>= 6)
     io-console (0.9.4)
@@ -491,6 +499,7 @@ DEPENDENCIES
   hashids
   honeybadger (~> 6.9)
   image_processing (~> 2.2.0)
+  imprimatur (= 0.6.1)
   inertia_rails (~> 3.22)
   jbuilder
   js-routes (~> 2.4)

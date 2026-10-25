@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-25
+  title: Field PDFs use the native document reader
+  body: "Field now reads PDF text and prepares scanned pages for transcription with Imprimatur's Rust core. Metadata, text and rendering run in a separate worker with time, memory and output limits. Completed pages are kept when a read hits a limit, and a page's decompression failure does not lose its healthy neighbors. Search, page coverage and the existing transcription permissions and budgets stay the same. Works once deployed."
+- date: 2026-10-25
   title: Removed avatars and logos are kept, not deleted
   body: "Removing or replacing your avatar, or a site admin removing or replacing the site logo, no longer deletes the earlier image. It is kept privately with your profile (or the site settings) so an administrator can bring it back if you ask; it is never shown, and old links to it stop working. Works once deployed."
 - date: 2026-10-25

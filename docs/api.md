@@ -489,7 +489,7 @@ a check. Voice renames, identity deletion and bulk transcript re-rendering can
 make summaries stale but do not schedule calls across the archive. Title/note
 edits do not schedule checks either. Older summaries are not backfilled.
 
-**PDF text.** A PDF's own text layer is read page by page with Poppler after
+**PDF text.** A PDF's own text layer is read page by page with Imprimatur after
 upload (nothing is sent outside the house). Files gain `text_extraction`
 (`status`: `pending`, `extracted`, `partial`, `failed` or `encrypted`, plus
 `reason`, `page_count`, per-state page counts, `pages_truncated`,
@@ -501,9 +501,10 @@ of a PDF only). `GET /api/v1/field/files/:file_id/pages` lists
 `text`, `empty`, `failed` or `skipped`); `GET .../pages/:number` adds `text`,
 and answers `skipped` for a page past the listing limit. Limits: rows for the
 first 500 pages (later pages are counted, not stored); five minutes for the
-whole read, every command's timeout capped to what is left; 256 kB of text
+whole read, every read's timeout capped to what is left; 256 kB of text
 per page (cut pages say so); the first 2 MB of joined text for search and
-summaries. Commands write stdout and stderr to size-capped files, not pipes.
+summaries. Rendering runs in a separate Rust worker with time, memory and
+output limits; macOS uses a sampled memory watchdog rather than a hard cap.
 Scanned pages (FieldOcr, off until a site admin turns it on under Site
 Settings): a page with no text of its own, or under 200 characters and a
 picture, is rendered (longer side 1568 px) and sent to
