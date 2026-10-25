@@ -126,6 +126,12 @@ class Agent < ApplicationRecord
   validate :identity_fields_are_read_only_when_external
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
+  # Its plan was paid while the owner had it paused, so waking left the
+  # container stopped (Billing::WakeJob); unpausing starts it.
+  after_update_commit -> { Billing::WakeJob.perform_later(id) }, if: lambda {
+    saved_change_to_paused?(to: false) &&
+      ResidentEntitlement.where(agent_id: id).where.not(state: "held").where.not(hold_released_at: nil).exists?
+  }
   after_create_commit :apply_default_service_accesses
   after_save :refresh_integration_presentation, if: -> {
     (saved_changes.keys & %w[id account_id name active github_resident_import_id runtime colour icon]).any?

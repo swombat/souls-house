@@ -10,8 +10,13 @@ module Billing
     queue_as :default
 
     RECHECK = 2.minutes
+    # A stop that failed is tried again for as long as the resident sleeps:
+    # nothing else would (the reconciler leaves asleep residents alone).
+    STOP_RETRY = 5.minutes
 
-    def perform(agent_id, now: Time.current)
+    class StopFailed < StandardError; end
+
+    def perform(agent_id, now: Time.current, attempt: 0)
       agent = Agent.find_by(id: agent_id)
       entitlement = agent && ResidentEntitlement.find_by(agent: agent)
       return unless entitlement&.held?
@@ -22,7 +27,7 @@ module Billing
         return
       end
 
-      stop!(agent)
+      stop!(agent, attempt)
     end
 
     private
@@ -32,16 +37,24 @@ module Billing
         agent.agent_runtime_interactions.where(finished_at: nil).exists?
     end
 
-    def stop!(agent)
-      return unless agent.externally_hosted?
+    # Returns true once the container is stopped (or the VM runner has the
+    # stop command). Otherwise reports and keeps custody: tries again later.
+    def stop!(agent, attempt)
+      return true unless agent.externally_hosted?
 
       if Agents::RemoteRuntime.dispatchable?(agent)
         Agents::RemoteRuntime.stop!(agent)
       else
-        Agents::Sandbox.new(agent).stop!
+        sandbox = Agents::Sandbox.new(agent)
+        sandbox.stop!
+        raise StopFailed, "#{agent.container_name} is still running after docker stop" if sandbox.running?
       end
+      true
     rescue StandardError => error
-      Rails.error.report(error, handled: true, context: { subsystem: "billing", agent_id: agent.id })
+      Rails.error.report(error, handled: true,
+        context: { subsystem: "billing", agent_id: agent.id, attempt: attempt })
+      self.class.set(wait: STOP_RETRY).perform_later(agent.id, attempt: attempt + 1)
+      false
     end
 
   end

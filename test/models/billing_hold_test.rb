@@ -157,6 +157,61 @@ class BillingHoldTest < ActiveSupport::TestCase
     end
   end
 
+  test "a turn admitted before the hold but not yet submitted is withdrawn before it starts" do
+    interaction = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake", session_id: "s1",
+      started_at: Time.current, endpoint_url: "https://runtime.example.test")
+    turn = ResidentTurn.enqueue!(interaction, { session_id: "s1", request: "hello" })
+    turn.update!(state: "starting", admitted_at: Time.current)
+    fall_asleep!
+
+    Agents::RuntimeLocation.stub(:dispatchable?, true) { turn.withdraw_unless_deliverable! }
+    assert_predicate turn.reload.cancel_requested_at, :present?
+  end
+
+  test "a failed stop is kept: reported and tried again while the resident sleeps" do
+    fall_asleep!(at: 1.hour.ago)
+    sandbox = Object.new
+    sandbox.define_singleton_method(:stop!) { false }
+    sandbox.define_singleton_method(:running?) { true }
+
+    Agents::Sandbox.stub(:new, sandbox) do
+      assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id, { attempt: 1 } ]) do
+        Billing::SleepJob.new.perform(@agent.id)
+      end
+    end
+
+    raising = Object.new
+    raising.define_singleton_method(:stop!) { raise "docker unavailable" }
+    Agents::Sandbox.stub(:new, raising) do
+      assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id, { attempt: 2 } ]) do
+        Billing::SleepJob.new.perform(@agent.id, attempt: 1)
+      end
+    end
+  end
+
+  test "paying never starts a resident its owner paused; unpausing does" do
+    started = []
+    sandbox = Object.new
+    sandbox.define_singleton_method(:spawn!) { started << :spawn }
+    @agent.update_columns(paused: true)
+    fall_asleep!
+    @entitlement.update!(state: "active", hold_released_at: Time.current)
+
+    Agents::Config.stub(:cold_start?, false) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        Billing::WakeJob.new.perform(@agent.id)
+        assert_empty started, "the owner's pause still holds"
+
+        assert_enqueued_with(job: Billing::WakeJob, args: [ @agent.id ]) do
+          @agent.reload.update!(paused: false)
+        end
+        Billing::WakeJob.new.perform(@agent.id)
+        assert_equal [ :spawn ], started
+      end
+    end
+    assert_not @agent.reload.paused?
+  end
+
   test "the emails say what happens and where to pay" do
     @entitlement.update_columns(state: "held", held_at: Time.current)
     asleep = BillingMailer.resident_asleep(@entitlement.reload)

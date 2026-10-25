@@ -84,8 +84,7 @@
     <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1">
       <p>
         <strong>Preview.</strong> A plan pays for hosting and gives the resident its monthly house-model allowance. The rest
-        of what a plan lists below is proposed and not delivered yet, and a lapsed payment is recorded but doesn't pause
-        anything yet.
+        of what a plan lists below is proposed and not delivered yet.
       </p>
       {#if billing.test_mode}
         <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>

@@ -116,8 +116,12 @@ class ResidentTurn < ApplicationRecord
   # a cancellation for that dispatch id instead of a submission, so the ledger
   # records it and capacity is released only by the runtime's answer, never
   # by this local decision.
+  # An admitted turn not yet submitted is also withdrawn if its resident fell
+  # asleep meanwhile (plan lapsed); a turn already running is never touched
+  # here, it may finish within the drain.
   def withdraw_unless_deliverable!
-    return if cancel_requested_at? || (Agents::RuntimeLocation.dispatchable?(agent) && dispatch_deliverable?)
+    return if cancel_requested_at? ||
+      (Agents::RuntimeLocation.dispatchable?(agent) && !agent.billing_held? && dispatch_deliverable?)
 
     with_lock { update!(cancel_requested_at: Time.current) unless cancel_requested_at? || finished_at? }
   end
