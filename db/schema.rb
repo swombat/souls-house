@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_25_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2107,9 +2107,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_090000) do
     t.datetime "born_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.uuid "reference", default: -> { "gen_random_uuid()" }, null: false
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
+    t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"

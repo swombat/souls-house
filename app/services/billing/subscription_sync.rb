@@ -42,11 +42,11 @@ module Billing
     # (if it is paid), which then brings the subscription in itself. Returns
     # nil while the resident isn't born.
     def unborn?(remote)
-      remote.metadata && remote.metadata["agent_id"].blank? && remote.metadata["birth_order_id"].present?
+      remote.metadata && remote.metadata["agent_id"].blank? && remote.metadata["birth_order"].present?
     end
 
     def complete_birth_order(remote)
-      order = ResidentBirthOrder.find_by(id: remote.metadata["birth_order_id"])
+      order = ResidentBirthOrder.find_by(reference: remote.metadata["birth_order"])
       if order.nil? || order.stripe_subscription_id.present? && order.stripe_subscription_id != remote.id
         raise InvalidSubscription, "Subscription #{@stripe_subscription_id} names no birth order here"
       end

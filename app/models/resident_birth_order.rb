@@ -28,6 +28,9 @@ class ResidentBirthOrder < ApplicationRecord
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }
 
   before_validation { self.expires_at ||= LIFETIME.from_now }
+  # The order's name at Stripe (see the migration that added it): random, so
+  # unique across every environment sharing a Stripe account.
+  before_validation(on: :create) { self.reference ||= SecureRandom.uuid }
 
   STATES.each do |name|
     define_method(:"#{name}?") { state == name }

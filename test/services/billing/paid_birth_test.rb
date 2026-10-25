@@ -41,9 +41,10 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "pm_visa", params[:default_payment_method]
     assert_equal "default_incomplete", params[:payment_behavior]
     assert_equal({ enabled: true }, params[:automatic_tax])
-    assert_equal order.id.to_s, params[:metadata][:birth_order_id]
+    assert_equal order.reference, params[:metadata][:birth_order]
     assert_nil params[:metadata][:agent_id]
-    assert_equal "souls-house-birth-order-#{order.id}", opts[:idempotency_key]
+    assert_equal "souls-house-birth-order-#{order.reference}", opts[:idempotency_key]
+    assert_match(/\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/, order.reference)
   end
 
   test "only an account that pays, its owner, a card and a complete draft can start" do
@@ -210,6 +211,35 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert order.born?
     assert_equal "sub_new_1", order.stripe_subscription_id
     assert ResidentEntitlement.find_by!(agent: order.agent).active?
+  end
+
+  # Production's order 1 met an idempotency key spent by another environment's
+  # order 1 in the shared Stripe test account (oewbQY 2026-10-25).
+  test "an order is named at Stripe by a random reference, never by an id another environment shares" do
+    @stripe.fail_next_subscription_create(created: false)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    other = ResidentBirthOrder.create!(account: @account, creator: @owner, tier: "conversation", state: "abandoned")
+    assert_not_equal order.reference, other.reference
+
+    # Another environment's paid subscriptions: one naming this order's id the
+    # old way, one naming a different order reference.
+    subscriptions = @stripe.instance_variable_get(:@subscriptions)
+    { "sub_elsewhere_id" => { "birth_order_id" => order.id.to_s },
+      "sub_elsewhere_ref" => { "birth_order" => SecureRandom.uuid } }.each do |id, metadata|
+      subscriptions[id] = { id: id, object: "subscription", status: "active", customer: "cus_other",
+        cancel_at_period_end: false, metadata: metadata,
+        items: { object: "list", data: [ { price: { id: CONVERSATION_PRICE }, current_period_end: 1.month.from_now.to_i } ] } }
+    end
+
+    assert_no_difference "Agent.count" do
+      paid_birth.complete!(order)
+      assert_raises(Billing::InvalidSubscription) do
+        Billing::SubscriptionSync.new("sub_elsewhere_ref", client: @stripe).call
+      end
+    end
+    assert order.reload.pending?
+    assert_nil order.stripe_subscription_id
   end
 
   test "Stripe names the resident only after it is committed, and a failed naming is retried" do

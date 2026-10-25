@@ -109,8 +109,8 @@ class FakeStripe
         construct(with_invoice(@subscriptions[id]))
       },
       search: lambda { |params|
-        order_id = params[:query][/birth_order_id'\]:'(\d+)'/, 1]
-        found = @search_lags ? [] : @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order_id") == order_id }
+        reference = params[:query][/birth_order'\]:'([0-9a-f-]+)'/, 1]
+        found = @search_lags ? [] : @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order") == reference }
         Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
       },
       update: lambda { |id, params|

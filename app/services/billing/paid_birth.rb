@@ -148,9 +148,9 @@ module Billing
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
         description: "#{tier.name} hosting for #{order.resident_name}",
-        metadata: { birth_order_id: order.id.to_s, account_id: order.account_id.to_s, tier: tier.id },
+        metadata: { birth_order: order.reference, account_id: order.account_id.to_s, tier: tier.id },
         expand: [ "latest_invoice.confirmation_secret" ]
-      }, { idempotency_key: "souls-house-birth-order-#{order.id}" })
+      }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
       order.update!(stripe_subscription_id: subscription.id, last_error: nil)
       subscription
     rescue Stripe::APIConnectionError, Stripe::APIError, Stripe::RateLimitError => error
@@ -210,7 +210,7 @@ module Billing
         return @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
       end
 
-      found = @client.v1.subscriptions.search({ query: "metadata['birth_order_id']:'#{order.id}'" }).data.first
+      found = @client.v1.subscriptions.search({ query: "metadata['birth_order']:'#{order.reference}'" }).data.first
       order.update!(stripe_subscription_id: found.id) if found
       found
     end
@@ -245,7 +245,7 @@ module Billing
       remote = @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
       if remote.metadata["agent_id"].to_s != order.agent_id.to_s
         @client.v1.subscriptions.update(remote.id, {
-          metadata: { agent_id: order.agent_id.to_s, birth_order_id: order.id.to_s },
+          metadata: { agent_id: order.agent_id.to_s, birth_order: order.reference },
           description: "#{order.tier_record.name} hosting for #{order.agent.name}"
         })
       end
