@@ -80,3 +80,17 @@ describe('Runtime step', () => {
     expect(screen.getByLabelText('OpenRouter API key')).toBeTruthy();
   });
 });
+
+test('in an account that pays per resident, the house path says the plan pays for it', async () => {
+  render(RuntimeStep, {
+    grouped_models: { 'On the house': [{ model_id: 'house/claude-haiku-5.5', label: 'Claude Haiku 5.5' }] },
+    houseOffered: true,
+    selectedModel: 'house/claude-haiku-5.5',
+    keyPath: 'house',
+    planAllowance: [8, 45],
+  });
+  expect(screen.getByText("The plan includes $8 to $45 a month of the house's models.")).toBeInTheDocument();
+  expect(screen.getByTestId('house-path-terms')).toHaveTextContent('Included in the plan.');
+  expect(screen.queryByText(/One funded resident per person/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
+});

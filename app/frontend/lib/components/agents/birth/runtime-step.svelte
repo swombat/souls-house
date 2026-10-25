@@ -18,7 +18,18 @@
     providerKey = $bindable(''),
     keysConfigured = {},
     canManageKeys = false,
+    // In an account that pays per resident, the house model is paid for by the
+    // plan's allowance, not the free grant: [lowest, highest] allowance in USD.
+    planAllowance = null,
   } = $props();
+
+  let allowanceText = $derived(
+    planAllowance
+      ? planAllowance[0] === planAllowance[1]
+        ? `$${planAllowance[0]}`
+        : `$${planAllowance[0]} to $${planAllowance[1]}`
+      : null
+  );
 
   const providerNames = {
     openrouter: 'OpenRouter',
@@ -69,7 +80,13 @@
         <Gift class="mt-0.5 size-5 shrink-0 text-primary" weight="duotone" />
         <span class="space-y-1">
           <span class="block font-medium">I don't have my own keys</span>
-          <span class="block text-sm text-muted-foreground">The house pays for a small model, up to $10 a month.</span>
+          <span class="block text-sm text-muted-foreground">
+            {#if allowanceText}
+              The plan includes {allowanceText} a month of the house's models.
+            {:else}
+              The house pays for a small model, up to $10 a month.
+            {/if}
+          </span>
         </span>
       </button>
       <button
@@ -93,22 +110,29 @@
   {#if path === 'house'}
     <div class="space-y-4" transition:slide={{ duration: 200 }} data-testid="house-path">
       <HouseModelChoice models={houseModels} bind:value={selectedModel} detailed={showMore} />
-      <p class="text-sm">
-        <span class="font-medium">On the house · $10 per month.</span>
-        <span class="text-muted-foreground">No key needed. One funded resident per person.</span>
+      <p class="text-sm" data-testid="house-path-terms">
+        {#if allowanceText}
+          <span class="font-medium">Included in the plan.</span>
+          <span class="text-muted-foreground">No key needed. You choose the plan at the last step.</span>
+        {:else}
+          <span class="font-medium">On the house · $10 per month.</span>
+          <span class="text-muted-foreground">No key needed. One funded resident per person.</span>
+        {/if}
       </p>
-      {#if showMore}
-        <div transition:slide={{ duration: 200 }}>
-          <HouseAllowance {selectedModel} />
-        </div>
+      {#if !allowanceText}
+        {#if showMore}
+          <div transition:slide={{ duration: 200 }}>
+            <HouseAllowance {selectedModel} />
+          </div>
+        {/if}
+        <button
+          type="button"
+          class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          aria-expanded={showMore}
+          onclick={() => (showMore = !showMore)}>
+          {showMore ? 'Show less' : 'Show more'}
+        </button>
       {/if}
-      <button
-        type="button"
-        class="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-        aria-expanded={showMore}
-        onclick={() => (showMore = !showMore)}>
-        {showMore ? 'Show less' : 'Show more'}
-      </button>
     </div>
   {:else if path === 'own'}
     <div class="space-y-4" transition:slide={{ duration: 200 }} data-testid="own-keys-path">

@@ -2,9 +2,12 @@ module Agents
   class HostedBirth
 
     def self.default_model_id(account:, creator:)
+      # In an account that pays per resident, the plan's allowance pays for the
+      # house model, so it is offered whatever free grant the creator has used.
+      paid_by_plan = Billing::BirthGate.requires_plan?(account)
       if HouseInference::Offering.configured? &&
           account.ai_credentials_manageable_by?(creator) &&
-          !HouseInferenceGrant.where(user: creator).where.not(agent_id: nil).exists?
+          (paid_by_plan || !HouseInferenceGrant.where(user: creator).where.not(agent_id: nil).exists?)
         HouseInference::Offering::DEFAULT_MODEL_ID
       else
         Chat::MODELS.first.fetch(:model_id)

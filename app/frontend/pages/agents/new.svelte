@@ -55,6 +55,14 @@
   let payError = $state(null);
   let lastPayment = $state(null);
   let paidPending = $state(null);
+  let planAllowance = $derived(
+    billing?.tiers?.length
+      ? [
+          Math.min(...billing.tiers.map((option) => option.allowance_usd)),
+          Math.max(...billing.tiers.map((option) => option.allowance_usd)),
+        ]
+      : null
+  );
   let chosenTier = $derived(billing?.tiers?.find((candidate) => candidate.id === tier) || null);
 
   let step = $state(0);
@@ -334,7 +342,8 @@
             {canManageKeys}
             bind:selectedModel
             bind:keyPath
-            bind:providerKey />
+            bind:providerKey
+            {planAllowance} />
         {:else if step === reviewStep}
           <ReviewStep
             {form}

@@ -173,14 +173,11 @@
 
       {#if cardFormOpen}
         <div class="space-y-2">
-          <div
-            class="min-h-24 overflow-hidden rounded-lg border"
-            bind:this={cardContainer}
-            data-testid="plan-card-form">
-            {#if cardFormLoading}
-              <p class="p-4 text-sm text-muted-foreground">Opening Stripe's secure card form…</p>
-            {/if}
-          </div>
+          {#if cardFormLoading}
+            <p class="text-sm text-muted-foreground">Opening Stripe's secure card form…</p>
+          {/if}
+          <!-- Stripe mounts only into an element with no child nodes: keep this one empty. -->
+          <div class="overflow-hidden rounded-lg border" bind:this={cardContainer} data-testid="plan-card-form"></div>
           <div class="flex items-center justify-between text-xs text-muted-foreground">
             <span class="flex items-center gap-1"
               ><LockSimple class="size-3.5" />Your card goes to Stripe. The house never sees it.</span>
