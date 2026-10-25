@@ -224,6 +224,16 @@ module Agents
       result[:ok] && result[:stdout].strip == "true"
     end
 
+    # Only a verified answer counts: Docker says the container exists and is
+    # not running, or that there is no such container. A failed probe is
+    # unknown, never stopped.
+    def confirmed_stopped?
+      result = docker_capture("container", "inspect", "--format", "{{.State.Running}}", agent.container_name)
+      return result[:stdout].strip == "false" if result[:ok]
+
+      result[:stderr].to_s.match?(/no such (container|object)/i)
+    end
+
     def stopped?
       container_exists? && !running?
     end

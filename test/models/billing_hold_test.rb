@@ -172,7 +172,7 @@ class BillingHoldTest < ActiveSupport::TestCase
     fall_asleep!(at: 1.hour.ago)
     sandbox = Object.new
     sandbox.define_singleton_method(:stop!) { false }
-    sandbox.define_singleton_method(:running?) { true }
+    sandbox.define_singleton_method(:confirmed_stopped?) { false }
 
     Agents::Sandbox.stub(:new, sandbox) do
       assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id, { attempt: 1 } ]) do
@@ -185,6 +185,31 @@ class BillingHoldTest < ActiveSupport::TestCase
     Agents::Sandbox.stub(:new, raising) do
       assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id, { attempt: 2 } ]) do
         Billing::SleepJob.new.perform(@agent.id, attempt: 1)
+      end
+    end
+  end
+
+  test "an unverifiable container state is never taken for a stop" do
+    fall_asleep!(at: 1.hour.ago)
+    sandbox = Agents::Sandbox.new(@agent)
+    failed = { stdout: "", stderr: "Cannot connect to the Docker daemon", ok: false }
+    sandbox.stub(:docker_capture, failed) do
+      assert_not sandbox.confirmed_stopped?, "a failed probe is unknown"
+    end
+    sandbox.stub(:docker_capture, { stdout: "", stderr: "Error: No such container: x", ok: false }) do
+      assert sandbox.confirmed_stopped?, "an absent container is stopped"
+    end
+    sandbox.stub(:docker_capture, { stdout: "false\n", stderr: "", ok: true }) do
+      assert sandbox.confirmed_stopped?
+    end
+
+    sandbox.stub(:stop!, false) do
+      sandbox.stub(:docker_capture, failed) do
+        Agents::Sandbox.stub(:new, sandbox) do
+          assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id, { attempt: 1 } ]) do
+            Billing::SleepJob.new.perform(@agent.id)
+          end
+        end
       end
     end
   end

@@ -46,8 +46,9 @@ module Billing
         Agents::RemoteRuntime.stop!(agent)
       else
         sandbox = Agents::Sandbox.new(agent)
-        sandbox.stop!
-        raise StopFailed, "#{agent.container_name} is still running after docker stop" if sandbox.running?
+        unless sandbox.stop! || sandbox.confirmed_stopped?
+          raise StopFailed, "docker stop failed for #{agent.container_name} and it isn't confirmed stopped"
+        end
       end
       true
     rescue StandardError => error
