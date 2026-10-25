@@ -7,7 +7,9 @@ class GithubResidentImportJob < ApplicationJob
     # With new residents on their own VM, a new import is admitted to one at
     # import (docs/2026-10-10-vm-imports.md, points 2 and 4), or fails with the
     # reason it can't be (cap, procurement, backups). Nothing is made here.
-    if request.agent.nil? && (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+    # An account that pays per resident can't import one unpaid, even if the
+    # request was made before the account started paying.
+    if request.agent.nil? && (refusal = new_resident_refusal(request))
       request.with_lock do
         request.update!(status: "failed", last_error: refusal) if request.status == "approved"
       end
@@ -31,7 +33,7 @@ class GithubResidentImportJob < ApplicationJob
         # Checked again here, after the checkout: the switch may have gone on
         # while the repository was being fetched, and this is the point where
         # a home would be made on the house.
-        if (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+        if (refusal = new_resident_refusal(request.reload))
           request.update!(status: "failed", last_error: refusal)
           return
         end
@@ -84,6 +86,12 @@ class GithubResidentImportJob < ApplicationJob
   end
 
   private
+
+  # Why a request with no resident yet can't make one now. A retry for a
+  # resident already created is never refused here.
+  def new_resident_refusal(request)
+    Billing::BirthGate.refusal(request.account) || Agents::VmBirthPolicy.current.refusal(kind: :import)
+  end
 
   def on_vm?(agent) = agent&.placement&.kind == "github_import"
 

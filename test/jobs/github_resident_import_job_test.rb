@@ -73,6 +73,65 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert_nil request.agent
   end
 
+  test "a request queued before its account started paying makes no unpaid resident" do
+    request = import_request
+    approve_fixture(request)
+    request.account.update!(billing_required: true)
+    Agents::GithubImportSource.stub(:new, ->(*) { flunk "must not fetch" }) do
+      assert_no_difference "Agent.count" do
+        GithubResidentImportJob.perform_now(request.id)
+      end
+    end
+    request.reload
+    assert_equal "failed", request.status
+    assert_equal Billing::BirthGate.refusal(request.account), request.last_error
+    assert_nil request.agent
+  end
+
+  test "an account that starts paying during the checkout makes no unpaid resident" do
+    request = import_request
+    approve_fixture(request)
+    source = Object.new
+    source.define_singleton_method(:with_checkout) do |branch:, commit_sha: nil, &block|
+      request.account.update!(billing_required: true)
+      block.call("/synthetic-home", { "identity_id" => request.portable_home_id }, commit_sha || "a" * 40, branch.presence || "main")
+    end
+    Agents::GithubImportSource.stub(:new, source) do
+      Agents::Volume.stub(:new, ->(*) { flunk "must not seed a home" }) do
+        assert_no_difference "Agent.count" do
+          GithubResidentImportJob.perform_now(request.id)
+        end
+      end
+    end
+    assert_equal "failed", request.reload.status
+    assert_nil request.agent
+  end
+
+  test "a resident already imported is retried even once its account pays" do
+    request = import_request
+    approve_fixture(request)
+    volume = Object.new
+    volume.define_singleton_method(:seed_from_directory!) { |_| }
+    sandbox = Object.new
+    sandbox.define_singleton_method(:spawn!) {}
+    sandbox.define_singleton_method(:recreate!) {}
+    sandbox.define_singleton_method(:active_turn?) { false }
+    sandbox.define_singleton_method(:imported_runtime_trusted?) { true }
+    run = lambda do
+      Agents::GithubImportSource.stub(:new, source_stub(request)) do
+        Agents::Volume.stub(:new, volume) do
+          Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+        end
+      end
+    end
+    run.call
+    assert_equal "ready", request.reload.status
+    request.account.update!(billing_required: true)
+    request.update!(status: "approved")
+    run.call
+    assert_equal "ready", request.reload.status
+  end
+
   test "seed failures preserve record and never make resident available" do
     request = import_request
     approve_fixture(request)
