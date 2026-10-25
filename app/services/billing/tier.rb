@@ -87,19 +87,21 @@ module Billing
 
     def swarm_search? = swarm_searches.positive?
 
-    # What the plan includes, for the public page and the Billing tab.
+    # What the plan includes, for the public page, the Billing tab, the
+    # creation wizard and the about-sheet. Only what a plan delivers today
+    # (Daniel, 2026-10-25, going live): hosting for one resident, the monthly
+    # house-model allowance (ResidentEntitlement) and swarm searches
+    # (Account#swarm_searches). The machine, transcription hours, backup space
+    # and connections above stay for costing and are not shown until each one
+    # ships; add it here when it does.
     def features
-      {
-        server_type: server_type, vcpus: machine[:vcpus], ram_gb: machine[:ram_gb], disk_gb: machine[:disk_gb],
-        allowance_usd: allowance_usd, transcription_hours: transcription_hours, backup_gb: backup_gb,
-        swarm_searches: swarm_searches, connections: connections
-      }
+      { hosting: true, allowance_usd: allowance_usd, swarm_searches: swarm_searches }
     end
 
     def as_json(*)
       {
         id: id, name: name, monthly_usd: monthly_usd, allowance_usd: allowance_usd,
-        memory_gb: memory_gb, purchasable: purchasable?, features: features
+        purchasable: purchasable?, features: features
       }
     end
 

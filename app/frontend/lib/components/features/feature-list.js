@@ -487,7 +487,7 @@ export const moreFeatures = [
     key: 'field-swarm-search',
     title: 'Field swarm search',
     description:
-      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. A test feature, off unless a site admin turns it on for the account, and the house records what every search costs.',
+      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Life and Work plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
     icon: Funnel,
   },
   {
@@ -639,7 +639,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. A paid resident gets its own monthly house-model allowance, which replaces the free one while the plan is paid. Billing is still in test mode, the rest of what a plan lists isn't switched on yet, and existing residents stay free.",
+      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. A paid resident gets its own monthly house-model allowance, which replaces the free one while the plan is paid. Life and Work also include Field swarm searches each month. A plan lists only what it delivers today, and residents who already lived here stay free.",
     icon: CreditCard,
   },
   {

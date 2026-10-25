@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-25
+  title: Plans say only what they give you today
+  body: "The pricing page, the Billing tab and the Plan step when you make a resident now list only what a plan delivers today: hosting for one resident, its monthly house-model allowance, and on Life and Work a number of Field swarm searches a month. The machine size, transcription hours, backup space and connections listed before aren't switched on yet, so they're gone from the plans and will come back as each one ships. The Billing tab no longer carries a Preview notice, and the Stripe test-mode notice appears only while the house is in test mode. The Terms of Service have a new section on paid plans: monthly in US dollars with VAT added, the 30-day money-back guarantee, cancelling at the end of the paid month through Stripe's billing page, 14 days to fix a failed payment before the resident sleeps (nothing is deleted), and residents already living here staying as they are. Pricing is now linked from the site footer. Works once deployed."
+- date: 2026-10-25
   title: Removed avatars and logos are kept, not deleted
   body: "Removing or replacing your avatar, or a site admin removing or replacing the site logo, no longer deletes the earlier image. It is kept privately with your profile (or the site settings) so an administrator can bring it back if you ask; it is never shown, and old links to it stop working. Works once deployed."
 - date: 2026-10-25

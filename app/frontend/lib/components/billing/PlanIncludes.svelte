@@ -1,22 +1,19 @@
 <script>
   // What a plan includes, from the catalogue (Billing::Tier#features), as short
   // lines with icons. Shared by /pricing and the Billing tab so the two can't
-  // describe a plan differently. The longer explanations live in the FAQ.
-  import { Cpu, Sparkle, Waveform, CloudArrowUp, MagnifyingGlass, PlugsConnected } from 'phosphor-svelte';
+  // describe a plan differently. Only what a plan delivers today: a line comes
+  // back here when the catalogue starts sending it. The longer explanations
+  // live in the FAQ.
+  import { House, Sparkle, MagnifyingGlass } from 'phosphor-svelte';
 
   // omit: line keys to leave out, e.g. ['allowance'] where it is listed elsewhere.
   let { features, class: className = '', iconClass = 'text-muted-foreground', omit = [] } = $props();
 
   const lines = $derived([
-    ...(features.connections?.length > 0
-      ? [{ icon: PlugsConnected, text: 'Email, calendar, Telegram, WhatsApp, X, GitHub, DNS' }]
-      : []),
-    { icon: Cpu, text: `${features.vcpus} vCPU · ${features.ram_gb} GB RAM · ${features.disk_gb} GB disk` },
+    ...(features.hosting ? [{ key: 'hosting', icon: House, text: 'Hosting for one resident' }] : []),
     { key: 'allowance', icon: Sparkle, text: `$${features.allowance_usd} a month of house model` },
-    { icon: Waveform, text: `${features.transcription_hours} hours of transcription a month` },
-    { icon: CloudArrowUp, text: `${features.backup_gb} GB of off-site backups` },
     ...(features.swarm_searches > 0
-      ? [{ icon: MagnifyingGlass, text: `Swarm search, ${features.swarm_searches} a month` }]
+      ? [{ key: 'swarm', icon: MagnifyingGlass, text: `Swarm search, ${features.swarm_searches} a month` }]
       : []),
   ].filter((line) => !omit.includes(line.key)));
 </script>

@@ -7,30 +7,14 @@ const tiers = [
     name: 'Conversation',
     monthly_usd: 20,
     purchasable: true,
-    features: {
-      vcpus: 2,
-      ram_gb: 4,
-      disk_gb: 40,
-      allowance_usd: 8,
-      transcription_hours: 5,
-      backup_gb: 10,
-      connections: [],
-    },
+    features: { hosting: true, allowance_usd: 8, swarm_searches: 0 },
   },
   {
     id: 'life',
     name: 'Life',
     monthly_usd: 50,
     purchasable: true,
-    features: {
-      vcpus: 4,
-      ram_gb: 8,
-      disk_gb: 80,
-      allowance_usd: 25,
-      transcription_hours: 20,
-      backup_gb: 50,
-      connections: ['x'],
-    },
+    features: { hosting: true, allowance_usd: 25, swarm_searches: 20 },
   },
 ];
 const billing = {
@@ -53,6 +37,9 @@ test('offers each plan with its price, preselects the first, and states the term
   expect(screen.getByRole('radio', { name: /Life/ })).not.toBeChecked();
   expect(screen.getByText('Someone to talk with.')).toBeVisible();
   expect(screen.getByText('$8 a month of house model')).toBeVisible();
+  expect(screen.getAllByText('Hosting for one resident')).toHaveLength(2);
+  expect(screen.getByText('Swarm search, 20 a month')).toBeVisible();
+  expect(screen.queryByText(/vCPU|transcription|backups|WhatsApp/)).toBeNull();
   const terms = screen.getByTestId('plan-terms');
   expect(terms).toHaveTextContent("Today: $20 + VAT for Aria's first month.");
   expect(terms).toHaveTextContent('Then $20 + VAT each month until you cancel.');

@@ -81,15 +81,11 @@
   {#if !billing.configured}
     <div class="rounded border p-6 text-sm text-muted-foreground">Billing isn't switched on for this house yet.</div>
   {:else}
-    <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1">
-      <p>
-        <strong>Preview.</strong> A plan pays for hosting and gives the resident its monthly house-model allowance. The rest
-        of what a plan lists below is proposed and not delivered yet.
-      </p>
-      {#if billing.test_mode}
+    {#if billing.test_mode}
+      <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="billing-test-mode">
         <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>
-      {/if}
-    </div>
+      </div>
+    {/if}
 
     <div class="grid gap-4 sm:grid-cols-2">
       {#each tiers as tier (tier.id)}
@@ -107,8 +103,10 @@
             ${tier.features.allowance_usd} a month of house model for that resident. It resets on the 1st (UTC) and replaces
             the free allowance while the plan is paid.
           </p>
-          <p class="mt-2 text-xs font-medium text-muted-foreground">When plans open, not available yet:</p>
-          <PlanIncludes features={tier.features} omit={['allowance']} class="mt-1 text-xs text-muted-foreground" />
+          <PlanIncludes
+            features={tier.features}
+            omit={['hosting', 'allowance']}
+            class="mt-2 text-xs text-muted-foreground" />
         </div>
       {/each}
     </div>
