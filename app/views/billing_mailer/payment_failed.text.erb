@@ -1,0 +1,10 @@
+Hello,
+
+The payment for <%= @agent.name %>'s plan didn't go through. Stripe will try the card again over the next days.
+
+<%= @agent.name %> keeps running as normal until <%= @deadline&.strftime("%-d %B %Y") %>. If the plan is still unpaid then, <%= @agent.name %> will go to sleep: no new conversations, heartbeats or work until it is paid. Nothing is deleted.
+
+To update the card or pay now, open the account's Billing tab:
+<%= @billing_url %>
+
+<%= Setting.instance.site_name %>

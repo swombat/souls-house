@@ -273,6 +273,39 @@ creation.
   through the API, an archive or GitHub import) is refused with a plain reason
   before anything is committed, until those routes can pay too.
 
+## Sleep: the hold, as built (2026-10-25)
+
+The hold boundary above, in Daniel's word: the resident goes to **sleep**.
+
+- **One predicate**, `Agent#billing_held?` (the entitlement is `held`), sits in
+  `eligible_for_conversation?` and its scope (`unavailability_reason`
+  `billing_hold`), so every conversation, trigger, invoke, mention, rhythm,
+  handoff, sweep, follow-through and initiation path refuses an asleep
+  resident through the check it already makes. It is also checked explicitly
+  in async turn admission (`ResidentTurn.enqueue!`, `#eligible?`), the cron
+  wake and memory-aggregation scopes (`not_billing_held`), Telegram, the two
+  orientation jobs and rhythm hold reasons (`billing_hold: <name>`).
+- **The container is never started while asleep**: `Sandbox#with_runtime`,
+  `spawn!`, `start!`, `recreate!` and `RemoteRuntime.start!` refuse, and the
+  runtime reconciler skips the resident.
+- **House inference**: the plan's ledger funds calls only while paid, or while
+  *draining* (`ResidentEntitlement#draining?`: held less than 30 minutes ago
+  and a run that began before the hold is still open). An asleep resident
+  never falls through to the free grant.
+- **Billing::SleepJob** (on entering `held`) cancels queued turns, waits for
+  running work up to the drain, then stops the container (VM: `stop_resident`;
+  local: `docker stop`). Nothing is removed. **Billing::WakeJob** (on leaving
+  `held`) starts it again if nothing else keeps it stopped; `paused` and
+  `active` are never changed by billing.
+- **Notice**: the owner is emailed when a renewal fails (with the date the
+  resident would sleep) and when it falls asleep; the residents list shows
+  *Asleep*, the resident's page a banner with *Pay to wake*, the Billing tab
+  *Asleep since*. Not built yet: the resident's own message in its home
+  conversation at grace start, and the T−7/T−1 reminders.
+- **After 30 days asleep** the notice says only that the house will be in
+  touch about the resident's care. What "the house takes over" means is
+  Daniel's decision; nothing automatic happens.
+
 ## Acceptance tests
 
 1. Failed or abandoned first checkout grants nothing (no allowance, no state change).

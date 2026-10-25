@@ -6,7 +6,7 @@ class ModelChangeOrientationJob < ApplicationJob
     agent = Agent.find_by(id: agent_id)
     return unless agent
     return unless agent.model_id == expected_model_id
-    return unless agent.external? && agent.health_state == "healthy"
+    return unless agent.external? && agent.health_state == "healthy" && !agent.billing_held?
 
     result = ExternalAgentOrientationRequest.new(
       agent: agent,

@@ -32,6 +32,7 @@ module Agents
     def spawn!
       agent.with_lock do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        ensure_awake!
         spawn_without_portability_gate!
       end
     end
@@ -86,6 +87,7 @@ module Agents
       # Checked before the remote branch too: a suspended vault stops a VM
       # resident's turns exactly as it stops a local one's.
       ensure_memory_not_suspended!
+      ensure_awake!
       # Started and stopped on its VM by explicit commands, never cold-started.
       return yield if RemoteRuntime.dispatchable?(agent)
 
@@ -103,6 +105,7 @@ module Agents
     def recreate!
       agent.with_lock do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        ensure_awake!
         recreate_without_portability_gate!
       end
     end
@@ -204,6 +207,7 @@ module Agents
     def start!
       agent.with_lock do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        ensure_awake!
         start_without_portability_gate!
       end
     end
@@ -365,6 +369,16 @@ module Agents
 
     def epoch_nanoseconds(time)
       (time.to_r * 1_000_000_000).to_i
+    end
+
+    # A resident asleep because its plan lapsed is never started, by a turn,
+    # the reconciler, a credentials refresh or anything else. Paying wakes it.
+    def ensure_awake!
+      return unless agent.billing_held?
+
+      raise Agent::RuntimeAvailability::Unavailable.new(
+        "#{agent.name} is asleep: the payment for their plan has lapsed", code: "billing_hold"
+      )
     end
 
     def ensure_memory_not_suspended!

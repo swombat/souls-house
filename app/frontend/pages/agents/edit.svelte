@@ -22,6 +22,7 @@
 
   import AgentAppearancePanel from '$lib/components/agents/AgentAppearancePanel.svelte';
   import AgentEditHeader from '$lib/components/agents/AgentEditHeader.svelte';
+  import AsleepBanner from '$lib/components/agents/AsleepBanner.svelte';
   import AgentIntegrationsPanel from '$lib/components/agents/AgentIntegrationsPanel.svelte';
   import ResidentMemoryPanel from '$lib/components/agents/ResidentMemoryPanel.svelte';
   import AgentSettingsPanel from '$lib/components/agents/AgentSettingsPanel.svelte';
@@ -34,6 +35,7 @@
   let {
     agent,
     house_allowance: houseAllowance = null,
+    billing_hold: billingHold = null,
     telegram_configuration: telegramConfiguration = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
     grouped_models = {},
@@ -187,6 +189,7 @@
 
 <div class="p-8 max-w-5xl mx-auto">
   <AgentEditHeader backHref={accountAgentsPath(account.id)} agentName={agent.name} />
+  {#if billingHold}<AsleepBanner name={agent.name} billingUrl={billingHold.billing_url} />{/if}
 
   <form
     onsubmit={(e) => {

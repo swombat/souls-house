@@ -4,7 +4,7 @@ class OrientNewAgentJob < ApplicationJob
 
   def perform(agent_id)
     agent = Agent.find(agent_id)
-    return unless agent.born_hosted? && agent.external? && agent.health_state == "healthy"
+    return unless agent.born_hosted? && agent.external? && agent.health_state == "healthy" && !agent.billing_held?
 
     agent.update!(
       orientation_requested_at: Time.current,

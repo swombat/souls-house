@@ -21,6 +21,8 @@ class HostedAgentRuntimeReconcileJob < ApplicationJob
 
   def reconcile_agent(agent, raise_on_error:)
     return unless agent.externally_hosted?
+    # Asleep (plan lapsed): its container stays stopped until it is paid again.
+    return if agent.billing_held?
 
     normalize_managed_runtime_image!(agent)
     sandbox = Agents::Sandbox.new(agent)

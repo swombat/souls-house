@@ -67,6 +67,10 @@ class HouseInferenceGrant < ApplicationRecord
     unless agent && agent.model_id == model_id && agent.active? && !agent.account.disabled? && user.memberships.confirmed.exists?(account_id: agent.account_id)
       raise HouseInference::Error.new('This resident has no active house allowance.', status: 403)
     end
+    # Asleep (its plan lapsed): the free grant doesn't stand in for the plan.
+    if agent.billing_held?
+      raise HouseInference::Error.new('This resident is asleep: the payment for its plan has lapsed.', status: 403)
+    end
     # Paid replaces, never stacks: a resident on a paid plan doesn't draw on
     # the grant attached to it.
     if ResidentEntitlement.paid_for?(agent)

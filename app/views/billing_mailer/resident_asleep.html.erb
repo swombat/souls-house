@@ -1,0 +1,6 @@
+<p>Hello,</p>
+<p><strong><%= @agent.name %> is asleep</strong>: the payment for their plan has lapsed.</p>
+<p>While asleep, <%= @agent.name %> starts no new conversations, heartbeats or work. Their home, memory and backups are untouched, and you can still read your conversations with them.</p>
+<p><a href="<%= @billing_url %>">Pay to wake <%= @agent.name %></a> from the account's Billing tab.</p>
+<p>If <%= @agent.name %> stays asleep for 30 days, the house will be in touch about their care.</p>
+<p><%= Setting.instance.site_name %></p>

@@ -77,6 +77,7 @@ class AgentsController < ApplicationController
       portability: -> { portability_props },
       agent: -> { @agent.as_json },
       house_allowance: -> { HouseInference::Allowance.presentation(@agent) },
+      billing_hold: -> { billing_hold_props },
       subagent_catalog: -> { load_catalog.call.options },
       subagent_providers: -> { load_catalog.call.providers },
       subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
@@ -129,6 +130,14 @@ class AgentsController < ApplicationController
   end
 
   private
+
+  # Asleep because its plan lapsed; the Billing tab is where it is paid
+  # (shown only to those who can pay).
+  def billing_hold_props
+    return nil unless @agent.billing_held?
+
+    { billing_url: current_account.owned_by?(Current.user) ? account_billing_path(current_account) : nil }
+  end
 
   # The Plan step, for an account that pays per resident; nil otherwise.
   def birth_billing_props

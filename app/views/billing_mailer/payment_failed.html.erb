@@ -1,0 +1,5 @@
+<p>Hello,</p>
+<p>The payment for <%= @agent.name %>'s plan didn't go through. Stripe will try the card again over the next days.</p>
+<p><%= @agent.name %> keeps running as normal until <strong><%= @deadline&.strftime("%-d %B %Y") %></strong>. If the plan is still unpaid then, <%= @agent.name %> will go to sleep: no new conversations, heartbeats or work until it is paid. Nothing is deleted.</p>
+<p><a href="<%= @billing_url %>">Update the card or pay now</a> from the account's Billing tab.</p>
+<p><%= Setting.instance.site_name %></p>

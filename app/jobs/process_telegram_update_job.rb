@@ -99,7 +99,7 @@ class ProcessTelegramUpdateJob < ApplicationJob
       else
         PrepareTelegramMediaJob.perform_later(telegram_message, content[:file_id], content[:telegram_metadata])
       end
-    elsif agent.active? && !agent.paused? && agent.external? && agent.trigger_bearer_token.present?
+    elsif agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
       TelegramAgentTriggerJob.perform_later(subscription, telegram_message)
     end
   end

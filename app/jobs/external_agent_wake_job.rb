@@ -15,6 +15,7 @@ class ExternalAgentWakeJob < ApplicationJob
   def wakeable_agents
     Agent.active
          .unpaused
+         .not_billing_held
          .where(runtime: "external")
          .where(scheduled_wakes_enabled: true)
          .where.not(trigger_bearer_token: [ nil, "" ])

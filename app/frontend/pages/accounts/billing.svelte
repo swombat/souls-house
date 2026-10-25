@@ -14,7 +14,7 @@
     pending: 'Awaiting payment',
     active: 'Paid',
     grace: 'Payment failed',
-    held: 'Lapsed',
+    held: 'Asleep',
     complimentary: 'Free (complimentary)',
   };
 
@@ -83,9 +83,9 @@
   {:else}
     <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1">
       <p>
-        <strong>Preview.</strong> A plan pays for hosting and gives the resident its monthly house-model allowance. The
-        rest of what a plan lists below is proposed and not delivered yet, and a lapsed payment is recorded but doesn't
-        pause anything yet.
+        <strong>Preview.</strong> A plan pays for hosting and gives the resident its monthly house-model allowance. The rest
+        of what a plan lists below is proposed and not delivered yet, and a lapsed payment is recorded but doesn't pause
+        anything yet.
       </p>
       {#if billing.test_mode}
         <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>
@@ -105,8 +105,8 @@
           </div>
           <p class="mt-2 text-sm">Hosting for one resident, in a container on the shared house server.</p>
           <p class="mt-1 text-sm">
-            ${tier.features.allowance_usd} a month of house model for that resident. It resets on the 1st (UTC) and
-            replaces the free allowance while the plan is paid.
+            ${tier.features.allowance_usd} a month of house model for that resident. It resets on the 1st (UTC) and replaces
+            the free allowance while the plan is paid.
           </p>
           <p class="mt-2 text-xs font-medium text-muted-foreground">When plans open, not available yet:</p>
           <PlanIncludes features={tier.features} omit={['allowance']} class="mt-1 text-xs text-muted-foreground" />
@@ -130,8 +130,9 @@
               {#if entitlement?.state === 'grace'}
                 The last payment failed. Update the card from Manage billing before {date(entitlement.grace_deadline)}.
               {:else if entitlement?.state === 'held'}
-                The paid plan lapsed on {date(entitlement.held_at)}. This is recorded only: nothing has been paused or
-                deleted.
+                Asleep since {date(entitlement.held_at)}: the plan's payment lapsed, so no new conversations, heartbeats
+                or work start. Nothing is deleted. Pay the open invoice from Manage billing, or choose a plan here, to
+                wake them. If they stay asleep for 30 days, the house will be in touch about their care.
               {:else if entitlement?.subscription?.cancel_at_period_end}
                 Cancels on {date(entitlement.subscription.current_period_end)}.
               {:else if entitlement?.state === 'active' && entitlement.subscription?.current_period_end}

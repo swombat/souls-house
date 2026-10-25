@@ -20,6 +20,7 @@ class ExternalAgentMemoryAggregationJob < ApplicationJob
   def aggregatable_agents
     Agent.active
          .unpaused
+         .not_billing_held
          .where(runtime: "external")
          .where.not(trigger_bearer_token: [ nil, "" ])
   end

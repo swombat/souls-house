@@ -97,7 +97,9 @@ module HouseInference
     # the lock, so a plan that lapses in between is refused, not misbilled.
     def reserve!(offering)
       entitlement = ResidentEntitlement.find_by(agent: @agent)
-      return entitlement.reserve_house_call!(offering, @input['model'], agent_id: @agent.id) if entitlement&.paid?
+      return entitlement.reserve_house_call!(offering, @input['model'], agent_id: @agent.id) if entitlement&.funds_calls?
+      # Asleep: its plan lapsed. The free grant doesn't stand in for it.
+      raise Error.new('This resident is asleep: the payment for its plan has lapsed.', status: 403) if entitlement&.held?
 
       grant = HouseInferenceGrant.find_by(agent: @agent)
       raise Error.new('This resident has no house allowance.', status: 403) unless grant

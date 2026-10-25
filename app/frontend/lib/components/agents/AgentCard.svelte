@@ -91,6 +91,10 @@
             {#if !agent.active}
               <Badge variant="secondary">Disabled</Badge>
             {/if}
+            {#if agent.unavailability_reason === 'billing_hold'}
+              <Badge variant="outline" title="The payment for this resident's plan has lapsed. Paying wakes them."
+                >Asleep</Badge>
+            {/if}
             {#if agent.paused && !agent.deprecated}
               <Badge variant="outline" title="Excluded from cron sweeps. Manual triggers still work.">Paused</Badge>
             {/if}
@@ -113,8 +117,8 @@
           <p class="mt-0.5">{agent.name}'s runtime isn't starting, so a new message won't get a reply.</p>
         {:else if failedRuns.model_unavailable}
           <p class="mt-0.5">
-            {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until
-            another model is chosen.
+            {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until another
+            model is chosen.
           </p>
         {/if}
         {#if showActions && !admin}

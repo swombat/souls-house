@@ -130,3 +130,10 @@ test('says the model is unavailable when every failure in the streak was a refus
   expect(box).toHaveTextContent("Test resident's model isn't available on its subscription");
   expect(box).not.toHaveTextContent("runtime isn't starting");
 });
+
+test('an asleep resident says so, and why, without claiming it is paused', () => {
+  render(AgentCard, { agent: { ...agent, unavailability_reason: 'billing_hold' }, accountId: 'test' });
+  const badge = screen.getByText('Asleep');
+  expect(badge).toHaveAttribute('title', expect.stringMatching(/payment .* has lapsed/));
+  expect(screen.queryByText('Paused')).not.toBeInTheDocument();
+});

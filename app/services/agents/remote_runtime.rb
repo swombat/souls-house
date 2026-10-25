@@ -84,6 +84,9 @@ module Agents
     # fetches that image from the house and checks the ID before using it.
     def start!(agent, image: local_image_id(agent))
       raise ArgumentError, "image must be a sha256 image ID" unless IMAGE_ID.match?(image.to_s)
+      if agent.billing_held?
+        raise Agent::RuntimeAvailability::Unavailable.new("#{agent.name} is asleep", code: "billing_hold")
+      end
 
       enrollment = live_enrollment!(agent)
       payload = {

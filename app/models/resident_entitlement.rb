@@ -7,6 +7,9 @@
 class ResidentEntitlement < ApplicationRecord
 
   STATES = %w[pending active grace held complimentary].freeze
+  # A turn already running when the resident falls asleep may finish, its
+  # house-model calls still funded by the plan, for at most this long.
+  DRAIN = 30.minutes
   SOURCES = %w[complimentary stripe].freeze
 
   belongs_to :agent
@@ -23,6 +26,9 @@ class ResidentEntitlement < ApplicationRecord
   scope :grace_expired, ->(now = Time.current) { in_grace.where(grace_deadline: ..now) }
 
   after_commit :schedule_grace_deadline, if: -> { saved_change_to_grace_deadline? && grace? }
+  after_commit :fall_asleep, if: -> { saved_change_to_state?(to: "held") }
+  after_commit :wake_up, if: -> { saved_change_to_state?(from: "held") }
+  after_commit :tell_payment_failed, if: -> { saved_change_to_state?(from: "active", to: "grace") }
 
   STATES.each do |name|
     define_method(:"#{name}?") { state == name }
@@ -78,13 +84,25 @@ class ResidentEntitlement < ApplicationRecord
 
   def paid? = source == "stripe" && (active? || grace?)
 
+  # Asleep, but a turn that began before the hold is still finishing: its
+  # house-model calls stay funded until it ends or DRAIN passes. New work
+  # gets no such exception (it is refused at admission).
+  def draining?(now = Time.current)
+    return false unless held? && source == "stripe" && held_at && now < held_at + DRAIN
+
+    agent.agent_runtime_interactions.where(finished_at: nil).where(created_at: ...held_at).exists?
+  end
+
+  # Whether the plan's ledger pays for this resident's house-model calls now.
+  def funds_calls? = paid? || draining?
+
   def tier_record = tier && Billing::Tier.find(tier)
 
   # The month's limit is the highest paid allowance in force at any point in
   # that UTC month: a ceiling on the month's spend, never a balance that is
   # topped up. Nothing while the plan isn't paid.
   def allowance_limit(month = HouseInference::Offering.month)
-    return BigDecimal("0") unless paid?
+    return BigDecimal("0") unless funds_calls?
 
     limits = [ self.class.tier_allowance(tier) ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
@@ -118,7 +136,7 @@ class ResidentEntitlement < ApplicationRecord
     if HouseInferenceCall.where(status: "overrun").exists?
       raise HouseInference::Error.new("House inference is paused pending a billing review.")
     end
-    unless agent_id == self.agent_id && paid? && agent.model_id == model_id && agent.active? && !agent.account.disabled?
+    unless agent_id == self.agent_id && funds_calls? && agent.model_id == model_id && agent.active? && !agent.account.disabled?
       raise HouseInference::Error.new("This resident has no active plan allowance.", status: 403)
     end
     month = HouseInference::Offering.month
@@ -215,6 +233,21 @@ class ResidentEntitlement < ApplicationRecord
       self.state = "held"
       self.held_at = now
     end
+  end
+
+  # Asleep: queued work is cancelled and the container stopped once running
+  # work drains; the owner is told.
+  def fall_asleep
+    Billing::SleepJob.perform_later(agent_id)
+    BillingMailer.resident_asleep(self).deliver_later if account.owner
+  end
+
+  def wake_up
+    Billing::WakeJob.perform_later(agent_id)
+  end
+
+  def tell_payment_failed
+    BillingMailer.payment_failed(self).deliver_later if account.owner
   end
 
   def schedule_grace_deadline

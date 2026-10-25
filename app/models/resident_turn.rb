@@ -22,6 +22,7 @@ class ResidentTurn < ApplicationRecord
       raise SessionBusy, "Resident backup is pending" if Backup::VmResident.held?(interaction.agent)
       raise SessionBusy if pending.where(session_id: body.fetch(:session_id)).exists?
       raise SessionBusy, "Resident is restarting with new credentials" if Agents::RemoteRuntime.refresh_pending?(interaction.agent)
+      raise SessionBusy, "Resident is asleep: the payment for their plan has lapsed" if interaction.agent.billing_held?
       turn = create!(
         agent: interaction.agent, agent_runtime_interaction: interaction,
         dispatch_id: SecureRandom.uuid, session_id: body.fetch(:session_id),
@@ -84,6 +85,7 @@ class ResidentTurn < ApplicationRecord
 
   def eligible?
     return false unless agent.active? && !agent.paused? && agent.external?
+    return false if agent.billing_held?
     return false unless Agents::RuntimeLocation.dispatchable?(agent)
     interaction = agent_runtime_interaction
     if interaction.chat

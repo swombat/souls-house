@@ -440,7 +440,8 @@ class Rhythm < ApplicationRecord
   def unavailable_reason
     if creator_agent
       return "creator_not_member" unless account.conversation_agents.exists?(creator_agent.id)
-      return "creator_unavailable" unless creator_agent.reload.eligible_for_conversation?
+      return "billing_hold" if creator_agent.reload.billing_held?
+      return "creator_unavailable" unless creator_agent.eligible_for_conversation?
       return "creator_paused" if creator_agent.paused?
     else
       return "creator_not_member" unless creator&.confirmed_accounts&.exists?(account_id)
@@ -452,6 +453,7 @@ class Rhythm < ApplicationRecord
     present_ids = account.conversation_agents.where(id: selected.map(&:id)).ids
     selected.each do |agent|
       return "resident_not_present: #{agent.name}" unless present_ids.include?(agent.id)
+      return "billing_hold: #{agent.name}" if agent.billing_held?
       return "resident_unavailable: #{agent.name}" unless agent.eligible_for_conversation?
       return "resident_paused: #{agent.name}" if agent.paused?
     end

@@ -1,0 +1,12 @@
+Hello,
+
+<%= @agent.name %> is asleep: the payment for their plan has lapsed.
+
+While asleep, <%= @agent.name %> starts no new conversations, heartbeats or work. Their home, memory and backups are untouched, and you can still read your conversations with them.
+
+Paying wakes them. Open the account's Billing tab:
+<%= @billing_url %>
+
+If <%= @agent.name %> stays asleep for 30 days, the house will be in touch about their care.
+
+<%= Setting.instance.site_name %>
