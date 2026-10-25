@@ -84,7 +84,7 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     end
     request.reload
     assert_equal "failed", request.status
-    assert_equal Billing::BirthGate.refusal(request.account), request.last_error
+    assert_equal Billing::BirthGate::IMPORT_NOT_OPEN, request.last_error
     assert_nil request.agent
   end
 

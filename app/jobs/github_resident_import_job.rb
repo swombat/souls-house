@@ -90,7 +90,7 @@ class GithubResidentImportJob < ApplicationJob
   # Why a request with no resident yet can't make one now. A retry for a
   # resident already created is never refused here.
   def new_resident_refusal(request)
-    Billing::BirthGate.refusal(request.account) || Agents::VmBirthPolicy.current.refusal(kind: :import)
+    Billing::BirthGate.import_refusal(request.account) || Agents::VmBirthPolicy.current.refusal(kind: :import)
   end
 
   def on_vm?(agent) = agent&.placement&.kind == "github_import"
