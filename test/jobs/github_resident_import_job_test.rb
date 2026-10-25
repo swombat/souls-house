@@ -113,8 +113,8 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     volume = Object.new
     volume.define_singleton_method(:seed_from_directory!) { |_| }
     sandbox = Object.new
-    sandbox.define_singleton_method(:spawn!) {}
-    sandbox.define_singleton_method(:recreate!) {}
+    sandbox.define_singleton_method(:spawn!) { }
+    sandbox.define_singleton_method(:recreate!) { }
     sandbox.define_singleton_method(:active_turn?) { false }
     sandbox.define_singleton_method(:imported_runtime_trusted?) { true }
     run = lambda do
