@@ -91,11 +91,13 @@ module Billing
     # creation wizard and the about-sheet. Only what a plan delivers today
     # (Daniel, 2026-10-25, going live): hosting for one resident, the monthly
     # house-model allowance (ResidentEntitlement) and swarm searches
-    # (Account#swarm_searches). The machine, transcription hours, backup space
+    # (Account#field_swarm_plan_searches), and sub-agents on the plans in
+    # Agent::Subagents::SUBAGENT_TIERS. The machine, transcription hours, backup space
     # and connections above stay for costing and are not shown until each one
     # ships; add it here when it does.
     def features
-      { hosting: true, allowance_usd: allowance_usd, swarm_searches: swarm_searches }
+      { hosting: true, allowance_usd: allowance_usd, swarm_searches: swarm_searches,
+        subagents: id.in?(Agent::Subagents::SUBAGENT_TIERS) }
     end
 
     def as_json(*)

@@ -177,6 +177,7 @@ class AboutSheet
   def price(tier)
     line = "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
     line += " and #{tier.swarm_searches} Field swarm searches a month" if tier.swarm_search?
+    line += ", and sub-agents" if tier.features[:subagents]
     "#{line}."
   end
 

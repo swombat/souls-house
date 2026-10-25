@@ -4,7 +4,7 @@
   // describe a plan differently. Only what a plan delivers today: a line comes
   // back here when the catalogue starts sending it. The longer explanations
   // live in the FAQ.
-  import { House, Sparkle, MagnifyingGlass } from 'phosphor-svelte';
+  import { House, Sparkle, MagnifyingGlass, UsersThree } from 'phosphor-svelte';
 
   // omit: line keys to leave out, e.g. ['allowance'] where it is listed elsewhere.
   let { features, class: className = '', iconClass = 'text-muted-foreground', omit = [] } = $props();
@@ -15,6 +15,7 @@
     ...(features.swarm_searches > 0
       ? [{ key: 'swarm', icon: MagnifyingGlass, text: `Swarm search, ${features.swarm_searches} a month` }]
       : []),
+    ...(features.subagents ? [{ key: 'subagents', icon: UsersThree, text: 'Sub-agents' }] : []),
   ].filter((line) => !omit.includes(line.key)));
 </script>
 

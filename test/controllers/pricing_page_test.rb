@@ -36,7 +36,8 @@ class PricingPageTest < ActionDispatch::IntegrationTest
       assert tiers.none? { |row| row.key?("memory_gb") || row.key?("cpu_shares") }, "container limits stay server-side"
       # Going live (Daniel, 2026-10-25): a plan shows only what it delivers today.
       tiers.each do |row|
-        assert_equal %w[allowance_usd hosting swarm_searches], row["features"].keys.sort, row["id"]
+        assert_equal %w[allowance_usd hosting subagents swarm_searches], row["features"].keys.sort, row["id"]
+        assert_equal row["id"] == "work", row["features"]["subagents"], "sub-agents only on Work"
       end
     end
   end
