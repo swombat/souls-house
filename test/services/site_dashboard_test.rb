@@ -38,7 +38,8 @@ class SiteDashboardTest < ActiveSupport::TestCase
 
   test "latest sign-ups name the newest humans with their residents' activity" do
     owner = @public_agent.account.memberships.find_by!(role: "owner").user
-    owner.update_columns(created_at: 1.minute.ago)
+    # Fixtures are stamped in real time, not the pinned midday, so be newer than all of them.
+    owner.update_columns(created_at: User.maximum(:created_at) + 1.minute)
     interaction(@public_agent)
     interaction(@public_agent, kind: "wake", at: 3.days.ago)
     interaction(@public_agent, at: 20.days.ago)
