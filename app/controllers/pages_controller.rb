@@ -6,7 +6,8 @@ class PagesController < ApplicationController
 
   def home
     @share_video = true
-    render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE) }
+    render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE),
+      from_usd: Billing::Tier.all.map(&:monthly_usd).min }
   end
 
   def features
