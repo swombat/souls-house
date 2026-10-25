@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "ripper"
 require "set"
 
@@ -7,6 +8,12 @@ require "set"
 # System tests are run once by the workflow, not by this runner.
 module RailsTestShard
   class Error < StandardError; end
+
+  # Seconds per test file from a measured run (scripts/rails-test-timings.rb).
+  # Shards are balanced on these. A file not in it is weighted by its byte
+  # size at the measured suite's seconds per byte, so a new test file lands
+  # about where its size suggests until the next measurement.
+  TIMINGS = "test/ci/rails_timings.json"
 
   # Per-test limit in CI. The slowest test takes about 18s locally; a test
   # that runs past this is killed and reported by name, instead of stalling
@@ -64,7 +71,6 @@ module RailsTestShard
       raise Error, "TOTAL must be a positive integer" unless total.is_a?(Integer) && total.positive?
       buckets = Array.new(total) { [] }
       weights = Array.new(total, 0)
-      # Byte size is a cheap runtime heuristic, not a measured duration.
       # Largest groups first; path and shard index break ties deterministically.
       groups.sort_by { |group| [-weight(group), group.first] }.each do |group|
         index = (0...total).min_by { |candidate| [weights[candidate], candidate] }
@@ -74,10 +80,27 @@ module RailsTestShard
       buckets.map(&:sort)
     end
 
+    # Measured seconds where known; otherwise byte size scaled to seconds, or
+    # plain byte size when nothing has been measured.
+    def weight(group)
+      group.sum { |file| timings.fetch(file) { File.size(File.join(root, file)) * seconds_per_byte } }
+    end
+
+    def timings
+      @timings ||= begin
+        path = File.join(root, TIMINGS)
+        File.file?(path) ? JSON.parse(File.read(path)) : {}
+      end
+    end
+
     private
 
-    def weight(group)
-      group.sum { |file| File.size(File.join(root, file)) }
+    def seconds_per_byte
+      @seconds_per_byte ||= begin
+        measured = timings.keys & files
+        bytes = measured.sum { |file| File.size(File.join(root, file)) }
+        bytes.zero? ? 1.0 : timings.values_at(*measured).sum / bytes.to_f
+      end
     end
 
     def reachable_tests(file, seen = Set.new)
@@ -188,12 +211,14 @@ module RailsTestShard
 
   def self.run(argv, root:, executor: nil, out: $stdout, err: $stderr)
     shard, total, list = arguments(argv)
-    selected = Plan.new(root).shards(total).fetch(shard - 1)
+    plan = Plan.new(root)
+    selected = plan.shards(total).fetch(shard - 1)
     if list
       selected.each { |file| out.puts(file) }
       return 0
     end
-    out.puts("Rails shard #{shard}/#{total}: #{selected.length} files")
+    measured = plan.timings.empty? ? "" : ", #{plan.weight(selected).round} s of measured test time"
+    out.puts("Rails shard #{shard}/#{total}: #{selected.length} files#{measured}")
     selected.each { |file| out.puts(file) }
     return 0 if selected.empty?
     command = [File.join(File.expand_path(root), "bin/test"),

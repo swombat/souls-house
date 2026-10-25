@@ -24,7 +24,11 @@ server_token = SecureRandom.hex(24)
 begin
   system("bin/rails", "db:prepare", exception: true)
   system("bin/rails", "db:fixtures:load", exception: true) if mode != "e2e"
-  system("bin/vite", "build", "--mode", "test", "--force", exception: true)
+  # Rebuilt when vite_ruby's digest of the watched files (app/frontend, the
+  # views and helpers Tailwind scans, the configs: config/vite.json) differs
+  # from the last build's; otherwise the build on disk is used, which is how
+  # CI reuses a cached public/vite-test instead of building in every job.
+  system("bin/vite", "build", "--mode", "test", exception: true)
   child = Process.spawn({ "PIDFILE" => pidfile, "SOULSHOUSE_SERVER_TOKEN" => server_token,
     "HOUSE_INFERENCE_OPENROUTER_API_KEY" => "test-only-house" }, "bin/rails", "server", "-e", "test", "-p", config.port(:backend).to_s,
     "-b", "127.0.0.1", out: log, err: [ :child, :out ])

@@ -1,7 +1,7 @@
 {
   "all": {
     "sourceCodeDir": "app/frontend",
-    "watchAdditionalPaths": []
+    "watchAdditionalPaths": ["app/views/**/*", "app/helpers/**/*", "bun.lock"]
   },
   "development": {
     "autoBuild": true,

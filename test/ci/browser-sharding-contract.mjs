@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { plan, readTimings, specFiles, SPEC_DIR } from '../../scripts/e2e-shard.mjs';
+
+const E2E_SHARDS = 5;
 
 const home = mkdtempSync(join(tmpdir(), 'browser-shard-contract-'));
 const env = {
@@ -13,12 +16,12 @@ const env = {
   SOULSHOUSE_INSTANCE: process.env.SOULSHOUSE_INSTANCE || '9',
 };
 
-function listing(suite, shard) {
+function listing(suite, files = []) {
   const cli =
     suite === 'e2e' ? 'node_modules/@playwright/test/cli.js' : 'node_modules/@playwright/experimental-ct-svelte/cli.js';
   const args = [cli, 'test', '-c', `playwright-${suite}.config.js`, '--list', '--reporter=json', '--workers=1'];
   if (suite === 'e2e') args.push('--no-deps');
-  if (shard) args.push(`--shard=${shard}`);
+  args.push(...files);
   const result = spawnSync(process.execPath, args, {
     env,
     encoding: 'utf8',
@@ -49,7 +52,19 @@ function listing(suite, shard) {
 
 try {
   const baseline = listing('e2e');
-  const shards = Array.from({ length: 3 }, (_, i) => listing('e2e', `${i + 1}/3`));
+  // The same planner call the workflow makes, with the same inputs.
+  const planned = plan(E2E_SHARDS);
+  assert.deepEqual(planned.flatMap((shard) => shard.files).sort(), specFiles(), 'Planner lost or invented a spec file');
+  const heaviest = Math.max(...planned.map((shard) => shard.seconds));
+  const lightest = Math.min(...planned.map((shard) => shard.seconds));
+  const slowestFile = Math.max(...Object.values(readTimings()));
+  assert(heaviest - lightest <= slowestFile, `Shards are unbalanced: ${planned.map((shard) => Math.round(shard.seconds))}`);
+  const shards = planned.map((shard) =>
+    listing(
+      'e2e',
+      shard.files.map((file) => `${SPEC_DIR}/${file}`)
+    )
+  );
   const assigned = shards.flat();
   assert.equal(new Set(assigned.map((test) => test.key)).size, assigned.length, 'Duplicate E2E assignment');
   assert.deepEqual(assigned.map((test) => test.key).sort(), baseline.map((test) => test.key).sort());
@@ -74,7 +89,8 @@ try {
   const components = listing('ct');
   assert(components.length > 0, 'Component coverage disappeared');
   console.log(
-    `Coverage contract: ${baseline.length} E2E tests exactly once across 3 shards; ${components.length} component tests listed.`
+    `Coverage contract: ${baseline.length} E2E tests exactly once across ${E2E_SHARDS} shards ` +
+      `(${planned.map((shard) => Math.round(shard.seconds)).join('/')} s recorded); ${components.length} component tests listed.`
   );
 } finally {
   rmSync(home, { recursive: true, force: true });

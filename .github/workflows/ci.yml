@@ -25,11 +25,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { suite: rails, shard: 1, total: 2 }
-          - { suite: rails, shard: 2, total: 2 }
-          - { suite: e2e, shard: 1, total: 3 }
-          - { suite: e2e, shard: 2, total: 3 }
-          - { suite: e2e, shard: 3, total: 3 }
+          # The repository is public, so runner minutes are free and the clock
+          # is the longest shard. Shards are balanced on measured test time:
+          # test/ci/rails_timings.json and test/ci/e2e_timings.json.
+          - { suite: rails, shard: 1, total: 4 }
+          - { suite: rails, shard: 2, total: 4 }
+          - { suite: rails, shard: 3, total: 4 }
+          - { suite: rails, shard: 4, total: 4 }
+          - { suite: e2e, shard: 1, total: 5 }
+          - { suite: e2e, shard: 2, total: 5 }
+          - { suite: e2e, shard: 3, total: 5 }
+          - { suite: e2e, shard: 4, total: 5 }
+          - { suite: e2e, shard: 5, total: 5 }
           - { suite: components, shard: 1, total: 1 }
     services:
       postgres:
@@ -73,6 +80,19 @@ jobs:
         run: |
           bundle install --jobs 4 --retry 3
           bun install --frozen-lockfile
+      - name: Restore the test asset build
+        # Every container job needs public/vite-test (the Rails shards for
+        # their views, playwright/run-backend.rb for the browser suites) and
+        # building it takes about a minute. The key covers everything the
+        # build reads; tmp/cache/vite holds vite_ruby's digest of those same
+        # inputs, so on a hit `bin/vite build` finds the build current and
+        # skips, and on a miss it builds as before.
+        uses: actions/cache@v4
+        with:
+          path: |
+            public/vite-test
+            tmp/cache/vite
+          key: ${{ runner.os }}-vite-test-v1-${{ hashFiles('app/frontend/**', 'app/views/**', 'app/helpers/**', 'config/vite.json', 'vite.config.js', 'package.json', 'bun.lock', '.github/ci/Dockerfile') }}
       - name: Rails partition contracts
         if: matrix.suite == 'rails' && matrix.shard == 1
         run: bundle exec ruby test/ci/rails_sharding_contract.rb
@@ -94,9 +114,12 @@ jobs:
         run: bin/rails test:system
       - name: Browser end-to-end tests
         if: matrix.suite == 'e2e'
-        # No dependency replay. One worker serializes admission with the
+        # The planner prints this shard's spec files, balanced by recorded
+        # time. No dependency replay. One worker serializes admission with the
         # other files on this shard's private backend/database.
-        run: bun run test --no-deps --workers=1 --shard=${{ matrix.shard }}/${{ matrix.total }}
+        run: |
+          files=$(node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ matrix.total }})
+          bun run test --no-deps --workers=1 $files
       - name: Browser component tests
         if: matrix.suite == 'components'
         run: bun run test:ct
