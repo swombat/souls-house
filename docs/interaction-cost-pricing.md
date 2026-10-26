@@ -142,10 +142,16 @@ suite uses its isolated worker databases.
 No database migration or runtime-image rebuild is required for this change.
 Production web deployment is a separate step from merging the source.
 
-## October 25, 2026 additions
+## October 2026 additions
 
-OCTOBER_MODELS take their list prices from the OpenRouter catalogue on
-2026-10-25 (USD per million tokens, input / output / cache read):
+OCTOBER_MODELS take their list prices from the OpenRouter catalogue
+(`/api/v1/models`), reverified on 2026-10-26 (USD per million tokens,
+input / output / cache read):
 Qwen3.8 Max (`qwen/qwen3.8-max-0902`) 2 / 6 / 0.25; Qwen3.8 Max Prime 4 / 12 / 0.5;
-GLM 5.3 0.079 / 1.4 / 0.078; GLM 5.3 Prime 2.8 / 8.8 / 0.56. Other Qwen and GLM
-models added to the catalogue on the same day stay unpriced.
+GLM 5.3 0.0699 / 1.4 / 0.0689; GLM 5.3 Prime 2.8 / 8.8 / 0.56. Other Qwen and GLM
+models added to the catalogue at the same time stay unpriced.
+
+GLM 5.3 was first recorded on 2026-10-25 at 0.079 input and 0.078 cache read;
+by 2026-10-26 OpenRouter listed the lower rates above. The other three were
+unchanged. GLM 5.3's price has moved once already, so recheck it before
+relying on old GLM 5.3 estimates.

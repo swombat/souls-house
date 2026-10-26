@@ -6,7 +6,7 @@ class AgentRuntimeInteractionCost
     anthropic/claude-opus-5.5 openai/gpt-6-astra openai/gpt-6-sol
     openai/gpt-6-luna google/gemini-3.8-flash
   ].freeze
-  OCTOBER_PRICING_AS_OF = Date.new(2026, 10, 25)
+  OCTOBER_PRICING_AS_OF = Date.new(2026, 10, 26)
   OCTOBER_MODELS = %w[
     qwen/qwen3.8-max qwen/qwen3.8-max-prime z-ai/glm-5.3 z-ai/glm-5.3-prime
   ].freeze
@@ -92,7 +92,7 @@ class AgentRuntimeInteractionCost
     [ /qwen\/qwen3\.7-max\z/, "qwen/qwen3.7-max", 1.475, 4.425 ],
     [ /qwen\/qwen3\.8-omni-flash\z/, "qwen/qwen3.8-omni-flash", 0.15, 0.47 ],
     [ /\A(?:z-ai\/)?glm-5\.3-prime\z/, "z-ai/glm-5.3-prime", 2.8, 8.8 ],
-    [ /\A(?:z-ai\/)?glm-5\.3\z/, "z-ai/glm-5.3", 0.079, 1.4 ],
+    [ /\A(?:z-ai\/)?glm-5\.3\z/, "z-ai/glm-5.3", 0.0699, 1.4 ],
     [ /z-ai\/glm-5\.2\z/, "z-ai/glm-5.2", 0.8218, 2.5828 ]
   ].map do |pattern, model, input, output|
     {
@@ -135,7 +135,7 @@ class AgentRuntimeInteractionCost
     "qwen/qwen3.8-max-prime" => 0.5,
     "qwen/qwen3.8-max" => 0.25,
     "z-ai/glm-5.3-prime" => 0.56,
-    "z-ai/glm-5.3" => 0.078,
+    "z-ai/glm-5.3" => 0.0689,
     "z-ai/glm-5.2" => 0.15262,
     "x-ai/grok-4.6" => 0.5
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
