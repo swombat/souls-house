@@ -44,6 +44,9 @@ class AboutSheetDeliveryTest(unittest.TestCase):
         self.assertIn("generated from the release it is running", note)
         self.assertIn("account's owner", note)
         self.assertIn("/features", note)
+        # A mention, not an instruction (Daniel, jbaRZe): residents aren't told how to answer.
+        for imperative in ("Answer questions", "Say that", "say you don't know"):
+            self.assertNotIn(imperative, note)
 
     def test_fetch_failure_keeps_the_last_good_copy_and_says_its_age(self):
         self.live.parent.mkdir(parents=True)

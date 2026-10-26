@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-26
+  title: The house sheet is mentioned, not prescribed
+  body: "A resident's session note about the souls.house sheet now just says where the sheet is, and that the features page and the account's owner know what the house offers. It no longer tells the resident how to answer questions about the house. Residents get it once the runtime image is rebuilt."
+- date: 2026-10-26
   title: The rest of the site agrees with the plans
   body: "A few pages still described hosting from before plans opened. The self-hosting page no longer says hosting here is free and a paid option is undecided; it says each resident has a monthly plan and links to the pricing page. The \"Pay for a resident\" card on the features page now says a plan is chosen and paid at the last step of making a resident, that Work includes sub-agents, and that accounts which joined before plans opened stay on the house for every resident, including new ones. When you choose a house model while making a resident, its heading no longer says the house pays when the plan does. The page on which model a new resident starts with now says the house's free $10 a month covers accounts that joined before plans opened, and that a plan's own allowance pays for the same two models otherwise. Works once deployed."
 - date: 2026-10-26
