@@ -12,6 +12,9 @@
     selectedModel = $bindable(),
     runtimeManaged = false,
     houseAllowance = null,
+    // Rendered right after the model choice: the subscription decides how
+    // that model is paid for.
+    subscription = null,
   } = $props();
 
   const ADVANCED_FIELDS = [
@@ -46,6 +49,8 @@
       defaultModelId={selectedModel}
       agentName={$form.agent.name || 'this resident'} />
   </AgentModelPanel>
+
+  {#if subscription}{@render subscription()}{/if}
 
   <div class="space-y-4">
     <div>

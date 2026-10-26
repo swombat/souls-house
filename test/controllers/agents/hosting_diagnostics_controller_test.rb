@@ -4,6 +4,7 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
 
   setup do
     @user = users(:user_1)
+    @user.update!(is_site_admin: true)
     @account = accounts(:personal_account)
     @agent = agents(:research_assistant)
 
@@ -14,6 +15,16 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
       password: "password123"
     }
     assert_redirected_to root_path
+  end
+
+  test "owners who are not site admins cannot read diagnostics or resident files" do
+    @user.update!(is_site_admin: false)
+
+    get account_agent_hosting_diagnostics_path(@account, @agent), as: :json
+    assert_response :forbidden
+
+    get file_preview_account_agent_hosting_diagnostics_path(@account, @agent, path: "soul.md"), as: :json
+    assert_response :forbidden
   end
 
   test "show returns sandbox and filesystem diagnostics as json" do
@@ -102,7 +113,7 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
       post account_agent_sandbox_recreation_path(@account, @agent)
     end
 
-    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "hosting")
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "settings")
     assert_match "Runtime image refresh queued", flash[:notice]
   end
 
@@ -113,7 +124,7 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
       post account_agent_sandbox_recreation_path(@account, @agent)
     end
 
-    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "hosting")
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "settings")
     assert_match "Only hosted residents", flash[:alert]
   end
 

@@ -75,7 +75,7 @@ class ExternalAgentTelegramRequest
     case result.dig(:body, "error_kind")
     when "auth_expired"
       agent.mark_provider_connection_status!(provider, "expired")
-      send_notice("Provider connection expired. Reconnect it in agent hosting settings.")
+      send_notice("Provider connection expired. Reconnect it in the resident's settings.")
     when "subscription_limit"
       usage = AgentSubscriptionUsage.new(result.dig(:body, "subscription_usage"))
       send_notice(usage.user_message(time_zone: subscription.user.timezone))

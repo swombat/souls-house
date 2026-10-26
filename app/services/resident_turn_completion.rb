@@ -45,7 +45,7 @@ class ResidentTurnCompletion
     when "auth_expired"
       provider = JSON.parse(@turn.payload)["provider"]
       @turn.agent.mark_provider_connection_status!(provider, "expired")
-      text = "Provider connection expired. Reconnect it in agent hosting settings."
+      text = "Provider connection expired. Reconnect it in the resident's settings."
     when "subscription_limit"
       text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
     when "model_unavailable"

@@ -96,7 +96,11 @@ class AgentsController < ApplicationController
       identity_export_url: identity_export_account_agent_path(current_account, @agent),
       memory_overview_url: account_agent_memory_overview_path(current_account, @agent),
       memory_history_url: Current.user.is_site_admin? ? history_account_agent_memory_overview_path(current_account, @agent) : nil,
-      hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
+      # The Hosting tab is site-admin only; owners get health, Restart and the
+      # subscription on Settings.
+      can_view_hosting: Current.user.is_site_admin?,
+      can_restart_runtime: current_account.owned_by?(Current.user) && @agent.externally_hosted?,
+      hosting_diagnostics_url: Current.user.is_site_admin? ? account_agent_hosting_diagnostics_path(current_account, @agent) : nil,
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),
       provider_subscription: -> { Agents::ProviderSubscriptionPresentation.call(@agent) },

@@ -20,7 +20,7 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     item = summary[:items].find { |i| i[:agent_id] == agents(:code_reviewer).to_param }
     assert_equal "Claude", item[:provider_name]
     assert_equal "Code Reviewer", item[:agent_name]
-    assert_includes item[:url], "tab=hosting"
+    assert_includes item[:url], "tab=settings"
   end
 
   test "connected, api-key and retired residents do not count, and reconnecting clears it" do

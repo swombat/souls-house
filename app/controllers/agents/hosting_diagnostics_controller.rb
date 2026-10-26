@@ -2,6 +2,10 @@ class Agents::HostingDiagnosticsController < ApplicationController
 
   include AgentScoped
 
+  # Container internals and a reader for the resident's own files (journals,
+  # soul, memory): operator material, not something every owner browses.
+  before_action :require_site_admin!
+
   def show
     reconcile_orientation_from_journals!
 
@@ -19,6 +23,10 @@ class Agents::HostingDiagnosticsController < ApplicationController
 
 
   private
+
+  def require_site_admin!
+    head :forbidden unless Current.user&.is_site_admin?
+  end
 
   def reconcile_orientation_from_journals!
     return unless @agent.external? && @agent.oriented_at.blank?

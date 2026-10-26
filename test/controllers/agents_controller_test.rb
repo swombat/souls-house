@@ -507,7 +507,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       }
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal @agent.to_param, subscription.fetch("id")
@@ -524,7 +524,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       health_state: "healthy"
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal "anthropic", subscription.fetch("provider")
@@ -540,7 +540,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       health_state: "healthy"
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal "gemini", subscription.fetch("provider")
@@ -549,10 +549,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, subscription.fetch("available")
   end
 
+  test "edit hides the hosting tab and its diagnostics from owners who are not site admins" do
+    @agent.update!(runtime: "external", health_state: "unhealthy")
+    assert_not @user.is_site_admin?
+
+    get edit_account_agent_path(@account, @agent)
+
+    assert_equal false, inertia_shared_props.fetch("can_view_hosting")
+    assert_nil inertia_shared_props["hosting_diagnostics_url"]
+  end
+
   test "edit omits provider subscription setup for deprecated inline agents" do
     @agent.update!(model_id: "openai/gpt-5", runtime: "deprecated")
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     assert_nil inertia_shared_props["provider_subscription"]
   end

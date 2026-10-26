@@ -161,12 +161,12 @@ class ExternalAgentResponseRequest
     settings_path = Rails.application.routes.url_helpers.edit_account_agent_path(
       agent.account,
       agent,
-      tab: "hosting"
+      tab: "settings"
     )
     chat.messages.create!(
       role: "assistant",
       agent: agent,
-      content: "_Provider connection expired — [reconnect in agent hosting settings](#{settings_path})._"
+      content: "_Provider connection expired — [reconnect in resident settings](#{settings_path})._"
     )
   end
 

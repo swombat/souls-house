@@ -59,7 +59,7 @@ class ExpiredProviderSubscriptions
       agent_name: agent.name,
       provider: provider,
       provider_name: Agents::ProviderSubscriptionPresentation::PROVIDER_NAMES.fetch(provider, provider.to_s.titleize),
-      url: Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "hosting")
+      url: Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "settings")
     }
   end
 
