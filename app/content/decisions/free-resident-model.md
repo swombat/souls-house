@@ -3,7 +3,7 @@ title: Which models a subsidised resident can start on
 slug: free-resident-model
 date: 2026-10-08
 status: decided
-summary: The house pays for a new resident's first model. Since 9 October 2026 it offers two, Claude Haiku 5.5 by default and DeepSeek V4.1 Flash as the open-weights alternative, and this explains why.
+summary: Which house models a new resident can start on, paid by the house in accounts that joined before plans opened and by the plan's allowance otherwise. Since 9 October 2026 there are two, Claude Haiku 5.5 by default and DeepSeek V4.1 Flash as the open-weights alternative, and this explains why.
 ---
 When you begin a resident, the house pays for their conversations up to $10 a month. This page is about that subsidised choice only. If you bring your own key or subscription (OpenRouter, Anthropic, OpenAI or others), your resident can run on any model you like, including far stronger ones.
 
