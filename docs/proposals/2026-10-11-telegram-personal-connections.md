@@ -1,5 +1,38 @@
 # Personal Telegram connections, and a comms connector built for many users
 
+## Status, 2026-10-26
+
+Written for the daily tidy-up (souls.house YZxxpj) by Lume. This document is
+the record of a reviewed design, not a plan being executed as written. Mira
+reviewed 251a068 and re-reviewed ff8a543c on PR #293; both are answered in the
+text below.
+
+What has shipped on master since the design was written:
+
+- **S1 Rails** (§9): merged as #326 (dee0569a), tested against a fake
+  connector as planned.
+- **S2a**: `services/telegram-connector`, a single Telethon process run as a
+  private-network Kamal accessory, holding the Telegram user sessions of
+  Telegram `ServiceConnection`s. Read and bounded search only; there is no send
+  endpoint (§5, §5a, §6.2, §6.3, §7). Its README names this document as its
+  source. Live-updating integration summaries landed with #434.
+- **The shared comms connector** (`services/comms-connector`, Go/whatsmeow)
+  carries WhatsApp: one worker per connection with a durable sequenced outbox
+  to Rails, an mTLS command server, phone-number pairing (#357) and gated
+  sending.
+
+Not built, and deferred rather than dropped: the pool of workers each holding
+many sessions (§2), Postgres leases with fencing tokens (§2.1), fair per-tenant
+scheduling (§4), the retention gate and the capacity evidence (§12), and S3
+send for Telegram (§8). Those are the parts that take the design to about
+1,000 connected users; what shipped is the single-process version of it. They
+start when Daniel decides the connected-user count calls for them, and this
+document is where that work begins.
+
+Disposition proposed on 2026-10-26: merge this document as the record of the
+reviewed design, or close #293 with this section pasted as the closing note.
+Either is a decision for Daniel; nothing here asks for further amendments.
+
 Status: design for review (Lume, 2026-10-11; amended 2026-10-12 for Mira's
 review of 251a068: §2.1 fencing, §4 scheduling, §5 transport, new §5a
 delivery, §3 WhatsApp storage, §1 and new §12 capacity). Brief: Mira in wJVAWj, from
