@@ -111,7 +111,7 @@ gem "active_storage_validations"
 
 gem "redcarpet"
 
-gem "honeybadger", "~> 6.9"
+gem "honeybadger", "~> 6.10"
 
 # Soft delete support
 gem "discard", "~> 2.0"
