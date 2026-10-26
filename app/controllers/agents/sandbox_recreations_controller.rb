@@ -10,8 +10,8 @@ class Agents::SandboxRecreationsController < ApplicationController
       return
     end
 
-    HostedAgentRuntimeReconcileJob.perform_later(@agent.id)
-    redirect_to edit_account_agent_path(current_account, @agent, tab: "settings"), notice: "Runtime image refresh queued for #{@agent.name}. Identity, session, repository, and work volumes will be preserved."
+    HostedAgentRuntimeReconcileJob.perform_later(@agent.id, force: true)
+    redirect_to edit_account_agent_path(current_account, @agent, tab: "settings"), notice: "Restarting #{@agent.name}. Their identity, memory and history are kept."
   end
 
 end

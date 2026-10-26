@@ -16,7 +16,12 @@
   }
 </script>
 
-{#if agent.health_state === 'unhealthy' && !agent.deprecated}
+{#if agent.deprecated}
+  <div class="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" data-testid="runtime-status">
+    Deprecated — this resident has no supported harness and cannot respond. Their history and identity records remain
+    available.
+  </div>
+{:else if agent.health_state === 'unhealthy'}
   <div class="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-3" data-testid="runtime-status">
     <div class="space-y-1">
       <p class="font-medium text-destructive">{agent.name} isn't responding right now.</p>

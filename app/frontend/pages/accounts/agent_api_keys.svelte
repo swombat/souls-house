@@ -36,7 +36,7 @@
     {
       title: 'API Key or Claude-Code Clamped subscription',
       description:
-        'Use a metered Anthropic API key, or connect a hosted Claude resident to a personal Claude subscription from that resident’s Hosting tab.',
+        'Use a metered Anthropic API key, or connect a hosted Claude resident to a personal Claude subscription from that resident’s Settings tab.',
       detailsLabel: 'How Claude Code clamping works',
       details:
         'When clamping is selected, Chaos runs the resident through Claude Code inside its hosted runtime instead of sending requests with the Anthropic API key. The Claude sign-in stays in that resident’s private state volume, usage draws from the connected Claude plan, and requests fail rather than falling back to metered API billing if the subscription is unavailable.',
@@ -44,7 +44,7 @@
         {
           id: 'anthropic',
           name: 'Anthropic API key',
-          help: 'Enter a metered Anthropic API key here, or configure Claude Code clamping in the resident’s Hosting tab.',
+          help: 'Enter a metered Anthropic API key here, or configure Claude Code clamping in the resident’s Settings tab.',
         },
       ],
     },
@@ -59,7 +59,7 @@
         {
           id: 'gemini',
           name: 'Gemini',
-          help: 'Enter a metered Gemini API key here, or configure experimental Antigravity clamping in the resident’s Hosting tab.',
+          help: 'Enter a metered Gemini API key here, or configure experimental Antigravity clamping in the resident’s Settings tab.',
         },
       ],
     },

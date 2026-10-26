@@ -312,7 +312,9 @@ test.describe('browser contracts', () => {
     await page.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(page.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(4);
     await page.goto(setup.agents[0].edit_url);
-    await page.getByRole('button', { name: 'Hosting', exact: true }).click();
+    // Hosting is site-admin only; the owner learns about deprecation on Settings.
+    await expect(page.getByRole('button', { name: 'Hosting', exact: true })).toBeHidden();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page.getByText(/has no supported harness and cannot respond/)).toBeVisible();
     await expect(page.getByRole('button', { name: /Promote/ })).toBeHidden();
     await page.goto(`/accounts/${setup.account_id}/chats`);

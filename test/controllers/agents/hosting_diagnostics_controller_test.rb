@@ -109,12 +109,12 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
       health_state: "healthy"
     )
 
-    assert_enqueued_with(job: HostedAgentRuntimeReconcileJob, args: [ @agent.id ]) do
+    assert_enqueued_with(job: HostedAgentRuntimeReconcileJob, args: [ @agent.id, { force: true } ]) do
       post account_agent_sandbox_recreation_path(@account, @agent)
     end
 
     assert_redirected_to edit_account_agent_path(@account, @agent, tab: "settings")
-    assert_match "Runtime image refresh queued", flash[:notice]
+    assert_match "Restarting", flash[:notice]
   end
 
   test "sandbox recreation refuses inline agent" do

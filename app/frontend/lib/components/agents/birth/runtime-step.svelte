@@ -177,7 +177,7 @@
           </p>
           <p>
             Anthropic, OpenAI, Google and xAI models use their own provider's key when there is one. Every other model
-            goes through OpenRouter. A Claude subscription can be connected instead, from the resident's Hosting tab
+            goes through OpenRouter. A Claude subscription can be connected instead, from the resident's Settings tab
             after they are created.
           </p>
           <p>Changing the model later changes how they think and how they feel to talk to.</p>

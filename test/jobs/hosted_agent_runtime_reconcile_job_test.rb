@@ -44,6 +44,35 @@ class HostedAgentRuntimeReconcileJobTest < ActiveJob::TestCase
     assert true
   end
 
+  test "forced restart recreates a current sandbox (an unhealthy container on a current image)" do
+    sandbox = Minitest::Mock.new
+    sandbox.expect(:active_turn?, false)
+    sandbox.expect(:recreate!, true)
+
+    Agents::Sandbox.stub(:new, ->(_agent) { sandbox }) do
+      Agents::Config.stub(:default_image, "helixkit-agent-runtime:latest") do
+        HostedAgentRuntimeReconcileJob.perform_now(@agent.id, force: true)
+      end
+    end
+
+    assert sandbox.verify, "a current sandbox was not recreated on a forced restart"
+  end
+
+  test "forced restart during an active turn retries later, still forced" do
+    sandbox = Minitest::Mock.new
+    sandbox.expect(:active_turn?, true)
+
+    assert_enqueued_with(job: HostedAgentRuntimeReconcileJob, args: [ @agent.id, { force: true } ]) do
+      Agents::Sandbox.stub(:new, ->(_agent) { sandbox }) do
+        Agents::Config.stub(:default_image, "helixkit-agent-runtime:latest") do
+          HostedAgentRuntimeReconcileJob.perform_now(@agent.id, force: true)
+        end
+      end
+    end
+
+    sandbox.verify
+  end
+
   test "retries active stale sandbox later" do
     sandbox = Minitest::Mock.new
     sandbox.expect(:stale_container?, true)

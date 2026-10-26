@@ -9,27 +9,32 @@ class HostedAgentRuntimeReconcileJob < ApplicationJob
 
   retry_on Agents::Sandbox::SandboxError, wait: 5.minutes, attempts: 3
 
-  def perform(agent_id = nil)
+  # force: the owner's Restart. Recreate even when the image and config are
+  # current, since an unhealthy container on a current image is exactly the
+  # case Restart is for. Every other gate (billing hold, active turn, and the
+  # sandbox's own checks in recreate!) still applies.
+  def perform(agent_id = nil, force: false)
     scope = agent_id.present? ? Agent.where(id: agent_id) : Agent.externally_hosted
 
     scope.find_each do |agent|
-      reconcile_agent(agent, raise_on_error: agent_id.present?)
+      reconcile_agent(agent, raise_on_error: agent_id.present?, force: force && agent_id.present?)
     end
   end
 
   private
 
-  def reconcile_agent(agent, raise_on_error:)
+  def reconcile_agent(agent, raise_on_error:, force: false)
     return unless agent.externally_hosted?
     # Asleep (plan lapsed): its container stays stopped until it is paid again.
     return if agent.billing_held?
 
     normalize_managed_runtime_image!(agent)
     sandbox = Agents::Sandbox.new(agent)
-    return unless sandbox.stale_container?
+    return unless force || sandbox.stale_container?
 
     if sandbox.active_turn?
-      self.class.set(wait: 5.minutes).perform_later(agent.id)
+      retry_args = force ? [ agent.id, { force: true } ] : [ agent.id ]
+      self.class.set(wait: 5.minutes).perform_later(*retry_args)
       Rails.logger.info("hosted agent runtime reconcile skipped active agent #{agent.id}; retry queued")
       return
     end

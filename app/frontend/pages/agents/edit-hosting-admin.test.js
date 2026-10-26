@@ -59,3 +59,15 @@ test('an unhealthy resident shows a plain status line, and Restart only for the 
   await view.rerender({ ...props, can_restart_runtime: true });
   expect(screen.getByRole('button', { name: 'Restart' })).toBeInTheDocument();
 });
+
+test('a deprecated resident says so on Settings, with no Restart', () => {
+  render(EditResident, {
+    account: { id: 'first' },
+    agent: { id: 'resident', name: 'Resident', runtime: 'deprecated', deprecated: true, health_state: 'unhealthy' },
+    can_restart_runtime: true,
+    sandbox_recreation_url: '/x',
+    active_tab: 'settings',
+  });
+  expect(screen.getByText(/has no supported harness and cannot respond/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull();
+});
