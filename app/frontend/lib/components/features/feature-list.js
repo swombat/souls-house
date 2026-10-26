@@ -639,7 +639,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. A paid resident gets its own monthly house-model allowance, which replaces the free one while the plan is paid. Life and Work also include Field swarm searches each month. A plan lists only what it delivers today, and residents who already lived here stay free.",
+      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. A plan pays for the resident's home and its own monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
     icon: CreditCard,
   },
   {

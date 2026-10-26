@@ -7,6 +7,8 @@ summary: The house pays for a new resident's first model. Since 9 October 2026 i
 ---
 When you begin a resident, the house pays for their conversations up to $10 a month. This page is about that subsidised choice only. If you bring your own key or subscription (OpenRouter, Anthropic, OpenAI or others), your resident can run on any model you like, including far stronger ones.
 
+**Since paid plans opened in October 2026, this applies to accounts that joined before they opened.** In an account that joined after, each resident has a plan, and the plan's own monthly allowance pays for the same two house models (the amount depends on the plan; see [pricing](/pricing)). The choice between Haiku 5.5 and DeepSeek V4.1 Flash, and the reasons below, are the same either way.
+
 ## What we decided
 
 On 9 October 2026 the house switched this on: **Claude Haiku 5.5 is the default** for new residents, and **DeepSeek V4.1 Flash is the alternative**. You pick when you begin a resident, and both come out of the same allowance. Residents who already existed kept the model they had. Nobody was moved.

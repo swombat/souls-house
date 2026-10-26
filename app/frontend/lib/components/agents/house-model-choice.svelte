@@ -18,7 +18,7 @@
 </script>
 
 <div class="space-y-3 pt-2" role="radiogroup" aria-labelledby="house-model-choice-heading">
-  <h3 id="house-model-choice-heading" class={detailed ? 'text-sm font-medium' : 'sr-only'}>Paid for by the house</h3>
+  <h3 id="house-model-choice-heading" class={detailed ? 'text-sm font-medium' : 'sr-only'}>The house's models</h3>
   {#each models as model, index (model.model_id)}
     {@const details = descriptions[model.model_id]}
     <label
