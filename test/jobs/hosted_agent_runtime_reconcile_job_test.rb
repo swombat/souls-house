@@ -58,19 +58,27 @@ class HostedAgentRuntimeReconcileJobTest < ActiveJob::TestCase
     assert sandbox.verify, "a current sandbox was not recreated on a forced restart"
   end
 
-  test "forced restart during an active turn retries later, still forced" do
-    sandbox = Minitest::Mock.new
-    sandbox.expect(:active_turn?, true)
+  test "forced restart during an active turn retries later, and the serialized retry still forces" do
+    busy = Minitest::Mock.new
+    busy.expect(:active_turn?, true)
 
-    assert_enqueued_with(job: HostedAgentRuntimeReconcileJob, args: [ @agent.id, { force: true } ]) do
-      Agents::Sandbox.stub(:new, ->(_agent) { sandbox }) do
-        Agents::Config.stub(:default_image, "helixkit-agent-runtime:latest") do
-          HostedAgentRuntimeReconcileJob.perform_now(@agent.id, force: true)
-        end
+    Agents::Config.stub(:default_image, "helixkit-agent-runtime:latest") do
+      Agents::Sandbox.stub(:new, ->(_agent) { busy }) do
+        HostedAgentRuntimeReconcileJob.perform_now(@agent.id, force: true)
       end
-    end
+      busy.verify
 
-    sandbox.verify
+      assert_equal 1, enqueued_jobs.size
+      # Run the retry as ActiveJob will: from its serialized arguments, with
+      # the sandbox now idle and still current (no stale_container? stub).
+      idle = Minitest::Mock.new
+      idle.expect(:active_turn?, false)
+      idle.expect(:recreate!, true)
+      Agents::Sandbox.stub(:new, ->(_agent) { idle }) do
+        perform_enqueued_jobs
+      end
+      assert idle.verify, "the serialized retry did not force a recreate"
+    end
   end
 
   test "retries active stale sandbox later" do

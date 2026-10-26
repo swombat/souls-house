@@ -33,8 +33,13 @@ class HostedAgentRuntimeReconcileJob < ApplicationJob
     return unless force || sandbox.stale_container?
 
     if sandbox.active_turn?
-      retry_args = force ? [ agent.id, { force: true } ] : [ agent.id ]
-      self.class.set(wait: 5.minutes).perform_later(*retry_args)
+      # Keyword spelled out: a splatted hash loses its keyword flag through
+      # ActiveJob serialization and the retry would raise ArgumentError.
+      if force
+        self.class.set(wait: 5.minutes).perform_later(agent.id, force: true)
+      else
+        self.class.set(wait: 5.minutes).perform_later(agent.id)
+      end
       Rails.logger.info("hosted agent runtime reconcile skipped active agent #{agent.id}; retry queued")
       return
     end
