@@ -31,6 +31,13 @@ module FieldFile::PdfExtraction
   MAX_JOINED_BYTES = FieldFile::TextExtraction::MAX_BYTES
   PAGE_SEPARATOR = "\n\n"
   TOO_LONG = "Reading the file took too long".freeze
+  # Imprimatur 0.6.1's read/pdf/isolation/stream.rs timeout classification,
+  # rendered by error.rs. Output-limit skips have a different reason.
+  NATIVE_TIMEOUT_REASONS = [
+    "the document exceeds the time limit",
+    "the document exceeds the render worker wall time limit",
+    "the document exceeds the PDF worker limit limit"
+  ].freeze
 
   included do
     has_many :pages, -> { in_order }, class_name: "FieldFilePage", dependent: :delete_all
@@ -222,9 +229,26 @@ module FieldFile::PdfExtraction
     timeout = deadline.allow(PdfText::BATCH_TIMEOUT)
     return numbers.map { |n| page_row(n, "skipped", reason: TOO_LONG) } unless timeout
 
-    PdfText.pages(path, numbers.first, numbers.last, timeout: timeout).map do |page|
-      text_row(page[:page], page)
+    pages = PdfText.pages(path, numbers.first, numbers.last, timeout: timeout)
+    rows = pages.to_h { |page| [ page[:page], text_row(page[:page], page) ] }
+    unread = pages.select { |page| page[:status] == "skipped" && NATIVE_TIMEOUT_REASONS.include?(page[:reason]) }
+      .map { |page| page[:page] }
+    # Default unattempted candidates to document exhaustion. Each attempted
+    # singleton replaces only its own row, with no recursive recovery.
+    unread.each { |n| rows[n] = page_row(n, "skipped", reason: TOO_LONG) }
+    # The first missing page may have stalled the worker. Read its later
+    # neighbours first, while the original document deadline still has room.
+    unread.rotate.each do |number|
+      timeout = deadline.allow(PdfText::BATCH_TIMEOUT) or break
+
+      begin
+        page = PdfText.pages(path, number, number, timeout: timeout).first
+        rows[number] = text_row(number, page)
+      rescue Imprimatur::Error, SystemCallError, IOError => e
+        rows[number] = page_row(number, "failed", reason: e.message)
+      end
     end
+    numbers.map { |n| rows.fetch(n) }
   rescue Imprimatur::Error, SystemCallError, IOError => e
     numbers.map { |n| page_row(n, "failed", reason: e.message) }
   end

@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-27
+  title: Slow PDF pages do not hide their healthy neighbours
+  body: "When a batch of PDF pages times out, Field keeps completed pages and tries unread neighbours individually while the original file-reading time budget still allows it. Output-limit skips are not retried. Works once the Imprimatur PDF reader and this fix are deployed."
 - date: 2026-10-25
   title: Field PDFs use the native document reader
   body: "Field now reads PDF text and prepares scanned pages for transcription with Imprimatur's Rust core. Metadata, text and rendering run in a separate worker with time, memory and output limits. Completed pages are kept when a read hits a limit, and a page's decompression failure does not lose its healthy neighbors. Search, page coverage and the existing transcription permissions and budgets stay the same. Works once deployed."
