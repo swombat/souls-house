@@ -207,7 +207,7 @@ class AllowlistTest(unittest.TestCase):
         self.assertEqual(runner.ALLOWED_ACTIONS, {
             "report_facts", "heartbeat",
             "start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home", "backup_resident", "provider_auth",
-            "check_runtime_trust", "tailnet",
+            "check_runtime_trust", "tailnet", "update_runner",
         })
         for action in ("shell", "start_container", "docker_run", "", "REPORT_FACTS"):
             with self.assertRaises(runner.RefusedAction):

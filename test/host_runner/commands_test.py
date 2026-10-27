@@ -430,6 +430,25 @@ class PollTest(unittest.TestCase):
                             max_heartbeats=2, poll=broken_poll, clock=lambda: next(ticking))
                 self.assertEqual(len(beats), 2)
 
+    def test_main_exits_for_a_restart_once_a_new_runner_is_installed(self):
+        state = tempfile.mkdtemp()
+        open(os.path.join(state, "enrolled"), "w").close()
+        config_path = os.path.join(state, "config.json")
+        with open(config_path, "w") as handle:
+            json.dump({"rails_url": "https://house.example", "runner_id": "r", "commands_enabled": True}, handle)
+        polls = []
+
+        def poll(config, key, st, host):
+            polls.append(1)
+            host.restart_requested = True
+            return True
+
+        code = runner.main(config_path=config_path, state_dir=state, sleep=lambda s: None,
+                           enroll=lambda *a: self.fail("enrolled already"), heartbeat=lambda *a: None,
+                           facts=lambda image: {}, max_heartbeats=50, poll=poll, clock=lambda: 0.0)
+        self.assertEqual(runner.RUNNER_RESTART_EXIT, code)
+        self.assertEqual(1, len(polls))
+
 
 class FetchImageTest(unittest.TestCase):
     CONFIG = {"rails_url": "https://house.example", "runner_id": "rnr_abc"}

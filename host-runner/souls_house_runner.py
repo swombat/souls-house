@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet) and anything
+submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, update_runner) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -28,6 +28,7 @@ used only for Ed25519. No cryptography is implemented here.
 import base64
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -63,7 +64,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
-                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet"})
+                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "update_runner"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -204,6 +205,10 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         # The house sends a GitHub import's runtime trust check only to a
         # runner that carries it; an older one would refuse the kind anyway.
         "runtime_trust_check": RUNTIME_TRUST_CHECK_VERSION,
+        # Which packaged runner this is (#593): the house queues update_runner
+        # when it differs from the bundle Rails currently ships. None for a
+        # runner still on the files cloud-init unpacked at birth.
+        "runner_bundle_sha256": installed_runner_bundle(),
     }
 
 
@@ -569,8 +574,15 @@ class ResidentHost:
     can see exactly what would run."""
 
     def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None,
-                 backup_request=None, docker_exit=_docker_exit):
+                 backup_request=None, docker_exit=_docker_exit, fetch_runner_bundle=None, runner_dir=None,
+                 self_check=None):
         self.state_dir = state_dir
+        # fetch_runner_bundle(sha256, write) streams a runner bundle from the
+        # house; self_check(directory) runs the staged runner's --self-check.
+        self.fetch_runner_bundle = fetch_runner_bundle
+        self.runner_dir = runner_dir or RUNNER_DIR
+        self.self_check = self_check or _runner_self_check
+        self.restart_requested = False
         self.docker = docker
         self.docker_exit = docker_exit
         self.http = http
@@ -834,6 +846,65 @@ class ResidentHost:
                                  timeout=TAILNET_SECONDS + 15)
         return {"ok": bool(ok), "output": (output or "")[-TAILNET_OUTPUT_MAX:]}
 
+    def update_runner(self, payload):
+        """Install the house's current runner bundle (#593). Fetched by
+        digest, checked, compiled, self-checked in a staging directory, then
+        swapped in file by file with the marker last; the runner restarts
+        once the answer is sent. A retry for the installed digest is
+        answered as already done; nothing is replaced on any failure."""
+        digest = payload.get("sha256")
+        _require(isinstance(digest, str) and SEED_DIGEST_RE.match(digest), "bad sha256")
+        size = payload.get("bytes")
+        _require(isinstance(size, int) and not isinstance(size, bool) and 0 < size <= RUNNER_BUNDLE_MAX_BYTES,
+                 "bad bytes")
+        if installed_runner_bundle(self.runner_dir) == digest:
+            return {"state": "current", "sha256": digest, "already": True}
+        if self.fetch_runner_bundle is None:
+            raise CommandFailed("no way to fetch runner bundles on this runner")
+        data = bytearray()
+
+        def write(chunk):
+            if len(data) + len(chunk) > size:
+                raise CommandFailed("runner bundle is larger than announced")
+            data.extend(chunk)
+
+        ok, error = self.fetch_runner_bundle(digest, write)
+        if not ok:
+            raise CommandFailed(f"could not fetch the runner bundle: {error}")
+        if len(data) != size or hashlib.sha256(bytes(data)).hexdigest() != digest:
+            raise CommandFailed("runner bundle does not match its digest")
+        files = unpack_runner_bundle(bytes(data))
+        staging = tempfile.mkdtemp(prefix=".update-", dir=self.runner_dir)
+        try:
+            for name, source in files.items():
+                path = os.path.join(staging, name)
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, RUNNER_BUNDLE_FILES[name])
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(source)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.chmod(path, RUNNER_BUNDLE_FILES[name])
+            if not self.self_check(staging):
+                raise CommandFailed("the new runner failed its self-check; the old one stays")
+            for name in RUNNER_BUNDLE_FILES:
+                os.replace(os.path.join(staging, name), os.path.join(self.runner_dir, name))
+            marker = os.path.join(staging, RUNNER_BUNDLE_MARKER)
+            with open(marker, "w") as handle:
+                handle.write(digest + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(marker, 0o644)
+            os.replace(marker, os.path.join(self.runner_dir, RUNNER_BUNDLE_MARKER))
+            directory = os.open(self.runner_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        self.restart_requested = True
+        return {"state": "installed", "sha256": digest}
+
     def backup_resident(self, payload):
         from backup_proxy import run_backup
         if self.backup_request is None:
@@ -1024,6 +1095,53 @@ SEED_MAX_UNPACKED = 256 * 1024 * 1024
 SEED_MAX_ENTRIES = 20000
 SEED_DEADLINE = 10 * 60
 
+# update_runner (#593): the packaged runner (the same compacted two-file
+# tar.xz cloud-init carries at birth), fetched from the house by digest,
+# checked, staged beside the running files and swapped in; the runner then
+# exits RUNNER_RESTART_EXIT and systemd (Restart=on-failure) starts the new
+# code. bundle.sha256, written last, says which bundle is installed.
+RUNNER_BUNDLE_PATH = "/api/v1/host_runner/runner_bundles/{id}"
+RUNNER_BUNDLE_MAX_BYTES = 256 * 1024
+RUNNER_BUNDLE_DEADLINE = 2 * 60
+RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
+RUNNER_BUNDLE_MARKER = "bundle.sha256"
+RUNNER_DIR = os.path.dirname(os.path.abspath(__file__))
+RUNNER_RESTART_EXIT = 75
+RUNNER_SELF_CHECK_SECONDS = 30
+
+
+def installed_runner_bundle(runner_dir=RUNNER_DIR):
+    try:
+        with open(os.path.join(runner_dir, RUNNER_BUNDLE_MARKER)) as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value if SEED_DIGEST_RE.match(value) else None
+
+
+def unpack_runner_bundle(data):
+    """The bundle's files as {name: bytes}: exactly RUNNER_BUNDLE_FILES, each a
+    regular file whose source compiles. Anything else is refused whole."""
+    files = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as archive:
+            for member in archive.getmembers():
+                if member.name not in RUNNER_BUNDLE_FILES or not member.isreg() or member.name in files:
+                    raise BadCommand(f"unexpected entry in runner bundle: {member.name!r}")
+                handle = archive.extractfile(member)
+                files[member.name] = handle.read(RUNNER_BUNDLE_MAX_BYTES + 1)
+    except (tarfile.TarError, EOFError, OSError) as error:
+        raise BadCommand(f"runner bundle is not a valid archive: {error}")
+    if set(files) != set(RUNNER_BUNDLE_FILES):
+        raise BadCommand("runner bundle is missing a file")
+    for name, source in files.items():
+        try:
+            compile(source, name, "exec")
+        except (SyntaxError, ValueError) as error:
+            raise BadCommand(f"runner bundle {name} does not compile: {error}")
+    return files
+
+
 
 def _seed_member_path(name):
     """A relative path with no '..', no absolute part and no empty segment."""
@@ -1124,6 +1242,44 @@ def fetch_seed(config, key, digest, write, opener=None, deadline=SEED_DEADLINE):
             while True:
                 if time.monotonic() >= ends_at:
                     return False, "seed fetch passed its deadline"
+                chunk = read(IMAGE_CHUNK)
+                if not chunk:
+                    return True, ""
+                write(chunk)
+    except urllib.error.HTTPError as error:
+        return False, f"house answered {error.code}"
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        return False, f"{type(error).__name__}: {error}"
+
+
+def _runner_self_check(directory):
+    """The staged runner imports cleanly (its own --self-check, which loads
+    every module and exits 0) with this Python, before it replaces us."""
+    try:
+        completed = subprocess.run([sys.executable, os.path.join(directory, "souls_house_runner.py"), "--self-check"],
+                                   cwd=directory, capture_output=True, timeout=RUNNER_SELF_CHECK_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def fetch_runner_bundle(config, key, digest, write, opener=None, deadline=RUNNER_BUNDLE_DEADLINE):
+    """Signed GET of one runner bundle from the house. Same rules as a seed:
+    no redirects, bounded in time. Returns (ok, error)."""
+    if not SEED_DIGEST_RE.match(digest or ""):
+        return False, "bad runner bundle digest"
+    path = RUNNER_BUNDLE_PATH.format(id=digest)
+    request = urllib.request.Request(config["rails_url"].rstrip("/") + path, method="GET",
+                                     headers=signed_headers(key, "GET", path, b"", config["runner_id"]))
+    ends_at = time.monotonic() + deadline
+    try:
+        with (opener or _IMAGE_OPENER.open)(request, timeout=60) as response:
+            if response.status != 200:
+                return False, f"house answered {response.status}"
+            read = response.read1 if hasattr(response, "read1") else response.read
+            while True:
+                if time.monotonic() >= ends_at:
+                    return False, "runner bundle fetch passed its deadline"
                 chunk = read(IMAGE_CHUNK)
                 if not chunk:
                     return True, ""
@@ -1328,7 +1484,8 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         from backup_proxy import make_signed_request
         host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
                             fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
-                            backup_request=make_signed_request(config, key, signed_headers))
+                            backup_request=make_signed_request(config, key, signed_headers),
+                            fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
         host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
@@ -1341,6 +1498,10 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
             except Exception as error:  # a broken poll must not stop heartbeats
                 print(f"command poll failed: {error}", file=sys.stderr)
                 handled = False
+            if getattr(host, "restart_requested", False):
+                # A new runner is installed and its answer is sent: exit so
+                # systemd starts it (Restart=on-failure).
+                return RUNNER_RESTART_EXIT
             if not handled:
                 sleep(COMMAND_IDLE_SECONDS)
         return 0
@@ -1354,5 +1515,11 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 if __name__ == "__main__":
     # Keep one set of command exception types for the backup module.
     sys.modules.setdefault("souls_house_runner", sys.modules[__name__])
+    if sys.argv[1:] == ["--self-check"]:
+        # update_runner runs this on a staged runner before swapping it in:
+        # every import above has succeeded, and the staged backup module
+        # (beside this file, first on sys.path) loads too.
+        import backup_proxy  # noqa: F401
+        sys.exit(0)
     signal.signal(signal.SIGTERM, lambda _signal, _frame: sys.exit(143))
     sys.exit(main())
