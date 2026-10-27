@@ -205,10 +205,10 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         # The house sends a GitHub import's runtime trust check only to a
         # runner that carries it; an older one would refuse the kind anyway.
         "runtime_trust_check": RUNTIME_TRUST_CHECK_VERSION,
-        # Which packaged runner this is (#593): the house queues update_runner
-        # when it differs from the bundle Rails currently ships. None for a
-        # runner still on the files cloud-init unpacked at birth.
-        "runner_bundle_sha256": installed_runner_bundle(),
+        # Which packaged runner this process is running (#593), not what is
+        # on disk: the house queues update_runner when it differs from the
+        # bundle Rails currently ships. None for the birth files.
+        "runner_bundle_sha256": running_runner_bundle(),
     }
 
 
@@ -575,12 +575,14 @@ class ResidentHost:
 
     def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None,
                  backup_request=None, docker_exit=_docker_exit, fetch_runner_bundle=None, runner_dir=None,
-                 self_check=None):
+                 self_check=None, running_dir=None):
         self.state_dir = state_dir
         # fetch_runner_bundle(sha256, write) streams a runner bundle from the
         # house; self_check(directory) runs the staged runner's --self-check.
         self.fetch_runner_bundle = fetch_runner_bundle
         self.runner_dir = runner_dir or RUNNER_DIR
+        # Where this process's code really lives (versions/<…> once updated).
+        self.running_dir = os.path.realpath(running_dir or RUNNING_DIR)
         self.self_check = self_check or _runner_self_check
         self.restart_requested = False
         self.docker = docker
@@ -861,6 +863,9 @@ class ResidentHost:
         _require(isinstance(size, int) and not isinstance(size, bool) and 0 < size <= RUNNER_BUNDLE_MAX_BYTES,
                  "bad bytes")
         if installed_runner_bundle(self.runner_dir) == digest:
+            # Installed but perhaps not running (an earlier attempt switched
+            # `current` and then failed): restart onto it.
+            self.restart_requested = self.restart_requested or self._current_is_not_running()
             return {"state": "current", "sha256": digest, "already": True}
         if self.fetch_runner_bundle is None:
             raise CommandFailed("no way to fetch runner bundles on this runner")
@@ -895,15 +900,24 @@ class ResidentHost:
             os.rename(staging, target)
             _fsync_dir(versions)
             adopt_flat_runner(self.runner_dir)
+            # The rollback reference moves first: killed between the two
+            # renames, `previous` and `current` both name the running pair.
             old = _link_target(os.path.join(self.runner_dir, RUNNER_CURRENT))
-            _swap_link(self.runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, version))
             if old:
                 _swap_link(self.runner_dir, RUNNER_PREVIOUS, old)
+            _swap_link(self.runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, version))
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+            # Whatever failed after the switch (an fsync, say), `current` is
+            # what the next start runs; restart onto it now.
+            self.restart_requested = self.restart_requested or self._current_is_not_running()
         prune_runner_versions(self.runner_dir)
-        self.restart_requested = True
         return {"state": "installed", "sha256": digest}
+
+    def _current_is_not_running(self):
+        # By bundle digest, not directory: the birth pair moved behind
+        # `current` is the same runner (both None) and needs no restart.
+        return installed_runner_bundle(self.runner_dir) != running_runner_bundle(self.running_dir)
 
     def backup_resident(self, payload):
         from backup_proxy import run_backup
@@ -1119,6 +1133,7 @@ RUNNER_PREVIOUS = "previous"
 RUNNER_STAGE_PREFIX = ".stage-"
 RUNNER_BIRTH_PREFIX = "birth-"
 RUNNER_DIR = os.path.dirname(os.path.abspath(__file__))
+RUNNING_DIR = os.path.dirname(os.path.realpath(__file__))
 RUNNER_RESTART_EXIT = 75
 RUNNER_SELF_CHECK_SECONDS = 30
 
@@ -1128,6 +1143,17 @@ def installed_runner_bundle(runner_dir=RUNNER_DIR):
     unpacked at birth (no `current` yet) or an unreadable marker."""
     try:
         with open(os.path.join(runner_dir, RUNNER_CURRENT, RUNNER_BUNDLE_MARKER)) as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value if SEED_DIGEST_RE.match(value) else None
+
+
+def running_runner_bundle(running_dir=RUNNING_DIR):
+    """The digest of the bundle this process was started from, read beside
+    the resolved script; None for the birth files."""
+    try:
+        with open(os.path.join(running_dir, RUNNER_BUNDLE_MARKER)) as handle:
             value = handle.read().strip()
     except OSError:
         return None

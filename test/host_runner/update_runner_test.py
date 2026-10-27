@@ -54,7 +54,8 @@ class UpdateRunnerTest(unittest.TestCase):
             return self.self_check_ok
 
         self.host = runner.ResidentHost(self.dir, docker=FakeDocker(), http=FakeHttp(), sleep=lambda s: None,
-                                        fetch_runner_bundle=fetch, runner_dir=self.runner_dir, self_check=self_check)
+                                        fetch_runner_bundle=fetch, runner_dir=self.runner_dir, self_check=self_check,
+                                        running_dir=self.runner_dir)
 
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -95,12 +96,51 @@ class UpdateRunnerTest(unittest.TestCase):
         data, digest = bundle()
         self.served[digest] = data
         self.host.update_runner({"sha256": digest, "bytes": len(data)})
-        self.host.restart_requested = False
+        self.restarted()
         self.fetched.clear()
         result = self.host.update_runner({"sha256": digest, "bytes": len(data)})
         self.assertEqual({"state": "current", "sha256": digest, "already": True}, result)
         self.assertEqual([], self.fetched)
         self.assertFalse(self.host.restart_requested)
+        self.assertEqual(digest, runner.running_runner_bundle(self.host.running_dir))
+
+    def restarted(self):
+        """What systemd does after exit 75: a fresh process from `current`."""
+        current = os.path.join(self.runner_dir, "current")
+        self.host.running_dir = os.path.realpath(current if os.path.islink(current) else self.runner_dir)
+        self.host.restart_requested = False
+
+    def test_installed_but_not_running_is_already_done_and_restarts_onto_it(self):
+        # Mira's #615 round 2: `current` switched, then the process kept
+        # running the old code. A retry must not just say "already".
+        data, digest = bundle()
+        self.served[digest] = data
+        self.host.update_runner({"sha256": digest, "bytes": len(data)})
+        self.host.restart_requested = False  # the restart never happened
+        result = self.host.update_runner({"sha256": digest, "bytes": len(data)})
+        self.assertTrue(result["already"])
+        self.assertTrue(self.host.restart_requested)
+        self.assertIsNone(runner.running_runner_bundle(self.host.running_dir))
+
+    def test_a_failure_after_the_switch_still_restarts(self):
+        data, digest = bundle()
+        self.served[digest] = data
+        real = runner._fsync_dir
+        current = os.path.join(self.runner_dir, "current")
+
+        def fsync_dir(path):
+            if os.path.islink(current) and runner.installed_runner_bundle(self.runner_dir) == digest:
+                raise OSError(5, "injected EIO after the switch")
+            return real(path)
+
+        runner._fsync_dir = fsync_dir
+        try:
+            with self.assertRaises(OSError):
+                self.host.update_runner({"sha256": digest, "bytes": len(data)})
+        finally:
+            runner._fsync_dir = real
+        self.assertEqual(digest, runner.installed_runner_bundle(self.runner_dir))
+        self.assertTrue(self.host.restart_requested)
 
     def assert_untouched(self):
         self.assertEqual("OLD = True\n", self.read("souls_house_runner.py"))
@@ -211,7 +251,7 @@ class UpdateRunnerTest(unittest.TestCase):
         # then check what systemd would start, then retry cleanly.
         data, digest = bundle()
         self.served[digest] = data
-        real = {name: getattr(os, name) for name in ("replace", "rename", "symlink")}
+        real = {name: getattr(os, name) for name in ("replace", "rename", "symlink", "fsync")}
         calls = []
 
         def counting(name):
@@ -250,6 +290,7 @@ class UpdateRunnerTest(unittest.TestCase):
                         with open(os.path.join(self.runner_dir, name), "w") as handle:
                             handle.write("OLD = True\n")
                     self.host.restart_requested = False
+                    self.host.running_dir = os.path.realpath(self.runner_dir)
                     seen = []
 
                     def faulty(name):
@@ -275,11 +316,26 @@ class UpdateRunnerTest(unittest.TestCase):
                             setattr(os, name, function)
                         shutil.rmtree = rmtree
                     self.assertIn(self.pair(), {("OLD = True\n", "OLD = True\n"), ("VERSION = 2\n", "X = 1\n")})
-                    self.assertFalse(self.host.restart_requested)
+                    switched = runner.installed_runner_bundle(self.runner_dir) == digest
+                    if death:
+                        self.restarted()  # systemd starts whatever `current` names
+                    else:
+                        # The same process lives on: it must restart iff the
+                        # switch happened before the fault.
+                        self.assertEqual(switched, self.host.restart_requested)
+                    previous = os.path.join(self.runner_dir, "previous")
+                    if os.path.islink(previous):
+                        # Never left naming anything but the old pair.
+                        with open(os.path.join(previous, "backup_proxy.py")) as handle:
+                            self.assertEqual("OLD = True\n", handle.read())
                     result = self.host.update_runner({"sha256": digest, "bytes": len(data)})
                     self.assertIn(result["state"], ("installed", "current"))
                     self.assertEqual(("VERSION = 2\n", "X = 1\n"), self.pair())
                     self.assertEqual(digest, runner.installed_runner_bundle(self.runner_dir))
+                    self.assertEqual(runner.running_runner_bundle(self.host.running_dir) != digest,
+                                     self.host.restart_requested)
+                    with open(os.path.join(previous, "backup_proxy.py")) as handle:
+                        self.assertEqual("OLD = True\n", handle.read())
                     self.assertEqual([], self.leftovers())
 
     def test_the_installed_layout_runs_through_its_links(self):
