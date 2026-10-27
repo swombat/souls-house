@@ -11,15 +11,29 @@ class FieldFilePdfTimeoutIntegrationTest < ActiveSupport::TestCase
       file.write(slow_middle_pdf)
       file.flush
 
-      timeout = 0.1
-      original = PdfText.pages(file.path, 1, 3, timeout: timeout)
-      assert_equal %w[text skipped skipped], original.map { it[:status] },
-        "fixture must really hit the batch timeout, not a decompression or output limit"
-
+      native_pages = PdfText.method(:pages)
+      calls = []
+      read = ->(path, first, last, timeout:) {
+        pages = native_pages.call(path, first, last, timeout: timeout)
+        calls << [ first, last, pages ]
+        pages
+      }
       deadline = FieldFile::PdfExtraction::Deadline.new(
         -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, 10)
-      with_constant(PdfText, :BATCH_TIMEOUT, timeout) do
-        rows = FieldFile.new.send(:read_batch, file.path, [ 1, 2, 3 ], deadline)
+      # Give healthy workers a generous startup margin. Observe the actual
+      # native calls used by recovery, not a separate warm-up invocation.
+      with_constant(PdfText, :BATCH_TIMEOUT, 0.5) do
+        rows = PdfText.stub(:pages, read) do
+          FieldFile.new.send(:read_batch, file.path, [ 1, 2, 3 ], deadline)
+        end
+        assert_equal [ 1, 3 ], calls.first.first(2)
+        assert_equal %w[text skipped skipped], calls.first.last.map { it[:status] },
+          "the actual batch must time out for this test to exercise recovery"
+        assert_includes [
+          "the document exceeds the time limit",
+          "the document exceeds the render worker wall time limit"
+        ], calls.first.last.last[:reason]
+        assert_equal [ [ 1, 3 ], [ 3, 3 ], [ 2, 2 ] ], calls.map { it.first(2) }
         assert_equal [ 1, 2, 3 ], rows.map { it[:page_number] }
         assert_equal "Healthy first page", rows.first[:native_text]
         assert_equal "Healthy third page", rows.last[:native_text]
@@ -52,7 +66,7 @@ class FieldFilePdfTimeoutIntegrationTest < ActiveSupport::TestCase
     objects << "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
     [
       "BT /F1 12 Tf 50 700 Td (Healthy first page) Tj ET",
-      "q Q\n" * 5_000_000,
+      "q Q\n" * 20_000_000,
       "BT /F1 12 Tf 50 700 Td (Healthy third page) Tj ET"
     ].each do |stream|
       compressed = Zlib::Deflate.deflate(stream)
