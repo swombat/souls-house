@@ -848,10 +848,13 @@ class ResidentHost:
 
     def update_runner(self, payload):
         """Install the house's current runner bundle (#593). Fetched by
-        digest, checked, compiled, self-checked in a staging directory, then
-        swapped in file by file with the marker last; the runner restarts
-        once the answer is sent. A retry for the installed digest is
-        answered as already done; nothing is replaced on any failure."""
+        digest, checked, compiled, written to versions/<digest>/ and
+        self-checked there, then activated by one atomic rename of the
+        `current` link that both entry files resolve through, so the two
+        files always change together. The previous pair stays on disk behind
+        `previous`. The runner restarts once the answer is sent. A retry for
+        the installed digest is answered as already done; a failure or a
+        killed process at any step leaves a consistent pair running."""
         digest = payload.get("sha256")
         _require(isinstance(digest, str) and SEED_DIGEST_RE.match(digest), "bad sha256")
         size = payload.get("bytes")
@@ -874,34 +877,31 @@ class ResidentHost:
         if len(data) != size or hashlib.sha256(bytes(data)).hexdigest() != digest:
             raise CommandFailed("runner bundle does not match its digest")
         files = unpack_runner_bundle(bytes(data))
-        staging = tempfile.mkdtemp(prefix=".update-", dir=self.runner_dir)
+        versions = os.path.join(self.runner_dir, RUNNER_VERSIONS)
+        os.makedirs(versions, mode=0o755, exist_ok=True)
+        staging = tempfile.mkdtemp(prefix=RUNNER_STAGE_PREFIX, dir=versions)
         try:
+            os.chmod(staging, 0o755)
             for name, source in files.items():
-                path = os.path.join(staging, name)
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, RUNNER_BUNDLE_FILES[name])
-                with os.fdopen(fd, "wb") as handle:
-                    handle.write(source)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.chmod(path, RUNNER_BUNDLE_FILES[name])
+                _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
             if not self.self_check(staging):
                 raise CommandFailed("the new runner failed its self-check; the old one stays")
-            for name in RUNNER_BUNDLE_FILES:
-                os.replace(os.path.join(staging, name), os.path.join(self.runner_dir, name))
-            marker = os.path.join(staging, RUNNER_BUNDLE_MARKER)
-            with open(marker, "w") as handle:
-                handle.write(digest + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(marker, 0o644)
-            os.replace(marker, os.path.join(self.runner_dir, RUNNER_BUNDLE_MARKER))
-            directory = os.open(self.runner_dir, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            _write_synced(os.path.join(staging, RUNNER_BUNDLE_MARKER), (digest + "\n").encode(), 0o644)
+            _fsync_dir(staging)
+            # A fresh name each time, so an install never touches the
+            # directory `current` or `previous` points at.
+            version = f"{digest}-{secrets.token_hex(4)}"
+            target = os.path.join(versions, version)
+            os.rename(staging, target)
+            _fsync_dir(versions)
+            adopt_flat_runner(self.runner_dir)
+            old = _link_target(os.path.join(self.runner_dir, RUNNER_CURRENT))
+            _swap_link(self.runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, version))
+            if old:
+                _swap_link(self.runner_dir, RUNNER_PREVIOUS, old)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+        prune_runner_versions(self.runner_dir)
         self.restart_requested = True
         return {"state": "installed", "sha256": digest}
 
@@ -1096,40 +1096,159 @@ SEED_MAX_ENTRIES = 20000
 SEED_DEADLINE = 10 * 60
 
 # update_runner (#593): the packaged runner (the same compacted two-file
-# tar.xz cloud-init carries at birth), fetched from the house by digest,
-# checked, staged beside the running files and swapped in; the runner then
-# exits RUNNER_RESTART_EXIT and systemd (Restart=on-failure) starts the new
-# code. bundle.sha256, written last, says which bundle is installed.
+# tar.xz cloud-init carries at birth), fetched from the house by digest and
+# checked. Layout after the first update:
+#   versions/<digest>/{souls_house_runner.py, backup_proxy.py, bundle.sha256}
+#   current  -> versions/<digest>        (one atomic rename switches both files)
+#   previous -> versions/<older>         (the last usable pair, kept on disk)
+#   souls_house_runner.py -> current/souls_house_runner.py   (systemd's path)
+#   backup_proxy.py       -> current/backup_proxy.py
+# Python puts the script's resolved directory first on sys.path, so the
+# runner always imports the backup module of its own version. The runner then
+# exits RUNNER_RESTART_EXIT and systemd (Restart=on-failure) starts the new code.
 RUNNER_BUNDLE_PATH = "/api/v1/host_runner/runner_bundles/{id}"
 RUNNER_BUNDLE_MAX_BYTES = 256 * 1024
+# Per unpacked file; an entry over it is refused, never cut to a prefix.
+RUNNER_SOURCE_MAX_BYTES = 256 * 1024
 RUNNER_BUNDLE_DEADLINE = 2 * 60
 RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
 RUNNER_BUNDLE_MARKER = "bundle.sha256"
+RUNNER_VERSIONS = "versions"
+RUNNER_CURRENT = "current"
+RUNNER_PREVIOUS = "previous"
+RUNNER_STAGE_PREFIX = ".stage-"
+RUNNER_BIRTH_PREFIX = "birth-"
 RUNNER_DIR = os.path.dirname(os.path.abspath(__file__))
 RUNNER_RESTART_EXIT = 75
 RUNNER_SELF_CHECK_SECONDS = 30
 
 
 def installed_runner_bundle(runner_dir=RUNNER_DIR):
+    """The digest `current` points at; None for the files cloud-init
+    unpacked at birth (no `current` yet) or an unreadable marker."""
     try:
-        with open(os.path.join(runner_dir, RUNNER_BUNDLE_MARKER)) as handle:
+        with open(os.path.join(runner_dir, RUNNER_CURRENT, RUNNER_BUNDLE_MARKER)) as handle:
             value = handle.read().strip()
     except OSError:
         return None
     return value if SEED_DIGEST_RE.match(value) else None
 
 
+def _write_synced(path, data, mode):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(path, mode)
+
+
+def _fsync_dir(path):
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def _link_target(path):
+    try:
+        return os.readlink(path)
+    except OSError:
+        return None
+
+
+def _swap_link(directory, name, target):
+    """Point directory/name at target (relative) in one rename."""
+    temporary = os.path.join(directory, f".{name}.{secrets.token_hex(4)}")
+    os.symlink(target, temporary)
+    try:
+        os.replace(temporary, os.path.join(directory, name))
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    _fsync_dir(directory)
+
+
+def adopt_flat_runner(runner_dir=RUNNER_DIR):
+    """Move a runner still on its birth layout (two regular files) behind
+    `current` without changing what runs. Idempotent, and safe to kill at
+    any step: the birth pair is copied to versions/birth-<hash>/ first, then
+    `current` is pointed at that copy, then each entry file becomes a link
+    through `current`. Every intermediate state resolves to the same pair."""
+    current = os.path.join(runner_dir, RUNNER_CURRENT)
+    if not os.path.islink(current):
+        sources = {}
+        for name in RUNNER_BUNDLE_FILES:
+            with open(os.path.join(runner_dir, name), "rb") as handle:
+                sources[name] = handle.read()
+        fingerprint = hashlib.sha256(b"".join(hashlib.sha256(sources[name]).digest()
+                                              for name in sorted(sources))).hexdigest()[:16]
+        versions = os.path.join(runner_dir, RUNNER_VERSIONS)
+        os.makedirs(versions, mode=0o755, exist_ok=True)
+        birth = os.path.join(versions, RUNNER_BIRTH_PREFIX + fingerprint)
+        if not os.path.isdir(birth):
+            staging = tempfile.mkdtemp(prefix=RUNNER_STAGE_PREFIX, dir=versions)
+            try:
+                os.chmod(staging, 0o755)
+                for name, source in sources.items():
+                    _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
+                _fsync_dir(staging)
+                os.rename(staging, birth)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+            _fsync_dir(versions)
+        _swap_link(runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, os.path.basename(birth)))
+    for name in RUNNER_BUNDLE_FILES:
+        entry = os.path.join(runner_dir, name)
+        wanted = os.path.join(RUNNER_CURRENT, name)
+        if _link_target(entry) != wanted:
+            _swap_link(runner_dir, name, wanted)
+
+
+def prune_runner_versions(runner_dir=RUNNER_DIR):
+    """Remove every version but `current` and `previous`, abandoned stages,
+    and link temporaries a killed swap left behind. Best effort: a leftover
+    costs disk, never correctness."""
+    for name in os.listdir(runner_dir):
+        if any(name.startswith(f".{link}.") for link in (RUNNER_CURRENT, RUNNER_PREVIOUS, *RUNNER_BUNDLE_FILES)):
+            try:
+                os.unlink(os.path.join(runner_dir, name))
+            except OSError:
+                pass
+    versions = os.path.join(runner_dir, RUNNER_VERSIONS)
+    keep = {os.path.basename(target or "") for target in
+            (_link_target(os.path.join(runner_dir, RUNNER_CURRENT)),
+             _link_target(os.path.join(runner_dir, RUNNER_PREVIOUS)))}
+    try:
+        names = os.listdir(versions)
+    except OSError:
+        return
+    for name in names:
+        if name not in keep:
+            shutil.rmtree(os.path.join(versions, name), ignore_errors=True)
+
+
 def unpack_runner_bundle(data):
     """The bundle's files as {name: bytes}: exactly RUNNER_BUNDLE_FILES, each a
-    regular file whose source compiles. Anything else is refused whole."""
+    regular file of at most RUNNER_SOURCE_MAX_BYTES whose source compiles.
+    Anything else is refused whole; nothing is ever cut to a prefix."""
     files = {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as archive:
             for member in archive.getmembers():
                 if member.name not in RUNNER_BUNDLE_FILES or not member.isreg() or member.name in files:
                     raise BadCommand(f"unexpected entry in runner bundle: {member.name!r}")
+                if member.size > RUNNER_SOURCE_MAX_BYTES:
+                    raise BadCommand(f"runner bundle {member.name} is larger than {RUNNER_SOURCE_MAX_BYTES} bytes")
                 handle = archive.extractfile(member)
-                files[member.name] = handle.read(RUNNER_BUNDLE_MAX_BYTES + 1)
+                source = handle.read(RUNNER_SOURCE_MAX_BYTES + 1)
+                if len(source) > RUNNER_SOURCE_MAX_BYTES or len(source) != member.size:
+                    raise BadCommand(f"runner bundle {member.name} is not the size its header says")
+                files[member.name] = source
     except (tarfile.TarError, EOFError, OSError) as error:
         raise BadCommand(f"runner bundle is not a valid archive: {error}")
     if set(files) != set(RUNNER_BUNDLE_FILES):

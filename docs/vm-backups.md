@@ -3,8 +3,15 @@
 Slice 4 of [new residents on VMs](2026-10-09-vm-hosted-new-residents.md).
 This does not enable VM births or authorize turning the site setting on.
 The runner source and `backup_proxy.py` must both ship in the Rails image
-and in the VM's cloud-init document. Existing runners are not updated by
-a Rails deployment.
+and in the VM's cloud-init document. Since #593 an enrolled runner that
+knows `update_runner` is updated through its command queue when the house
+ships a different bundle: it fetches the bundle by digest, refuses any entry
+over 256 KiB unpacked (never a prefix), self-checks it in
+`versions/<digest>-<random>/`, and activates it by one atomic rename of the
+`current` link that both entry files resolve through, keeping the last pair
+behind `previous`. A runner still on its birth files is first moved behind
+`current` without changing what runs. A runner older than `update_runner`
+needs one install by hand.
 Cloud-init carries an XZ-compressed, deterministic two-file tar bundle and
 extracts it before enabling the runner. Python's standard AST unparser removes
 comments, redundant formatting and docstrings (since #593); each module is
