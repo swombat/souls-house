@@ -95,6 +95,31 @@ class ParityTest(unittest.TestCase):
     def test_provider_auth_is_in_the_vocabulary(self):
         self.assertIn("provider_auth", runner.COMMAND_KINDS)
 
+    def test_tailnet_runs_only_status_or_up_inside_the_resident_as_agent(self):
+        self.host.start_resident(spec())
+        self.docker.calls.clear()
+        result = self.host.tailnet({"container_name": "agent-pilot-1", "action": "up"})
+        self.assertEqual({"ok": True, "output": ""}, result)
+        self.assertEqual([["docker", "exec", "-u", "agent", "-e", "HOME=/home/agent", "agent-pilot-1",
+                           "timeout", "45", "soulshouse-tailnet", "up", "--json"]], self.docker.calls)
+
+    def test_tailnet_refuses_other_actions_and_unknown_residents(self):
+        self.host.start_resident(spec())
+        for action in ("down", "logout", "status --json; id", None, ["status"], "ssh"):
+            with self.subTest(action=action), self.assertRaises(runner.BadCommand):
+                self.host.tailnet({"container_name": "agent-pilot-1", "action": action})
+        with self.assertRaises(runner.CommandFailed):
+            self.host.tailnet({"container_name": "agent-other", "action": "status"})
+
+    def test_tailnet_reports_a_failed_exec_with_its_output(self):
+        self.host.start_resident(spec())
+        self.docker.fail.add("exec")
+        self.assertEqual({"ok": False, "output": "boom"},
+                         self.host.tailnet({"container_name": "agent-pilot-1", "action": "status"}))
+
+    def test_tailnet_is_in_the_vocabulary(self):
+        self.assertIn("tailnet", runner.COMMAND_KINDS)
+
 
 if __name__ == "__main__":
     unittest.main()

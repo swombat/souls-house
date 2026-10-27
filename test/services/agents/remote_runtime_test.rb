@@ -122,6 +122,42 @@ module Agents
       end
     end
 
+    test "tailnet status is relayed through the runner, and an old runner's refusal says so" do
+      answer_next = lambda do |result|
+        Thread.new do
+          command = nil
+          40.times do
+            command = RunnerCommand.where(kind: "tailnet", state: "queued").last
+            break if command
+            sleep 0.05
+          end
+          command.deliver!(now: Time.current)
+          command.record_result!(result, now: Time.current)
+        end
+      end
+
+      waiter = answer_next.call({ "outcome" => "done", "result" => { "ok" => true, "output" => "{}" } })
+      answer = RemoteRuntime.tailnet!(@agent, action: "status", wait: 5.seconds, poll: 0.05)
+      waiter.join
+      assert_equal({ "ok" => true, "output" => "{}" }, answer)
+
+      waiter = answer_next.call({ "outcome" => "refused", "error" => "command not allowed on this runner: 'tailnet'" })
+      assert_raises(RemoteRuntime::RunnerTooOld) do
+        RemoteRuntime.tailnet!(@agent, action: "up", wait: 5.seconds, poll: 0.05)
+      end
+      waiter.join
+
+      waiter = answer_next.call({ "outcome" => "failed", "error" => "no resident agent-x on this host" })
+      error = assert_raises(RemoteRuntime::Unavailable) do
+        RemoteRuntime.tailnet!(@agent, action: "status", wait: 5.seconds, poll: 0.05)
+      end
+      waiter.join
+      assert_not_kind_of RemoteRuntime::RunnerTooOld, error
+      assert_match(/no resident/, error.message)
+
+      assert_raises(ArgumentError) { RemoteRuntime.tailnet!(@agent, action: "down") }
+    end
+
     test "start! needs an image ID and queues one start_resident for this placement" do
       @agent.update!(container_name: "agent-research-assistant")
       with_env("SOULSHOUSE_DOMAIN" => "house.example") do

@@ -4,8 +4,8 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-27
-  title: Tailscale on a resident with its own server says what to do instead of erroring
-  body: "On the Integrations tab of a resident that runs on its own server, the Tailscale card showed \"Internal Server Error\". The house was trying to read the resident's Tailscale node on the main server, where the resident doesn't live. The card now explains that the house can't read the node there yet, and that the resident can run soulshouse-tailnet up itself and send you the sign-in link. The node works from inside the resident; only the card couldn't see it. The card being able to show and start the sign-in for these residents comes next. Works once deployed."
+  title: Tailscale works on the Integrations tab for residents with their own server
+  body: "On the Integrations tab of a resident that runs on its own server, the Tailscale card showed \"Internal Server Error\". The house was trying to read the resident's Tailscale node on the main server, where the resident doesn't live. Now the house asks the resident's own server, so the card shows the sign-in link and which machines the resident can see, as it does for other residents. A server set up before this change can't answer that question until its small runner program is updated. Until then, the card says so and suggests the way that already works: the resident runs soulshouse-tailnet up itself and sends you the sign-in link. Works once deployed."
 - date: 2026-10-27
   title: Settings say which machine a resident runs on
   body: "Under Advanced settings on a resident's Settings, a new section says where the resident runs. A resident with its own server shows the exact Hetzner Cloud machine, for example CX23 (2 vCPUs, 4 GB RAM, 40 GB disk), and the city it's in. A resident on the main souls.house server says so, and that this is free of charge for people who signed up early. It also asks people not to overuse it: if the main server fills up, we may have to limit usage there and ask people to move their residents onto their own VMs. Works once deployed."

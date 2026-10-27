@@ -9,12 +9,12 @@ module Agents
 
     class Unavailable < StandardError; end
 
-    # Said on the panel after "<name>'s node isn't reachable right now: ".
-    # A resident on its own server is reached only through its runner, which
-    # has no tailnet command yet (#593); the node itself still works from
+    # Said on the panel after "<name>'s node isn't reachable right now: ",
+    # when the resident's own server runs a runner from before the tailnet
+    # command (runners ship at birth). The node itself still works from
     # inside, so the owner gets the route that does.
-    REMOTE_DETAIL = "this resident runs on its own server, and the house can't read its Tailscale node there yet. " \
-                    "Ask the resident to run `soulshouse-tailnet up` and send you the sign-in link.".freeze
+    RUNNER_TOO_OLD_DETAIL = "this resident runs on its own server, whose runner can't read Tailscale yet. " \
+                            "Ask the resident to run `soulshouse-tailnet up` and send you the sign-in link.".freeze
 
     REPORT_KEYS = %w[granted daemon backend_state auth_url node addresses hosts pubkey admin_url].freeze
 
@@ -40,17 +40,32 @@ module Agents
 
     attr_reader :sandbox
 
-    def run(*args)
-      raise Unavailable, REMOTE_DETAIL if Agents::RemoteRuntime.remote?(agent)
-
-      result = sandbox.exec_as_agent("soulshouse-tailnet", *args, timeout_seconds: 45)
+    def run(action, *flags)
+      result = Agents::RemoteRuntime.remote?(agent) ? remote_exec(action) : local_exec(action, *flags)
       report = parse(result[:stdout])
       unless result[:ok] && report
-        detail = result[:stderr].to_s.strip.lines.last.to_s.strip.presence || "soulshouse-tailnet #{args.first} failed"
+        detail = result[:stderr].to_s.strip.lines.last.to_s.strip.presence || "soulshouse-tailnet #{action} failed"
         raise Unavailable, detail.delete_prefix("soulshouse-tailnet: ")
       end
       report.slice(*REPORT_KEYS).merge("container" => "running")
     rescue Agents::Sandbox::SandboxError, Agents::Resources::OwnershipError => e
+      raise Unavailable, e.message
+    end
+
+    def local_exec(action, *flags)
+      sandbox.exec_as_agent("soulshouse-tailnet", action, *flags, timeout_seconds: 45)
+    end
+
+    # A resident on its own server: the same command, run by its runner
+    # (#593). The runner returns stdout when it succeeds and stderr when not.
+    def remote_exec(action)
+      answer = Agents::RemoteRuntime.tailnet!(agent, action:)
+      ok = answer.is_a?(Hash) && answer["ok"] == true
+      output = answer.is_a?(Hash) ? answer["output"].to_s : ""
+      { ok:, stdout: ok ? output : "", stderr: ok ? "" : output }
+    rescue Agents::RemoteRuntime::RunnerTooOld
+      raise Unavailable, RUNNER_TOO_OLD_DETAIL
+    rescue Agents::RemoteRuntime::Unavailable => e
       raise Unavailable, e.message
     end
 

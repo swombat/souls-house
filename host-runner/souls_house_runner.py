@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust) and anything
+submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -63,7 +63,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
-                           "backup_resident", "provider_auth", "check_runtime_trust"})
+                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -327,6 +327,9 @@ PROVIDER_AUTH_CALLS = frozenset({
     ("POST", "/auth/start"), ("POST", "/auth/cancel"), ("POST", "/auth/code"), ("POST", "/auth/disconnect"),
 })
 PROVIDER_AUTH_PARAMS = frozenset({"provider", "model", "refresh", "code"})
+TAILNET_ACTIONS = frozenset({"status", "up"})
+TAILNET_SECONDS = 45
+TAILNET_OUTPUT_MAX = 16384
 VOLUME_MOUNTS = (
     ("identity", "/home/agent/identity"),
     ("chaos", "/home/agent/.chaos"),
@@ -816,6 +819,20 @@ class ResidentHost:
                 url += "?" + urllib.parse.urlencode(params)
             return self.http("GET", url, token, timeout=20)
         return self.http("POST", url, token, body=params or None, timeout=20)
+
+    def tailnet(self, payload):
+        """The resident's own Tailscale node (#593): soulshouse-tailnet status
+        or up, run inside the resident as its agent user, exactly as the house
+        does for a local resident. Only those two actions, always --json, no
+        other arguments; the answer is returned whatever the exit."""
+        name = payload.get("container_name")
+        self._known_resident(name)
+        action = payload.get("action")
+        _require(isinstance(action, str) and action in TAILNET_ACTIONS, f"tailnet action not allowed: {action!r}")
+        ok, output = self.docker(["docker", "exec", "-u", "agent", "-e", "HOME=/home/agent", name,
+                                  "timeout", str(TAILNET_SECONDS), "soulshouse-tailnet", action, "--json"],
+                                 timeout=TAILNET_SECONDS + 15)
+        return {"ok": bool(ok), "output": (output or "")[-TAILNET_OUTPUT_MAX:]}
 
     def backup_resident(self, payload):
         from backup_proxy import run_backup

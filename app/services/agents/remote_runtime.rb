@@ -21,6 +21,8 @@ module Agents
     RUNTIME_TRUST_CHECK_VERSION = 1
 
     class Unavailable < StandardError; end
+    # The VM's runner predates the command asked of it (runners ship at birth).
+    class RunnerTooOld < Unavailable; end
 
     module_function
 
@@ -381,9 +383,24 @@ module Agents
     PROVIDER_AUTH_WAIT = 25.seconds
 
     def provider_auth!(agent, method:, path:, params: {}, wait: PROVIDER_AUTH_WAIT, poll: 0.5)
-      command = RunnerCommand.enqueue!(enrollment: live_enrollment!(agent), kind: "provider_auth", payload: {
+      relay!(agent, "provider_auth", {
         "container_name" => agent.container_name, "method" => method, "path" => path, "params" => params.compact
-      })
+      }, wait:, poll:)
+    end
+
+    # soulshouse-tailnet status/up inside a VM resident, through its runner
+    # (#593). Returns the runner's { "ok", "output" }. A runner from before
+    # the tailnet command refuses the kind: RunnerTooOld says so.
+    TAILNET_WAIT = 60.seconds
+
+    def tailnet!(agent, action:, wait: TAILNET_WAIT, poll: 0.5)
+      raise ArgumentError, "unknown tailnet action: #{action}" unless %w[status up].include?(action)
+
+      relay!(agent, "tailnet", { "container_name" => agent.container_name, "action" => action }, wait:, poll:)
+    end
+
+    def relay!(agent, kind, payload, wait:, poll:)
+      command = RunnerCommand.enqueue!(enrollment: live_enrollment!(agent), kind:, payload:)
       deadline = Time.current + wait
       loop do
         command.reload
@@ -392,7 +409,12 @@ module Agents
 
         sleep poll
       end
-      raise Unavailable, "The resident's server could not relay that: #{command.result&.dig('error') || command.state}" unless command.state == "done"
+      unless command.state == "done"
+        error = command.result&.dig("error").to_s
+        raise RunnerTooOld, error if command.state == "refused" && error.start_with?("command not allowed on this runner")
+
+        raise Unavailable, "The resident's server could not relay that: #{error.presence || command.state}"
+      end
 
       command.result["result"]
     end

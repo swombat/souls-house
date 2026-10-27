@@ -53,16 +53,37 @@ class Agents::TailnetsControllerTest < ActionDispatch::IntegrationTest
 
   # #593: Alanis (born on her own server) got "Internal Server Error" here,
   # because the read went to the local Docker runtime she doesn't live on.
-  test "a resident on its own server gets the in-container route, not a 500" do
+  test "a resident on its own server is read through its runner, never the local sandbox" do
     enable!
     AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
     touched = false
     sandbox = Object.new
     sandbox.define_singleton_method(:exec_as_agent) { |*| touched = true }
+    asked = []
+    report = { "backend_state" => "NeedsLogin", "auth_url" => "https://login.tailscale.com/a/vm", "hosts" => [] }
+    relay = ->(agent, action:) { asked << [ agent.id, action ]; { "ok" => true, "output" => report.to_json } }
 
     Agents::Sandbox.stub(:new, sandbox) do
+      Agents::RemoteRuntime.stub(:tailnet!, relay) do
+        post account_agent_tailnet_path(@account, @agent), as: :json
+      end
+    end
+
+    assert_response :success
+    body = response.parsed_body
+    assert body["available"]
+    assert_equal "https://login.tailscale.com/a/vm", body["auth_url"]
+    assert_equal [ [ @agent.id, "up" ] ], asked
+    assert_not touched, "the local sandbox must not be asked about a VM resident"
+  end
+
+  test "a VM resident whose runner predates the command gets the in-container route" do
+    enable!
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+    too_old = ->(*, **) { raise Agents::RemoteRuntime::RunnerTooOld, "command not allowed on this runner: 'tailnet'" }
+
+    Agents::RemoteRuntime.stub(:tailnet!, too_old) do
       get account_agent_tailnet_path(@account, @agent), as: :json
-      post account_agent_tailnet_path(@account, @agent), as: :json
     end
 
     assert_response :success
@@ -70,7 +91,20 @@ class Agents::TailnetsControllerTest < ActionDispatch::IntegrationTest
     assert_not body["available"]
     assert_match(/runs on its own server/, body["error"])
     assert_match(/soulshouse-tailnet up/, body["error"])
-    assert_not touched, "the local sandbox must not be asked about a VM resident"
+  end
+
+  test "a VM resident's failed command reports the command's own words" do
+    enable!
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+    failed = ->(*, **) { { "ok" => false, "output" => "soulshouse-tailnet: no Tailscale integration is granted to this resident\n" } }
+
+    Agents::RemoteRuntime.stub(:tailnet!, failed) do
+      get account_agent_tailnet_path(@account, @agent), as: :json
+    end
+
+    body = response.parsed_body
+    assert_not body["available"]
+    assert_equal "no Tailscale integration is granted to this resident", body["error"]
   end
 
   test "a local-runtime refusal is reported, not raised" do
