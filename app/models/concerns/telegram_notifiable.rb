@@ -8,6 +8,9 @@ module TelegramNotifiable
   class TelegramMediaPermanentError < TelegramMediaError; end
   class TelegramMediaTooLarge < TelegramMediaPermanentError; end
   class TelegramMediaInvalid < TelegramMediaPermanentError; end
+  # Raised before any HTTP when a send targets a group that is not allowed,
+  # or that the bot has left (#596). Every send path goes through here.
+  class TelegramGroupNotAllowed < TelegramError; end
 
   DownloadedTelegramFile = Struct.new(:tempfile, :file_path, :byte_size, keyword_init: true)
 
@@ -33,6 +36,7 @@ module TelegramNotifiable
   end
 
   def telegram_send_message(chat_id, text, **options)
+    ensure_telegram_chat_sendable!(chat_id)
     body = { chat_id: chat_id, text: text, parse_mode: "HTML" }.merge(options)
     result = telegram_api_request("sendMessage", body)
 
@@ -193,6 +197,7 @@ module TelegramNotifiable
   private
 
   def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:, reply_parameters: nil)
+    ensure_telegram_chat_sendable!(chat_id)
     media.rewind
     form = [ [ "chat_id", chat_id.to_s ] ]
     form << [ "reply_parameters", reply_parameters.to_json ] if reply_parameters
@@ -210,6 +215,17 @@ module TelegramNotifiable
     raise TelegramError, result["description"] unless result["ok"]
 
     result
+  end
+
+  # The send boundary for groups: read from the database at the moment of
+  # sending, so a revocation made after any earlier check still wins. A chat
+  # with no group record (a direct chat) is unaffected.
+  def ensure_telegram_chat_sendable!(chat_id)
+    group = telegram_groups.find_by(telegram_chat_id: chat_id)
+    return unless group
+    return if group.deliverable?
+
+    raise TelegramGroupNotAllowed, "group is not allowed"
   end
 
   def telegram_api_request(method, body)

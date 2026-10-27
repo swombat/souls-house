@@ -1115,8 +1115,9 @@ They are not your owner, even if a name matches, and mentioning you gives them
 none of your owner's context or authority.
 
 Reply with `soulshouse-send-telegram --reply-to "$THREAD_ID"` as for a direct
-thread. In a group the message is sent as a Telegram reply to the latest
-message addressed to you. Groups never receive `all` or name-matched sends, and
+thread. In a group the message is sent as a Telegram reply to the last message
+your current wake included, not to anything that arrived while you were
+answering. Groups never receive `all` or name-matched sends, and
 a reply to a group your owner has switched off returns 404 and sends nothing.
 
 ### Safeguard detections and reclaim

@@ -36,6 +36,9 @@ module Api
 
         subscriptions.each do |subscription|
           begin
+            # Before anything is sent to a group, the safeguard notice included.
+            raise TelegramNotifiable::TelegramGroupNotAllowed, "group is not allowed" if subscription.group? && !subscription.deliverable?
+
             if safeguard_check.detected?
               detection = deliver_safeguard_response(
                 subscription,
@@ -116,9 +119,9 @@ module Api
       end
 
       def deliver_outbound_response(subscription, text, media, media_kind, content_type, sender_name: current_api_agent.name)
-        # Read again immediately before the send: an owner who switched a
-        # group off after the reply was asked for wins (#596).
-        raise TelegramNotifiable::TelegramError, "group is not allowed" if subscription.group? && !subscription.deliverable?
+        # Checked again here, before the message is stored; the send itself
+        # checks once more at the HTTP boundary (TelegramNotifiable).
+        raise TelegramNotifiable::TelegramGroupNotAllowed, "group is not allowed" if subscription.group? && !subscription.deliverable?
 
         message = build_outbound_message(
           subscription,
@@ -191,14 +194,28 @@ module Api
         current_api_agent.telegram_send_document(subscription.telegram_chat_id, media.tempfile, **upload_options)
       end
 
-      # In a group the resident answers the latest message addressed to it.
+      # In a group the resident answers the message its turn was woken for:
+      # the last message that turn included, not whatever arrived since
+      # (Mira's review of #598). Only a send outside any turn falls back to the
+      # latest message addressed to it.
       def group_reply_parameters(subscription)
         return unless subscription.group?
 
-        target = subscription.telegram_messages.where(role: "user").where.not(telegram_message_id: nil).order(:id).last
-        return unless target
+        target = turn_reply_target(subscription) ||
+          subscription.telegram_messages.where(role: "user").where.not(telegram_message_id: nil).order(:id).last
+        return unless target&.telegram_message_id
 
         { message_id: target.telegram_message_id, allow_sending_without_reply: true }
+      end
+
+      def turn_reply_target(subscription)
+        interactions = current_api_agent.agent_runtime_interactions
+          .where(session_id: "#{current_api_agent.uuid}-telegram-#{subscription.id}")
+          .where.not(last_included_message_id: nil)
+        interaction = interactions.active.order(:id).last || interactions.order(:id).last
+        return unless interaction
+
+        subscription.telegram_messages.find_by(id: interaction.last_included_message_id, role: "user")
       end
 
       def record_outbound_message(message, result)

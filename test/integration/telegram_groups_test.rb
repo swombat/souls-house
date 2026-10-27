@@ -120,6 +120,25 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     assert_equal 32, posts.first.dig("reply_parameters", "message_id")
   end
 
+  test "a message that arrives while the turn is generating does not take the reply" do
+    @group.allow!(by: @owner)
+    ana = @group.telegram_messages.create!(role: "user", text: "@alanis_bot one", sender_name: "Ana", telegram_message_id: 31, sent_at: 2.minutes.ago)
+    @agent.agent_runtime_interactions.create!(
+      trigger_kind: "telegram", started_at: 1.minute.ago, provider_auth_mode: Agent::PROVIDER_AUTH_MODES.first,
+      session_id: "#{@agent.uuid}-telegram-#{@group.id}", last_included_message_id: ana.id
+    )
+    @group.telegram_messages.create!(role: "user", text: "@alanis_bot me too", sender_name: "Ben", telegram_message_id: 32, sent_at: Time.current)
+    api_token = ApiKey.generate_for(@owner, name: "Alanis", agent: @agent).raw_token
+
+    posts = []
+    Net::HTTP.stub :post, ->(uri, body, _headers) { posts << JSON.parse(body); @fake_ok } do
+      post api_v1_telegram_messages_url, params: { reply_to: @group.to_param, text: "for Ana" },
+        headers: { "Authorization" => "Bearer #{api_token}" }
+    end
+    assert_response :created
+    assert_equal 31, posts.sole.dig("reply_parameters", "message_id")
+  end
+
   test "sending to all subscribers never reaches a group" do
     @group.allow!(by: @owner)
     @agent.telegram_subscriptions.create!(user: @owner, telegram_chat_id: 111)
@@ -132,6 +151,59 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     end
     assert_response :created
     assert_equal [ 111 ], chats
+  end
+
+  test "the send boundary refuses a group that is not allowed, before any HTTP, for text and media" do
+    posts = []
+    Net::HTTP.stub :post, ->(*args) { posts << args; @fake_ok } do
+      assert_raises(TelegramNotifiable::TelegramGroupNotAllowed) { @agent.telegram_send_message(-100_1, "hi") }
+      assert_raises(TelegramNotifiable::TelegramGroupNotAllowed) do
+        @agent.telegram_send_document(-100_1, StringIO.new("x"), filename: "x.txt", content_type: "text/plain")
+      end
+    end
+    assert_empty posts
+
+    @group.allow!(by: @owner)
+    Net::HTTP.stub :post, ->(*args) { posts << args; @fake_ok } do
+      @agent.telegram_send_message(-100_1, "hi")
+    end
+    assert_equal 1, posts.size
+
+    @group.update!(removed_at: Time.current)
+    assert_raises(TelegramNotifiable::TelegramGroupNotAllowed) { @agent.telegram_send_message(-100_1, "gone") }
+  end
+
+  test "a media-failure notice for a group switched off after the message arrived is not sent" do
+    @group.allow!(by: @owner)
+    message = @group.telegram_messages.create!(role: "user", text: "[Photo]", media_kind: "photo", media_status: "pending",
+      sender_name: "Ana", telegram_message_id: 12, sent_at: Time.current)
+    @group.disallow!
+
+    posts = []
+    Net::HTTP.stub :post, ->(*args) { posts << args; @fake_ok } do
+      PrepareTelegramMediaJob.new.send(:notify_media_failure, message, "too_large")
+    end
+    assert_empty posts
+  end
+
+  test "a safeguard-labelled reply to a group switched off sends neither the notice nor the reply" do
+    @group.allow!(by: @owner)
+    api_token = ApiKey.generate_for(@owner, name: "Alanis", agent: @agent).raw_token
+    detected = OpenStruct.new(detected?: true, prefilter_reason: "x", classifier_verdict: "y", classifier_reason: "z", detector_version: "t")
+    posts = []
+    revoke_on_lookup = lambda do |*|
+      @group.disallow!
+      detected
+    end
+
+    SafeguardResponseCheck.stub :new, ->(**) { OpenStruct.new(call: revoke_on_lookup.call) } do
+      Net::HTTP.stub :post, ->(*args) { posts << args; @fake_ok } do
+        post api_v1_telegram_messages_url, params: { reply_to: @group.to_param, text: "I can't help with that." },
+          headers: { "Authorization" => "Bearer #{api_token}" }
+      end
+    end
+    assert_empty posts
+    assert_equal 0, @group.telegram_messages.count
   end
 
   private
