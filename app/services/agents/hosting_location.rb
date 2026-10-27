@@ -20,10 +20,14 @@ module Agents
     end
 
     def call
-      return unless @agent.externally_hosted?
+      # provisioning: a resident still being born has a home already.
+      return unless @agent.externally_hosted? || @agent.provisioning?
 
       placement = AgentPlacement.find_by(agent_id: @agent.id)
       return { kind: "house" } if placement.nil? || placement.backend == "local"
+      # A failed or retired VM placement holds no server, and the resident is
+      # not on the main server either (the local runtime refuses it).
+      return { kind: "none" } if placement.state.in?(%w[failed retired])
 
       # At most one purchase per placement is unresolved: the current server.
       operation = placement.cloud_procurement_operations.unresolved.first
@@ -33,7 +37,9 @@ module Agents
 
       {
         kind: "vm",
-        ready: placement.state == "ready",
+        # ready, pending (being bought and set up) or staged (an import or
+        # move waiting for Activate; nothing bought yet).
+        status: placement.state,
         server_type: server_type&.upcase,
         vcpus: machine[:vcpus],
         ram_gb: machine[:ram_gb],

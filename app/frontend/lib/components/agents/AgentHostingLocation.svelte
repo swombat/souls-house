@@ -16,12 +16,16 @@
     <h2 class="text-lg font-semibold">Where this resident runs</h2>
   </div>
   <div class="rounded border bg-muted/30 p-4 space-y-2 text-sm">
-    {#if hostingLocation.kind === 'vm'}
+    {#if hostingLocation.kind === 'none'}
+      <p>Not on any server right now: it has no server of its own running, and it isn't on the main server.</p>
+    {:else if hostingLocation.kind === 'vm' && hostingLocation.status === 'staged'}
+      <p>Waiting to move onto its own server. Nothing has been bought yet; that happens when the move is activated.</p>
+    {:else if hostingLocation.kind === 'vm'}
       <p>
         On its own server: a Hetzner Cloud
         <span class="font-medium">{hostingLocation.server_type || 'VM'}</span>{#if specs}&nbsp;({specs}){/if}{#if hostingLocation.location}, in {hostingLocation.location}{/if}.
       </p>
-      {#if !hostingLocation.ready}
+      {#if hostingLocation.status !== 'ready'}
         <p class="text-muted-foreground">The server is still being set up.</p>
       {/if}
     {:else}

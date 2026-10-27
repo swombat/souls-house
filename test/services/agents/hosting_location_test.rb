@@ -21,7 +21,7 @@ class Agents::HostingLocationTest < ActiveSupport::TestCase
       location: "fsn1", provider_server_id: 4242)
     purchase(placement, "cx33", state: "provisioned")
 
-    assert_equal({ kind: "vm", ready: true, server_type: "CX33", vcpus: 4, ram_gb: 8, disk_gb: 80,
+    assert_equal({ kind: "vm", status: "ready", server_type: "CX33", vcpus: 4, ram_gb: 8, disk_gb: 80,
       location: "Falkenstein, Germany" }, Agents::HostingLocation.call(@agent))
   end
 
@@ -37,14 +37,39 @@ class Agents::HostingLocationTest < ActiveSupport::TestCase
     assert_equal "Helsinki, Finland", result[:location]
   end
 
-  test "a VM still being bought says it is not ready, from the purchase's location" do
+  test "a resident being born onto a VM says its server is being set up, from the purchase's location" do
+    @agent.update_columns(runtime: "provisioning")
     placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
     purchase(placement, "cx23", state: "create_in_flight", location: "nbg1")
 
     result = Agents::HostingLocation.call(@agent)
-    assert_equal false, result[:ready]
+    assert_equal "pending", result[:status]
     assert_equal "CX23", result[:server_type]
     assert_equal "Nuremberg, Germany", result[:location]
+  end
+
+  test "a resident being born on the main server says so" do
+    @agent.update_columns(runtime: "provisioning")
+    assert_equal({ kind: "house" }, Agents::HostingLocation.call(@agent))
+  end
+
+  test "an offline resident whose VM placement was retired is on no server, not the main one" do
+    @agent.update_columns(runtime: "offline")
+    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "retired", location: "fsn1")
+    purchase(placement, "cx23", state: "deleted")
+    assert_equal({ kind: "none" }, Agents::HostingLocation.call(@agent))
+  end
+
+  test "a staged move reports staged, with no server yet" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "staged", kind: "migration")
+    result = Agents::HostingLocation.call(@agent)
+    assert_equal "staged", result[:status]
+    assert_nil result[:server_type]
+  end
+
+  test "a failed VM placement is on no server either" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "failed")
+    assert_equal({ kind: "none" }, Agents::HostingLocation.call(@agent))
   end
 
   test "a resident with no hosted runtime has nothing to say" do
