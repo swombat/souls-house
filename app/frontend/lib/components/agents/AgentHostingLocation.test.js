@@ -51,3 +51,11 @@ test('a resident on no server says so, and does not claim the main server', () =
   expect(block).not.toHaveTextContent('Directly on the main');
   expect(block).not.toHaveTextContent('On its own server');
 });
+
+test('a failed setup says so without claiming the server is gone', () => {
+  render(AgentHostingLocation, { hostingLocation: { kind: 'failed' } });
+  const block = screen.getByTestId('hosting-location');
+  expect(block).toHaveTextContent('Setting up its own server failed. Cleaning up that server may still be pending.');
+  expect(block).not.toHaveTextContent('Not on any server');
+  expect(block).not.toHaveTextContent('Directly on the main');
+});

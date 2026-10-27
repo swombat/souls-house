@@ -25,9 +25,11 @@ module Agents
 
       placement = AgentPlacement.find_by(agent_id: @agent.id)
       return { kind: "house" } if placement.nil? || placement.backend == "local"
-      # A failed or retired VM placement holds no server, and the resident is
-      # not on the main server either (the local runtime refuses it).
-      return { kind: "none" } if placement.state.in?(%w[failed retired])
+      # Neither is on the main server (the local runtime refuses both). A
+      # retired placement's server is gone; a failed one is marked before its
+      # cleanup runs, so its server may still exist.
+      return { kind: "none" } if placement.state == "retired"
+      return { kind: "failed" } if placement.state == "failed"
 
       # At most one purchase per placement is unresolved: the current server.
       operation = placement.cloud_procurement_operations.unresolved.first

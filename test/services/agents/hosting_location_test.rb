@@ -67,9 +67,11 @@ class Agents::HostingLocationTest < ActiveSupport::TestCase
     assert_nil result[:server_type]
   end
 
-  test "a failed VM placement is on no server either" do
-    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "failed")
-    assert_equal({ kind: "none" }, Agents::HostingLocation.call(@agent))
+  test "a failed VM placement whose server may still exist says setup failed, not that there is no server" do
+    placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "failed",
+      location: "fsn1", provider_server_id: 4244)
+    purchase(placement, "cx23", state: "provisioned")
+    assert_equal({ kind: "failed" }, Agents::HostingLocation.call(@agent))
   end
 
   test "a resident with no hosted runtime has nothing to say" do

@@ -16,7 +16,9 @@
     <h2 class="text-lg font-semibold">Where this resident runs</h2>
   </div>
   <div class="rounded border bg-muted/30 p-4 space-y-2 text-sm">
-    {#if hostingLocation.kind === 'none'}
+    {#if hostingLocation.kind === 'failed'}
+      <p>Setting up its own server failed. Cleaning up that server may still be pending.</p>
+    {:else if hostingLocation.kind === 'none'}
       <p>Not on any server right now: it has no server of its own running, and it isn't on the main server.</p>
     {:else if hostingLocation.kind === 'vm' && hostingLocation.status === 'staged'}
       <p>Waiting to move onto its own server. Nothing has been bought yet; that happens when the move is activated.</p>
