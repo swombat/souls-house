@@ -6,11 +6,13 @@
   // Accept and reject show at once: the row moves to the end, marked saving,
   // and the list refreshes behind it, so the next sample can be played
   // straight away. A failed save puts the row back with the reason.
+  // Cutting ahead and interrupted plays: voice-sample-warm.js.
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import VoiceSampleRow from './VoiceSampleRow.svelte';
   import OtherNamings from './OtherNamings.svelte';
-  import { STATES } from './voice-sample-format.js';
+  import VoiceSampleSummary from './VoiceSampleSummary.svelte';
+  import { askToWarm, interrupted, warmIds } from './voice-sample-warm.js';
   import { orderedRows, shownCounts, stillPending } from './voice-sample-pending.js';
 
   let { base, name, version = '', onChanged = () => {} } = $props();
@@ -30,6 +32,9 @@
   const playingId = $derived(playing?.id ?? null);
   let page = $state(1);
   let paused = $state(true);
+  // The row whose audio has been asked for and has not started sounding.
+  let loadingId = $state(null);
+  let warmed = new Map();
   let progress = $state({});
 
   // Reviews shown before the server has answered (voice-sample-pending.js).
@@ -110,6 +115,7 @@
         heard = {};
         progress = {};
         pending = {};
+        warmed = new Map();
         page = 1;
         stop();
       }
@@ -128,21 +134,35 @@
     if (playing) audio?.pause();
     playing = null;
     paused = true;
+    loadingId = null;
+  }
+
+  function warmAhead(from = null) {
+    askToWarm(base, warmIds(rows, { from, heard: heardIt, full: result?.full, warmed }), headers());
+  }
+
+  function playFailed(failure) {
+    if (interrupted(failure)) return;
+    loadingId = null;
+    error = 'This audio could not be played. Check the source recording, then try again.';
   }
 
   function toggle(sample) {
     if (!audio || !sample.audio_url) return;
+    error = '';
     if (playing?.id === sample.id && playing.digest === sample.digest && playing.url === sample.audio_url) {
-      if (audio.paused) audio.play();
-      else audio.pause();
+      if (audio.paused) {
+        loadingId = sample.id;
+        audio.play().catch(playFailed);
+      } else audio.pause();
       return;
     }
     playing = { id: sample.id, digest: sample.digest, url: sample.audio_url };
+    loadingId = sample.id;
     audio.src = sample.audio_url;
     audio.currentTime = 0;
-    audio.play().catch(() => {
-      error = 'This audio could not be played. Check the source recording, then try again.';
-    });
+    audio.play().catch(playFailed);
+    warmAhead(sample.id);
   }
 
   function tick() {
@@ -156,6 +176,7 @@
       progress = { ...progress, [playing.id]: 1 };
     }
     paused = true;
+    loadingId = null;
   }
 
   async function save(path, method, body) {
@@ -202,10 +223,18 @@
 
   const rows = $derived(orderedRows(result?.samples, pending));
 
+  // Whenever the list (re)loads, have the first samples cut before they're asked for.
+  $effect(() => {
+    if (!result) return;
+    untrack(() => warmAhead(playing?.id ?? null));
+  });
+
   const heardIt = (sample) => heard[sample.id] === sample.digest;
   // Accepting says "I heard all of this and it is only them". A sample
   // confirmed earlier and later removed can come back without replaying.
+  // With twenty included, only an included sample can still be confirmed.
   const canAccept = (sample) =>
+    (!result?.full || sample.included) &&
     sample.source_current &&
     (sample.state === 'review' || sample.state === 'removed') &&
     (heardIt(sample) || (sample.state === 'removed' && sample.confirmed));
@@ -220,42 +249,23 @@
   class="hidden"
   data-testid="sample-audio"
   onplay={() => (paused = false)}
-  onpause={() => (paused = true)}
+  onplaying={() => (loadingId = null)}
+  onpause={() => {
+    paused = true;
+    loadingId = null;
+  }}
   ontimeupdate={tick}
   onended={ended}
-  onerror={() => {
-    if (playingId) error = 'This audio could not be played. Check the source recording, then try again.';
-  }}></audio>
+  onerror={() => playingId && audio?.error?.code !== 1 && playFailed()}></audio>
+<!-- error code 1 is MEDIA_ERR_ABORTED: a source swapped mid-load, not a failure. -->
 
 <section class="space-y-3" data-testid="voice-samples">
   {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
   {#if !result && loading}<p class="text-sm text-muted-foreground">Loading samples…</p>{/if}
 
   {#if result}
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="text-sm">
-        <p data-testid="voice-print-state">{result.print}</p>
-        {#if result.learning !== 'Learning enabled'}<p class="text-muted-foreground">{result.learning}</p>{/if}
-      </div>
-      {#if result.preparable > 0}
-        <Button size="sm" disabled={busy != null} onclick={prepareAll} data-testid="voice-prepare">
-          Prepare {result.preparable}
-          {result.preparable === 1 ? 'sample' : 'samples'} for listening
-        </Button>
-      {/if}
-    </div>
-
-    {#if result.samples.length === 0}
-      <p class="text-sm text-muted-foreground">No fingerprint samples yet.</p>
-    {:else}
-      <p class="text-xs text-muted-foreground">
-        {result.total}
-        {result.total === 1 ? 'sample' : 'samples'}
-        {#each Object.keys(STATES) as state (state)}
-          {#if counts[state]}<span> · {counts[state]} {STATES[state].label.toLowerCase()}</span>{/if}
-        {/each}. Accept after playing a sample to the end, if it is only {name} throughout. Wrong person or mixed voices:
-        reject it, then correct the speaker in the recording.
-      </p>
+    <VoiceSampleSummary {result} {counts} {name} busy={busy != null} onPrepare={prepareAll} />
+    {#if result.samples.length > 0}
       <ul class="divide-y rounded-md border" data-testid="voice-sample-list">
         {#each rows as sample (sample.id)}
           <VoiceSampleRow
@@ -263,8 +273,10 @@
             {name}
             playing={playingId === sample.id && playing.digest === sample.digest && !paused}
             progress={progress[sample.id] ?? null}
+            loading={loadingId === sample.id && playingId === sample.id}
             busy={busy != null || sample.saving}
             acceptable={canAccept(sample)}
+            full={result.full}
             onToggle={() => toggle(sample)}
             onReview={(included) => review(sample, included)} />
         {/each}

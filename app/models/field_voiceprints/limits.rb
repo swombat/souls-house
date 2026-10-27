@@ -16,6 +16,16 @@ module FieldVoiceprints::Limits
     raise Reached, "This speaker already has twenty included samples. Exclude one explicitly first." if rows.count >= ACTIVE
   end
 
+  # Twenty included samples is as many as a print uses (Daniel, Ypzyaj
+  # 2026-10-27): from then on no new candidate is offered for review. A
+  # speaker whose sample is already included can still be refreshed.
+  def full?(voice, speaker: nil)
+    rows = voice.samples.where(eligible: true)
+    return false if speaker && rows.where(field_recording_speaker_id: speaker.id).exists?
+
+    rows.count >= ACTIVE
+  end
+
   def pending_count(voice, except_sample: nil, except_speaker: nil)
     rows = voice.samples.to_a.reject { |sample|
       sample.id == except_sample&.id || (except_speaker && sample.field_recording_speaker_id == except_speaker.id) ||

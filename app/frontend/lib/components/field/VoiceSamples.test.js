@@ -138,7 +138,10 @@ function serveSlowSave(body) {
   globalThis.fetch = vi.fn(async (url, options = {}) => {
     if (!options.method) return { ok: true, json: async () => body };
     const ok = await saved;
-    return { ok, json: async () => (ok ? { saved: true } : { error: 'This sample changed. Reload, listen again and retry.' }) };
+    return {
+      ok,
+      json: async () => (ok ? { saved: true } : { error: 'This sample changed. Reload, listen again and retry.' }),
+    };
   });
   return settle;
 }
@@ -219,4 +222,91 @@ test('another voice loads at once, not behind a slow request for the previous on
   expect(screen.getByText('Voice b1')).toBeInTheDocument();
   expect(screen.queryByText('Voice a1')).not.toBeInTheDocument();
   expect(screen.queryByText('Loading samples…')).not.toBeInTheDocument();
+});
+
+test('a play interrupted by a second click shows loading, then nothing red', async () => {
+  serve(listing([sample(), sample({ id: 's2', digest: 'd2', audio_url: '/a/2' })]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  const [row] = await screen.findAllByTestId('voice-sample');
+  const audio = container.querySelector('audio');
+  let refuse;
+  audio.play = vi.fn(() => {
+    Object.defineProperty(audio, 'paused', { value: false, configurable: true });
+    return new Promise((_resolve, reject) => (refuse = reject));
+  });
+  audio.pause = vi.fn(() => {
+    Object.defineProperty(audio, 'paused', { value: true, configurable: true });
+    refuse(
+      Object.assign(new Error('The play() request was interrupted by a call to pause().'), { name: 'AbortError' })
+    );
+  });
+  const play = within(row).getByTestId('sample-play');
+  await fireEvent.click(play);
+  await fireEvent.play(audio);
+  expect(play).toHaveAttribute('aria-busy', 'true');
+  expect(play).toHaveAccessibleName(/^Loading sample/);
+
+  await fireEvent.click(play); // Still silent: the person clicks again.
+  await fireEvent.pause(audio);
+  await Promise.resolve();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(play).toHaveAttribute('aria-busy', 'false');
+
+  await fireEvent.click(play);
+  await fireEvent.play(audio);
+  await fireEvent.playing(audio);
+  expect(play).toHaveAttribute('aria-busy', 'false');
+  expect(play).toHaveAccessibleName(/^Pause sample/);
+});
+
+test('a real playback failure is still reported', async () => {
+  serve(listing([sample()]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  const row = await screen.findByTestId('voice-sample');
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.reject(Object.assign(new Error('no source'), { name: 'NotSupportedError' })));
+  await fireEvent.click(within(row).getByTestId('sample-play'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('could not be played');
+});
+
+test('the next samples are asked to be cut ahead, once each', async () => {
+  const many = Array.from({ length: 10 }, (_, index) =>
+    sample({ id: `s${index + 1}`, digest: `d${index + 1}`, audio_url: `/a/${index + 1}` })
+  );
+  serve(listing([...many, sample({ id: 'upload-u1', digest: 'u', audio_url: '/a/u' })]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  await screen.findAllByTestId('voice-sample');
+  const warms = () =>
+    globalThis.fetch.mock.calls
+      .filter(([url]) => url === '/v/samples/warm')
+      .map(([, options]) => JSON.parse(options.body).ids);
+  const first = many.slice(0, 8).map((row) => row.id);
+  await waitFor(() => expect(warms()).toEqual([first]));
+
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.resolve());
+  const rows = screen.getAllByTestId('voice-sample');
+  await fireEvent.click(within(rows[1]).getByTestId('sample-play'));
+  expect(warms()).toEqual([first, ['s9', 's10']]);
+  await fireEvent.click(within(rows[2]).getByTestId('sample-play'));
+  expect(warms()).toHaveLength(2);
+});
+
+test('with twenty included, candidates are not asked about and nothing invites pruning', async () => {
+  serve({
+    ...listing([
+      sample({ id: 's1', state: 'spare', included: false }),
+      sample({ id: 's2', state: 'removed', included: false, digest: 'd2', audio_url: '/a/2' }),
+    ]),
+    state_counts: { spare: 1, removed: 1 },
+    full: true,
+  });
+  render(VoiceSamples, { base: '/v', name: 'Ann' });
+  const rows = await screen.findAllByTestId('voice-sample');
+  expect(within(rows[0]).getByTestId('sample-inclusion')).toHaveTextContent('Not needed');
+  for (const row of rows) expect(within(row).queryByTestId('sample-accept')).toBeNull();
+  expect(screen.getByText(/Twenty samples are included/)).toBeInTheDocument();
+  expect(screen.queryByText(/Accept after playing/)).toBeNull();
+  const warm = globalThis.fetch.mock.calls.find(([url]) => url === '/v/samples/warm');
+  expect(warm).toBeUndefined();
 });

@@ -9,9 +9,11 @@
     sample,
     name,
     playing = false,
+    loading = false,
     progress = null,
     busy = false,
     acceptable = false,
+    full = false,
     onToggle,
     onReview,
   } = $props();
@@ -24,10 +26,11 @@
     class="grid size-9 shrink-0 place-items-center rounded-full border transition-colors
       {sample.audio_url ? 'hover:bg-muted' : 'opacity-40 cursor-not-allowed'}"
     disabled={!sample.audio_url}
-    aria-label={`${playing ? 'Pause' : 'Play'} sample from ${sample.recording_title || 'recording'}`}
+    aria-label={`${loading ? 'Loading' : playing ? 'Pause' : 'Play'} sample from ${sample.recording_title || 'recording'}`}
+    aria-busy={loading}
     data-testid="sample-play"
     onclick={onToggle}>
-    {#if sample.state === 'preparing'}
+    {#if sample.state === 'preparing' || loading}
       <CircleNotch class="size-4 animate-spin" />
     {:else if playing}
       <Pause class="size-4" weight="fill" />
@@ -78,7 +81,7 @@
   </span>
 
   <div class="ml-auto flex shrink-0 gap-1">
-    {#if sample.source_current && (sample.state === 'review' || sample.state === 'removed')}
+    {#if (!full || sample.included) && sample.source_current && (sample.state === 'review' || sample.state === 'removed')}
       <Button
         size="sm"
         variant="outline"

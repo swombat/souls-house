@@ -52,6 +52,8 @@ module FieldVoiceprints::Learning
       next false if speaker.sample_learning_status == "pending"
 
       FieldVoiceprints::Limits.pending!(voices.first, except_speaker: speaker)
+      next false if FieldVoiceprints::Limits.full?(voices.first, speaker:)
+
       speaker.update!(sample_learning_status: "pending", sample_learning_error: nil)
       ActiveRecord.after_all_transactions_commit { FieldVoices::LearnSampleJob.perform_later(snapshot) }
       true
@@ -98,7 +100,10 @@ module FieldVoiceprints::Learning
       included = sample.persisted? && sample.eligible? && sample.source_digest == source_digest &&
         sample.manually_confirmed?(speaker:)
       FieldVoiceprints::Limits.active!(live_voice, except: sample) if included
-      FieldVoiceprints::Limits.pending!(live_voice, except_sample: sample, except_speaker: speaker) unless included
+      unless included
+        FieldVoiceprints::Limits.pending!(live_voice, except_sample: sample, except_speaker: speaker)
+        raise FieldVoiceprints::Limits::Reached, "Twenty samples are already included." if FieldVoiceprints::Limits.full?(live_voice, speaker:)
+      end
       if sample.source_digest != source_digest
         sample.assign_attributes(rollback_embedding: nil, rollback_profile: nil)
       end

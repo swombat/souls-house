@@ -224,7 +224,7 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
       end
     }
     url = audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: @sample.source_digest)
-    FieldVoiceSamplesController::AUDIO_CACHE.clear
+    FieldVoiceSamples::Audio.clear
     Rails.stub(:cache, -> { flunk "Private sample audio must never use the persistent Rails cache" }) do
       FieldVoiceprints::Sample.stub(:cut, cut) do
         get url
@@ -257,6 +257,92 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
     delete logout_path
     get url
     assert_response :redirect
+  end
+
+  test "warm cuts this voice's samples ahead, once, and play then uses that cut" do
+    FieldVoiceSamples::Audio.clear
+    FieldVoiceSamples::Audio.executor = Concurrent::ImmediateExecutor.new
+    bytes = "RIFF" + ("warmed audio" * 50)
+    passes = []
+    cut_many = ->(recording, lists, &block) {
+      passes << [ recording.id, lists ]
+      Tempfile.create([ "warm", ".wav" ]) do |file|
+        file.binmode
+        file.write(bytes)
+        file.flush
+        block.call(lists.map { file.path })
+      end
+    }
+    other_account = accounts(:team_account)
+    stranger = long_ready_recording(account: other_account, user: @user, title: "Not this account").speakers.first
+    Rails.stub(:cache, -> { flunk "Private sample audio must never use the persistent Rails cache" }) do
+      FieldVoiceprints::Sample.stub(:cut_many, cut_many) do
+        FieldVoiceprints::Sample.stub(:cut, ->(*) { flunk "a warmed sample is not cut again" }) do
+          ids = [ @speaker.to_param, stranger.to_param, "upload-#{@speaker.to_param}" ]
+          post warm_account_field_voice_samples_path(@account, @voice), params: { ids: }, as: :json
+          assert_response :success
+          assert_equal 1, response.parsed_body["warming"]
+          assert_equal [ [ @recording.id, [ @sample.source_segments ] ] ], passes
+
+          post warm_account_field_voice_samples_path(@account, @voice), params: { ids: }, as: :json
+          assert_equal 0, response.parsed_body["warming"], "a cut already made is not queued again"
+          assert_equal 1, passes.size
+
+          get audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: @sample.source_digest)
+          assert_response :success
+          assert_equal bytes, response.body
+        end
+      end
+    end
+  ensure
+    FieldVoiceSamples::Audio.executor = nil
+    FieldVoiceSamples::Audio.clear
+  end
+
+  test "a play that arrives while its sample is being cut waits for that cut" do
+    FieldVoiceSamples::Audio.clear
+    started = Queue.new
+    release = Queue.new
+    FieldVoiceSamples::Audio.executor = nil # the real one-worker pool
+    cut_many = ->(_recording, lists, &block) {
+      started << true
+      release.pop
+      Tempfile.create([ "slow", ".wav" ]) do |file|
+        file.binmode
+        file.write("RIFFslow")
+        file.flush
+        block.call(lists.map { file.path })
+      end
+    }
+    FieldVoiceprints::Sample.stub(:cut_many, cut_many) do
+      FieldVoiceprints::Sample.stub(:cut, ->(*) { flunk "the cut under way is not started twice" }) do
+        assert_equal 1, FieldVoiceSamples::Audio.warm(@account, [ [ @speaker, @sample ] ])
+        started.pop
+        waiter = Thread.new { FieldVoiceSamples::Audio.bytes(@account, @speaker, @sample) }
+        sleep 0.05
+        assert waiter.alive?, "the play waits"
+        release << true
+        assert_equal "RIFFslow", waiter.value
+      end
+    end
+  ensure
+    FieldVoiceSamples::Audio.executor&.shutdown
+    FieldVoiceSamples::Audio.executor = nil
+    FieldVoiceSamples::Audio.clear
+  end
+
+  test "with twenty included, a candidate is shown as not needed and the list says so" do
+    @sample.update!(eligible: false)
+    FieldVoiceprints::Limits.stub(:full?, true) do
+      get account_field_voice_samples_path(@account, @voice), as: :json
+    end
+    assert_response :success
+    assert response.parsed_body["full"]
+    assert_equal "spare", response.parsed_body["samples"].first["state"]
+
+    get account_field_voice_samples_path(@account, @voice), as: :json
+    assert_not response.parsed_body["full"]
+    assert_equal "review", response.parsed_body["samples"].first["state"]
   end
 
   test "missing audio is presented honestly and stale evidence cannot be streamed" do

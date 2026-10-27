@@ -286,6 +286,7 @@ Rails.application.routes.draw do
         get :audio, on: :member
         post :relearn, on: :member
         post :prepare, on: :collection
+        post :warm, on: :collection
       end
       delete :forget, on: :member, path: "print"
       post :remember, on: :member
