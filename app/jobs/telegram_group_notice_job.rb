@@ -15,7 +15,7 @@ class TelegramGroupNoticeJob < ApplicationJob
     group.telegram_messages.create!(
       role: "assistant",
       text: text,
-      sender_name: "souls.house",
+      sender_name: Setting.instance.site_name,
       telegram_message_id: sent["message_id"],
       sent_at: sent["date"] ? Time.zone.at(sent["date"]) : Time.current
     )
@@ -28,7 +28,7 @@ class TelegramGroupNoticeJob < ApplicationJob
     <<~TEXT.strip
       #{agent.name} can now answer in this group. It only sees messages that mention #{handle} or reply to it.
 
-      Those messages, with your Telegram name, and #{agent.name}'s replies are copied to souls.house, where the people in the account "#{account.name}" can read them. Each answer #{agent.name} gives here uses that account's allowance.
+      Those messages, with your Telegram name, and #{agent.name}'s replies are copied to #{Setting.instance.site_name}, where the people in the account "#{account.name}" can read them. Each answer #{agent.name} gives here uses that account's allowance.
     TEXT
   end
 

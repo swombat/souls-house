@@ -36,8 +36,8 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     assert_match(/sendMessage\z/, posts.first[0])
     assert_equal(-100_1, posts.first[1]["chat_id"])
     notice = @group.telegram_messages.sole
-    assert_equal "souls.house", notice.sender_name
-    assert_includes notice.text, "copied to souls.house"
+    assert_equal Setting.instance.site_name, notice.sender_name
+    assert_includes notice.text, "copied to #{Setting.instance.site_name}"
     assert_includes notice.text, @account.name
     assert_includes notice.text, "allowance"
     assert_includes notice.text, "@alanis_bot"

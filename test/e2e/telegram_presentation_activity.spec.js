@@ -73,7 +73,7 @@ test('Telegram summaries arrive live without revealing links or replacing creden
     await expect(page.getByRole('button', { name: 'Send test message', exact: true })).toBeEnabled();
     await expect(username).toHaveValue('unfinished_username');
     await expect(token).toHaveValue('unfinished-synthetic-token');
-    expect(reloads.at(-1).sort()).toEqual(['telegram_configuration', 'telegram_subscriber_count'].sort());
+    expect(reloads.at(-1).sort()).toEqual(['telegram_configuration', 'telegram_subscriber_count', 'telegram_groups'].sort());
     expect(reveals).toBe(0);
     await page.getByRole('button', { name: 'Reveal registration link', exact: true }).click();
     await expect(page.locator('code').filter({ hasText: 'https://t.me/synthetic_bot?start=' })).toBeVisible();
