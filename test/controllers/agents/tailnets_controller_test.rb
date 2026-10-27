@@ -51,6 +51,45 @@ class Agents::TailnetsControllerTest < ActionDispatch::IntegrationTest
     assert_match(/no Tailscale integration/, body["error"])
   end
 
+  # #593: Alanis (born on her own server) got "Internal Server Error" here,
+  # because the read went to the local Docker runtime she doesn't live on.
+  test "a resident on its own server gets the in-container route, not a 500" do
+    enable!
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+    touched = false
+    sandbox = Object.new
+    sandbox.define_singleton_method(:exec_as_agent) { |*| touched = true }
+
+    Agents::Sandbox.stub(:new, sandbox) do
+      get account_agent_tailnet_path(@account, @agent), as: :json
+      post account_agent_tailnet_path(@account, @agent), as: :json
+    end
+
+    assert_response :success
+    body = response.parsed_body
+    assert_not body["available"]
+    assert_match(/runs on its own server/, body["error"])
+    assert_match(/soulshouse-tailnet up/, body["error"])
+    assert_not touched, "the local sandbox must not be asked about a VM resident"
+  end
+
+  test "a local-runtime refusal is reported, not raised" do
+    enable!
+    sandbox = Object.new
+    sandbox.define_singleton_method(:exec_as_agent) do |*|
+      raise Agents::Resources::OwnershipError, "Resident placement is not available to the local runtime"
+    end
+
+    Agents::Sandbox.stub(:new, sandbox) do
+      get account_agent_tailnet_path(@account, @agent), as: :json
+    end
+
+    assert_response :success
+    body = response.parsed_body
+    assert_not body["available"]
+    assert_match(/not available to the local runtime/, body["error"])
+  end
+
   private
 
   def enable!(provisioning_status: "active")

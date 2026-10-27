@@ -9,6 +9,13 @@ module Agents
 
     class Unavailable < StandardError; end
 
+    # Said on the panel after "<name>'s node isn't reachable right now: ".
+    # A resident on its own server is reached only through its runner, which
+    # has no tailnet command yet (#593); the node itself still works from
+    # inside, so the owner gets the route that does.
+    REMOTE_DETAIL = "this resident runs on its own server, and the house can't read its Tailscale node there yet. " \
+                    "Ask the resident to run `soulshouse-tailnet up` and send you the sign-in link.".freeze
+
     REPORT_KEYS = %w[granted daemon backend_state auth_url node addresses hosts pubkey admin_url].freeze
 
     attr_reader :agent
@@ -34,6 +41,8 @@ module Agents
     attr_reader :sandbox
 
     def run(*args)
+      raise Unavailable, REMOTE_DETAIL if Agents::RemoteRuntime.remote?(agent)
+
       result = sandbox.exec_as_agent("soulshouse-tailnet", *args, timeout_seconds: 45)
       report = parse(result[:stdout])
       unless result[:ok] && report
@@ -41,7 +50,7 @@ module Agents
         raise Unavailable, detail.delete_prefix("soulshouse-tailnet: ")
       end
       report.slice(*REPORT_KEYS).merge("container" => "running")
-    rescue Agents::Sandbox::SandboxError => e
+    rescue Agents::Sandbox::SandboxError, Agents::Resources::OwnershipError => e
       raise Unavailable, e.message
     end
 
