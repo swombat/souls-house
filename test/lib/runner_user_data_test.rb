@@ -59,9 +59,11 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_equal %w[backup_proxy.py souls_house_runner.py], sources.keys.sort
     sources.each do |name, source|
       original = File.read(Rails.root.join("host-runner", name))
-      script = "import ast,json,sys; a,b=json.load(sys.stdin); assert ast.dump(ast.parse(a), include_attributes=False)==ast.dump(ast.parse(b), include_attributes=False)"
+      script = "import ast,json,sys\n#{RunnerUserData::DOCSTRING_STRIP}\na,b=json.load(sys.stdin)\n" \
+        "assert ast.dump(strip_docstrings(ast.parse(a)), include_attributes=False)==ast.dump(ast.parse(b), include_attributes=False)\n" \
+        "assert ast.get_docstring(ast.parse(b)) is None"
       _out, _err, proof = Open3.capture3("python3", "-c", script, stdin_data: JSON.generate([ original, source ]))
-      assert proof.success?, "embedded #{name} preserves the complete executable AST"
+      assert proof.success?, "embedded #{name} preserves the complete executable AST, docstrings aside"
       assert_equal RunnerUserData.compact_source(original), source
     end
     extract = %w[tar -xJf /opt/souls-house-runner/source.tar.xz -C /opt/souls-house-runner]

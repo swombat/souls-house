@@ -7,8 +7,9 @@ and in the VM's cloud-init document. Existing runners are not updated by
 a Rails deployment.
 Cloud-init carries an XZ-compressed, deterministic two-file tar bundle and
 extracts it before enabling the runner. Python's standard AST unparser removes
-comments and redundant formatting; each module is reparsed and its complete
-AST must equal the reviewed original (including docstrings), or packaging
+comments, redundant formatting and docstrings (since #593); each module is
+reparsed and its AST must equal the reviewed original with docstrings removed,
+and a module that reads `__doc__` is refused, or packaging
 fails before purchase. Traceback line numbers change, not executable behavior.
 `python3` is explicit in the Rails image; `xz-utils` already is and is also
 explicitly installed on the VM. Tests prove AST equality and exercise the
