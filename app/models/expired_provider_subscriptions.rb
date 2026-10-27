@@ -1,5 +1,5 @@
 # Residents whose provider subscription login has expired, across every
-# account a person is a confirmed member of. Shown in the navbar as a black
+# account a person is a confirmed owner of. Shown in the navbar as a black
 # count beside the red reply-attention one, so a lapsed Claude or Gemini login
 # is visible the moment someone signs in rather than when they happen to open
 # the account and see the notice (Daniel, 2026-10-14, AjabgJ).
@@ -8,6 +8,10 @@
 # (auth mode oauth_account) and it is marked "expired", which is what the
 # runtime writes on an auth failure. Reconnecting clears it; switching the
 # resident to an API key stops it counting.
+#
+# Owners only (Daniel, 2026-10-27, elXOke): reconnecting a lapsed login is the
+# owner's job, so a member or admin of someone else's account (site admins
+# included) is not shown that account's expired subscriptions.
 class ExpiredProviderSubscriptions
 
   def self.summary_for(user)
@@ -39,7 +43,7 @@ class ExpiredProviderSubscriptions
   end
 
   def candidates
-    Agent.where(account_id: @user.confirmed_accounts.select(:id))
+    Agent.where(account_id: owned_account_ids)
       .where.not(runtime: Agent::RuntimeAvailability::RETIRED_RUNTIMES)
       .where(<<~SQL.squish)
         EXISTS (
@@ -49,6 +53,10 @@ class ExpiredProviderSubscriptions
       SQL
       .includes(:account)
       .order(:account_id, :name)
+  end
+
+  def owned_account_ids
+    @user.confirmed_accounts.merge(Membership.owners).select(:id)
   end
 
   def item_for(agent, provider)

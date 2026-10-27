@@ -300,7 +300,7 @@ module TestSupport
       if params[:operation] == "setup"
         user = account.users.find_by!(email_address: params.fetch(:email))
         other = Account.create!(name: "#{account.name} Other", account_type: :team)
-        other.add_user!(user, role: "member", skip_confirmation: true)
+        other.add_user!(user, role: "owner", skip_confirmation: true)
         private_account = Account.create!(name: "#{account.name} Inaccessible", account_type: :team)
         [ other, private_account ].each { |target| create_agent!(target, "#{target.name} Resident", "slate") }
         render json: { other: other.to_param, hidden: private_account.to_param }
@@ -549,6 +549,14 @@ module TestSupport
         account.update!(use_system_ai_credentials: false)
         agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
           orientation_last_error: "Synthetic raw provider exception", orientation_last_error_at: Time.current)
+      end
+      # Who sees what on a resident's Settings and Hosting tabs: a Claude
+      # resident (so the clamping block renders) that the house marked
+      # unhealthy, and a healthy one that should show no status line.
+      if params[:hosting_visibility]
+        agents.first.update_columns(model_id: "anthropic/claude-opus-5.5", health_state: "unhealthy",
+          sandbox_last_error: "Synthetic: container exited (code 137)", sandbox_last_error_at: Time.current)
+        agents.second.update_columns(health_state: "healthy", last_health_check_at: Time.current)
       end
       if params[:costs].in?(%w[mixed unpriced])
         2.times do

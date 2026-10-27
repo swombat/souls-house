@@ -8,7 +8,7 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     @user = users(:user_1)
   end
 
-  test "counts expired subscription logins across every confirmed account and names them" do
+  test "counts expired subscription logins across every owned account and names them" do
     expire!(agents(:code_reviewer), "anthropic")
     expire!(agents(:other_account_agent), "gemini")
 
@@ -48,6 +48,19 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     expire!(agents(:code_reviewer), "anthropic")
     assert_equal 0, ExpiredProviderSubscriptions.summary_for(users(:needsreset_user))[:total]
     assert_equal 0, ExpiredProviderSubscriptions.summary_for(users(:unconfirmed_user))[:total]
+  end
+
+  test "members and admins of an account do not see its expired subscriptions, only owners" do
+    expire!(agents(:other_account_agent), "gemini")
+    member = users(:existing_user) # confirmed member of the team account
+    assert_equal "member", memberships(:team_member).role
+    assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
+
+    memberships(:team_member).update_columns(role: "admin")
+    assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
+
+    memberships(:team_member).update_columns(role: "owner")
+    assert_equal 1, ExpiredProviderSubscriptions.summary_for(member)[:total]
   end
 
   test "one resident with two expired providers counts twice, once per provider" do
