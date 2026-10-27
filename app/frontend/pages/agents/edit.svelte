@@ -42,6 +42,8 @@
     billing_hold: billingHold = null,
     telegram_configuration: telegramConfiguration = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
+    telegram_groups: telegramGroups = [],
+    can_manage_telegram_groups: canManageTelegramGroups = false,
     grouped_models = {},
     colour_options = [],
     icon_options = [],
@@ -95,7 +97,7 @@
   const updateTelegramSync = createDynamicSync();
   $effect(() => {
     updateTelegramSync({
-      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count'],
+      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count', 'telegram_groups'],
     });
   });
 
@@ -277,6 +279,8 @@
             {account}
             {telegramConfiguration}
             {telegramSubscriberCount}
+            {telegramGroups}
+            {canManageTelegramGroups}
             {sendingTestNotification}
             {registeringWebhook}
             {serviceConnections}

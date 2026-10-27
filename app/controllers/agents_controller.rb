@@ -87,6 +87,8 @@ class AgentsController < ApplicationController
       telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
       telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username } },
       telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
+      telegram_groups: -> { TelegramGroupPresentation.list(@agent, account: current_account) },
+      can_manage_telegram_groups: -> { current_account.owned_by?(Current.user) },
       memories: -> { memories_for_display },
       grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,

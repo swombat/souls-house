@@ -6,10 +6,13 @@ class ProcessTelegramUpdateJob < ApplicationJob
 
   def perform(agent, update)
     return process_callback_query(agent, update.fetch("callback_query")) if update["callback_query"]
+    return process_membership(agent, update.fetch("my_chat_member")) if update["my_chat_member"]
 
     message = update.dig("message")
     return unless message
-    return if message.dig("chat", "type").present? && message.dig("chat", "type") != "private"
+    chat_type = message.dig("chat", "type")
+    return process_group_message(agent, message) if TelegramSubscription::GROUP_CHAT_TYPES.include?(chat_type)
+    return if chat_type.present? && chat_type != "private"
 
     text = message.dig("text")
     chat_id = message.dig("chat", "id")
@@ -30,8 +33,9 @@ class ProcessTelegramUpdateJob < ApplicationJob
 
     thread_id = data.delete_prefix("safeguard_reset:")
     chat_id = callback_query.dig("message", "chat", "id")
-    subscription = agent.telegram_subscriptions.find_by(id: TelegramSubscription.decode_id(thread_id))
+    subscription = TelegramSubscription.where(agent: agent).find_by(id: TelegramSubscription.decode_id(thread_id))
     return unless subscription && subscription.telegram_chat_id == chat_id
+    return if subscription.group? && !subscription.deliverable?
 
     reset_subscription(agent, subscription)
     agent.telegram_answer_callback_query(callback_query["id"], text: "Fresh session requested")
@@ -93,6 +97,93 @@ class ProcessTelegramUpdateJob < ApplicationJob
     telegram_message = create_inbound_message(subscription, message, content)
     return unless telegram_message
 
+    enqueue_wake(agent, subscription, telegram_message, content)
+  end
+
+  # Groups (#596). The bot hears about a group the first time it is added
+  # (my_chat_member) or the first time a message from it arrives, and records
+  # it with allowed off. Nothing from a group is persisted unless the owner
+  # has allowed it, and then only a message addressed to the bot: an
+  # @mention of its username, a text_mention of it, or a reply to one of its
+  # own messages. This check is ours, whatever BotFather's privacy mode or
+  # the bot's admin status lets Telegram deliver.
+  def process_membership(agent, member_update)
+    chat = member_update["chat"] || {}
+    return unless TelegramSubscription::GROUP_CHAT_TYPES.include?(chat["type"])
+
+    group = record_group(agent, chat)
+    status = member_update.dig("new_chat_member", "status")
+    if %w[left kicked].include?(status)
+      group.update!(removed_at: Time.current, allowed: false)
+    elsif group.removed_at
+      group.update!(removed_at: nil)
+    end
+  end
+
+  def process_group_message(agent, message)
+    return migrate_group(agent, message) if message["migrate_to_chat_id"]
+
+    group = record_group(agent, message["chat"])
+    return if message.dig("from", "is_bot")
+    return unless group.deliverable?
+    return unless addressed_to_bot?(agent, message)
+
+    content = supported_content(message)
+    return unless content
+
+    telegram_message = create_inbound_message(group, message, content)
+    return unless telegram_message
+
+    enqueue_wake(agent, group, telegram_message, content)
+  end
+
+  def record_group(agent, chat)
+    group = agent.telegram_groups.find_or_create_by!(telegram_chat_id: chat["id"]) do |record|
+      record.title = chat["title"]
+    end
+    group.update!(title: chat["title"]) if chat["title"].present? && group.title != chat["title"]
+    group
+  rescue ActiveRecord::RecordNotUnique
+    agent.telegram_groups.find_by!(telegram_chat_id: chat["id"])
+  end
+
+  # A group upgraded to a supergroup gets a new chat id. Keep the record (and
+  # its allowance) on the new id unless the new id already has one.
+  def migrate_group(agent, message)
+    group = agent.telegram_groups.find_by(telegram_chat_id: message.dig("chat", "id"))
+    return unless group
+    return if agent.telegram_groups.exists?(telegram_chat_id: message["migrate_to_chat_id"])
+
+    group.update!(telegram_chat_id: message["migrate_to_chat_id"])
+  end
+
+  def addressed_to_bot?(agent, message)
+    bot_id = agent.telegram_bot_user_id
+    return true if bot_id && message.dig("reply_to_message", "from", "id") == bot_id
+
+    text = message["text"] || message["caption"]
+    entities = message["entities"] || message["caption_entities"] || []
+    handle = "@#{agent.telegram_bot_username}".downcase
+    entities.any? do |entity|
+      case entity["type"]
+      when "mention" then entity_text(text, entity)&.downcase == handle
+      when "text_mention" then bot_id.present? && entity.dig("user", "id") == bot_id
+      else false
+      end
+    end
+  end
+
+  # Telegram measures entity offsets in UTF-16 code units.
+  def entity_text(text, entity)
+    return if text.blank?
+
+    units = text.encode("UTF-16LE")
+    units.byteslice(entity["offset"].to_i * 2, entity["length"].to_i * 2)&.force_encoding("UTF-16LE")&.encode("UTF-8")
+  rescue EncodingError
+    nil
+  end
+
+  def enqueue_wake(agent, subscription, telegram_message, content)
     if content[:media_kind]
       if content[:file_size].to_i > TelegramMessage.media_limit_for(content[:media_kind])
         fail_oversized_media(agent, subscription, telegram_message)
@@ -110,19 +201,34 @@ class ProcessTelegramUpdateJob < ApplicationJob
     return if existing
 
     subscription.telegram_messages.create!(
+      **sender_attributes(subscription, message),
       role: "user",
       text: content[:text],
       caption: content[:caption],
       media_kind: content[:media_kind],
       media_status: content[:media_kind] ? "pending" : nil,
       media_metadata: content[:telegram_metadata] || {},
-      sender_name: subscription.subscriber_name,
       sender_username: message.dig("from", "username"),
       telegram_message_id: telegram_message_id,
       sent_at: message["date"] ? Time.zone.at(message["date"]) : Time.current
     )
   rescue ActiveRecord::RecordNotUnique
     nil
+  end
+
+  # In a DM the sender is the subscriber. In a group the sender is whoever
+  # wrote, named as Telegram names them: never the owner, whoever the owner is.
+  def sender_attributes(subscription, message)
+    return { sender_name: subscription.subscriber_name } if subscription.direct?
+
+    from = message["from"] || {}
+    name = [ from["first_name"], from["last_name"] ].compact_blank.join(" ").presence ||
+      from["username"].presence || "Telegram user"
+    {
+      sender_name: name,
+      sender_telegram_user_id: from["id"],
+      reply_to_telegram_message_id: message.dig("reply_to_message", "message_id")
+    }
   end
 
   def supported_content(message)

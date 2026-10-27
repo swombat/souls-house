@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_26_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2590,6 +2590,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_160000) do
     t.text "transcription"
     t.datetime "updated_at", null: false
     t.datetime "wake_enqueued_at"
+    t.bigint "reply_to_telegram_message_id"
+    t.bigint "sender_telegram_user_id"
     t.index ["telegram_subscription_id", "telegram_message_id"], name: "idx_on_telegram_subscription_id_telegram_message_id_9eb10802be", unique: true, where: "(telegram_message_id IS NOT NULL)"
     t.index ["telegram_subscription_id"], name: "index_telegram_messages_on_telegram_subscription_id"
   end
@@ -2603,12 +2605,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_160000) do
     t.bigint "telegram_chat_id", null: false
     t.string "telegram_username"
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
+    t.string "chat_kind", default: "direct", null: false
+    t.string "title"
+    t.boolean "allowed", default: false, null: false
+    t.datetime "allowed_at"
+    t.bigint "allowed_by_id"
+    t.datetime "removed_at"
     t.index ["agent_id", "telegram_chat_id"], name: "index_telegram_subscriptions_on_agent_id_and_telegram_chat_id", unique: true
     t.index ["agent_id", "user_id"], name: "index_telegram_subscriptions_on_agent_id_and_user_id", unique: true
     t.index ["agent_id"], name: "index_telegram_subscriptions_on_agent_id"
+    t.index ["allowed_by_id"], name: "index_telegram_subscriptions_on_allowed_by_id"
     t.index ["pending_safeguard_detection_id"], name: "index_telegram_subscriptions_on_pending_safeguard_detection_id"
     t.index ["user_id"], name: "index_telegram_subscriptions_on_user_id"
+    t.check_constraint "chat_kind::text = 'direct'::text AND user_id IS NOT NULL OR chat_kind::text = 'group'::text AND user_id IS NULL", name: "telegram_subscriptions_kind_user"
   end
 
   create_table "tool_calls", force: :cascade do |t|
@@ -3045,6 +3055,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_160000) do
   add_foreign_key "telegram_subscriptions", "agents"
   add_foreign_key "telegram_subscriptions", "safeguard_detections", column: "pending_safeguard_detection_id", on_delete: :nullify
   add_foreign_key "telegram_subscriptions", "users"
+  add_foreign_key "telegram_subscriptions", "users", column: "allowed_by_id", on_delete: :nullify
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "transcription_glossary_terms", "accounts"
   add_foreign_key "transcription_glossary_terms", "agents", column: "created_by_agent_id", on_delete: :nullify

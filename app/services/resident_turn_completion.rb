@@ -56,7 +56,8 @@ class ResidentTurnCompletion
       interaction.chat.messages.create!(role: "assistant", agent: @turn.agent, content: "_#{text}_")
     elsif context["telegram_subscription_id"]
       subscription = TelegramSubscription.find_by(id: context["telegram_subscription_id"], agent: @turn.agent)
-      @turn.agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text)) if subscription
+      # The owner's provider trouble is not the group's business.
+      @turn.agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text)) if subscription&.direct?
     end
   end
 

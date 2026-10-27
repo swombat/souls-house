@@ -12,7 +12,12 @@ module TelegramNotifiable
   DownloadedTelegramFile = Struct.new(:tempfile, :file_path, :byte_size, keyword_init: true)
 
   included do
-    has_many :telegram_subscriptions, dependent: :destroy
+    # Direct subscribers only. Every existing caller (broadcast to "all",
+    # subscriber counts, the attention feed) means people; a group must be
+    # reached through telegram_groups on purpose (#596).
+    has_many :telegram_subscriptions, -> { where(chat_kind: "direct") }, dependent: :destroy, inverse_of: :agent
+    has_many :telegram_groups, -> { where(chat_kind: "group") },
+      class_name: "TelegramSubscription", dependent: :destroy, inverse_of: :agent
     has_many :telegram_messages, through: :telegram_subscriptions
 
     encrypts :telegram_bot_token
@@ -36,7 +41,7 @@ module TelegramNotifiable
     result
   end
 
-  def telegram_send_photo(chat_id, photo, filename:, content_type:, caption: nil)
+  def telegram_send_photo(chat_id, photo, filename:, content_type:, caption: nil, reply_parameters: nil)
     telegram_send_media(
       "sendPhoto",
       chat_id,
@@ -44,11 +49,12 @@ module TelegramNotifiable
       photo,
       filename: filename,
       content_type: content_type,
-      caption: caption
+      caption: caption,
+      reply_parameters: reply_parameters
     )
   end
 
-  def telegram_send_document(chat_id, document, filename:, content_type:, caption: nil)
+  def telegram_send_document(chat_id, document, filename:, content_type:, caption: nil, reply_parameters: nil)
     telegram_send_media(
       "sendDocument",
       chat_id,
@@ -56,7 +62,8 @@ module TelegramNotifiable
       document,
       filename: filename,
       content_type: content_type,
-      caption: caption
+      caption: caption,
+      reply_parameters: reply_parameters
     )
   end
 
@@ -127,7 +134,7 @@ module TelegramNotifiable
     webhook_url = "#{public_url}/telegram/webhook/#{telegram_webhook_token}"
     result = telegram_api_request("setWebhook", {
       url: webhook_url,
-      allowed_updates: [ "message", "callback_query" ],
+      allowed_updates: [ "message", "callback_query", "my_chat_member" ],
       secret_token: telegram_webhook_secret
     })
 
@@ -163,6 +170,18 @@ module TelegramNotifiable
     )
   end
 
+  # The bot's own Telegram user id is the number before the colon in its
+  # token; replies to the bot carry it as reply_to_message.from.id.
+  def telegram_bot_user_id
+    telegram_bot_token.to_s[/\A(\d+):/, 1]&.to_i
+  end
+
+  # Every thread the resident may address by id through its API: its direct
+  # subscribers and its groups. Callers still check deliverable? before a send.
+  def telegram_threads
+    TelegramSubscription.where(agent_id: id)
+  end
+
   def telegram_deep_link_for(user)
     # Telegram deep link params only allow [A-Za-z0-9_] and max 64 chars,
     # so we store a short random token in Rails cache instead of signing
@@ -173,9 +192,10 @@ module TelegramNotifiable
 
   private
 
-  def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:)
+  def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:, reply_parameters: nil)
     media.rewind
     form = [ [ "chat_id", chat_id.to_s ] ]
+    form << [ "reply_parameters", reply_parameters.to_json ] if reply_parameters
     form.concat([ [ "caption", caption ], [ "parse_mode", "HTML" ] ]) if caption.present?
     form << [ media_key.to_s, media, { filename: filename, content_type: content_type } ]
 

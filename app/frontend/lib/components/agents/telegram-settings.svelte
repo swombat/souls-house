@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/shadcn/button';
   import { Input } from '$lib/components/shadcn/input';
   import { Label } from '$lib/components/shadcn/label';
+  import { Switch } from '$lib/components/shadcn/switch';
   import { siteName } from '$lib/branding';
   import { router } from '@inertiajs/svelte';
   import { onDestroy } from 'svelte';
@@ -12,6 +13,8 @@
     accountId,
     telegramConfiguration = null,
     telegramSubscriberCount,
+    telegramGroups = [],
+    canManageTelegramGroups = false,
     sendingTestNotification,
     registeringWebhook,
     onsendTestNotification,
@@ -33,6 +36,17 @@
   onDestroy(() => {
     revealGeneration++;
   });
+
+  let savingGroup = $state(null);
+
+  function setGroupAllowed(group, allowed) {
+    savingGroup = group.id;
+    router.patch(
+      group.path,
+      { allowed },
+      { preserveScroll: true, preserveState: true, onFinish: () => (savingGroup = null) }
+    );
+  }
 
   function revealLink() {
     const generation = revealGeneration;
@@ -197,6 +211,56 @@
           {registeringWebhook ? 'Registering...' : 'Re-register webhook'}
         </Button>
       </div>
+    </div>
+
+    <div class="rounded-lg bg-muted/50 p-4 space-y-3" data-testid="telegram-groups">
+      <div>
+        <p class="text-sm font-medium">Groups</p>
+        <p class="text-xs text-muted-foreground">
+          In a group you allow, {agent.name} answers when someone mentions @{username} or replies to it, and nothing else.
+          Anyone in an allowed group who does that spends a turn on this account's plan.
+        </p>
+      </div>
+      {#if telegramGroups.length === 0}
+        <p class="text-xs text-muted-foreground" data-testid="telegram-groups-empty">
+          Add @{username} to a Telegram group and it will appear here, switched off.
+        </p>
+      {:else}
+        <ul class="divide-y rounded-md border bg-background">
+          {#each telegramGroups as group (group.id)}
+            <li class="flex items-center justify-between gap-3 p-3 text-sm" data-testid="telegram-group">
+              <div class="min-w-0">
+                <a href={group.path} class="font-medium underline-offset-4 hover:underline">{group.title}</a>
+                <p class="text-xs text-muted-foreground">
+                  {#if group.removed}
+                    The bot is no longer in this group.
+                  {:else if group.allowed}
+                    Allowed{group.allowed_by ? ` by ${group.allowed_by}` : ''} · {group.message_count} message{group.message_count ===
+                    1
+                      ? ''
+                      : 's'} copied
+                  {:else}
+                    Off: nothing from this group is read or kept.
+                  {/if}
+                </p>
+              </div>
+              {#if canManageTelegramGroups}
+                <Switch
+                  aria-label={`Allow ${agent.name} in ${group.title}`}
+                  data-testid="telegram-group-allowed"
+                  checked={group.allowed}
+                  disabled={savingGroup === group.id || (group.removed && !group.allowed)}
+                  onCheckedChange={(on) => setGroupAllowed(group, on)} />
+              {:else}
+                <span class="text-xs text-muted-foreground">{group.allowed ? 'Allowed' : 'Off'}</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        {#if !canManageTelegramGroups}
+          <p class="text-xs text-muted-foreground">Only an owner of this account can allow a group.</p>
+        {/if}
+      {/if}
     </div>
   {/if}
 

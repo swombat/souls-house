@@ -72,8 +72,11 @@ module Api
       private
 
       def target_subscriptions
+        # reply_to may name a direct thread or an allowed group (#596);
+        # "all" and name matching only ever reach direct subscribers.
+        return [ current_api_agent.telegram_threads.active.includes(user: :profile).find(params[:reply_to]) ] if params[:reply_to].present?
+
         scope = current_api_agent.telegram_subscriptions.active.includes(user: :profile)
-        return [ scope.find(params[:reply_to]) ] if params[:reply_to].present?
 
         target = params[:recipient].presence || params[:to].presence
         needle = target.to_s.downcase.strip
@@ -96,6 +99,8 @@ module Api
       end
 
       def subscriber_json(subscription)
+        return group_json(subscription) if subscription.group?
+
         user = subscription.user
         {
           user_id: user.to_param,
@@ -106,7 +111,15 @@ module Api
         }
       end
 
+      def group_json(group)
+        { thread_id: group.to_param, chat_kind: "group", name: group.subscriber_name }
+      end
+
       def deliver_outbound_response(subscription, text, media, media_kind, content_type, sender_name: current_api_agent.name)
+        # Read again immediately before the send: an owner who switched a
+        # group off after the reply was asked for wins (#596).
+        raise TelegramNotifiable::TelegramError, "group is not allowed" if subscription.group? && !subscription.deliverable?
+
         message = build_outbound_message(
           subscription,
           text,
@@ -151,12 +164,16 @@ module Api
 
       def send_outbound_message(subscription, text, message, media)
         escaped_text = ERB::Util.html_escape(text)
-        return current_api_agent.telegram_send_message(subscription.telegram_chat_id, escaped_text) unless message.media.attached?
+        reply = group_reply_parameters(subscription)
+        unless message.media.attached?
+          return current_api_agent.telegram_send_message(subscription.telegram_chat_id, escaped_text, **(reply ? { reply_parameters: reply } : {}))
+        end
 
         upload_options = {
           filename: message.media.filename.to_s,
           content_type: message.media.content_type,
-          caption: escaped_text.presence
+          caption: escaped_text.presence,
+          reply_parameters: reply
         }
 
         if message.photo?
@@ -172,6 +189,16 @@ module Api
           text: text.presence || media_placeholder("document", message.media.filename.to_s)
         )
         current_api_agent.telegram_send_document(subscription.telegram_chat_id, media.tempfile, **upload_options)
+      end
+
+      # In a group the resident answers the latest message addressed to it.
+      def group_reply_parameters(subscription)
+        return unless subscription.group?
+
+        target = subscription.telegram_messages.where(role: "user").where.not(telegram_message_id: nil).order(:id).last
+        return unless target
+
+        { message_id: target.telegram_message_id, allow_sending_without_reply: true }
       end
 
       def record_outbound_message(message, result)

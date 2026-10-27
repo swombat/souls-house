@@ -159,6 +159,8 @@ module TestSupport
         agent.telegram_subscriptions.first!.mark_blocked!
       when "bookkeeping"
         agent.telegram_subscriptions.first!.request_runtime_reset!
+      when "group"
+        agent.telegram_groups.create!(telegram_chat_id: -agent.id, title: "E2E group")
       else
         return head :unprocessable_entity
       end

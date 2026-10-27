@@ -6,7 +6,7 @@ import { subscribeToModel } from '$lib/cable';
 
 vi.mock('$lib/cable', () => ({ subscribeToModel: vi.fn(() => vi.fn()) }));
 
-const telegramProps = ['telegram_configuration', 'telegram_subscriber_count'];
+const telegramProps = ['telegram_configuration', 'telegram_subscriber_count', 'telegram_groups'];
 const props = {
   account: { id: 'home' },
   agent: { id: 'resident', name: 'Resident', telegram_configured: false, telegram_bot_username: 'stale_bot' },
@@ -15,7 +15,7 @@ const props = {
   active_tab: 'integrations',
 };
 
-test('Telegram maps exactly configuration/count to the stable resident identity, never the bearer link', async () => {
+test('Telegram maps exactly configuration/count/groups to the stable resident identity, never the bearer link', async () => {
   const view = render(EditResident, props);
   const calls = () => subscribeToModel.mock.calls.filter(([model]) => model === 'TelegramPresentation');
   await waitFor(() => expect(subscribeToModel).toHaveBeenCalledWith('TelegramPresentation', 'resident', telegramProps));

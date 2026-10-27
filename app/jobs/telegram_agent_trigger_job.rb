@@ -13,6 +13,8 @@ class TelegramAgentTriggerJob < ApplicationJob
   def perform(subscription, telegram_message)
     agent = subscription.agent
     return unless agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
+    # A group the owner switched off after this was queued is not processed.
+    return if subscription.group? && !subscription.deliverable?
 
     result = ExternalAgentTelegramRequest.new(
       agent: agent,

@@ -231,6 +231,7 @@ Rails.application.routes.draw do
         end
         resource :sandbox_recreation, only: :create
         resource :telegram_test, only: :create
+        resources :telegram_groups, only: [ :show, :update ]
         resource :telegram_webhook, only: :create
         resource :predecessor, only: :create
         resource :provider_subscription, only: [ :show, :create, :update, :destroy ] do

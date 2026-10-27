@@ -79,6 +79,7 @@ class TelegramMessage < ApplicationRecord
       timestamp: sent_at.iso8601
     }
     result[:media] = media_json if media?
+    result[:reply_to_telegram_message_id] = reply_to_telegram_message_id if reply_to_telegram_message_id
     result
   end
 
