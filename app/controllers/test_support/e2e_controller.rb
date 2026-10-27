@@ -535,6 +535,16 @@ module TestSupport
           content: "It is a quarter to four, so the deploy can go out before five.")
         clock.judgments.create!(message: post, score: 0.93, offered: true)
       end
+      # Where each resident runs (Settings -> Advanced): the first on the
+      # main server, the second on a synthetic, never-contacted Hetzner VM.
+      if params[:hosting_location]
+        agents.first.update_columns(health_state: "healthy", last_health_check_at: Time.current)
+        placement = AgentPlacement.create!(agent: agents.second, backend: "hetzner_cloud", state: "ready",
+          location: "fsn1", provider_server_id: 900_000_000 + rand(99_999_999))
+        CloudProcurementOperation.create!(agent_placement: placement, requested_by: admin_user,
+          public_id: SecureRandom.hex(4), approval_reference: "e2e", location: "fsn1", server_type: "cx23",
+          image_id: 1, ssh_key_ids: [ 1 ], provider_name: "e2e-#{run_id}-resident", state: "provisioned")
+      end
       if params[:missing_resident_credentials]
         account.update!(use_system_ai_credentials: false)
         agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
@@ -1002,6 +1012,8 @@ module TestSupport
       AuditLog.where(account: accounts).or(AuditLog.where(user: users)).destroy_all
       Session.where(user: users).destroy_all
       GithubResidentImport.where(account: accounts).destroy_all
+      # Purchases are history and block a placement's destroy; synthetic ones go.
+      CloudProcurementOperation.where(agent_placement: AgentPlacement.where(agent_id: agent_ids)).delete_all
       connections = ServiceConnection.where(account_id: accounts.select(:id))
       CommsMessage.where(service_connection: connections).delete_all
       CommsChat.where(service_connection: connections).delete_all

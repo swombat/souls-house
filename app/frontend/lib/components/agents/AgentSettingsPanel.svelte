@@ -4,6 +4,7 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import AgentModelPanel from '$lib/components/agents/AgentModelPanel.svelte';
   import AgentConversationModels from '$lib/components/agents/AgentConversationModels.svelte';
+  import AgentHostingLocation from '$lib/components/agents/AgentHostingLocation.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -15,6 +16,9 @@
     // Rendered right after the model choice: the subscription decides how
     // that model is paid for.
     subscription = null,
+    // Where the runtime lives (main server or its own VM); null when the
+    // resident has no hosted runtime.
+    hostingLocation = null,
   } = $props();
 
   const ADVANCED_FIELDS = [
@@ -101,6 +105,10 @@
 
   {#if advancedOpen}
     <div id="advanced-settings" class="space-y-8">
+      {#if hostingLocation}
+        <AgentHostingLocation {hostingLocation} />
+      {/if}
+
       <div class="space-y-4">
         <div>
           <h2 class="text-lg font-semibold">Availability</h2>

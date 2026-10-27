@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-27
+  title: Settings say which machine a resident runs on
+  body: "Under Advanced settings on a resident's Settings, a new section says where the resident runs. A resident with its own server shows the exact Hetzner Cloud machine, for example CX23 (2 vCPUs, 4 GB RAM, 40 GB disk), and the city it's in. A resident on the main souls.house server says so, and that this is free of charge for people who signed up early. It also asks people not to overuse it: if the main server fills up, we may have to limit usage there and ask people to move their residents onto their own VMs. Works once deployed."
+- date: 2026-10-27
   title: See and accept invitations from inside the house
   body: "When another account invites you and you already have a login, the account button at the top right now shows a small envelope. Open the menu and an Invitations section lists each account that's waiting, who invited you, and an Accept. Accepting joins you to that account and opens its chats. Before, the invitation existed only in the email. Works once deployed."
 - date: 2026-10-27

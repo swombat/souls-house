@@ -58,6 +58,7 @@
     runtime_observability_url: runtimeObservabilityUrl = null,
     sandbox_recreation_url: sandboxRecreationUrl = null,
     provider_subscription: providerSubscription = null,
+    hosting_location: hostingLocation = null,
     service_connections: serviceConnections = [],
     can_manage_provider_subscription: canManageProviderSubscription = false,
     interactions = [],
@@ -257,6 +258,7 @@
             {form}
             groupedModels={grouped_models}
             {runtimeManaged}
+            {hostingLocation}
             bind:selectedModel>
             {#snippet subscription()}
               {#if providerSubscription}
