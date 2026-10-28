@@ -149,6 +149,24 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal rails_blob_path(recording.audio, disposition: :inline), inertia_props.dig("props", "recording", "audio_url")
   end
 
+  test "with a cache, a page opened again within the hour asks for one copy, and after the hour asks again" do
+    blob = pinned_blob(account: @account, user: @user, fixture: "test_playback.mp3", content_type: "audio/mpeg")
+    recording = FieldRecording::Upload.claim!(account: @account, user: @user, signed_id: blob.signed_id, attributes: {})
+    recording.admit!(60_000)
+    recording.accept_transcript!(recording.reload.claim_dispatch!, scribe_transcription)
+
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      assert_enqueued_jobs(1, only: FieldRecordings::PlaybackJob) do
+        3.times { get account_field_recording_path(@account, recording) }
+      end
+      travel 61.minutes do
+        assert_enqueued_jobs(1, only: FieldRecordings::PlaybackJob) do
+          get account_field_recording_path(@account, recording)
+        end
+      end
+    end
+  end
+
   test "another account's recording is not found" do
     other = claimed_recording(account: accounts(:another_team), user: @user)
     delete account_field_recording_path(@account, other)
