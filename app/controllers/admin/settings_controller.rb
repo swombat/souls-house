@@ -48,7 +48,14 @@ class Admin::SettingsController < ApplicationController
       accounts_required: Account.where(billing_required: true).count,
       payment_open: Billing.configured?,
       configured: Billing.configured?,
-      test_mode: Billing.test_mode?
+      test_mode: Billing.test_mode?,
+      # What used to reach only Honeybadger (#619): a Stripe event the house
+      # couldn't apply, and a paid at-cost subscription on an account with no
+      # grant (docs/proposals/2026-10-28-billing-codes-at-cost.md).
+      stripe_events_failed: StripeEvent.where(status: "failed", updated_at: 7.days.ago..).count,
+      stripe_events_last_error: StripeEvent.where(status: "failed").order(updated_at: :desc).pick(:last_error),
+      ungranted_rates: AuditLog.where(action: "billing_rate_without_grant", created_at: 30.days.ago..).count,
+      portal: Billing.configured? ? Billing::PortalCheck.call : nil
     }
   end
 

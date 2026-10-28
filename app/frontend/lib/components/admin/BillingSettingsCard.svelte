@@ -35,5 +35,41 @@
         Stripe is in test mode.
       {/if}
     </p>
+
+    {#if status.configured}
+      <ul class="space-y-1 text-sm" data-testid="billing-watch">
+        <li class:text-rose-600={status.stripe_events_failed > 0}>
+          {#if status.stripe_events_failed > 0}
+            {status.stripe_events_failed} Stripe {status.stripe_events_failed === 1 ? 'event' : 'events'} the house couldn't
+            apply in the last 7 days. Last: <code class="text-xs">{status.stripe_events_last_error}</code>
+          {:else}
+            Every Stripe event of the last 7 days was applied.
+          {/if}
+        </li>
+        <li class:text-rose-600={status.ungranted_rates > 0}>
+          {#if status.ungranted_rates > 0}
+            {status.ungranted_rates} paid at-cost {status.ungranted_rates === 1 ? 'subscription' : 'subscriptions'} on an
+            account with no code grant in the last 30 days (see the audit log, billing_rate_without_grant).
+          {:else}
+            No at-cost subscription without a code grant in the last 30 days.
+          {/if}
+        </li>
+        {#if status.portal}
+          <li class:text-rose-600={status.portal.error || status.portal.at_cost_switchable?.length > 0}>
+            {#if status.portal.error}
+              The Stripe portal check failed: {status.portal.error}
+            {:else if status.portal.at_cost_switchable?.length > 0}
+              At-cost prices can be chosen in Stripe's portal by anyone with a subscription: {status.portal.at_cost_switchable.join(', ')}.
+              Remove them from the portal configuration's plan list.
+            {:else if status.portal.switchable_prices?.length > 0}
+              Stripe's portal lets customers switch plans among: {status.portal.switchable_prices.join(', ')}. No at-cost
+              price is among them.
+            {:else}
+              Stripe's portal lets nobody switch plans; plan changes go through the house.
+            {/if}
+          </li>
+        {/if}
+      </ul>
+    {/if}
   </CardContent>
 </Card>

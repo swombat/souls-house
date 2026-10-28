@@ -11,6 +11,7 @@ class FakeStripe
     def update(id, params = {}, *) = handlers.fetch(:update).call(id, params)
     def cancel(id, *) = handlers.fetch(:cancel).call(id)
     def search(params = {}, *) = handlers.fetch(:search).call(params)
+    def list(params = {}, *) = handlers.fetch(:list).call(params)
   end
 
   attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states,
@@ -21,6 +22,7 @@ class FakeStripe
     @created_customers = []
     @checkout_sessions = []
     @portal_sessions = []
+    @portal_configurations = []
     @expired_sessions = []
     # Checkout session id => { status:, subscription: }, as Stripe would report it.
     @session_states = {}
@@ -191,7 +193,20 @@ class FakeStripe
       @portal_sessions << params
       Stripe::StripeObject.construct_from(url: "https://billing.stripe.com/p/session/test_1")
     })
-    Struct.new(:sessions).new(sessions)
+    configurations = Service.new(list: lambda { |_params|
+      Stripe::StripeObject.construct_from(object: "list", data: @portal_configurations.map(&:deep_dup))
+    })
+    Struct.new(:sessions, :configurations).new(sessions, configurations)
+  end
+
+  # A portal configuration whose plan switcher offers these prices (none by
+  # default: the house's portal lets nobody switch plans).
+  def put_portal_configuration(prices: [], active: true, enabled: true)
+    @portal_configurations << {
+      id: "bpc_test_#{@portal_configurations.size + 1}", active: active, is_default: @portal_configurations.empty?,
+      features: { subscription_update: { enabled: enabled, products: prices.empty? ? [] : [ { product: "prod_test", prices: prices } ] },
+                  subscription_cancel: { enabled: true } }
+    }
   end
 
   def subscriptions = subscriptions_service
