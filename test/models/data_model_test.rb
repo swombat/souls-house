@@ -65,4 +65,46 @@ class DataModelTest < ActiveSupport::TestCase
     assert_equal "field", DataModel.find(:field).id
   end
 
+  test "array columns keep their array type" do
+    json = DataModel.area_json(DataModel.find("conversations"))
+    messages = json[:tables].find { |table| table[:name] == "messages" }
+    tools_used = messages[:columns].find { |column| column[:name] == "tools_used" }
+    assert_equal "text[]", tools_used[:type]
+    memory = DataModel.area_json(DataModel.find("memory"))
+    nodes = memory[:tables].find { |table| table[:name] == "mnemodyne_nodes" }
+    assert_equal "float[]", nodes[:columns].find { |column| column[:name] == "embedding" }[:type]
+    assert_includes memory[:diagram], "  mnemodyne_nodes {"
+  end
+
+  test "a unique foreign key draws one-to-one and an ordinary one many-to-one" do
+    billing = DataModel.area_json(DataModel.find("billing"))
+    customer = billing[:tables].find { |table| table[:name] == "billing_customers" }
+    account = customer[:references].find { |reference| reference[:column] == "account_id" }
+    assert account[:unique], "billing_customers.account_id has a unique index"
+    assert_includes billing[:diagram], "  billing_customers |o--|| accounts : account_id"
+
+    conversations = DataModel.area_json(DataModel.find("conversations"))
+    messages = conversations[:tables].find { |table| table[:name] == "messages" }
+    chat = messages[:references].find { |reference| reference[:column] == "chat_id" }
+    assert_not chat[:unique]
+    assert_includes conversations[:diagram], "  messages }o--|| chats : chat_id"
+    assert_includes conversations[:diagram], "  messages }o--o| users : user_id"
+  end
+
+  test "a change to the map alone reaches a warm durable cache" do
+    area = DataModel.find("rhythms")
+    original = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    first = DataModel.area_json(area)
+    assert_equal first, DataModel.area_json(area), "second read should come from the cache"
+    DataModel.stub(:map_digest, "edited-map") do
+      DataModel.stub(:build_area_json, { id: "rhythms", edited: true }) do
+        assert_equal({ id: "rhythms", edited: true }, DataModel.area_json(area), "an edited map must miss the old key")
+      end
+    end
+    assert_includes DataModel.cache_key(area), DataModel::PAYLOAD_VERSION
+  ensure
+    Rails.cache = original
+  end
+
 end

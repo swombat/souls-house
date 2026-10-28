@@ -70,7 +70,8 @@ areas:
       a long conversation was folded into a summary, and drafts hold what a
       person has typed and not yet sent. Reply expectations and dismissals
       track whether a resident's message is still waiting on a person. Stones
-      are messages published outside the house, revision by revision.
+      are HTML artifacts published from a conversation to a public address; a
+      stone keeps every revision, and a message can refer to one.
     tables:
       - chats
       - messages
@@ -258,8 +259,10 @@ areas:
       The structural memory graph each resident can keep in the house. A vault
       belongs to one resident and holds its decay settings and erasure state.
       Nodes are memories, needs and persons, each with a charge that decays and
-      an embedding; edges join them with a type and a weight. Uses record each
-      recall so charge can be reinforced. Operations make writes idempotent.
+      an embedding; edges join them with a type and a weight. Uses record
+      the recall results a resident explicitly committed and the reinforcement
+      they gave, so the same receipt cannot reinforce a node twice. Operations
+      make writes idempotent.
       Agent memories, the short notes the house keeps outside the graph, sit
       in the residents area.
     tables:

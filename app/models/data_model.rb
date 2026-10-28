@@ -8,6 +8,10 @@ class DataModel
   PATH = Rails.root.join("config/data_model.yml")
   REPOSITORY_PATH = "https://github.com/swombat/souls-house/blob/master/config/data_model.yml"
 
+  # Bump when the shape of area_json changes, so a durable cache does not serve
+  # the old shape to new page code.
+  PAYLOAD_VERSION = 2
+
   # Rails' own bookkeeping, never part of the application's model.
   FRAMEWORK_TABLES = %w[ar_internal_metadata schema_migrations].freeze
 
@@ -50,12 +54,18 @@ class DataModel
 
     # One area for the page: its tables with columns and references, and a Mermaid
     # ER diagram of the keys between them. Cross-area references name the other
-    # area so the page can link there. Cached per schema version; a migration
-    # changes the version and so the key.
+    # area so the page can link there. The cache is durable in production, so the
+    # key carries everything the payload depends on: the schema version (a
+    # migration), a digest of the whole map (prose, grouping and the cross-area
+    # links that depend on other areas), and the payload version.
     def area_json(area)
-      Rails.cache.fetch([ "data_model", schema_version, area.id ], expires_in: 1.day) do
+      Rails.cache.fetch(cache_key(area), expires_in: 1.day) do
         build_area_json(area)
       end
+    end
+
+    def cache_key(area)
+      [ "data_model", PAYLOAD_VERSION, schema_version, map_digest, area.id ]
     end
 
     private
@@ -66,6 +76,10 @@ class DataModel
 
     def schema_version
       ActiveRecord::Base.connection_pool.migration_context.current_version
+    end
+
+    def map_digest
+      Digest::SHA256.file(PATH).hexdigest.first(16)
     end
 
     def build_area_json(area)
@@ -87,18 +101,35 @@ class DataModel
     end
 
     def column_json(column)
-      { name: column.name, type: (column.type || column.sql_type).to_s, null: column.null,
-        primary_key: column.name == "id" }
+      type = (column.type || column.sql_type).to_s
+      type = "#{type}[]" if column.respond_to?(:array) && column.array
+      { name: column.name, type: type, null: column.null, primary_key: column.name == "id" }
     end
 
     def reference_json(key, area)
       { column: key_columns(key).join(", "), columns: key_columns(key), table: key.to_table,
-        area: area_link(key.to_table, area) }
+        area: area_link(key.to_table, area), unique: unique_key?(key) }
     end
 
     # A composite key names several columns; most name one.
     def key_columns(key)
       Array(key.column).map(&:to_s)
+    end
+
+    # A foreign key whose columns are exactly a unique index is one-to-one: at
+    # most one child row per parent. Anything else is many-to-one, including a
+    # partial unique index (unique only among, say, unrevoked rows): that is a
+    # rule about live rows, not about the table's shape.
+    def unique_key?(key)
+      columns = key_columns(key)
+      unique_indexes(key.from_table).any? { |index| Array(index.columns).map(&:to_s) == columns }
+    end
+
+    def unique_indexes(table)
+      @unique_indexes ||= {}
+      @unique_indexes[[ schema_version, table ]] ||= connection.indexes(table).select do |index|
+        index.unique && index.where.blank?
+      end
     end
 
     # nil when the table is in the area being shown; otherwise the first other
@@ -129,7 +160,9 @@ class DataModel
 
     # Mermaid erDiagram source. Entities carry their primary key and foreign-key
     # columns only; the full column list is in the table cards. A table outside
-    # the area that one of its tables points at appears as a bare box.
+    # the area that one of its tables points at appears as a bare box. The child
+    # end is zero-or-many, or zero-or-one when the key is unique; the parent end
+    # is exactly one, or zero-or-one when the key column is nullable.
     def diagram(area, tables)
       lines = [ "erDiagram" ]
       tables.each do |table|
@@ -149,7 +182,9 @@ class DataModel
             table[:columns].find { |column| column[:name] == name }&.dig(:null)
           end
           label = reference[:columns].join("_")
-          lines << "  #{table[:name]} }o--#{optional ? 'o|' : '||'} #{reference[:table]} : #{label}"
+          child = reference[:unique] ? "|o" : "}o"
+          parent = optional ? "o|" : "||"
+          lines << "  #{table[:name]} #{child}--#{parent} #{reference[:table]} : #{label}"
         end
       end
       lines.join("\n")
