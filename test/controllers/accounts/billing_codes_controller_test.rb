@@ -50,7 +50,7 @@ class Accounts::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, BillingCodeRedemption.count
   end
 
-  test "checkout at a rate the account holds no grant for is refused" do
+  test "checkout at cost for an existing resident is refused for now, grant or no grant" do
     sign_in(@owner)
     agent = agents(:research_assistant)
     @stripe = FakeStripe.new
@@ -59,7 +59,7 @@ class Accounts::BillingCodesControllerTest < ActionDispatch::IntegrationTest
         headers: { "X-Inertia" => "true" }
     end
     assert_redirected_to account_billing_path(@account)
-    assert_match(/can't buy plans at that rate/, flash[:alert])
+    assert_match(/is coming/, flash[:alert])
   end
 
 end

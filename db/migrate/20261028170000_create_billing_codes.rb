@@ -36,23 +36,6 @@ class CreateBillingCodes < ActiveRecord::Migration[8.1]
       name: "index_billing_code_redemptions_live_by_account"
 
     add_reference :resident_birth_orders, :billing_code_redemption, foreign_key: true
-
-    # One Checkout attempt per idempotency key: the offer and the grant it
-    # was authorised by, committed before Stripe is called, so a replay of
-    # the key sends the same payload whatever the account's grants are by
-    # then. An attempt whose answer was lost (no session id) is recovered by
-    # its key, never overwritten by an attempt at another offer; one whose
-    # key can no longer be replayed is marked abandoned.
-    create_table :checkout_attempts do |t|
-      t.references :agent, null: false, foreign_key: true
-      t.string :idempotency_key, null: false
-      t.string :offer_id, null: false
-      t.references :billing_code_redemption, foreign_key: true
-      t.string :stripe_session_id
-      t.datetime :abandoned_at
-      t.timestamps
-    end
-    add_index :checkout_attempts, :idempotency_key, unique: true
   end
 
 end

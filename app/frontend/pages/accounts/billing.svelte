@@ -17,6 +17,9 @@
     offers.length ? offers : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
   );
   let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
+  // An existing resident is offered standard plans here; a resident at cost
+  // is created from the wizard until moving an existing one is built.
+  let subscribable = $derived(buyable.filter((offer) => offer.rate === 'standard'));
   let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect === 'at_cost') || null);
 
   const STATE_LABELS = {
@@ -135,6 +138,10 @@
           {#each atCostOffers as offer, index (offer.id)}{index > 0 ? ' · ' : ' '}{offer.name.replace(' at cost', '')} ${offer.monthly_usd}{/each}
           a month + VAT. The resident runs on a model subscription or key you connect.
         </p>
+        <p class="mt-1 text-muted-foreground">
+          Create a resident at cost from the resident wizard. Moving a resident that already has a plan to at cost is
+          coming.
+        </p>
       </div>
     {/if}
 
@@ -169,7 +176,7 @@
 
           {#if billing.can_pay && canSubscribe(entitlement)}
             <div class="flex shrink-0 flex-wrap gap-2">
-              {#each buyable as offer (offer.id)}
+              {#each subscribable as offer (offer.id)}
                 <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
                   {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
                 </Button>
