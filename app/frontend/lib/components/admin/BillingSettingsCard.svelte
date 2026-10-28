@@ -55,25 +55,33 @@
           {/if}
         </li>
         {#if status.portal}
-          <li
-            class:text-rose-600={status.portal.error ||
-              status.portal.at_cost_switchable?.length > 0 ||
-              status.portal.unknown_configurations?.length > 0}>
-            {#if status.portal.error}
-              The Stripe portal check failed: {status.portal.error}
-            {:else if status.portal.unknown_configurations?.length > 0}
-              The Stripe portal check couldn't read the plan list of {status.portal.unknown_configurations.join(', ')}: treat
-              the portal as unverified until it can.
-            {:else if status.portal.at_cost_switchable?.length > 0}
-              At-cost prices can be chosen in Stripe's portal by anyone with a subscription: {status.portal.at_cost_switchable.join(', ')}.
-              Remove them from the portal configuration's plan list.
-            {:else if status.portal.switchable_prices?.length > 0}
-              Stripe's portal lets customers switch plans among: {status.portal.switchable_prices.join(', ')}. No at-cost
-              price is among them.
-            {:else}
-              Stripe's portal lets nobody switch plans; plan changes go through the house.
+          <!-- Each portal finding on its own line: an unreadable configuration never hides a confirmed unsafe price. -->
+          {#if status.portal.error}
+            <li class="text-rose-600" data-testid="portal-error">The Stripe portal check failed: {status.portal.error}</li>
+          {:else}
+            {#if status.portal.at_cost_switchable?.length > 0}
+              <li class="text-rose-600" data-testid="portal-unsafe">
+                At-cost prices can be chosen in Stripe's portal by anyone with a subscription: {status.portal.at_cost_switchable.join(', ')}.
+                Remove them from the portal configuration's plan list.
+              </li>
             {/if}
-          </li>
+            {#if status.portal.unknown_configurations?.length > 0}
+              <li class="text-rose-600" data-testid="portal-unknown">
+                The Stripe portal check couldn't read the plan list of {status.portal.unknown_configurations.join(', ')}: treat
+                the portal as unverified until it can.
+              </li>
+            {/if}
+            {#if !(status.portal.at_cost_switchable?.length > 0) && !(status.portal.unknown_configurations?.length > 0)}
+              <li data-testid="portal-clean">
+                {#if status.portal.switchable_prices?.length > 0}
+                  Stripe's portal lets customers switch plans among: {status.portal.switchable_prices.join(', ')}. No at-cost
+                  price is among them.
+                {:else}
+                  Stripe's portal lets nobody switch plans; plan changes go through the house.
+                {/if}
+              </li>
+            {/if}
+          {/if}
         {/if}
       </ul>
     {/if}
