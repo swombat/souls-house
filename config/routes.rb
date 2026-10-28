@@ -654,6 +654,7 @@ Rails.application.routes.draw do
   get "self-host" => "pages#self_host", as: :self_host
   get "pricing" => "pages#pricing", as: :pricing
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
+  get "data-model(/:area)" => "pages#data_model", as: :data_model
   get "terms" => "pages#terms", as: :terms
   get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
   # A transcript shared by link (FieldRecordingShare): no account needed. The

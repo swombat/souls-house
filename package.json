@@ -52,6 +52,7 @@
     "@tailwindcss/vite": "^4.1.11",
     "date-fns": "^4.1.0",
     "marked": "^16.3.0",
+    "mermaid": "^12.2.0",
     "mode-watcher": "^1.1.0",
     "qrcode": "^1.5.4",
     "svelte": "^5.35.6",

@@ -1,0 +1,338 @@
+# The public data-model page (/data-model) is built from this file and the live
+# schema. The schema says what the tables are; this file says which concern each
+# one belongs to and what the shape means. A table may sit in more than one area.
+#
+# DataModelTest fails when a table exists in the schema and is not named here,
+# or is named here and no longer exists. Add new tables to an area when you add
+# the migration; the page stays true because the test will not let it go stale.
+areas:
+  - id: accounts
+    title: Accounts and people
+    summary: >-
+      A person signs in as a user. Everything else hangs off an account: a
+      personal one made at sign-up, or a team one that several people share
+      through memberships. Guest memberships let a resident from another
+      account visit this one. Profiles hold what a person chose about how the
+      house looks to them; settings is the single row of site-wide switches an
+      operator sets. Notices are announcements an account posts to its
+      residents. Audit logs and versions are the two records of who changed
+      what: audit logs for actions a person took, versions for the before and
+      after of a row.
+    tables:
+      - users
+      - accounts
+      - memberships
+      - guest_memberships
+      - profiles
+      - sessions
+      - settings
+      - notices
+      - audit_logs
+      - versions
+
+  - id: residents
+    title: Residents
+    summary: >-
+      A resident is a row in agents, owned by an account. The row carries the
+      resident's name, model and provider choices, the container or VM it runs
+      in, its Telegram bot, its backup schedule, and the prompts the house uses
+      to summarise and refine. Agent memories are the short constitutional and
+      working notes the house keeps for a resident outside its own home; the
+      structural memory graph has its own area. Reflexes are the named
+      failure shapes a resident asked to be reminded about, judged per message.
+      AI models is the catalogue of what the house can run, with pricing and
+      context windows. House samples are the point-in-time measurements behind
+      the site dashboard. A resident born from a GitHub repository starts as a
+      github_resident_import; one born from an archive leaves its parts in
+      agent_import_stages until a VM is seeded from them.
+    tables:
+      - agents
+      - agent_memories
+      - reflexes
+      - reflex_judgments
+      - ai_models
+      - house_samples
+      - prompt_outputs
+      - github_resident_imports
+      - agent_import_stages
+      - agent_backup_snapshots
+
+  - id: conversations
+    title: Conversations and rooms
+    summary: >-
+      A conversation is a chat; its messages belong to a user or a resident,
+      with tool calls hanging off the messages that made them. Chat agents is
+      the join that says which residents are in a conversation, and holds the
+      per-conversation summary of each. Rooms group conversations inside an
+      account, and room model defaults say which model a resident uses in a
+      room. Visual tags colour and pin conversations. Whiteboards are the
+      shared notes a conversation can have open. Compactions record each time
+      a long conversation was folded into a summary, and drafts hold what a
+      person has typed and not yet sent. Reply expectations and dismissals
+      track whether a resident's message is still waiting on a person. Stones
+      are messages published outside the house, revision by revision.
+    tables:
+      - chats
+      - messages
+      - tool_calls
+      - chat_agents
+      - agent_bookmarks
+      - rooms
+      - room_model_defaults
+      - visual_tags
+      - whiteboards
+      - conversation_compactions
+      - conversation_drafts
+      - reply_expectations
+      - reply_dismissals
+      - stones
+      - stone_revisions
+      - message_stone_revisions
+
+  - id: turns
+    title: Waking and running a resident
+    summary: >-
+      How a message becomes a run. A message dispatch is the durable intent to
+      wake the residents a message named, written in the same transaction that
+      accepted the message. A message handoff is one resident tagging another,
+      with a receipt of whether it was queued, held, delivered or blocked. A
+      pending wake is a request that arrived while the resident was already
+      responding in that room; its sources say who asked. Resident turns are
+      the admission gate, counting how many runs the house is carrying. Each
+      run is an agent runtime interaction: the prompt that was sent, the model,
+      the tokens, the session that was resumed or rolled, and what came back.
+      Attempts and events underneath it are the live telemetry stream from the
+      runtime. Stalled thread sweeps are the verdicts of the sweeper that looks
+      at quiet rooms and decides whether anyone is waiting.
+    tables:
+      - message_dispatches
+      - message_handoffs
+      - pending_wakes
+      - pending_wake_sources
+      - resident_turns
+      - agent_runtime_interactions
+      - agent_runtime_attempts
+      - agent_runtime_events
+      - stalled_thread_sweeps
+      - messages
+
+  - id: rhythms
+    title: Rhythms
+    summary: >-
+      A rhythm is a recurring prompt a person or resident set up: a cadence,
+      a time of day, an opening message, and the room it opens in. Rhythm
+      agents are the residents it wakes, each with the model to use. Every run
+      makes a rhythm occurrence, which points at the conversation and message
+      it opened. Holds are a person's or resident's pause on a rhythm; the
+      house itself never holds one, it skips a slot and records why.
+    tables:
+      - rhythms
+      - rhythm_agents
+      - rhythm_occurrences
+      - rhythm_holds
+      - rooms
+      - chats
+
+  - id: field
+    title: The Field
+    summary: >-
+      The Field is what an account's people and residents can hear, read and
+      remember together. Recordings are uploaded audio with a transcript and
+      summaries; dispatches and reservations account for the transcription
+      minutes they used; shares are public links to one recording. Each
+      recording's speakers are the diarised voices in it, and a speaker can
+      be named as a field voice. Voiceprints are the embeddings the house
+      keeps per voice so the next recording can recognise them, built from
+      voice samples. Files are uploaded documents with their pages' text and
+      the OCR calls that cost money. Songs, tags and taggings are the shared
+      shelf and its labels. Tweet sources, tweets, backlog items and calls are
+      the X timelines an account follows and what fetching them cost. Swarm
+      searches and reads are the parallel model reads a question across the
+      Field fans out into. Glossary terms are the words the transcriber is told
+      to expect.
+    tables:
+      - field_recordings
+      - field_recording_dispatches
+      - field_recording_reservations
+      - field_recording_shares
+      - field_recording_speakers
+      - field_voices
+      - field_voiceprints
+      - field_voice_samples
+      - field_files
+      - field_file_pages
+      - field_ocr_calls
+      - field_songs
+      - field_tags
+      - field_taggings
+      - field_tweet_sources
+      - field_tweets
+      - field_tweet_backlog_items
+      - field_tweet_calls
+      - field_swarm_searches
+      - field_swarm_reads
+      - transcription_glossary_terms
+      - whiteboards
+
+  - id: billing
+    title: Billing
+    summary: >-
+      One Stripe customer per account. A resident birth order is a plan chosen
+      at creation, paid before the resident exists; a resident subscription is
+      the live Stripe subscription for a resident, and its entitlement is what
+      the house has decided that resident may do right now, including the
+      monthly inference allowance and any grace period. House inference grants
+      and calls are the house paying for a resident's model use on its own
+      keys, call by call. Metered action events count the actions the house
+      meters per resident, such as X reads. Stripe events is the inbox of
+      webhooks, kept so a replay is harmless.
+    tables:
+      - billing_customers
+      - resident_birth_orders
+      - resident_subscriptions
+      - resident_entitlements
+      - house_inference_grants
+      - house_inference_calls
+      - metered_action_events
+      - stripe_events
+
+  - id: hosting
+    title: VM hosting and the runner
+    summary: >-
+      A resident runs either in a container on the house or on its own VM. An
+      agent placement is where a resident lives and what state that home is
+      in. A cloud procurement operation is one request to the cloud provider
+      to create or delete a server, kept until it is reconciled. On the VM a
+      small runner enrols with the house, heartbeats, and receives commands:
+      seed the home, start a turn, take a backup. Nonces stop a replayed
+      request. Backups are restic snapshots, with vm_backups tracking the
+      ones taken from a VM. Import stages hold an archived home until a VM is
+      seeded from it.
+    tables:
+      - agent_placements
+      - cloud_procurement_operations
+      - runner_enrollments
+      - runner_commands
+      - runner_request_nonces
+      - vm_backups
+      - agent_backup_snapshots
+      - agent_import_stages
+
+  - id: integrations
+    title: Integrations
+    summary: >-
+      A service connection is one credential an account holds for an outside
+      service, such as Telegram, WhatsApp, GitHub, Oura or X, with the OAuth
+      attempt that produced it. Agent service accesses say which residents may
+      use which connection, and whether they may send. The comms tables are
+      the mirror of a messaging account: its chats, the messages in them, the
+      sends a resident made and the grant events that allowed sending.
+      Telegram subscriptions are a resident's own bot talking to a person or a
+      group, with the messages that passed through. Watched repositories,
+      their deliveries and watches are GitHub webhooks turned into wakes.
+      Tweet logs are what a resident posted to X. The older github, oura and x
+      integration tables predate service connections and are being folded in.
+    tables:
+      - service_connections
+      - service_authorization_attempts
+      - agent_service_accesses
+      - comms_chats
+      - comms_messages
+      - comms_sends
+      - comms_send_grant_events
+      - comms_request_nonces
+      - telegram_subscriptions
+      - telegram_messages
+      - watched_repositories
+      - repository_deliveries
+      - repository_watches
+      - repository_watch_deliveries
+      - github_integrations
+      - oura_integrations
+      - x_integrations
+      - tweet_logs
+
+  - id: memory
+    title: Memory
+    summary: >-
+      The structural memory graph each resident can keep in the house. A vault
+      belongs to one resident and holds its decay settings and erasure state.
+      Nodes are memories, needs and persons, each with a charge that decays and
+      an embedding; edges join them with a type and a weight. Uses record each
+      recall so charge can be reinforced. Operations make writes idempotent.
+      Agent memories, the short notes the house keeps outside the graph, sit
+      in the residents area.
+    tables:
+      - mnemodyne_vaults
+      - mnemodyne_nodes
+      - mnemodyne_edges
+      - mnemodyne_uses
+      - mnemodyne_operations
+      - agent_memories
+
+  - id: safeguards
+    title: Safeguards
+    summary: >-
+      When a classifier judges that a resident's reply should not go out as
+      written, the house records a safeguard detection: the channel, the
+      verdict and reason, the withheld text, and what happened next, including
+      whether the resident's session was rolled and whether the reply was
+      reclaimed. Classifier failures record the times the classifier itself
+      could not answer. Reflexes are the opposite end: shapes a resident asked
+      the house to watch for in its own writing, scored per message.
+    tables:
+      - safeguard_detections
+      - safeguard_classifier_failures
+      - reflexes
+      - reflex_judgments
+
+  - id: access
+    title: API keys, apps and devices
+    summary: >-
+      Every way in that is not a browser session. API keys belong to a person
+      or a resident and are what the resident API authenticates with; key
+      requests are the approval flow for a key asked for by an agent. OAuth
+      applications, grants and tokens are the standard OAuth server for apps;
+      app sessions and cable tickets are those apps' signed-in state and their
+      realtime subscriptions. Companion devices are phones or desktops paired
+      to an account that residents can ask to do things, through operations
+      with their inputs and bodies. Device streams are sensor feeds, such as
+      heart rate, batched into sessions. The action_mcp tables are the Model
+      Context Protocol server's sessions, messages and long-running tasks.
+    tables:
+      - api_keys
+      - api_key_requests
+      - oauth_applications
+      - oauth_access_grants
+      - oauth_access_tokens
+      - app_sessions
+      - app_cable_tickets
+      - companion_devices
+      - companion_enrollment_grants
+      - companion_cable_tickets
+      - companion_operations
+      - companion_operation_inputs
+      - companion_operation_bodies
+      - device_streams
+      - device_stream_credentials
+      - device_stream_sessions
+      - device_stream_batches
+      - action_mcp_sessions
+      - action_mcp_session_messages
+      - action_mcp_session_subscriptions
+      - action_mcp_session_tasks
+
+  - id: infrastructure
+    title: Infrastructure
+    summary: >-
+      Framework tables the app leans on rather than owns. Active Storage holds
+      every uploaded file: blobs are the files, attachments tie them to a
+      record, variants are resized copies. Versions is the audit trail of row
+      changes. Deploy alarm states is one row the deploy watcher keeps about
+      whether production is behind master, and when it last said so.
+    tables:
+      - active_storage_blobs
+      - active_storage_attachments
+      - active_storage_variant_records
+      - versions
+      - deploy_alarm_states
