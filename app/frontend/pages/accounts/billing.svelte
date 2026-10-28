@@ -6,7 +6,7 @@
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
 
-  let { account, billing = {}, tiers = [], offers = [], codes = null, residents = [] } = $props();
+  let { account, billing = {}, tiers = [], offers = [], change_offers = [], codes = null, residents = [] } = $props();
 
   let busy = $state(null);
   let code = $state('');
@@ -72,6 +72,26 @@
     if (!code.trim()) return;
     busy = 'code';
     router.post(codes.redeem_url, { code: code.trim() }, { onFinish: () => (busy = null), onSuccess: () => (code = '') });
+  }
+
+  // A paid resident can move to another plan at its own rate: the offers at
+  // that rate, other than the one it is on.
+  function canChange(entitlement) {
+    return entitlement?.source === 'stripe' && ['active', 'trialing'].includes(entitlement?.subscription?.status);
+  }
+
+  function changeOptions(entitlement) {
+    const rate = entitlement?.rate ?? 'standard';
+    return change_offers.filter((offer) => offer.rate === rate && offer.tier !== entitlement?.tier);
+  }
+
+  function changePlan(resident, offer) {
+    busy = `${resident.id}:change:${offer.id}`;
+    router.post(
+      `/accounts/${account.id}/billing/plan_change`,
+      { agent_id: resident.id, tier: offer.tier },
+      { onFinish: () => (busy = null) }
+    );
   }
 
   function openPortal() {
@@ -181,6 +201,21 @@
                   {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
                 </Button>
               {/each}
+            </div>
+          {:else if billing.can_pay && canChange(entitlement)}
+            <div class="flex shrink-0 flex-col items-end gap-1" data-testid="plan-change">
+              <div class="flex flex-wrap gap-2">
+                {#each changeOptions(entitlement) as offer (offer.id)}
+                  <Button size="sm" variant="outline" onclick={() => changePlan(resident, offer)} disabled={busy !== null}>
+                    {busy === `${resident.id}:change:${offer.id}` ? 'Changing…' : `Move to ${offer.name} · $${offer.monthly_usd}`}
+                  </Button>
+                {/each}
+              </div>
+              <p class="text-xs text-muted-foreground">
+                The price changes now; Stripe puts the difference for the rest of this period on the next invoice. The
+                house-model allowance follows the month's rule: this month keeps the higher of the two until the 1st. A
+                resident's own server keeps its size for now.
+              </p>
             </div>
           {/if}
         </div>

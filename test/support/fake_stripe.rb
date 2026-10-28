@@ -8,7 +8,7 @@ class FakeStripe
     def retrieve(id, *) = handlers.fetch(:retrieve).call(id)
     def create(params = {}, opts = {}) = handlers.fetch(:create).call(params, opts)
     def expire(id, *) = handlers.fetch(:expire).call(id)
-    def update(id, params = {}, *) = handlers.fetch(:update).call(id, params)
+    def update(id, params = {}, opts = {}, *) = handlers.fetch(:update).call(id, params, opts)
     def cancel(id, *) = handlers.fetch(:cancel).call(id)
     def search(params = {}, *) = handlers.fetch(:search).call(params)
     def list(params = {}, *) = handlers.fetch(:list).call(params)
@@ -31,6 +31,7 @@ class FakeStripe
     @payment_methods = {}
     @created_subscriptions = []
     @subscription_updates = []
+    @update_responses = {}
     @cancelled_subscriptions = []
   end
 
@@ -87,7 +88,7 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { agent_id: agent.id.to_s },
-      items: { object: "list", data: [ { price: { id: price }, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, current_period_end: period_end.to_i } ] }
     }
   end
 
@@ -118,7 +119,7 @@ class FakeStripe
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
           default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
           create_params: params.except(:expand).deep_dup,
-          items: { object: "list", data: params[:items].map { |item| { price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
+          items: { object: "list", data: params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
         }
         raise error if error
         construct(with_invoice(@subscriptions[id]))
@@ -128,17 +129,30 @@ class FakeStripe
         found = @search_lags ? [] : @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order") == reference }
         Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
       },
-      update: lambda { |id, params|
+      update: lambda { |id, params, opts = {}|
         if @update_fault
           error = @update_fault
           @update_fault = nil
           raise error
         end
-        @subscription_updates << [ id, params ]
+        # Stripe replays an idempotency key: the cached response, no mutation.
+        if (key = opts[:idempotency_key]) && (cached = @update_responses[key])
+          @subscription_updates << [ id, params, opts.merge(replayed: true) ]
+          next cached
+        end
+        @subscription_updates << [ id, params, opts ]
         stored = stored_subscription(id)
         stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
         stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
-        construct(with_invoice(stored))
+        Array(params[:items]).each do |change|
+          item = stored[:items][:data].find { |row| row[:id] == change[:id] } ||
+            raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
+          item[:price] = { id: change[:price] } if change[:price]
+        end
+        stored[:description] = params[:description] if params.key?(:description)
+        response = construct(with_invoice(stored))
+        @update_responses[opts[:idempotency_key]] = response if opts[:idempotency_key]
+        response
       },
       cancel: lambda { |id|
         @cancelled_subscriptions << id
@@ -161,7 +175,7 @@ class FakeStripe
         method = customer.dig(:invoice_settings, :default_payment_method)
         construct(customer.merge(invoice_settings: { default_payment_method: method && @payment_methods.fetch(method) }))
       },
-      update: lambda { |id, params|
+      update: lambda { |id, params, _opts = {}|
         @customer_updates << [ id, params ]
         customer = @customers.fetch(id) { put_customer(id) }
         if (method = params.dig(:invoice_settings, :default_payment_method))

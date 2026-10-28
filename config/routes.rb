@@ -130,6 +130,7 @@ Rails.application.routes.draw do
     resource :costs, only: :show, module: :accounts
     resource :billing, only: :show, module: :accounts do
       post :checkout
+      post :plan_change
       post :portal
       resources :codes, only: :create, controller: "billing_codes"
     end
