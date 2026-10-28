@@ -59,7 +59,12 @@ module Billing
     end
 
     def params(customer)
-      metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @offer.tier.id, rate: @offer.rate }
+      # A standard session's payload is what it was before rates existed: the
+      # idempotency key is deterministic across deploys, and Stripe refuses a
+      # replayed key whose parameters moved. Only an at-cost session carries
+      # its rate.
+      metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @offer.tier.id }
+      metadata[:rate] = @offer.rate unless @offer.standard?
       {
         mode: "subscription",
         customer: customer.stripe_customer_id,

@@ -69,6 +69,22 @@ class Billing::TierTest < ActiveSupport::TestCase
     saved.each { |key, value| ENV[key] = value }
   end
 
+  test "price ids come from the credentials first, as one id or a list" do
+    saved = ENV["STRIPE_PRICE_WORK"]
+    ENV["STRIPE_PRICE_WORK"] = "price_env_work"
+    prices = { conversation: "price_cred_conv", life: [ "price_cred_life_new", "price_cred_life_old" ] }
+    Rails.application.credentials.stub(:dig, ->(*keys) { keys[0..1] == %i[stripe prices] ? prices[keys[2]] : nil }) do
+      assert_equal %w[price_cred_conv], Billing::Tier.find!("conversation").price_ids
+      assert_equal %w[price_cred_life_new price_cred_life_old], Billing::Tier.find!("life").price_ids
+      assert_equal "price_cred_life_new", Billing::Tier.find!("life").price_id
+      assert_equal Billing::Tier.find!("life"), Billing::Tier.for_price("price_cred_life_old")
+      # Nothing in the credentials for work: the ENV of the test harness applies.
+      assert_equal %w[price_env_work], Billing::Tier.find!("work").price_ids
+    end
+  ensure
+    ENV["STRIPE_PRICE_WORK"] = saved
+  end
+
   # Costed 2026-10-28 (jBVrDj): net Hetzner list price (gross / 1.19, reverse
   # charge) at ECB 1.115 USD/EUR, the primary IPv4 at €0.50, Stripe UK on an
   # EU card at 2.5% + 20p (~$0.27). At cost covers that and no more than the

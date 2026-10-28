@@ -141,9 +141,16 @@ module Billing
     # with the same key and the same stored card, returns the one Stripe made
     # the first time. Stripe's answer is recorded before anything else can
     # happen to the order.
+    #
+    # The payload for a standard order is byte-for-byte what it was before
+    # rates existed: an uncertain order opened by an older deploy is replayed
+    # by a newer one under the same idempotency key, and Stripe refuses a key
+    # whose parameters moved. Only an at-cost order carries its rate.
     def open_subscription!(order)
       offer = order.offer
       customer = BillingCustomer.find_by!(account: order.account)
+      metadata = { birth_order: order.reference, account_id: order.account_id.to_s, tier: offer.tier.id }
+      metadata[:rate] = offer.rate unless offer.standard?
       subscription = @client.v1.subscriptions.create({
         customer: customer.stripe_customer_id,
         items: [ { price: order.stripe_price_id.presence || offer.price_id } ],
@@ -152,7 +159,7 @@ module Billing
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
         description: "#{offer.name} hosting for #{order.resident_name}",
-        metadata: { birth_order: order.reference, account_id: order.account_id.to_s, tier: offer.tier.id, rate: offer.rate },
+        metadata: metadata,
         expand: [ "latest_invoice.confirmation_secret" ]
       }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
       order.update!(stripe_subscription_id: subscription.id, last_error: nil)
