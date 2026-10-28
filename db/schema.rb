@@ -2186,6 +2186,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_170000) do
     t.date "allowance_month"
     t.decimal "allowance_limit_usd", precision: 14, scale: 8
     t.string "rate", default: "standard", null: false
+    t.string "checkout_key"
+    t.bigint "checkout_redemption_id"
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
     t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"

@@ -43,4 +43,28 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_empty @stripe.checkout_sessions
   end
 
+  # An uncertain create is replayed under the same key. The grant it was
+  # authorised by is pinned to that key before Stripe is called, so the
+  # replay's payload matches even after the account's grants have changed.
+  test "a replayed attempt sends the grant it was authorised by, whatever the grants are by then" do
+    admin = users(:site_admin_user)
+    first_grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: admin).code,
+      account: @agent.account, by: users(:user_1))
+    @stripe.fail_next_checkout_create(created: true)
+    assert_raises(Stripe::APIConnectionError) { checkout(rate: "at_cost") }
+    entitlement = ResidentEntitlement.find_by!(agent: @agent)
+    assert_equal first_grant.id, entitlement.checkout_redemption_id
+    assert_nil entitlement.checkout_session_id, "the answer was lost"
+
+    first_grant.withdraw!(by: admin)
+    second_grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE-2", effect: "at_cost", created_by: admin).code,
+      account: @agent.account, by: users(:user_1))
+    assert_equal second_grant, @agent.account.grant_for("at_cost")
+
+    assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", checkout(rate: "at_cost")
+    assert_equal 1, @stripe.checkout_sessions.size, "the replay found the session Stripe had made"
+    assert_equal first_grant.id.to_s, @stripe.checkout_sessions.sole.first.dig(:metadata, :redemption_id)
+    assert_equal "cs_test_1", entitlement.reload.checkout_session_id
+  end
+
 end

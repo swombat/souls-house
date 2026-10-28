@@ -99,10 +99,15 @@ module Billing
     # A recognised at-cost price on a correctly linked subscription is
     # accepted (the money is taken; refusing would strand it) and the missing
     # grant is reported, unless the purchase names the redemption that
-    # authorised it: a grant withdrawn since then is not abuse.
+    # authorised it: this account's, for this rate, withdrawn or not, since a
+    # grant withdrawn after the purchase is not abuse. A name that is not
+    # such a redemption counts for nothing.
     def flag_ungranted!(remote, agent, offer)
       return if offer.standard?
-      return if remote.metadata["redemption_id"].present? || agent.account.eligible_for?(offer.rate)
+
+      named = remote.metadata["redemption_id"].presence
+      return if named && BillingCodeRedemption.where(id: named, account_id: agent.account_id, effect: offer.rate).exists?
+      return if agent.account.eligible_for?(offer.rate)
 
       AuditLog.create!(account: agent.account, action: "billing_rate_without_grant", auditable: agent,
         data: { "stripe_subscription_id" => remote.id, "rate" => offer.rate })

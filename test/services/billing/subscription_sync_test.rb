@@ -104,9 +104,27 @@ class Billing::SubscriptionSyncTest < ActiveSupport::TestCase
     @agent.account.billing_code_redemptions.sole.withdraw!(by: users(:site_admin_user))
     @stripe.put_subscription(id: "sub_2", agent: agents(:code_reviewer), customer: "cus_1",
       price: FakeStripe::Helpers::LIFE_AT_COST_PRICE, status: "active")
-    @stripe.subscription("sub_2")[:metadata]["redemption_id"] = "7"
+    @stripe.subscription("sub_2")[:metadata]["redemption_id"] = BillingCodeRedemption.sole.id.to_s
     sync("sub_2")
-    assert_nil AuditLog.find_by(action: "billing_rate_without_grant"), "a purchase that names its grant is trusted"
+    assert_nil AuditLog.find_by(action: "billing_rate_without_grant"), "a purchase that names its withdrawn grant is trusted"
+  end
+
+  test "a redemption named on the purchase counts only if it is this account's, for this rate" do
+    other = accounts(:team_account)
+    foreign = BillingCode.redeem!(code: BillingCode.create!(code: "THEIRS", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: other, by: users(:user_1))
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1",
+      price: FakeStripe::Helpers::LIFE_AT_COST_PRICE, status: "active")
+    @stripe.subscription("sub_1")[:metadata]["redemption_id"] = foreign.id.to_s
+    sync("sub_1")
+    assert AuditLog.exists?(action: "billing_rate_without_grant"), "another account's grant is not this one's"
+
+    AuditLog.where(action: "billing_rate_without_grant").delete_all
+    @stripe.put_subscription(id: "sub_2", agent: agents(:code_reviewer), customer: "cus_1",
+      price: FakeStripe::Helpers::LIFE_AT_COST_PRICE, status: "active")
+    @stripe.subscription("sub_2")[:metadata]["redemption_id"] = "999999"
+    sync("sub_2")
+    assert AuditLog.exists?(action: "billing_rate_without_grant"), "a name that is no redemption counts for nothing"
   end
 
 end

@@ -21,27 +21,44 @@ module Billing
     # Returns the Checkout URL to send the owner to.
     def url
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
-      unless @agent.account.eligible_for?(@offer.rate)
-        raise NotEligible, "This account can't buy plans at that rate."
-      end
 
       customer = BillingCustomer.for!(@agent.account, client: @client)
       entitlement = ResidentEntitlement.for_agent!(@agent)
 
-      entitlement.with_lock do
+      # The lock is a transaction. An error from Stripe is carried out of it
+      # and raised after it commits, so the pinned grant below survives the
+      # uncertain create it exists for.
+      failure = nil
+      url = entitlement.with_lock do
         if ResidentSubscription.live.exists?(agent: @agent)
           raise AlreadySubscribed, "#{@agent.name} already has a subscription; change it from Manage billing"
         end
 
         previous = entitlement.checkout_session_id
         resolve_previous!(previous) if previous.present?
-        session = @client.v1.checkout.sessions.create(
-          params(customer),
-          { idempotency_key: "souls-house-checkout-#{@agent.id}-#{previous || 'first'}-#{@offer.id}" }
-        )
+        key = "souls-house-checkout-#{@agent.id}-#{previous || 'first'}-#{@offer.id}"
+        # The grant this attempt is authorised by is pinned to its key before
+        # Stripe is called. A replay of the key (an uncertain create) sends
+        # the same redemption whatever the account's grants are by then, so
+        # the payload matches and the attempt is recovered, not refused.
+        unless entitlement.checkout_key == key
+          unless @agent.account.eligible_for?(@offer.rate)
+            raise NotEligible, "This account can't buy plans at that rate."
+          end
+          entitlement.update!(checkout_key: key, checkout_redemption_id: @agent.account.grant_for(@offer.rate)&.id)
+        end
+        begin
+          session = @client.v1.checkout.sessions.create(params(customer, entitlement.checkout_redemption_id), { idempotency_key: key })
+        rescue Stripe::StripeError => error
+          failure = error
+          next nil
+        end
         entitlement.update!(checkout_session_id: session.id)
         session.url
       end
+      raise failure if failure
+
+      url
     end
 
     private
@@ -61,7 +78,7 @@ module Billing
       end
     end
 
-    def params(customer)
+    def params(customer, redemption_id)
       # A standard session's payload is what it was before rates existed: the
       # idempotency key is deterministic across deploys, and Stripe refuses a
       # replayed key whose parameters moved. Only an at-cost session carries
@@ -69,7 +86,7 @@ module Billing
       metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @offer.tier.id }
       unless @offer.standard?
         metadata[:rate] = @offer.rate
-        metadata[:redemption_id] = @agent.account.grant_for(@offer.rate)&.id.to_s
+        metadata[:redemption_id] = redemption_id.to_s
       end
       {
         mode: "subscription",

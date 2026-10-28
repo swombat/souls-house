@@ -36,6 +36,11 @@ class CreateBillingCodes < ActiveRecord::Migration[8.1]
       name: "index_billing_code_redemptions_live_by_account"
 
     add_reference :resident_birth_orders, :billing_code_redemption, foreign_key: true
+    # The grant a Checkout attempt was authorised by, pinned to the attempt's
+    # idempotency key before Stripe is called, so a replay sends the same
+    # redemption whatever the account's grants are by then.
+    add_column :resident_entitlements, :checkout_key, :string
+    add_column :resident_entitlements, :checkout_redemption_id, :bigint
   end
 
 end

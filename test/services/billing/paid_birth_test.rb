@@ -412,6 +412,18 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal 0, ResidentBirthOrder.count
   end
 
+  test "an at-cost order on a house-funded model is refused before any money moves" do
+    BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: HouseInference::Offering::DEFAULT_MODEL_ID })
+    end
+    assert_match(/includes no house model/, error.message)
+    assert_equal 0, @stripe.created_subscriptions.size
+    assert_equal 0, ResidentBirthOrder.count
+  end
+
   test "births that don't pay are refused in an account that pays" do
     error = assert_raises(Billing::BirthGate::Refused) do
       Agents::HostedBirth.new(account: @account, creator: @owner,

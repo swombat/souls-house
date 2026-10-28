@@ -70,6 +70,12 @@
   let chosenPlan = $derived(
     chosenTier ? { tier: chosenTier.tier ?? chosenTier.id, rate: chosenTier.rate ?? 'standard' } : null
   );
+  // At cost includes no house model: a draft on a house-funded model can't
+  // be paid for at cost (the server refuses it too).
+  let atCostNeedsOwnModel = $derived(
+    chosenPlan?.rate === 'at_cost' &&
+      (grouped_models['On the house'] || []).some((model) => model.model_id === selectedModel)
+  );
 
   let step = $state(0);
   let selectedModel = $state(default_model_id);
@@ -128,6 +134,7 @@
       formComplete &&
       acknowledged &&
       !$form.processing &&
+      !atCostNeedsOwnModel &&
       (!billing || (billing.can_pay && Boolean(chosenTier) && Boolean(paymentMethod) && !paying && !paidPending))
   );
 
@@ -372,6 +379,9 @@
             bind:paymentMethod
             {payError}
             payPaid={Boolean(lastPayment?.paid)}
+            blocked={atCostNeedsOwnModel
+              ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose a standard plan.`
+              : null}
             busy={paying} />
         {/if}
       </div>

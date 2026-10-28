@@ -57,6 +57,7 @@ module Billing
     def start!(account:, creator:, attributes:, open_beginning:, tier:, rate: "standard")
       offer = tier&.offer(rate)
       refuse!(account, creator, offer)
+      refuse_house_model_at_cost!(offer, attributes)
       payment_method = current_payment_method!(account)
       Agents::VmBirthPolicy.current.refuse!(kind: :birth)
       raise Refused, "Give the resident a name first." if attributes[:name].to_s.strip.empty?
@@ -132,6 +133,16 @@ module Billing
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
       raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
       raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer.rate)
+    end
+
+    # At cost includes no house-model allowance, so a resident on a
+    # house-funded model would be born unable to think. Refused before any
+    # money moves; the wizard says the same before the button.
+    def refuse_house_model_at_cost!(offer, attributes)
+      return unless offer.at_cost? && HouseInference::Offering.find(attributes[:model_id].to_s)
+
+      raise Refused, "At cost includes no house model. Choose a model you connect a subscription or key for, " \
+                     "or a plan with an allowance."
     end
 
     def current_payment_method!(account)

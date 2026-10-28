@@ -61,6 +61,12 @@ class FakeStripe
     @create_fault = [ error, created ]
   end
 
+  # The next Checkout session create has no certain answer: Stripe made the
+  # session (created: true) or didn't, and the caller sees only the error.
+  def fail_next_checkout_create(error = Stripe::APIConnectionError.new("timed out"), created: true)
+    @checkout_fault = [ error, created ]
+  end
+
   # Search hasn't indexed anything yet (Stripe's search lags by up to a minute).
   def search_lags!
     @search_lags = true
@@ -168,9 +174,23 @@ class FakeStripe
   def checkout
     sessions = Service.new(
       create: lambda { |params, opts|
+        # Stripe replays an idempotency key only for identical parameters.
+        if (replayed = @session_states.find { |_id, state| state[:idempotency_key] && state[:idempotency_key] == opts[:idempotency_key] })
+          id, state = replayed
+          if params != state[:create_params]
+            raise Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters they " \
+                                               "were first used with. #{params} vs #{state[:create_params]}")
+          end
+          next Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
+        end
+        fault = @checkout_fault
+        @checkout_fault = nil
+        raise fault[0] if fault && !fault[1]
         @checkout_sessions << [ params, opts ]
         id = "cs_test_#{@checkout_sessions.size}"
-        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer] }
+        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer],
+                                idempotency_key: opts[:idempotency_key], create_params: params.deep_dup }
+        raise fault[0] if fault
         Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
       },
       retrieve: lambda { |id|

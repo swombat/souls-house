@@ -70,6 +70,11 @@ test('offers at cost beside standard when the account holds a code, and says wha
   expect(screen.getByTestId('plan-at-cost-terms')).toHaveTextContent('includes no house-model allowance');
 });
 
+test('a draft the plan does not fit is told so', () => {
+  render(PlanStep, { billing, residentName: 'Aria', blocked: 'At cost includes no house model, and Aria is set to think on the house.' });
+  expect(screen.getByTestId('plan-blocked')).toHaveTextContent('At cost includes no house model');
+});
+
 test('without a card on file it asks for one, and says nothing is charged yet', () => {
   render(PlanStep, { billing, residentName: 'Aria' });
   expect(screen.getByRole('button', { name: 'Add a card' })).toBeVisible();

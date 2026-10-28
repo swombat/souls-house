@@ -21,6 +21,8 @@
     payError = null,
     // The money was taken but the house hasn't finished: no decline wording.
     payPaid = false,
+    // Why this draft can't be paid for on the chosen plan, if it can't.
+    blocked = null,
     busy = false,
   } = $props();
 
@@ -219,6 +221,13 @@
           30 days for a full refund.
         </p>
       </section>
+    {/if}
+
+    {#if blocked}
+      <Alert variant="destructive" data-testid="plan-blocked">
+        <AlertTitle>This plan doesn't fit the draft</AlertTitle>
+        <AlertDescription>{blocked}</AlertDescription>
+      </Alert>
     {/if}
 
     {#if payError}
