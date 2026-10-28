@@ -7,6 +7,8 @@ means it has shipped. Move settled behaviour into the relevant reference guide.
 - [House default-model selection, Lume, 2026-09-30](2026-09-30-house-model-selection-from-lume.md)
   — research and recommendation; its “Before it ships” section remains a decision/
   implementation gate, not a change made by the documentation cleanup.
+- [Billing codes and the At Cost rate, Lume with Mira, 2026-10-28](2026-10-28-billing-codes-at-cost.md)
+  — proposed, not built; the cost basis and prices are Daniel's decision.
 
 Earlier plans and requirements are retained in [the historical shelf](../.bak/README.md).
 That move does not cancel unfinished work. Native-client work on other branches
