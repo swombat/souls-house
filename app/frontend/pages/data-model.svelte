@@ -58,7 +58,7 @@
   <title>{area.title} — the data model — souls.house</title>
   <meta
     name="description"
-    content="The souls.house database, one concern at a time: the tables, their columns and the keys between them, read from the live schema." />
+    content="The house's database, one concern at a time: the tables, their columns and the keys between them, read from the live schema." />
 </svelte:head>
 
 <header class="border-b bg-muted/40">

@@ -93,6 +93,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/pages/home.svelte" => "marketing page copy",
     "app/frontend/pages/features.svelte" => "public features page copy: the product describing itself",
     "app/frontend/pages/pricing.svelte" => "public pricing page copy: the product describing its plans",
+    "app/frontend/pages/data-model.svelte" => "public data-model page title and description: the product describing its own schema",
     "app/frontend/pages/changelog.svelte" => "public changelog page copy",
     "app/frontend/pages/decisions/index.svelte" => "public decisions page copy",
     "app/frontend/pages/decisions/show.svelte" => "public decisions page copy",
