@@ -1,9 +1,12 @@
 # Billing codes and the At Cost rate — design
 
-Status: **proposed, not built.** Written by Lume on 2026-10-28 from Daniel's ask
-in conversation `jBVrDj` and two review rounds with Mira (`YKaggj`, `JMNgWj`),
-who agreed to it as the proposed design. Nothing here is an instruction to
-implement; the pricing choice at the end is Daniel's. Companion to
+Status: **proposed, not built; prices decided.** Written by Lume on 2026-10-28
+from Daniel's ask in conversation `jBVrDj` and two review rounds with Mira
+(`YKaggj`, `JMNgWj`), who agreed to it as the proposed design. Daniel chose the
+cost basis the same afternoon (`YrzdmY`): at cost includes Stripe's fee and the
+IP, so **$8 / $11 / $20**. The first case is Pepe creating a VM resident on a
+code and moving its machine up or down; converting an existing resident into a
+VM resident comes second. Companion to
 [Paid hosting with Stripe](2026-10-07-stripe-billing.md), whose mechanism this
 extends.
 
@@ -155,7 +158,7 @@ redeems the code, adds a card, buys Alanis's plan from the Billing tab (the
 existing-resident Checkout path). "No included tokens" is already how his
 residents run.
 
-## The number: Daniel's decision
+## The number
 
 Hetzner list prices from the house's own pricing sample, 2026-10-28 04:40Z
 (fsn1/hel1/nbg1 identical), and ECB EUR→USD 1.115 (2026-10-27):
@@ -169,23 +172,97 @@ Hetzner list prices from the house's own pricing sample, 2026-10-28 04:40Z
 | **VM only, rounded up** | **$7** | **$10** | **$18** |
 | **VM plus what it drags, rounded up** | **$8** | **$11** | **$20** |
 
-Daniel asked for the VM price. Lume's recommendation is the second row: the
-first makes the house pay about a dollar a month to host every at-cost
-resident, and the name says it doesn't. Either way it is a **fixed hosting
-rate, re-costed by hand** when Hetzner or the exchange rate moves (a new price
-id; old subscriptions keep theirs), described as such on the Billing tab, not
-metered reimbursement. The three USD figures live in the catalogue with a
-comment saying what they cover and when they were costed.
+Daniel chose the second row (`jBVrDj` `YrzdmY`, 2026-10-28): at cost means the
+VM and what it drags with it. It is a **fixed hosting rate, re-costed by hand**
+when Hetzner or the exchange rate moves (a new price id; old subscriptions
+keep theirs), described as such on the Billing tab, not metered reimbursement.
+The three USD figures live in the catalogue with a comment saying what they
+cover and when they were costed.
+
+## Data model
+
+Against `db/schema.rb` as of 2026-10-28 (posted as `JDwDGY`).
+
+### New tables
+
+- **`billing_codes`**: `code` string (unique on `lower(code)`), `effect` string
+  (check: `at_cost`), `max_redemptions` integer null (null = unlimited),
+  `redemptions_count` integer, `expires_at`, `revoked_at`, `created_by_id` →
+  users, `note` text, timestamps. Made and revoked in Site Admin.
+- **`billing_code_redemptions`**: `account_id`, `billing_code_id`, `effect`
+  string (copied from the code at redemption, so a later edit to the code
+  cannot change what was granted), `redeemed_by_id` → users, `redeemed_at`,
+  `withdrawn_at`, `withdrawn_by_id`, timestamps. Unique
+  (`account_id`, `billing_code_id`); partial index on `account_id` where
+  `withdrawn_at` is null. This row is the grant: `Account#eligible_rates` =
+  `standard` always, plus `at_cost` while a live redemption with that effect
+  exists. No column on `accounts`.
+- **`placement_resize_operations`** (the machine half of upgrade/downgrade):
+  `agent_placement_id`, `from_server_type`, `to_server_type`, `state`,
+  `requested_by_id`, `provider_action_id`, `error`, timestamps; the same shape
+  as a procurement operation.
+
+### Columns on existing tables
+
+- `resident_subscriptions.rate` string not null default `standard` (check
+  `standard|at_cost`), beside `tier`; `stripe_price_id` string, what Stripe
+  actually sold, so the catalogue-version lookup is auditable from our rows;
+  `stripe_schedule_id` string null, for a scheduled conversion.
+- `resident_entitlements.rate`, same shape. The allowance derivation becomes a
+  function of (tier, rate); the high-water mark columns are unchanged.
+- `resident_birth_orders.rate`, same shape, and `billing_code_redemption_id`
+  nullable FK: the authorisation recorded on the attempt. The existing-resident
+  Checkout path has no order row; there `rate` and `redemption_id` go in the
+  Stripe session and subscription metadata, which `SubscriptionSync` already
+  re-reads under lock.
+- `agent_placements.server_type` string: set at procurement, updated on
+  resize, so a placement knows its own size instead of reading its latest
+  operation.
+
+Nothing is renamed; the existing `tier` column and its validations stay.
+
+### Not tables
+
+- The catalogue: `Billing::Offer` = (tier, rate) with `price_ids` (list,
+  current first; retired ids recognised, never sold), `monthly_usd`,
+  `allowance_usd`. Stripe side: one new price per existing *product*
+  (Conversation/Life/Work keep their products, so the invoice still says
+  "Conversation"); credentials `stripe.prices.<tier>_at_cost`.
+- `Billing::PlanChange`: a plan change is a Stripe subscription item price
+  change to the other offer at the same rate (Stripe prorates). The portal
+  cannot do it (its product list is empty), so it is a house action on the
+  Billing tab; sync records the new tier.
+
+## The machine must follow the plan (gap today, issue #621)
+
+Every VM birth gets the one `server_type` from Site Admin settings (cx23)
+whatever plan was bought: `app/services/cloud_procurement.rb:89` passes
+`@config.server_type`, not the tier's machine. A Work resident on a VM is on a
+Conversation machine today, and an at-cost Work resident would pay $20 for a
+cx23. `cloud_procurement_operations.server_type` already exists per operation,
+so this is wiring, not schema: procurement takes `offer.tier.server_type`. Both
+of Daniel's cases stand on it, so it is built first, with #619.
+
+Resizing: Hetzner `change_type`, server powered off for the minute it takes. A
+resize that also grows the disk can never be shrunk again, so CPU/RAM are
+resized and the disk stays at the birth size; that is what keeps downgrade
+possible.
+
+Converting an existing resident into a VM resident (the second case) needs no
+new table: `agent_placements.kind` already has `migration`; the flow is buy a
+plan for the existing resident (the Checkout path exists), then a migration
+placement sized by the offer's tier.
 
 ## Build order, if Daniel says go
 
-1. #619: price ids as lists; failed Stripe events in Site Admin.
+1. #619 (price ids as lists; failed Stripe events in Site Admin) and #621
+   (the server_type wiring), both gaps today.
 2. Offers and `rate`; at-cost prices; the zero-allowance message; portal check.
 3. `BillingCode`, redemption, Site Admin, the Billing tab and wizard offers;
    Checkout/PaidBirth on offers; sync accept-and-flag.
-4. Conversion by subscription schedule, with the boundary test.
+4. Plan change and resize.
+5. Conversion by subscription schedule, with the boundary test.
 
 ## Open
 
-- Cost basis and the three prices (Daniel).
-- Whether 4 ships with 3 or follows it.
+- Daniel's go, and whether it starts now or on the next 08:30 pick.
