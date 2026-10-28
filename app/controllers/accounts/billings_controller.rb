@@ -45,7 +45,7 @@ class Accounts::BillingsController < ApplicationController
       cancel_url: account_billing_url(current_account)
     ).url
     inertia_location url
-  rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Stripe::StripeError => error
+  rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady, Stripe::StripeError => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 

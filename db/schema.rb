@@ -690,6 +690,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_170000) do
     t.index ["web_access"], name: "index_chats_on_web_access"
   end
 
+  create_table "checkout_attempts", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "idempotency_key", null: false
+    t.string "offer_id", null: false
+    t.bigint "billing_code_redemption_id"
+    t.string "stripe_session_id"
+    t.datetime "abandoned_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_checkout_attempts_on_agent_id"
+    t.index ["billing_code_redemption_id"], name: "index_checkout_attempts_on_billing_code_redemption_id"
+    t.index ["idempotency_key"], name: "index_checkout_attempts_on_idempotency_key", unique: true
+  end
+
   create_table "cloud_procurement_operations", force: :cascade do |t|
     t.bigint "agent_placement_id", null: false
     t.bigint "requested_by_id", null: false
@@ -2186,8 +2200,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_170000) do
     t.date "allowance_month"
     t.decimal "allowance_limit_usd", precision: 14, scale: 8
     t.string "rate", default: "standard", null: false
-    t.string "checkout_key"
-    t.bigint "checkout_redemption_id"
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
     t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
@@ -2898,6 +2910,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_170000) do
   add_foreign_key "chats", "rooms", column: ["room_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "visual_tags", column: ["visual_tag_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
+  add_foreign_key "checkout_attempts", "agents"
+  add_foreign_key "checkout_attempts", "billing_code_redemptions"
   add_foreign_key "cloud_procurement_operations", "agent_placements"
   add_foreign_key "cloud_procurement_operations", "users", column: "requested_by_id"
   add_foreign_key "comms_chats", "service_connections"
