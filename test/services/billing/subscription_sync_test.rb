@@ -54,4 +54,23 @@ class Billing::SubscriptionSyncTest < ActiveSupport::TestCase
     assert_nil ResidentEntitlement.find_by(agent: @agent)
   end
 
+  # #619: a plan re-costed onto a new price keeps the old id in its list, so
+  # the subscriptions still on it see renewals, past_due and cancellation.
+  test "a subscription on a retired price keeps syncing" do
+    ENV["STRIPE_PRICE_CONVERSATION"] = "#{FakeStripe::Helpers::CONVERSATION_PRICE},price_retired_conversation"
+    assert_equal FakeStripe::Helpers::CONVERSATION_PRICE, Billing::Tier.find!("conversation").price_id
+
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: "price_retired_conversation", status: "active")
+    assert_equal "conversation", sync("sub_1").tier
+    assert ResidentEntitlement.find_by!(agent: @agent).active?
+
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: "price_retired_conversation", status: "past_due")
+    sync("sub_1")
+    assert ResidentEntitlement.find_by!(agent: @agent).grace?
+
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: "price_retired_conversation", status: "canceled")
+    sync("sub_1")
+    assert ResidentEntitlement.find_by!(agent: @agent).held?
+  end
+
 end

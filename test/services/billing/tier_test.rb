@@ -23,6 +23,23 @@ class Billing::TierTest < ActiveSupport::TestCase
     assert_equal Billing::Tier::CONNECTIONS, Billing::Tier.find!("work").connections
   end
 
+  # #619: re-costing a plan makes a new Stripe price; the old one is still
+  # recognised so its subscriptions keep syncing, but it is never sold.
+  test "price ids are versions: the first is sold, every one is recognised" do
+    saved = ENV["STRIPE_PRICE_CONVERSATION"]
+    ENV["STRIPE_PRICE_CONVERSATION"] = "price_new, price_old"
+    tier = Billing::Tier.find!("conversation")
+
+    assert_equal %w[price_new price_old], tier.price_ids
+    assert_equal "price_new", tier.price_id
+    assert tier.purchasable?
+    assert_equal tier, Billing::Tier.for_price("price_old")
+    assert_equal tier, Billing::Tier.for_price("price_new")
+    assert_nil Billing::Tier.for_price("price_unknown")
+  ensure
+    ENV["STRIPE_PRICE_CONVERSATION"] = saved
+  end
+
   # Costed 2026-10-14 (WjNvXj/YwkgkY). Machine at €1 = $1.10, Scribe $0.22/h,
   # S3 $0.023/GB, swarm $0.064 a search, Stripe 2.9% + $0.30. If a plan's
   # numbers change, this keeps the at-full-use margin positive.

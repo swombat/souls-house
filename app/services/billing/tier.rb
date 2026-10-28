@@ -71,16 +71,25 @@ module Billing
     def self.for_price(price_id)
       return nil if price_id.blank?
 
-      CATALOGUE.find { |tier| tier.price_id == price_id }
+      CATALOGUE.find { |tier| tier.price_ids.include?(price_id) }
     end
 
     def self.with_swarm_search = CATALOGUE.select(&:swarm_search?)
 
-    # Stripe price IDs differ between test and live mode, so they are configuration.
-    def price_id
-      Rails.application.credentials.dig(:stripe, :prices, id.to_sym).presence ||
+    # Stripe price IDs differ between test and live mode, so they are
+    # configuration. A plan may have several, current first: re-costing a plan
+    # makes a new Stripe price, and the subscriptions still on the old one
+    # must keep syncing (#619), so a retired id is recognised but never sold.
+    # Credentials: stripe.prices.<plan> as one id or a list; ENV
+    # STRIPE_PRICE_<PLAN> comma-separated.
+    def price_ids
+      configured = Rails.application.credentials.dig(:stripe, :prices, id.to_sym).presence ||
         ENV["STRIPE_PRICE_#{id.upcase}"].presence
+      Array(configured).flat_map { |value| value.to_s.split(",") }.map(&:strip).reject(&:blank?)
     end
+
+    # What a new purchase buys.
+    def price_id = price_ids.first
 
     def purchasable? = price_id.present?
 

@@ -86,13 +86,23 @@ class CloudProcurement
 
     requester = placement.birth_requested_by || raise(NotAllowed, "placement has no recorded birth requester")
     operation = plan_operation!(placement:, requested_by: requester,
-      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}", server_type: @config.server_type,
+      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}",
+      server_type: vm_birth_server_type(placement),
       refuse_if_cleanup_requested: true)
     AuditLog.create!(user: requester, account: placement.agent.account, action: "vm_birth_procurement_planned",
       auditable: operation, data: { "agent_id" => placement.agent_id, "placement_id" => placement.id,
         "admitted_by_setting_at" => placement.admitted_by_setting_at.iso8601, "server_type" => operation.server_type,
         "location" => operation.location })
     operation
+  end
+
+  # The machine the resident's plan bought (#621): a paid birth has an order
+  # naming its plan, and the plan names its machine. A birth the house pays
+  # for itself has no order and gets the settings' server type. The provider
+  # allowlist still applies at submit.
+  def vm_birth_server_type(placement)
+    ResidentBirthOrder.where(agent_id: placement.agent_id).order(:id).last&.tier_record&.server_type ||
+      @config.server_type
   end
 
   # Cleanup of a placement whose birth failed or was given up (#246): delete
