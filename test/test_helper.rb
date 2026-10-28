@@ -89,8 +89,11 @@ end
 module InertiaTestHelpers
 
   def inertia_props
-    return @inertia_props if @inertia_props
+    # Memoised per response, not per test: a test that reads two responses
+    # must not be handed the first one's props twice.
+    return @inertia_props if @inertia_props && @inertia_props_response.equal?(@response)
 
+    @inertia_props_response = @response
     if @response.media_type == "application/json"
       # JSON response (when X-Inertia header is present)
       @inertia_props = JSON.parse(@response.body)

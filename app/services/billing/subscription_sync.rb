@@ -26,6 +26,7 @@ module Billing
         remote = fetch
         offer = validate!(remote, agent)
         subscription = record!(remote, agent, offer)
+        flag_ungranted!(remote, agent, offer)
         ResidentEntitlement.for_agent!(agent).apply_subscription!(subscription, now: @now)
         subscription
       end
@@ -93,6 +94,20 @@ module Billing
       )
       subscription.save!
       subscription
+    end
+
+    # A recognised at-cost price on a correctly linked subscription is
+    # accepted (the money is taken; refusing would strand it) and the missing
+    # grant is reported, unless the purchase names the redemption that
+    # authorised it: a grant withdrawn since then is not abuse.
+    def flag_ungranted!(remote, agent, offer)
+      return if offer.standard?
+      return if remote.metadata["redemption_id"].present? || agent.account.eligible_for?(offer.rate)
+
+      AuditLog.create!(account: agent.account, action: "billing_rate_without_grant", auditable: agent,
+        data: { "stripe_subscription_id" => remote.id, "rate" => offer.rate })
+      Rails.error.report(UngrantedRate.new("Subscription #{remote.id} is at #{offer.rate} with no grant on account #{agent.account_id}"),
+        handled: true, context: { subsystem: "billing", stripe_subscription_id: remote.id })
     end
 
     # Newer Stripe API versions keep the period on the subscription item.

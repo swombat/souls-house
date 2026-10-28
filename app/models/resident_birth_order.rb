@@ -20,6 +20,7 @@ class ResidentBirthOrder < ApplicationRecord
   belongs_to :account
   belongs_to :creator, class_name: "User"
   belongs_to :agent, optional: true
+  belongs_to :billing_code_redemption, optional: true
 
   validates :state, inclusion: { in: STATES }
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }

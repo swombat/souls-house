@@ -131,6 +131,7 @@ Rails.application.routes.draw do
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :portal
+      resources :codes, only: :create, controller: "billing_codes"
     end
     resource :billing_card, only: :create, module: :accounts do
       post :complete
@@ -343,6 +344,10 @@ Rails.application.routes.draw do
     resources :jobs, only: [ :index, :create ]
     resources :notices, only: [ :index, :create, :destroy ]
     resource :settings, only: [ :show, :update ]
+    resources :billing_codes, only: [ :index, :create ] do
+      patch :revoke, on: :member
+    end
+    patch "billing_code_redemptions/:id/withdraw", to: "billing_codes#withdraw", as: :withdraw_billing_code_redemption
   end
 
   # Native-app sign-in (issue #94). No application-management UI.

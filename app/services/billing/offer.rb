@@ -45,9 +45,12 @@ module Billing
 
     def purchasable? = price_id.present?
 
+    # The tier's features at this rate: the allowance is the rate's.
+    def features = tier.features.merge(allowance_usd: allowance_usd)
+
     def as_json(*)
       { id: id, tier: tier.id, rate: rate, name: name, monthly_usd: monthly_usd, allowance_usd: allowance_usd,
-        purchasable: purchasable? }
+        purchasable: purchasable?, features: features }
     end
   end
 end

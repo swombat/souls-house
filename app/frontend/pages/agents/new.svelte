@@ -55,15 +55,21 @@
   let payError = $state(null);
   let lastPayment = $state(null);
   let paidPending = $state(null);
+  // The plans on offer: offers (a tier at a rate) when the server sends
+  // them, else the standard tiers.
+  let planOptions = $derived(billing?.offers?.length ? billing.offers : billing?.tiers || []);
   let planAllowance = $derived(
-    billing?.tiers?.length
+    planOptions.length
       ? [
-          Math.min(...billing.tiers.map((option) => option.allowance_usd)),
-          Math.max(...billing.tiers.map((option) => option.allowance_usd)),
+          Math.min(...planOptions.map((option) => option.allowance_usd)),
+          Math.max(...planOptions.map((option) => option.allowance_usd)),
         ]
       : null
   );
-  let chosenTier = $derived(billing?.tiers?.find((candidate) => candidate.id === tier) || null);
+  let chosenTier = $derived(planOptions.find((candidate) => candidate.id === tier) || null);
+  let chosenPlan = $derived(
+    chosenTier ? { tier: chosenTier.tier ?? chosenTier.id, rate: chosenTier.rate ?? 'standard' } : null
+  );
 
   let step = $state(0);
   let selectedModel = $state(default_model_id);
@@ -190,13 +196,17 @@
     try {
       // Once an order exists, retries resume it; only an unpaid one may be
       // replaced by choosing a different plan.
-      const retrying = lastPayment && (lastPayment.paid || lastPayment.order?.tier === tier);
+      const retrying =
+        lastPayment &&
+        (lastPayment.paid ||
+          (lastPayment.order?.tier === chosenPlan?.tier && (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate));
       const result = retrying
         ? await payAgain({ billing, payment: lastPayment, onPhase })
         : await payForResident({
             billing,
             agent: draftAgent(),
-            tier,
+            tier: chosenPlan?.tier ?? tier,
+            rate: chosenPlan?.rate ?? 'standard',
             providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
             onPhase,
           });

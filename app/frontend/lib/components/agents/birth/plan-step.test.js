@@ -48,6 +48,28 @@ test('offers each plan with its price, preselects the first, and states the term
   expect(screen.getByTestId('plan-test-mode')).toHaveTextContent('4242 4242 4242 4242');
 });
 
+test('offers at cost beside standard when the account holds a code, and says what at cost means', () => {
+  const offers = [
+    { ...tiers[0], tier: 'conversation', rate: 'standard' },
+    {
+      id: 'conversation_at_cost',
+      tier: 'conversation',
+      rate: 'at_cost',
+      name: 'Conversation at cost',
+      monthly_usd: 8,
+      purchasable: true,
+      features: { hosting: true, allowance_usd: 0, swarm_searches: 0, subagents: false },
+    },
+  ];
+  render(PlanStep, { billing: { ...billing, offers }, residentName: 'Aria', tier: 'conversation_at_cost' });
+
+  expect(screen.getByRole('radio', { name: /Conversation at cost/ })).toBeChecked();
+  expect(screen.getByText('The machine at its price, no house model.')).toBeVisible();
+  expect(screen.getByText('No house model included: runs on its own subscription or key')).toBeVisible();
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $8 + VAT for Aria's first month.");
+  expect(screen.getByTestId('plan-at-cost-terms')).toHaveTextContent('includes no house-model allowance');
+});
+
 test('without a card on file it asks for one, and says nothing is charged yet', () => {
   render(PlanStep, { billing, residentName: 'Aria' });
   expect(screen.getByRole('button', { name: 'Add a card' })).toBeVisible();

@@ -6,9 +6,18 @@
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
 
-  let { account, billing = {}, tiers = [], residents = [] } = $props();
+  let { account, billing = {}, tiers = [], offers = [], codes = null, residents = [] } = $props();
 
   let busy = $state(null);
+  let code = $state('');
+
+  // What the account can buy: offers when the server sends them, else the
+  // purchasable standard tiers.
+  let buyable = $derived(
+    offers.length ? offers : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
+  );
+  let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
+  let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect === 'at_cost') || null);
 
   const STATE_LABELS = {
     pending: 'Awaiting payment',
@@ -46,13 +55,20 @@
     return !['active', 'trialing', 'past_due', 'incomplete'].includes(status);
   }
 
-  function subscribe(resident, tier) {
-    busy = `${resident.id}:${tier.id}`;
+  function subscribe(resident, offer) {
+    busy = `${resident.id}:${offer.id}`;
     router.post(
       `/accounts/${account.id}/billing/checkout`,
-      { agent_id: resident.id, tier: tier.id },
+      { agent_id: resident.id, tier: offer.tier, rate: offer.rate },
       { onFinish: () => (busy = null) }
     );
+  }
+
+  function redeem(event) {
+    event.preventDefault();
+    if (!code.trim()) return;
+    busy = 'code';
+    router.post(codes.redeem_url, { code: code.trim() }, { onFinish: () => (busy = null), onSuccess: () => (code = '') });
   }
 
   function openPortal() {
@@ -111,6 +127,17 @@
       {/each}
     </div>
 
+    {#if atCostGrant}
+      <div class="rounded border p-4 text-sm" data-testid="billing-at-cost">
+        <p class="font-medium">This account can buy plans at cost (code {atCostGrant.code}).</p>
+        <p class="mt-1 text-muted-foreground">
+          At cost is the machine's price and what comes with it, with no house-model allowance:
+          {#each atCostOffers as offer, index (offer.id)}{index > 0 ? ' · ' : ' '}{offer.name.replace(' at cost', '')} ${offer.monthly_usd}{/each}
+          a month + VAT. The resident runs on a model subscription or key you connect.
+        </p>
+      </div>
+    {/if}
+
     <div class="rounded border divide-y">
       {#each residents as resident (resident.id)}
         {@const entitlement = resident.entitlement}
@@ -120,7 +147,7 @@
               <span class="font-medium truncate">{resident.name}</span>
               <Badge variant={stateVariant(entitlement)}>{stateLabel(entitlement)}</Badge>
               {#if entitlement?.tier && entitlement.source === 'stripe'}
-                <Badge variant="outline">{tierName(entitlement.tier)}</Badge>
+                <Badge variant="outline">{tierName(entitlement.tier)}{entitlement.rate === 'at_cost' ? ' at cost' : ''}</Badge>
               {/if}
             </div>
             <div class="mt-1 text-xs text-muted-foreground">
@@ -141,10 +168,10 @@
           </div>
 
           {#if billing.can_pay && canSubscribe(entitlement)}
-            <div class="flex shrink-0 gap-2">
-              {#each tiers.filter((tier) => tier.purchasable) as tier (tier.id)}
-                <Button size="sm" variant="outline" onclick={() => subscribe(resident, tier)} disabled={busy !== null}>
-                  {busy === `${resident.id}:${tier.id}` ? 'Opening…' : `${tier.name} · $${tier.monthly_usd}`}
+            <div class="flex shrink-0 flex-wrap gap-2">
+              {#each buyable as offer (offer.id)}
+                <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
+                  {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
                 </Button>
               {/each}
             </div>
@@ -156,6 +183,27 @@
     </div>
 
     <RefundGuarantee email={billing.contact_email} />
+
+    {#if billing.can_pay && codes?.redeem_url}
+      <form class="flex flex-wrap items-end gap-2 rounded border p-4" onsubmit={redeem} data-testid="billing-code-form">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="font-medium">Have a code?</span>
+          <input
+            class="rounded border bg-background px-3 py-1.5 font-mono text-sm uppercase"
+            name="code"
+            placeholder="ABCD-1234"
+            autocomplete="off"
+            bind:value={code}
+            disabled={busy !== null} />
+        </label>
+        <Button type="submit" size="sm" variant="outline" disabled={busy !== null || !code.trim()}>
+          {busy === 'code' ? 'Checking…' : 'Apply'}
+        </Button>
+        <p class="basis-full text-xs text-muted-foreground">
+          A code changes which plans this account is offered. It doesn't change a plan already bought.
+        </p>
+      </form>
+    {/if}
 
     {#if !billing.can_pay}
       <p class="text-xs text-muted-foreground">Only the account owner can start or change a plan.</p>

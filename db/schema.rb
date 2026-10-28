@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -584,6 +584,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_160000) do
     t.index ["auditable_type", "auditable_id"], name: "index_audit_logs_on_auditable_type_and_auditable_id"
     t.index ["created_at"], name: "index_audit_logs_on_created_at"
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
+  end
+
+  create_table "billing_code_redemptions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "billing_code_id", null: false
+    t.string "effect", null: false
+    t.bigint "redeemed_by_id", null: false
+    t.datetime "redeemed_at", null: false
+    t.datetime "withdrawn_at"
+    t.bigint "withdrawn_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "billing_code_id"], name: "index_billing_code_redemptions_once_per_account", unique: true
+    t.index ["account_id"], name: "index_billing_code_redemptions_live_by_account", where: "(withdrawn_at IS NULL)"
+    t.index ["account_id"], name: "index_billing_code_redemptions_on_account_id"
+    t.index ["billing_code_id"], name: "index_billing_code_redemptions_on_billing_code_id"
+    t.index ["redeemed_by_id"], name: "index_billing_code_redemptions_on_redeemed_by_id"
+    t.index ["withdrawn_by_id"], name: "index_billing_code_redemptions_on_withdrawn_by_id"
+  end
+
+  create_table "billing_codes", force: :cascade do |t|
+    t.string "code", null: false
+    t.string "effect", null: false
+    t.integer "max_redemptions"
+    t.integer "redemptions_count", default: 0, null: false
+    t.datetime "expires_at"
+    t.datetime "revoked_at"
+    t.bigint "created_by_id", null: false
+    t.text "note"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((code)::text)", name: "index_billing_codes_on_lower_code", unique: true
+    t.index ["created_by_id"], name: "index_billing_codes_on_created_by_id"
+    t.check_constraint "effect::text = 'at_cost'::text", name: "billing_codes_effect_known"
   end
 
   create_table "billing_customers", force: :cascade do |t|
@@ -2121,8 +2155,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_160000) do
     t.uuid "reference", default: -> { "gen_random_uuid()" }, null: false
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
+    t.bigint "billing_code_redemption_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
+    t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
@@ -2846,6 +2882,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_160000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "billing_code_redemptions", "accounts"
+  add_foreign_key "billing_code_redemptions", "billing_codes"
+  add_foreign_key "billing_code_redemptions", "users", column: "redeemed_by_id"
+  add_foreign_key "billing_code_redemptions", "users", column: "withdrawn_by_id"
+  add_foreign_key "billing_codes", "users", column: "created_by_id"
   add_foreign_key "billing_customers", "accounts"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
@@ -3007,6 +3048,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_160000) do
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
   add_foreign_key "resident_birth_orders", "accounts"
   add_foreign_key "resident_birth_orders", "agents"
+  add_foreign_key "resident_birth_orders", "billing_code_redemptions"
   add_foreign_key "resident_birth_orders", "users", column: "creator_id"
   add_foreign_key "resident_entitlements", "accounts"
   add_foreign_key "resident_entitlements", "agents"

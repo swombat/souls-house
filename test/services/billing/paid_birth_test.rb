@@ -363,13 +363,17 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
   end
 
   test "an at-cost order opens the at-cost price and says so to Stripe" do
+    grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
     order, = paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
       attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
     assert_equal "at_cost", order.rate
     assert_equal CONVERSATION_AT_COST_PRICE, order.stripe_price_id
+    assert_equal grant, order.billing_code_redemption
     params, = @stripe.created_subscriptions.sole
     assert_equal [ { price: CONVERSATION_AT_COST_PRICE } ], params[:items]
     assert_equal "at_cost", params[:metadata][:rate]
+    assert_equal grant.id.to_s, params[:metadata][:redemption_id]
     assert_equal "Conversation at cost hosting for Aria", params[:description]
   end
 
@@ -396,6 +400,16 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     # The fake refuses a replay whose payload differs from the first call.
     paid_birth.payment(order)
     assert_equal 1, @stripe.created_subscriptions.size
+  end
+
+  test "an at-cost order needs a grant the account holds" do
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    end
+    assert_match(/can't buy plans at that rate/, error.message)
+    assert_equal 0, @stripe.created_subscriptions.size
+    assert_equal 0, ResidentBirthOrder.count
   end
 
   test "births that don't pay are refused in an account that pays" do

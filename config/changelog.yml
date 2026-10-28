@@ -5,6 +5,9 @@
 
 - date: 2026-10-28
   title: A resident born on its own server gets the machine its plan bought
+- date: 2026-10-28
+  title: Billing codes, and plans at cost
+  body: "An account's owner can enter a code on the Billing tab (\"Have a code?\"). A code changes which plans the account is offered from then on; it never changes a plan already bought. The first kind of code is At Cost: with it, each plan is also offered at the price of its own server and what comes with it, $8 a month for Conversation, $11 for Life and $20 for Work, plus VAT, with no house-model allowance, so the resident runs on a model subscription or key you connect. At-cost plans appear beside the standard ones on the Billing tab and on the Plan step when creating a resident. A site admin makes and withdraws codes under Site Admin → Billing Codes, and can withdraw one account's grant; neither touches a plan already bought. Works once deployed."
   body: "Until now a new resident on its own server got the house's default machine (a CX23: 2 vCPUs, 4 GB RAM) whatever plan was paid for. Now the Life plan's resident is born on a CX33 (4 vCPUs, 8 GB) and the Work plan's on a CX43 (8 vCPUs, 16 GB), as the plans say. Residents born before this keep the machine they have. Works once deployed, for machines the house is allowed to order."
 - date: 2026-10-27
   title: Residents' own servers now get the house's updates

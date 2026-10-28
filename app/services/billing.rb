@@ -7,6 +7,11 @@ module Billing
   class InvalidSubscription < StandardError; end
   class AlreadySubscribed < StandardError; end
   class NotReady < StandardError; end
+  # A rate the account holds no grant for (see Account#eligible_rates).
+  class NotEligible < StandardError; end
+  # Reported, never raised to a caller: a paid at-cost subscription on an
+  # account with no grant and no redemption named on the purchase.
+  class UngrantedRate < StandardError; end
 
   GRACE_PERIOD = 14.days
 

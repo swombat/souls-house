@@ -21,6 +21,9 @@ module Billing
     # Returns the Checkout URL to send the owner to.
     def url
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
+      unless @agent.account.eligible_for?(@offer.rate)
+        raise NotEligible, "This account can't buy plans at that rate."
+      end
 
       customer = BillingCustomer.for!(@agent.account, client: @client)
       entitlement = ResidentEntitlement.for_agent!(@agent)
@@ -64,7 +67,10 @@ module Billing
       # replayed key whose parameters moved. Only an at-cost session carries
       # its rate.
       metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @offer.tier.id }
-      metadata[:rate] = @offer.rate unless @offer.standard?
+      unless @offer.standard?
+        metadata[:rate] = @offer.rate
+        metadata[:redemption_id] = @agent.account.grant_for(@offer.rate)&.id.to_s
+      end
       {
         mode: "subscription",
         customer: customer.stripe_customer_id,

@@ -24,8 +24,11 @@
     busy = false,
   } = $props();
 
-  let tiers = $derived(billing.tiers || []);
+  // Offers (a plan at a rate: standard, or at cost when the account holds a
+  // code for it); older props carry only tiers, which are the standard offers.
+  let tiers = $derived(billing.offers?.length ? billing.offers : billing.tiers || []);
   let chosen = $derived(tiers.find((candidate) => candidate.id === tier) || null);
+  let atCost = $derived(chosen?.rate === 'at_cost');
   let name = $derived(residentName.trim() || 'your resident');
 
   let cardFormOpen = $state(false);
@@ -121,7 +124,9 @@
               <span class="font-semibold">{option.name}</span>
               {#if selected}<CheckCircle class="size-5 text-primary" weight="fill" />{/if}
             </span>
-            <span class="mt-1 text-sm text-muted-foreground">{planTaglines[option.id] ?? ''}</span>
+            <span class="mt-1 text-sm text-muted-foreground">
+              {option.rate === 'at_cost' ? 'The machine at its price, no house model.' : (planTaglines[option.tier ?? option.id] ?? '')}
+            </span>
             <span class="mt-3">
               <span class="text-2xl font-semibold">${option.monthly_usd}</span>
               <span class="text-sm text-muted-foreground">/ month + VAT</span>
@@ -202,6 +207,12 @@
           <span class="font-medium">Today:</span> ${chosen.monthly_usd} + VAT for {name}'s first month.
           <span class="font-medium">Then</span> ${chosen.monthly_usd} + VAT each month until you cancel.
         </p>
+        {#if atCost}
+          <p data-testid="plan-at-cost-terms">
+            At cost: this pays for {name}'s own server and what comes with it, and includes no house-model allowance.
+            {name} runs on a model subscription or key you connect.
+          </p>
+        {/if}
         <p class="text-muted-foreground">
           Cancel any time from the account's Billing tab. Not what you hoped? Write to
           <a class="underline underline-offset-4" href="mailto:{billing.contact_email}">{billing.contact_email}</a> within

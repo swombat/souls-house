@@ -19,6 +19,7 @@
     UsersThree,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
+  import { Ticket } from 'phosphor-svelte';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
   import { adminNoticesPath } from '@/routes';
@@ -165,6 +166,10 @@
       <DropdownMenu.Item onclick={() => router.visit('/admin/accounts')}>
         <Buildings class="mr-2 size-4" />
         <span>Manage Accounts</span>
+      </DropdownMenu.Item>
+      <DropdownMenu.Item onclick={() => router.visit('/admin/billing_codes')}>
+        <Ticket class="mr-2 size-4" />
+        <span>Billing Codes</span>
       </DropdownMenu.Item>
       <DropdownMenu.Item onclick={() => router.visit('/admin/residents')}>
         <UsersThree class="mr-2 size-4" />

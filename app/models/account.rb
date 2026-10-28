@@ -56,6 +56,7 @@ class Account < ApplicationRecord
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
+  has_many :billing_code_redemptions, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.
@@ -417,6 +418,28 @@ class Account < ApplicationRecord
     tiers = ResidentEntitlement.where(account: self, state: Billing::Tier::IN_FORCE_STATES,
       tier: Billing::Tier.with_swarm_search.map(&:id)).pluck(:tier)
     tiers.sum { |id| Billing::Tier.find(id)&.swarm_searches.to_i }
+  end
+
+  # The rates this account may buy plans at: standard always, plus any rate a
+  # live billing-code redemption grants (docs/proposals/2026-10-28-billing-codes-at-cost.md).
+  # The redemption is the grant; there is no flag here.
+  def eligible_rates
+    [ "standard" ] | (billing_code_redemptions.live.distinct.pluck(:effect) & Billing::Tier::RATES)
+  end
+
+  def eligible_for?(rate) = eligible_rates.include?(rate.to_s)
+
+  # The live redemption that grants a rate; named on the purchases it
+  # authorises, so a grant withdrawn afterwards is not read as abuse.
+  def grant_for(rate)
+    return nil if rate.to_s == "standard"
+
+    billing_code_redemptions.live.where(effect: rate.to_s).order(:id).first
+  end
+
+  # What this account can buy now: every purchasable offer at a rate it holds.
+  def purchasable_offers
+    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.purchasable? && eligible_for?(offer.rate) }
   end
 
   def recording_unlimited? = includes_site_admin?

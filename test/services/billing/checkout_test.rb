@@ -26,12 +26,21 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_equal({ agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: "life" }, params[:metadata])
     assert_equal "Life hosting for #{@agent.name}", params.dig(:subscription_data, :description)
 
+    grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @agent.account, by: users(:user_1))
     checkout(rate: "at_cost")
     params, opts = @stripe.checkout_sessions.last
     assert_equal "souls-house-checkout-#{@agent.id}-cs_test_1-life_at_cost", opts[:idempotency_key]
     assert_equal [ { price: LIFE_AT_COST_PRICE, quantity: 1 } ], params[:line_items]
     assert_equal "at_cost", params.dig(:metadata, :rate)
+    assert_equal grant.id.to_s, params.dig(:metadata, :redemption_id)
     assert_equal "Life at cost hosting for #{@agent.name}", params.dig(:subscription_data, :description)
+  end
+
+  test "an at-cost session needs a grant the account holds" do
+    error = assert_raises(Billing::NotEligible) { checkout(rate: "at_cost") }
+    assert_match(/can't buy plans at that rate/, error.message)
+    assert_empty @stripe.checkout_sessions
   end
 
 end
