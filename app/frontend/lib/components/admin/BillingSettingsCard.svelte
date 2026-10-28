@@ -46,18 +46,24 @@
             Every Stripe event of the last 7 days was applied.
           {/if}
         </li>
-        <li class:text-rose-600={status.ungranted_rates > 0}>
-          {#if status.ungranted_rates > 0}
-            {status.ungranted_rates} paid at-cost {status.ungranted_rates === 1 ? 'subscription' : 'subscriptions'} on an
+        <li class:text-rose-600={status.ungranted_subscriptions > 0}>
+          {#if status.ungranted_subscriptions > 0}
+            {status.ungranted_subscriptions} paid at-cost {status.ungranted_subscriptions === 1 ? 'subscription' : 'subscriptions'} on an
             account with no code grant in the last 30 days (see the audit log, billing_rate_without_grant).
           {:else}
             No at-cost subscription without a code grant in the last 30 days.
           {/if}
         </li>
         {#if status.portal}
-          <li class:text-rose-600={status.portal.error || status.portal.at_cost_switchable?.length > 0}>
+          <li
+            class:text-rose-600={status.portal.error ||
+              status.portal.at_cost_switchable?.length > 0 ||
+              status.portal.unknown_configurations?.length > 0}>
             {#if status.portal.error}
               The Stripe portal check failed: {status.portal.error}
+            {:else if status.portal.unknown_configurations?.length > 0}
+              The Stripe portal check couldn't read the plan list of {status.portal.unknown_configurations.join(', ')}: treat
+              the portal as unverified until it can.
             {:else if status.portal.at_cost_switchable?.length > 0}
               At-cost prices can be chosen in Stripe's portal by anyone with a subscription: {status.portal.at_cost_switchable.join(', ')}.
               Remove them from the portal configuration's plan list.

@@ -54,7 +54,9 @@ class Admin::SettingsController < ApplicationController
       # grant (docs/proposals/2026-10-28-billing-codes-at-cost.md).
       stripe_events_failed: StripeEvent.where(status: "failed", updated_at: 7.days.ago..).count,
       stripe_events_last_error: StripeEvent.where(status: "failed").order(updated_at: :desc).pick(:last_error),
-      ungranted_rates: AuditLog.where(action: "billing_rate_without_grant", created_at: 30.days.ago..).count,
+      # Distinct subscriptions: every sync of one writes a row.
+      ungranted_subscriptions: AuditLog.where(action: "billing_rate_without_grant", created_at: 30.days.ago..)
+        .distinct.count(Arel.sql("data->>'stripe_subscription_id'")),
       portal: Billing.configured? ? Billing::PortalCheck.call : nil
     }
   end

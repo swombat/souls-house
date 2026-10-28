@@ -19,6 +19,9 @@ class Admin::BillingStatusTest < ActionDispatch::IntegrationTest
     StripeEvent.create!(stripe_event_id: "evt_2", event_type: "invoice.paid", status: "processed", attempts: 1)
     AuditLog.create!(account: accounts(:personal_account), action: "billing_rate_without_grant",
       data: { "stripe_subscription_id" => "sub_x", "rate" => "at_cost" })
+    # A second sync of the same subscription writes a second row; it is one subscription.
+    AuditLog.create!(account: accounts(:personal_account), action: "billing_rate_without_grant",
+      data: { "stripe_subscription_id" => "sub_x", "rate" => "at_cost" })
     @stripe.put_portal_configuration(prices: [ LIFE_AT_COST_PRICE ])
 
     Billing.stub(:client, @stripe) do
@@ -30,7 +33,7 @@ class Admin::BillingStatusTest < ActionDispatch::IntegrationTest
     assert billing["configured"]
     assert_equal 1, billing["stripe_events_failed"], "only the last 7 days"
     assert_match(/outside the plan catalogue/, billing["stripe_events_last_error"])
-    assert_equal 1, billing["ungranted_rates"]
+    assert_equal 1, billing["ungranted_subscriptions"]
     assert_equal [ LIFE_AT_COST_PRICE ], billing.dig("portal", "at_cost_switchable")
     assert_equal [ LIFE_AT_COST_PRICE ], billing.dig("portal", "switchable_prices")
   end
@@ -43,7 +46,7 @@ class Admin::BillingStatusTest < ActionDispatch::IntegrationTest
     billing = inertia_shared_props["billing"]
     assert_equal 0, billing["stripe_events_failed"]
     assert_nil billing["stripe_events_last_error"]
-    assert_equal 0, billing["ungranted_rates"]
+    assert_equal 0, billing["ungranted_subscriptions"]
     assert_equal [], billing.dig("portal", "switchable_prices")
     assert_equal [], billing.dig("portal", "at_cost_switchable")
   end

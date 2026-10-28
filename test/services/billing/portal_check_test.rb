@@ -35,6 +35,32 @@ class Billing::PortalCheckTest < ActiveSupport::TestCase
     assert_empty check[:switchable_prices]
   end
 
+  test "a switcher that allows quantity but not price switches no plans" do
+    @stripe.put_portal_configuration(prices: [ WORK_AT_COST_PRICE ], allowed: %w[quantity])
+    result = check
+    assert_empty result[:switchable_prices]
+    assert_empty result[:at_cost_switchable]
+    assert_nil result[:unknown_configurations]
+  end
+
+  test "a plan list Stripe didn't send is unknown, never clean" do
+    @stripe.put_portal_configuration(products: nil)
+    @stripe.put_portal_configuration(prices: [ CONVERSATION_PRICE ])
+    result = check
+    assert_equal [ "bpc_test_1" ], result[:unknown_configurations]
+    assert_equal [ CONVERSATION_PRICE ], result[:switchable_prices]
+  end
+
+  test "every configuration is read, not the first page" do
+    @stripe.put_portal_configuration(prices: [ CONVERSATION_PRICE ])
+    @stripe.put_portal_configuration(prices: [ LIFE_PRICE ])
+    @stripe.put_portal_configuration(prices: [ WORK_AT_COST_PRICE ])
+    @stripe.portal_page_size!(1)
+    result = check
+    assert_equal [ CONVERSATION_PRICE, LIFE_PRICE, WORK_AT_COST_PRICE ], result[:switchable_prices]
+    assert_equal [ WORK_AT_COST_PRICE ], result[:at_cost_switchable]
+  end
+
   test "a Stripe error is an error, not an empty answer" do
     failing = Struct.new(:v1).new(Struct.new(:billing_portal).new(Struct.new(:configurations).new(
       Class.new { def list(_params) = raise(Stripe::APIConnectionError.new("no route to Stripe")) }.new

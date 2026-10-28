@@ -20,18 +20,44 @@ module Billing
 
     def read(now = Time.current)
       switchable = []
-      @client.v1.billing_portal.configurations.list({ limit: 100 }).data.each do |configuration|
+      unknown = []
+      each_configuration do |configuration|
         next unless configuration.active
 
-        update = configuration.features.subscription_update
-        next unless update && update.enabled
+        update = configuration[:features] && configuration[:features][:subscription_update]
+        next unless update && update[:enabled]
+        # "enabled" can mean quantity only; switching plans needs "price".
+        next unless Array(update[:default_allowed_updates]).map(&:to_s).include?("price")
 
-        Array(update.products).each { |product| switchable.concat(Array(product.prices).map(&:to_s)) }
+        # A plan list that isn't there (not expanded, or null) is unknown,
+        # never clean.
+        products = update[:products]
+        if products.nil?
+          unknown << configuration.id
+          next
+        end
+        Array(products).each { |product| switchable.concat(Array(product[:prices]).map(&:to_s)) }
       end
       at_cost = Tier.all.flat_map { |tier| tier.offer("at_cost").price_ids }
-      { checked_at: now.iso8601, switchable_prices: switchable.uniq, at_cost_switchable: switchable.uniq & at_cost }
+      result = { checked_at: now.iso8601, switchable_prices: switchable.uniq, at_cost_switchable: switchable.uniq & at_cost }
+      result[:unknown_configurations] = unknown if unknown.any?
+      result
     rescue Stripe::StripeError => error
       { checked_at: now.iso8601, error: error.message }
+    end
+
+    private
+
+    # Every configuration, not the first page.
+    def each_configuration
+      starting_after = nil
+      loop do
+        page = @client.v1.billing_portal.configurations.list({ limit: 100, starting_after: starting_after }.compact)
+        page.data.each { |configuration| yield configuration }
+        break unless page[:has_more] && page.data.any?
+
+        starting_after = page.data.last.id
+      end
     end
 
   end

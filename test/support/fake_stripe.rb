@@ -193,21 +193,31 @@ class FakeStripe
       @portal_sessions << params
       Stripe::StripeObject.construct_from(url: "https://billing.stripe.com/p/session/test_1")
     })
-    configurations = Service.new(list: lambda { |_params|
-      Stripe::StripeObject.construct_from(object: "list", data: @portal_configurations.map(&:deep_dup))
+    configurations = Service.new(list: lambda { |params|
+      all = @portal_configurations
+      from = params[:starting_after] ? all.index { |row| row[:id] == params[:starting_after] } + 1 : 0
+      size = @portal_page_size || params[:limit] || 100
+      page = all[from, size] || []
+      Stripe::StripeObject.construct_from(object: "list", data: page.map(&:deep_dup), has_more: from + size < all.size)
     })
     Struct.new(:sessions, :configurations).new(sessions, configurations)
   end
 
   # A portal configuration whose plan switcher offers these prices (none by
-  # default: the house's portal lets nobody switch plans).
-  def put_portal_configuration(prices: [], active: true, enabled: true)
+  # default: the house's portal lets nobody switch plans). allowed: what the
+  # switcher may change; products: nil for a plan list Stripe didn't send.
+  def put_portal_configuration(prices: [], active: true, enabled: true, allowed: %w[price quantity], products: :from_prices)
+    product_list = products == :from_prices ? (prices.empty? ? [] : [ { product: "prod_test", prices: prices } ]) : products
+    update = { enabled: enabled, default_allowed_updates: allowed }
+    update[:products] = product_list unless product_list.nil?
     @portal_configurations << {
       id: "bpc_test_#{@portal_configurations.size + 1}", active: active, is_default: @portal_configurations.empty?,
-      features: { subscription_update: { enabled: enabled, products: prices.empty? ? [] : [ { product: "prod_test", prices: prices } ] },
-                  subscription_cancel: { enabled: true } }
+      features: { subscription_update: update, subscription_cancel: { enabled: true } }
     }
   end
+
+  # Pages of this size from configurations.list, to test pagination.
+  def portal_page_size!(size) = @portal_page_size = size
 
   def subscriptions = subscriptions_service
 
