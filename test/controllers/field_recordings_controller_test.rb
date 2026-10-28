@@ -122,6 +122,33 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal recording, again.retried_from
   end
 
+  test "the transcript page plays the seekable copy of an MP3 once it exists, and asks for one until then" do
+    blob = pinned_blob(account: @account, user: @user, fixture: "test_playback.mp3", content_type: "audio/mpeg")
+    recording = FieldRecording::Upload.claim!(account: @account, user: @user, signed_id: blob.signed_id, attributes: {})
+    recording.admit!(60_000)
+    recording.accept_transcript!(recording.reload.claim_dispatch!, scribe_transcription)
+
+    assert_enqueued_with(job: FieldRecordings::PlaybackJob, args: [ recording.id ]) do
+      get account_field_recording_path(@account, recording)
+    end
+    assert_equal rails_blob_path(recording.audio, disposition: :inline), inertia_props.dig("props", "recording", "audio_url")
+
+    recording.playback.attach(io: file_fixture("test_audio.webm").open, filename: "test_playback.m4a", content_type: "audio/mp4")
+    @inertia_props = nil # the helper remembers the first response
+    assert_no_enqueued_jobs(only: FieldRecordings::PlaybackJob) do
+      get account_field_recording_path(@account, recording)
+    end
+    assert_equal rails_blob_path(recording.playback, disposition: :inline), inertia_props.dig("props", "recording", "audio_url")
+  end
+
+  test "the transcript page doesn't ask for a copy of a format the browser seeks well" do
+    recording = ready_recording(account: @account, user: @user) # Opus in WebM
+    assert_no_enqueued_jobs(only: FieldRecordings::PlaybackJob) do
+      get account_field_recording_path(@account, recording)
+    end
+    assert_equal rails_blob_path(recording.audio, disposition: :inline), inertia_props.dig("props", "recording", "audio_url")
+  end
+
   test "another account's recording is not found" do
     other = claimed_recording(account: accounts(:another_team), user: @user)
     delete account_field_recording_path(@account, other)

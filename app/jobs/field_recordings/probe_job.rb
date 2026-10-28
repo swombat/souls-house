@@ -16,7 +16,10 @@ module FieldRecordings
 
       duration_ms = recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) }
       if duration_ms
-        TranscribeJob.perform_later(recording.id) if recording.admit!(duration_ms) == :admitted
+        if recording.admit!(duration_ms) == :admitted
+          TranscribeJob.perform_later(recording.id)
+          PlaybackJob.perform_later(recording.id)
+        end
       else
         recording.reject_unreadable!(UNREADABLE)
       end
@@ -32,7 +35,8 @@ module FieldRecordings
     def record_duration(recording)
       return unless recording.kept? && recording.duration_ms.nil?
 
-      recording.record_duration!(recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) })
+      duration_ms = recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) }
+      PlaybackJob.perform_later(recording.id) if recording.record_duration!(duration_ms)
     rescue ActiveStorage::FileNotFoundError, ActiveStorage::IntegrityError
       nil
     end

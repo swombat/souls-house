@@ -16,9 +16,10 @@ class FieldRecordingsController < ApplicationController
   def show
     recording = @field_recording
     recognition = FieldVoiceprints.enabled_for?(current_account)
+    request_playback_copy(recording)
     render inertia: "field/recordings/show", props: {
       recording: -> { FieldItems.recording_json(recording).merge(
-        audio_url: (rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?),
+        audio_url: player_audio_url(recording),
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
         transcript_revision: (recording.transcript_revision if recording.ready?),
@@ -178,6 +179,25 @@ class FieldRecordingsController < ApplicationController
   end
 
   private
+
+  # What the page's player loads: the seekable copy when there is one
+  # (FieldRecording::Playback), the original otherwise.
+  def player_audio_url(recording)
+    return rails_blob_path(recording.playback, disposition: :inline) if recording.playback.attached?
+
+    rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?
+  end
+
+  # Recordings brought in before the player had copies get one the first
+  # time their page is opened. The cache entry keeps a page reloaded ten
+  # times from starting ten transcodes; the job itself is harmless twice.
+  def request_playback_copy(recording)
+    return unless recording.ready? && recording.audio.attached? && !recording.playback.attached?
+    return unless recording.audio.blob.content_type == "audio/mpeg"
+    return unless Rails.cache.write("field_recording/#{recording.id}/playback", true, unless_exist: true, expires_in: 1.hour)
+
+    FieldRecordings::PlaybackJob.perform_later(recording.id)
+  end
 
   # What "Look for known voices again" can actually do, said up front: the
   # voices pass only compares against prints that passed their held-out check,

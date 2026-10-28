@@ -53,6 +53,10 @@ class FieldRecording < ApplicationRecord
   has_many :shares, class_name: "FieldRecordingShare", dependent: :destroy
 
   has_one_attached :audio
+  # The player's copy of an MP3 original (FieldRecording::Playback), made by
+  # PlaybackJob. Absent until the job has run, and for formats that don't
+  # need one; the page plays the original then.
+  has_one_attached :playback
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
@@ -325,7 +329,8 @@ class FieldRecording < ApplicationRecord
       raise NotRetryable unless kept? && RETRYABLE_STATUSES.include?(status) && audio.attached?
 
       account.field_recordings.create!(
-        title:, note:, notes:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
+        title:, note:, notes:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob,
+        playback: (playback.blob if playback.attached?)
       )
     end
   end
