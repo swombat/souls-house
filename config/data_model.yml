@@ -186,9 +186,13 @@ areas:
       and calls are the house paying for a resident's model use on its own
       keys, call by call. Metered action events count the actions the house
       meters per resident, such as X reads. Stripe events is the inbox of
-      webhooks, kept so a replay is harmless.
+      webhooks, kept so a replay is harmless. A billing code is an invitation
+      to a billing arrangement, made in Site Admin; an account's redemption of
+      one is its grant, and decides which plans it may buy at which rate.
     tables:
       - billing_customers
+      - billing_codes
+      - billing_code_redemptions
       - resident_birth_orders
       - resident_subscriptions
       - resident_entitlements
