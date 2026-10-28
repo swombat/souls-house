@@ -21,6 +21,7 @@ class ResidentEntitlement < ApplicationRecord
   validates :state, inclusion: { in: STATES }
   validates :source, inclusion: { in: SOURCES }
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }, allow_nil: true
+  validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :in_grace, -> { where(state: "grace") }
   scope :grace_expired, ->(now = Time.current) { in_grace.where(grace_deadline: ..now) }
@@ -98,13 +99,16 @@ class ResidentEntitlement < ApplicationRecord
 
   def tier_record = tier && Billing::Tier.find(tier)
 
+  # The offer the current plan was bought at.
+  def offer = tier_record&.offer(rate)
+
   # The month's limit is the highest paid allowance in force at any point in
   # that UTC month: a ceiling on the month's spend, never a balance that is
   # topped up. Nothing while the plan isn't paid.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
 
-    limits = [ self.class.tier_allowance(tier) ]
+    limits = [ self.class.offer_allowance(tier, rate) ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
     limits.compact.max || BigDecimal("0")
   end
@@ -140,8 +144,17 @@ class ResidentEntitlement < ApplicationRecord
       raise HouseInference::Error.new("This resident has no active plan allowance.", status: 403)
     end
     month = HouseInference::Offering.month
-    return if allowance_limit(month) - allowance_spent(month) >= reservation
+    limit = allowance_limit(month)
+    return if limit - allowance_spent(month) >= reservation
 
+    # Keyed on the ceiling in force, not on the rate: a resident just moved
+    # to at cost keeps this month's ceiling until the 1st.
+    if limit.zero?
+      raise HouseInference::Error.new(
+        "This resident's #{tier_record&.name} plan includes no house-model allowance; it runs on its own model subscription or key.",
+        code: "house_allowance_none", status: 402
+      )
+    end
     raise HouseInference::Error.new(
       "This resident's #{tier_record&.name} plan allowance is used up for this month. It resets at the start of next month (UTC).",
       code: "house_allowance_exhausted", status: 402
@@ -152,14 +165,14 @@ class ResidentEntitlement < ApplicationRecord
     month = HouseInference::Offering.month
     limit = allowance_limit(month)
     used = allowance_spent(month)
-    { source: "plan", plan: tier_record&.name, limit_usd: limit.to_f, used_usd: used.to_f,
+    { source: "plan", plan: tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
       remaining_usd: [ limit - used, 0 ].max.to_f, resets_at: month.next_month.iso8601,
       configured: HouseInference::Offering.configured? }
   end
 
-  def self.tier_allowance(tier_id)
-    allowance = tier_id && Billing::Tier.find(tier_id)&.allowance_usd
-    allowance && BigDecimal(allowance.to_s)
+  def self.offer_allowance(tier_id, rate)
+    offer = tier_id && Billing::Tier.find(tier_id)&.offer(rate.presence || "standard")
+    offer && BigDecimal(offer.allowance_usd.to_s)
   end
 
   def as_json(*)
@@ -168,12 +181,14 @@ class ResidentEntitlement < ApplicationRecord
       state: state,
       source: source,
       tier: tier,
+      rate: rate,
       complimentary: complimentary_granted_at.present?,
       grace_deadline: grace_deadline&.iso8601,
       held_at: held_at&.iso8601,
       subscription: subscription && {
         status: subscription.stripe_status,
         tier: subscription.tier,
+        rate: subscription.rate,
         current_period_end: subscription.current_period_end&.iso8601,
         cancel_at_period_end: subscription.cancel_at_period_end
       }
@@ -187,11 +202,12 @@ class ResidentEntitlement < ApplicationRecord
   end
 
   def activate(subscription, now)
-    record_allowance(subscription.tier, now)
+    record_allowance(subscription.tier, subscription.rate, now)
     self.hold_released_at = now if held?
     self.state = "active"
     self.source = "stripe"
     self.tier = subscription.tier
+    self.rate = subscription.rate
     self.grace_started_at = nil
     self.grace_deadline = nil
   end
@@ -201,11 +217,11 @@ class ResidentEntitlement < ApplicationRecord
   # repayment, can't refill the month. The lower limit starts on the 1st.
   # Called on every activation and when a paid plan ends (new_tier nil), so a
   # plan carried over from last month still marks this month before it lapses.
-  def record_allowance(new_tier, now)
+  def record_allowance(new_tier, new_rate, now)
     month = now.utc.to_date.beginning_of_month
-    limits = [ self.class.tier_allowance(new_tier) ]
+    limits = [ self.class.offer_allowance(new_tier, new_rate) ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
-    limits << self.class.tier_allowance(tier) if paid?
+    limits << self.class.offer_allowance(tier, rate) if paid?
     self.allowance_month = month
     self.allowance_limit_usd = limits.compact.max
   end
@@ -223,7 +239,7 @@ class ResidentEntitlement < ApplicationRecord
   # A paid plan ended. Free hosting the house granted comes back; otherwise
   # the resident is held. Nothing is deleted.
   def end_paid_plan(now)
-    record_allowance(nil, now)
+    record_allowance(nil, nil, now)
     self.grace_started_at = nil
     self.grace_deadline = nil
     if complimentary_granted_at.present?

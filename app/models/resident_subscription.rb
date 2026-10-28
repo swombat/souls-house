@@ -13,6 +13,7 @@ class ResidentSubscription < ApplicationRecord
   validates :stripe_subscription_id, presence: true, uniqueness: true
   validates :stripe_status, presence: true
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
+  validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :live, -> { where(stripe_status: LIVE_STATUSES) }
 
@@ -21,5 +22,7 @@ class ResidentSubscription < ApplicationRecord
   def ended? = stripe_status.in?(ENDED_STATUSES)
 
   def tier_record = Billing::Tier.find(tier)
+
+  def offer = tier_record&.offer(rate)
 
 end

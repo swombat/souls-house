@@ -162,6 +162,52 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("18"), entitlement.allowance_remaining
   end
 
+  # At cost: the plan funds calls (it is paid) but includes no allowance. The
+  # two-clock rule (docs/proposals/2026-10-28-billing-codes-at-cost.md): a
+  # switch mid-month keeps the month's ceiling; zero starts on the 1st.
+  test "at cost includes no allowance; a mid-month switch keeps the month's ceiling until the 1st" do
+    @agent.update!(model_id: @model)
+    entitlement, sub = pay!(@agent, "conversation")
+    configured { spend!(entitlement, @agent, 4) }
+
+    travel_to Time.utc(2026, 10, 20)
+    sub.update!(rate: "at_cost")
+    entitlement.apply_subscription!(sub, now: Time.current)
+    entitlement.reload
+    assert_equal "at_cost", entitlement.rate
+    assert entitlement.paid?
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
+    assert_equal BigDecimal("6"), entitlement.allowance_remaining
+    configured do
+      error = assert_raises(HouseInference::Error) do
+        entitlement.reserve_house_call!(@offering.merge(reservation_usd: BigDecimal("7")), @model, agent_id: @agent.id)
+      end
+      assert_match(/used up for this month/, error.message)
+    end
+
+    travel_to Time.utc(2026, 11, 2)
+    assert_equal BigDecimal("0"), entitlement.allowance_limit
+    assert_equal BigDecimal("0"), entitlement.allowance_remaining
+    configured do
+      error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
+      assert_match(/includes no house-model allowance/, error.message)
+    end
+    assert_equal "at_cost", entitlement.allowance_presentation[:rate]
+  end
+
+  test "a resident born at cost has a zero ceiling from the start" do
+    @agent.update!(model_id: @model)
+    sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_ac",
+      tier: "work", rate: "at_cost", stripe_status: "active")
+    entitlement = ResidentEntitlement.for_agent!(@agent)
+    entitlement.apply_subscription!(sub, now: Time.current)
+    assert_equal BigDecimal("0"), entitlement.reload.allowance_limit
+    configured do
+      error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
+      assert_match(/includes no house-model allowance/, error.message)
+    end
+  end
+
   test "a lapse and repayment, or a replacement checkout, in the same month doesn't refill it" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "conversation")

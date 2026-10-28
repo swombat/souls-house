@@ -54,8 +54,9 @@ module Billing
     end
 
     # Returns [order, client_secret, payment_method_id].
-    def start!(account:, creator:, attributes:, open_beginning:, tier:)
-      refuse!(account, creator, tier)
+    def start!(account:, creator:, attributes:, open_beginning:, tier:, rate: "standard")
+      offer = tier&.offer(rate)
+      refuse!(account, creator, offer)
       payment_method = current_payment_method!(account)
       Agents::VmBirthPolicy.current.refuse!(kind: :birth)
       raise Refused, "Give the resident a name first." if attributes[:name].to_s.strip.empty?
@@ -64,8 +65,11 @@ module Billing
       end
 
       settle_earlier!(account, creator)
-      order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id,
-        birth_attributes: attributes.to_h, open_beginning: open_beginning)
+      # The price is pinned on the order: an uncertain create is replayed with
+      # the same idempotency key, so its parameters must not move when the
+      # catalogue is re-costed in between (#619).
+      order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
+        stripe_price_id: offer.price_id, birth_attributes: attributes.to_h, open_beginning: open_beginning)
       order.update!(stripe_payment_method_id: payment_method.id)
       subscription = open_subscription!(order)
       [ order, client_secret(subscription), payment_method.id ]
@@ -121,11 +125,11 @@ module Billing
 
     private
 
-    def refuse!(account, creator, tier)
+    def refuse!(account, creator, offer)
       raise Refused, "This account doesn't pay per resident." unless account.billing_required?
       raise Refused, "Only the account's owner can pay for a new resident." unless account.owned_by?(creator)
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
-      raise Refused, "That plan can't be bought yet." unless tier&.purchasable?
+      raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
     end
 
     def current_payment_method!(account)
@@ -138,17 +142,17 @@ module Billing
     # the first time. Stripe's answer is recorded before anything else can
     # happen to the order.
     def open_subscription!(order)
-      tier = order.tier_record
+      offer = order.offer
       customer = BillingCustomer.find_by!(account: order.account)
       subscription = @client.v1.subscriptions.create({
         customer: customer.stripe_customer_id,
-        items: [ { price: tier.price_id } ],
+        items: [ { price: order.stripe_price_id.presence || offer.price_id } ],
         default_payment_method: order.stripe_payment_method_id,
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
-        description: "#{tier.name} hosting for #{order.resident_name}",
-        metadata: { birth_order: order.reference, account_id: order.account_id.to_s, tier: tier.id },
+        description: "#{offer.name} hosting for #{order.resident_name}",
+        metadata: { birth_order: order.reference, account_id: order.account_id.to_s, tier: offer.tier.id, rate: offer.rate },
         expand: [ "latest_invoice.confirmation_secret" ]
       }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
       order.update!(stripe_subscription_id: subscription.id, last_error: nil)
@@ -246,7 +250,7 @@ module Billing
       if remote.metadata["agent_id"].to_s != order.agent_id.to_s
         @client.v1.subscriptions.update(remote.id, {
           metadata: { agent_id: order.agent_id.to_s, birth_order: order.reference },
-          description: "#{order.tier_record.name} hosting for #{order.agent.name}"
+          description: "#{order.offer.name} hosting for #{order.agent.name}"
         })
       end
       SubscriptionSync.new(remote.id, client: @client).call

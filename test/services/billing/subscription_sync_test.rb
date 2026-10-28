@@ -73,4 +73,20 @@ class Billing::SubscriptionSyncTest < ActiveSupport::TestCase
     assert ResidentEntitlement.find_by!(agent: @agent).held?
   end
 
+  test "an at-cost price records the offer it bought: the tier, the rate and no allowance" do
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1",
+      price: FakeStripe::Helpers::WORK_AT_COST_PRICE, status: "active")
+
+    subscription = sync("sub_1")
+
+    assert_equal "work", subscription.tier
+    assert_equal "at_cost", subscription.rate
+    assert_equal FakeStripe::Helpers::WORK_AT_COST_PRICE, subscription.stripe_price_id
+    entitlement = ResidentEntitlement.find_by!(agent: @agent)
+    assert entitlement.active?
+    assert_equal "at_cost", entitlement.rate
+    assert_equal BigDecimal("0"), entitlement.allowance_limit
+    assert_equal "at_cost", entitlement.as_json[:rate]
+  end
+
 end

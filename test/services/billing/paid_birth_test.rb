@@ -345,6 +345,34 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "pm_visa", @stripe.created_subscriptions.sole.first[:default_payment_method]
   end
 
+  # #619: a re-costing between the first attempt and its replay must not
+  # change the replayed parameters, which share an idempotency key.
+  test "the replay uses the price the order was opened with, even after the plan is re-costed" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    assert_equal CONVERSATION_PRICE, order.stripe_price_id
+    assert_equal "standard", order.rate
+
+    ENV["STRIPE_PRICE_CONVERSATION"] = "price_test_conversation_v2,#{CONVERSATION_PRICE}"
+    assert_equal "price_test_conversation_v2", @tier.price_id
+    paid_birth.payment(order)
+
+    assert_equal 1, @stripe.created_subscriptions.size
+    assert_equal [ { price: CONVERSATION_PRICE } ], @stripe.created_subscriptions.sole.first[:items]
+  end
+
+  test "an at-cost order opens the at-cost price and says so to Stripe" do
+    order, = paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+      attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    assert_equal "at_cost", order.rate
+    assert_equal CONVERSATION_AT_COST_PRICE, order.stripe_price_id
+    params, = @stripe.created_subscriptions.sole
+    assert_equal [ { price: CONVERSATION_AT_COST_PRICE } ], params[:items]
+    assert_equal "at_cost", params[:metadata][:rate]
+    assert_equal "Conversation at cost hosting for Aria", params[:description]
+  end
+
   test "births that don't pay are refused in an account that pays" do
     error = assert_raises(Billing::BirthGate::Refused) do
       Agents::HostedBirth.new(account: @account, creator: @owner,

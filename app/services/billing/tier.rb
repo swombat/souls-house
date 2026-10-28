@@ -27,6 +27,18 @@ module Billing
     # once plans open; nothing enforces them until checkout is gated on it.
     CONNECTIONS = %w[google_workspace telegram whatsapp x github dns].freeze
 
+    # The rates a tier can be bought at (Billing::Offer).
+    RATES = %w[standard at_cost].freeze
+
+    # At cost, per tier, in USD a month (Daniel, jBVrDj 2026-10-28): the
+    # machine and what it drags with it, rounded up to the dollar. Costed
+    # against net Hetzner list price (reverse charge) at ECB 1.115 USD/EUR,
+    # the primary IPv4 and Stripe's UK fee on an EU card; the test holds the
+    # working. No house-model allowance. Re-cost by hand when Hetzner or the
+    # exchange rate moves: that makes a new Stripe price, and the old id
+    # stays in the list (#619).
+    AT_COST_MONTHLY_USD = { "conversation" => 8, "life" => 11, "work" => 20 }.freeze
+
     attr_reader :id, :name, :monthly_usd, :allowance_usd, :memory_gb, :cpu_shares, :server_type,
       :transcription_hours, :backup_gb, :swarm_searches, :connections
 
@@ -69,28 +81,18 @@ module Billing
     end
 
     def self.for_price(price_id)
-      return nil if price_id.blank?
-
-      CATALOGUE.find { |tier| tier.price_ids.include?(price_id) }
+      Offer.for_price(price_id)&.tier
     end
 
     def self.with_swarm_search = CATALOGUE.select(&:swarm_search?)
 
-    # Stripe price IDs differ between test and live mode, so they are
-    # configuration. A plan may have several, current first: re-costing a plan
-    # makes a new Stripe price, and the subscriptions still on the old one
-    # must keep syncing (#619), so a retired id is recognised but never sold.
-    # Credentials: stripe.prices.<plan> as one id or a list; ENV
-    # STRIPE_PRICE_<PLAN> comma-separated.
-    def price_ids
-      configured = Rails.application.credentials.dig(:stripe, :prices, id.to_sym).presence ||
-        ENV["STRIPE_PRICE_#{id.upcase}"].presence
-      Array(configured).flat_map { |value| value.to_s.split(",") }.map(&:strip).reject(&:blank?)
-    end
+    def offer(rate = "standard") = Offer.new(tier: self, rate: rate.to_s)
 
-    # What a new purchase buys.
-    def price_id = price_ids.first
+    def offers = RATES.map { |rate| offer(rate) }
 
+    # The standard offer's prices; see Billing::Offer.
+    def price_ids = offer.price_ids
+    def price_id = offer.price_id
     def purchasable? = price_id.present?
 
     def machine = MACHINES.fetch(server_type)

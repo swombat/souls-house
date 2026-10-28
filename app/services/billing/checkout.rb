@@ -10,9 +10,9 @@
 module Billing
   class Checkout
 
-    def initialize(agent:, tier:, success_url:, cancel_url:, client: Billing.client)
+    def initialize(agent:, tier:, success_url:, cancel_url:, rate: "standard", client: Billing.client)
       @agent = agent
-      @tier = tier
+      @offer = tier.offer(rate)
       @success_url = success_url
       @cancel_url = cancel_url
       @client = client
@@ -20,7 +20,7 @@ module Billing
 
     # Returns the Checkout URL to send the owner to.
     def url
-      raise NotConfigured, "The #{@tier.name} plan has no Stripe price configured" unless @tier.purchasable?
+      raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
 
       customer = BillingCustomer.for!(@agent.account, client: @client)
       entitlement = ResidentEntitlement.for_agent!(@agent)
@@ -34,7 +34,7 @@ module Billing
         resolve_previous!(previous) if previous.present?
         session = @client.v1.checkout.sessions.create(
           params(customer),
-          { idempotency_key: "souls-house-checkout-#{@agent.id}-#{previous || 'first'}-#{@tier.id}" }
+          { idempotency_key: "souls-house-checkout-#{@agent.id}-#{previous || 'first'}-#{@offer.id}" }
         )
         entitlement.update!(checkout_session_id: session.id)
         session.url
@@ -59,13 +59,13 @@ module Billing
     end
 
     def params(customer)
-      metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @tier.id }
+      metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s, tier: @offer.tier.id, rate: @offer.rate }
       {
         mode: "subscription",
         customer: customer.stripe_customer_id,
         client_reference_id: @agent.id.to_s,
-        line_items: [ { price: @tier.price_id, quantity: 1 } ],
-        subscription_data: { metadata: metadata, description: "#{@tier.name} hosting for #{@agent.name}" },
+        line_items: [ { price: @offer.price_id, quantity: 1 } ],
+        subscription_data: { metadata: metadata, description: "#{@offer.name} hosting for #{@agent.name}" },
         metadata: metadata,
         automatic_tax: { enabled: true },
         tax_id_collection: { enabled: true },

@@ -23,6 +23,7 @@ class ResidentBirthOrder < ApplicationRecord
 
   validates :state, inclusion: { in: STATES }
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
+  validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :pending, -> { where(state: "pending") }
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }
@@ -38,10 +39,12 @@ class ResidentBirthOrder < ApplicationRecord
 
   def tier_record = Billing::Tier.find!(tier)
 
+  def offer = tier_record.offer(rate)
+
   def resident_name = birth_attributes["name"]
 
   def as_json(*)
-    { id: to_param, state: state, tier: tier, resident_name: resident_name, expires_at: expires_at&.iso8601,
+    { id: to_param, state: state, tier: tier, rate: rate, resident_name: resident_name, expires_at: expires_at&.iso8601,
       last_error: last_error }
   end
 
