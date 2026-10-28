@@ -201,6 +201,17 @@ Against `db/schema.rb` as of 2026-10-28 (posted as `JDwDGY`).
   `agent_placement_id`, `from_server_type`, `to_server_type`, `state`,
   `requested_by_id`, `provider_action_id`, `error`, timestamps; the same shape
   as a procurement operation.
+- **`checkout_attempts`** (added in the build, from Mira's review of #626):
+  one row per Stripe idempotency key for a Checkout, holding `agent_id`,
+  `offer_id`, `billing_code_redemption_id` (the grant the attempt was
+  authorised by), `stripe_session_id` once Stripe answers, `abandoned_at`.
+  Written under the entitlement lock and committed before Stripe is called,
+  so a replay of the key sends the same payload whatever the account's grants
+  are by then. Before an attempt at another offer, every unresolved attempt
+  is replayed by its key to learn and expire its session; one Stripe refuses
+  to replay is abandoned and the next key moves on. This replaces the idea of
+  pinning the attempt on the entitlement row, which one transaction and one
+  slot could lose.
 
 ### Columns on existing tables
 
@@ -232,6 +243,11 @@ Nothing is renamed; the existing `tier` column and its validations stay.
   change to the other offer at the same rate (Stripe prorates). The portal
   cannot do it (its product list is empty), so it is a house action on the
   Billing tab; sync records the new tier.
+- `Billing::PortalCheck`: reads every Customer Portal configuration (all
+  pages), counts a switcher only when `default_allowed_updates` includes
+  `price` (enabled can mean quantity only), reports a plan list Stripe didn't
+  send as unknown rather than clean, and says in red on Site Settings if an
+  at-cost price is switchable. Cached an hour.
 
 ## The machine must follow the plan (gap today, issue #621)
 
@@ -266,3 +282,25 @@ placement sized by the offer's tier.
 ## Open
 
 - Daniel's go, and whether it starts now or on the next 08:30 pick.
+
+## Build log (2026-10-28)
+
+Daniel said go at 16:10 (`jomZmY`), builds in thread `YzmZBJ`.
+
+- **#622 merged, deployed** (66dda70e): price ids as versions (#619); a VM
+  birth orders the plan's machine (#621). Live consequence: prod's Hetzner
+  allowlist is `cx23` only, so a Life or Work VM birth is refused at the
+  provider until cx33/cx43 are allowed in credentials. Daniel's call; asked,
+  not yet answered.
+- **#624 merged, deployed** (1aa8615e): `Billing::Offer`, the at-cost prices
+  8/11/20 with allowance 0 (costing held in a test), `rate` and
+  `stripe_price_id` columns, the order pinning its price, legacy Stripe
+  payloads kept byte-identical for cross-deploy replays.
+- **#626 open**: codes, redemptions, eligibility, Billing tab, wizard, Site
+  Admin → Billing Codes, `checkout_attempts`. Three review rounds so far,
+  each real.
+- **#627 open**: the Site Admin lines and the portal check.
+- **#628 open**: plan change at the same rate (PR 4a).
+- **#625 filed**: a plan change exactly at UTC month start keeps the outgoing
+  ceiling for the new month; for PR 5 with the schedules.
+- Not started: resize (PR 4b), scheduled conversion (PR 5).
