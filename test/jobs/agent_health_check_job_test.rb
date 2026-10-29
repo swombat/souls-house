@@ -61,16 +61,20 @@ class AgentHealthCheckJobTest < ActiveJob::TestCase
 
   test "the first failure stamps when the run began; recovery clears it" do
     stub_request(:get, "https://agent.example.com/health").to_return(status: 500)
+    began = nil
     freeze_time do
       2.times { AgentHealthCheckJob.perform_now }
       @agent.reload
+      began = Time.current
       assert_equal Time.current, @agent.health_failing_since
       assert_equal "unanswered", @agent.health_failure_kind
     end
     travel 10.minutes
     AgentHealthCheckJob.perform_now
     assert_equal 3, @agent.reload.consecutive_health_failures
-    assert_equal 10.minutes.ago.to_i, @agent.health_failing_since.to_i
+    # Compared with the frozen start, not "10.minutes.ago": the clock runs
+    # between the frozen block and travel, and CI crossed a second boundary.
+    assert_equal began.to_i, @agent.health_failing_since.to_i
 
     stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: "{}")
     AgentHealthCheckJob.perform_now
