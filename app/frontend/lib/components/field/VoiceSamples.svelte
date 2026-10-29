@@ -191,6 +191,9 @@
   async function review(sample, included) {
     const url = base;
     error = '';
+    // The verdict is on what has been heard: a sample still sounding stops
+    // when it is accepted or rejected, rather than playing on under the list.
+    if (playing?.id === sample.id) stop();
     pending = { ...pending, [sample.id]: { included, settled: null } };
     try {
       await save(`${url}/samples/${sample.id}`, 'PATCH', { included, digest: sample.digest });

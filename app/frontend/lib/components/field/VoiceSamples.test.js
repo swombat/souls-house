@@ -187,6 +187,33 @@ test('accept shows at once, moves the row to the end and leaves the next one pla
   );
 });
 
+test('rejecting the sample that is playing stops it; rejecting another leaves it sounding', async () => {
+  serveSlowSave(listing([sample(), sample({ id: 's2', digest: 'd2', audio_url: '/a/2', recording_title: 'Second' })]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  let rows = await screen.findAllByTestId('voice-sample');
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.resolve());
+  audio.pause = vi.fn();
+
+  // s1 sounds; rejecting s2 does not touch the player.
+  await fireEvent.click(within(rows[0]).getByTestId('sample-play'));
+  await fireEvent.play(audio);
+  await fireEvent.playing(audio);
+  expect(within(rows[0]).getByTestId('sample-play')).toHaveAccessibleName(/^Pause sample/);
+  await fireEvent.click(within(rows[1]).getByRole('button', { name: 'Reject' }));
+  expect(audio.pause).not.toHaveBeenCalled();
+  expect(within(rows[0]).getByTestId('sample-play')).toHaveAccessibleName(/^Pause sample/);
+
+  // Rejecting s1 itself stops it at once, before the server has answered.
+  await fireEvent.click(within(rows[0]).getByRole('button', { name: 'Reject' }));
+  expect(audio.pause).toHaveBeenCalledTimes(1);
+  await fireEvent.pause(audio);
+  rows = screen.getAllByTestId('voice-sample');
+  const first = rows.find((row) => within(row).queryByText('Synthetic meeting'));
+  expect(within(first).getByTestId('sample-play')).toHaveAccessibleName(/^Play sample/);
+  expect(within(first).getByTestId('sample-inclusion')).toHaveTextContent('saving');
+});
+
 test('a refused accept puts the row back with the reason', async () => {
   const settle = serveSlowSave(listing([sample(), sample({ id: 's2', digest: 'd2', recording_title: 'Second' })]));
   const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
