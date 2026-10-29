@@ -1,4 +1,4 @@
-// Which attachments can be previewed inside souls.house, and how (Daniel,
+// Which attachments can be previewed in place in a conversation, and how (Daniel,
 // jBVqwj, 29 Oct 2026: "anything that has an easy preview"). Word and other
 // office formats stay download-only: there is no easy, faithful browser preview.
 
