@@ -6,7 +6,6 @@
 # advisory lock, so two Stripe fetches can't interleave here.
 class ResidentEntitlement < ApplicationRecord
 
-  STATES = %w[pending active grace held complimentary].freeze
   # A turn already running when the resident falls asleep may finish, its
   # house-model calls still funded by the plan, for at most this long.
   DRAIN = 30.minutes
@@ -17,8 +16,26 @@ class ResidentEntitlement < ApplicationRecord
   belongs_to :current_subscription, class_name: "ResidentSubscription", optional: true
   has_many :house_inference_calls, dependent: :restrict_with_error
 
+  # Subscription metadata and state are saved together by the domain methods
+  # below. Keep effects in after_commit, not in transition callbacks.
+  state_machine :state, initial: :pending, action: nil do
+    state :pending, :active, :grace, :held, :complimentary
+
+    event :activate_plan do
+      transition all => :active
+    end
+
+    event :enter_grace do
+      transition active: :grace
+    end
+
+    event :end_plan do
+      transition all => :complimentary, if: :complimentary_granted_at?
+      transition all => :held
+    end
+  end
+
   validates :agent_id, uniqueness: true
-  validates :state, inclusion: { in: STATES }
   validates :source, inclusion: { in: SOURCES }
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }, allow_nil: true
   validates :rate, inclusion: { in: Billing::Tier::RATES }
@@ -31,15 +48,10 @@ class ResidentEntitlement < ApplicationRecord
   after_commit :wake_up, if: -> { saved_change_to_state?(from: "held") }
   after_commit :tell_payment_failed, if: -> { saved_change_to_state?(from: "active", to: "grace") }
 
-  STATES.each do |name|
-    define_method(:"#{name}?") { state == name }
-  end
-
   def self.for_agent!(agent)
     find_or_create_by!(agent: agent) do |entitlement|
       entitlement.account = agent.account
       entitlement.source = "stripe"
-      entitlement.state = "pending"
     end
   end
 
@@ -197,6 +209,8 @@ class ResidentEntitlement < ApplicationRecord
 
   private
 
+  private :activate_plan, :activate_plan!, :enter_grace, :enter_grace!, :end_plan, :end_plan!
+
   def adoptable?(subscription)
     subscription.paid? && (current_subscription.nil? || !current_subscription.live?)
   end
@@ -204,7 +218,7 @@ class ResidentEntitlement < ApplicationRecord
   def activate(subscription, now)
     record_allowance(subscription.tier, subscription.rate, now)
     self.hold_released_at = now if held?
-    self.state = "active"
+    activate_plan!
     self.source = "stripe"
     self.tier = subscription.tier
     self.rate = subscription.rate
@@ -229,9 +243,9 @@ class ResidentEntitlement < ApplicationRecord
   # Grace starts only from active. Replaying past_due while in grace or held
   # neither restarts grace nor lifts a hold.
   def start_grace(now)
-    return unless active?
+    return unless can_enter_grace?
 
-    self.state = "grace"
+    enter_grace!
     self.grace_started_at = now
     self.grace_deadline = now + Billing::GRACE_PERIOD
   end
@@ -242,13 +256,9 @@ class ResidentEntitlement < ApplicationRecord
     record_allowance(nil, nil, now)
     self.grace_started_at = nil
     self.grace_deadline = nil
-    if complimentary_granted_at.present?
-      self.state = "complimentary"
-      self.source = "complimentary"
-    elsif !held?
-      self.state = "held"
-      self.held_at = now
-    end
+    self.held_at = now unless complimentary_granted_at? || held?
+    end_plan!
+    self.source = "complimentary" if complimentary?
   end
 
   # Asleep: queued work is cancelled and the container stopped once running
