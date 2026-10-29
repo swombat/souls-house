@@ -59,6 +59,14 @@ admission checks, enrollment and placement bookkeeping keep their existing
 ordering. There is still only one create request; uncertainty cannot release
 the purchase reservation, and provisioned does not mean runtime-ready.
 
+## Paid birth orders
+
+`ResidentBirthOrder` defines completion, unpaid abandonment and retryable birth
+failure. `Billing::PaidBirth` still checks payment, holds the order lock and
+commits the resident with its born order before linking Stripe. Settled orders
+clear the draft; failures retain it for retry. Only order bookkeeping changed:
+ordinary birth, provisioning and runtime execution remain untouched.
+
 ## Development diagrams
 
 `state_machines-mermaid` is development-only. Render the current definition with:
@@ -81,6 +89,20 @@ bin/rails test test/models/resident_entitlement_test.rb \
 bin/rails test test/controllers/field_tweet_sources_controller_test.rb \
   test/models/field_tweets_sync_test.rb test/models/field_tweet_funding_test.rb \
   test/models/field_tweet_stream_test.rb test/models/field_tweets_concurrency_test.rb
+
+bin/rails test test/models/field_recording_reservation_test.rb \
+  test/models/reply_expectation_test.rb test/models/direct_reply_attention_test.rb \
+  test/controllers/api/v1/reply_attention_test.rb \
+  test/controllers/chats/reply_dismissals_controller_test.rb \
+  test/jobs/classify_reply_expectations_job_test.rb
+
+bin/rails test test/models/repository_watch_test.rb \
+  test/jobs/repository_watch_jobs_test.rb test/jobs/repository_watch_recovery_test.rb \
+  test/controllers/accounts/repository_watches_controller_test.rb \
+  test/models/deploy_alarm_test.rb test/jobs/deploy_alarm_check_job_test.rb
+
+bin/rails test test/services/cloud_procurement_test.rb \
+  test/jobs/provision_vm_agent_job_test.rb
 ```
 
 These cover subscription adoption, replay safety, grace expiry, holds, allowance
