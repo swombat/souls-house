@@ -12,15 +12,16 @@ class AddHealthFailureFieldsToAgents < ActiveRecord::Migration[8.1]
     add_column :agents, :runtime_restart_count, :integer
 
     # A resident already failing when this lands has a failure count but no
-    # start. The probe runs every five minutes (config/recurring.yml), so the
-    # count times five minutes before the last check is where the run began,
-    # give or take a probe; without it the first notice would say "since" the
+    # start. The probe runs every five minutes (config/recurring.yml) and the
+    # job stamps the start at the first failed check, so the run began
+    # (count - 1) probes before the last check, give or take the schedule's
+    # drift; without it the first notice would say "since" the
     # deploy. Estimate marked by the kind: "unanswered" is all we can know.
     reversible do |direction|
       direction.up do
         execute <<~SQL
           UPDATE agents
-          SET health_failing_since = last_health_check_at - (consecutive_health_failures * interval '5 minutes'),
+          SET health_failing_since = last_health_check_at - ((consecutive_health_failures - 1) * interval '5 minutes'),
               health_failure_kind = 'unanswered'
           WHERE health_state = 'unhealthy' AND consecutive_health_failures > 0 AND last_health_check_at IS NOT NULL
         SQL

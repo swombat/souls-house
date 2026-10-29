@@ -45,13 +45,20 @@ class ResidentUnreachableNotice
     @agent = agent
   end
 
+  # The read, the decision and the write happen under a lock on the resident's
+  # row, re-read inside it: two health jobs can overlap (the probes are
+  # sequential network calls and can outlast the five-minute schedule), and
+  # without the lock both would see no open outage and each open one, or both
+  # see the same open outage and each close it.
   def observe!
-    outage = self.class.open_outage(@agent)
-    if @agent.health_state == "healthy"
-      reachable_again!(outage) if outage
-    elsif outage.nil? && @agent.health_state == "unhealthy" &&
-        @agent.consecutive_health_failures >= THRESHOLD && worth_saying?
-      unreachable!
+    @agent.with_lock do
+      outage = self.class.open_outage(@agent)
+      if @agent.health_state == "healthy"
+        reachable_again!(outage) if outage
+      elsif outage.nil? && @agent.health_state == "unhealthy" &&
+          @agent.consecutive_health_failures >= THRESHOLD && worth_saying?
+        unreachable!
+      end
     end
   end
 
