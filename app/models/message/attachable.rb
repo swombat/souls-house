@@ -38,10 +38,14 @@ module Message::Attachable
 
       begin
         file_data[:url] = url_helpers.rails_blob_url(file, only_path: true, disposition: :attachment)
-        # Same-origin and inline, so the chat can preview the file in place:
-        # the browser can read text without S3 CORS and play media from it.
-        # The proxy controller carries the same discard guard as the redirect.
-        file_data[:inline_url] = url_helpers.rails_storage_proxy_url(file, only_path: true, disposition: :inline)
+        # For the in-place preview. Media, images and PDFs play from the
+        # storage redirect, inline. Text is read by the page itself, so it
+        # comes same-origin (no storage CORS) and uncached, through
+        # AttachmentPreviewsController; both carry the discard guard.
+        file_data[:inline_url] = url_helpers.rails_blob_url(file, only_path: true, disposition: :inline)
+        file_data[:text_preview_url] = url_helpers.attachment_preview_path(
+          signed_id: file.blob.signed_id, filename: file.filename.to_param
+        )
 
         if file.variable?
           file_data[:thumb_url] = url_helpers.rails_representation_url(file.variant(:thumb), only_path: true)

@@ -27,18 +27,30 @@ class DiscardedMessageBlobsTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
-  test "the inline preview url serves the bytes in place and is denied after discard" do
+  test "a text preview is served same-origin, never cached, and denied after discard" do
     notes = @chat.messages.create!(content: "Notes", role: "user", user: @user)
     notes.attachments.attach(io: StringIO.new("# Comparison\n\nNemotron wins."), filename: "comparison.md",
       content_type: "text/markdown", identify: false)
-    url = notes.files_json.first.fetch(:inline_url)
+    files = notes.files_json.first
+    url = files.fetch(:text_preview_url)
 
     get url
     assert_response :success
     assert_equal "# Comparison\n\nNemotron wins.", response.body
+    assert_equal "private, no-store", response.headers["Cache-Control"]
+
+    get files.fetch(:inline_url)
+    assert_response :redirect
 
     notes.discard!
     get url
+    assert_response :not_found
+    get files.fetch(:inline_url)
+    assert_response :not_found
+  end
+
+  test "a text preview of a forged id is not found" do
+    get "/attachment_previews/not-a-signed-id/comparison.md"
     assert_response :not_found
   end
 

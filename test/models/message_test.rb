@@ -426,8 +426,9 @@ class MessageTest < ActiveSupport::TestCase
       content_type: "text/markdown", identify: false)
     metadata = message.reload.files_json.first
 
-    assert_match %r{\A/rails/active_storage/blobs/proxy/}, metadata[:inline_url]
+    assert_match %r{\A/rails/active_storage/blobs/redirect/}, metadata[:inline_url]
     assert_includes metadata[:inline_url], "disposition=inline"
+    assert_match %r{\A/attachment_previews/[^/]+/comparison\.md\z}, metadata[:text_preview_url]
     assert_includes metadata[:url], "disposition=attachment"
   end
 

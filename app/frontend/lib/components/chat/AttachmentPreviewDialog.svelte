@@ -11,24 +11,25 @@
   let truncated = $state(false);
   let error = $state(null);
   let loading = $state(false);
-  let loadedUrl = null;
+  let loaded = false;
 
+  // Read text when the dialog opens; closing it stops an unfinished read.
   $effect(() => {
-    if (!open || (kind !== 'markdown' && kind !== 'text')) return;
-    if (loadedUrl === file.inline_url) return;
-    loadedUrl = file.inline_url;
+    if (!open || loaded || (kind !== 'markdown' && kind !== 'text')) return;
+    const controller = new AbortController();
     loading = true;
     error = null;
-    readTextPreview(file.inline_url)
+    readTextPreview(file.text_preview_url, fetch, controller.signal)
       .then((result) => {
         text = result.text;
         truncated = result.truncated;
+        loaded = true;
       })
       .catch((e) => {
-        error = e.message;
-        loadedUrl = null;
+        if (e.name !== 'AbortError') error = e.message;
       })
       .finally(() => (loading = false));
+    return () => controller.abort();
   });
 </script>
 

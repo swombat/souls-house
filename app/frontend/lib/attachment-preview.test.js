@@ -4,7 +4,8 @@ import { previewKind, readTextPreview, TEXT_PREVIEW_LIMIT } from './attachment-p
 const file = (filename, content_type, extra = {}) => ({
   filename,
   content_type,
-  inline_url: '/rails/active_storage/blobs/proxy/x/' + filename,
+  inline_url: '/rails/active_storage/blobs/redirect/x/' + filename + '?disposition=inline',
+  text_preview_url: '/attachment_previews/x/' + filename,
   ...extra,
 });
 
@@ -37,8 +38,9 @@ describe('previewKind', () => {
     expect(previewKind(file('logo.svg', 'image/svg+xml'))).toBeNull();
   });
 
-  it('needs an inline url', () => {
-    expect(previewKind({ filename: 'a.md', content_type: 'text/markdown' })).toBeNull();
+  it('needs the url its kind reads from', () => {
+    expect(previewKind({ filename: 'a.md', content_type: 'text/markdown', inline_url: '/x' })).toBeNull();
+    expect(previewKind({ filename: 'a.mp3', content_type: 'audio/mpeg', text_preview_url: '/x' })).toBeNull();
   });
 });
 
@@ -54,6 +56,21 @@ describe('readTextPreview', () => {
     const result = await readTextPreview('/x', fake);
     expect(result.truncated).toBe(true);
     expect(result.text.length).toBe(TEXT_PREVIEW_LIMIT);
+  });
+
+  it('does not leave half a character at the cut', async () => {
+    const big = 'a'.repeat(TEXT_PREVIEW_LIMIT - 1) + 'é'.repeat(4);
+    const result = await readTextPreview('/x', async () => new Response(big));
+    expect(result.truncated).toBe(true);
+    expect(result.text.endsWith('a')).toBe(true);
+    expect(result.text).not.toContain('\uFFFD');
+  });
+
+  it('passes the abort signal to fetch', async () => {
+    const controller = new AbortController();
+    let seen;
+    await readTextPreview('/x', async (_url, opts) => ((seen = opts.signal), new Response('x')), controller.signal);
+    expect(seen).toBe(controller.signal);
   });
 
   it('throws on a failed response', async () => {

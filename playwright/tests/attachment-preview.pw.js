@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
 import CommitBadgeHarness from '../CommitBadgeHarness.svelte';
 
-const proxy = (name) => `/rails/active_storage/blobs/proxy/sig/${name}?disposition=inline`;
+const inline = (name) => `/rails/active_storage/blobs/redirect/sig/${name}?disposition=inline`;
+const textPreview = (name) => `/attachment_previews/sig/${name}`;
 const blob = (name) => `/rails/active_storage/blobs/redirect/sig/${name}?disposition=attachment`;
 
 const messages = [
@@ -18,7 +19,8 @@ const messages = [
         content_type: 'text/markdown',
         byte_size: 2048,
         url: blob('comparison.md'),
-        inline_url: proxy('comparison.md'),
+        inline_url: inline('comparison.md'),
+        text_preview_url: textPreview('comparison.md'),
       },
       {
         id: 2,
@@ -26,7 +28,8 @@ const messages = [
         content_type: 'application/zip',
         byte_size: 54272,
         url: blob('evidence.zip'),
-        inline_url: proxy('evidence.zip'),
+        inline_url: inline('evidence.zip'),
+        text_preview_url: textPreview('evidence.zip'),
       },
       {
         id: 3,
@@ -34,7 +37,8 @@ const messages = [
         content_type: 'audio/webm',
         byte_size: 343225,
         url: blob('recording.webm'),
-        inline_url: proxy('recording.webm'),
+        inline_url: inline('recording.webm'),
+        text_preview_url: textPreview('recording.webm'),
       },
     ],
   },
@@ -44,7 +48,7 @@ test('a markdown attachment opens rendered in place, a zip has no eye', async ({
   await page.route('**/commit_statuses**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"statuses":{}}' })
   );
-  await page.route('**/blobs/proxy/sig/comparison.md**', (route) =>
+  await page.route('**/attachment_previews/sig/comparison.md', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/markdown',
@@ -77,6 +81,6 @@ test('a markdown attachment opens rendered in place, a zip has no eye', async ({
 
   await chips.nth(2).locator('[data-testid="file-attachment-preview"]').click();
   const audio = page.locator('[data-testid="attachment-preview-audio"]');
-  await expect(audio).toHaveAttribute('src', proxy('recording.webm'));
+  await expect(audio).toHaveAttribute('src', inline('recording.webm'));
   await expect(audio).toHaveAttribute('controls', '');
 });

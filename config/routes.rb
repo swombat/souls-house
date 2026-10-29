@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
+  get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
   resources :stones, only: :show do
     get "revisions/:number", to: "stones#show", as: :revision
     get "revisions/:number/content", to: "stones#content", as: :revision_content

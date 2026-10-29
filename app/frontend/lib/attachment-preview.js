@@ -52,9 +52,7 @@ function extension(filename) {
   return dot === -1 ? '' : name.slice(dot + 1);
 }
 
-export function previewKind(file) {
-  if (!file || !file.inline_url) return null;
-
+function kindOf(file) {
   const type = (file.content_type || '').toLowerCase().split(';')[0].trim();
   const ext = extension(file.filename);
 
@@ -68,9 +66,25 @@ export function previewKind(file) {
   return null;
 }
 
+// Text kinds are read by the page from text_preview_url (same origin, never
+// cached); the rest play from inline_url. No url, no preview.
+export function previewKind(file) {
+  if (!file) return null;
+  const kind = kindOf(file);
+  if (!kind) return null;
+  const isText = kind === 'markdown' || kind === 'text';
+  return (isText ? file.text_preview_url : file.inline_url) ? kind : null;
+}
+
 // Reads a text attachment for preview, stopping at TEXT_PREVIEW_LIMIT bytes.
-export async function readTextPreview(url, fetchImpl = fetch) {
-  const response = await fetchImpl(url, { credentials: 'same-origin' });
+// A cut can land inside a multi-byte character; drop the replacement mark
+// the decoder leaves there.
+function decodeCut(bytes) {
+  return new TextDecoder().decode(bytes).replace(/\uFFFD+$/, '');
+}
+
+export async function readTextPreview(url, fetchImpl = fetch, signal = undefined) {
+  const response = await fetchImpl(url, { credentials: 'same-origin', signal });
   if (!response.ok) throw new Error(`Could not load the file (${response.status}).`);
 
   const reader = response.body?.getReader?.();
@@ -78,7 +92,7 @@ export async function readTextPreview(url, fetchImpl = fetch) {
     const text = await response.text();
     const bytes = new TextEncoder().encode(text);
     if (bytes.length <= TEXT_PREVIEW_LIMIT) return { text, truncated: false };
-    return { text: new TextDecoder().decode(bytes.slice(0, TEXT_PREVIEW_LIMIT)), truncated: true };
+    return { text: decodeCut(bytes.slice(0, TEXT_PREVIEW_LIMIT)), truncated: true };
   }
 
   const chunks = [];
@@ -104,5 +118,5 @@ export async function readTextPreview(url, fetchImpl = fetch) {
     all.set(chunk, offset);
     offset += chunk.length;
   }
-  return { text: new TextDecoder().decode(all), truncated };
+  return { text: truncated ? decodeCut(all) : new TextDecoder().decode(all), truncated };
 }
