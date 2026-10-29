@@ -50,6 +50,15 @@ grace periods, recovery and notification deduplication. Repeated observations
 and visibility blips preserve an ongoing episode; no notification or deployment
 work moved into machine callbacks.
 
+## Cloud purchases
+
+`CloudProcurementOperation` defines submission, uncertain outcomes, discovery,
+review, provisioning and verified deletion. `CloudProcurement` applies those
+edges under its existing locks and saves evidence with each edge. Provider I/O,
+admission checks, enrollment and placement bookkeeping keep their existing
+ordering. There is still only one create request; uncertainty cannot release
+the purchase reservation, and provisioned does not mean runtime-ready.
+
 ## Development diagrams
 
 `state_machines-mermaid` is development-only. Render the current definition with:
