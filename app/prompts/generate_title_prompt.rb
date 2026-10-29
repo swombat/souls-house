@@ -5,13 +5,21 @@ class GenerateTitlePrompt
   MAX_MESSAGES = 12
   MAX_MESSAGE_LENGTH = 240
 
-  def initialize(chat:, model: UtilityInference::TITLE_MODEL)
+  # Without a provider the call runs on the account's own OpenRouter key
+  # (UtilityInference.title). With one, it runs on the house's key, pinned to
+  # that provider (TitleSweepJob's retry).
+  def initialize(chat:, model: UtilityInference::TITLE_MODEL, provider: nil)
     @model = model
+    @provider = provider
     @chat = chat
   end
 
   def generate_title
-    response = UtilityInference.title(account: chat.account, model: @model, **render)
+    response = if @provider
+      UtilityInference.house_chat(model: @model, provider: @provider, max_tokens: 100, **render)
+    else
+      UtilityInference.title(account: chat.account, model: @model, **render)
+    end
     extract_title(response)&.squish
   end
 

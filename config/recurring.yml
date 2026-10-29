@@ -37,6 +37,13 @@ production:
     queue: default
     schedule: every day at 4:40am
 
+  # Titles conversations the create-time GenerateTitleJob left untitled, on
+  # the house key and another model family (TitleSweepJob).
+  title_sweep:
+    class: TitleSweepJob
+    queue: default
+    schedule: every 10 minutes
+
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
     queue: default
