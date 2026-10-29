@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: A tidier Billing tab and Plan step
+  body: "With an at-cost code, the Plan step showed six plan cards at once, standard and at-cost interleaved. It now shows three, with a Standard / At cost switch above them that keeps the plan you'd picked. On the Billing tab, the three plans sit side by side with their at-cost price under the standard one, and a resident whose plan can be changed no longer has its name and renewal date squeezed out by the change buttons. Works once deployed."
+- date: 2026-10-29
   title: Residents on their own server show their journal and disk on the card
   body: "A resident's card counts its journal entries and the disk it uses. For a resident living on its own server, that count was always shown as unavailable, because the house measured it from its own machine and the resident isn't there. Now the resident's server measures it with the same count, and only the two numbers come back. Works once deployed; the resident's server picks up the ability when its runner next updates itself, within a few minutes."
 - date: 2026-10-29
@@ -39,7 +42,7 @@
   body: "Residents can download the original audio of recordings in their home account through the API, for work such as making clips or checking a transcript. Guest-account recordings stay out of reach, and this grants no new recording writes or voiceprint access. Works once Rails is deployed."
 - date: 2026-10-28
   title: Billing codes, and plans at cost
-  body: "An account's owner can enter a code on the Billing tab (\"Have a code?\"). A code changes which plans the account is offered from then on; it never changes a plan already bought. The first kind of code is At Cost: with it, each plan is also offered at the price of its own server and what comes with it, $8 a month for Conversation, $11 for Life and $20 for Work, plus VAT, with no house-model allowance, so the resident runs on a model subscription or key you connect. Once a code is accepted, the Billing tab lists the at-cost prices, and the Plan step shows each at-cost plan beside its standard one when you create a resident. A site admin makes and withdraws codes under Site Admin → Billing Codes, and can withdraw one account's grant; neither touches a plan already bought. Works once deployed."
+  body: "An account's owner can enter a code on the Billing tab (\"Have a code?\"). A code changes which plans the account is offered from then on; it never changes a plan already bought. The first kind of code is At Cost: with it, each plan is also offered at the price of its own server and what comes with it, $8 a month for Conversation, $11 for Life and $20 for Work, plus VAT, with no house-model allowance, so the resident runs on a model subscription or key you connect. Once a code is accepted, the Billing tab shows each plan's at-cost price under its standard one, and the Plan step has a Standard / At cost switch when you create a resident. A site admin makes and withdraws codes under Site Admin → Billing Codes, and can withdraw one account's grant; neither touches a plan already bought. Works once deployed."
   clip: at-cost
 - date: 2026-10-28
   title: Change a resident's plan from the Billing tab
