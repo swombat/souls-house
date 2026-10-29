@@ -214,6 +214,25 @@ test('rejecting the sample that is playing stops it; rejecting another leaves it
   expect(within(first).getByTestId('sample-inclusion')).toHaveTextContent('saving');
 });
 
+test('accepting a removed sample while replaying it stops the replay too', async () => {
+  // Confirmed earlier, then removed: Accept is open without hearing it again.
+  serveSlowSave(listing([sample({ state: 'removed', included: false, confirmed: true })]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  const row = await screen.findByTestId('voice-sample');
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.resolve());
+  audio.pause = vi.fn();
+  await fireEvent.click(within(row).getByTestId('sample-play'));
+  await fireEvent.play(audio);
+  await fireEvent.playing(audio);
+  const accept = within(row).getByRole('button', { name: 'Accept' });
+  expect(accept).toBeEnabled();
+  await fireEvent.click(accept);
+  expect(audio.pause).toHaveBeenCalledTimes(1);
+  await fireEvent.pause(audio);
+  expect(within(row).getByTestId('sample-play')).toHaveAccessibleName(/^Play sample/);
+});
+
 test('a refused accept puts the row back with the reason', async () => {
   const settle = serveSlowSave(listing([sample(), sample({ id: 's2', digest: 'd2', recording_title: 'Second' })]));
   const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
