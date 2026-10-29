@@ -62,3 +62,15 @@ test('a group the bot has left cannot be switched on', () => {
   expect(screen.getByRole('switch', { name: 'Allow Alanis in MGL' })).toBeDisabled();
   expect(screen.getByText('The bot is no longer in this group.')).toBeInTheDocument();
 });
+
+test("says how to turn privacy mode off when Telegram withholds a group's untagged messages", () => {
+  render(TelegramSettings, props({ telegramConfiguration: { configured: true, username: 'alanis_bot', reads_all_group_messages: false } }));
+  expect(screen.getByTestId('telegram-groups-privacy')).toHaveTextContent('/setprivacy');
+});
+
+test('says nothing about privacy mode when the bot reads the whole group, or before it is known', () => {
+  render(TelegramSettings, props({ telegramConfiguration: { configured: true, username: 'alanis_bot', reads_all_group_messages: true } }));
+  expect(screen.queryByTestId('telegram-groups-privacy')).toBeNull();
+  render(TelegramSettings, props());
+  expect(screen.queryByTestId('telegram-groups-privacy')).toBeNull();
+});

@@ -80,6 +80,8 @@ class TelegramMessage < ApplicationRecord
     }
     result[:media] = media_json if media?
     result[:reply_to_telegram_message_id] = reply_to_telegram_message_id if reply_to_telegram_message_id
+    # Group context the resident was not asked about (#596 follow-up).
+    result[:addressed_to_you] = false unless addressed?
     result
   end
 

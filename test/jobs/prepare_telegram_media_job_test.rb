@@ -185,11 +185,52 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     end
   end
 
+  test "group media nobody addressed is prepared without a wake" do
+    group = context_group
+    message = create_media_message("photo", subscription: group, addressed: false)
+    stub_telegram_download("photo/file.png", file_fixture("test_image.png").binread)
+
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      PrepareTelegramMediaJob.perform_now(message, "photo-file", {})
+    end
+    assert_equal "ready", message.reload.media_status
+  end
+
+  test "group media nobody addressed wakes the mention that waited behind it" do
+    group = context_group
+    message = create_media_message("photo", subscription: group, addressed: false)
+    group.telegram_messages.create!(role: "user", text: "@media_bot what is this?", sender_name: "Ana", sent_at: Time.current)
+    stub_telegram_download("photo/file.png", file_fixture("test_image.png").binread)
+
+    assert_enqueued_with(job: TelegramAgentTriggerJob) do
+      PrepareTelegramMediaJob.perform_now(message, "photo-file", {})
+    end
+  end
+
+  test "group media nobody addressed fails without a word in the group" do
+    group = context_group
+    message = create_media_message("photo", subscription: group, addressed: false)
+    stub_telegram_download("photo/file.txt", "not an image")
+    send = stub_request(:post, "https://api.telegram.org/bot123:ABC/sendMessage")
+
+    PrepareTelegramMediaJob.perform_now(message, "photo-file", {})
+
+    assert_equal "failed", message.reload.media_status
+    assert_not_requested send
+  end
+
   private
 
-  def create_media_message(kind, caption: nil)
+  def context_group
+    group = @agent.telegram_groups.create!(telegram_chat_id: -100_44, title: "MGL")
+    group.allow!(by: users(:user_1))
+    group
+  end
+
+  def create_media_message(kind, caption: nil, subscription: @subscription, addressed: true)
     label = { "photo" => "Photo", "voice" => "Voice message", "video" => "Video" }.fetch(kind)
-    @subscription.telegram_messages.create!(
+    subscription.telegram_messages.create!(
+      addressed: addressed,
       role: "user",
       text: [ caption, "[#{label} — processing]" ].compact.join("\n\n"),
       caption: caption,

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_29_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -453,6 +453,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_29_070000) do
     t.text "system_prompt"
     t.string "telegram_bot_token"
     t.string "telegram_bot_username"
+    t.boolean "telegram_reads_all_group_messages"
     t.string "telegram_webhook_token"
     t.integer "thinking_budget", default: 10000
     t.boolean "thinking_enabled", default: false, null: false
@@ -2620,6 +2621,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_29_070000) do
   end
 
   create_table "telegram_messages", force: :cascade do |t|
+    t.boolean "addressed", default: true, null: false
     t.text "caption"
     t.datetime "created_at", null: false
     t.string "media_error"

@@ -202,7 +202,7 @@ module Api
         return unless subscription.group?
 
         target = turn_reply_target(subscription) ||
-          subscription.telegram_messages.where(role: "user").where.not(telegram_message_id: nil).order(:id).last
+          subscription.telegram_messages.where(role: "user", addressed: true).where.not(telegram_message_id: nil).order(:id).last
         return unless target&.telegram_message_id
 
         { message_id: target.telegram_message_id, allow_sending_without_reply: true }
@@ -215,7 +215,12 @@ module Api
         interaction = interactions.active.order(:id).last || interactions.order(:id).last
         return unless interaction
 
-        subscription.telegram_messages.find_by(id: interaction.last_included_message_id, role: "user")
+        # A wake also carries the group's conversation around the mention;
+        # the answer goes to the last message in it addressed to the resident.
+        subscription.telegram_messages
+          .where(role: "user", addressed: true)
+          .where("id <= ?", interaction.last_included_message_id)
+          .order(:id).last
       end
 
       def record_outbound_message(message, result)

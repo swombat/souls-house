@@ -1,8 +1,10 @@
 require "test_helper"
 require "ostruct"
 
-# #596: a resident's bot answers in a Telegram group only when the owner has
-# allowed the group, and only to messages addressed to it.
+# #596: a resident's bot answers in a Telegram group only once the group is
+# on, and only to messages addressed to it; while on, the rest of the group's
+# conversation is kept as context. A group switches on at an owner's first
+# word to the bot there, or from settings.
 class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
 
   GROUP_ID = -100_555
@@ -77,7 +79,7 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert_equal 1, group.telegram_messages.count
   end
 
-  test "group messages not addressed to the bot are dropped before persistence" do
+  test "group messages not addressed to the bot are kept as context and wake nobody" do
     group = allowed_group
     other_reply = { "message_id" => 901, "from" => { "id" => 12, "is_bot" => false } }
     cases = [
@@ -94,7 +96,103 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
         ProcessTelegramUpdateJob.perform_now(@agent, update)
       end
     end
-    assert_equal 0, group.telegram_messages.count
+    assert_equal 5, group.telegram_messages.count
+    assert group.telegram_messages.none?(&:addressed?)
+    assert_equal "Ana Ruiz", group.telegram_messages.first.sender_name
+  end
+
+  test "a mention after untagged chatter wakes the resident, which marks only the mention as addressed" do
+    group = allowed_group
+    chatter = group_message("the contract says 30 days")
+    chatter["message"]["message_id"] = 1
+    ProcessTelegramUpdateJob.perform_now(@agent, chatter)
+
+    assert_enqueued_with(job: TelegramAgentTriggerJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, group_message("@group_bot what do you think of that?", mention_entity("@group_bot what do you think of that?")))
+    end
+    assert_equal [ false, true ], group.telegram_messages.order(:id).map(&:addressed?)
+  end
+
+  test "untagged media in a group that is on is prepared without waking or answering" do
+    group = allowed_group
+    update = group_message(nil)
+    update["message"].delete("text")
+    update["message"]["photo"] = [ { "file_id" => "ph1", "width" => 10, "height" => 10, "file_size" => 100 } ]
+
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+    assert_not group.telegram_messages.sole.addressed?
+  end
+
+  test "oversized untagged media is marked failed without a word in the group" do
+    group = allowed_group
+    update = group_message(nil)
+    update["message"].delete("text")
+    update["message"]["photo"] = [ { "file_id" => "ph1", "width" => 10, "height" => 10, "file_size" => 500.megabytes } ]
+
+    Net::HTTP.stub :post, ->(*) { flunk "nothing may be sent to the group" } do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+    message = group.telegram_messages.sole
+    assert_equal "failed", message.media_status
+    assert_equal "too_large", message.media_error
+  end
+
+  test "an owner's first mention switches the group on, announces it, and is answered" do
+    link_owner_telegram
+    ProcessTelegramUpdateJob.perform_now(@agent, membership_update("member"))
+    group = @agent.telegram_groups.sole
+    assert_not group.allowed?
+
+    assert_enqueued_with(job: TelegramGroupNoticeJob, args: [ group ]) do
+      assert_enqueued_with(job: TelegramAgentTriggerJob) do
+        ProcessTelegramUpdateJob.perform_now(@agent, group_message("@group_bot hi", mention_entity("@group_bot hi")))
+      end
+    end
+    group.reload
+    assert group.allowed?
+    assert_equal users(:user_1), group.allowed_by
+    assert group.telegram_messages.sole.addressed?
+  end
+
+  test "a linked owner's untagged chatter does not switch the group on" do
+    link_owner_telegram
+    assert_no_difference "TelegramMessage.count" do
+      ProcessTelegramUpdateJob.perform_now(@agent, group_message("just talking"))
+    end
+    assert_not @agent.telegram_groups.sole.allowed?
+  end
+
+  test "a mention from someone who is not a linked owner does not switch the group on" do
+    @agent.telegram_subscriptions.create!(user: users(:user_1), telegram_chat_id: 5_555)
+    ProcessTelegramUpdateJob.perform_now(@agent, group_message("@group_bot hi", mention_entity("@group_bot hi")))
+
+    assert_not @agent.telegram_groups.sole.allowed?
+  end
+
+  test "a group an owner switched off in settings stays off when the owner mentions the bot" do
+    link_owner_telegram
+    group = allowed_group
+    group.disallow!
+
+    assert_no_enqueued_jobs only: [ TelegramGroupNoticeJob, TelegramAgentTriggerJob ] do
+      ProcessTelegramUpdateJob.perform_now(@agent, group_message("@group_bot hi", mention_entity("@group_bot hi")))
+    end
+    assert_not group.reload.allowed?
+  end
+
+  test "after the bot is removed and added back, the owner's first mention switches it on again" do
+    link_owner_telegram
+    group = allowed_group
+    ProcessTelegramUpdateJob.perform_now(@agent, membership_update("kicked"))
+    ProcessTelegramUpdateJob.perform_now(@agent, membership_update("member"))
+    assert_nil group.reload.allowed_at
+
+    ProcessTelegramUpdateJob.perform_now(@agent, group_message("@group_bot back", mention_entity("@group_bot back")))
+    assert group.reload.allowed?
   end
 
   test "mention offsets are UTF-16 code units, as Telegram counts them" do
@@ -106,13 +204,15 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert_equal 1, group.telegram_messages.count
   end
 
-  test "another bot mentioning ours is ignored" do
+  test "another bot mentioning ours is kept as context but never wakes it" do
     group = allowed_group
     update = group_message("@group_bot ping", mention_entity("@group_bot ping"))
     update["message"]["from"]["is_bot"] = true
 
-    ProcessTelegramUpdateJob.perform_now(@agent, update)
-    assert_equal 0, group.telegram_messages.count
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+    assert_not group.telegram_messages.sole.addressed?
   end
 
   test "a Telegram retry of the same update is kept once and wakes once" do
@@ -165,6 +265,11 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
   end
 
   private
+
+  # Ana (Telegram id 77) is user_1, an owner, with her Telegram linked to the bot.
+  def link_owner_telegram
+    @agent.telegram_subscriptions.create!(user: users(:user_1), telegram_chat_id: 77)
+  end
 
   def allowed_group
     group = @agent.telegram_groups.create!(telegram_chat_id: GROUP_ID, title: "MGL")

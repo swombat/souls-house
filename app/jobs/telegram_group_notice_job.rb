@@ -1,4 +1,4 @@
-# Said once in the group when its owner allows it (#596): what is copied,
+# Said once in the group when it is switched on (#596): what is copied,
 # who can read the copy, and whose allowance the answers spend.
 class TelegramGroupNoticeJob < ApplicationJob
 
@@ -26,9 +26,9 @@ class TelegramGroupNoticeJob < ApplicationJob
     account = agent.account
     handle = agent.telegram_bot_username.present? ? "@#{agent.telegram_bot_username}" : agent.name
     <<~TEXT.strip
-      #{agent.name} can now answer in this group. It only sees messages that mention #{handle} or reply to it.
+      #{agent.name} is now on in this group. It reads the conversation here and answers when someone mentions #{handle} or replies to it.
 
-      Those messages, with your Telegram name, and #{agent.name}'s replies are copied to #{Setting.instance.site_name}, where the people in the account "#{account.name}" can read them. Each answer #{agent.name} gives here uses that account's allowance.
+      Every message in this group from now on, with your Telegram name, and #{agent.name}'s replies are copied to #{Setting.instance.site_name}, where the people in the account "#{account.name}" can read them. Each answer #{agent.name} gives here uses that account's allowance.
     TEXT
   end
 

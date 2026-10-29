@@ -148,6 +148,10 @@ class PrepareTelegramMediaJob < ApplicationJob
   end
 
   def enqueue_wake!(telegram_message)
+    # Group context nobody addressed wakes nobody, unless an addressed message
+    # arrived after it and has been waiting for it to be ready.
+    return unless telegram_message.addressed? || addressed_message_after?(telegram_message)
+
     job = TelegramAgentTriggerJob.perform_later(telegram_message.telegram_subscription, telegram_message)
     raise WakeEnqueueError, "Could not enqueue the Resident wake" unless job.successfully_enqueued?
 
@@ -159,7 +163,7 @@ class PrepareTelegramMediaJob < ApplicationJob
 
     telegram_message.update!(media_status: "failed", media_error: category)
     telegram_message.rebuild_text!
-    notify_media_failure(telegram_message, category)
+    notify_media_failure(telegram_message, category) if telegram_message.addressed?
     enqueue_follow_up_wake(telegram_message)
   end
 
@@ -175,9 +179,16 @@ class PrepareTelegramMediaJob < ApplicationJob
 
   def enqueue_follow_up_wake(telegram_message)
     subscription = telegram_message.telegram_subscription
-    return unless subscription.telegram_messages.where(role: "user").where("id > ?", telegram_message.id).exists?
+    return unless addressed_message_after?(telegram_message)
 
     TelegramAgentTriggerJob.perform_later(subscription, telegram_message)
+  end
+
+  def addressed_message_after?(telegram_message)
+    telegram_message.telegram_subscription.telegram_messages
+      .where(role: "user", addressed: true)
+      .where("id > ?", telegram_message.id)
+      .exists?
   end
 
   def error_category(error)

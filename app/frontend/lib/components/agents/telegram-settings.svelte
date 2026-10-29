@@ -217,10 +217,20 @@
       <div>
         <p class="text-sm font-medium">Groups</p>
         <p class="text-xs text-muted-foreground">
-          In a group you allow, {agent.name} answers when someone mentions @{username} or replies to it, and nothing else.
-          Anyone in an allowed group who does that spends a turn on this account's plan.
+          A group is off until an owner of this account, with their Telegram linked to @{username}, mentions it there
+          for the first time, or switches it on here. In a group that is on, {agent.name} reads the conversation and
+          answers when someone mentions @{username} or replies to it. Each of those answers spends a turn on this
+          account's plan.
         </p>
       </div>
+      {#if telegramConfiguration?.reads_all_group_messages === false}
+        <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="telegram-groups-privacy">
+          Telegram's privacy mode is on for @{username}, so groups only send it the messages that mention it or reply
+          to it, and {agent.name} can't see the conversation around them. To change that, send /setprivacy to
+          @BotFather, pick @{username} and choose Disable, then remove the bot from each group and add it back (or
+          make it a group admin).
+        </p>
+      {/if}
       {#if telegramGroups.length === 0}
         <p class="text-xs text-muted-foreground" data-testid="telegram-groups-empty">
           Add @{username} to a Telegram group and it will appear here, switched off.
@@ -240,7 +250,7 @@
                       ? ''
                       : 's'} copied
                   {:else}
-                    Off: nothing from this group is read or kept.
+                    Off: nothing from this group is read or kept until an owner mentions the bot there.
                   {/if}
                 </p>
               </div>

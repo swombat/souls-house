@@ -8,6 +8,7 @@ class Agents::TelegramWebhooksController < ApplicationController
     end
 
     @agent.set_telegram_webhook!
+    RefreshTelegramBotInfoJob.perform_later(@agent)
     info = @agent.telegram_webhook_info
     webhook_url = info&.dig("result", "url")
 
