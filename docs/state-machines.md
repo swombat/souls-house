@@ -26,6 +26,14 @@ State and reason/retry metadata are saved together, with the existing stream
 refresh callback unchanged. Pausing and resuming preserve the collection window,
 cursor, checkpoint and backlog. Funding and collection policies are unchanged.
 
+## Reply attention
+
+`ReplyExpectation` closes open attention flags through `answer!` and `dismiss!`.
+The existing integer enum and prefixed scopes remain compatible. Classification,
+late results, individual dismissals and bulk dismissals still share the chat's
+write lock; answered or dismissed flags cannot be reopened by inference.
+Refresh and listing notifications remain after-commit effects.
+
 ## Development diagrams
 
 `state_machines-mermaid` is development-only. Render the current definition with:

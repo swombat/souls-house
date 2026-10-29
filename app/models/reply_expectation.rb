@@ -9,6 +9,19 @@ class ReplyExpectation < ApplicationRecord
   belongs_to :answered_by_message, class_name: "Message", optional: true
 
   enum :state, { open: 0, answered: 1, dismissed: 2 }, prefix: true
+
+  state_machine :state, initial: :open, action: nil do
+    state :open, :answered, :dismissed
+
+    event :answer_expectation do
+      transition open: :answered
+    end
+
+    event :dismiss_expectation do
+      transition open: :dismissed
+    end
+  end
+
   validates :score, numericality: { in: 0..1 }
   validates :classifier_version, presence: true
 
@@ -60,7 +73,7 @@ class ReplyExpectation < ApplicationRecord
   def self.dismiss_message!(message:, user:)
     message.chat.with_lock do
       expectation = find_by!(message: message, user: user)
-      expectation.update!(state: :dismissed) if expectation.state_open?
+      expectation.dismiss! if expectation.state_open?
     end
   end
 
@@ -76,14 +89,12 @@ class ReplyExpectation < ApplicationRecord
       .where("messages.id > ?", message.id).order(:id).first
     expectation.assign_attributes(score: score, classifier_version: classifier_version)
     if cutoff && message.id <= cutoff
-      expectation.state = :dismissed
+      expectation.dismiss!
     elsif reply
-      expectation.state = :answered
-      expectation.answered_by_message = reply
+      expectation.answer!(reply)
     else
-      expectation.state = :open
+      expectation.save!
     end
-    expectation.save!
     expectation
   end
 
@@ -93,7 +104,7 @@ class ReplyExpectation < ApplicationRecord
     # enclosing message transaction, serialising with classification/dismissal.
     joins(:message).state_open.where(user_id: message.user_id, messages: { chat_id: message.chat_id })
       .where("messages.id < ?", message.id).find_each do |expectation|
-        expectation.update!(state: :answered, answered_by_message: message)
+        expectation.answer!(message)
       end
   end
 
@@ -104,5 +115,20 @@ class ReplyExpectation < ApplicationRecord
   rescue StandardError => error
     Rails.logger.warn("Reply attention refresh failed: #{error.class}")
   end
+
+  # Call while holding the chat's write lock, just like classification.
+  def dismiss!
+    dismiss_expectation!
+    save!
+  end
+
+  def answer!(message)
+    answer_expectation!
+    update!(answered_by_message: message)
+  end
+
+  private
+
+  private :answer_expectation, :answer_expectation!, :dismiss_expectation, :dismiss_expectation!
 
 end
