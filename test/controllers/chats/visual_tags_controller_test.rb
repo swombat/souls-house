@@ -47,6 +47,30 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert @chat.messages.where(role: "system").all? { |m| m.user_id.nil? && m.agent_id.nil? }
   end
 
+  test "an overlapping write is read under the lock: the line names the tag actually replaced" do
+    name = ResidentFacingName.for(@user)
+    other = @account.visual_tags.create!(label: "Plans", icon: "Compass", colour: "green")
+    real_resolve = VisualTag.method(:resolve_for)
+    # Another request commits Plans after this one loaded the room, before it locks.
+    overlapping = ->(account, id) { Chat.where(id: @chat.id).update_all(visual_tag_id: other.id); real_resolve.call(account, id) }
+    VisualTag.stub(:resolve_for, overlapping) do
+      patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }
+    end
+    assert_equal [ "#{name} changed the tag to Care (was Plans)." ],
+      @chat.messages.where(role: "system").pluck(:content)
+  end
+
+  test "two writers choosing the same tag log it once" do
+    real_resolve = VisualTag.method(:resolve_for)
+    # The other writer already committed the same choice before this one locks.
+    same = ->(account, id) { Chat.where(id: @chat.id).update_all(visual_tag_id: @tag.id); real_resolve.call(account, id) }
+    VisualTag.stub(:resolve_for, same) do
+      patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }
+    end
+    assert_equal @tag, @chat.reload.visual_tag
+    assert_empty @chat.messages.where(role: "system")
+  end
+
   test "a refused selection leaves no line" do
     VisualTag.stub(:resolve_for, ->(*) { raise ActiveRecord::InvalidForeignKey }) do
       patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }, as: :json

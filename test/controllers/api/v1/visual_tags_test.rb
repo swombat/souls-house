@@ -92,6 +92,21 @@ module Api
           @room.messages.where(role: "system").order(:id).last.content
       end
 
+      test "API tag lines read the previous tag under the lock" do
+        other = @account.visual_tags.create!(label: "Plans", icon: "Compass", colour: "green")
+        real_resolve = VisualTag.method(:resolve_for)
+        overlapping = ->(account, id) { Chat.where(id: @room.id).update_all(visual_tag_id: other.id); real_resolve.call(account, id) }
+        VisualTag.stub(:resolve_for, overlapping) { update_room({ visual_tag_id: @tag.to_param }) }
+        assert_response :success
+        assert_equal [ "#{@agent.name} changed the tag to Research (was Plans)." ],
+          @room.messages.where(role: "system").pluck(:content)
+
+        same = ->(account, id) { Chat.where(id: @room.id).update_all(visual_tag_id: other.id); real_resolve.call(account, id) }
+        VisualTag.stub(:resolve_for, same) { update_room({ visual_tag_id: other.to_param }) }
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+      end
+
       test "human account key can select a room tag" do
         update_room({ visual_tag_id: @tag.to_param }, headers: @human_headers)
         assert_response :success

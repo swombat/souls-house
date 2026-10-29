@@ -191,8 +191,10 @@ module Api
           changes["visual_tag"] = VisualTag.resolve_for(chat.account, tag_id)
         end
 
-        previous_tag = chat.visual_tag
-        updated = chat.transaction do
+        # with_lock reloads the row first, so previous_tag is the tag this
+        # write replaces even when another request changed it meanwhile.
+        updated = chat.with_lock do
+          previous_tag = chat.visual_tag
           next false unless chat.update(changes)
 
           if chat.saved_change_to_visual_tag_id?

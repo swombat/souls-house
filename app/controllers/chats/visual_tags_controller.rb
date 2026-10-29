@@ -8,10 +8,13 @@ class Chats::VisualTagsController < ApplicationController
       return
     end
 
-    previous = chat.visual_tag
-    chat.transaction do
-      chat.update!(visual_tag: VisualTag.resolve_for(current_account, params[:visual_tag_id]))
-      ConversationTagEvent.changed!(chat: chat, from: previous, to: chat.visual_tag, by: Current.user)
+    tag = VisualTag.resolve_for(current_account, params[:visual_tag_id])
+    # The lock reloads the row, so the "was" in the line is the tag this
+    # write replaced, not whatever an overlapping request saw first.
+    chat.with_lock do
+      previous = chat.visual_tag
+      chat.update!(visual_tag: tag)
+      ConversationTagEvent.changed!(chat: chat, from: previous, to: tag, by: Current.user)
     end
     redirect_back_or_to chat_view_path(chat)
   rescue ActiveRecord::InvalidForeignKey
