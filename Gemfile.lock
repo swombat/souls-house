@@ -185,7 +185,7 @@ GEM
       activesupport (>= 6.1)
     hashdiff (1.2.1)
     hashids (1.0.6)
-    honeybadger (6.9.3)
+    honeybadger (6.10.0)
       logger
       ostruct
     i18n (1.15.2)
@@ -536,7 +536,7 @@ DEPENDENCIES
   doorkeeper (= 5.9.9)
   fiddle (~> 1.1)
   hashids
-  honeybadger (~> 6.9)
+  honeybadger (~> 6.10)
   image_processing (~> 2.2.0)
   inertia_rails (~> 3.22)
   jbuilder
