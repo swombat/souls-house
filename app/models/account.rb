@@ -36,6 +36,12 @@ class Account < ApplicationRecord
     moonshot: { env: "MOONSHOT_API_KEY", credentials: %i[ai moonshot api_token] },
     minimax: { env: "MINIMAX_API_KEY", credentials: %i[ai minimax api_token] }
   }.freeze
+  # House-held tokens for services that aren't model providers. No account
+  # column and no bring-your-own field: they reach a resident only through the
+  # house fallback (use_system_ai_credentials), next to the model keys.
+  HOUSE_SERVICE_TOKENS = {
+    huggingface: { env: "HF_TOKEN", credentials: %i[huggingface token] }
+  }.freeze
   AI_CREDENTIAL_ATTRIBUTES = [
     :use_system_ai_credentials,
     *AI_PROVIDERS.keys.map { |provider| "#{provider}_api_key".to_sym }
@@ -357,6 +363,16 @@ class Account < ApplicationRecord
   def ai_provider_keys
     AI_PROVIDERS.filter_map do |provider, config|
       value = ai_api_key(provider)
+      [ config.fetch(:env), value ] if value.present? && !value.start_with?("<")
+    end.to_h.merge(house_service_tokens)
+  end
+
+  def house_service_tokens
+    return {} unless use_system_ai_credentials?
+
+    HOUSE_SERVICE_TOKENS.values.filter_map do |config|
+      value = Rails.application.credentials.dig(*config.fetch(:credentials)).presence ||
+        ENV[config.fetch(:env)].presence
       [ config.fetch(:env), value ] if value.present? && !value.start_with?("<")
     end.to_h
   end

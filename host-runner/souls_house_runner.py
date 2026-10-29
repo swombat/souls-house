@@ -319,6 +319,7 @@ RESIDENT_ENV_KEYS = frozenset({
     "SOULSHOUSE_REQUIRE_HOUSE_TRUST", "TZ",
     "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
     "XAI_API_KEY", "ZAI_API_KEY", "MOONSHOT_API_KEY", "MINIMAX_API_KEY",
+    "HF_TOKEN",
 }) | IMPORTED_HOME_ENV_KEYS
 # External-service credentials (Gmail and the like), copied into the
 # container before it starts, exactly as Agents::Sandbox does locally. The

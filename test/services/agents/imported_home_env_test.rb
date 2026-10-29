@@ -49,6 +49,11 @@ module Agents
       assert_equal Agents::RemoteRuntime::RUNTIME_TRUST_CHECK_VERSION, RUNNER[/^RUNTIME_TRUST_CHECK_VERSION = (\d+)/, 1].to_i
     end
 
+    test "every house service token reaches a VM resident through the runner's allowlist" do
+      names = Account::HOUSE_SERVICE_TOKENS.values.map { |config| config.fetch(:env) }
+      assert_empty names - runner_names("RESIDENT_ENV_KEYS")
+    end
+
     test "every name a GitHub import's runtime is given is on the runner's allowlist, and nothing for mira_v1" do
       allowed = runner_names("RESIDENT_ENV_KEYS") + runner_names("IMPORTED_HOME_ENV_KEYS")
       Agents::Config.stub(:imported_clamp_omit_forced_login?, true) do
