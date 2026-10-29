@@ -31,6 +31,8 @@ class FieldRecordingsController < ApplicationController
       # Live links to read the transcript without an account. The URLs
       # themselves aren't here: a link's token is shown once, when it's made.
       shares: -> { recording.shares.active.includes(:created_by).order(created_at: :desc).map(&:as_list_json) },
+      # The recordings either side, for previous/next at the top of the page.
+      neighbours: -> { FieldRecordingNeighbours.new(recording).as_json },
       speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
       recognition_enabled: recognition,
       voices: -> { FieldItems.voices_json(current_account) },

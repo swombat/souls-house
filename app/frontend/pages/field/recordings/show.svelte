@@ -22,13 +22,14 @@
     suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
-  import { ArrowClockwise, ArrowLeft, Trash, X } from 'phosphor-svelte';
+  import { ArrowClockwise, ArrowLeft, CaretLeft, CaretRight, Trash, X } from 'phosphor-svelte';
 
   let {
     recording,
     transcript = { revision: null, words: [] },
     speakers = [],
     shares = [],
+    neighbours = {},
     voices = [],
     members_without_voice = [],
     my_voice_id = null,
@@ -236,9 +237,70 @@
 
 <div class="p-8 max-w-5xl mx-auto space-y-6">
   <div>
-    <Link href={backPath} class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-      <ArrowLeft class="size-4" /> Recordings
-    </Link>
+    <div class="flex items-center justify-between gap-3">
+      <Link href={backPath} class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <ArrowLeft class="size-4" /> Recordings
+      </Link>
+      <!-- Previous and next follow the Recordings list (newest first). On a
+           laptop, hovering shows a second, yellow pair underneath that skips to
+           the nearest recording with a speaker still to name. -->
+      <nav class="group relative" aria-label="Other recordings" data-testid="recording-neighbours">
+        <div class="flex items-center gap-1">
+          {#if neighbours.previous}
+            <Link
+              href={neighbours.previous.url}
+              title={neighbours.previous.title}
+              class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted"
+              data-testid="recording-previous">
+              <CaretLeft class="size-4" /> Previous
+            </Link>
+          {:else}
+            <span class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1" aria-disabled="true">
+              <CaretLeft class="size-4" /> Previous
+            </span>
+          {/if}
+          {#if neighbours.next}
+            <Link
+              href={neighbours.next.url}
+              title={neighbours.next.title}
+              class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted"
+              data-testid="recording-next">
+              Next <CaretRight class="size-4" />
+            </Link>
+          {:else}
+            <span class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1" aria-disabled="true">
+              Next <CaretRight class="size-4" />
+            </span>
+          {/if}
+        </div>
+        {#if neighbours.previous_waiting || neighbours.next_waiting}
+          <div
+            class="absolute right-0 top-full z-20 hidden pt-1 md:group-hover:block md:group-focus-within:block"
+            data-testid="recording-waiting-neighbours">
+            <div class="flex items-center gap-1 whitespace-nowrap">
+              {#if neighbours.previous_waiting}
+                <Link
+                  href={neighbours.previous_waiting.url}
+                  title={`${neighbours.previous_waiting.title}: has speakers to name`}
+                  class="text-xs inline-flex items-center gap-1 rounded-md px-2 py-1 bg-yellow-300 text-yellow-950 hover:bg-yellow-400 shadow-sm"
+                  data-testid="recording-previous-waiting">
+                  <CaretLeft class="size-3.5" /> Previous unnamed
+                </Link>
+              {/if}
+              {#if neighbours.next_waiting}
+                <Link
+                  href={neighbours.next_waiting.url}
+                  title={`${neighbours.next_waiting.title}: has speakers to name`}
+                  class="text-xs inline-flex items-center gap-1 rounded-md px-2 py-1 bg-yellow-300 text-yellow-950 hover:bg-yellow-400 shadow-sm"
+                  data-testid="recording-next-waiting">
+                  Next unnamed <CaretRight class="size-3.5" />
+                </Link>
+              {/if}
+            </div>
+          </div>
+        {/if}
+      </nav>
+    </div>
     <div class="flex items-start justify-between gap-3 mt-2">
       <h1 class="text-3xl font-bold break-words min-w-0">{recording.title}</h1>
       <Button
