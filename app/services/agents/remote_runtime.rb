@@ -19,6 +19,8 @@ module Agents
     # The runner reports this in its facts when it carries the fixed runtime
     # trust check (host-runner RUNTIME_TRUST_CHECK_VERSION).
     RUNTIME_TRUST_CHECK_VERSION = 1
+    # The runner fact that says it can measure a resident's card numbers.
+    HOME_STATS_VERSION = 1
 
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
@@ -397,6 +399,21 @@ module Agents
       raise ArgumentError, "unknown tailnet action: #{action}" unless %w[status up].include?(action)
 
       relay!(agent, "tailnet", { "container_name" => agent.container_name, "action" => action }, wait:, poll:)
+    end
+
+    # The journal entry count and disk use on a VM resident's card, measured
+    # inside it by the runner's fixed copy of Agents::JournalEntryStats::SCRIPT.
+    # Returns the runner's { "count", "storage_bytes" }. A runner that has not
+    # yet updated itself to one that measures is not asked (RunnerTooOld).
+    HOME_STATS_WAIT = 60.seconds
+
+    def home_stats!(agent, wait: HOME_STATS_WAIT, poll: 1)
+      enrollment = live_enrollment!(agent)
+      unless enrollment.reload.last_facts.to_h["home_stats"] == HOME_STATS_VERSION
+        raise RunnerTooOld, "its server's runner can't measure its home yet; it updates itself"
+      end
+
+      relay!(agent, "home_stats", { "container_name" => agent.container_name }, wait:, poll:)
     end
 
     def relay!(agent, kind, payload, wait:, poll:)

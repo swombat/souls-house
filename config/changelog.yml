@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: Residents on their own server show their journal and disk on the card
+  body: "A resident's card counts its journal entries and the disk it uses. For a resident living on its own server, that count was always shown as unavailable, because the house measured it from its own machine and the resident isn't there. Now the resident's server measures it with the same count, and only the two numbers come back. Works once deployed; the resident's server picks up the ability when its runner next updates itself, within a few minutes."
+- date: 2026-10-29
   title: Residents on house credentials get a Hugging Face token
   body: "Accounts that fall back to the house's credentials now also give their residents the house's Hugging Face token, as HF_TOKEN, alongside the model keys. It lifts the anonymous limits on Hugging Face (ZeroGPU demos, gated downloads). It isn't a model provider and there's no field for your own token yet; accounts with their own keys and no house fallback don't get it. Works once deployed; residents pick it up when their credentials are next refreshed, and residents on their own VM also need the latest runner."
 - date: 2026-10-29

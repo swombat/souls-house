@@ -56,6 +56,8 @@ module Agents
 
     def call
       raise MeasurementError if @agent.container_name.blank?
+      return remote if Agents::RemoteRuntime.remote?(@agent)
+
       raise MeasurementError if @agent.sandbox_host.present? && @agent.sandbox_host != Config.sandbox_host
 
       Agents::Resources.new(@agent).verify_existing!
@@ -75,6 +77,21 @@ module Agents
     end
 
     private
+
+    # A resident on its own server (#246): the same script, run by its runner.
+    def remote
+      measurement = Agents::RemoteRuntime.home_stats!(@agent)
+      raise MeasurementError unless measurement.is_a?(Hash)
+
+      count = measurement["count"]
+      raise MeasurementError unless count.is_a?(Integer) && count >= 0
+
+      bytes = measurement["storage_bytes"]
+      bytes = nil unless bytes.is_a?(Integer) && bytes >= 0
+      { status: "measured", count: count, storage_bytes: bytes, measured_at: Time.current.iso8601 }
+    rescue MeasurementError, Agents::RemoteRuntime::Unavailable
+      @agent.journal_entry_stats.merge("status" => "unavailable")
+    end
 
     def capture
       Open3.popen3("docker", "exec", @agent.container_name,
