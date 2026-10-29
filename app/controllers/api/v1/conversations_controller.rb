@@ -191,7 +191,17 @@ module Api
           changes["visual_tag"] = VisualTag.resolve_for(chat.account, tag_id)
         end
 
-        if chat.update(changes)
+        previous_tag = chat.visual_tag
+        updated = chat.transaction do
+          next false unless chat.update(changes)
+
+          if chat.saved_change_to_visual_tag_id?
+            ConversationTagEvent.changed!(chat: chat, from: previous_tag, to: chat.visual_tag,
+              by: current_api_agent || current_api_user)
+          end
+          true
+        end
+        if updated
           render json: { conversation: conversation_json(chat) }
         else
           render json: { error: chat.errors.full_messages.to_sentence }, status: :unprocessable_entity

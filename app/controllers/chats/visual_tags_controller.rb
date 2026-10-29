@@ -8,7 +8,11 @@ class Chats::VisualTagsController < ApplicationController
       return
     end
 
-    chat.update!(visual_tag: VisualTag.resolve_for(current_account, params[:visual_tag_id]))
+    previous = chat.visual_tag
+    chat.transaction do
+      chat.update!(visual_tag: VisualTag.resolve_for(current_account, params[:visual_tag_id]))
+      ConversationTagEvent.changed!(chat: chat, from: previous, to: chat.visual_tag, by: Current.user)
+    end
     redirect_back_or_to chat_view_path(chat)
   rescue ActiveRecord::InvalidForeignKey
     redirect_back_or_to chat_view_path(chat),

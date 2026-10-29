@@ -72,6 +72,26 @@ module Api
         assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned] }
       end
 
+      test "a resident's tag change is written into the room under the resident's name; other edits are not" do
+        update_room({ title: "Only a rename" })
+        assert_response :success
+        assert_empty @room.messages.where(role: "system")
+
+        update_room({ visual_tag_id: @tag.to_param })
+        assert_response :success
+        assert_equal [ "#{@agent.name} tagged this conversation Research." ],
+          @room.messages.where(role: "system").pluck(:content)
+
+        update_room({ visual_tag_id: @tag.to_param, title: "Same tag, new title" })
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+
+        update_room({ visual_tag_id: nil }, headers: @human_headers)
+        assert_response :success
+        assert_equal "#{ResidentFacingName.for(@user)} removed the tag Research.",
+          @room.messages.where(role: "system").order(:id).last.content
+      end
+
       test "human account key can select a room tag" do
         update_room({ visual_tag_id: @tag.to_param }, headers: @human_headers)
         assert_response :success

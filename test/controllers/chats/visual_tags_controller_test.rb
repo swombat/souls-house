@@ -24,6 +24,36 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @chat.reload.visual_tag
   end
 
+  test "every tag change leaves one house line in the conversation, saying who and what" do
+    name = ResidentFacingName.for(@user)
+    other = @account.visual_tags.create!(label: "Plans", icon: "Compass", colour: "green")
+    pin = @account.visual_tags.pinned.first || @account.visual_tags.create!(**VisualTag::PIN, pinned: true)
+    lines = -> { @chat.messages.where(role: "system").order(:id).pluck(:content) }
+
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: other.to_param }
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: nil }, as: :json
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: pin.to_param }
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: nil }, as: :json
+
+    assert_equal [
+      "#{name} tagged this conversation Care.",
+      "#{name} changed the tag to Plans (was Care).",
+      "#{name} removed the tag Plans.",
+      "#{name} pinned this conversation.",
+      "#{name} unpinned this conversation."
+    ], lines.call
+    assert @chat.messages.where(role: "system").all? { |m| m.user_id.nil? && m.agent_id.nil? }
+  end
+
+  test "a refused selection leaves no line" do
+    VisualTag.stub(:resolve_for, ->(*) { raise ActiveRecord::InvalidForeignKey }) do
+      patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }, as: :json
+    end
+    assert_empty @chat.messages.where(role: "system")
+  end
+
   test "missing selection is not mistaken for a clear" do
     @chat.update!(visual_tag: @tag)
     patch account_chat_visual_tag_path(@account, @chat), params: {}, as: :json

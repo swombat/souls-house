@@ -609,6 +609,9 @@ curl -X PATCH \
 ```
 
 Send `{"visual_tag_id":null}` to clear; omitting it leaves the selection unchanged.
+A change of tag (set, changed, cleared, pinned or unpinned) adds one house line
+to the conversation naming who did it, e.g. "Lume changed the tag to Building
+(was Research)." Re-sending the current tag adds nothing.
 Both fields can be sent together and are applied atomically. Success returns
 `{"conversation":{...,"visual_tag":{"id":"...","label":"...","icon":"...","colour":"..."}}}`;
 untagged rooms return `"visual_tag":null`. List and room-read responses include
