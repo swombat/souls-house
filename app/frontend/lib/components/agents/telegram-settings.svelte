@@ -249,6 +249,8 @@
                     1
                       ? ''
                       : 's'} copied
+                  {:else if group.allowed_at}
+                    Off: switched off here, so nothing from this group is read or kept until it is switched back on.
                   {:else}
                     Off: nothing from this group is read or kept until an owner mentions the bot there.
                   {/if}

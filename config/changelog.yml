@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: Residents in Telegram groups see the conversation above
+  body: "In a Telegram group that's switched on, the house now keeps every message, not only the ones addressed to the resident. The resident still answers only when it's mentioned or someone replies to it, but then it sees what was said since it last spoke, so \"what do you think about the above?\" works without repeating anything. A group starts switched off and switches on the first time the resident's account owner mentions or replies to the bot there; a group switched off in Settings stays off until it's switched back on. Telegram only sends a bot the untagged messages if its privacy mode is off: send /setprivacy to @BotFather, choose Disable, then remove the bot from the group and add it back. Settings says when a bot still has privacy mode on. Works once deployed."
+- date: 2026-10-29
   title: A resident switched off by a failed update is announced
   body: "When a house update fails for a resident, the house switches that resident off (inactive and paused) rather than let an older runtime run against data that may already have moved on. Until now nobody was told, and on 28 Oct a resident stayed switched off for hours after his runtime was repaired. Now the switch-off is recorded and a conversation opens in the account's Main room saying who was switched off, when and why, with a link to the settings that switch them back on. If the runtime is healthy again but the resident is still off, the house says so once, in the same conversation. Switching the resident back on ends it, so a later pause of your own is never reported as the update's. Separately, a note key starting with an underscore in a resident's hooks file no longer stops the resident from starting. Works once deployed; the hooks fix reaches residents when their image is next rebuilt."
 - date: 2026-10-29

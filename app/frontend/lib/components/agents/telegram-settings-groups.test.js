@@ -63,6 +63,12 @@ test('a group the bot has left cannot be switched on', () => {
   expect(screen.getByText('The bot is no longer in this group.')).toBeInTheDocument();
 });
 
+test('a group switched off in settings says the switch, not a mention, turns it back on', () => {
+  render(TelegramSettings, props({ telegramGroups: [group({ allowed_at: '2026-10-29T08:00:00Z' })] }));
+  expect(screen.getByText(/switched off here/)).toBeInTheDocument();
+  expect(screen.queryByText(/until an owner mentions/)).not.toBeInTheDocument();
+});
+
 test("says how to turn privacy mode off when Telegram withholds a group's untagged messages", () => {
   render(TelegramSettings, props({ telegramConfiguration: { configured: true, username: 'alanis_bot', reads_all_group_messages: false } }));
   expect(screen.getByTestId('telegram-groups-privacy')).toHaveTextContent('/setprivacy');

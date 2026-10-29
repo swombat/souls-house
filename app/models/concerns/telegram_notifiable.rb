@@ -174,18 +174,20 @@ module TelegramNotifiable
     )
   end
 
-  # getMe's can_read_all_group_messages is false while BotFather's privacy
-  # mode is on: Telegram then sends the bot only commands, mentions and
-  # replies to it from a group (unless it is an admin there). Stored, never
-  # fetched while rendering a page.
+  # getMe's can_read_all_group_messages is true only when BotFather's privacy
+  # mode is off. The Bot API marks it optional, so with privacy on it may be
+  # absent rather than false; a successful getMe without it means false.
+  # Telegram then sends the bot only commands, mentions and replies to it
+  # from a group (unless it is an admin there). A failed getMe keeps the
+  # stored value. Stored, never fetched while rendering a page.
   def refresh_telegram_bot_info!
     return unless telegram_bot_token.present?
 
     result = telegram_api_request("getMe", {})
     return Rails.logger.warn("[Telegram] getMe failed for agent #{id}: #{result['description']}") unless result["ok"]
 
-    value = result.dig("result", "can_read_all_group_messages")
-    update_column(:telegram_reads_all_group_messages, value) unless value.nil? || value == telegram_reads_all_group_messages
+    value = result.dig("result", "can_read_all_group_messages") == true
+    update_column(:telegram_reads_all_group_messages, value) unless value == telegram_reads_all_group_messages
   end
 
   # The bot's own Telegram user id is the number before the colon in its
