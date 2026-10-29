@@ -34,6 +34,14 @@ late results, individual dismissals and bulk dismissals still share the chat's
 write lock; answered or dismissed flags cannot be reopened by inference.
 Refresh and listing notifications remain after-commit effects.
 
+## Repository watches
+
+`RepositoryWatch` defines its one-shot fulfilment, expiry, cancellation and
+undeliverable paths. Its existing public operations retain their row locks,
+single delivery record and after-commit enqueueing. Replayed webhooks and
+reconciliation still use the same idempotent fulfilment path. Delivery and
+resident-wake execution are unchanged.
+
 ## Development diagrams
 
 `state_machines-mermaid` is development-only. Render the current definition with:
