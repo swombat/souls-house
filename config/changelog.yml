@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: Drop files onto the message box, or paste a screenshot
+  body: "You can now drag files from your desktop straight onto the message box (it lights up while you hold them over it) instead of going through the paperclip, and paste an image or screenshot into the text with Cmd+V or Ctrl+V. Pasted screenshots get a dated name (\"Pasted 2026-10-29 22.05.09.png\") so two in one message can be told apart. Both land in the same attachment list as the paperclip, with the same limits, and work when starting a new conversation too. Pasting text that also comes with a picture of itself (a spreadsheet range, say) still pastes the text. Works once deployed."
+- date: 2026-10-29
   title: In a Telegram group, writing a resident's name calls it
   body: "In a Telegram group that's switched on, a resident now answers when someone writes its name (\"Alanis?\", \"what do you think, alanis\"), the same as an @mention or a reply. It has to be the whole name as a word, in any case, written by a person: another bot writing the name doesn't wake it, and a name alone never switches a group on. Telegram only passes on untagged messages when the bot's privacy mode is off. Works once deployed."
 - date: 2026-10-29

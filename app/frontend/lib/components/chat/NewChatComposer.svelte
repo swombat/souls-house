@@ -1,5 +1,7 @@
 <script>
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
+  import { fileDropZone } from '$lib/file-drop-zone';
+  import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
   import { ArrowUp } from 'phosphor-svelte';
 
@@ -20,11 +22,26 @@
     onKeydown,
     onInput,
   } = $props();
+
+  let uploader = $state(null);
+
+  // A screenshot or image on the clipboard becomes an attachment; text pastes as text.
+  function handlePaste(event) {
+    if (processing) return;
+    const files = filesFromPaste(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    uploader?.addFiles(files);
+  }
 </script>
 
-<div class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4" data-testid="message-composer">
+<div
+  class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
+  data-testid="message-composer"
+  use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: processing }}>
   <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
     <FileUploadInput
+      bind:this={uploader}
       bind:files={selectedFiles}
       disabled={processing}
       maxSize={fileUploadConfig?.max_size || 52428800} />
@@ -33,6 +50,7 @@
       <textarea
         bind:this={textareaRef}
         bind:value={message}
+        onpaste={handlePaste}
         onkeydown={onKeydown}
         oninput={onInput}
         {placeholder}

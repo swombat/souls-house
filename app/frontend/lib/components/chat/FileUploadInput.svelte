@@ -7,11 +7,12 @@
 
   let fileInput;
   let error = $state(null);
-  let dragActive = $state(false);
 
   function handleFileSelect(event) {
     const selectedFiles = Array.from(event.target.files || []);
     processFiles(selectedFiles);
+    // Let the same file be picked again after it has been removed.
+    event.target.value = '';
   }
 
   function processFiles(selectedFiles) {
@@ -20,26 +21,15 @@
     error = result.error;
   }
 
+  // Files dropped on the composer or pasted into it go through the same limits as the picker.
+  export function addFiles(selectedFiles) {
+    if (disabled || selectedFiles.length === 0) return;
+    processFiles(selectedFiles);
+  }
+
   function removeFile(index) {
     files = removeUploadFile(files, index);
     error = null;
-  }
-
-  function handleDragOver(event) {
-    event.preventDefault();
-    dragActive = true;
-  }
-
-  function handleDragLeave() {
-    dragActive = false;
-  }
-
-  function handleDrop(event) {
-    event.preventDefault();
-    dragActive = false;
-
-    const droppedFiles = Array.from(event.dataTransfer.files || []);
-    processFiles(droppedFiles);
   }
 </script>
 
@@ -54,7 +44,7 @@
     onclick={() => fileInput?.click()}
     {disabled}
     class="col-start-1 row-start-1 h-10 w-10 p-0"
-    title="Attach files">
+    title="Attach files (or drop them here, or paste an image)">
     <Paperclip size={18} />
   </Button>
 
