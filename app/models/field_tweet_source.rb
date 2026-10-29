@@ -27,18 +27,33 @@ class FieldTweetSource < ApplicationRecord
   after_save :refresh_stream_status, if: -> { (saved_changes.keys & STREAM_STATUS_COLUMNS).any? }
   after_destroy -> { FieldTweetStream.refresh!(account_id) }
 
-  STATES = %w[active paused needs_attention].freeze
-
   belongs_to :account
   belongs_to :created_by, polymorphic: true, optional: true
   has_many :field_tweets, dependent: :nullify
   has_many :backlog_items, class_name: "FieldTweetBacklogItem", dependent: :delete_all
 
+  # Save state together with its reason/retry metadata in the domain methods.
+  # The stream refresh stays on the existing save callback.
+  state_machine :state, initial: :active, action: nil do
+    state :active, :paused, :needs_attention
+
+    event :pause_collection do
+      transition all => :paused
+    end
+
+    event :flag_attention do
+      transition all => :needs_attention
+    end
+
+    event :resume_collection do
+      transition all => :active
+    end
+  end
+
   normalizes :handle, with: ->(value) { value.to_s.strip.delete_prefix("@") }
 
   validates :handle, format: { with: FieldTweet::HANDLE, message: "must be an X handle (letters, digits and _, up to 15)" }
   validates :account_id, uniqueness: { message: "already follows a handle" }
-  validates :state, inclusion: { in: STATES }
   validates :own_monthly_usd_limit, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
   before_validation(on: :create) do
@@ -103,20 +118,26 @@ class FieldTweetSource < ApplicationRecord
   end
 
   def pause!(reason)
-    update!(state: "paused", state_reason: reason.to_s.first(300))
+    pause_collection!
+    update!(state_reason: reason.to_s.first(300))
   end
 
   def needs_attention!(reason)
-    update!(state: "needs_attention", state_reason: reason.to_s.first(300))
+    flag_attention!
+    update!(state_reason: reason.to_s.first(300))
   end
 
   # A person's act: start again from where collection stopped (the open
   # window and backlog are kept, not dropped).
   def resume!(now: Time.current)
-    update!(state: "active", state_reason: nil, failure_count: 0, next_attempt_at: now)
+    resume_collection!
+    update!(state_reason: nil, failure_count: 0, next_attempt_at: now)
   end
 
   private
+
+  private :pause_collection, :pause_collection!, :flag_attention, :flag_attention!,
+    :resume_collection, :resume_collection!
 
   def refresh_stream_status
     FieldTweetStream.refresh!([ account_id, *saved_change_to_account_id ])
