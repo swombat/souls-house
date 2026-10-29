@@ -15,6 +15,23 @@ class ResidentSwitchedOffNotice
 
   SWITCHED_OFF = "resident_switched_off_by_roll".freeze
   STILL_OFF = "resident_roll_hold_still_off".freeze
+  # A hold ends when the resident is switched back on (Agent callback, and the
+  # watch as a backstop), so a later deliberate pause isn't read as the roll's.
+  CLOSED = "resident_roll_hold_closed".freeze
+
+  # Holds of this resident that have neither been closed nor reported.
+  def self.open_holds(agent)
+    ended = AuditLog.where(action: [ STILL_OFF, CLOSED ], auditable: agent)
+      .pluck(Arel.sql("data->>'hold_id'")).compact.map(&:to_i)
+    AuditLog.where(action: SWITCHED_OFF, auditable: agent).where.not(id: ended)
+  end
+
+  def self.close_open_holds!(agent)
+    open_holds(agent).find_each do |hold|
+      AuditLog.create!(user: nil, account: agent.account, action: CLOSED, auditable: agent,
+        data: { hold_id: hold.id, chat_id: hold.data&.dig("chat_id") })
+    end
+  end
 
   def self.switched_off!(agent, image:)
     new(agent).switched_off!(image: image)

@@ -55,4 +55,43 @@ class RollHoldWatchJobTest < ActiveSupport::TestCase
     assert_equal [ newer.id.to_s ], still_off_notices.map { |log| log.data["hold_id"].to_s }
   end
 
+  def pause_deliberately!
+    @agent.update!(active: true, paused: true, health_state: "healthy", last_health_check_at: 5.minutes.from_now)
+  end
+
+  test "restore, watch, deliberate pause, watch says nothing (Mira's #647 review)" do
+    @agent.update!(active: true, paused: false, health_state: "healthy", last_health_check_at: 1.minute.from_now)
+    RollHoldWatchJob.perform_now
+    pause_deliberately!
+    RollHoldWatchJob.perform_now
+    assert_empty still_off_notices
+    assert_equal 1, @chat.messages.count
+  end
+
+  test "a restore between watch ticks still closes the hold" do
+    @agent.update!(active: true, paused: false)
+    assert_equal 1, AuditLog.where(action: "resident_roll_hold_closed", auditable: @agent).count
+    pause_deliberately!
+    RollHoldWatchJob.perform_now
+    assert_empty still_off_notices
+  end
+
+  test "the watch closes a hold whose restore skipped callbacks" do
+    @agent.update_columns(active: true, paused: false, health_state: "healthy", last_health_check_at: 1.minute.from_now)
+    RollHoldWatchJob.perform_now
+    @agent.update_columns(paused: true)
+    RollHoldWatchJob.perform_now
+    assert_empty still_off_notices
+    assert_equal 1, AuditLog.where(action: "resident_roll_hold_closed", auditable: @agent).count
+  end
+
+  test "a new roll failure after a restore opens a hold that speaks" do
+    @agent.update!(active: true, paused: false)
+    @agent.update!(active: false, paused: true)
+    newer = travel_to(1.minute.from_now) { ResidentSwitchedOffNotice.switched_off!(@agent, image: "fixture:again") }
+    @agent.update!(health_state: "healthy", last_health_check_at: 2.minutes.from_now)
+    RollHoldWatchJob.perform_now
+    assert_equal [ newer.id.to_s ], still_off_notices.map { |log| log.data["hold_id"].to_s }
+  end
+
 end

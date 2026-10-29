@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: A resident switched off by a failed update is announced
+  body: "When a house update fails for a resident, the house switches that resident off (inactive and paused) rather than let an older runtime run against data that may already have moved on. Until now nobody was told, and on 28 Oct a resident stayed switched off for hours after his runtime was repaired. Now the switch-off is recorded and a conversation opens in the account's Main room saying who was switched off, when and why, with a link to the settings that switch them back on. If the runtime is healthy again but the resident is still off, the house says so once, in the same conversation. Switching the resident back on ends it, so a later pause of your own is never reported as the update's. Separately, a note key starting with an underscore in a resident's hooks file no longer stops the resident from starting. Works once deployed; the hooks fix reaches residents when their image is next rebuilt."
+- date: 2026-10-29
   title: Conversations no longer stay "New Conversation"
   body: "The house names each conversation once, just after it starts, using the account's own OpenRouter key. On accounts with no OpenRouter key, or with a key that can't reach the naming model, that did nothing and the conversation kept the name \"New Conversation\" for good. Now every five minutes the house looks for conversations more than five minutes old that still have no name and asks again on its own key, with a model from a different family (Claude Haiku today). It tries each conversation at most three times. Conversations that are already stuck get named in the first runs after it's deployed. The house pays for these names. Works once deployed."
 - date: 2026-10-28

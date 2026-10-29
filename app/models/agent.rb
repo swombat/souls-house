@@ -136,6 +136,11 @@ class Agent < ApplicationRecord
       ResidentEntitlement.where(agent_id: id).where.not(state: "held").where.not(hold_released_at: nil).exists?
   }
   after_create_commit :apply_default_service_accesses
+  # Switching a resident back on ends any failed-roll hold on it, so a later
+  # deliberate pause isn't reported as the roll's (RollHoldWatchJob).
+  after_update_commit :close_roll_holds, if: lambda {
+    (saved_change_to_active? || saved_change_to_paused?) && active? && !paused?
+  }
   # A new resident speaks first once its first wake has settled
   # (Agents::FirstConversation). Every orientation writer lands here.
   after_update_commit -> { Agents::FirstConversation.offer_later(self) }, if: lambda {
@@ -443,6 +448,12 @@ class Agent < ApplicationRecord
     return unless EXTERNALLY_MANAGED_ATTRIBUTES.any? { |field| will_save_change_to_attribute?(field) }
 
     errors.add(:base, "Identity and runtime-managed fields are resident-owned and read-only in souls.house")
+  end
+
+  def close_roll_holds
+    ResidentSwitchedOffNotice.close_open_holds!(self)
+  rescue StandardError => error
+    Rails.logger.warn "[RollHold] agent #{id}: #{error.class}: #{error.message}"
   end
 
 end
