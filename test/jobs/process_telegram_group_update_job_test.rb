@@ -215,6 +215,55 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert_not group.telegram_messages.sole.addressed?
   end
 
+  test "in a group that is on, a person writing the resident's name wakes it like a mention" do
+    group = allowed_group
+    [ "Group Agent?", "what do you think, group agent", "(Group Agent) look at this" ].each_with_index do |text, index|
+      update = group_message(text)
+      update["message"]["message_id"] = 300 + index
+      assert_enqueued_with(job: TelegramAgentTriggerJob) do
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+    assert group.telegram_messages.all?(&:addressed?)
+  end
+
+  test "the name only counts as a whole word, and never from another bot" do
+    group = allowed_group
+    by_bot = group_message("Group Agent is still silent")
+    by_bot["message"]["from"]["is_bot"] = true
+    cases = [ group_message("the Group Agents meeting"), group_message("MyGroup Agent"), by_bot ]
+
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      cases.each_with_index do |update, index|
+        update["message"]["message_id"] = 400 + index
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+    assert_equal 3, group.telegram_messages.count
+    assert group.telegram_messages.none?(&:addressed?)
+  end
+
+  test "an owner writing the resident's name does not switch a group on" do
+    link_owner_telegram
+    assert_no_difference "TelegramMessage.count" do
+      ProcessTelegramUpdateJob.perform_now(@agent, group_message("Group Agent, are you there?"))
+    end
+    assert_not @agent.telegram_groups.sole.allowed?
+  end
+
+  test "a name in a media caption counts too" do
+    group = allowed_group
+    update = group_message(nil)
+    update["message"].delete("text")
+    update["message"]["caption"] = "group agent what is this?"
+    update["message"]["photo"] = [ { "file_id" => "p1", "file_unique_id" => "u1", "width" => 10, "height" => 10, "file_size" => 100 } ]
+
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+    assert group.telegram_messages.sole.addressed?
+  end
+
   test "a Telegram retry of the same update is kept once and wakes once" do
     group = allowed_group
     update = group_message("@group_bot once", mention_entity("@group_bot once"))

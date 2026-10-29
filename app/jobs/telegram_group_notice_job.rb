@@ -26,7 +26,7 @@ class TelegramGroupNoticeJob < ApplicationJob
     account = agent.account
     handle = agent.telegram_bot_username.present? ? "@#{agent.telegram_bot_username}" : agent.name
     <<~TEXT.strip
-      #{agent.name} is now on in this group. It reads the conversation here and answers when someone mentions #{handle} or replies to it.
+      #{agent.name} is now on in this group. It reads the conversation here and answers when someone mentions #{handle}, writes "#{agent.name}", or replies to it.
 
       Every message in this group from now on, with your Telegram name, and #{agent.name}'s replies are copied to #{Setting.instance.site_name}, where the people in the account "#{account.name}" can read them. Each answer #{agent.name} gives here uses that account's allowance.
     TEXT

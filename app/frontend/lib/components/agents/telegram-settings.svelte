@@ -219,7 +219,7 @@
         <p class="text-xs text-muted-foreground">
           A group is off until an owner of this account, with their Telegram linked to @{username}, mentions it there
           for the first time, or switches it on here. In a group that is on, {agent.name} reads the conversation and
-          answers when someone mentions @{username} or replies to it. Each of those answers spends a turn on this
+          answers when someone mentions @{username}, writes its name, or replies to it. Each of those answers spends a turn on this
           account's plan.
         </p>
       </div>

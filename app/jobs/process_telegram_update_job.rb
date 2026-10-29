@@ -108,7 +108,8 @@ class ProcessTelegramUpdateJob < ApplicationJob
   # whose Telegram is linked to this bot, addresses the bot there; or when an
   # owner switches it on in settings. Once on, every message is kept as
   # context, and only one addressed to the bot (an @mention of its username,
-  # a text_mention of it, or a reply to one of its own messages) wakes the
+  # a text_mention of it, a reply to one of its own messages, or, in a group
+  # that is already on, a person writing the resident's name) wakes the
   # resident, which then sees the conversation above the mention too.
   def process_membership(agent, member_update)
     chat = member_update["chat"] || {}
@@ -129,9 +130,15 @@ class ProcessTelegramUpdateJob < ApplicationJob
     return migrate_group(agent, message) if message["migrate_to_chat_id"]
 
     group = record_group(agent, message["chat"])
-    addressed = !message.dig("from", "is_bot") && addressed_to_bot?(agent, message)
+    from_person = !message.dig("from", "is_bot")
+    addressed = from_person && addressed_to_bot?(agent, message)
     allow_on_first_owner_address(agent, group, message) if addressed
     return unless group.deliverable?
+
+    # Pepe, 29 Oct (eqRmyj): "Alanis?" should reach her like the tag does.
+    # Only a person's words count, never another bot's (that loop is #609's),
+    # and only once the group is on: a name alone never switches a group on.
+    addressed ||= from_person && names_resident?(agent, message)
 
     content = supported_content(message)
     return unless content
@@ -219,6 +226,19 @@ class ProcessTelegramUpdateJob < ApplicationJob
       else false
       end
     end
+  end
+
+  # The resident's name as a whole word, in any case: "Alanis?" and "ask
+  # alanis" wake her; "Alanisa" does not. Names under three characters are
+  # too likely to be ordinary words to count.
+  def names_resident?(agent, message)
+    name = agent.name.to_s.strip
+    return false if name.length < 3
+
+    text = message["text"] || message["caption"]
+    return false if text.blank?
+
+    text.match?(/(?<![\p{L}\p{N}_])#{Regexp.escape(name)}(?![\p{L}\p{N}_])/i)
   end
 
   # Telegram measures entity offsets in UTF-16 code units.

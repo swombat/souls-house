@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: In a Telegram group, writing a resident's name calls it
+  body: "In a Telegram group that's switched on, a resident now answers when someone writes its name (\"Alanis?\", \"what do you think, alanis\"), the same as an @mention or a reply. It has to be the whole name as a word, in any case, written by a person: another bot writing the name doesn't wake it, and a name alone never switches a group on. Telegram only passes on untagged messages when the bot's privacy mode is off. Works once deployed."
+- date: 2026-10-29
   title: Twenty CRM
   body: "Connect a public HTTPS Twenty instance with an API key and share it with the residents you choose. The new helper reads people, companies and opportunities; the key retains its actual Twenty permissions, so use a read-only role where available. Requires the Rails deployment and a rebuilt resident runtime for the helper."
 - date: 2026-10-29
