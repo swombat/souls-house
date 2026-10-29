@@ -187,12 +187,11 @@
     }
   }
 
-  // Shown at once; nothing else waits for the server. A sample still sounding
-  // stops when it is reviewed: the verdict is on what has been heard.
+  // Shown at once; nothing else waits for the server.
   async function review(sample, included) {
     const url = base;
     error = '';
-    if (playing?.id === sample.id) stop();
+    if (playing?.id === sample.id) stop(); // the verdict is on what has been heard
     pending = { ...pending, [sample.id]: { included, settled: null } };
     try {
       await save(`${url}/samples/${sample.id}`, 'PATCH', { included, digest: sample.digest });
