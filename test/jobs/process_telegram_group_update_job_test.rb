@@ -264,6 +264,16 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert group.telegram_messages.sole.addressed?
   end
 
+  test "a name under three characters does not count" do
+    @agent.update!(name: "Al")
+    group = allowed_group
+
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      ProcessTelegramUpdateJob.perform_now(@agent, group_message("Al, are you there?"))
+    end
+    assert_not group.telegram_messages.sole.addressed?
+  end
+
   test "a Telegram retry of the same update is kept once and wakes once" do
     group = allowed_group
     update = group_message("@group_bot once", mention_entity("@group_bot once"))
