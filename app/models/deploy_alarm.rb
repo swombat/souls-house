@@ -87,7 +87,6 @@ class DeployAlarm
     previous = @record.state
     verdict, reason, run_url = evaluate
     attrs = {
-      state: verdict,
       deployed_sha: deployed_sha,
       master_sha: master_sha,
       behind_by: behind_by,
@@ -122,7 +121,7 @@ class DeployAlarm
       attrs.merge!(since: nil, reason: nil, notified_at: nil, notified_master_sha: nil)
     end
 
-    @record.update!(attrs)
+    @record.record_observation!(verdict, **attrs)
     @record
   end
 

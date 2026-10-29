@@ -42,6 +42,14 @@ single delivery record and after-commit enqueueing. Replayed webhooks and
 reconciliation still use the same idempotent fulfilment path. Delivery and
 resident-wake execution are unchanged.
 
+## Deploy alarm observations
+
+`DeployAlarmState#record_observation!` records current, stuck and unknown
+observations with their metadata in one save. `DeployAlarm` still owns evaluation,
+grace periods, recovery and notification deduplication. Repeated observations
+and visibility blips preserve an ongoing episode; no notification or deployment
+work moved into machine callbacks.
+
 ## Development diagrams
 
 `state_machines-mermaid` is development-only. Render the current definition with:
