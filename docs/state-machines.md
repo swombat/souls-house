@@ -10,6 +10,14 @@ metadata, deadlines and allowance accounting together. Subscription sync keeps
 its existing per-resident advisory lock; grace expiry keeps its row lock.
 Notifications and sleep/wake jobs remain in the existing `after_commit` callbacks.
 
+## Recording allowance reservations
+
+`FieldRecordingReservation` defines consumption and release from pending.
+`consume!` and `release!` retain their atomic guarded SQL update: the machine
+resolves the edge, and the database decides which worker settled it first.
+No model save or account lock replaces that compare-and-set. Repeated or stale
+workers cannot change the winner's timestamps, release reason or allowance.
+
 ## Tweet source collection
 
 `FieldTweetSource` owns pause, resume and attention-required transitions. Keep
