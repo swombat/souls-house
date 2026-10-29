@@ -27,6 +27,21 @@ class DiscardedMessageBlobsTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
+  test "the inline preview url serves the bytes in place and is denied after discard" do
+    notes = @chat.messages.create!(content: "Notes", role: "user", user: @user)
+    notes.attachments.attach(io: StringIO.new("# Comparison\n\nNemotron wins."), filename: "comparison.md",
+      content_type: "text/markdown", identify: false)
+    url = notes.files_json.first.fetch(:inline_url)
+
+    get url
+    assert_response :success
+    assert_equal "# Comparison\n\nNemotron wins.", response.body
+
+    notes.discard!
+    get url
+    assert_response :not_found
+  end
+
   test "an old variant URL is denied after discard" do
     url = @message.files_json.first.fetch(:thumb_url)
     @message.discard!

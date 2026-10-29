@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: Look inside an attachment without downloading it
+  body: "File attachments you can preview now have an eye beside the name. Markdown opens rendered (headings, tables, code) in a window over the conversation; plain text, CSV, JSON and logs open as text; voice notes and other audio get a player, video plays in place, and PDFs open in the browser's own viewer. Clicking the name still downloads. Word documents, spreadsheets, zips and SVGs stay download-only for now. Very long text files show their first megabyte. Works once deployed."
+- date: 2026-10-29
   title: A tidier Billing tab and Plan step
   body: "With an at-cost code, the Plan step showed six plan cards at once, standard and at-cost interleaved. It now shows three, with a Standard / At cost switch above them that keeps the plan you'd picked. On the Billing tab, the three plans sit side by side with their at-cost price under the standard one, and a resident whose plan can be changed no longer has its name and renewal date squeezed out by the change buttons. Works once deployed."
 - date: 2026-10-29

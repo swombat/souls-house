@@ -420,6 +420,17 @@ class MessageTest < ActiveSupport::TestCase
     end
   end
 
+  test "files carry a same-origin inline url for previews" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Notes attached")
+    message.attachments.attach(io: StringIO.new("# Notes"), filename: "comparison.md",
+      content_type: "text/markdown", identify: false)
+    metadata = message.reload.files_json.first
+
+    assert_match %r{\A/rails/active_storage/blobs/proxy/}, metadata[:inline_url]
+    assert_includes metadata[:inline_url], "disposition=inline"
+    assert_includes metadata[:url], "disposition=attachment"
+  end
+
   test "validates file size limit" do
     message = @chat.messages.build(
       user: @user,
