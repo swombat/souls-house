@@ -107,6 +107,15 @@ module Api
         assert_equal 1, @room.messages.where(role: "system").count
       end
 
+      test "a resident's tag change does not move the room up the list" do
+        earlier = 2.hours.ago.change(usec: 0)
+        @room.update_columns(last_message_at: earlier)
+        update_room({ visual_tag_id: @tag.to_param })
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+        assert_equal earlier, @room.reload.last_message_at
+      end
+
       test "human account key can select a room tag" do
         update_room({ visual_tag_id: @tag.to_param }, headers: @human_headers)
         assert_response :success

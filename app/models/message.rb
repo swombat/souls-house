@@ -46,6 +46,9 @@ class Message < ApplicationRecord
 
   attr_accessor :skip_content_validation
   attr_accessor :suppress_automatic_dispatch
+  # A line that records something about the room (a tag change) rather than
+  # new conversation: it must not move the room up the list.
+  attr_accessor :skip_chat_activity
   attr_reader :single_resident_response_triggered
   # Set by the resident API when a resident posts: the residents named in
   # recipient_agent_ids ([] for none). Tags in the content are read too. Nil
@@ -83,6 +86,8 @@ class Message < ApplicationRecord
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def record_chat_message_time
+    return if skip_chat_activity
+
     chat.with_lock do
       if chat.last_message_at.nil? || created_at > chat.last_message_at
         chat.update!(last_message_at: created_at)

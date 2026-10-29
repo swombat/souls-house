@@ -4,11 +4,13 @@
 # room, with no setting to switch it on.
 class ConversationTagEvent
 
-  # Writes nothing when the tag did not actually change.
+  # Writes nothing when the tag did not actually change. The line does not
+  # count as activity: tagging a room done must leave it where it is in the
+  # conversation list (Daniel, jbawqe).
   def self.changed!(chat:, from:, to:, by:)
     return if from&.id == to&.id
 
-    chat.messages.create!(role: "system", content: "#{actor_label(by)} #{describe(from, to)}.")
+    chat.messages.create!(role: "system", content: "#{actor_label(by)} #{describe(from, to)}.", skip_chat_activity: true)
   end
 
   def self.describe(from, to)

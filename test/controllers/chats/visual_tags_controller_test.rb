@@ -124,4 +124,16 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @tag.as_json, row.fetch("visual_tag")
   end
 
+  test "a tag change leaves the conversation where it is in the list" do
+    earlier = 2.hours.ago.change(usec: 0)
+    newer = @account.chats.create!(title: "Newer", model_id: "openrouter/auto")
+    @chat.update_columns(last_message_at: earlier)
+    newer.update_columns(last_message_at: 1.hour.ago)
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }
+    assert_equal 1, @chat.messages.where(role: "system").count
+    assert_equal earlier, @chat.reload.last_message_at
+    order = @account.chats.latest.where(id: [ @chat.id, newer.id ]).pluck(:id)
+    assert_equal [ newer.id, @chat.id ], order
+  end
+
 end
