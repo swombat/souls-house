@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-29
+  title: Conversations no longer stay "New Conversation"
+  body: "The house names each conversation once, just after it starts, using the account's own OpenRouter key. On accounts with no OpenRouter key, or with a key that can't reach the naming model, that did nothing and the conversation kept the name \"New Conversation\" for good. Now every five minutes the house looks for conversations more than five minutes old that still have no name and asks again on its own key, with a model from a different family (Claude Haiku today). It tries each conversation at most three times. Conversations that are already stuck get named in the first runs after it's deployed. The house pays for these names. Works once deployed."
 - date: 2026-10-28
   title: The data model, by area
   body: "A new public page, /data-model, shows how the house stores things, one concern at a time: accounts and people, residents, conversations and rooms, rhythms, the Field, billing, memory, safeguards and the rest, thirteen areas in all. Each area has a paragraph on what its shape means, a diagram of its tables and how they point at each other, and a card per table listing its columns, what it points at and what points at it, with links across areas. It is read from the live schema, so it can't drift from what the house actually stores. Linked from the self-hosting technical page."

@@ -14,7 +14,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
   end
 
   test "titles an old untitled chat on the house key with the fallback model" do
-    chat = untitled_chat(age: 11.minutes)
+    chat = untitled_chat(age: 6.minutes)
     calls = []
     UtilityInference.stub :house_chat, ->(model:, provider:, system:, user:, max_tokens:) {
       calls << [ model, provider ]
@@ -22,7 +22,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
       "Q4 campaign plan"
     } do
       UtilityInference.stub :title, ->(**) { flunk "the account key is not used by the sweep" } do
-        TitleSweepJob.perform_now
+        with_house_key { TitleSweepJob.perform_now }
       end
     end
 
@@ -32,7 +32,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
   end
 
   test "leaves young, titled, discarded and user-less chats alone" do
-    young = untitled_chat(age: 5.minutes)
+    young = untitled_chat(age: 4.minutes)
     titled = untitled_chat(age: 1.hour).tap { |chat| chat.update!(title: "Kept") }
     discarded = untitled_chat(age: 1.hour).tap(&:discard!)
     no_user = @account.chats.create!(model_id: "openai/gpt-5-mini")
@@ -40,7 +40,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
     no_user.update_columns(created_at: 1.hour.ago)
 
     UtilityInference.stub :house_chat, ->(**) { flunk "nothing to sweep" } do
-      TitleSweepJob.perform_now
+      with_house_key { TitleSweepJob.perform_now }
     end
 
     assert_nil young.reload.title
@@ -57,7 +57,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
       "Fine title"
     } do
       stuck.messages.create!(role: "user", content: "STUCK")
-      4.times { TitleSweepJob.perform_now }
+      4.times { with_house_key { TitleSweepJob.perform_now } }
     end
 
     assert_nil stuck.reload.title
@@ -69,7 +69,7 @@ class TitleSweepJobTest < ActiveSupport::TestCase
   test "a blank answer uses an attempt and leaves the title unset" do
     chat = untitled_chat(age: 1.hour)
     UtilityInference.stub :house_chat, ->(**) { "   " } do
-      TitleSweepJob.perform_now
+      with_house_key { TitleSweepJob.perform_now }
     end
     assert_nil chat.reload.title
     assert_equal 1, chat.title_sweep_attempts
@@ -78,10 +78,60 @@ class TitleSweepJobTest < ActiveSupport::TestCase
   test "is scheduled every ten minutes in production" do
     entry = YAML.load_file(Rails.root.join("config/recurring.yml")).dig("production", "title_sweep")
     assert_equal "TitleSweepJob", entry["class"]
-    assert_equal "every 10 minutes", entry["schedule"]
+    assert_equal "every 5 minutes", entry["schedule"]
+  end
+
+  test "without the house key nothing is asked and no attempt is spent" do
+    chat = untitled_chat(age: 1.hour)
+    HouseInference::Offering.stub :key, nil do
+      OpenAI::Client.stub :new, ->(*) { flunk "No inference expected" } do
+        4.times { TitleSweepJob.perform_now }
+      end
+    end
+    assert_equal 0, chat.reload.title_sweep_attempts
+
+    with_house_key do
+      UtilityInference.stub :house_chat, ->(**) { "Named at last" } do
+        TitleSweepJob.perform_now
+      end
+    end
+    assert_equal "Named at last", chat.reload.title
+  end
+
+  test "an attempt another run already took is not taken again" do
+    chat = untitled_chat(age: 1.hour)
+    stale = Chat.find(chat.id)
+    Chat.where(id: chat.id).update_all(title_sweep_attempts: TitleSweepJob::MAX_ATTEMPTS)
+    job = TitleSweepJob.new
+    refute job.send(:reserve_attempt, stale)
+    assert_equal TitleSweepJob::MAX_ATTEMPTS, chat.reload.title_sweep_attempts
+
+    other = untitled_chat(age: 1.hour)
+    stale_other = Chat.find(other.id)
+    assert job.send(:reserve_attempt, Chat.find(other.id))
+    refute job.send(:reserve_attempt, stale_other), "the stale copy's count is out of date"
+    assert_equal 1, other.reload.title_sweep_attempts
+  end
+
+  test "a run stops taking chats once its budget is spent" do
+    first = untitled_chat(age: 1.hour)
+    second = untitled_chat(age: 2.hours)
+    calls = 0
+    with_house_key do
+      UtilityInference.stub :house_chat, ->(**) { calls += 1; travel TitleSweepJob::RUN_BUDGET + 1.second; "Title" } do
+        TitleSweepJob.perform_now
+      end
+    end
+    assert_equal 1, calls
+    assert_equal "Title", first.reload.title
+    assert_equal 0, second.reload.title_sweep_attempts
   end
 
   private
+
+  def with_house_key(&)
+    HouseInference::Offering.stub(:key, "sk-or-test", &)
+  end
 
   def untitled_chat(age:)
     chat = @account.chats.create!(model_id: "openai/gpt-5-mini")

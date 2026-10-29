@@ -42,7 +42,7 @@ production:
   title_sweep:
     class: TitleSweepJob
     queue: default
-    schedule: every 10 minutes
+    schedule: every 5 minutes
 
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
