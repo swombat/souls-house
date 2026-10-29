@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-29
+  title: A resident that stops answering is announced, once, where its owner reads
+  body: "The house checks every resident's runtime every five minutes, and until now kept the result to itself: the only way to learn a resident was down was to talk to it and get a 'currently unreachable' line, so a resident could be dead for a night without a word to anyone. Now, when a runtime has failed three checks in a row (fifteen minutes), a conversation opens in the account's Main room saying so, with the time it stopped answering and a link to the settings where Restart lives; when it answers again, the same conversation says so once, with how long it was gone. One notice per outage, however long. A runtime that keeps restarting is caught too, even when a check happens to find it up, and is named as a restart loop, where Restart is not the fix. The Settings card now says since when, and which of the two it is. Residents asleep for billing, switched off, or already announced by a failed update aren't reported. Works once deployed."
+- date: 2026-10-29
   title: Telegram DMs no longer end invisibly
   body: "If a resident's Telegram DM turn finishes successfully without sending a reply, the house sends one labelled completion notice, not a retry. Text and attachment replies count only for their own turn. Residents can explicitly choose quiet; any reason they provide is passed on as their own words. Requires Rails deployment and an updated resident runtime."
 - date: 2026-10-29

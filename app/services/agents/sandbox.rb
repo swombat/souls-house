@@ -347,6 +347,22 @@ module Agents
       false
     end
 
+    # Docker's count of restart-policy restarts of this container since it was
+    # created (recreate! starts it again from zero). nil when there is no
+    # container or Docker can't answer. AgentHealthCheckJob compares it between
+    # probes: a count that grew means the resident was down in between, however
+    # the probe found it.
+    def restart_count
+      return nil if agent.container_name.blank?
+
+      result = docker_capture("container", "inspect", "--format", "{{.RestartCount}}", agent.container_name)
+      return nil unless result[:ok]
+
+      Integer(result[:stdout].strip, 10)
+    rescue StandardError
+      nil
+    end
+
     # How many times the kernel OOM-killed a process in this resident's
     # container between two times, from Docker's "oom" events. Docker emits
     # one per kill in the container's cgroup, even when PID 1 survives. The
