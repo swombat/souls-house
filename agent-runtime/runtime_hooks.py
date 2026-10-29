@@ -16,6 +16,7 @@ import time
 
 MANIFEST = 'house-hooks-v1.json'
 TRUST_COLUMNS = ['project_path', 'trust_level', 'created_at', 'updated_at']
+HOUSE_PREFIXES = ('house-global-v1-', 'house-project-v1-')
 
 
 def command(home, project, *args):
@@ -53,9 +54,16 @@ def prepare(home, project, run=command, global_source=None):
         record = json.loads(marker.read_text())
         if record.get('version') != 1 or record.get('project') != str(project):
             raise RuntimeError('Hook migration manifest does not match this home')
-        if record.get('status') != 'complete':
+        if record.get('status') == 'complete':
+            return
+        # A first import that failed before anything was imported or enabled
+        # left nothing to replay, so it is safe to start again. Anything that
+        # got further still waits for an operator (#641).
+        existing = json.loads(run(home, project, 'list'))
+        if record.get('status') != 'pending' or record.get('enabled') or \
+                any(row['id'].startswith(HOUSE_PREFIXES) for row in existing):
             raise RuntimeError('Incomplete hook migration; operator review required (no grants replayed)')
-        return
+        marker.unlink()
     sources = []
     for path, prefix, scoped in [
         (Path(global_source) if global_source else home / 'hooks.json', 'house-global-v1', False),
@@ -64,9 +72,13 @@ def prepare(home, project, run=command, global_source=None):
         if path.exists():
             content = path.read_bytes()
             data = json.loads(content)
-            # House bookkeeping is not part of Chaos's strict legacy schema.
-            # Strip only our known key; retain all hook definitions unchanged.
-            data.pop('_helixkit_managed', None)
+            # Bookkeeping keys (`_helixkit_managed`, a resident's `_note`) are
+            # not part of Chaos's strict legacy schema, which rejects the whole
+            # file for one of them (#641). Strip top-level `_` keys from the
+            # import copy only; the source and every hook definition stay as
+            # they are.
+            for key in [key for key in data if key.startswith('_')]:
+                del data[key]
             if data == {'hooks': {}} or (set(data) == {'hooks'} and
                     all(groups == [] for groups in data['hooks'].values())):
                 continue
@@ -75,7 +87,7 @@ def prepare(home, project, run=command, global_source=None):
             sources.append({'path': str(path), 'prefix': prefix, 'project': scoped,
                             'sha256': hashlib.sha256(content).hexdigest(), 'import_path': str(imported)})
     existing = json.loads(run(home, project, 'list'))
-    if any(row['id'].startswith(('house-global-v1-', 'house-project-v1-')) for row in existing):
+    if any(row['id'].startswith(HOUSE_PREFIXES) for row in existing):
         raise RuntimeError('Hook migration ID collision; no existing hooks changed')
     record = {'version': 1, 'project': str(project), 'status': 'pending', 'sources': sources, 'enabled': []}
     save(marker, record)

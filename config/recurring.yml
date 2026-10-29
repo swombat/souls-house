@@ -187,6 +187,11 @@ production:
     queue: default
     schedule: every 5 minutes
 
+  roll_hold_watch:
+    class: RollHoldWatchJob
+    queue: default
+    schedule: every 15 minutes
+
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob
     queue: default

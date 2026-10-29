@@ -62,7 +62,34 @@ class RuntimeHooksTest(unittest.TestCase):
         self.calls = []
         with self.assertRaisesRegex(RuntimeError, 'operator review'):
             self.prepare()
-        self.assertEqual(self.calls, [])
+        # Only a read: an import that got as far as a house row is never replayed.
+        self.assertEqual(self.calls, [('list',)])
+
+    def test_import_that_never_started_is_retried_not_latched(self):
+        # #641: the first import was rejected before any row existed. The
+        # pending manifest held nothing, so every later boot crash-looped.
+        def reject(home, project, *args):
+            if args[1:2] == ('import',):
+                self.calls.append(args)
+                raise RuntimeError('Chaos hook provisioning failed')
+            return self.run_cli(home, project, *args)
+        with self.assertRaisesRegex(RuntimeError, 'provisioning failed'):
+            s.prepare(self.home, self.project, reject)
+        self.assertEqual(json.loads((self.home / s.MANIFEST).read_text())['status'], 'pending')
+        self.calls = []
+        self.prepare()
+        self.assertEqual(json.loads((self.home / s.MANIFEST).read_text())['status'], 'complete')
+        self.assertEqual(len([c for c in self.calls if c[1:2] == ('enable',)]), 2)
+
+    def test_underscore_keys_are_stripped_from_the_import_copy_only(self):
+        source = self.home / 'hooks.json'
+        original = json.dumps({'_note': 'kept by the resident', '_helixkit_managed': 'x',
+                               'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': 'true'}]}]}})
+        source.write_text(original)
+        self.prepare()
+        copy = json.loads((self.home / 'house-global-v1-import.json').read_text())
+        self.assertEqual(set(copy), {'hooks'})
+        self.assertEqual(source.read_text(), original)
 
     def test_invalid_source_fails_before_mutation(self):
         path = self.project / '.chaos/hooks.json'
@@ -185,6 +212,28 @@ class RealRuntimeHooksTest(unittest.TestCase):
             self.assertIn('not trusted', before or '')
             self.assertEqual(s.ensure_house_trust(home, project), 'granted')
             self.assertIsNone(json.loads(s.command(home, project, 'list'))[0]['inactive_reason'])
+
+    def test_actual_global_hooks_with_a_resident_note_import(self):
+        """#641, Claude's home: a global hooks.json with a top-level `_note`.
+        The real import schema rejects that key; the import copy must not
+        carry it, and the migration completes."""
+        import os
+        from unittest.mock import patch
+        config_spec = importlib.util.spec_from_file_location('runtime_settings', Path(s.__file__).with_name('runtime_settings.py'))
+        config = importlib.util.module_from_spec(config_spec)
+        config_spec.loader.exec_module(config)
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'CHAOS_BIN': os.environ['CHAOS_TEST_BIN']}):
+            home, project = Path(td) / 'home', Path(td) / 'repo'
+            (project / '.chaos').mkdir(parents=True)
+            oauth = home / 'oauth-runtime'
+            oauth.mkdir(parents=True)
+            source = home / 'hooks.json'
+            source.write_text(json.dumps({'_note': 'resident bookkeeping', 'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': 'true'}]}]}}))
+            config.prepare(oauth)
+            s.prepare(oauth, project, global_source=source)
+            self.assertEqual(json.loads((oauth / s.MANIFEST).read_text())['status'], 'complete')
+            rows = json.loads(s.command(oauth, project, 'list'))
+            self.assertEqual([r['enabled'] for r in rows if r['id'].startswith('house-global-v1-')], [True])
     def test_fresh_birth_then_first_subscription_turn_has_trusted_hooks(self):
         """No oauth-runtime before boot. Boot as the entrypoint does for a house
         home; the subscription home the shim then selects already has settings,
