@@ -21,7 +21,8 @@ class TelegramPresentationPartialsTest < ActionDispatch::IntegrationTest
         end
       end
     end
-    assert_equal({ "configured" => true, "username" => "synthetic_bot" }, response.parsed_body.dig("props", "telegram_configuration"))
+    assert_equal({ "configured" => true, "username" => "synthetic_bot", "reads_all_group_messages" => nil },
+                 response.parsed_body.dig("props", "telegram_configuration"))
     assert_equal 0, response.parsed_body.dig("props", "telegram_subscriber_count")
     assert_not response.parsed_body.fetch("props").key?("telegram_deep_link")
     assert_not keys.any? { |key| key.include?("telegram_deep_link:") }
