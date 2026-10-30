@@ -1336,16 +1336,17 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     out = run_shim_python(<<~PY)
       env = {
         "OPENROUTER_API_KEY": "or", "OPENAI_API_KEY": "oa", "ANTHROPIC_API_KEY": "an",
-        "SOME_KEY_FILE": "f", "HF_TOKEN": "hf", "PATH": "/bin",
+        "SOME_KEY_FILE": "f", "HF_TOKEN": "hf", "PATH": "/bin", "lower_api_key": "lk",
       }
       print(mod.shell_env_excludes(env))
     PY
 
     patterns = JSON.parse(out)
-    names = %w[OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE HF_TOKEN PATH TRIGGER_BEARER_TOKEN DB_SECRET]
-    glob = ->(pattern, name) { File.fnmatch?(pattern, name, File::FNM_DOTMATCH) }
+    names = %w[OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE HF_TOKEN PATH TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret]
+    # Chaos matches shell_environment_policy patterns case-insensitively.
+    glob = ->(pattern, name) { File.fnmatch?(pattern, name, File::FNM_DOTMATCH | File::FNM_CASEFOLD) }
     excluded = names.select { |n| patterns.any? { |p| glob.(p, n) } }
-    assert_equal %w[OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE TRIGGER_BEARER_TOKEN DB_SECRET], excluded
+    assert_equal %w[OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret], excluded
   end
 
   test "trigger shim accepts every reasoning effort the app can send" do

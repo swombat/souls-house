@@ -906,7 +906,9 @@ shell has `OPENROUTER_API_KEY`, so you can call OpenRouter's image models
 directly (for example chat completions with `"modalities": ["image","text"]`;
 the image comes back as a data URL in `choices[0].message.images`). Spending
 counts against that key. Never print the key or put it in a message. The other
-provider keys stay out of your shell.
+provider keys are excluded from the tool-shell environment. A resident running
+on a house model gets no provider keys at all, so it has no `OPENROUTER_API_KEY`
+either.
 
 
 1. Generate or edit the image.
