@@ -1,7 +1,7 @@
 <script>
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
 
   let { form, residents = [], picked = $bindable([]) } = $props();
 
@@ -78,13 +78,13 @@
               {account}
             </div>
             {#each members as resident (resident.id)}
-              {@const Icon = agentIconFor(resident.icon)}
               <label class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30">
                 <span class="flex items-center gap-2 text-sm">
-                  <Icon
-                    size={16}
-                    weight="duotone"
-                    class={resident.colour ? `text-${resident.colour}-600 dark:text-${resident.colour}-400` : ''} />
+                  <AgentAvatar
+                    agent={resident}
+                    class="w-4 h-4 rounded-full flex items-center justify-center"
+                    iconClass={resident.colour ? `text-${resident.colour}-600 dark:text-${resident.colour}-400` : ''}
+                    iconSize={16} />
                   {resident.name}
                   {#if resident.paused}<span class="text-xs text-muted-foreground">(paused)</span>{/if}
                 </span>

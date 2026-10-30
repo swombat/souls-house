@@ -304,7 +304,8 @@ class Chat < ApplicationRecord
         id: agent.to_param,
         name: agent.name,
         icon: agent.icon,
-        colour: agent.colour
+        colour: agent.colour,
+        avatar_url: agent.avatar_url
       }
     end
 

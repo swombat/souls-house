@@ -63,7 +63,7 @@ Rails.application.routes.draw do
   resource :user, only: %i[edit update] do
     scope module: :users do
       resource :password, only: [ :edit, :update ]
-      resource :avatar, only: :destroy
+      resource :avatar, only: %i[update destroy]
     end
   end
 
@@ -225,6 +225,8 @@ Rails.application.routes.draw do
         get "identity_export", to: "agents/runtime_checks#identity_export", as: :identity_export
         post "send_test_request", to: "agents/runtime_checks#send_test_request", as: :send_test_request
         post "send_orientation", to: "agents/runtime_checks#send_orientation", as: :send_orientation
+        patch :avatar, to: "agents/avatars#update"
+        delete :avatar, to: "agents/avatars#destroy"
       end
 
       scope module: :agents do

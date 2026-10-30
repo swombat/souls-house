@@ -79,6 +79,7 @@ module Api
           model: agent.model_label,
           colour: agent.colour,
           icon: agent.icon,
+          avatar_url: agent.avatar_url,
           active: agent.active?,
           runtime: agent.runtime,
           deprecated: agent.deprecated?,

@@ -2,7 +2,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Spinner, UsersThree } from 'phosphor-svelte';
   import { accountChatAgentTriggerPath, accountChatModelSelectionPath, editAccountAgentPath } from '@/routes';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import AgentModelControl from '$lib/components/chat/AgentModelControl.svelte';
   import AgentModelProblems from '$lib/components/chat/AgentModelProblems.svelte';
@@ -210,7 +210,6 @@
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-xs text-muted-foreground mr-2 hidden md:inline">Ask resident:</span>
       {#each sortedAgents as agent (agent.id)}
-        {@const IconComponent = agentIconFor(agent.icon)}
         {@const selection = selectionFor(agent)}
         {@const withModel = showsModelControl(selection)}
         <div class="inline-flex items-center min-w-0">
@@ -230,10 +229,11 @@
             {#if triggeringAgent === agent.id || activeAgentIds.has(agent.id)}
               <Spinner size={14} class="animate-spin" />
             {:else}
-              <IconComponent
-                size={14}
-                weight="duotone"
-                class={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
+              <AgentAvatar
+                {agent}
+                class="w-4 h-4 rounded-full flex items-center justify-center"
+                iconClass={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''}
+                iconSize={14} />
             {/if}
             <AgentUsageName {accountId} {agent} {showUsage} mobileGauge />
           </Button>

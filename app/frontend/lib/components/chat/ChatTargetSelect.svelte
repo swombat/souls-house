@@ -1,6 +1,6 @@
 <script>
   import * as Select from '$lib/components/shadcn/select/index.js';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { groupModelsByProvider } from '$lib/agent-models';
 
   let {
@@ -40,14 +40,14 @@
   <Select.Root type="single" value={selectionValue} onValueChange={handleSelection}>
     <Select.Trigger class="w-56">
       {#if selectedAgent}
-        {@const IconComponent = agentIconFor(selectedAgent.icon)}
         <span class="flex items-center gap-2">
-          <IconComponent
-            size={14}
-            weight="duotone"
-            class={selectedAgent.colour
+          <AgentAvatar
+            agent={selectedAgent}
+            class="w-4 h-4 rounded-full flex items-center justify-center"
+            iconClass={selectedAgent.colour
               ? `text-${selectedAgent.colour}-600 dark:text-${selectedAgent.colour}-400`
-              : ''} />
+              : ''}
+            iconSize={14} />
           {selectedAgent.name}
         </span>
       {:else}
@@ -61,13 +61,13 @@
             Residents
           </Select.GroupHeading>
           {#each agents as agent (agent.id)}
-            {@const IconComponent = agentIconFor(agent.icon)}
             <Select.Item value={`agent:${agent.id}`} label={agent.name}>
               <span class="flex items-center gap-2">
-                <IconComponent
-                  size={14}
-                  weight="duotone"
-                  class={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
+                <AgentAvatar
+                  {agent}
+                  class="w-4 h-4 rounded-full flex items-center justify-center"
+                  iconClass={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''}
+                  iconSize={14} />
                 {agent.name}
               </span>
             </Select.Item>
