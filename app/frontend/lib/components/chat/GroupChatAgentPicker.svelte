@@ -1,5 +1,5 @@
 <script>
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import { sortAgentsByAvailability, watchAgentsRemaining } from '$lib/agent-subscription-usage';
 
@@ -28,7 +28,6 @@
     <div class="text-sm font-medium mb-2">Select residents to participate:</div>
     <div class="flex flex-wrap gap-2">
       {#each sortedAgents as agent (agent.id)}
-        {@const IconComponent = agentIconFor(agent.icon)}
         {@const isSelected = selectedAgentIds.includes(agent.id)}
         <button
           type="button"
@@ -43,10 +42,11 @@
               ? `bg-transparent border-${agent.colour}-300 dark:border-${agent.colour}-700 hover:bg-${agent.colour}-50 dark:hover:bg-${agent.colour}-950 text-${agent.colour}-600 dark:text-${agent.colour}-400`
               : 'bg-muted hover:bg-muted/80 text-muted-foreground border-border'}
                  {agent.paused === true ? 'opacity-60' : ''}">
-          <IconComponent
-            size={14}
-            weight="duotone"
-            class={agent.colour && !isSelected ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
+          <AgentAvatar
+            {agent}
+            class="w-4 h-4 rounded-full flex items-center justify-center"
+            iconClass={agent.colour && !isSelected ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''}
+            iconSize={14} />
           <AgentUsageName {accountId} {agent} {showUsage} />
           {#if agent.paused === true}
             <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Paused</span>

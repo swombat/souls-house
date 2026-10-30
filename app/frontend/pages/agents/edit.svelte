@@ -50,6 +50,7 @@
     active_tab: activeTabProp = null,
     local_dev_endpoint_mode: localDevEndpointMode = false,
     identity_export_url: identityExportUrl = null,
+    avatar_path: avatarPath = null,
     memory_overview_url: memoryOverviewUrl = null,
     memory_history_url: memoryHistoryUrl = null,
     hosting_diagnostics_url: hostingDiagnosticsUrl = null,
@@ -250,7 +251,9 @@
             bind:icon={$form.agent.icon}
             nameError={$form.errors.name}
             colourOptions={colour_options}
-            iconOptions={icon_options} />
+            iconOptions={icon_options}
+            {avatarPath}
+            avatarUrl={agent.avatar_url} />
         {:else if activeTab === 'settings'}
           <AgentRuntimeStatus {agent} {sandboxRecreationUrl} canRestart={canRestartRuntime} />
           <AgentSettingsPanel

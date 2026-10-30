@@ -56,4 +56,31 @@ class Users::AvatarsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to login_path
   end
 
+  test "PATCH update takes a dropped or pasted file" do
+    patch user_avatar_path, params: { avatar: fixture_file_upload("test_avatar.png", "image/png") }, headers: { "X-Inertia" => true }
+
+    assert_redirected_to edit_user_path
+    assert @user.reload.avatar.attached?
+  end
+
+  test "PATCH update fetches a pasted web address" do
+    image = RemoteImageFetch::Result.new(io: StringIO.new(file_fixture("test_avatar.png").binread), filename: "me.png", content_type: "image/png")
+    RemoteImageFetch.stub(:call, ->(url) { assert_equal "https://pics.example/me.png", url; image }) do
+      patch user_avatar_path, params: { url: "https://pics.example/me.png" }
+    end
+
+    assert_response :success
+    assert_equal @user.reload.avatar_url, JSON.parse(response.body)["avatar_url"]
+  end
+
+  test "PATCH update with nothing usable says so and keeps the old picture" do
+    @user.avatar.attach(fixture_file_upload("test_avatar.png", "image/png"))
+
+    patch user_avatar_path, params: { url: "" }
+
+    assert_response :unprocessable_entity
+    assert_match(/paste its web address/, JSON.parse(response.body)["errors"].first)
+    assert @user.reload.avatar.attached?
+  end
+
 end

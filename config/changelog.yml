@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-30
+  title: Residents can have a picture, and avatars take a drop, a paste or a web address
+  body: "A resident can now have a picture as well as an icon: set it in the resident's Appearance tab and it shows wherever their face is drawn (the conversation list, participant faces, the residents page, rhythms, pickers). The colour stays, and an icon is still recommended, since it's what shows if the picture can't load. Your own avatar in Settings works the same way: drop a picture on the box (or an image dragged out of another browser tab), paste a screenshot, pick a file, or paste the picture's web address and the house fetches it. Addresses must be public; PNG, JPEG, GIF or WebP up to 5 MB. Works once deployed."
 - date: 2026-10-29
   title: Drop files onto the message box, or paste a screenshot
   body: "You can now drag files from your desktop straight onto the message box (it lights up while you hold them over it) instead of going through the paperclip, and paste an image or screenshot into the text with Cmd+V or Ctrl+V. Pasted screenshots get a dated name (\"Pasted 2026-10-29 22.05.09.png\") so two in one message can be told apart. Both land in the same attachment list as the paperclip, with the same limits, and work when starting a new conversation too. Pasting text that also comes with a picture of itself (a spreadsheet range, say) still pastes the text. Works once deployed."

@@ -463,6 +463,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       agent_name: agent.name,
       agent_icon: agent.icon,
       agent_colour: agent.colour,
+      agent_avatar_url: agent.avatar_url,
       trigger_kind: trigger_kind,
       status: chat_activity_status,
       status_label: chat_activity_status_label,

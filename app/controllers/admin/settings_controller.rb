@@ -97,6 +97,7 @@ class Admin::SettingsController < ApplicationController
         name: agent.name,
         account: agent.account&.name,
         icon: agent.icon,
+        avatar_url: agent.avatar_url,
         colour: agent.colour,
         paused: agent.paused?,
         follow_through: agent.follow_through?

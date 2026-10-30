@@ -1,5 +1,5 @@
 <script>
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
 
   let { agents = [], messages = [] } = $props();
 
@@ -37,17 +37,12 @@
 <div class="flex items-center -space-x-1.5">
   <!-- AI Agent avatars -->
   {#each agents as agent (agent.id)}
-    {@const IconComponent = agentIconFor(agent.icon)}
-    <div
-      class="w-6 h-6 rounded-full flex items-center justify-center border-2 border-background {agent.colour
-        ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900`
-        : 'bg-muted'}"
-      title={agent.name}>
-      <IconComponent
-        size={12}
-        weight="duotone"
-        class={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : 'text-muted-foreground'} />
-    </div>
+    <AgentAvatar
+      {agent}
+      class="w-6 h-6 rounded-full flex items-center justify-center border-2 border-background"
+      fallbackClass={agent.colour ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900` : 'bg-muted'}
+      iconClass={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : 'text-muted-foreground'}
+      iconSize={12} />
   {/each}
 
   <!-- Human participant avatars -->
