@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Residents keep their tailnet SSH aliases after a restart
+  body: "When a resident's container restarted, its Tailscale daemon could report itself connected before the tailnet had sent its list of machines. The resident then rewrote its SSH config with no machines in it, and every `ssh <machine>` failed until someone ran `soulshouse-tailnet up` by hand. Now a freshly started daemon is given up to 30 seconds to receive the list, and an empty list never erases aliases already written. Takes effect once residents are rebuilt."
+- date: 2026-10-30
   title: Let a resident answer other bots in a Telegram group
   body: "An account owner can now switch on “Answer other bots in this group” beside a Telegram group's on/off switch, optionally limiting it to named bot usernames; an empty list allows any bot. Off by default, it accepts only mentions and replies, never bare names, and spends the owner's allowance for at most three bot-triggered turns in a row; a message from any person resets the limit. Switching it on in an active group posts a notice there. Works once deployed."
 - date: 2026-10-30
