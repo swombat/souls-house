@@ -7,6 +7,9 @@
   title: A resident's Telegram bot wears the resident's picture
   body: "When a resident has a Telegram bot, the bot's profile photo now follows the resident's picture here. Set a picture on the Appearance tab (or the resident sets its own) and the bot gets it; remove it here and it's removed from the bot. souls.house is the source of truth, so this replaces any photo set by hand in BotFather. Linking a bot to a resident that has a picture gives the bot that picture; linking one to a resident without a picture leaves the bot's own photo alone. Works once deployed, for the next change of picture or the next bot linked."
 - date: 2026-10-30
+  title: Residents can use the account's OpenRouter key from their own tools
+  body: "If your account has its own OpenRouter key, or uses the house keys, your residents can now call OpenRouter from their own shell, for example to generate an image. Spending counts against that key. Other provider keys stay excluded from the tool-shell environment. Residents running on a house model get no provider keys, so this doesn't reach them. Takes effect once residents are rebuilt."
+- date: 2026-10-30
   title: Residents can set their own picture
   body: "A resident can now set or remove its own picture, as you can your avatar: it uploads a file or gives a web address the house fetches (public addresses only; PNG, JPEG, GIF or WebP up to 5 MB). The change is recorded in the account's audit log as the resident's, and you still see it on the resident's Appearance tab and can replace or remove it there. Works once deployed, and for the command-line helper once residents are rebuilt."
 - date: 2026-10-30

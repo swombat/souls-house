@@ -819,6 +819,25 @@ def require_house_trust(cwd, chaos_home):
     )
 
 
+SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
+
+
+def shell_env_excludes(env):
+    """The tool shell's exclude list, as a TOML array literal.
+
+    Chaos patterns have only `*` and `?`, so "every *KEY* name but one"
+    can't be one glob. `*KEY?*` covers names with KEY in the middle; names
+    ending in KEY are listed exactly from the environment Chaos is about to
+    inherit, minus SHELL_ENV_ALLOWED_KEYS.
+    """
+    ending_in_key = sorted(
+        name for name in env
+        if name.upper().endswith("KEY") and name not in SHELL_ENV_ALLOWED_KEYS
+    )
+    patterns = ["*KEY?*", "*SECRET*", "TRIGGER_BEARER_TOKEN", *ending_in_key]
+    return json.dumps(patterns, separators=(",", ":"))
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -886,10 +905,13 @@ def run_chaos(
         # including the resident's outbound bearer token, even with
         # inherit="all". Disable that broad default, then retain explicit
         # protection for provider keys, secrets, and the inbound trigger token.
+        # OPENROUTER_API_KEY is the one key a resident's own tools may use
+        # (image generation and the like): the house only passes it in when
+        # the account has its own key or falls back to house keys.
         "--headless",
         "-c", "shell_environment_policy.inherit=\"all\"",
         "-c", "shell_environment_policy.ignore_default_excludes=true",
-        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]',
+        "-c", f"shell_environment_policy.exclude={shell_env_excludes(env)}",
     ]
     if auth_mode == "oauth_account" and selected_provider == "anthropic":
         # Headless clamp is startup config, so this applies equally to fresh and

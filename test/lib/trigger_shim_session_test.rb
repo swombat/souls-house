@@ -1326,8 +1326,27 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes args, 'model_reasoning_effort="high"'
     assert_includes args, 'shell_environment_policy.inherit="all"'
     assert_includes args, "shell_environment_policy.ignore_default_excludes=true"
-    assert_includes args, 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]'
+    exclude = args.find { |a| a.start_with?("shell_environment_policy.exclude=") }
+    assert exclude, "expected a shell exclude list"
+    assert_includes exclude, '"*KEY?*","*SECRET*","TRIGGER_BEARER_TOKEN"'
     assert_not_includes args, "--dangerously-bypass-approvals-and-sandbox"
+  end
+
+  test "the tool shell keeps OPENROUTER_API_KEY and drops every other key" do
+    out = run_shim_python(<<~PY)
+      env = {
+        "OPENROUTER_API_KEY": "or", "OPENAI_API_KEY": "oa", "ANTHROPIC_API_KEY": "an",
+        "SOME_KEY_FILE": "f", "HF_TOKEN": "hf", "PATH": "/bin", "lower_api_key": "lk",
+      }
+      print(mod.shell_env_excludes(env))
+    PY
+
+    patterns = JSON.parse(out)
+    names = %w[OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE HF_TOKEN PATH TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret]
+    # Chaos matches shell_environment_policy patterns case-insensitively.
+    glob = ->(pattern, name) { File.fnmatch?(pattern, name, File::FNM_DOTMATCH | File::FNM_CASEFOLD) }
+    excluded = names.select { |n| patterns.any? { |p| glob.(p, n) } }
+    assert_equal %w[OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret], excluded
   end
 
   test "trigger shim accepts every reasoning effort the app can send" do
