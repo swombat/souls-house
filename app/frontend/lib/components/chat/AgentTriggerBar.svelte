@@ -21,12 +21,13 @@
     responseMarker = null,
     onTrigger = null,
   } = $props();
-  let triggeringAgent = $state(null);
+  // One entry per resident asked and not yet taken up, so asking one resident
+  // never holds the others' buttons. Each entry remembers what the room looked
+  // like when that resident was asked: whether it was running, its runtime
+  // rows, and the reply marker.
+  let pending = $state({});
   let triggeringAll = $state(false);
-  let waitingForResponse = $state(false);
-  let responseMarkerAtTrigger = $state(null);
-  let activeAtTrigger = new Set();
-  let timeoutId = null;
+  const pendingTimeouts = new Map();
   let errorOpen = $state(false);
   let errorTitle = $state('');
   let triggerError = $state('');
@@ -55,7 +56,7 @@
     };
   }
 
-  async function submitTrigger(body) {
+  async function submitTrigger(body, ids) {
     try {
       const response = await fetch(accountChatAgentTriggerPath(accountId, chatId), {
         method: 'POST',
@@ -70,13 +71,15 @@
       }
       const data = (await response.json?.().catch(() => null)) || {};
       if (data.queued?.length) {
-        // Nothing new starts now, so there is no response to wait for.
-        clearWaitingState();
+        // Nothing new starts now for these, so there is no response to wait for.
+        clearPending(data.queued.map((agent) => agent.id));
         showQueued(data.queued);
       }
+      triggeringAll = false;
       onTrigger?.();
     } catch (error) {
-      clearWaitingState();
+      clearPending(ids);
+      triggeringAll = false;
       errorTitle = '';
       triggerError = error.message;
       errorOpen = true;
@@ -135,64 +138,70 @@
     }
   }
 
-  function clearWaitingState() {
-    waitingForResponse = false;
-    triggeringAgent = null;
-    triggeringAll = false;
-    responseMarkerAtTrigger = null;
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-    }
+  function rowIdsFor(agentId) {
+    return new Set(runtimeInteractions.filter((row) => row.agent_id === agentId).map((row) => row.id));
   }
 
-  function beginWaiting() {
-    waitingForResponse = true;
-    responseMarkerAtTrigger = responseMarker;
-    activeAtTrigger = new Set(activeRuntimeAgentIds);
-    if (timeoutId) clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-      clearWaitingState();
-    }, 120_000);
+  function clearPending(ids) {
+    const next = { ...pending };
+    for (const id of ids) {
+      delete next[id];
+      clearTimeout(pendingTimeouts.get(id));
+      pendingTimeouts.delete(id);
+    }
+    pending = next;
   }
 
-  // Stop waiting once the ask is taken up: streaming started (disabled), or a
-  // run started that wasn't running when we asked (busy residents stay askable).
-  $effect(() => {
-    if (!waitingForResponse) return;
-    if (disabled || activeRuntimeAgentIds.some((id) => !activeAtTrigger.has(id))) {
-      clearWaitingState();
+  function beginPending(ids) {
+    const next = { ...pending };
+    for (const id of ids) {
+      next[id] = { wasActive: activeRuntimeAgentIds.includes(id), rowIds: rowIdsFor(id), marker: responseMarker };
+      clearTimeout(pendingTimeouts.get(id));
+      pendingTimeouts.set(
+        id,
+        setTimeout(() => clearPending([id]), 120_000)
+      );
     }
-  });
+    pending = next;
+  }
 
-  // External agents post a completed assistant message rather than a streaming
-  // placeholder. Clear the local trigger spinner when the chat receives a new
-  // assistant message marker from ActionCable/Inertia reload.
+  // A resident's ask is taken up once a run of theirs starts that wasn't
+  // running when they were asked, or a new runtime row of theirs appears.
+  // External residents post a finished message instead of running here, so a
+  // new reply marker releases them. Only that resident's button is released.
   $effect(() => {
-    if (waitingForResponse && responseMarker && responseMarker !== responseMarkerAtTrigger) {
-      clearWaitingState();
-    }
+    const ids = Object.keys(pending);
+    if (!ids.length) return;
+    if (disabled) return clearPending(ids);
+    const taken = ids.filter((id) => {
+      const entry = pending[id];
+      if (activeRuntimeAgentIds.includes(id) && !entry.wasActive) return true;
+      if (runtimeInteractions.some((row) => row.agent_id === id && !entry.rowIds.has(row.id))) return true;
+      const external = agents.find((agent) => agent.id === id)?.runtime === 'external';
+      return external && responseMarker && responseMarker !== entry.marker;
+    });
+    if (taken.length) clearPending(taken);
   });
 
   function triggerAgent(agent) {
-    if (agent.unavailability_reason || triggeringAgent || triggeringAll || waitingForResponse) return;
-    triggeringAgent = agent.id;
-    beginWaiting();
+    if (agent.unavailability_reason || pending[agent.id]) return;
+    beginPending([agent.id]);
 
     missingCredentials = [];
-    void submitTrigger({ agent_id: agent.id });
+    void submitTrigger({ agent_id: agent.id }, [agent.id]);
   }
 
   function triggerAllAgents() {
-    if (triggeringAgent || triggeringAll || waitingForResponse) return;
+    if (triggeringAll) return;
+    const ids = agents.filter((agent) => !agent.unavailability_reason && !pending[agent.id]).map((agent) => agent.id);
+    if (!ids.length) return;
     triggeringAll = true;
-    beginWaiting();
+    beginPending(ids);
 
     missingCredentials = [];
-    void submitTrigger({});
+    void submitTrigger({}, ids);
   }
 
-  const isTriggering = $derived(triggeringAgent !== null || triggeringAll || waitingForResponse);
   const activeAgentIds = $derived(new Set(activeRuntimeAgentIds));
   const anyAgentAvailable = $derived(agents.some((agent) => !agent.unavailability_reason));
   const modelProblems = $derived(
@@ -200,7 +209,7 @@
   );
 
   onDestroy(() => {
-    if (timeoutId) clearTimeout(timeoutId);
+    for (const id of pendingTimeouts.values()) clearTimeout(id);
     if (queuedTimeoutId) clearTimeout(queuedTimeoutId);
   });
 </script>
@@ -217,7 +226,7 @@
             variant="outline"
             size="sm"
             onclick={() => triggerAgent(agent)}
-            disabled={disabled || isTriggering || Boolean(agent.unavailability_reason)}
+            disabled={disabled || Boolean(pending[agent.id]) || Boolean(agent.unavailability_reason)}
             class="relative gap-2 {withModel ? 'rounded-r-none' : ''} {agent.colour
               ? `border-${agent.colour}-300 dark:border-${agent.colour}-700 hover:bg-${agent.colour}-50 dark:hover:bg-${agent.colour}-950`
               : ''}"
@@ -226,7 +235,7 @@
               : activeAgentIds.has(agent.id)
                 ? `${agent.name} is responding · ask again to have them look once more when they finish`
                 : agent.name}>
-            {#if triggeringAgent === agent.id || activeAgentIds.has(agent.id)}
+            {#if pending[agent.id] || activeAgentIds.has(agent.id)}
               <Spinner size={14} class="animate-spin" />
             {:else}
               <AgentAvatar
@@ -253,7 +262,7 @@
           variant="default"
           size="sm"
           onclick={triggerAllAgents}
-          disabled={disabled || isTriggering || !anyAgentAvailable}
+          disabled={disabled || triggeringAll || !anyAgentAvailable}
           class="gap-2 ml-2"
           title="Ask All Residents">
           {#if triggeringAll}

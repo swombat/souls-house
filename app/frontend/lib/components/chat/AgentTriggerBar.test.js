@@ -119,8 +119,98 @@ test('a successful trigger notifies the parent and waits for a response', async 
     await fireEvent.click(screen.getByRole('button', { name: 'One' }));
     await waitFor(() => expect(onTrigger).toHaveBeenCalledOnce());
     expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    await rerender({ runtimeInteractions: [{ id: 'run-1', agent_id: 'one', active: false }] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+test('an external resident is released by its posted reply', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true });
+  try {
+    const { rerender } = render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      responseMarker: 'old-reply',
+      agents: [{ id: 'one', name: 'One', runtime: 'external' }],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
     await rerender({ responseMarker: 'new-reply' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+// Daniel, 30 Oct: tapping one resident froze the whole bar for seconds.
+test('asking one resident leaves the others askable, and each is released on its own', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) });
+  try {
+    const { rerender } = render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      responseMarker: 'm0',
+      agents: [
+        { id: 'one', name: 'One' },
+        { id: 'two', name: 'Two' },
+        { id: 'three', name: 'Three' },
+      ],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Three' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ask All' })).toBeEnabled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Two' }));
+    expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
+      { agent_id: 'one' },
+      { agent_id: 'two' },
+    ]);
+
+    // One's run starts and its reply changes the room's marker: only One is released.
+    await rerender({
+      responseMarker: 'm1',
+      activeRuntimeAgentIds: ['one'],
+      runtimeInteractions: [{ id: 'run-1', agent_id: 'one', active: true }],
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Three' })).toBeEnabled();
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+test('a failed ask releases only the resident it was for', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  let rejectFirst;
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementationOnce(() => new Promise((_, reject) => (rejectFirst = reject)))
+    .mockImplementationOnce(() => new Promise(() => {}));
+  try {
+    render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      agents: [
+        { id: 'one', name: 'One' },
+        { id: 'two', name: 'Two' },
+      ],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Two' }));
+    rejectFirst(new Error('Network unavailable'));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Network unavailable');
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
   } finally {
     fetchMock.mockRestore();
   }
@@ -171,8 +261,9 @@ test('the wait for an ask ends when a run starts that was not running before', a
     await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeDisabled());
     await rerender({ activeRuntimeAgentIds: ['two'] });
     expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled();
     await rerender({ activeRuntimeAgentIds: ['two', 'one'] });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
   } finally {
     fetchMock.mockRestore();
   }
