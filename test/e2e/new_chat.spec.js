@@ -109,6 +109,10 @@ for (const width of [360, 1280]) {
         });
         expect(cutOff).toBe(0);
 
+        // Too short for even the newest: no half card, and no prompt either.
+        await page.setViewportSize({ width, height: 200 });
+        await expect(recent).toHaveCount(0);
+
         // Growing again brings them back.
         await page.setViewportSize({ width, height: 800 });
         await expect(recent.getByRole('link')).toHaveCount(4);

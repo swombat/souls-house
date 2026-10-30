@@ -109,14 +109,15 @@ describe('fitting the screen', () => {
     ]);
   });
 
-  test('keeps the newest conversation even when nothing fits whole', async () => {
+  test('shows no conversations and no prompt when not even the newest fits whole', async () => {
     rectSpy.mockImplementation(function () {
       if (this.dataset?.testid === 'new-chat-empty-state') return rect(50);
       if (this.tagName === 'LI') return rect(500);
       return rect(0);
     });
     render(NewChatEmptyState, { accountId: 'account', chats: many });
-    await vi.waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
-    expect(screen.getByRole('link')).toHaveTextContent('Chat 0');
+    await vi.waitFor(() => expect(screen.queryByRole('navigation')).not.toBeInTheDocument());
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText('Or pick an existing conversation:')).not.toBeInTheDocument();
   });
 });

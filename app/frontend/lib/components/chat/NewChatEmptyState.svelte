@@ -25,7 +25,7 @@
 
   // Lay out every candidate, then keep the ones whose bottom edge is inside
   // the scroller. Hiding the rest never moves the ones above, so one pass is
-  // enough. Always keep the first, so the prompt never stands alone.
+  // enough. If not even the newest fits whole, show none, and no prompt.
   async function measure() {
     if (!scroller) return;
     fitCount = MAX_RECENT;
@@ -38,7 +38,7 @@
       if (item.getBoundingClientRect().bottom > bottom + 0.5) break;
       fits += 1;
     }
-    fitCount = Math.max(1, fits);
+    fitCount = fits;
   }
 
   $effect(() => {
@@ -68,7 +68,7 @@
   class="flex-1 min-h-0 overflow-y-auto flex items-start md:items-center justify-center px-4 md:px-6 py-4">
   <div class="w-full text-center text-muted-foreground max-w-md">
     <h2 class="hidden md:block text-xl font-semibold">Start a new conversation</h2>
-    {#if recentChats.length > 0}
+    {#if shownChats.length > 0}
       <nav aria-label="Recent conversations" class="md:hidden">
         <p>Or pick an existing conversation:</p>
         <ul bind:this={list} class="mt-3 space-y-2">
