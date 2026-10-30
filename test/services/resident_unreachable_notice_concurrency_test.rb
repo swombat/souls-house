@@ -16,6 +16,11 @@ class ResidentUnreachableNoticeConcurrencyTest < ActiveSupport::TestCase
     @agent = @account.agents.create!(name: "Racer", system_prompt: "Test", runtime: "external")
     @agent.update_columns(health_state: "unhealthy", consecutive_health_failures: 3,
       health_failing_since: 20.minutes.ago, last_health_check_at: 5.minutes.ago)
+    # One observation short of the threshold, so each observer below is the
+    # one that trips it.
+    (ResidentUnreachableNotice::THRESHOLD - 1).times do
+      ResidentUnreachableNotice.new(@agent).send(:record_failure!)
+    end
   end
 
   teardown do
@@ -58,19 +63,19 @@ class ResidentUnreachableNoticeConcurrencyTest < ActiveSupport::TestCase
   def race_two_observers
     @release = Queue.new
     paused = Queue.new
-    original = ResidentUnreachableNotice.method(:open_outage)
+    original = ResidentUnreachableNotice.method(:circuit_for)
     first = true
     lock = Mutex.new
     pausing_read = lambda do |agent|
-      result = original.call(agent)
+      circuit = original.call(agent)
       if lock.synchronize { first.tap { first = false } }
         paused << true
         raise "first observer was never released" unless @release.pop(timeout: 10)
       end
-      result
+      circuit
     end
 
-    ResidentUnreachableNotice.stub(:open_outage, pausing_read) do
+    ResidentUnreachableNotice.stub(:circuit_for, pausing_read) do
       in_thread { ResidentUnreachableNotice.new(Agent.find(@agent.id)).observe! }
       assert_equal true, paused.pop(timeout: 10), "first observer never read the latch"
       in_thread { ResidentUnreachableNotice.new(Agent.find(@agent.id)).observe! }
