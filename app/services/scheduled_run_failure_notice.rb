@@ -34,6 +34,10 @@ class ScheduledRunFailureNotice
     AuditLog.where(action: FAILING, auditable: agent).where.not(id: ended).order(:id).last
   end
 
+  # How many scheduled rows one look reads back before calling the streak
+  # truncated. A method so a test can make truncation cheap.
+  def self.scan_budget = Agents::RunFailureStreak::MAX_SCAN
+
   # Called with every finished scheduled run. Never raises into the caller:
   # a notice that can't be written must not fail the run's own bookkeeping.
   def self.observe!(run)
@@ -56,7 +60,8 @@ class ScheduledRunFailureNotice
   # only the occasion to look.
   def observe!
     @agent.with_lock do
-      current = Agents::RunFailureStreak.call(@agent, kind: :scheduled)
+      current = Agents::RunFailureStreak.call(@agent, kind: :scheduled, max_scan: self.class.scan_budget,
+        batch: [ Agents::RunFailureStreak::BATCH, self.class.scan_budget ].min)
       open = self.class.open_streak(@agent)
       if open && (success = first_completed_after(open))
         completing_again!(open, success)
@@ -67,7 +72,10 @@ class ScheduledRunFailureNotice
   end
 
   def failing!(streak)
-    since = streak.since || @run.started_at
+    # A truncated streak has no known start: no time is stored or said, and
+    # the anchor for finding its recovery is the oldest failure the scan saw
+    # in it, never the run whose job happened to ask (which may be old).
+    since = streak.since
     category = streak.categories.first || "unknown"
     Agent.transaction do
       chat = @agent.account.chats.create_with_message!(
@@ -76,7 +84,8 @@ class ScheduledRunFailureNotice
       )
       chat.messages.create!(role: "system", content: failing_text(streak, since, category), notice_link: link)
       AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
-        data: { chat_id: chat.id, run_id: @run.id, first_run_id: streak.first_run_id, since: since.iso8601,
+        data: { chat_id: chat.id, run_id: @run.id, first_run_id: streak.first_run_id,
+                anchor_run_id: streak.first_run_id || streak.oldest_seen_id, since: since&.iso8601,
                 count: streak.count, category: category })
     end
   end
@@ -110,7 +119,9 @@ class ScheduledRunFailureNotice
   end
 
   def completing_text(streak, at)
-    since = Time.zone.parse(streak.data&.dig("since").to_s) || streak.created_at
+    since = streak.data&.dig("since").presence && Time.zone.parse(streak.data["since"])
+    return "[System Notice] #{@agent.name}'s scheduled runs are completing again as of #{time_label(at)}." unless since
+
     "[System Notice] #{@agent.name}'s scheduled runs are completing again as of #{time_label(at)}, " \
       "after #{ActionController::Base.helpers.distance_of_time_in_words(since, at)} of failures."
   end
@@ -126,12 +137,12 @@ class ScheduledRunFailureNotice
 
   # The completed scheduled run that ended the open streak: the first one
   # finishing after the streak's first failure (or, for a streak opened
-  # without a known start, after the run that opened it). Scanned oldest
+  # without a known start, after the oldest failure the scan saw in it). Scanned oldest
   # first with no row cap, so any number of later failures can't push it out
   # of reach, and the duration on the recovery line ends where the streak
   # did. Nil when there is none yet.
   def first_completed_after(open)
-    opener = AgentRuntimeInteraction.find_by(id: open.data&.dig("first_run_id") || open.data&.dig("run_id"))
+    opener = AgentRuntimeInteraction.find_by(id: open.data&.dig("anchor_run_id") || open.data&.dig("first_run_id"))
     scope = Agents::RunFailureStreak.scheduled_scope(@agent.agent_runtime_interactions.where.not(finished_at: nil))
     scope = scope.where("(finished_at, id) > (?, ?)", opener.finished_at, opener.id) if opener
     cursor = nil

@@ -211,6 +211,26 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_equal first_new.id, failing_streaks.last.data["first_run_id"]
   end
 
+  test "a truncated streak is anchored inside itself, not on an old job replayed into it" do
+    old = scheduled_run("wake", "failed", at: 10.hours.ago)
+    scheduled_run("wake", "completed", at: 9.hours.ago)
+    current = Array.new(6) { |i| scheduled_run("wake", "failed", at: (8 - i).hours.ago) }
+    ScheduledRunFailureNotice.stub(:scan_budget, 4) do
+      ScheduledRunFailureNoticeJob.perform_now(old.id)
+      ScheduledRunFailureNoticeJob.perform_now(old.id)
+    end
+    notice = failing_streaks.sole
+    assert_empty recoveries, "the completion before the streak ended nothing"
+    assert_includes current.map(&:id), notice.data["anchor_run_id"]
+    assert_nil notice.data["since"]
+    assert_includes notice_chat.messages.sole.content, "4 or more failed scheduled runs in a row"
+
+    recovered = scheduled_run("memory_aggregation_daily", "completed", at: 1.hour.ago)
+    ScheduledRunFailureNotice.stub(:scan_budget, 4) { ScheduledRunFailureNoticeJob.perform_now(recovered.id) }
+    assert_equal recovered.id, recoveries.sole.data["run_id"]
+    assert_match(/completing again as of \d+ \w+ \d\d:\d\d CES?T\.\z/, notice_chat.messages.last.content)
+  end
+
   test "a failure the fields don't explain is said as unknown" do
     scheduled_run("wake", "failed", at: 2.hours.ago)
     run = scheduled_run("wake", "failed", at: 1.hour.ago)

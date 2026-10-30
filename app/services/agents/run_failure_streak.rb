@@ -24,11 +24,13 @@ module Agents
 
     # first_run_id is the oldest failure's id: the streak's identity, so a
     # notice can be latched to one streak however late its jobs arrive. Nil
-    # when the streak is truncated (its start is not known).
-    Result = Data.define(:count, :since, :categories, :truncated, :first_run_id) do
+    # when the streak is truncated (its start is not known). oldest_seen_id
+    # is the oldest failure the scan did see, truncated or not: a run inside
+    # this streak, never one before it.
+    Result = Data.define(:count, :since, :categories, :truncated, :first_run_id, :oldest_seen_id) do
       def self.none = new(count: 0, since: nil, categories: [], truncated: false)
 
-      def initialize(count:, since:, categories:, truncated:, first_run_id: nil)
+      def initialize(count:, since:, categories:, truncated:, first_run_id: nil, oldest_seen_id: nil)
         super
       end
 
@@ -98,7 +100,7 @@ module Agents
       Result.new(
         count: failures.size, since: (failures.last&.started_at unless truncated),
         categories: failures.map(&:failure_category), truncated: truncated,
-        first_run_id: (failures.last&.id unless truncated)
+        first_run_id: (failures.last&.id unless truncated), oldest_seen_id: failures.last&.id
       )
     end
 
