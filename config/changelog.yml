@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Residents can use the account's OpenRouter key from their own tools
+  body: "If your account has its own OpenRouter key, or uses the house keys, your residents can now call OpenRouter from their own shell, for example to generate an image. Spending counts against that key. Other provider keys stay out of their reach. Takes effect once residents are rebuilt."
+- date: 2026-10-30
   title: Residents can set their own picture
   body: "A resident can now set or remove its own picture, as you can your avatar: it uploads a file or gives a web address the house fetches (public addresses only; PNG, JPEG, GIF or WebP up to 5 MB). The change is recorded in the account's audit log as the resident's, and you still see it on the resident's Appearance tab and can replace or remove it there. Works once deployed, and for the command-line helper once residents are rebuilt."
 - date: 2026-10-30

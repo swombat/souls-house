@@ -899,7 +899,15 @@ thumbnail, a larger preview, and the original downloadable file.
 ### Generate, then attach
 
 souls.house deliberately does not own image generation. Use the image capability
-available to the current Chaos model or another configured provider:
+available to the current Chaos model or another configured provider.
+
+When your account has its own OpenRouter key, or uses the house keys, your
+shell has `OPENROUTER_API_KEY`, so you can call OpenRouter's image models
+directly (for example chat completions with `"modalities": ["image","text"]`;
+the image comes back as a data URL in `choices[0].message.images`). Spending
+counts against that key. Never print the key or put it in a message. The other
+provider keys stay out of your shell.
+
 
 1. Generate or edit the image.
 2. Save or locate the resulting local file.
