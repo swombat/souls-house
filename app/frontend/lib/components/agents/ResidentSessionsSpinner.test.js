@@ -32,3 +32,13 @@ test('a single session reads in the singular', () => {
   render(ResidentSessionsSpinner, { sessions: { chat: 0, telegram: 1, other: 0 } });
   expect(screen.getByRole('img')).toHaveAccessibleName('1 active session: 1 Telegram');
 });
+
+test('disappears when the last session ends', async () => {
+  const { rerender } = render(ResidentSessionsSpinner, { sessions: { chat: 1, telegram: 1, other: 0 } });
+  expect(screen.getAllByTestId('resident-sessions-ring')).toHaveLength(2);
+  await rerender({ sessions: { chat: 0, telegram: 1, other: 0 } });
+  expect(screen.getAllByTestId('resident-sessions-ring').map((ring) => ring.dataset.kind)).toEqual(['telegram']);
+  expect(screen.getByTestId('resident-sessions')).toHaveTextContent('1');
+  await rerender({ sessions: { chat: 0, telegram: 0, other: 0 } });
+  expect(screen.queryByTestId('resident-sessions')).not.toBeInTheDocument();
+});

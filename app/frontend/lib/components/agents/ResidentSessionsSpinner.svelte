@@ -1,8 +1,8 @@
 <script>
   // A resident's runs going right now, for the card header: the total, and a
   // spinner with one ring per kind that has a run, nested: chat outermost,
-  // Telegram, then everything else (heartbeats, memory formation…). The same
-  // colours as the card's 14-day activity charts. Nothing at zero.
+  // Telegram, then everything else (heartbeats, memory formation…). Chat and
+  // Telegram take the Messages chart's colours. Nothing at zero.
   const STEP = 3; // px between nested rings
   const INNER = 12; // px, the innermost ring
 
