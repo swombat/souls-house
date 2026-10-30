@@ -23,6 +23,7 @@ test.describe('unsent first-message recovery', () => {
   for (const suffix of ['', '/new']) {
     test(`recovers immediate reload and intended audience from ${suffix || 'index'}`, async ({ page }) => {
       await page.goto(url + suffix);
+      await page.getByRole('button', { name: 'Change' }).click();
       await page.getByRole('button', { name: 'E2E Critic', exact: true }).click();
       await page.getByTitle('Edit chat title').click();
       await page.locator('header input[type="text"]').fill('An unsent beginning');
