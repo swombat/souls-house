@@ -443,9 +443,9 @@ test.describe('browser contracts', () => {
 
     await expect(page.getByText(/Settings updated successfully/)).toBeVisible();
 
-    await page.getByRole('button', { name: /update profile picture/i }).click();
-    await page.locator('#avatar-upload').setInputFiles('test/fixtures/files/test_avatar.png');
-    await expect(page.getByRole('dialog')).not.toBeVisible();
+    // The picker sits inline in Settings: choosing a file saves it at once.
+    await page.locator('[data-avatar-file]').setInputFiles('test/fixtures/files/test_avatar.png');
+    await expect(page.locator('[data-avatar-dropzone] img')).toBeVisible();
 
     const stateResponse = await request.post('/test/e2e/state', {
       data: { run_id: setup.run_id, account_id: setup.account_id },

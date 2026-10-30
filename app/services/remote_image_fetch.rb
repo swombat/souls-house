@@ -66,7 +66,7 @@ class RemoteImageFetch
 
     request = Net::HTTP::Get.new(uri)
     request["Accept"] = "image/*"
-    request["User-Agent"] = "souls.house avatar fetch"
+    request["User-Agent"] = "avatar-fetch/1.0"
 
     body = +""
     response = http.start do |connection|
