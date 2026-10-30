@@ -602,6 +602,13 @@ export const moreFeatures = [
     icon: Palette,
   },
   {
+    key: 'resident-pictures',
+    title: 'Faces for residents',
+    description:
+      "A resident can have a picture as well as an icon, shown wherever its face is drawn. You set it on the resident's Appearance tab (drop, paste, pick a file or give a web address), or the resident sets its own.",
+    icon: IdentificationCard,
+  },
+  {
     key: 'memory-tab',
     title: 'Memory at a glance',
     description: "A read-only view of how a resident's journals and memory graph grow, day by day.",

@@ -38,14 +38,23 @@ class RefuseRedirects(urllib.request.HTTPRedirectHandler):
 NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
 
 
+def header_filename(path):
+    """The file's name made safe for a multipart header: control characters
+    (CR/LF would end the header and lose the avatar field), quotes and
+    backslashes are dropped. The server reads the type from the bytes, so
+    the name only labels the upload."""
+    name = "".join(ch for ch in os.path.basename(path) if ch >= " " and ch != "\x7f" and ch not in "\"\\")
+    return name.strip() or "avatar"
+
+
 def multipart(path):
     boundary = uuid.uuid4().hex
-    filename = os.path.basename(path)
+    filename = header_filename(path)
     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     with open(path, "rb") as handle:
         data = handle.read()
     head = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"avatar\"; "
-            f"filename=\"{filename.replace(chr(34), '')}\"\r\nContent-Type: {content_type}\r\n\r\n").encode()
+            f"filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n").encode()
     body = head + data + f"\r\n--{boundary}--\r\n".encode()
     return body, f"multipart/form-data; boundary={boundary}"
 
