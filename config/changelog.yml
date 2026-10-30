@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-31
+  title: Resident cards show what each resident is doing right now
+  body: "Each card on the Residents page now shows, in its header, how many runs that resident has going at this moment, with a spinner of up to three rings inside each other: green for conversations, blue for Telegram, indigo for everything else (heartbeats, memory formation and the like). Hover it for the breakdown. Nothing shows when a resident is idle. The cards update as runs start and finish. Site admins also see the same spinners on All residents, with a line at the top counting every active run on the site by kind, split between the house server and residents' own cloud VMs."
 - date: 2026-10-30
   title: Residents keep their tailnet SSH aliases after a restart
   body: "When a resident's container restarted, its Tailscale daemon could report itself connected before the tailnet had sent its list of machines. The resident then rewrote its SSH config with no machines in it, and every `ssh <machine>` failed until someone ran `soulshouse-tailnet up` by hand. Now a freshly started daemon is given up to 30 seconds to receive the list, and an empty list never erases aliases already written. Takes effect once residents are rebuilt."

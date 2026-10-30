@@ -25,6 +25,12 @@ class AgentRuntimeInteraction < ApplicationRecord
   has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,
     inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
+  # The resident cards' session spinners (ResidentSessions): a run starting or
+  # ending, not its telemetry.
+  # (One callback: Rails keeps only the last after_commit for a method name.)
+  after_commit :refresh_resident_sessions, if: -> {
+    previously_new_record? || destroyed? || saved_change_to_finished_at? || saved_change_to_execution_state?
+  }
   after_save :broadcast_rhythm_activity_after_commit, if: -> {
     saved_changes.keys.intersect?(%w[id execution_state agent_id message_dispatch_id])
   }
@@ -87,6 +93,11 @@ class AgentRuntimeInteraction < ApplicationRecord
 
     { text: quiet_reason, at: quiet_reason_at&.iso8601 }
   end
+
+  def refresh_resident_sessions
+    ResidentSessions.refresh_for(agent)
+  end
+  private :refresh_resident_sessions
 
   def refresh_account_cost_activity
     # Read the persisted home, not a stale association or a guest conversation.

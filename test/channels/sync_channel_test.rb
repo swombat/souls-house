@@ -142,6 +142,30 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
+  test "resident sessions stream per accessible account" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ResidentSessions", id: @account.obfuscated_id
+    assert subscription.confirmed?
+    assert_equal [ "ResidentSessions:#{@account.obfuscated_id}" ], subscription.streams
+  end
+
+  test "resident sessions of another account are rejected" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ResidentSessions", id: accounts(:existing_user_account).obfuscated_id
+    assert subscription.rejected?
+  end
+
+  test "the site-wide resident sessions stream is for site admins only" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ResidentSessions", id: "all"
+    assert subscription.rejected?
+
+    stub_connection current_user: users(:site_admin_user), current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ResidentSessions", id: "all"
+    assert subscription.confirmed?
+    assert_has_stream "ResidentSessions:all"
+  end
+
   test "field activity streams only for the accessible account" do
     stub_connection current_user: @user, current_app_session: nil
     subscribe channel: "SyncChannel", model: "FieldActivity", id: @account.obfuscated_id
