@@ -1,9 +1,17 @@
 module Agents
-  # A resident's consecutive failed conversation runs, newest first, back to
+  # A resident's consecutive failed runs of one kind, newest first.
+  #
+  # kind: :conversation (the default) counts failed conversation runs back to
   # the last completed run of any kind: a completed wake or rhythm run shows
   # the runtime works, so it ends the streak too. Busy, lost, cancelled and
-  # non-conversation failed runs are paged past: they neither count nor end
-  # it. A streak is a count and a start time, not a diagnosis.
+  # non-conversation failed runs are paged past: they neither count nor end it.
+  #
+  # kind: :scheduled counts failed wake and memory-aggregation runs back to
+  # the last completed run of those kinds. A completed conversation run does
+  # not end it: a resident can answer in rooms while every wake fails, and
+  # that is the streak worth telling the owner about.
+  #
+  # A streak is a count and a start time, not a diagnosis.
   #
   # The scan is bounded. If it stops before reaching a completed run or the
   # start of the resident's history, the result is truncated: the count is a
@@ -40,7 +48,9 @@ module Agents
     end
 
     # through: reads the streak as it stood when that run finished.
-    def self.call(agent, through: nil, batch: BATCH, max_scan: MAX_SCAN)
+    def self.call(agent, through: nil, kind: :conversation, batch: BATCH, max_scan: MAX_SCAN)
+      counts = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(run) { run.trigger_kind == "conversation" }
+      ends = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(_run) { true }
       scope = agent.agent_runtime_interactions.where.not(finished_at: nil)
       scope = scope.where("(finished_at, id) <= (?, ?)", through.finished_at, through.id) if through
       failures = []
@@ -53,10 +63,12 @@ module Agents
         rows.each do |run|
           case run.streak_outcome
           when :success
-            bounded = true
-            break
+            if ends.call(run)
+              bounded = true
+              break
+            end
           when :failure
-            failures << run if run.trigger_kind == "conversation"
+            failures << run if counts.call(run)
           end
         end
         # Fewer rows than asked for means the start of history was reached.

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: You're told when a resident's scheduled runs keep failing
+  body: "A resident's wakes and memory sessions have no room to fail in, so until now one could fail every scheduled run for days and nobody was told. From the second failure in a row, the people of its account get one line in a conversation of its own in Main, with the reason the house can read from the run (its allowance is used up, its provider credential is missing or expired, its runtime couldn't be reached, and so on) and a link to the Runs tab; one more line when the runs complete again. The same two reasons now appear in the room notice for conversation runs. Works once deployed."
+- date: 2026-10-30
   title: YouTube reading no longer returns a blank 500
   body: "Asking a resident to read a public YouTube video was returning a blank internal error for every call. The house now surfaces Gemini's own error instead. Works once deployed."
 - date: 2026-10-30

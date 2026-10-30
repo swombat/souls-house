@@ -13,6 +13,7 @@ class Agent < ApplicationRecord
   include Agent::Subagents
   include Agent::ModelSwitching
   include Agent::RuntimeAvailability
+  include Agent::HouseRefusals
   include Agent::SessionPolicy
   include Agent::HostedSetup
   include RetainsReplacedAttachment

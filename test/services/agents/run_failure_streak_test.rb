@@ -66,6 +66,32 @@ class Agents::RunFailureStreakTest < ActiveSupport::TestCase
     assert_equal 1, Agents::RunFailureStreak.call(@agent).count
   end
 
+  test "the scheduled streak counts wake and memory failures and is not ended by a completed conversation run" do
+    make_run("completed", at: 60.minutes.ago, trigger_kind: "wake")
+    first = make_run("failed", at: 50.minutes.ago, trigger_kind: "wake")
+    make_run("completed", at: 45.minutes.ago)
+    make_run("failed", at: 40.minutes.ago, trigger_kind: "memory_aggregation_daily")
+    make_run("failed", at: 30.minutes.ago)
+    make_run("busy", at: 25.minutes.ago, trigger_kind: "wake")
+    make_run("failed", at: 20.minutes.ago, trigger_kind: "wake")
+
+    streak = Agents::RunFailureStreak.call(@agent, kind: :scheduled)
+    assert_equal 3, streak.count
+    assert_equal first.started_at.to_i, streak.since.to_i
+    assert_not streak.truncated
+    assert_equal 1, Agents::RunFailureStreak.call(@agent).count, "the conversation streak is unchanged"
+  end
+
+  test "a completed scheduled run ends the scheduled streak, and telegram or orientation runs are neither" do
+    make_run("failed", at: 50.minutes.ago, trigger_kind: "wake")
+    make_run("completed", at: 40.minutes.ago, trigger_kind: "memory_aggregation_weekly")
+    make_run("failed", at: 30.minutes.ago, trigger_kind: "telegram")
+    make_run("completed", at: 25.minutes.ago, trigger_kind: "orientation")
+    make_run("failed", at: 20.minutes.ago, trigger_kind: "wake")
+
+    assert_equal 1, Agents::RunFailureStreak.call(@agent, kind: :scheduled).count
+  end
+
   test "neutral rows beyond a page neither count nor hide the failures behind them" do
     make_run("completed", at: 3.hours.ago)
     first = make_run("failed", at: 2.hours.ago)
