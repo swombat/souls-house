@@ -45,6 +45,8 @@ module ActiveSupport
     setup do
       ActiveStorage::Current.url_options = { host: "test.host" }
       ensure_profiles_exist
+      # Rate limiters count in the cache, which outlives a test's transaction.
+      ThrottleMachines.reset!
     end
 
     private
