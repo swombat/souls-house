@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Filter the integrations you can connect
+  body: "The \"Connect a new integration\" list on the Integrations page now has a filter box above it. Type part of a name or something the integration does (\"goo\" finds Google Workspace, \"invoices\" finds Xero) and the list narrows as you type; every word has to match. The list is also now in alphabetical order, with Polar H10 and X posting sorted in with the rest instead of sitting at the end. Works once deployed."
+- date: 2026-10-30
   title: Odoo accounting reads
   body: "Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented."
 - date: 2026-10-30
