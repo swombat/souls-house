@@ -12,6 +12,19 @@ module TelegramNotifiable
   # or that the bot has left (#596). Every send path goes through here.
   class TelegramGroupNotAllowed < TelegramError; end
 
+  # Flood control (429) or Telegram's own trouble (5xx): worth trying again,
+  # after retry_after seconds when Telegram gives one.
+  class TelegramRetryableError < TelegramError
+
+    attr_reader :retry_after
+
+    def initialize(message, retry_after: nil)
+      super(message)
+      @retry_after = retry_after
+    end
+
+  end
+
   DownloadedTelegramFile = Struct.new(:tempfile, :file_path, :byte_size, keyword_init: true)
 
   included do
@@ -219,19 +232,28 @@ module TelegramNotifiable
       [ "profile_photo", jpeg_io, { filename: "profile.jpg", content_type: "image/jpeg" } ]
     ]
     result = telegram_multipart_request("setMyProfilePhoto", form)
-    raise TelegramError, result["description"] unless result["ok"]
+    raise_telegram_refusal!(result) unless result["ok"]
 
     result
   end
 
   def telegram_remove_profile_photo!
     result = telegram_api_request("removeMyProfilePhoto", {})
-    raise TelegramError, result["description"] unless result["ok"]
+    raise_telegram_refusal!(result) unless result["ok"]
 
     result
   end
 
   private
+
+  def raise_telegram_refusal!(result)
+    code = result["error_code"].to_i
+    if code == 429 || code >= 500
+      raise TelegramRetryableError.new(result["description"], retry_after: result.dig("parameters", "retry_after"))
+    end
+
+    raise TelegramError, result["description"]
+  end
 
   def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:, reply_parameters: nil)
     ensure_telegram_chat_sendable!(chat_id)

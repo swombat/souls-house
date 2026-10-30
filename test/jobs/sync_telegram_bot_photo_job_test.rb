@@ -2,7 +2,7 @@ require "test_helper"
 require "ostruct"
 require "webmock/minitest"
 
-class SyncTelegramBotPhotoJobTest < ActiveSupport::TestCase
+class SyncTelegramBotPhotoJobTest < ActiveJob::TestCase
 
   BASE = "https://api.telegram.org/bot123:ABC".freeze
 
@@ -61,9 +61,65 @@ class SyncTelegramBotPhotoJobTest < ActiveSupport::TestCase
 
   test "a refusal from Telegram is logged, not retried" do
     attach_png
-    stub_request(:post, "#{BASE}/setMyProfilePhoto").to_return(body: { ok: false, description: "Unauthorized" }.to_json)
+    stub_request(:post, "#{BASE}/setMyProfilePhoto")
+      .to_return(body: { ok: false, error_code: 401, description: "Unauthorized" }.to_json)
 
-    assert_nothing_raised { SyncTelegramBotPhotoJob.perform_now(@agent) }
+    assert_no_enqueued_jobs(only: SyncTelegramBotPhotoJob) do
+      assert_nothing_raised { SyncTelegramBotPhotoJob.perform_now(@agent) }
+    end
+  end
+
+  test "one sync at a time per resident, so an older upload can't finish after a newer one" do
+    other = agents(:code_reviewer)
+
+    assert_equal 1, SyncTelegramBotPhotoJob.concurrency_limit
+    assert_equal SyncTelegramBotPhotoJob.new(@agent).concurrency_key,
+      SyncTelegramBotPhotoJob.new(@agent, remove_when_missing: false).concurrency_key
+    assert_not_equal SyncTelegramBotPhotoJob.new(@agent).concurrency_key, SyncTelegramBotPhotoJob.new(other).concurrency_key
+  end
+
+  test "a job queued for a picture that was removed before it ran removes the bot's photo" do
+    attach_png
+    job = SyncTelegramBotPhotoJob.new(@agent)
+    @agent.retire_avatar!
+    stub_request(:post, "#{BASE}/removeMyProfilePhoto").to_return(body: { ok: true, result: true }.to_json)
+
+    job.perform_now
+
+    assert_requested :post, "#{BASE}/removeMyProfilePhoto", times: 1
+    assert_not_requested :post, "#{BASE}/setMyProfilePhoto"
+  end
+
+  test "flood control is retried after the wait Telegram asks for" do
+    freeze_time
+    stub_request(:post, "#{BASE}/removeMyProfilePhoto")
+      .to_return(body: { ok: false, error_code: 429, description: "Too Many Requests: retry after 7",
+                         parameters: { retry_after: 7 } }.to_json)
+
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob, args: [ @agent ], at: 8.seconds.from_now) do
+      SyncTelegramBotPhotoJob.perform_now(@agent)
+    end
+  end
+
+  test "Telegram's own trouble is retried, an HTML error page included" do
+    stub_request(:post, "#{BASE}/removeMyProfilePhoto")
+      .to_return(body: { ok: false, error_code: 503, description: "Service Unavailable" }.to_json)
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob) { SyncTelegramBotPhotoJob.perform_now(@agent) }
+
+    clear_enqueued_jobs
+    stub_request(:post, "#{BASE}/removeMyProfilePhoto").to_return(status: 502, body: "<html>Bad Gateway</html>")
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob) { SyncTelegramBotPhotoJob.perform_now(@agent) }
+  end
+
+  test "flood control stops being retried after the last attempt" do
+    stub_request(:post, "#{BASE}/removeMyProfilePhoto")
+      .to_return(body: { ok: false, error_code: 429, description: "Too Many Requests", parameters: { retry_after: 3 } }.to_json)
+    job = SyncTelegramBotPhotoJob.new(@agent)
+    job.executions = SyncTelegramBotPhotoJob::ATTEMPTS - 1
+
+    assert_no_enqueued_jobs(only: SyncTelegramBotPhotoJob) do
+      assert_nothing_raised { job.perform_now }
+    end
   end
 
   private
