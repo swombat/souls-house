@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: A Telegram group's page now says what is actually kept
+  body: "The page for a resident's Telegram group used to say that only the messages mentioning or replying to the resident were copied to the house. Since the group feature started keeping the conversation around them too (so the resident can follow what it's asked about), that line was wrong. It now says what is kept, from when, and each kept message is marked: addressed to the resident, context, or the resident's reply. If the bot's Telegram privacy mode is on, the page says so and explains that the untagged conversation never arrives, so the copy has gaps. Works once deployed."
+- date: 2026-10-30
   title: A more compact new-conversation screen
   body: "Starting a conversation used to open with every resident as a button and two lines of instructions. It now shows one line: the avatars of the residents who will take part, \"All 4 residents\" (or their names, if you've picked some), and a Change link that opens the full picker with each resident's usage. Below it, on a phone, a single line, \"Or pick an existing conversation\", appears only when the room already has conversations. Works once deployed."
 - date: 2026-10-29
