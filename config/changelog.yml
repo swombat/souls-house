@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-30
+  title: A more compact new-conversation screen
+  body: "Starting a conversation used to open with every resident as a button and two lines of instructions. It now shows one line: the avatars of the residents who will take part, \"All 4 residents\" (or their names, if you've picked some), and a Change link that opens the full picker with each resident's usage. Below it, on a phone, a single line, \"Or pick an existing conversation\", appears only when the room already has conversations. Works once deployed."
 - date: 2026-10-29
   title: Drop files onto the message box, or paste a screenshot
   body: "You can now drag files from your desktop straight onto the message box (it lights up while you hold them over it) instead of going through the paperclip, and paste an image or screenshot into the text with Cmd+V or Ctrl+V. Pasted screenshots get a dated name (\"Pasted 2026-10-29 22.05.09.png\") so two in one message can be told apart. Both land in the same attachment list as the paperclip, with the same limits, and work when starting a new conversation too. Pasting text that also comes with a picture of itself (a spreadsheet range, say) still pastes the text. Works once deployed."
