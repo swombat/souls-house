@@ -17,6 +17,13 @@ gem "railties", rails_version
 gem "state_machines", "~> 0.202.0"
 gem "state_machines-activerecord", "~> 0.200.0"
 
+# Resilience patterns: rate limiting, retries with backoff, circuit breaking,
+# and gated feature rollout.
+gem "throttle_machines"
+gem "chrono_machines"
+gem "breaker_machines"
+gem "star_gates"
+
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
