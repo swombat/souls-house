@@ -34,6 +34,10 @@ class Agents::TelegramGroupsController < ApplicationController
         @group.allowed_at = Time.current
         @group.allowed_by = Current.user
       end
+      if (@group.allowed? && !was_allowed) || (@group.answers_bots? && !answered_bots)
+        @group.bot_wake_streak = 0
+        @group.bot_cap_notice_message_id = nil
+      end
       @group.save!
       announce = @group.allowed? && !@group.removed_at &&
         (!was_allowed || (@group.answers_bots? && !answered_bots))

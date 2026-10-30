@@ -100,6 +100,25 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     assert @group.allowed?
   end
 
+  test "owner re-enablement resets a capped streak but repeated saves do not" do
+    sign_in_as(@owner)
+    [
+      [ { allowed: false, answers_bots: true }, { allowed: true } ],
+      [ { allowed: true, answers_bots: false }, { answers_bots: true } ]
+    ].each do |state, enable|
+      @group.update!(**state, bot_wake_streak: 3, bot_cap_notice_message_id: 123)
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: enable
+      assert_response :redirect
+      assert_equal 0, @group.reload.bot_wake_streak
+      assert_nil @group.bot_cap_notice_message_id
+
+      @group.update!(bot_wake_streak: 3, bot_cap_notice_message_id: 456)
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: enable
+      assert_equal 3, @group.reload.bot_wake_streak
+      assert_equal 456, @group.bot_cap_notice_message_id
+    end
+  end
+
   test "enabling a group and bot answers together queues only one notice" do
     sign_in_as(@owner)
     assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
