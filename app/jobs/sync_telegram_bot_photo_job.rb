@@ -1,4 +1,4 @@
-# Makes a resident's Telegram bot wear the resident's picture. souls.house is
+# Makes a resident's Telegram bot wear the resident's picture. The house is
 # the source of truth: a picture set here (by a member on the Appearance tab
 # or by the resident through its API) replaces whatever the bot had, and
 # removing it here removes it there. Linking a bot pushes the picture if the
