@@ -397,6 +397,53 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_match(/kept the existing ssh aliases/, out)
   end
 
+  test "with no peers yet, a changed manifest alias still applies and the seen peers are kept (#681)" do
+    work = ->(machine) { [ { "alias" => "work", "machine" => machine } ] }
+    write_manifest(connection_id: "svc_1", hosts: work.call("100.64.0.2"))
+    set_world(world.merge("backend" => "Running", "peers" => DELL_PEER))
+    assert tailnet("up").last.success?
+    stop_fake_daemon
+
+    write_manifest(connection_id: "svc_1", hosts: work.call("100.64.0.3"))
+    set_world(world.merge("empty_peer_polls" => 1_000))
+    _, err, status = tailnet("boot")
+    assert status.success?, err
+    config = File.read(@ssh_config)
+    assert_includes config, "Host work\n    HostName 100.64.0.3\n"
+    assert_includes config, "Host dell\n    HostName 100.64.0.2\n", "the peer seen last time is kept"
+    assert_equal 1, config.scan("Host work\n").size
+  end
+
+  test "with no peers yet, an alias removed from the manifest is removed (#681)" do
+    write_manifest(connection_id: "svc_1", hosts: [ { "alias" => "work", "machine" => "100.64.0.7" } ])
+    set_world(world.merge("backend" => "Running", "peers" => DELL_PEER))
+    assert tailnet("up").last.success?
+    stop_fake_daemon
+
+    write_manifest(connection_id: "svc_1", hosts: [])
+    set_world(world.merge("empty_peer_polls" => 1_000))
+    assert tailnet("boot").last.success?
+    config = File.read(@ssh_config)
+    assert_not_includes config, "Host work\n"
+    assert_not_includes config, "100.64.0.7"
+    assert_includes config, "Host dell\n"
+  end
+
+  test "peers seen on one integration are not carried to another (#681)" do
+    write_manifest(connection_id: "svc_1", hosts: [])
+    set_world(world.merge("backend" => "Running", "peers" => DELL_PEER))
+    assert tailnet("up").last.success?
+    assert_includes File.read(@ssh_config), "Host dell\n"
+
+    set_world(world.merge("valid_key" => "tskey-auth-second", "empty_peer_polls" => 1_000))
+    write_manifest(connection_id: "svc_2", key: "tskey-auth-second", hosts: [])
+    out, err, status = tailnet("up")
+    assert status.success?, err
+    assert_equal 1, world["logged_out"]
+    assert_not_includes File.read(@ssh_config).to_s, "Host dell\n"
+    assert_no_match(/kept the existing ssh aliases/, out)
+  end
+
   test "a running daemon with no peers does not wait (only a fresh one does)" do
     write_manifest(connection_id: "svc_1", hosts: [])
     set_world(world.merge("backend" => "Running", "peers" => {}))

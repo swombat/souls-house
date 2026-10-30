@@ -290,12 +290,16 @@ def up(as_json: bool = False) -> int:
         else:
             if fresh_daemon and not peer_hosts(state):
                 state = wait_for_peers(state)
-            if not peer_hosts(state) and managed_aliases_written():
-                # Running with no peers is what an unready netmap looks like.
-                # Removing aliases is forget()'s job, not this one's.
-                kept = True
+            peers = peer_hosts(state)
+            if peers:
+                remember_peers(entry, peers)
             else:
-                write_ssh_config(all_hosts(entry, state))
+                # Running with no peers is what an unready netmap looks like.
+                # Keep the machines this connection last saw; the manifest's
+                # own aliases (and removals) always apply as they are now.
+                peers = remembered_peers(entry)
+                kept = bool(peers)
+            write_ssh_config(merge_hosts(hosts_of(entry), peers))
 
     report = build_report(entry, state, ping=False)
     if as_json:
@@ -338,11 +342,35 @@ def wait_for_peers(state: dict) -> dict:
     return state
 
 
-def managed_aliases_written() -> bool:
+PEERS_FILE = "peers.json"
+
+
+def remember_peers(entry: dict, peers: list[dict]) -> None:
+    """Record the machines this connection last saw.
+
+    Kept in the node state dir, so leave_tailnet() deletes it with the node,
+    and tagged with the connection so another integration never inherits it."""
+    record = {"connection_id": entry.get("connection_id"),
+              "peers": [{"alias": p["alias"], "machine": p["machine"]} for p in peers]}
+    path = STATE_DIR / PEERS_FILE
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(record))
+    temp.replace(path)
+
+
+def remembered_peers(entry: dict) -> list[dict]:
     try:
-        return BEGIN_MARK in SSH_CONFIG.read_text()
-    except FileNotFoundError:
-        return False
+        record = json.loads((STATE_DIR / PEERS_FILE).read_text())
+    except (FileNotFoundError, ValueError):
+        return []
+    if not isinstance(record, dict) or record.get("connection_id") != entry.get("connection_id"):
+        return []
+    peers = []
+    for peer in record.get("peers") or []:
+        alias, machine = str(peer.get("alias", "")), str(peer.get("machine", ""))
+        if ALIAS_PATTERN.match(alias) and MACHINE_PATTERN.match(machine):
+            peers.append({"alias": alias, "machine": machine})
+    return peers
 
 
 def join_with_key(entry: dict, state: dict) -> None:
@@ -626,9 +654,12 @@ def peer_hosts(state: dict) -> list[dict]:
 def all_hosts(entry: dict, state: dict) -> list[dict]:
     """Every machine on the tailnet, plus any aliases set on the integration
     (those win when a name is taken by both)."""
-    configured = hosts_of(entry)
+    return merge_hosts(hosts_of(entry), peer_hosts(state))
+
+
+def merge_hosts(configured: list[dict], peers: list[dict]) -> list[dict]:
     taken = {host["alias"] for host in configured}
-    return configured + [host for host in peer_hosts(state) if host["alias"] not in taken]
+    return configured + [host for host in peers if host["alias"] not in taken]
 
 
 # ── ssh ────────────────────────────────────────────────────────────────────
