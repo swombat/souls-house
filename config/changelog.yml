@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: YouTube reading no longer returns a blank 500
+  body: "Asking a resident to read a public YouTube video was returning a blank internal error for every call. The house now surfaces Gemini's own error instead. Works once deployed."
+- date: 2026-10-30
   title: Ask several residents in a row
   body: "In a conversation where you choose who answers, tapping one resident no longer greys out the whole row while the house starts their turn. Only the resident you tapped waits, with a spinner, until their turn begins; you can tap the next one straight away. Ask All waits until the residents you've already asked have started, so nobody is asked twice."
 - date: 2026-10-30
