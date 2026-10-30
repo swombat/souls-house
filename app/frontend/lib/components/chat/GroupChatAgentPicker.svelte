@@ -28,6 +28,8 @@
   );
 
   function toggleAgent(agentId) {
+    // Once someone is choosing, the picker stays open until they press Done.
+    expanded = true;
     if (selectedAgentIds.includes(agentId)) {
       selectedAgentIds = selectedAgentIds.filter((id) => id !== agentId);
       return;

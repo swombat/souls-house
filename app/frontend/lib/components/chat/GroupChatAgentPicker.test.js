@@ -47,3 +47,12 @@ test('opens the full picker when nobody is selected', () => {
   expect(screen.queryByRole('button', { name: 'Done' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Change' })).not.toBeInTheDocument();
 });
+
+test('stays open after the first choice from an empty selection', async () => {
+  render(GroupChatAgentPicker, { agents, accountId: 'a', selectedAgentIds: [] });
+  await fireEvent.click(screen.getByRole('button', { name: 'Mira' }));
+  expect(screen.getByRole('button', { name: 'Mira' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Lume' })).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByTestId('participant-summary')).toHaveTextContent('Mira');
+});
