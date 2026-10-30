@@ -72,6 +72,27 @@ module Api
         assert_equal "URL must identify one public YouTube video", JSON.parse(response.body)["error"]
       end
 
+      test "returns 502 JSON when Gemini wraps an error in an array" do
+        reader = Object.new
+        reader.define_singleton_method(:call) do |**|
+          raise YoutubeVideoReader::UpstreamError, "API key not valid. Please pass a valid API key."
+        end
+
+        YoutubeVideoReader.stub(:new, -> { reader }) do
+          post api_v1_youtube_reads_url,
+            params: {
+              url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+              operation: "ask",
+              question: "In one sentence, what happens?"
+            },
+            headers: { "Authorization" => "Bearer #{@api_key.raw_token}" },
+            as: :json
+        end
+
+        assert_response :bad_gateway
+        assert_equal "API key not valid. Please pass a valid API key.", JSON.parse(response.body)["error"]
+      end
+
     end
   end
 end

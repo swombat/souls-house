@@ -156,7 +156,7 @@ class YoutubeVideoReader
   end
 
   def parse_response(response, video_url:, operation:)
-    payload = JSON.parse(response.body.to_s.dup.force_encoding("UTF-8"))
+    payload = unwrap_gemini_payload(JSON.parse(response.body.to_s.dup.force_encoding("UTF-8")))
     unless response.is_a?(Net::HTTPSuccess) && payload["status"] == "completed"
       message = payload.dig("error", "message").presence || "Gemini could not read this video"
       raise UpstreamError, message
@@ -173,8 +173,21 @@ class YoutubeVideoReader
       content:,
       usage: normalized_usage(payload["usage"])
     }
-  rescue JSON::ParserError
+  rescue JSON::ParserError, TypeError
     raise UpstreamError, "Gemini returned an unreadable response"
+  end
+
+  # Gemini's Interactions API wraps some errors as `[{ "error" => { ... } }]`.
+  # Indexing that array with "status" is a TypeError and became the live 500
+  # on /api/v1/youtube_reads (#675).
+  def unwrap_gemini_payload(payload)
+    case payload
+    when Hash then payload
+    when Array
+      payload.find { |item| item.is_a?(Hash) } || {}
+    else
+      {}
+    end
   end
 
   def extract_output_text(payload)

@@ -81,10 +81,59 @@ class YoutubeVideoReaderTest < ActiveSupport::TestCase
     assert_equal "A question is required for the ask operation", error.message
   end
 
+  test "raises UpstreamError when Gemini wraps the error in a JSON array" do
+    reader = YoutubeVideoReader.new(
+      api_key: "test-key",
+      transport: ->(*) {
+        http_response(
+          [
+            {
+              "error" => {
+                "code" => 400,
+                "message" => "API key not valid. Please pass a valid API key.",
+                "status" => "INVALID_ARGUMENT"
+              }
+            }
+          ],
+          success: false
+        )
+      }
+    )
+
+    error = assert_raises(YoutubeVideoReader::UpstreamError) do
+      reader.call(
+        url: "https://youtu.be/jNQXAC9IVRw",
+        operation: "ask",
+        question: "In one sentence, what happens?"
+      )
+    end
+    assert_equal "API key not valid. Please pass a valid API key.", error.message
+  end
+
+  test "raises UpstreamError for a Gemini object error without exploding" do
+    reader = YoutubeVideoReader.new(
+      api_key: "test-key",
+      transport: ->(*) {
+        http_response(
+          {
+            "error" => { "message" => "Gemini could not read this video" },
+            "status" => "failed"
+          },
+          success: false
+        )
+      }
+    )
+
+    error = assert_raises(YoutubeVideoReader::UpstreamError) do
+      reader.call(url: "https://youtu.be/jNQXAC9IVRw", operation: "transcript")
+    end
+    assert_equal "Gemini could not read this video", error.message
+  end
+
   private
 
   def success_response(text:, usage: {})
-    body = {
+    http_response({
       "status" => "completed",
       "model" => "gemini-test",
       "usage" => usage,
@@ -94,12 +143,15 @@ class YoutubeVideoReaderTest < ActiveSupport::TestCase
           "content" => [ { "type" => "text", "text" => text } ]
         }
       ]
-    }.to_json
-    Struct.new(:body) do
+    }, success: true)
+  end
+
+  def http_response(body, success:)
+    Struct.new(:body, :success) do
       def is_a?(klass)
-        klass == Net::HTTPSuccess || super
+        (success && klass == Net::HTTPSuccess) || super
       end
-    end.new(body)
+    end.new(body.is_a?(String) ? body : body.to_json, success)
   end
 
 end
