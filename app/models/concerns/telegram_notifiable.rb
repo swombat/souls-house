@@ -210,6 +210,27 @@ module TelegramNotifiable
     "https://t.me/#{telegram_bot_username}?start=#{token}"
   end
 
+  # The bot's own profile photo (Bot API setMyProfilePhoto). Telegram takes
+  # a static photo only as a fresh JPEG upload, attached by name.
+  def telegram_set_profile_photo!(jpeg_io)
+    jpeg_io.rewind
+    form = [
+      [ "photo", { type: "static", photo: "attach://profile_photo" }.to_json ],
+      [ "profile_photo", jpeg_io, { filename: "profile.jpg", content_type: "image/jpeg" } ]
+    ]
+    result = telegram_multipart_request("setMyProfilePhoto", form)
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
+  end
+
+  def telegram_remove_profile_photo!
+    result = telegram_api_request("removeMyProfilePhoto", {})
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
+  end
+
   private
 
   def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:, reply_parameters: nil)
@@ -220,17 +241,21 @@ module TelegramNotifiable
     form.concat([ [ "caption", caption ], [ "parse_mode", "HTML" ] ]) if caption.present?
     form << [ media_key.to_s, media, { filename: filename, content_type: content_type } ]
 
+    result = telegram_multipart_request(method, form)
+
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
+  end
+
+  def telegram_multipart_request(method, form)
     uri = telegram_api_uri(method)
     request = Net::HTTP::Post.new(uri)
     request.set_form(form, "multipart/form-data")
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|
       http.request(request)
     end
-    result = JSON.parse(response.body)
-
-    raise TelegramError, result["description"] unless result["ok"]
-
-    result
+    JSON.parse(response.body)
   end
 
   # The send boundary for groups: read from the database at the moment of

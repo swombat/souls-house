@@ -16,6 +16,7 @@ module Api
         if agent.save
           audit_resident(:set_agent_avatar, agent)
           agent.touch # the account list and open conversations redraw with the new face
+          agent.sync_telegram_photo_later
           render json: { avatar_url: agent.reload.avatar_url }
         else
           render_error(agent.errors.full_messages_for(:avatar).to_sentence.presence || agent.errors.full_messages.to_sentence)
@@ -29,6 +30,7 @@ module Api
         agent.retire_avatar!
         audit_resident(:remove_agent_avatar, agent)
         agent.touch
+        agent.sync_telegram_photo_later
         render json: { avatar_url: nil }
       end
 

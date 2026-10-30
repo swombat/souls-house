@@ -69,6 +69,30 @@ class Api::V1::AgentAvatarsControllerTest < ActionDispatch::IntegrationTest
     assert_not @agent.reload.avatar.attached?
   end
 
+  test "with a Telegram bot linked, setting and removing the picture send the bot after it" do
+    @agent.update_columns(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob, args: [ @agent ]) do
+      patch "/api/v1/agent/avatar", params: { avatar: fixture_file_upload("test_avatar.png", "image/png") },
+        headers: auth(@resident_key)
+    end
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob, args: [ @agent ]) do
+      delete "/api/v1/agent/avatar", headers: auth(@resident_key)
+    end
+  end
+
+  test "without a bot, and on a refused change, nothing is sent to Telegram" do
+    assert_no_enqueued_jobs(only: SyncTelegramBotPhotoJob) do
+      patch "/api/v1/agent/avatar", params: { avatar: fixture_file_upload("test_avatar.png", "image/png") },
+        headers: auth(@resident_key)
+    end
+
+    @agent.update_columns(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+    assert_no_enqueued_jobs(only: SyncTelegramBotPhotoJob) do
+      patch "/api/v1/agent/avatar", params: {}, as: :json, headers: auth(@resident_key)
+    end
+  end
+
   private
 
   def auth(key)

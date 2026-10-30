@@ -313,6 +313,12 @@ class Agent < ApplicationRecord
     end
   end
 
+  # After the picture is set or removed here: the resident's Telegram bot
+  # follows (SyncTelegramBotPhotoJob). No-op without a linked bot.
+  def sync_telegram_photo_later
+    SyncTelegramBotPhotoJob.perform_later(self) if telegram_configured?
+  end
+
   def model_label
     return HouseInference::Offering.find(model_id).fetch(:label) if HouseInference::Offering.find(model_id)
 

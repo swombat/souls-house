@@ -11,6 +11,7 @@ class Agents::AvatarsController < ApplicationController
     if @agent.save
       audit(:set_agent_avatar, @agent)
       @agent.touch # the account list and open conversations redraw with the new face
+      @agent.sync_telegram_photo_later
       respond_ok("Picture updated")
     else
       respond_error(@agent.errors.full_messages_for(:avatar).to_sentence.presence || @agent.errors.full_messages.to_sentence)
@@ -23,6 +24,7 @@ class Agents::AvatarsController < ApplicationController
     @agent.retire_avatar!
     audit(:remove_agent_avatar, @agent)
     @agent.touch
+    @agent.sync_telegram_photo_later
     respond_ok("Picture removed")
   end
 

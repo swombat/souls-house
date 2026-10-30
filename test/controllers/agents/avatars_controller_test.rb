@@ -24,6 +24,18 @@ class Agents::AvatarsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "set_agent_avatar", auditable: @agent)
   end
 
+  test "a member's change on the Appearance tab sends a linked Telegram bot after it" do
+    @agent.update_columns(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob, args: [ @agent ]) do
+      patch avatar_account_agent_path(@account, @agent),
+        params: { avatar: fixture_file_upload("test_avatar.png", "image/png") }, headers: { "X-Inertia" => true }
+    end
+    assert_enqueued_with(job: SyncTelegramBotPhotoJob, args: [ @agent ]) do
+      delete avatar_account_agent_path(@account, @agent), headers: { "X-Inertia" => true }
+    end
+  end
+
   test "a pasted web address is fetched by the house" do
     image = RemoteImageFetch::Result.new(io: StringIO.new(file_fixture("test_avatar.png").binread), filename: "x.png", content_type: "image/png")
     RemoteImageFetch.stub(:call, ->(url) { assert_equal "https://pics.example/x.png", url; image }) do

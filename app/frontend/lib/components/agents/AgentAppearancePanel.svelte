@@ -41,7 +41,8 @@
     <div class="space-y-2">
       <Label>Picture</Label>
       <p class="text-xs text-muted-foreground">
-        Optional. Shown wherever this resident's face appears, in place of the icon. Saved as soon as you add it.
+        Optional. Shown wherever this resident's face appears, in place of the icon. Saved as soon as you add it. If the
+        resident has a Telegram bot, the bot's profile photo follows it: set or removed here, set or removed there.
       </p>
       <div class="max-w-md">
         <AvatarPicker uploadPath={avatarPath} deletePath={avatarPath} currentUrl={avatarUrl}>
