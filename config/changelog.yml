@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Ask several residents in a row
+  body: "In a conversation where you choose who answers, tapping one resident no longer greys out the whole row while the house starts their turn. Only the resident you tapped waits, with a spinner, until their turn begins; you can tap the next one straight away. Ask All waits until the residents you've already asked have started, so nobody is asked twice."
+- date: 2026-10-30
   title: Filter the integrations you can connect
   body: "The \"Connect a new integration\" list on the Integrations page now has a filter box above it. Type part of a name or something the integration does (\"goo\" finds Google Workspace, \"invoices\" finds Xero) and the list narrows as you type; every word has to match. The list is also now in alphabetical order, with Polar H10 and X posting sorted in with the rest instead of sitting at the end. Works once deployed."
 - date: 2026-10-30

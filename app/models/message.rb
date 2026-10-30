@@ -233,7 +233,8 @@ class Message < ApplicationRecord
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link do |hash, options|
+                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link,
+                  :author_agent_id do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end
@@ -303,6 +304,13 @@ class Message < ApplicationRecord
     else
       "System"
     end
+  end
+
+  # The resident who wrote this, as the obfuscated id the frontend uses for
+  # residents (agent_id in the payload is the raw column). Lets the trigger bar
+  # release only the resident whose reply arrived.
+  def author_agent_id
+    Agent.encode_id(agent_id) if agent_id && !safeguard_labelled?
   end
 
   def author_type
