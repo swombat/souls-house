@@ -60,6 +60,9 @@ TAILSCALE = os.environ.get("SOULSHOUSE_TAILSCALE_BINARY", "tailscale")
 TAILSCALED = os.environ.get("SOULSHOUSE_TAILSCALED_BINARY", "tailscaled")
 DAEMON_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_DAEMON_WAIT", "15"))
 LOGIN_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_LOGIN_WAIT", "10"))
+# A daemon that has just started says Running from the netmap it cached on
+# disk, which can hold no peers, before control has sent the real one (#681).
+PEER_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_PEER_WAIT", "30"))
 ADMIN_MACHINES_URL = "https://login.tailscale.com/admin/machines"
 
 # What a resident says when its node isn't on the tailnet yet. Not joined is the
@@ -267,7 +270,10 @@ def up(as_json: bool = False) -> int:
             # The node belongs to an integration that is no longer granted.
             # Leave that tailnet before joining this one.
             leave_tailnet()
-        state = ensure_daemon()
+        state = backend_status()
+        fresh_daemon = state is None
+        if fresh_daemon:
+            state = ensure_daemon()
         # Bind before joining, so a node still waiting for sign-in is already
         # recognised as this integration's on the next run.
         (STATE_DIR / "connection").write_text(f"{entry.get('connection_id')}\n")
@@ -278,21 +284,65 @@ def up(as_json: bool = False) -> int:
                 start_sign_in(state)
             state = backend_status() or state
         ensure_ssh_key()
-        write_ssh_config(all_hosts(entry, state) if state.get("BackendState") == "Running" else [])
+        kept = False
+        if state.get("BackendState") != "Running":
+            write_ssh_config([])
+        else:
+            if fresh_daemon and not peer_hosts(state):
+                state = wait_for_peers(state)
+            if not peer_hosts(state) and managed_aliases_written():
+                # Running with no peers is what an unready netmap looks like.
+                # Removing aliases is forget()'s job, not this one's.
+                kept = True
+            else:
+                write_ssh_config(all_hosts(entry, state))
 
     report = build_report(entry, state, ping=False)
     if as_json:
+        if kept:
+            report["note"] = KEPT_ALIASES_NOTE
         print(json.dumps(report, indent=2))
         return 0
     if report["backend_state"] == "Running":
         print(f"on the tailnet as {report['node'] or node_hostname()}")
         for host in report["hosts"]:
             print(f"  ssh {host['alias']}  →  {host['target']}")
+        if kept:
+            print(KEPT_ALIASES_NOTE)
     else:
         print(f"not joined yet (state: {report['backend_state']})")
         if report["help"]:
             print(report["help"])
     return 0
+
+
+KEPT_ALIASES_NOTE = (
+    "The tailnet hasn't sent its machine list yet, so I kept the existing ssh aliases. "
+    "Run `soulshouse-tailnet up` again in a minute to refresh them."
+)
+
+
+def wait_for_peers(state: dict) -> dict:
+    """Poll a freshly started daemon until control has sent its peers.
+
+    Bounded: a tailnet can genuinely have no other machines."""
+    deadline = time.monotonic() + PEER_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        current = backend_status()
+        if current is None:
+            continue
+        state = current
+        if state.get("BackendState") != "Running" or peer_hosts(state):
+            return state
+    return state
+
+
+def managed_aliases_written() -> bool:
+    try:
+        return BEGIN_MARK in SSH_CONFIG.read_text()
+    except FileNotFoundError:
+        return False
 
 
 def join_with_key(entry: dict, state: dict) -> None:

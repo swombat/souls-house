@@ -50,7 +50,13 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
         if world["backend"] == "NeedsLogin" and world.get("auth_url"):
             report["AuthURL"] = world["auth_url"]
         if world["backend"] == "Running":
-            report["Peer"] = world.get("peers", {})
+            # A freshly started daemon reports Running from its cached netmap
+            # before control has sent the peers (#681).
+            if world.get("empty_peer_polls", 0) > 0:
+                world["empty_peer_polls"] -= 1; save()
+                report["Peer"] = {}
+            else:
+                report["Peer"] = world.get("peers", {})
         print(json.dumps(report))
     elif cmd == "up":
         key = next((a.split("file:", 1)[1] for a in args if a.startswith("--auth-key=file:")), None)
@@ -362,6 +368,44 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_equal 1, world["login_starts"]
   end
 
+  test "boot waits for the peers when a fresh daemon reports Running before its netmap (#681)" do
+    write_manifest(connection_id: "svc_1", hosts: [])
+    set_world(world.merge("backend" => "Running", "peers" => DELL_PEER))
+    assert tailnet("up").last.success?
+    assert_includes File.read(@ssh_config), "Host dell\n"
+    stop_fake_daemon # as after a container restart
+
+    set_world(world.merge("empty_peer_polls" => 3))
+    out, err, status = tailnet("boot")
+    assert status.success?, err
+    assert_includes out, "ssh dell"
+    assert_includes File.read(@ssh_config), "Host dell\n"
+    assert_equal 0, world["empty_peer_polls"], "it polled until the peers arrived"
+  end
+
+  test "a peer list that never arrives keeps the aliases already written (#681)" do
+    write_manifest(connection_id: "svc_1", hosts: [])
+    set_world(world.merge("backend" => "Running", "peers" => DELL_PEER))
+    assert tailnet("up").last.success?
+    config = File.read(@ssh_config)
+    stop_fake_daemon
+
+    set_world(world.merge("empty_peer_polls" => 1_000))
+    out, err, status = tailnet("boot")
+    assert status.success?, err
+    assert_equal config, File.read(@ssh_config), "an unready netmap must not erase the aliases"
+    assert_match(/kept the existing ssh aliases/, out)
+  end
+
+  test "a running daemon with no peers does not wait (only a fresh one does)" do
+    write_manifest(connection_id: "svc_1", hosts: [])
+    set_world(world.merge("backend" => "Running", "peers" => {}))
+    assert tailnet("up").last.success?
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    assert tailnet("up").last.success?
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 1.5
+  end
+
   test "status without a grant or a daemon says so and exits 3" do
     out, _, status = tailnet("status")
     assert_equal 3, status.exitstatus
@@ -369,6 +413,10 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
   end
 
   private
+
+  DELL_PEER = {
+    "k1" => { "DNSName" => "dell.tail1234.ts.net.", "HostName" => "dell", "TailscaleIPs" => [ "100.64.0.2" ], "Online" => true, "OS" => "linux" }
+  }.freeze
 
   def tailnet(*args)
     Open3.capture3(
@@ -379,6 +427,7 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
         "SOULSHOUSE_TAILNET_SSH_DIR" => File.join(@dir, "ssh-keys"),
         "SOULSHOUSE_TAILNET_SSH_CONFIG" => @ssh_config,
         "SOULSHOUSE_TAILNET_DAEMON_WAIT" => "10",
+        "SOULSHOUSE_TAILNET_PEER_WAIT" => "2",
         "AGENT_SLUG" => "test",
         "FAKE_TS_WORLD" => @world,
         "FAKE_TS_LOG" => @log
