@@ -13,7 +13,7 @@
     agentIsResponding = false,
     activeRuntimeAgentIds = [],
     runtimeInteractions = [],
-    lastReply = null,
+    latestReplies = {},
     fileUploadConfig = {},
     onAgentTrigger = () => {},
     onSent = () => {},
@@ -32,7 +32,7 @@
     disabled={!chat?.respondable}
     {activeRuntimeAgentIds}
     {runtimeInteractions}
-    {lastReply}
+    {latestReplies}
     onTrigger={onAgentTrigger} />
 {/if}
 

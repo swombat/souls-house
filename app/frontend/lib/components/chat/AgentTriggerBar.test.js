@@ -135,7 +135,7 @@ test("an external resident is released by its own reply, not by anyone else's ru
     const { rerender } = render(AgentTriggerBar, {
       accountId: 'account',
       chatId: 'chat',
-      lastReply: { id: 'm0', agentId: 'two' },
+      latestReplies: { two: 'm0' },
       agents: [
         { id: 'one', name: 'One' },
         { id: 'two', name: 'Two', runtime: 'external' },
@@ -147,14 +147,14 @@ test("an external resident is released by its own reply, not by anyone else's ru
     await rerender({
       activeRuntimeAgentIds: ['one'],
       runtimeInteractions: [{ id: 'run-1', agent_id: 'one', active: true }],
-      lastReply: { id: 'm1', agentId: 'one' },
+      latestReplies: { two: 'm0', one: 'm1' },
     });
     expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Three' })).toBeDisabled();
-    await rerender({ lastReply: { id: 'm2', agentId: 'three' } });
+    await rerender({ latestReplies: { two: 'm0', one: 'm1', three: 'm2' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Three' })).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
-    await rerender({ lastReply: { id: 'm3', agentId: 'two' } });
+    await rerender({ latestReplies: { two: 'm3', one: 'm1', three: 'm2' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled());
   } finally {
     fetchMock.mockRestore();
@@ -190,12 +190,36 @@ test('asking one resident leaves the others askable, and each is released on its
 
     // One's run starts and it replies: only One is released.
     await rerender({
-      lastReply: { id: 'm1', agentId: 'one' },
+      latestReplies: { one: 'm1' },
       activeRuntimeAgentIds: ['one'],
       runtimeInteractions: [{ id: 'run-1', agent_id: 'one', active: true }],
     });
     await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Two' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Three' })).toBeEnabled();
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+// Mira's review of #672: one messages reload can bring several replies at once.
+test('two external residents replying in one update are both released', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true });
+  try {
+    const { rerender } = render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      latestReplies: { two: 'm0' },
+      agents: [
+        { id: 'two', name: 'Two', runtime: 'external' },
+        { id: 'three', name: 'Three', runtime: 'external' },
+      ],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Two' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Three' }));
+    await rerender({ latestReplies: { two: 'm1', three: 'm2' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled());
     expect(screen.getByRole('button', { name: 'Three' })).toBeEnabled();
   } finally {
     fetchMock.mockRestore();

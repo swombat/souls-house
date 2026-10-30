@@ -62,11 +62,14 @@
   const visibleMessages = $derived(visibleChatMessages(history.messages, showAllMessages));
   const activeRuntimeAgentIds = $derived(activity.rows.filter((row) => row.active).map((row) => row.agent_id));
   const agentIsResponding = $derived(activeRuntimeAgentIds.length > 0);
-  // The newest resident reply, with its author, so the trigger bar can release
-  // only the resident who answered.
-  const lastReply = $derived.by(() => {
-    const message = history.messages.findLast((m) => m.role === 'assistant' && m.author_agent_id);
-    return message ? { id: message.id, agentId: message.author_agent_id } : null;
+  // Each resident's newest reply id, so the trigger bar releases exactly the
+  // residents who answered, even when one reload brings several replies.
+  const latestReplies = $derived.by(() => {
+    const byAgent = {};
+    for (const m of history.messages) {
+      if (m.role === 'assistant' && m.author_agent_id) byAgent[m.author_agent_id] = m.id;
+    }
+    return byAgent;
   });
   const updateSync = createDynamicSync();
   let syncSignature = null;
@@ -171,7 +174,7 @@
       {agentIsResponding}
       {activeRuntimeAgentIds}
       runtimeInteractions={activity.rows}
-      {lastReply}
+      {latestReplies}
       fileUploadConfig={file_upload_config}
       onAgentTrigger={response.refreshMessages}
       onSent={sent}

@@ -18,16 +18,16 @@
     disabled = false,
     activeRuntimeAgentIds = [],
     runtimeInteractions = [],
-    // The newest resident reply as { id, agentId }; releases an external
-    // resident (who posts a finished message and leaves no run) only when
-    // the reply is theirs.
-    lastReply = null,
+    // Each resident's newest reply id ({ [agentId]: messageId }). An external
+    // resident (who posts a finished message and leaves no run) is released
+    // when theirs changes.
+    latestReplies = {},
     onTrigger = null,
   } = $props();
   // One entry per resident asked and not yet taken up, so asking one resident
   // never holds the others' buttons. Each entry remembers what the room looked
   // like when that resident was asked: whether it was running, its runtime
-  // rows, and the reply marker.
+  // rows, and their newest reply.
   let pending = $state({});
   let triggeringAll = $state(false);
   const pendingTimeouts = new Map();
@@ -159,7 +159,7 @@
       next[id] = {
         wasActive: activeRuntimeAgentIds.includes(id),
         rowIds: rowIdsFor(id),
-        replyId: lastReply?.id ?? null,
+        replyId: latestReplies[id] ?? null,
       };
       clearTimeout(pendingTimeouts.get(id));
       pendingTimeouts.set(
@@ -182,7 +182,7 @@
       const entry = pending[id];
       if (activeRuntimeAgentIds.includes(id) && !entry.wasActive) return true;
       if (runtimeInteractions.some((row) => row.agent_id === id && !entry.rowIds.has(row.id))) return true;
-      return lastReply?.agentId === id && lastReply.id !== entry.replyId;
+      return Boolean(latestReplies[id]) && latestReplies[id] !== entry.replyId;
     });
     if (taken.length) clearPending(taken);
   });
