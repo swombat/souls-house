@@ -10,6 +10,11 @@ class HouseInferenceCall < ApplicationRecord
   validates :charge_usd, numericality: { greater_than_or_equal_to: 0 }
 
   scope :on_grants, -> { where.not(house_inference_grant_id: nil) }
+  # Calls the house pays for out of free allowances: the per-user grants and
+  # free-hosting residents' own allowances. They share the house-wide ceiling.
+  scope :free, -> {
+    on_grants.or(where(resident_entitlement_id: ResidentEntitlement.where(state: "complimentary").select(:id)))
+  }
 
   # Idempotent. Missing/ambiguous usage retains the conservative charge; a crash
   # leaves pending admission blocked until an operator reconciles that call.

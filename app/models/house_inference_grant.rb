@@ -24,7 +24,7 @@ class HouseInferenceGrant < ApplicationRecord
         # A resident on a paid plan is funded by its plan; it doesn't claim
         # (or need) the user's one free grant, so editing it needs no
         # permission over the account's credentials.
-        return nil if ResidentEntitlement.paid_for?(agent)
+        return nil if ResidentEntitlement.funds_calls_for?(agent)
         unless agent.account.ai_credentials_manageable_by?(user)
           agent.errors.add(:model_id, 'requires permission to manage account credentials')
           raise ActiveRecord::RecordInvalid, agent
@@ -85,7 +85,7 @@ class HouseInferenceGrant < ApplicationRecord
     end
     # The free house-wide ceiling covers free grants only; paid plans are
     # bounded by their own allowances.
-    if HouseInferenceCall.on_grants.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
+    if HouseInferenceCall.free.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
       raise HouseInference::Error.new('The house-wide inference allowance is currently used up.', code: 'house_allowance_unavailable', status: 503)
     end
   end
