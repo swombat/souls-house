@@ -160,7 +160,7 @@ module Api
       private
 
       def require_residents_enabled!
-        return if Setting.instance.allow_agents?
+        return if Setting.feature_enabled?(:agents)
 
         render json: { error: "Residents are currently disabled" }, status: :forbidden
       end

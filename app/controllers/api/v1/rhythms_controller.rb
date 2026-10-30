@@ -163,7 +163,7 @@ module Api
       # The web Rhythms pages sit behind the agents feature switch. Membership
       # is checked against the account each action acts in (human_account!).
       def require_human_rhythm_access
-        return if Setting.instance.allow_agents?
+        return if Setting.feature_enabled?(:agents)
 
         render json: { error: "This feature is currently disabled" }, status: :forbidden
       end

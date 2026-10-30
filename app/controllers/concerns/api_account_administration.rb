@@ -50,7 +50,7 @@ module ApiAccountAdministration
 
   # The web's require_feature_enabled.
   def require_feature_enabled!(feature)
-    return if Setting.instance.public_send(:"allow_#{feature}?")
+    return if Setting.feature_enabled?(feature)
 
     render_forbidden("This feature is currently disabled")
   end
