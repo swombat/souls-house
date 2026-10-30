@@ -10,6 +10,7 @@ class RunFailureNotice
     "model_unavailable" => "its model isn't available on its subscription",
     "runtime_error" => "the run ended in an error",
     "timed_out" => "the run timed out",
+    "authentication_error" => "the run's output looked like an authentication error",
     "unknown" => "the run failed and the cause isn't identified"
   }.freeze
 
