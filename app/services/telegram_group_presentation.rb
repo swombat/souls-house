@@ -13,6 +13,8 @@ module TelegramGroupPresentation
       id: group.to_param,
       title: group.subscriber_name,
       allowed: group.allowed?,
+      answers_bots: group.answers_bots?,
+      answer_bot_usernames: group.answer_bot_usernames,
       removed: group.removed_at.present?,
       allowed_at: group.allowed_at&.iso8601,
       allowed_by: group.allowed_by && ResidentFacingName.for(group.allowed_by),

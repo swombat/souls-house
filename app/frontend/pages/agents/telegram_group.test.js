@@ -30,7 +30,7 @@ test('says every message the bot receives is kept, and labels addressed, context
   render(TelegramGroup, { agent, group, messages, privacy_mode_on: false, settings_path: '/settings' });
 
   expect(screen.getByTestId('telegram-group-state')).toHaveTextContent(
-    'answers here when someone @mentions it, replies to it, or writes its name'
+    'answers here when a person @mentions it, replies to it, or writes its name'
   );
   expect(screen.getByTestId('telegram-group-kept')).toHaveTextContent(
     'every message the bot receives from it is copied here'
@@ -53,4 +53,39 @@ test('with privacy mode on, says unaddressed conversation may be missing, withou
   expect(note).toHaveTextContent('ordinary unaddressed conversation may be missing');
   expect(note).not.toHaveTextContent('only');
   expect(note).not.toHaveTextContent('never');
+});
+
+test('the group state distinguishes bot answers off, any bot, and selected bot usernames', async () => {
+  const props = { agent, group, messages: [], settings_path: '/settings' };
+  const view = render(TelegramGroup, props);
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('does not answer other bots');
+  await view.rerender({ ...props, group: { ...group, answers_bots: true, answer_bot_usernames: [] } });
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('answers any other bot');
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('never just write its name');
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('at most 3 bot-triggered turns');
+  await view.rerender({ ...props, group: { ...group, answers_bots: true, answer_bot_usernames: ['other_bot'] } });
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('answers @other_bot');
+  expect(screen.getByTestId('telegram-group-state')).not.toHaveTextContent('any other bot');
+});
+
+test('bot-addressed rows use the same addressed label as people, suppressed rows remain context', () => {
+  render(TelegramGroup, {
+    agent,
+    group,
+    settings_path: '/settings',
+    messages: [
+      { ...messages[0], sender_name: 'Other Bot', sender_username: 'other_bot', addressed: true },
+      { ...messages[1], sender_name: 'Other Bot', sender_username: 'other_bot', addressed: false },
+    ],
+  });
+  expect(screen.getAllByTestId('telegram-group-message-label').map((node) => node.textContent)).toEqual([
+    'addressed to Alanis',
+    'context',
+  ]);
+});
+
+test('an off group never claims to answer bots even if its bot setting is on', () => {
+  render(TelegramGroup, { agent, group: { ...group, allowed: false, answers_bots: true }, settings_path: '/settings' });
+  expect(screen.getByTestId('telegram-group-state')).toHaveTextContent('does not read or keep anything');
+  expect(screen.getByTestId('telegram-group-state')).not.toHaveTextContent('answers any other bot');
 });

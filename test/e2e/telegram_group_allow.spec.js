@@ -38,10 +38,31 @@ test('the owner allows a Telegram group from the resident settings', async ({ pa
   await saved;
   await expect(row.getByRole('switch', { name: /Allow .* in E2E group/ })).toBeChecked();
   await expect(row).toContainText('Allowed by');
+  const answerBots = row.getByRole('switch', { name: 'Answer other bots in E2E group' });
+  await expect(answerBots).not.toBeChecked();
+  await row.getByLabel('Bot usernames for E2E group').fill('@Janis_mexzungu_bot');
+  const listSaved = page.waitForResponse(
+    (reply) => /telegram_groups\//.test(reply.url()) && reply.request().method() === 'PATCH'
+  );
+  await row.getByRole('button', { name: 'Save bot list' }).click();
+  await listSaved;
+  await expect(row.getByLabel('Bot usernames for E2E group')).toHaveValue('janis_mexzungu_bot');
+  const botAnswersSaved = page.waitForResponse(
+    (reply) => /telegram_groups\//.test(reply.url()) && reply.request().method() === 'PATCH'
+  );
+  await answerBots.click();
+  await botAnswersSaved;
+  await expect(answerBots).toBeChecked();
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings', exact: true }).last().click();
+  await expect(row.getByRole('switch', { name: 'Answer other bots in E2E group' })).toBeChecked();
+  await expect(row.getByLabel('Bot usernames for E2E group')).toHaveValue('janis_mexzungu_bot');
   await page.screenshot({ path: testInfo.outputPath('telegram-groups-on.png'), fullPage: true });
 
   await row.getByRole('link', { name: 'E2E group' }).click();
-  await expect(page.getByTestId('telegram-group-state')).toContainText('answers here when someone @mentions it');
+  await expect(page.getByTestId('telegram-group-state')).toContainText('answers here when a person @mentions it');
+  await expect(page.getByTestId('telegram-group-state')).toContainText('@janis_mexzungu_bot');
+  await expect(page.getByTestId('telegram-group-state')).toContainText('at most 3 bot-triggered turns');
   await expect(page.getByTestId('telegram-group-kept')).toContainText(
     'every message the bot receives from it is copied here'
   );

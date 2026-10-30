@@ -215,6 +215,237 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert_not group.telegram_messages.sole.addressed?
   end
 
+  test "enabled bot answers accept a tag, text mention and reply" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    text_mention = [ { "type" => "text_mention", "offset" => 0, "length" => 5, "user" => { "id" => 4242 } } ]
+    updates = [
+      bot_message(101),
+      bot_message(102, "Lumen, hi", text_mention),
+      bot_message(103, "yes please", [], reply_to: { "message_id" => 900, "from" => { "id" => 4242, "is_bot" => true } })
+    ]
+
+    updates.each do |update|
+      assert_enqueued_with(job: TelegramAgentTriggerJob) do
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+    assert_equal 3, group.reload.bot_wake_streak
+    assert group.telegram_messages.all?(&:addressed?)
+  end
+
+  test "bot answers never accept bare names, untagged text or a tag of another bot" do
+    group = allowed_group
+    group.update!(answers_bots: true, bot_wake_streak: 2)
+    updates = [
+      bot_message(101, "Group Agent?"),
+      bot_message(102, "plain chatter"),
+      bot_message(103, "@group_bot hi", []),
+      bot_message(104, "@other_bot hi", mention_entity("@other_bot hi", "@other_bot")),
+      bot_message(105, "yes", [], reply_to: { "from" => { "id" => 999 } })
+    ]
+
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      updates.each { |update| ProcessTelegramUpdateJob.perform_now(@agent, update) }
+    end
+    assert_equal 5, group.telegram_messages.count
+    assert group.telegram_messages.none?(&:addressed?)
+    assert_equal 2, group.reload.bot_wake_streak, "bot context must not reset a streak"
+  end
+
+  test "only listed bot usernames can wake when a list is configured" do
+    group = allowed_group
+    group.update!(answers_bots: true, answer_bot_usernames: [ "@Other_Bot" ])
+    allowed = bot_message(101)
+    allowed["message"]["from"]["username"] = "OTHER_BOT"
+    assert_enqueued_with(job: TelegramAgentTriggerJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, allowed)
+    end
+
+    unlisted = bot_message(102)
+    unlisted["message"]["from"]["username"] = "unlisted_bot"
+    unnamed = bot_message(103)
+    unnamed["message"]["from"].delete("username")
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      [ unlisted, unnamed ].each { |update| ProcessTelegramUpdateJob.perform_now(@agent, update) }
+    end
+    assert_equal [ true, false, false ], group.telegram_messages.order(:id).map(&:addressed?)
+    assert_equal 1, group.reload.bot_wake_streak
+  end
+
+  test "bots with no username may wake when the list is empty" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    update = bot_message(101)
+    update["message"]["from"].delete("username")
+
+    assert_enqueued_with(job: TelegramAgentTriggerJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+    assert_equal 1, group.reload.bot_wake_streak
+  end
+
+  test "a bot cannot auto-enable a group even with an owner's linked Telegram id" do
+    link_owner_telegram
+    group = @agent.telegram_groups.create!(telegram_chat_id: GROUP_ID, answers_bots: true)
+    update = bot_message(101)
+    update["message"]["from"]["id"] = 77
+
+    assert_no_enqueued_jobs only: [ TelegramAgentTriggerJob, TelegramGroupNoticeJob ] do
+      assert_no_difference "TelegramMessage.count" do
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+    assert_not group.reload.allowed?
+  end
+
+  test "three bot wakes are admitted and later addressed bot messages become context with one notice" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    3.times { |index| ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101 + index)) }
+    assert_nil group.reload.bot_cap_notice_message_id
+    fourth = bot_message(104)
+
+    notice_args = ->(args) { args == [ group, { bot_cap_message_id: group.reload.bot_cap_notice_message_id } ] }
+    assert_enqueued_with(job: TelegramGroupNoticeJob, args: notice_args) do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, fourth)
+      end
+    end
+    assert_equal group.telegram_messages.find_by!(telegram_message_id: 104).id, group.reload.bot_cap_notice_message_id
+    assert_equal 3, group.bot_wake_streak
+    assert_no_enqueued_jobs only: [ TelegramAgentTriggerJob, TelegramGroupNoticeJob ] do
+      ProcessTelegramUpdateJob.perform_now(@agent, fourth.deep_dup)
+      ProcessTelegramUpdateJob.perform_now(@agent, bot_message(105))
+    end
+    assert_equal [ true, true, true, false, false ], group.telegram_messages.order(:id).map(&:addressed?)
+    assert_equal 3, enqueued_jobs.count { |job| job["job_class"] == "TelegramAgentTriggerJob" }
+  end
+
+  test "an unaddressed human message resets the cap and permits a new streak and notice" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    4.times { |index| ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101 + index)) }
+    first_notice_id = group.reload.bot_cap_notice_message_id
+    human = group_message("a person is here")
+    human["message"]["message_id"] = 200
+
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      ProcessTelegramUpdateJob.perform_now(@agent, human)
+    end
+    assert_equal 0, group.reload.bot_wake_streak
+    assert_nil group.bot_cap_notice_message_id
+    3.times { |index| ProcessTelegramUpdateJob.perform_now(@agent, bot_message(201 + index)) }
+    notice_args = ->(args) { args == [ group, { bot_cap_message_id: group.reload.bot_cap_notice_message_id } ] }
+    assert_enqueued_with(job: TelegramGroupNoticeJob, args: notice_args) do
+      ProcessTelegramUpdateJob.perform_now(@agent, bot_message(204))
+    end
+    assert_equal 3, group.reload.bot_wake_streak
+    assert_equal group.telegram_messages.find_by!(telegram_message_id: 204).id, group.bot_cap_notice_message_id
+    assert_not_equal first_notice_id, group.bot_cap_notice_message_id
+  end
+
+  test "duplicate bot and human updates neither spend nor reset another streak" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    human = group_message("hello")
+    ProcessTelegramUpdateJob.perform_now(@agent, human)
+    bot = bot_message(101)
+    ProcessTelegramUpdateJob.perform_now(@agent, bot)
+
+    assert_no_enqueued_jobs only: [ TelegramAgentTriggerJob, TelegramGroupNoticeJob ] do
+      ProcessTelegramUpdateJob.perform_now(@agent, bot.deep_dup)
+      ProcessTelegramUpdateJob.perform_now(@agent, human.deep_dup)
+    end
+    assert_equal 1, group.reload.bot_wake_streak
+    assert_equal 2, group.telegram_messages.count
+  end
+
+  test "an unsupported human message resets once without waking even when replying to the bot" do
+    group = allowed_group
+    group.update!(answers_bots: true, bot_wake_streak: 3, bot_cap_notice_message_id: 42)
+    human = group_message(nil, [], reply_to: { "from" => { "id" => 4242 } })
+    human["message"]["sticker"] = { "file_id" => "sticker" }
+
+    assert_no_enqueued_jobs only: [ TelegramAgentTriggerJob, PrepareTelegramMediaJob ] do
+      ProcessTelegramUpdateJob.perform_now(@agent, human)
+    end
+    assert_equal 0, group.reload.bot_wake_streak
+    assert_nil group.bot_cap_notice_message_id
+    placeholder = group.telegram_messages.sole
+    assert_equal "[Unsupported Telegram message]", placeholder.text
+    assert_not placeholder.addressed?
+
+    ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101))
+    assert_no_difference "TelegramMessage.count" do
+      ProcessTelegramUpdateJob.perform_now(@agent, human.deep_dup)
+    end
+    assert_equal 1, group.reload.bot_wake_streak
+  end
+
+  test "unavailable residents do not spend bot text wake slots" do
+    group = allowed_group
+    group.update!(answers_bots: true)
+    [
+      [ :active?, false ],
+      [ :paused?, true ],
+      [ :billing_held?, true ],
+      [ :external?, false ],
+      [ :trigger_bearer_token, nil ]
+    ].each_with_index do |(method, value), index|
+      @agent.stub method, value do
+        assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+          ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101 + index))
+        end
+      end
+    end
+    assert_equal 0, group.reload.bot_wake_streak
+    assert_equal 5, group.telegram_messages.count
+    assert group.telegram_messages.none?(&:addressed?)
+  end
+
+  test "bot media reserves a slot and capped media follows the context path" do
+    group = allowed_group
+    group.update!(answers_bots: true, bot_wake_streak: 2)
+    update = bot_photo(101)
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+    assert group.telegram_messages.sole.addressed?
+    assert_equal 3, group.reload.bot_wake_streak
+
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, bot_photo(102))
+      end
+    end
+    assert_not group.telegram_messages.order(:id).last.addressed?
+    assert_equal 3, group.reload.bot_wake_streak
+    assert_no_enqueued_jobs only: [ PrepareTelegramMediaJob, TelegramGroupNoticeJob ] do
+      ProcessTelegramUpdateJob.perform_now(@agent, update.deep_dup)
+    end
+  end
+
+  test "bot media with answers off is context and oversized suppressed media gets no error reply" do
+    group = allowed_group
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, bot_photo(101))
+    end
+    assert_not group.telegram_messages.sole.addressed?
+    group.update!(answers_bots: true, bot_wake_streak: 3, bot_cap_notice_message_id: 42)
+    oversized = bot_photo(102)
+    oversized["message"]["photo"].first["file_size"] = 500.megabytes
+
+    Net::HTTP.stub :post, ->(*) { flunk "nothing may be sent for suppressed oversized media" } do
+      assert_no_enqueued_jobs only: [ PrepareTelegramMediaJob, TelegramAgentTriggerJob ] do
+        ProcessTelegramUpdateJob.perform_now(@agent, oversized)
+      end
+    end
+    message = group.telegram_messages.order(:id).last
+    assert_not message.addressed?
+    assert_equal "failed", message.media_status
+  end
+
   test "in a group that is on, a person writing the resident's name wakes it like a mention" do
     group = allowed_group
     [ "Group Agent?", "what do you think, group agent", "(Group Agent) look at this" ].each_with_index do |text, index|
@@ -324,6 +555,22 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
   end
 
   private
+
+  def bot_message(id, text = "@group_bot ping", entities = nil, reply_to: nil)
+    entities ||= text.include?("@group_bot") ? mention_entity(text) : []
+    update = group_message(text, entities, reply_to: reply_to)
+    update["message"]["message_id"] = id
+    update["message"]["from"] = { "id" => 888, "is_bot" => true, "first_name" => "Other bot", "username" => "other_bot" }
+    update
+  end
+
+  def bot_photo(id)
+    update = bot_message(id)
+    update["message"]["caption"] = update["message"].delete("text")
+    update["message"]["caption_entities"] = update["message"].delete("entities")
+    update["message"]["photo"] = [ { "file_id" => "p1", "width" => 10, "height" => 10, "file_size" => 100 } ]
+    update
+  end
 
   # Ana (Telegram id 77) is user_1, an owner, with her Telegram linked to the bot.
   def link_owner_telegram

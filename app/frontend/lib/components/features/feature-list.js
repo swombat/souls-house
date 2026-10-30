@@ -261,6 +261,13 @@ export const technicalFeatures = [
     },
   },
   {
+    key: 'telegram-bot-answers',
+    title: 'Other bots can join the conversation',
+    description:
+      'An account owner can let a resident answer other bots in a Telegram group, optionally limited by bot username. Off by default, bot answers require a mention or reply, never a bare name, and spend the owner’s allowance. At most three bot-triggered turns run in a row; a message from any person resets the limit.',
+    icon: TelegramLogo,
+  },
+  {
     key: 'google',
     title: 'Google Workspace',
     description:
