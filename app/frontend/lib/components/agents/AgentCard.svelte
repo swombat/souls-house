@@ -21,7 +21,7 @@
     HardDrives,
     Cloud,
   } from 'phosphor-svelte';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { editAccountAgentPath } from '@/routes';
   import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
 
@@ -52,7 +52,6 @@
     canManageProviderSubscription = false,
   } = $props();
   let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
-  let IconComponent = $derived(agentIconFor(agent.icon));
   let failedRuns = $derived(agent.failed_runs);
   // Only the site admin's grid sends these.
   let hostingTitle = $derived(
@@ -77,14 +76,13 @@
   <CardHeader class="pb-3">
     <div class="flex items-start justify-between">
       <div class="flex items-center gap-3">
-        <div
-          class="p-2 rounded-lg {agent.colour
-            ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900`
-            : 'bg-primary/10'}">
-          <IconComponent
-            class="size-5 {agent.colour ? `text-${agent.colour}-700 dark:text-${agent.colour}-300` : 'text-primary'}"
-            weight="duotone" />
-        </div>
+        <AgentAvatar
+          {agent}
+          class="size-9 rounded-lg flex items-center justify-center"
+          fallbackClass={agent.colour ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900` : 'bg-primary/10'}
+          iconClass="size-5 {agent.colour
+            ? `text-${agent.colour}-700 dark:text-${agent.colour}-300`
+            : 'text-primary'}" />
         <div>
           <div class="flex items-center gap-1.5">
             <CardTitle class="text-lg">{agent.name}</CardTitle>

@@ -96,6 +96,7 @@ class AgentsController < ApplicationController
       active_tab: params[:tab],
       local_dev_endpoint_mode: Agents::Config.publish_ports?,
       identity_export_url: identity_export_account_agent_path(current_account, @agent),
+      avatar_path: avatar_account_agent_path(current_account, @agent),
       memory_overview_url: account_agent_memory_overview_path(current_account, @agent),
       memory_history_url: Current.user.is_site_admin? ? history_account_agent_memory_overview_path(current_account, @agent) : nil,
       # The Hosting tab is site-admin only; owners get health, Restart and the

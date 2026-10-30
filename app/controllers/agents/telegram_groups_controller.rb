@@ -10,9 +10,12 @@ class Agents::TelegramGroupsController < ApplicationController
 
   def show
     render inertia: "agents/telegram_group", props: {
-      agent: { id: @agent.to_param, name: @agent.name },
+      agent: { id: @agent.to_param, name: @agent.name, bot_username: @agent.telegram_bot_username },
       group: TelegramGroupPresentation.group(@group, account: current_account, agent: @agent),
       messages: transcript,
+      # getMe said the bot can't read all group messages (BotFather privacy
+      # mode on). nil means the house hasn't been told either way.
+      privacy_mode_on: @agent.telegram_reads_all_group_messages == false,
       settings_path: edit_account_agent_path(current_account, @agent, tab: "integrations")
     }
   end
@@ -56,6 +59,9 @@ class Agents::TelegramGroupsController < ApplicationController
       sender_username: message.sender_username,
       text: message.text,
       sent_at: message.sent_at.iso8601,
+      # A person's message that mentioned, replied to or named the resident,
+      # as against the group's conversation around it (#646).
+      addressed: message.role == "user" && message.addressed?,
       replying_to_resident: own_ids.include?(message.reply_to_telegram_message_id)
     }
   end

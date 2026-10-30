@@ -155,7 +155,11 @@
             draft.edit({ title: value });
           }
         }
-        onMenuOpen={() => (sidebarOpen = true)} />
+        onMenuOpen={() => (sidebarOpen = true)}>
+        {#snippet actions()}
+          <NewChatRoomPicker bind:roomId />
+        {/snippet}
+      </NewChatHeader>
       <GroupChatAgentPicker
         {agents}
         accountId={account.id}
@@ -170,11 +174,15 @@
       <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
-    <NewChatRoomPicker bind:roomId />
     {#if error}
       <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
     {/if}
-    <div class="px-4 py-2 text-xs text-muted-foreground" aria-live="polite">
+    <!-- On a phone the routine draft note goes; warnings still show. -->
+    <div
+      class="px-4 text-xs text-muted-foreground {draftState.storageError || draftState.submissionId
+        ? 'py-2'
+        : 'hidden md:block md:py-2'}"
+      aria-live="polite">
       {#if draftState.storageError}
         <p role="alert">Browser storage is unavailable. This draft may not survive a reload.</p>
       {:else if userId}

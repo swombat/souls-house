@@ -74,6 +74,29 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     assert_equal true, props["can_manage_telegram_groups"]
   end
 
+  # #646 keeps every message the bot receives while a group is on; the page
+  # has to mark which of them were addressed to the resident, and say when
+  # Telegram's privacy mode means the rest never arrived.
+  test "the group page marks addressed rows against context, and reports the bot's privacy mode" do
+    @group.telegram_messages.create!(role: "user", text: "Morning all", sender_name: "Pepe", sent_at: 2.minutes.ago, addressed: false)
+    @group.telegram_messages.create!(role: "user", text: "Alanis?", sender_name: "Pepe", sent_at: 1.minute.ago, addressed: true)
+    @group.telegram_messages.create!(role: "assistant", text: "Here.", sender_name: "Alanis", sent_at: Time.current, telegram_message_id: 77)
+    sign_in_as(@owner)
+
+    get account_agent_telegram_group_path(@account, @agent, @group),
+      headers: { "X-Inertia" => "true", "X-Inertia-Version" => inertia_version }
+    props = JSON.parse(response.body)["props"]
+    assert_equal [ [ "user", false ], [ "user", true ], [ "assistant", false ] ],
+      props["messages"].map { |message| [ message["role"], message["addressed"] ] }
+    assert_equal false, props["privacy_mode_on"], "nothing known from getMe is not a privacy-mode claim"
+    assert_equal "alanis_bot", props["agent"]["bot_username"]
+
+    @agent.update_column(:telegram_reads_all_group_messages, false)
+    get account_agent_telegram_group_path(@account, @agent, @group),
+      headers: { "X-Inertia" => "true", "X-Inertia-Version" => inertia_version }
+    assert_equal true, JSON.parse(response.body)["props"]["privacy_mode_on"]
+  end
+
   test "a wake queued before the owner switched the group off is not processed" do
     @group.allow!(by: @owner)
     message = @group.telegram_messages.create!(role: "user", text: "@alanis_bot hi", sender_name: "Ana", telegram_message_id: 9, sent_at: Time.current)

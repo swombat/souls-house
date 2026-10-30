@@ -1,10 +1,15 @@
 <script>
   import { ArrowLeft, TelegramLogo } from 'phosphor-svelte';
 
-  let { agent, group, messages = [], settings_path: settingsPath } = $props();
+  let { agent, group, messages = [], privacy_mode_on: privacyModeOn = false, settings_path: settingsPath } = $props();
 
   function formatTime(iso) {
     return new Date(iso).toLocaleString();
+  }
+
+  function label(message) {
+    if (message.role === 'assistant') return 'reply';
+    return message.addressed ? `addressed to ${agent.name}` : 'context';
   }
 </script>
 
@@ -30,15 +35,23 @@
         {#if group.removed}
           {agent.name} is no longer in this group.
         {:else if group.allowed}
-          {agent.name} answers here when mentioned or replied to.
+          {agent.name} answers here when someone @mentions it, replies to it, or writes its name.
         {:else}
           Off. {agent.name} does not read or keep anything from this group.
         {/if}
       </p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Only the messages that mentioned or replied to {agent.name}, and its replies, were copied here. This is not the
-        group's history.
+      <p class="mt-1 text-xs text-muted-foreground" data-testid="telegram-group-kept">
+        While the group is on, every message the bot receives from it is copied here with the sender's Telegram name:
+        the ones addressed to {agent.name} and the conversation around them, which it reads so it can follow what it's asked.
+        Nothing from before the group was switched on, and nothing from while it was off: this is not the group's whole history.
       </p>
+      {#if privacyModeOn}
+        <p class="mt-1 text-xs text-amber-700 dark:text-amber-400" data-testid="telegram-group-privacy">
+          Telegram's privacy mode is on for {agent.bot_username ? `@${agent.bot_username}` : 'this bot'}, so unless the
+          bot is an admin of the group, Telegram limits which messages reach it: mentions, replies and commands get
+          through, and ordinary unaddressed conversation may be missing here.
+        </p>
+      {/if}
     </div>
   </div>
 
@@ -51,6 +64,11 @@
           <div class="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
             <span class="font-medium text-foreground">{message.sender_name || message.role}</span>
             {#if message.sender_username}<span>@{message.sender_username}</span>{/if}
+            <span
+              class="rounded px-1.5 py-0.5 {message.role === 'user' && message.addressed
+                ? 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200'
+                : 'bg-muted'}"
+              data-testid="telegram-group-message-label">{label(message)}</span>
             {#if message.replying_to_resident}<span>· replying to {agent.name}</span>{/if}
             <span>· {formatTime(message.sent_at)}</span>
           </div>

@@ -15,6 +15,7 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
   include Agent::HostedSetup
+  include RetainsReplacedAttachment
 
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
@@ -84,7 +85,7 @@ class Agent < ApplicationRecord
     telegram_bot_token telegram_webhook_token trigger_bearer_token
   ].freeze
   LIST_JSON_ATTRIBUTES = %i[
-    name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason inference_setup_message
+    name model_id model_label active? paused? colour icon avatar_url runtime health_state deprecated? unavailability_reason inference_setup_message
   ].freeze
 
   # "Imported" is a class of home profile: a reviewed private home cloned into
@@ -114,6 +115,13 @@ class Agent < ApplicationRecord
   validates :refinement_prompt, length: { maximum: 10_000 }
   validates :colour, inclusion: { in: VALID_COLOURS }, allow_nil: true
   validates :icon, inclusion: { in: VALID_ICONS }, allow_nil: true
+  # A picture, like a person's: shown wherever the resident's face is drawn,
+  # in place of the icon. Colour stays; the icon is still recommended for the
+  # places too small for a picture to read.
+  has_one_attached :avatar
+  retains_replaced_attachment :avatar, history: :retired_avatars
+  validates :avatar, content_type: [ "image/png", "image/jpeg", "image/gif", "image/webp" ],
+                     size: { less_than: 5.megabytes }
   validates :thinking_budget,
              numericality: { greater_than_or_equal_to: 1000, less_than_or_equal_to: 50000 },
              allow_nil: true
@@ -252,7 +260,7 @@ class Agent < ApplicationRecord
 
   json_attributes :name, :system_prompt, :reflection_prompt, :memory_reflection_prompt,
                   :summary_prompt, :refinement_prompt, :refinement_threshold,
-                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon,
+                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon, :avatar_url,
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
@@ -276,7 +284,7 @@ class Agent < ApplicationRecord
     hash.except!(*SENSITIVE_JSON_ATTRIBUTES.map(&:to_s))
 
     if options&.dig(:as) == :resident_card
-      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
+      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon", "avatar_url",
         "deprecated?", "runtime", "reasoning_effort", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
     end
 
@@ -292,6 +300,17 @@ class Agent < ApplicationRecord
     return json_attrs unless options&.dig(:as) == :list
 
     LIST_JSON_ATTRIBUTES
+  end
+
+  def avatar_url
+    return nil unless avatar.attached?
+
+    helpers = Rails.application.routes.url_helpers
+    if avatar.variable?
+      helpers.rails_representation_url(avatar.variant(resize_to_fill: [ 200, 200 ]), only_path: true)
+    else
+      helpers.rails_blob_url(avatar, only_path: true)
+    end
   end
 
   def model_label

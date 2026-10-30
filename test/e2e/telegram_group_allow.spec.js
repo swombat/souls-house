@@ -41,6 +41,8 @@ test('the owner allows a Telegram group from the resident settings', async ({ pa
   await page.screenshot({ path: testInfo.outputPath('telegram-groups-on.png'), fullPage: true });
 
   await row.getByRole('link', { name: 'E2E group' }).click();
-  await expect(page.getByTestId('telegram-group-state')).toContainText('answers here when mentioned or replied to');
-  await expect(page.getByText("This is not the group's history.", { exact: false })).toBeVisible();
+  await expect(page.getByTestId('telegram-group-state')).toContainText('answers here when someone @mentions it');
+  await expect(page.getByTestId('telegram-group-kept')).toContainText(
+    'every message the bot receives from it is copied here'
+  );
 });

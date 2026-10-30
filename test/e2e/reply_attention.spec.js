@@ -106,7 +106,7 @@ test.describe('touch explanation', () => {
       await expect(explanation).toBeVisible();
       await expect(eye).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('touch-eye-explanation.png') });
-      await page.getByRole('heading', { name: 'Start a new conversation' }).tap();
+      await page.getByText('Or pick an existing conversation:').tap();
       await expect(explanation).not.toBeVisible();
       await expect(eye).toBeVisible();
       await eye.tap();
