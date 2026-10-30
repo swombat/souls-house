@@ -18,7 +18,10 @@
     disabled = false,
     activeRuntimeAgentIds = [],
     runtimeInteractions = [],
-    responseMarker = null,
+    // The newest resident reply as { id, agentId }; releases an external
+    // resident (who posts a finished message and leaves no run) only when
+    // the reply is theirs.
+    lastReply = null,
     onTrigger = null,
   } = $props();
   // One entry per resident asked and not yet taken up, so asking one resident
@@ -75,11 +78,9 @@
         clearPending(data.queued.map((agent) => agent.id));
         showQueued(data.queued);
       }
-      triggeringAll = false;
       onTrigger?.();
     } catch (error) {
       clearPending(ids);
-      triggeringAll = false;
       errorTitle = '';
       triggerError = error.message;
       errorOpen = true;
@@ -155,7 +156,11 @@
   function beginPending(ids) {
     const next = { ...pending };
     for (const id of ids) {
-      next[id] = { wasActive: activeRuntimeAgentIds.includes(id), rowIds: rowIdsFor(id), marker: responseMarker };
+      next[id] = {
+        wasActive: activeRuntimeAgentIds.includes(id),
+        rowIds: rowIdsFor(id),
+        replyId: lastReply?.id ?? null,
+      };
       clearTimeout(pendingTimeouts.get(id));
       pendingTimeouts.set(
         id,
@@ -167,8 +172,8 @@
 
   // A resident's ask is taken up once a run of theirs starts that wasn't
   // running when they were asked, or a new runtime row of theirs appears.
-  // External residents post a finished message instead of running here, so a
-  // new reply marker releases them. Only that resident's button is released.
+  // External residents post a finished message instead of running here, so
+  // their own new reply releases them. Only that resident's button is released.
   $effect(() => {
     const ids = Object.keys(pending);
     if (!ids.length) return;
@@ -177,8 +182,7 @@
       const entry = pending[id];
       if (activeRuntimeAgentIds.includes(id) && !entry.wasActive) return true;
       if (runtimeInteractions.some((row) => row.agent_id === id && !entry.rowIds.has(row.id))) return true;
-      const external = agents.find((agent) => agent.id === id)?.runtime === 'external';
-      return external && responseMarker && responseMarker !== entry.marker;
+      return lastReply?.agentId === id && lastReply.id !== entry.replyId;
     });
     if (taken.length) clearPending(taken);
   });
@@ -191,16 +195,20 @@
     void submitTrigger({ agent_id: agent.id }, [agent.id]);
   }
 
+  // Ask All asks every resident in the room, so it waits while any single
+  // ask is still starting: otherwise that resident would be asked twice.
   function triggerAllAgents() {
-    if (triggeringAll) return;
-    const ids = agents.filter((agent) => !agent.unavailability_reason && !pending[agent.id]).map((agent) => agent.id);
+    if (triggeringAll || anyPending) return;
+    const ids = agents.filter((agent) => !agent.unavailability_reason).map((agent) => agent.id);
     if (!ids.length) return;
     triggeringAll = true;
     beginPending(ids);
 
     missingCredentials = [];
-    void submitTrigger({}, ids);
+    void submitTrigger({}, ids).finally(() => (triggeringAll = false));
   }
+
+  const anyPending = $derived(Object.keys(pending).length > 0);
 
   const activeAgentIds = $derived(new Set(activeRuntimeAgentIds));
   const anyAgentAvailable = $derived(agents.some((agent) => !agent.unavailability_reason));
@@ -262,9 +270,9 @@
           variant="default"
           size="sm"
           onclick={triggerAllAgents}
-          disabled={disabled || triggeringAll || !anyAgentAvailable}
+          disabled={disabled || triggeringAll || anyPending || !anyAgentAvailable}
           class="gap-2 ml-2"
-          title="Ask All Residents">
+          title={anyPending ? 'Ask All waits until the residents you asked have started' : 'Ask All Residents'}>
           {#if triggeringAll}
             <Spinner size={14} class="animate-spin" />
           {:else}
