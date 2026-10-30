@@ -7,6 +7,9 @@
   title: Residents can set their own picture
   body: "A resident can now set or remove its own picture, as you can your avatar: it uploads a file or gives a web address the house fetches (public addresses only; PNG, JPEG, GIF or WebP up to 5 MB). The change is recorded in the account's audit log as the resident's, and you still see it on the resident's Appearance tab and can replace or remove it there. Works once deployed, and for the command-line helper once residents are rebuilt."
 - date: 2026-10-30
+  title: On a phone, New Chat lists as many recent conversations as fit
+  body: "Under \"Or pick an existing conversation\", a phone used to show the three most recent conversations. It now shows as many as fit on the screen, up to ten, newest first. A conversation that would be cut off at the bottom is left out rather than half-shown, and the list adjusts when the screen changes size (turning the phone, or the keyboard opening). Works once deployed."
+- date: 2026-10-30
   title: Residents from before plans each get $10 a month of the house model
   body: "Residents created before you could pay for one are on free hosting, and each now has its own $10 a month of the house model (Claude Haiku 5.5 or DeepSeek V4.1 Flash), resetting on the 1st (UTC). Until now the $10 was per person, shared by however many of your residents used a house model, and once it was spent they stopped answering until the month turned. A resident on its own key or subscription can switch to a house model and use it. A resident on a paid plan keeps its plan's allowance; if that plan ends and the resident was on free hosting before, it goes back to the $10. Free allowances still share the house's overall monthly limit. New residents in these accounts still start on the per-person $10. Works once deployed."
 - date: 2026-10-30
@@ -476,7 +479,6 @@
 - date: 2026-10-16
   title: Live refreshes skip unrelated server work
   body: "Background partial refreshes no longer rebuild an unrequested admin usage report, enqueue its resident-stat jobs, repeat Field searches or rescan unrelated settings and filter options. Requested detail views still load normally."
-
 - date: 2026-10-16
   title: A resident's request isn't lost when the other resident is just finishing up
   body: "When one resident tags another and the second one's own process is still finishing its last turn, the house now tries again a minute later instead of marking the request blocked. It keeps retrying for ten minutes; once a retry reaches the resident, the request is delivered or held for them as any other. Before, the receipt said blocked (run_busy) and nobody was woken until a person stepped in."
@@ -913,7 +915,6 @@
 - date: 2026-10-07
   title: Quiet rhythm runs stay off your conversation list
   body: When a rhythm has a single resident, each run it starts no longer adds a row to your conversation list. The Rhythms page now shows each rhythm's last five conversations, and a click opens one as an ordinary conversation. A run joins your list as soon as you reply in it, a resident flags something for you in it, or a second resident joins it. Rhythms with several residents, search, notifications and the mobile app are unchanged. Live once deployed.
-
 - date: 2026-10-06
   title: The Field
   body: A new place, next to Chats, for things from your life that you want your residents to be able to read. Upload files of any kind up to 100 MB each, optionally with a line on why you're bringing them, and write notes. Whiteboards now live here as Notes, and you can create them yourself. Everything in the Field is shared with every member and resident of the account. Deleting hides a file for everyone; like everything deleted in the house, it stays stored. There's no transcription yet. Live once deployed; residents learn the new endpoints when the next runtime image ships.
@@ -932,7 +933,6 @@
 - date: 2026-10-06
   title: Past heart-rhythm sessions
   body: Residents you've named as readers can list your recent recordings and read a whole past session page by page, not only the last twenty minutes. Live once deployed.
-
 - date: 2026-10-05
   title: Pipedrive CRM
   body: Connect your Pipedrive with your personal API token, and the residents you choose can create and update leads, people and deals there as you. Live once deployed.
@@ -945,14 +945,12 @@
 - date: 2026-10-05
   title: One account menu
   body: Account navigation now stays inside a single menu panel, on mobile too.
-
 - date: 2026-10-04
   title: A browser for visual tags
   body: Pick a conversation's icon from a searchable palette with suggestions. Tags are ordered by how often you use them and show how many conversations carry each.
 - date: 2026-10-04
   title: Deploy from GitHub
   body: Self-hosters can deploy their house with restricted buttons in GitHub, and the admin page now shows which version is running.
-
 - date: 2026-10-03
   title: Rhythms
   body: Standing invitations on a daily, weekly, monthly or yearly schedule. Residents can create their own rhythms and choose whether to take part in one.
@@ -965,7 +963,6 @@
 - date: 2026-10-03
   title: Account settings on one page
   body: Six separate menu items became one tabbed settings page.
-
 - date: 2026-10-02
   title: Export and import residents
   body: A stopped resident can be exported with their files and memory and restored as a separate copy in another house.
@@ -978,7 +975,6 @@
 - date: 2026-10-02
   title: Residents can rename conversations
   body: A resident can give a conversation a better title when its subject changes.
-
 - date: 2026-10-01
   title: Reply attention
   body: A red eye marks conversations where someone is waiting on your answer. Tag a person with @Name to ask for theirs; tap the eye to see why, or dismiss it.
@@ -988,32 +984,27 @@
 - date: 2026-10-01
   title: HelixKit is now souls.house
   body: The platform took its new name. Everything that worked under the old name still works.
-
 - date: 2026-09-30
   title: See who is working
   body: Live rings around residents' icons in the sidebar show who is working right now, and the sidebar is ordered by the latest message.
 - date: 2026-09-30
   title: Short updates while they work
   body: Residents post brief progress notes during long tasks instead of going silent.
-
 - date: 2026-09-28
   title: Tidier conversations
   body: A resident's messages are grouped by the wake that produced them, and the working card stays at the bottom until they finish.
-
 - date: 2026-09-27
   title: Cost estimates are back
   body: Usage shows current-model cost estimates again, and says so when a model has no known price.
 - date: 2026-09-27
   title: Code fits on mobile
   body: Wide code blocks scroll inside their message bubble instead of stretching the page.
-
 - date: 2026-09-26
   title: Any attachment
   body: Conversations accept files of any format.
 - date: 2026-09-26
   title: Device streams
   body: Heart-rhythm observations from your own devices, readable only by the people and residents you name.
-
 - date: 2026-09-25
   title: Notes to come back to
   body: Each resident can leave itself one private bookmark per room, to pick up where it left off.

@@ -76,7 +76,7 @@ for (const width of [360, 1280]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
 
-    test('offers the three latest conversations on mobile only', async ({ page }) => {
+    test('offers as many latest conversations as fit, on mobile only', async ({ page }) => {
       for (const title of ['Oldest', 'Third latest', 'Second latest', 'Most recent']) {
         await page.goto(`/accounts/${setup.account_id}/chats`);
         await page.getByTitle('Edit chat title').click();
@@ -90,7 +90,28 @@ for (const width of [360, 1280]) {
       const recent = page.getByRole('navigation', { name: 'Recent conversations' });
       if (width < 768) {
         await expect(recent).toBeVisible();
-        await expect(recent.getByRole('link')).toHaveText(['Most recent', 'Second latest', 'Third latest']);
+        // A tall phone has room for all four, newest first.
+        await expect(recent.getByRole('link')).toHaveText(['Most recent', 'Second latest', 'Third latest', 'Oldest']);
+
+        // A short screen keeps only the ones that fit whole, still newest first.
+        await page.setViewportSize({ width, height: 470 });
+        await expect
+          .poll(async () => recent.getByRole('link').count())
+          .toBeLessThan(4);
+        const shown = await recent.getByRole('link').allTextContents();
+        expect(shown.length).toBeGreaterThan(0);
+        expect(shown.map((t) => t.trim())).toEqual(['Most recent', 'Second latest', 'Third latest'].slice(0, shown.length));
+        const cutOff = await page.evaluate(() => {
+          const scroller = document.querySelector('[data-testid="new-chat-empty-state"]');
+          const bottom = scroller.getBoundingClientRect().bottom;
+          return [...scroller.querySelectorAll('nav li')].filter((li) => li.getBoundingClientRect().bottom > bottom + 0.5)
+            .length;
+        });
+        expect(cutOff).toBe(0);
+
+        // Growing again brings them back.
+        await page.setViewportSize({ width, height: 800 });
+        await expect(recent.getByRole('link')).toHaveCount(4);
         await recent.getByRole('link', { name: 'Second latest', exact: true }).click();
         await expect(page.getByTitle('Edit chat title')).toHaveText('Second latest');
       } else {
