@@ -61,6 +61,20 @@ class ResidentEntitlement < ApplicationRecord
     find_by(agent: agent)&.paid? || false
   end
 
+  # Free hosting (residents from before paying was possible) carries $10 a
+  # month of the house model of its own, the Conversation allowance (Daniel,
+  # jygXOY/jlnVNY, 2026-10-30: "they are on a free plan where they get a $10
+  # allowance, so they should continue functioning"). It replaces the per-user
+  # grant for that resident. A paid plan replaces it in turn while in force.
+  COMPLIMENTARY_ALLOWANCE_USD = BigDecimal(Billing::Tier.find!("conversation").allowance_usd.to_s)
+
+  # Whether this resident's own entitlement pays for its house-model calls
+  # now (paid plan, draining, or free hosting with its allowance). When true,
+  # the user's free grant isn't claimed or drawn on.
+  def self.funds_calls_for?(agent)
+    find_by(agent: agent)&.funds_calls? || false
+  end
+
   # Applies a freshly fetched subscription. Returns true when the entitlement
   # changed. Events about a subscription that isn't current change nothing
   # here, so an old subscription's cancellation can't hold a resident whose
@@ -107,18 +121,24 @@ class ResidentEntitlement < ApplicationRecord
   end
 
   # Whether the plan's ledger pays for this resident's house-model calls now.
-  def funds_calls? = paid? || draining?
+  def funds_calls? = paid? || draining? || complimentary?
 
   def tier_record = tier && Billing::Tier.find(tier)
+
+  def plan_name = complimentary? ? "free" : "#{tier_record&.name} plan"
 
   # The offer the current plan was bought at.
   def offer = tier_record&.offer(rate)
 
   # The month's limit is the highest paid allowance in force at any point in
   # that UTC month: a ceiling on the month's spend, never a balance that is
-  # topped up. Nothing while the plan isn't paid.
+  # topped up. Nothing while the plan isn't paid; free hosting has its own.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
+
+    # Free hosting's allowance is fixed: a paid plan that ended this month
+    # doesn't carry its higher ceiling into it. Spend so far still counts.
+    return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
 
     limits = [ self.class.offer_allowance(tier, rate) ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
@@ -143,6 +163,7 @@ class ResidentEntitlement < ApplicationRecord
       reservation = offering.fetch(:reservation_usd)
       check_house_call!(model_id, reservation, agent_id: agent_id)
       house_inference_calls.create!(agent_id: agent_id, month: HouseInference::Offering.month, model_id: model_id,
+        free_pool: complimentary?,
         provider_route: offering.fetch(:provider), charge_usd: reservation)
     end
   end
@@ -157,7 +178,14 @@ class ResidentEntitlement < ApplicationRecord
     end
     month = HouseInference::Offering.month
     limit = allowance_limit(month)
-    return if limit - allowance_spent(month) >= reservation
+    if limit - allowance_spent(month) >= reservation
+      # Free allowances, unlike paid ones, share the house-wide ceiling.
+      if complimentary? && HouseInferenceCall.free.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
+        raise HouseInference::Error.new("The house-wide inference allowance is currently used up.",
+          code: "house_allowance_unavailable", status: 503)
+      end
+      return
+    end
 
     # Keyed on the ceiling in force, not on the rate: a resident just moved
     # to at cost keeps this month's ceiling until the 1st.
@@ -168,7 +196,7 @@ class ResidentEntitlement < ApplicationRecord
       )
     end
     raise HouseInference::Error.new(
-      "This resident's #{tier_record&.name} plan allowance is used up for this month. It resets at the start of next month (UTC).",
+      "This resident's #{plan_name} allowance is used up for this month. It resets at the start of next month (UTC).",
       code: "house_allowance_exhausted", status: 402
     )
   end
@@ -177,7 +205,7 @@ class ResidentEntitlement < ApplicationRecord
     month = HouseInference::Offering.month
     limit = allowance_limit(month)
     used = allowance_spent(month)
-    { source: "plan", plan: tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
+    { source: complimentary? ? "free" : "plan", plan: complimentary? ? nil : tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
       remaining_usd: [ limit - used, 0 ].max.to_f, resets_at: month.next_month.iso8601,
       configured: HouseInference::Offering.configured? }
   end

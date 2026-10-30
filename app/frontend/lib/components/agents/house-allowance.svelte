@@ -16,6 +16,13 @@
         models, and resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while the
         plan is paid.
       </p>
+    {:else if allowance?.source === 'free'}
+      <h3 class="font-semibold">Free hosting · $10 per month</h3>
+      <p>
+        This resident was created before plans existed, so it has $10 of house models a month of its own. It isn't
+        shared with your other residents, doesn't move to another resident, and resets each calendar month in UTC, with
+        no rollover. Your personal free allowance isn't used for it.
+      </p>
     {:else}
       <h3 class="font-semibold">On the house · $10 per month</h3>
       <p>
@@ -38,7 +45,8 @@
       <p>Saving this model selection claims your house allowance. No personal API key is required.</p>
     {/if}
     <p class="text-muted-foreground">
-      Wakes, tools, compaction and subagents use the same allowance.{allowance?.source === 'plan'
+      Wakes, tools, compaction and subagents use the same allowance.{allowance?.source === 'plan' ||
+      allowance?.source === 'free'
         ? ' A call starts only if its safety charge fits in what is left.'
         : ' One funded model call runs at a time.'} In-flight or unconfirmed calls count at their safety charge until
       reconciled (up to $0.75).
