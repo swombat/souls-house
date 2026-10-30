@@ -4,7 +4,7 @@
 # sidebar's avatar rings (AgentRuntimeInteraction.working). One count per run,
 # not per persistent Chaos session.
 #
-#   chat:     a conversation run (souls.house rooms)
+#   chat:     a conversation run (the house's rooms)
 #   telegram: a Telegram run
 #   other:    everything else: heartbeat wakes, memory formation, orientation…
 class ResidentSessions
