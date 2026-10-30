@@ -75,6 +75,20 @@ class Setting < ApplicationRecord
     first_or_create!(site_name: ENV.fetch("SOULSHOUSE_SITE_NAME", "souls.house"))
   end
 
+  # The feature flags StarGates resolves: the admin switches, as flags.
+  def self.feature_flags
+    instance = self.instance
+    {
+      agents: instance.allow_agents,
+      chats: instance.allow_chats,
+      signups: instance.allow_signups
+    }
+  end
+
+  def self.feature_enabled?(flag)
+    StarGates.flags.enabled?(flag)
+  end
+
   private
 
   def refresh_glossaries
