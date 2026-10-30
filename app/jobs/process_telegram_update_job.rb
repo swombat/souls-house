@@ -130,23 +130,53 @@ class ProcessTelegramUpdateJob < ApplicationJob
     return migrate_group(agent, message) if message["migrate_to_chat_id"]
 
     group = record_group(agent, message["chat"])
-    from_person = !message.dig("from", "is_bot")
-    addressed = from_person && addressed_to_bot?(agent, message)
-    allow_on_first_owner_address(agent, group, message) if addressed
-    return unless group.deliverable?
-
-    # Pepe, 29 Oct (eqRmyj): "Alanis?" should reach her like the tag does.
-    # Only a person's words count, never another bot's (that loop is #609's),
-    # and only once the group is on: a name alone never switches a group on.
-    addressed ||= from_person && names_resident?(agent, message)
-
+    telegram_message = nil
     content = supported_content(message)
-    return unless content
+    group.with_lock do
+      # Deduplication, human resets and bot admission share this lock. A retry
+      # must not spend another slot, reset a later streak, or repeat its notice.
+      next if message["message_id"] && group.telegram_messages.exists?(telegram_message_id: message["message_id"])
 
-    telegram_message = create_inbound_message(group, message, content, addressed: addressed)
+      from_person = !message.dig("from", "is_bot")
+      explicitly_addressed = addressed_to_bot?(agent, message)
+      allow_on_first_owner_address(agent, group, message) if from_person && explicitly_addressed
+      next unless group.deliverable?
+
+      # Even a human sticker/service message breaks a bot streak. Keep a
+      # non-waking placeholder so a redelivery cannot reset a later streak.
+      unsupported = content.nil?
+      content ||= { text: "[Unsupported Telegram message]" } if from_person
+      next unless content
+
+      addressed = if from_person
+        !unsupported && (explicitly_addressed || names_resident?(agent, message))
+      else
+        explicitly_addressed && group.answers_bot?(message.dig("from", "username")) &&
+          (content[:media_kind].present? || text_wake_eligible?(agent))
+      end
+
+      capped = !from_person && addressed && group.bot_wake_streak >= TelegramSubscription::BOT_WAKE_LIMIT
+      # addressed is wake eligibility, not just syntactic addressing:
+      # downstream media preparation uses it too. Policy-suppressed bot media
+      # must follow the context path, never wake around the setting/list/cap.
+      addressed = false if capped
+      telegram_message = create_inbound_message(group, message, content, addressed: addressed)
+      next unless telegram_message
+
+      if from_person
+        group.update!(bot_wake_streak: 0, bot_cap_notice_message_id: nil) if group.bot_wake_streak.positive? || group.bot_cap_notice_message_id
+      elsif capped
+        unless group.bot_cap_notice_message_id
+          group.update!(bot_cap_notice_message_id: telegram_message.id)
+          TelegramGroupNoticeJob.perform_later(group, bot_cap_message_id: telegram_message.id)
+        end
+      elsif addressed
+        group.update!(bot_wake_streak: group.bot_wake_streak + 1)
+      end
+    end
     return unless telegram_message
 
-    if addressed
+    if telegram_message.addressed?
       enqueue_wake(agent, group, telegram_message, content)
     elsif content[:media_kind]
       prepare_context_media(group, telegram_message, content)
@@ -258,9 +288,13 @@ class ProcessTelegramUpdateJob < ApplicationJob
       else
         PrepareTelegramMediaJob.perform_later(telegram_message, content[:file_id], content[:telegram_metadata])
       end
-    elsif agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
+    elsif text_wake_eligible?(agent)
       TelegramAgentTriggerJob.perform_later(subscription, telegram_message)
     end
+  end
+
+  def text_wake_eligible?(agent)
+    agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
   end
 
   def create_inbound_message(subscription, message, content, addressed: true)

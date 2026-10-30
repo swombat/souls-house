@@ -21,25 +21,44 @@ class Agents::TelegramGroupsController < ApplicationController
   end
 
   def update
-    allowed = ActiveModel::Type::Boolean.new.cast(params.require(:allowed))
-    if allowed && @group.removed_at
-      return redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
-        alert: "#{@agent.name} is no longer in that group. Add the bot back first."
+    announce = false
+    @group.with_lock do
+      was_allowed = @group.allowed?
+      answered_bots = @group.answers_bots?
+      @group.assign_attributes(group_params)
+      if @group.allowed? && @group.removed_at
+        return redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
+          alert: "#{@agent.name} is no longer in that group. Add the bot back first."
+      end
+      if @group.allowed? && !was_allowed
+        @group.allowed_at = Time.current
+        @group.allowed_by = Current.user
+      end
+      if (@group.allowed? && !was_allowed) || (@group.answers_bots? && !answered_bots)
+        @group.bot_wake_streak = 0
+        @group.bot_cap_notice_message_id = nil
+      end
+      @group.save!
+      announce = @group.allowed? && !@group.removed_at &&
+        (!was_allowed || (@group.answers_bots? && !answered_bots))
     end
+    TelegramGroupNoticeJob.perform_later(@group) if announce
 
-    if allowed && !@group.allowed?
-      @group.allow!(by: Current.user)
-      TelegramGroupNoticeJob.perform_later(@group)
-      notice = "#{@agent.name} can now answer in #{@group.subscriber_name}."
-    elsif !allowed && @group.allowed?
-      @group.disallow!
-      notice = "#{@agent.name} will no longer answer in #{@group.subscriber_name}."
-    end
-
-    redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"), notice: notice
+    redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
+      notice: "Telegram group settings saved."
+  rescue ActiveRecord::RecordInvalid
+    redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
+      alert: @group.errors.full_messages.to_sentence
   end
 
   private
+
+  def group_params
+    permitted = params.permit(:allowed, :answers_bots, answer_bot_usernames: [])
+    # A cleared text/list control means any bot, not an unchanged allowlist.
+    permitted[:answer_bot_usernames] = [] if params[:answer_bot_usernames].is_a?(String) && params[:answer_bot_usernames].blank?
+    permitted
+  end
 
   def set_group
     @group = @agent.telegram_groups.find(params[:id])
@@ -59,7 +78,7 @@ class Agents::TelegramGroupsController < ApplicationController
       sender_username: message.sender_username,
       text: message.text,
       sent_at: message.sent_at.iso8601,
-      # A person's message that mentioned, replied to or named the resident,
+      # An admitted message that addressed the resident (including other bots),
       # as against the group's conversation around it (#646).
       addressed: message.role == "user" && message.addressed?,
       replying_to_resident: own_ids.include?(message.reply_to_telegram_message_id)

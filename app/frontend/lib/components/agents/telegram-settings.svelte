@@ -3,7 +3,7 @@
   import { Button } from '$lib/components/shadcn/button';
   import { Input } from '$lib/components/shadcn/input';
   import { Label } from '$lib/components/shadcn/label';
-  import { Switch } from '$lib/components/shadcn/switch';
+  import TelegramSettingsGroups from './telegram-settings-groups.svelte';
   import { siteName } from '$lib/branding';
   import { router } from '@inertiajs/svelte';
   import { onDestroy } from 'svelte';
@@ -36,17 +36,6 @@
   onDestroy(() => {
     revealGeneration++;
   });
-
-  let savingGroup = $state(null);
-
-  function setGroupAllowed(group, allowed) {
-    savingGroup = group.id;
-    router.patch(
-      group.path,
-      { allowed },
-      { preserveScroll: true, preserveState: true, onFinish: () => (savingGroup = null) }
-    );
-  }
 
   function revealLink() {
     const generation = revealGeneration;
@@ -213,67 +202,12 @@
       </div>
     </div>
 
-    <div class="rounded-lg bg-muted/50 p-4 space-y-3" data-testid="telegram-groups">
-      <div>
-        <p class="text-sm font-medium">Groups</p>
-        <p class="text-xs text-muted-foreground">
-          A group is off until an owner of this account, with their Telegram linked to @{username}, mentions it there
-          for the first time, or switches it on here. In a group that is on, {agent.name} reads the conversation and
-          answers when someone mentions @{username}, writes its name, or replies to it. Each of those answers spends a turn on this
-          account's plan.
-        </p>
-      </div>
-      {#if telegramConfiguration?.reads_all_group_messages === false}
-        <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="telegram-groups-privacy">
-          Telegram's privacy mode is on for @{username}, so groups only send it the messages that mention it or reply
-          to it, and {agent.name} can't see the conversation around them. To change that, send /setprivacy to
-          @BotFather, pick @{username} and choose Disable, then remove the bot from each group and add it back (or
-          make it a group admin).
-        </p>
-      {/if}
-      {#if telegramGroups.length === 0}
-        <p class="text-xs text-muted-foreground" data-testid="telegram-groups-empty">
-          Add @{username} to a Telegram group and it will appear here, switched off.
-        </p>
-      {:else}
-        <ul class="divide-y rounded-md border bg-background">
-          {#each telegramGroups as group (group.id)}
-            <li class="flex items-center justify-between gap-3 p-3 text-sm" data-testid="telegram-group">
-              <div class="min-w-0">
-                <a href={group.path} class="font-medium underline-offset-4 hover:underline">{group.title}</a>
-                <p class="text-xs text-muted-foreground">
-                  {#if group.removed}
-                    The bot is no longer in this group.
-                  {:else if group.allowed}
-                    Allowed{group.allowed_by ? ` by ${group.allowed_by}` : ''} · {group.message_count} message{group.message_count ===
-                    1
-                      ? ''
-                      : 's'} copied
-                  {:else if group.allowed_at}
-                    Off: switched off here, so nothing from this group is read or kept until it is switched back on.
-                  {:else}
-                    Off: nothing from this group is read or kept until an owner mentions the bot there.
-                  {/if}
-                </p>
-              </div>
-              {#if canManageTelegramGroups}
-                <Switch
-                  aria-label={`Allow ${agent.name} in ${group.title}`}
-                  data-testid="telegram-group-allowed"
-                  checked={group.allowed}
-                  disabled={savingGroup === group.id || (group.removed && !group.allowed)}
-                  onCheckedChange={(on) => setGroupAllowed(group, on)} />
-              {:else}
-                <span class="text-xs text-muted-foreground">{group.allowed ? 'Allowed' : 'Off'}</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-        {#if !canManageTelegramGroups}
-          <p class="text-xs text-muted-foreground">Only an owner of this account can allow a group.</p>
-        {/if}
-      {/if}
-    </div>
+    <TelegramSettingsGroups
+      {agent}
+      {username}
+      configuration={telegramConfiguration}
+      groups={telegramGroups}
+      canManage={canManageTelegramGroups} />
   {/if}
 
   <div class="flex justify-end gap-3">

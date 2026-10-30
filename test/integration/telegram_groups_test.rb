@@ -53,6 +53,100 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "only an owner can change bot answers and their allowlist" do
+    sign_in_as(@member)
+    assert_no_enqueued_jobs only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group),
+        params: { answers_bots: true, answer_bot_usernames: [ "other_bot" ] }
+    end
+    assert_not @group.reload.answers_bots?
+    assert_empty @group.answer_bot_usernames
+  end
+
+  test "an owner saves normalized bot usernames without changing unrelated attributes" do
+    sign_in_as(@owner)
+    assert_no_enqueued_jobs only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group),
+        params: { answers_bots: true, answer_bot_usernames: [ "@Other_Bot", "SECOND_bot" ],
+                  title: "Untrusted title", allowed_by_id: @member.id, telegram_chat_id: -999 }
+    end
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "integrations")
+    @group.reload
+    assert @group.answers_bots?
+    assert_equal [ "other_bot", "second_bot" ], @group.answer_bot_usernames
+    assert_not @group.allowed?
+    assert_nil @group.allowed_by
+    assert_equal "MGL", @group.title
+    assert_equal(-100_1, @group.telegram_chat_id)
+
+    patch account_agent_telegram_group_path(@account, @agent, @group), params: { answer_bot_usernames: "" }
+    assert_empty @group.reload.answer_bot_usernames
+    assert @group.answers_bots?
+  end
+
+  test "enabling bot answers in an allowed group announces once, not on list edits or repeated saves" do
+    @group.allow!(by: @owner)
+    sign_in_as(@owner)
+    assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: { answers_bots: true }
+    end
+    assert @group.reload.answers_bots?
+    assert_no_enqueued_jobs only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group),
+        params: { answers_bots: true, answer_bot_usernames: [ "other_bot" ] }
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: { answers_bots: false }
+    end
+    assert_not @group.reload.answers_bots?
+    assert @group.allowed?
+  end
+
+  test "owner re-enablement resets a capped streak but repeated saves do not" do
+    sign_in_as(@owner)
+    [
+      [ { allowed: false, answers_bots: true }, { allowed: true } ],
+      [ { allowed: true, answers_bots: false }, { answers_bots: true } ]
+    ].each do |state, enable|
+      @group.update!(**state, bot_wake_streak: 3, bot_cap_notice_message_id: 123)
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: enable
+      assert_response :redirect
+      assert_equal 0, @group.reload.bot_wake_streak
+      assert_nil @group.bot_cap_notice_message_id
+
+      @group.update!(bot_wake_streak: 3, bot_cap_notice_message_id: 456)
+      patch account_agent_telegram_group_path(@account, @agent, @group), params: enable
+      assert_equal 3, @group.reload.bot_wake_streak
+      assert_equal 456, @group.bot_cap_notice_message_id
+    end
+  end
+
+  test "enabling a group and bot answers together queues only one notice" do
+    sign_in_as(@owner)
+    assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group),
+        params: { allowed: true, answers_bots: true, answer_bot_usernames: [ "@Other_bot" ] }
+    end
+    @group.reload
+    assert @group.allowed?
+    assert @group.answers_bots?
+    assert_equal @owner, @group.allowed_by
+    assert_not_nil @group.allowed_at
+  end
+
+  test "invalid bot usernames reject the whole update without a notice" do
+    sign_in_as(@owner)
+    assert_no_enqueued_jobs only: TelegramGroupNoticeJob do
+      patch account_agent_telegram_group_path(@account, @agent, @group),
+        params: { allowed: true, answers_bots: true, answer_bot_usernames: [ "not a username!" ] }
+    end
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "integrations")
+    assert flash[:alert].present?
+    @group.reload
+    assert_not @group.allowed?
+    assert_not @group.answers_bots?
+    assert_empty @group.answer_bot_usernames
+    assert_nil @group.allowed_at
+  end
+
   test "a group the bot has left cannot be switched on" do
     @group.update!(removed_at: Time.current)
     sign_in_as(@owner)
@@ -71,6 +165,8 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
     props = JSON.parse(response.body)["props"]
     assert_equal [ "MGL" ], props["telegram_groups"].map { |group| group["title"] }
     assert_equal false, props["telegram_groups"].first["allowed"]
+    assert_equal false, props["telegram_groups"].first["answers_bots"]
+    assert_equal [], props["telegram_groups"].first["answer_bot_usernames"]
     assert_equal true, props["can_manage_telegram_groups"]
   end
 
@@ -78,6 +174,7 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
   # has to mark which of them were addressed to the resident, and say when
   # Telegram's privacy mode means the rest never arrived.
   test "the group page marks addressed rows against context, and reports the bot's privacy mode" do
+    @group.update!(answers_bots: true, answer_bot_usernames: [ "other_bot" ])
     @group.telegram_messages.create!(role: "user", text: "Morning all", sender_name: "Pepe", sent_at: 2.minutes.ago, addressed: false)
     @group.telegram_messages.create!(role: "user", text: "Alanis?", sender_name: "Pepe", sent_at: 1.minute.ago, addressed: true)
     @group.telegram_messages.create!(role: "assistant", text: "Here.", sender_name: "Alanis", sent_at: Time.current, telegram_message_id: 77)
@@ -90,6 +187,8 @@ class TelegramGroupsTest < ActionDispatch::IntegrationTest
       props["messages"].map { |message| [ message["role"], message["addressed"] ] }
     assert_equal false, props["privacy_mode_on"], "nothing known from getMe is not a privacy-mode claim"
     assert_equal "alanis_bot", props["agent"]["bot_username"]
+    assert_equal true, props["group"]["answers_bots"]
+    assert_equal [ "other_bot" ], props["group"]["answer_bot_usernames"]
 
     @agent.update_column(:telegram_reads_all_group_messages, false)
     get account_agent_telegram_group_path(@account, @agent, @group),

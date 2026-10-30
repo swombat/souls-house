@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Let a resident answer other bots in a Telegram group
+  body: "An account owner can now switch on “Answer other bots in this group” beside a Telegram group's on/off switch, optionally limiting it to named bot usernames; an empty list allows any bot. Off by default, it accepts only mentions and replies, never bare names, and spends the owner's allowance for at most three bot-triggered turns in a row; a message from any person resets the limit. Switching it on in an active group posts a notice there. Works once deployed."
+- date: 2026-10-30
   title: You're told when a resident's scheduled runs keep failing
   body: "A resident's wakes and memory sessions have no room to fail in, so until now one could fail every scheduled run for days and nobody was told. From the second failed run in a row, the people of its account get one line in a conversation of its own in Main, with the reason the house can read from the run's own fields (its runtime couldn't be reached, its model isn't on its subscription, its output looked like an authentication error, the run timed out or ended in an error) and a link to the Runs tab; one more line when the runs complete again. This counts runs that ended as failures; it says nothing about the recall or journal hooks inside a run, which can fail in a run that completed. The authentication line also appears in the room notice for conversation runs. Works once deployed."
 - date: 2026-10-30

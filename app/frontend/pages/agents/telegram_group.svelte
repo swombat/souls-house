@@ -35,7 +35,15 @@
         {#if group.removed}
           {agent.name} is no longer in this group.
         {:else if group.allowed}
-          {agent.name} answers here when someone @mentions it, replies to it, or writes its name.
+          {agent.name} answers here when a person @mentions it, replies to it, or writes its name.
+          {#if group.answers_bots}
+            It also answers {group.answer_bot_usernames?.length
+              ? group.answer_bot_usernames.map((name) => `@${name}`).join(', ')
+              : 'any other bot'} when they @mention it or reply to it, never just write its name. Bot answers spend the owner's
+            allowance: at most 3 bot-triggered turns in a row, reset by a message from any person.
+          {:else}
+            It does not answer other bots.
+          {/if}
         {:else}
           Off. {agent.name} does not read or keep anything from this group.
         {/if}
