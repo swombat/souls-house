@@ -50,6 +50,9 @@ gem "thruster", require: false
 gem "image_processing", "~> 2.2.0"
 gem "ruby-vips", "~> 2.3.0"
 
+# Resource-limited PDF reads and page rendering in the native worker.
+gem "imprimatur", "0.6.1"
+
 # Use Amazon S3 for Active Storage in production
 gem "aws-sdk-s3", require: false
 
