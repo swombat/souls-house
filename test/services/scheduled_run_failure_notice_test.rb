@@ -169,6 +169,48 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_equal failure.id, failing_streaks.last.data["first_run_id"]
   end
 
+  test "the first completion ends the streak, so the recovery line names it and not a later one" do
+    scheduled_run("wake", "failed", at: 5.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 4.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    first = scheduled_run("wake", "completed", at: 3.hours.ago)
+    second = scheduled_run("memory_aggregation_daily", "completed", at: 1.hour.ago)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    ScheduledRunFailureNoticeJob.perform_now(first.id)
+    assert_equal first.id, recoveries.sole.data["run_id"]
+    assert_match(/after about 2 hours of failures/, notice_chat.messages.last.content)
+  end
+
+  test "a recovery followed by 201 failures before any job runs still closes the old streak and opens the new one" do
+    scheduled_run("wake", "failed", at: 30.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 29.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    success = scheduled_run("wake", "completed", at: 28.hours.ago)
+    bulk_runs("wake", 201, from: 27.hours.ago, transport_status: 500)
+    newest = @agent.agent_runtime_interactions.order(:finished_at, :id).last
+    ScheduledRunFailureNoticeJob.perform_now(newest.id)
+    assert_equal success.id, recoveries.sole.data["run_id"]
+    assert_equal 2, failing_streaks.count
+    assert_equal 201, failing_streaks.last.data["count"]
+  end
+
+  test "conversation rows don't spend the scheduled scan: 2,001 of them can't truncate it or hide a recovery" do
+    scheduled_run("wake", "failed", at: 30.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 29.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    success = scheduled_run("wake", "completed", at: 28.hours.ago)
+    first_new = scheduled_run("wake", "failed", at: 27.hours.ago)
+    bulk_runs("conversation", 2_001, from: 26.hours.ago, execution_state: "failed")
+    newer = scheduled_run("wake", "failed", at: 1.hour.ago)
+
+    streak = Agents::RunFailureStreak.call(@agent, kind: :scheduled)
+    assert_not streak.truncated
+    assert_equal first_new.id, streak.first_run_id
+    ScheduledRunFailureNoticeJob.perform_now(newer.id)
+    assert_equal success.id, recoveries.sole.data["run_id"]
+    assert_equal first_new.id, failing_streaks.last.data["first_run_id"]
+  end
+
   test "a failure the fields don't explain is said as unknown" do
     scheduled_run("wake", "failed", at: 2.hours.ago)
     run = scheduled_run("wake", "failed", at: 1.hour.ago)
@@ -247,6 +289,16 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
         session_id: "#{@agent.uuid}-wake", started_at: at - 2.minutes, run_id: SecureRandom.uuid,
         finished_at: at, created_at: at - 2.minutes }.merge(fields).merge(attrs)
     )
+  end
+
+  # Many finished runs at once, a minute apart from `from`, without callbacks.
+  def bulk_runs(kind, count, from:, **attrs)
+    rows = Array.new(count) do |i|
+      at = from + i.minutes
+      { agent_id: @agent.id, trigger_kind: kind, requested_by: "souls.house", session_id: "s", run_id: SecureRandom.uuid,
+        started_at: at - 30.seconds, finished_at: at, created_at: at, updated_at: at }.merge(attrs)
+    end
+    AgentRuntimeInteraction.insert_all!(rows)
   end
 
   def conversation_run(state, at:, **attrs)

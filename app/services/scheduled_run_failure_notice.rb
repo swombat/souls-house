@@ -58,7 +58,7 @@ class ScheduledRunFailureNotice
     @agent.with_lock do
       current = Agents::RunFailureStreak.call(@agent, kind: :scheduled)
       open = self.class.open_streak(@agent)
-      if open && !same_streak?(open, current) && (success = completed_after(open))
+      if open && (success = first_completed_after(open))
         completing_again!(open, success)
         open = nil
       end
@@ -117,16 +117,6 @@ class ScheduledRunFailureNotice
 
   private
 
-  # The open notice still describes the current streak: the runs table has a
-  # failing streak and it starts at the run the notice was opened for. A
-  # truncated streak has no known start, so it is taken to be the same one.
-  def same_streak?(open, current)
-    return false if current.count.zero?
-
-    first = open.data&.dig("first_run_id")
-    first.nil? || current.first_run_id.nil? || first.to_i == current.first_run_id
-  end
-
   # This streak was announced before (and since closed): its first failed run
   # is already on a notice, so a late job can't announce it again.
   def announced?(current)
@@ -134,15 +124,26 @@ class ScheduledRunFailureNotice
       AuditLog.where(action: FAILING, auditable: @agent).where("data->>'first_run_id' = ?", current.first_run_id.to_s).exists?
   end
 
-  # The completed scheduled run that ended the open streak: the newest one
-  # finishing after the run the notice was opened for. Nil when the runs
-  # table holds none (then nothing is closed).
-  def completed_after(open)
+  # The completed scheduled run that ended the open streak: the first one
+  # finishing after the streak's first failure (or, for a streak opened
+  # without a known start, after the run that opened it). Scanned oldest
+  # first with no row cap, so any number of later failures can't push it out
+  # of reach, and the duration on the recovery line ends where the streak
+  # did. Nil when there is none yet.
+  def first_completed_after(open)
     opener = AgentRuntimeInteraction.find_by(id: open.data&.dig("first_run_id") || open.data&.dig("run_id"))
-    scope = @agent.agent_runtime_interactions.where.not(finished_at: nil)
-      .where("trigger_kind = 'wake' OR trigger_kind LIKE 'memory\\_aggregation\\_%'")
+    scope = Agents::RunFailureStreak.scheduled_scope(@agent.agent_runtime_interactions.where.not(finished_at: nil))
     scope = scope.where("(finished_at, id) > (?, ?)", opener.finished_at, opener.id) if opener
-    scope.order(finished_at: :desc, id: :desc).limit(200).detect { |run| run.streak_outcome == :success }
+    cursor = nil
+    loop do
+      page = cursor ? scope.where("(finished_at, id) > (?, ?)", *cursor) : scope
+      rows = page.order(:finished_at, :id).limit(200).to_a
+      found = rows.detect { |run| run.streak_outcome == :success }
+      return found if found
+      return if rows.size < 200
+
+      cursor = [ rows.last.finished_at, rows.last.id ]
+    end
   end
 
   def worth_saying?

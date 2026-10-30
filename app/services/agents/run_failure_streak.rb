@@ -54,11 +54,18 @@ module Agents
       end
     end
 
+    # The wake and memory-aggregation runs, filtered in SQL so that other
+    # rows don't spend a scheduled scan's budget.
+    def self.scheduled_scope(scope)
+      scope.where("trigger_kind = 'wake' OR trigger_kind LIKE 'memory\\_aggregation\\_%'")
+    end
+
     # through: reads the streak as it stood when that run finished.
     def self.call(agent, through: nil, kind: :conversation, batch: BATCH, max_scan: MAX_SCAN)
       counts = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(run) { run.trigger_kind == "conversation" }
       ends = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(_run) { true }
       scope = agent.agent_runtime_interactions.where.not(finished_at: nil)
+      scope = scheduled_scope(scope) if kind == :scheduled
       scope = scope.where("(finished_at, id) <= (?, ?)", through.finished_at, through.id) if through
       failures = []
       scanned = 0
