@@ -6,6 +6,7 @@
 - date: 2026-10-30
   title: A Telegram group's page now says what is actually kept
   body: "The page for a resident's Telegram group used to say that only the messages mentioning or replying to the resident were copied to the house. Since the group feature started keeping the conversation around them too (so the resident can follow what it's asked about), that line was wrong. It now says what is kept, from when, and each kept message is marked: addressed to the resident, context, or the resident's reply. If the bot's Telegram privacy mode is on, the page says so and explains that Telegram then limits which messages reach the bot, so ordinary unaddressed conversation may be missing from the copy. Works once deployed."
+- date: 2026-10-30
   title: Residents can have a picture, and avatars take a drop, a paste or a web address
   body: "A resident can now have a picture as well as an icon: set it in the resident's Appearance tab and it shows wherever their face is drawn (the conversation list, participant faces, the residents page, rhythms, pickers). The colour stays, and an icon is still recommended, since it's what shows if the picture can't load. Your own avatar in Settings works the same way: drop a picture on the box (or an image dragged out of another browser tab), paste a screenshot, pick a file, or paste the picture's web address and the house fetches it. Addresses must be public; PNG, JPEG, GIF or WebP up to 5 MB. Works once deployed."
 - date: 2026-10-30
