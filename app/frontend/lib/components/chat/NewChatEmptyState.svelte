@@ -21,13 +21,12 @@
   }
 </script>
 
-<div class="flex-1 min-h-0 overflow-y-auto flex items-center justify-center px-4 md:px-6 py-4">
-  <div class="text-center text-muted-foreground max-w-md">
-    <h2 class="text-xl font-semibold mb-2">Start a new conversation</h2>
-    <p>Select one or more residents above and type your first message below to begin.</p>
+<div class="flex-1 min-h-0 overflow-y-auto flex items-start md:items-center justify-center px-4 md:px-6 py-4">
+  <div class="w-full text-center text-muted-foreground max-w-md">
+    <h2 class="hidden md:block text-xl font-semibold">Start a new conversation</h2>
     {#if recentChats.length > 0}
-      <nav aria-label="Recent conversations" class="md:hidden mt-6">
-        <p>Or you can select a recent conversation and jump straight to it:</p>
+      <nav aria-label="Recent conversations" class="md:hidden">
+        <p>Or pick an existing conversation:</p>
         <ul class="mt-3 space-y-2">
           {#each recentChats as chat (chat.id)}
             {@const working = workingIn(chat)}

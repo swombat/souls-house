@@ -18,6 +18,8 @@ test('offers the latest three active conversations in recency order', () => {
   expect(links.map((link) => link.textContent.trim())).toEqual(['First', 'Second', 'Third']);
   expect(links[0]).toHaveAttribute('href', '/accounts/account/chats/first');
   expect(nav).toHaveClass('md:hidden');
+  expect(within(nav).getByText('Or pick an existing conversation:')).toBeInTheDocument();
+  expect(screen.queryByText(/Select one or more residents/)).not.toBeInTheDocument();
 });
 
 test('omits the recent-conversation prompt when there are no active chats', () => {

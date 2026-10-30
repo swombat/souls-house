@@ -122,6 +122,7 @@ test('restores title input even before accepting the rename', async () => {
 
 test('restores an empty audience rather than selecting new residents', async () => {
   const view = render(NewChat, props);
+  await fireEvent.click(screen.getByRole('button', { name: 'Change' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Resident' }));
   expect(JSON.parse(localStorage.getItem(key)).selectedAgentIds).toEqual([]);
   view.unmount();
@@ -225,6 +226,7 @@ test('a matching receipt retains title and audience edits made while submitting'
   const input = screen.getAllByRole('textbox').find((element) => element.tagName === 'INPUT');
   await fireEvent.input(input, { target: { value: 'Newer title' } });
   await fireEvent.keyDown(input, { key: 'Enter' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Change' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Resident' }));
   callbacks.onSuccess({ props: { flash: { draft_submission_id: body.get('draft_submission_id') } } });
   callbacks.onFinish();
