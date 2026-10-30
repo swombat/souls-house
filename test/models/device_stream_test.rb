@@ -137,14 +137,11 @@ class DeviceStreamTest < ActiveSupport::TestCase
 
   test "rate limit admits retries without admitting new batches" do
     @stream.append!(@credential, @payload)
-    session = @stream.device_stream_sessions.first
-    DeviceStreamBatch.insert_all!((1..599).map { |n|
-      { device_stream_session_id: session.id, sequence: n, observed_at: Time.current,
-        rr_ms: [ 800 ], payload_digest: "synthetic-#{n}", created_at: Time.current, updated_at: Time.current }
-    })
-    @stream.update!(batches_count: 600)
+    throttle = "device_stream:#{@stream.id}:batches"
+    ThrottleMachines.storage.increment_counter(throttle, 60, DeviceStream::BATCHES_PER_MINUTE - 1)
+
     assert_equal :ok, @stream.append!(@credential, @payload)
-    error = assert_raises(DeviceStream::Rejected) { @stream.append!(@credential, @payload.merge("sequence" => 600)) }
+    error = assert_raises(DeviceStream::Rejected) { @stream.append!(@credential, @payload.merge("sequence" => 1)) }
     assert_equal :too_many_requests, error.status
   end
 

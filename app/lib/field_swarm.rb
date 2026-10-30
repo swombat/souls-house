@@ -244,6 +244,17 @@ class FieldSwarm
 
   private
 
+  def charge_daily_search!
+    daily_searches.throttle!
+  rescue ThrottleMachines::ThrottledError
+    raise LimitReached, "This account has used its #{MAX_SEARCHES_PER_ACCOUNT_PER_DAY} swarm searches for today (UTC)"
+  end
+
+  def daily_searches
+    ThrottleMachines.limiter("field_swarm:account:#{@account.id}",
+      limit: MAX_SEARCHES_PER_ACCOUNT_PER_DAY, period: 1.day.to_i)
+  end
+
   def validate!
     raise Invalid, "Give a question" if @question.blank?
     raise Invalid, "question must be at most #{MAX_QUESTION_LENGTH} characters" if @question.length > MAX_QUESTION_LENGTH
@@ -265,15 +276,12 @@ class FieldSwarm
   def sanitize(*args) = ActiveRecord::Base.sanitize_sql_array(args)
   def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-  # Counts today's searches and writes this one's row under a lock on the
-  # account row, so concurrent callers are admitted one at a time and the
-  # daily cap can't be overshot. The lock is released before anything is read
-  # or sent.
+  # The daily cap is a ThrottleMachines counter, shared across workers; the
+  # month's is counted from the rows under the account lock. The lock is
+  # released before anything is read or sent.
   def admit!
     @account.with_lock do
-      if FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_day).count >= MAX_SEARCHES_PER_ACCOUNT_PER_DAY
-        raise LimitReached, "This account has used its #{MAX_SEARCHES_PER_ACCOUNT_PER_DAY} swarm searches for today (UTC)"
-      end
+      charge_daily_search!
       if (monthly = @account.field_swarm_monthly_limit) &&
           FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_month).count >= monthly
         raise LimitReached, "This account has used its plan's #{monthly} swarm searches for this month (UTC)"
