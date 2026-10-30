@@ -120,3 +120,50 @@ test('the wrong kind of file is refused before upload, and the server’s refusa
   await expect.poll(() => calls.length).toBe(1);
   await expect(page.getByRole('alert')).toContainText('public internet');
 });
+
+test('a paste into an unrelated text field is left to that field, picture or not', async ({ mount, page }) => {
+  const calls = await capture(page);
+  await mount(AvatarPicker, { props });
+  const field = await page.evaluateHandle(() => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('data-testid', 'first-name');
+    document.body.appendChild(input);
+    const area = document.createElement('div');
+    area.contentEditable = 'true';
+    area.setAttribute('data-testid', 'editable');
+    document.body.appendChild(area);
+    return input;
+  });
+  await field.dispose();
+
+  for (const testId of ['first-name', 'editable']) {
+    const target = page.getByTestId(testId);
+    // A spreadsheet-style clipboard: text plus a picture of itself.
+    expect(
+      await paste(page, target, [
+        [null, 'text/plain', 'Ada'],
+        ['range.png', 'image/png', 'PNGDATA'],
+      ])
+    ).toBe(false);
+    expect(await paste(page, target, [['shot.png', 'image/png', 'PNGDATA']])).toBe(false);
+    expect(await paste(page, target, [[null, 'text/plain', 'https://pics.example/me.jpg']])).toBe(false);
+  }
+
+  // Typing and pasting text in the field still works as text.
+  await page.getByTestId('first-name').fill('Ada Lovelace');
+  await expect(page.getByTestId('first-name')).toHaveValue('Ada Lovelace');
+  await page.waitForTimeout(200);
+  expect(calls.length).toBe(0);
+});
+
+test('the drop box takes a paste once clicked', async ({ mount, page }) => {
+  const calls = await capture(page);
+  await mount(AvatarPicker, { props });
+  const zone = page.locator('[data-avatar-dropzone]');
+  await zone.focus();
+  await expect(zone).toBeFocused();
+
+  expect(await paste(page, zone, [['shot.png', 'image/png', 'PNGDATA']])).toBe(true);
+  await expect.poll(() => calls.length).toBe(1);
+});

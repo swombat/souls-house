@@ -125,7 +125,9 @@
   }
 
   function handlePaste(event) {
-    if (busy) return;
+    // A paste into any text field belongs to that field, picture or not; the picker's own
+    // address box handles its paste itself (addressPaste) and stops it reaching here.
+    if (busy || event.defaultPrevented || isTextEntry(event.target)) return;
     const transfer = event.clipboardData;
     const file = Array.from(transfer?.items || []).some((item) => item.kind === 'file')
       ? imageFileFrom(transfer)
@@ -136,7 +138,7 @@
       return;
     }
     const url = webAddress(transfer?.getData('text/plain'));
-    if (url && !isTextEntry(event.target)) {
+    if (url) {
       event.preventDefault();
       useAddress(url);
     }
@@ -160,13 +162,15 @@
 </script>
 
 <div class="space-y-3" data-avatar-picker>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
   <div
-    class="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed p-4 text-center transition-colors {dragDepth >
+    class="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed p-4 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary {dragDepth >
     0
       ? 'border-primary bg-primary/5'
       : 'border-muted-foreground/25'}"
     data-avatar-dropzone
+    tabindex="0"
+    aria-label="Drop or paste a picture here"
     data-dragging={dragDepth > 0 ? '' : undefined}
     ondragenter={dragEnter}
     ondragover={dragOver}
@@ -174,7 +178,7 @@
     ondrop={drop}>
     {@render children?.()}
     <p class="text-sm text-muted-foreground">
-      {busy ? 'Saving…' : 'Drop a picture here, paste one, or'}
+      {busy ? 'Saving…' : 'Drop a picture here, or click here and paste one, or'}
     </p>
     <Button type="button" variant="outline" size="sm" disabled={busy} onclick={() => fileInput?.click()}>
       <UploadSimple class="size-4" /> Choose a file

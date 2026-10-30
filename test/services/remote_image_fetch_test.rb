@@ -63,4 +63,43 @@ class RemoteImageFetchTest < ActiveSupport::TestCase
     assert_match(/5 MB/, error.message)
   end
 
+  # Real transport, not WebMock: Net::HTTP buffers whatever body the request
+  # block leaves unread, so the cap has to hold for redirects and errors too.
+  test "the 5 MB cap holds on a real redirect body and a real error body" do
+    big = "x" * (RemoteImageFetch::MAX_BYTES + 1.megabyte)
+    [ "302 Found\r\nLocation: /elsewhere.png", "404 Not Found" ].each do |status|
+      with_raw_server("HTTP/1.1 #{status}\r\nContent-Length: #{big.bytesize}\r\nConnection: close\r\n\r\n#{big}") do |port|
+        fetch = RemoteImageFetch.new(address_check: ->(_) { true })
+        error = assert_raises(RemoteImageFetch::Error) { fetch.call("http://127.0.0.1:#{port}/a.png") }
+        assert_match(/5 MB/, error.message, status)
+      end
+    end
+  end
+
+  test "a real small picture still comes through the bounded path" do
+    with_raw_server("HTTP/1.1 200 OK\r\nContent-Length: #{PNG.bytesize}\r\nConnection: close\r\n\r\n".b + PNG) do |port|
+      result = RemoteImageFetch.new(address_check: ->(_) { true }).call("http://127.0.0.1:#{port}/me.png")
+      assert_equal "image/png", result.content_type
+    end
+  end
+
+  private
+
+  def with_raw_server(response)
+    server = TCPServer.new("127.0.0.1", 0)
+    thread = Thread.new do
+      client = server.accept
+      client.readpartial(4096)
+      client.write(response.b)
+    rescue IOError, SystemCallError
+      nil
+    ensure
+      client&.close
+    end
+    yield server.addr[1]
+  ensure
+    server&.close
+    thread&.join(2)
+  end
+
 end

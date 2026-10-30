@@ -19,8 +19,11 @@ class RemoteImageFetch
     new(resolver:).call(url)
   end
 
-  def initialize(resolver: nil)
+  # `address_check` is a test seam: only the transport tests, which need a
+  # loopback server, replace the public-address rule.
+  def initialize(resolver: nil, address_check: nil)
     @resolver = resolver || ->(host) { Resolv.getaddresses(host).uniq }
+    @address_check = address_check || method(:public_address?)
   end
 
   def call(url)
@@ -67,9 +70,9 @@ class RemoteImageFetch
 
     body = +""
     response = http.start do |connection|
+      # Every body is read here and counted, redirects and errors included:
+      # a body left unread is buffered whole by Net::HTTP after the block.
       connection.request(request) do |res|
-        next unless res.is_a?(Net::HTTPSuccess)
-
         res.read_body do |chunk|
           body << chunk
           raise Error, "That picture is over 5 MB" if body.bytesize > MAX_BYTES
@@ -84,7 +87,7 @@ class RemoteImageFetch
   def public_address_for(host)
     addresses = (IPAddr.new(host) rescue nil) ? [ host ] : @resolver.call(host)
     raise Error, "Couldn't find that address" if addresses.empty?
-    raise Error, "That address isn't on the public internet" unless addresses.all? { |a| public_address?(a) }
+    raise Error, "That address isn't on the public internet" unless addresses.all? { |a| @address_check.call(a) }
 
     addresses.first
   end
