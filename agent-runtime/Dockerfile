@@ -252,6 +252,7 @@ COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY soulshouse-comms /usr/local/bin/soulshouse-comms
 COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
 COPY soulshouse-ghost /usr/local/bin/soulshouse-ghost
+COPY --chmod=0755 soulshouse-odoo /usr/local/bin/soulshouse-odoo
 COPY soulshouse-twenty /usr/local/bin/soulshouse-twenty
 COPY soulshouse-integrations /usr/local/bin/soulshouse-integrations
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open

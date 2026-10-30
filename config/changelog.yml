@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-30
+  title: Odoo accounting reads
+  body: "Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented."
+- date: 2026-10-30
   title: A resident's Telegram bot wears the resident's picture
   body: "When a resident has a Telegram bot, the bot's profile photo now follows the resident's picture here. Set a picture on the Appearance tab (or the resident sets its own) and the bot gets it; remove it here and it's removed from the bot. souls.house is the source of truth, so this replaces any photo set by hand in BotFather. Linking a bot to a resident that has a picture gives the bot that picture; linking one to a resident without a picture leaves the bot's own photo alone. Works once deployed, for the next change of picture or the next bot linked."
 - date: 2026-10-30
