@@ -9,6 +9,7 @@
   import { sortAgentsByAvailability, watchAgentsRemaining } from '$lib/agent-subscription-usage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { onDestroy } from 'svelte';
+  import { pendingEntry, takenUpIds } from '$lib/agent-trigger-pending';
 
   let {
     agents = [],
@@ -24,10 +25,7 @@
     latestReplies = {},
     onTrigger = null,
   } = $props();
-  // One entry per resident asked and not yet taken up, so asking one resident
-  // never holds the others' buttons. Each entry remembers what the room looked
-  // like when that resident was asked: whether it was running, its runtime
-  // rows, and their newest reply.
+  // One wait per resident asked and not yet taken up ($lib/agent-trigger-pending).
   let pending = $state({});
   let triggeringAll = $state(false);
   const pendingTimeouts = new Map();
@@ -139,10 +137,6 @@
     }
   }
 
-  function rowIdsFor(agentId) {
-    return new Set(runtimeInteractions.filter((row) => row.agent_id === agentId).map((row) => row.id));
-  }
-
   function clearPending(ids) {
     const next = { ...pending };
     for (const id of ids) {
@@ -156,11 +150,7 @@
   function beginPending(ids) {
     const next = { ...pending };
     for (const id of ids) {
-      next[id] = {
-        wasActive: activeRuntimeAgentIds.includes(id),
-        rowIds: rowIdsFor(id),
-        replyId: latestReplies[id] ?? null,
-      };
+      next[id] = pendingEntry(id, { activeRuntimeAgentIds, runtimeInteractions, latestReplies });
       clearTimeout(pendingTimeouts.get(id));
       pendingTimeouts.set(
         id,
@@ -170,20 +160,12 @@
     pending = next;
   }
 
-  // A resident's ask is taken up once a run of theirs starts that wasn't
-  // running when they were asked, or a new runtime row of theirs appears.
-  // External residents post a finished message instead of running here, so
-  // their own new reply releases them. Only that resident's button is released.
+  // Release each resident whose ask has been taken up; only their button.
   $effect(() => {
     const ids = Object.keys(pending);
     if (!ids.length) return;
     if (disabled) return clearPending(ids);
-    const taken = ids.filter((id) => {
-      const entry = pending[id];
-      if (activeRuntimeAgentIds.includes(id) && !entry.wasActive) return true;
-      if (runtimeInteractions.some((row) => row.agent_id === id && !entry.rowIds.has(row.id))) return true;
-      return Boolean(latestReplies[id]) && latestReplies[id] !== entry.replyId;
-    });
+    const taken = takenUpIds(pending, { activeRuntimeAgentIds, runtimeInteractions, latestReplies });
     if (taken.length) clearPending(taken);
   });
 
