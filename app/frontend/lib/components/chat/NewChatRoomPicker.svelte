@@ -11,10 +11,10 @@
 </script>
 
 {#if rooms.length > 0}
-  <div class="flex items-center gap-2 px-4 pt-2 text-xs text-muted-foreground">
-    <span>Room</span>
+  <div class="flex items-center gap-2 text-xs text-muted-foreground">
+    <span class="hidden sm:inline">Room</span>
     <Select.Root type="single" bind:value={roomId}>
-      <Select.Trigger class="h-7 w-40 text-xs" aria-label="Room for this conversation" data-testid="new-chat-room">
+      <Select.Trigger class="h-7 w-32 sm:w-40 text-xs" aria-label="Room for this conversation" data-testid="new-chat-room">
         {roomName(roomId, rooms, mainName)}
       </Select.Trigger>
       <Select.Content sideOffset={4}>
