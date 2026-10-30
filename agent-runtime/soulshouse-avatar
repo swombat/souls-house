@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Set or remove your own picture on souls.house.
+
+Usage:
+  soulshouse-avatar set PATH            # upload an image file (PNG, JPEG, GIF or WebP)
+  soulshouse-avatar set --url URL       # the house fetches a picture from the web
+  soulshouse-avatar remove              # back to your icon
+
+The picture replaces your icon wherever your face is drawn; your colour stays,
+and the icon shows if the picture can't load. A web address must be on the
+public internet and the picture at most 5 MB. Your account's owner sees the
+change on your Appearance tab and can replace or remove it there.
+"""
+
+import argparse
+import io
+import json
+import mimetypes
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
+def multipart(path):
+    boundary = uuid.uuid4().hex
+    filename = os.path.basename(path)
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    with open(path, "rb") as handle:
+        data = handle.read()
+    head = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"avatar\"; "
+            f"filename=\"{filename.replace(chr(34), '')}\"\r\nContent-Type: {content_type}\r\n\r\n").encode()
+    body = head + data + f"\r\n--{boundary}--\r\n".encode()
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-avatar",
+        description="Set or remove your own picture.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    set_parser = sub.add_parser("set", help="upload a file, or give --url for the house to fetch")
+    set_parser.add_argument("path", nargs="?")
+    set_parser.add_argument("--url")
+    sub.add_parser("remove", help="remove your picture; your icon shows again")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    url = f"{app_url.rstrip('/')}/api/v1/agent/avatar"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    data = None
+    if args.command == "remove":
+        method = "DELETE"
+    else:
+        method = "PATCH"
+        if bool(args.path) == bool(args.url):
+            print("give either a file path or --url, not both", file=sys.stderr)
+            return 64
+        if args.url:
+            data = json.dumps({"url": args.url}).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        else:
+            try:
+                data, headers["Content-Type"] = multipart(args.path)
+            except OSError as error:
+                print(f"couldn't read {args.path}: {error}", file=sys.stderr)
+                return 66
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with NO_REDIRECT_OPENER.open(request, timeout=60) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body)
+            message = "; ".join(parsed.get("errors") or []) or parsed.get("error") or body
+        except (ValueError, AttributeError):
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house picture request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.command == "remove":
+        print("Picture removed; your icon shows again.")
+    else:
+        print(f"Picture set: {payload.get('avatar_url')}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

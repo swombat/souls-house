@@ -46,6 +46,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
   HELPERS = {
     "soulshouse-post-message" => { args: %w[c1], stdin: "hello" },
     "soulshouse-model" => { args: %w[c1] },
+    "soulshouse-avatar" => { args: %w[remove] },
     "soulshouse-quiet-reason" => { args: %w[c1], stdin: "busy elsewhere",
                                    env: { "SOULSHOUSE_RUNTIME_CHAT_ID" => "c1", "SOULSHOUSE_RUNTIME_RUN_ID" => "r1" } },
     "soulshouse-usage" => { args: [] },

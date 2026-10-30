@@ -478,6 +478,8 @@ Rails.application.routes.draw do
         resources :judgments, only: :index, module: :reflexes
       end
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      patch "agent/avatar", to: "agent_avatars#update"
+      delete "agent/avatar", to: "agent_avatars#destroy"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
