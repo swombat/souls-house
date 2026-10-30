@@ -1,6 +1,7 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
+  import { visibleRefresh } from '$lib/visible-refresh';
   import { newAccountAgentPath, accountAgentPath, accountAgentPredecessorPath } from '@/routes';
   import { findModelLabel as modelLabelFor } from '$lib/agent-models';
   import AgentEmptyState from '$lib/components/agents/AgentEmptyState.svelte';
@@ -20,6 +21,7 @@
     guest_candidates: guestCandidates = [],
     can_end_guest_memberships: canEndGuestMemberships = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
+    active_sessions: activeSessions = {},
   } = $props();
 
   // Subscribe to both:
@@ -30,6 +32,7 @@
     updateSync({
       [`Account:${account.id}:agents`]: 'agents',
       [`Account:${account.id}`]: 'agents',
+      [`ResidentSessions:${account.id}`]: 'active_sessions',
       [`GuestDirectory:${account.id}`]: [
         'guest_memberships',
         'away_memberships',
@@ -38,6 +41,8 @@
       ],
     });
   });
+  // A run that ages out of the working window ends without a broadcast.
+  $effect(() => visibleRefresh(['active_sessions']));
   // Discovery belongs to this human, not whichever account is being viewed.
   const updateDiscoverySync = createDynamicSync();
   $effect(() => {
@@ -107,6 +112,7 @@
   {:else}
     <AgentGrid
       {agents}
+      {activeSessions}
       accountId={account.id}
       {canManageProviderSubscription}
       onUpgrade={openUpgradeModal}

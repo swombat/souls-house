@@ -56,6 +56,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_not response.parsed_body.fetch("props").key?("grouped_models")
   end
 
+  test "a sessions-only partial counts this account's running sessions without building the cards" do
+    resident = @account.agents.where.not(id: @agent.id).first || @agent
+    AgentRuntimeInteraction.create!(agent: resident, trigger_kind: "wake", started_at: Time.current,
+      run_id: SecureRandom.uuid, execution_state: "running")
+    Agents::ResidentDirectory.stub :new, ->(*) { flunk "a sessions refresh built resident cards" } do
+      get account_agents_path(@account), headers: {
+        "X-Inertia" => "true",
+        "X-Inertia-Version" => ViteRuby.digest,
+        "X-Inertia-Partial-Component" => "agents/index",
+        "X-Inertia-Partial-Data" => "active_sessions"
+      }
+      assert_response :success
+    end
+    sessions = response.parsed_body.dig("props", "active_sessions")
+    assert_equal({ "chat" => 0, "telegram" => 0, "other" => 1 }, sessions.fetch(resident.to_param))
+    assert sessions.keys.all? { |id| @account.agents.find_by_obfuscated_id(id) }, "only this account's residents"
+  end
+
   test "birth claims funding atomically and a second birth creates no resident key or job" do
     attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
     assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do

@@ -26,6 +26,7 @@
   import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
 
   import ResidentActivity from './ResidentActivity.svelte';
+  import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
   const integrationIcons = {
     telegram: TelegramLogo,
     github: GithubLogo,
@@ -44,6 +45,7 @@
 
   let {
     agent,
+    sessions = null,
     accountId,
     onupgrade,
     ondisable,
@@ -132,6 +134,7 @@
           </div>
         </div>
       </div>
+      <ResidentSessionsSpinner {sessions} />
     </div>
   </CardHeader>
   <CardContent>

@@ -16,6 +16,8 @@ class AgentsController < ApplicationController
       github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       # Directory-only hints must not rebuild cards or claim journal-stat jobs.
       agents: -> { Agents::ResidentDirectory.new(current_account).call },
+      # Light on purpose: the spinners reload this alone (ResidentSessions).
+      active_sessions: -> { ResidentSessions.by_agent(current_account.agents) },
       can_end_guest_memberships: current_account.owned_by?(Current.user),
       # The reconnect endpoints require the account owner; offer the button to the same people.
       can_manage_provider_subscription: current_account.owned_by?(Current.user),

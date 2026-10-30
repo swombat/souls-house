@@ -3,6 +3,7 @@
 
   let {
     agents = [],
+    activeSessions = {},
     accountId,
     onUpgrade,
     onDisable,
@@ -21,6 +22,7 @@
     {#each residents as agent (agent.id)}
       <AgentCard
         {agent}
+        sessions={activeSessions?.[agent.id]}
         {accountId}
         {showActions}
         {admin}
