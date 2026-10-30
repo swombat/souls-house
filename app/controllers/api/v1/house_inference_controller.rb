@@ -34,9 +34,6 @@ module Api
       rescue JSON::ParserError
         render json: { error: { message: 'Invalid JSON.' } }, status: :bad_request
       rescue HouseInference::Error => e
-        # An allowance refusal leaves its code on the resident, so the failed
-        # run can be categorised from a field rather than from this message.
-        current_api_agent.note_house_refusal!(e)
         payload = { error: { message: e.message, code: e.code } }
         if response.committed?
           response.stream.write("data: #{JSON.generate(payload)}\n\n")

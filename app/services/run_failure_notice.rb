@@ -10,8 +10,7 @@ class RunFailureNotice
     "model_unavailable" => "its model isn't available on its subscription",
     "runtime_error" => "the run ended in an error",
     "timed_out" => "the run timed out",
-    "allowance_spent" => "its house allowance is used up",
-    "credential_unavailable" => "its provider credential is missing or has expired",
+    "authentication_error" => "the run's output looked like an authentication error",
     "unknown" => "the run failed and the cause isn't identified"
   }.freeze
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_080000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -409,8 +409,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_210000) do
     t.string "health_state", default: "unknown", null: false
     t.integer "heartbeat_wakes_per_day", default: 2, null: false
     t.string "home_profile", default: "house", null: false
-    t.string "house_refusal_code"
-    t.datetime "house_refused_at"
     t.string "icon"
     t.datetime "identity_seeded_at"
     t.jsonb "journal_entry_stats", default: {}, null: false

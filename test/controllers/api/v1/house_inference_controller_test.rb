@@ -53,10 +53,6 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
       assert_response :payment_required
       assert_equal 'house_allowance_exhausted', response.parsed_body.dig('error', 'code')
     end
-    # The refusal leaves its code and time on the resident, so the run that
-    # hit it can be categorised without reading this message.
-    assert_equal 'house_allowance_exhausted', @agent.reload.house_refusal_code
-    assert_in_delta Time.current, @agent.house_refused_at, 5.seconds
   end
 
   test 'unexpected gateway failures are not mistaken for empty successful responses' do

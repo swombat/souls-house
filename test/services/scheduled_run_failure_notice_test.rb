@@ -49,6 +49,7 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_equal "system", message.role
     assert_nil message.agent_id
     assert_match(/\A\[System Notice\] #{@agent.name}'s scheduled runs are failing: the run ended in an error \(2nd failed scheduled run in a row since \d+ \w+ \d\d:\d\d CES?T\)\./, message.content)
+    assert_includes message.content, "ended as a failed run (some work may have happened before it failed)"
     assert_includes message.content, "conversations are separate"
     link = message.notice_link.stringify_keys
     assert_equal "Why?", link["label"]
@@ -91,31 +92,81 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_empty recoveries
   end
 
-  test "a spent house allowance is said from the house's own mark, only when the mark falls inside the run" do
+  test "a house allowance refusal is not claimed: no run carries it, so the line stays general" do
     @agent.update!(model_id: HouseInference::Offering::HAIKU_MODEL_ID)
     scheduled_run("wake", "failed", at: 2.hours.ago, provider: "house", runtime_status: "error", runtime_returncode: 1, transport_status: 500)
-    @agent.update_columns(house_refusal_code: "house_allowance_exhausted", house_refused_at: 61.minutes.ago)
     run = scheduled_run("wake", "failed", at: 1.hour.ago, provider: "house", runtime_status: "error", runtime_returncode: 1, transport_status: 500)
-    assert_equal "allowance_spent", run.failure_category
+    assert_equal "runtime_error", run.failure_category
     ScheduledRunFailureNoticeJob.perform_now(run.id)
-    assert_includes notice_chat.messages.sole.content, "its house allowance is used up"
-
-    @agent.update_columns(house_refused_at: 3.hours.ago)
-    assert_equal "runtime_error", run.reload.failure_category
-    @agent.update_columns(house_refused_at: 61.minutes.ago, house_refusal_code: "house_allowance_none")
-    assert_equal "runtime_error", run.reload.failure_category
+    assert_no_match(/allowance/, notice_chat.messages.sole.content)
   end
 
-  test "a missing or expired provider credential is said from the shim's error kind" do
+  test "the shim's auth class is said as an authentication error, not as a missing or expired credential" do
     scheduled_run("wake", "failed", at: 2.hours.ago, provider: "openrouter", runtime_status: "error", runtime_returncode: 1,
       transport_status: 500, response_body: { "status" => "error", "error_kind" => "auth_expired", "stderr" => "sk-or-SECRET no credentials" })
     run = scheduled_run("memory_aggregation_daily", "failed", at: 1.hour.ago, provider: "openrouter", runtime_status: "error",
       runtime_returncode: 1, transport_status: 500, response_body: { "status" => "error", "error_kind" => "auth_expired" })
-    assert_equal "credential_unavailable", run.failure_category
+    assert_equal "authentication_error", run.failure_category
     ScheduledRunFailureNoticeJob.perform_now(run.id)
     content = notice_chat.messages.sole.content
-    assert_includes content, "its provider credential is missing or has expired"
-    assert_no_match(/SECRET|sk-or/, content)
+    assert_includes content, "the run's output looked like an authentication error"
+    assert_no_match(/missing|expired|SECRET|sk-or/, content)
+  end
+
+  test "an old completion arriving after newer failures does not close the newer streak" do
+    scheduled_run("wake", "failed", at: 5.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 4.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    old_success = scheduled_run("wake", "completed", at: 6.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(old_success.id)
+    assert_empty recoveries, "a completion older than the streak ended nothing"
+    assert_equal 1, failing_streaks.count
+  end
+
+  test "a completion delayed past newer failures closes the old streak and the new one is announced once" do
+    scheduled_run("wake", "failed", at: 6.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 5.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    success = scheduled_run("wake", "completed", at: 4.hours.ago)
+    first_new = scheduled_run("wake", "failed", at: 3.hours.ago)
+    newer = scheduled_run("wake", "failed", at: 2.hours.ago)
+    # The completion's job arrives only now, after both newer failures.
+    ScheduledRunFailureNoticeJob.perform_now(success.id)
+    ScheduledRunFailureNoticeJob.perform_now(newer.id)
+    assert_equal success.id, recoveries.sole.data["run_id"]
+    assert_equal 2, failing_streaks.count
+    assert_equal first_new.id, failing_streaks.last.data["first_run_id"]
+  end
+
+  test "a failed run's job replayed after recovery does not reopen its streak" do
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    recovered = scheduled_run("wake", "completed", at: 1.hour.ago)
+    ScheduledRunFailureNoticeJob.perform_now(recovered.id)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    assert_equal 1, failing_streaks.count
+    assert_equal 1, recoveries.count
+  end
+
+  test "a completion and a failure finishing at the same instant are ordered by id" do
+    at = 1.hour.ago
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    opener = scheduled_run("wake", "failed", at: 2.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(opener.id)
+    success = scheduled_run("memory_aggregation_daily", "completed", at: at)
+    failure = scheduled_run("wake", "failed", at: at)
+    ScheduledRunFailureNoticeJob.perform_now(failure.id)
+    ScheduledRunFailureNoticeJob.perform_now(success.id)
+    # The failure has the higher id, so it is the newer run: the old streak
+    # is closed by the completion, and the new one (one failure) says nothing.
+    assert_equal success.id, recoveries.sole.data["run_id"]
+    assert_equal 1, failing_streaks.count
+
+    later = scheduled_run("wake", "failed", at: at + 1.minute)
+    ScheduledRunFailureNoticeJob.perform_now(later.id)
+    assert_equal failure.id, failing_streaks.last.data["first_run_id"]
   end
 
   test "a failure the fields don't explain is said as unknown" do
@@ -135,19 +186,31 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_empty failing_streaks
 
     @agent.update!(active: true)
+    ResidentEntitlement.create!(agent: @agent, account: @agent.account, source: "stripe", state: "held", held_at: Time.current, tier: "conversation")
+    ScheduledRunFailureNoticeJob.perform_now(run.id)
+    assert_empty failing_streaks
+    ResidentEntitlement.where(agent: @agent).update_all(state: "active", held_at: nil)
+
     AuditLog.create!(user: nil, account: @agent.account, action: ResidentSwitchedOffNotice::SWITCHED_OFF, auditable: @agent, data: {})
     ScheduledRunFailureNoticeJob.perform_now(run.id)
     assert_empty failing_streaks
   end
 
-  test "a conversation run's room notice uses the same two new causes" do
-    @agent.update!(model_id: HouseInference::Offering::HAIKU_MODEL_ID)
-    first = conversation_run("failed", at: 2.hours.ago, provider: "house")
-    @agent.update_columns(house_refusal_code: "house_allowance_exhausted", house_refused_at: 61.minutes.ago)
-    run = conversation_run("failed", at: 1.hour.ago, provider: "house")
+  test "a conversation run's room notice uses the same authentication line" do
+    first = conversation_run("failed", at: 2.hours.ago)
+    run = conversation_run("failed", at: 1.hour.ago, response_body: { "status" => "error", "error_kind" => "auth_expired" })
     RunFailureNoticeJob.perform_now(run.id)
-    assert_equal "#{@agent.name} couldn't respond here: its house allowance is used up (2nd failed run in a row since #{first.started_at.in_time_zone('Madrid').strftime('%H:%M %Z')}).",
+    assert_equal "#{@agent.name} couldn't respond here: the run's output looked like an authentication error (2nd failed run in a row since #{first.started_at.in_time_zone('Madrid').strftime('%H:%M %Z')}).",
       @room.messages.where(role: "system").last.content
+  end
+
+  test "this reads terminal failed runs only: a completed run whose hooks failed is a completion" do
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    hooks_failed = scheduled_run("wake", "completed", at: 1.hour.ago, response_body: { "status" => "ok", "hook_errors" => [ "stop" ] })
+    ScheduledRunFailureNoticeJob.perform_now(hooks_failed.id)
+    assert_equal 1, recoveries.count, "hook health inside a run is not what this notice claims to know"
   end
 
   private

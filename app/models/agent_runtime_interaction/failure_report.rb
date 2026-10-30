@@ -13,7 +13,7 @@ module AgentRuntimeInteraction::FailureReport
 
   FAILURE_STATES = %w[failed timed_out].freeze
   FAILURE_CATEGORIES = %w[
-    runtime_unavailable model_unavailable allowance_spent credential_unavailable runtime_error timed_out unknown
+    runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
   ].freeze
   # Runs the house starts on its own clock, with no room to fail in: the
   # scheduled wake and the memory aggregations. Telegram and orientation runs
@@ -62,12 +62,11 @@ module AgentRuntimeInteraction::FailureReport
     # The runtime's own structured classification (trigger_shim.py
     # classify_provider_error): the CLI refused the model before any request.
     return "model_unavailable" if error_kind == "model_unavailable"
-    # The shim's auth class covers a credential that expired and one that was
-    # never set ("no credentials", "missing provider credentials").
-    return "credential_unavailable" if error_kind == "auth_expired"
-    # The house gateway refused this resident's allowance while the run was
-    # going (Agent::HouseRefusals): a mark the house wrote, not error text.
-    return "allowance_spent" if provider == "house" && agent&.house_allowance_exhausted_between?(started_at, finished_at)
+    # The shim's auth class (classify_provider_error) matches authentication
+    # wording or a 401 anywhere in the run's output, so it shows the run
+    # looked like an authentication error, not that a credential is missing
+    # or expired. The line says only that.
+    return "authentication_error" if error_kind == "auth_expired"
     return "runtime_error" if runtime_status == "error" || runtime_returncode.to_i.nonzero?
 
     "unknown"

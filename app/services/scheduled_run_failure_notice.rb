@@ -48,41 +48,42 @@ class ScheduledRunFailureNotice
     @agent = run.agent
   end
 
-  # Read, decide and write under a lock on the resident's row: two scheduled
-  # runs can finish close together (the 02:00 memory run and a wake), and
-  # without the lock both could open a streak, or both close one.
+  # Read, decide and write under a lock on the resident's row. The decision
+  # is made from the runs table, ordered by (finished_at, id), never from the
+  # run this job was handed: jobs arrive late, twice or out of order, and a
+  # replayed old failure or a delayed old completion must not reopen or close
+  # a streak the runs table no longer has. The run that triggered the job is
+  # only the occasion to look.
   def observe!
     @agent.with_lock do
+      current = Agents::RunFailureStreak.call(@agent, kind: :scheduled)
       open = self.class.open_streak(@agent)
-      case @run.streak_outcome
-      when :success
-        completing_again!(open) if open
-      when :failure
-        next if open || !worth_saying?
-
-        streak = Agents::RunFailureStreak.call(@agent, through: @run, kind: :scheduled)
-        failing!(streak) if streak.count >= 2
+      if open && !same_streak?(open, current) && (success = completed_after(open))
+        completing_again!(open, success)
+        open = nil
       end
+      failing!(current) if open.nil? && current.count >= 2 && !announced?(current) && worth_saying?
     end
   end
 
   def failing!(streak)
     since = streak.since || @run.started_at
+    category = streak.categories.first || "unknown"
     Agent.transaction do
       chat = @agent.account.chats.create_with_message!(
         { title: "#{@agent.name}'s scheduled runs are failing", manual_responses: true },
         agent_ids: [ @agent.id ], automatic_response: false
       )
-      chat.messages.create!(role: "system", content: failing_text(streak, since), notice_link: link)
+      chat.messages.create!(role: "system", content: failing_text(streak, since, category), notice_link: link)
       AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
-        data: { chat_id: chat.id, run_id: @run.id, since: since.iso8601, count: streak.count,
-                category: @run.failure_category, trigger_kind: @run.trigger_kind })
+        data: { chat_id: chat.id, run_id: @run.id, first_run_id: streak.first_run_id, since: since.iso8601,
+                count: streak.count, category: category })
     end
   end
 
-  def completing_again!(streak)
+  def completing_again!(streak, success)
     chat = Chat.find_by(id: streak.data&.dig("chat_id"), account_id: @agent.account_id)
-    at = @run.finished_at
+    at = success.finished_at
     Agent.transaction do
       chat ||= @agent.account.chats.create_with_message!(
         { title: "#{@agent.name}'s scheduled runs are completing again", manual_responses: true },
@@ -90,20 +91,21 @@ class ScheduledRunFailureNotice
       )
       chat.messages.create!(role: "system", content: completing_text(streak, at), notice_link: link)
       AuditLog.create!(user: nil, account: @agent.account, action: RECOVERED, auditable: @agent,
-        data: { streak_id: streak.id, chat_id: chat.id, run_id: @run.id, at: at.iso8601 })
+        data: { streak_id: streak.id, chat_id: chat.id, run_id: success.id, at: at.iso8601 })
     end
   end
 
-  def failing_text(streak, since)
+  def failing_text(streak, since, category)
     name = @agent.name
-    cause = RunFailureNotice::NO_REPLY_CAUSES.fetch(@run.failure_category)
+    cause = RunFailureNotice::NO_REPLY_CAUSES.fetch(category)
     tally = if streak.truncated
       "#{streak.count} or more failed scheduled runs in a row"
     else
       "#{streak.count.ordinalize} failed scheduled run in a row since #{time_label(since)}"
     end
     "[System Notice] #{name}'s scheduled runs are failing: #{cause} (#{tally}). " \
-      "#{name}'s wakes and memory sessions don't happen while they fail; conversations are separate and may still work. " \
+      "Each of these wakes or memory sessions ended as a failed run (some work may have happened before it failed); " \
+      "conversations are separate and may still work. " \
       "The Runs tab shows each run."
   end
 
@@ -114,6 +116,34 @@ class ScheduledRunFailureNotice
   end
 
   private
+
+  # The open notice still describes the current streak: the runs table has a
+  # failing streak and it starts at the run the notice was opened for. A
+  # truncated streak has no known start, so it is taken to be the same one.
+  def same_streak?(open, current)
+    return false if current.count.zero?
+
+    first = open.data&.dig("first_run_id")
+    first.nil? || current.first_run_id.nil? || first.to_i == current.first_run_id
+  end
+
+  # This streak was announced before (and since closed): its first failed run
+  # is already on a notice, so a late job can't announce it again.
+  def announced?(current)
+    current.first_run_id &&
+      AuditLog.where(action: FAILING, auditable: @agent).where("data->>'first_run_id' = ?", current.first_run_id.to_s).exists?
+  end
+
+  # The completed scheduled run that ended the open streak: the newest one
+  # finishing after the run the notice was opened for. Nil when the runs
+  # table holds none (then nothing is closed).
+  def completed_after(open)
+    opener = AgentRuntimeInteraction.find_by(id: open.data&.dig("first_run_id") || open.data&.dig("run_id"))
+    scope = @agent.agent_runtime_interactions.where.not(finished_at: nil)
+      .where("trigger_kind = 'wake' OR trigger_kind LIKE 'memory\\_aggregation\\_%'")
+    scope = scope.where("(finished_at, id) > (?, ?)", opener.finished_at, opener.id) if opener
+    scope.order(finished_at: :desc, id: :desc).limit(200).detect { |run| run.streak_outcome == :success }
+  end
 
   def worth_saying?
     @agent.active? && !@agent.billing_held? && !ResidentSwitchedOffNotice.open_holds(@agent).exists?

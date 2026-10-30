@@ -22,8 +22,15 @@ module Agents
     BATCH = 200
     MAX_SCAN = 2_000
 
-    Result = Data.define(:count, :since, :categories, :truncated) do
+    # first_run_id is the oldest failure's id: the streak's identity, so a
+    # notice can be latched to one streak however late its jobs arrive. Nil
+    # when the streak is truncated (its start is not known).
+    Result = Data.define(:count, :since, :categories, :truncated, :first_run_id) do
       def self.none = new(count: 0, since: nil, categories: [], truncated: false)
+
+      def initialize(count:, since:, categories:, truncated:, first_run_id: nil)
+        super
+      end
 
       # Only when every failure in a complete streak was a runtime that
       # couldn't be reached may the card say the runtime isn't starting.
@@ -83,7 +90,8 @@ module Agents
       truncated = !bounded
       Result.new(
         count: failures.size, since: (failures.last&.started_at unless truncated),
-        categories: failures.map(&:failure_category), truncated: truncated
+        categories: failures.map(&:failure_category), truncated: truncated,
+        first_run_id: (failures.last&.id unless truncated)
       )
     end
 
