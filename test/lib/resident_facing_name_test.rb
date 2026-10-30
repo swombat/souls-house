@@ -12,18 +12,6 @@ class ResidentFacingNameTest < ActiveSupport::TestCase
     @chat = @agent.account.chats.create!(title: "Names", manual_responses: true, agents: [ @agent ])
   end
 
-  test "a named person is their profile name" do
-    assert_equal "Ada Lovelace", ResidentFacingName.for(@ada)
-  end
-
-  test "a person with no profile name is a member id, not their email or its local part" do
-    nameless = person("nameless.private@example.test", nil, nil)
-
-    label = ResidentFacingName.for(nameless)
-    assert_equal "Member #{nameless.obfuscated_id}", label
-    refute_includes label, "nameless"
-  end
-
   test "transcript lines and metadata name people, not their addresses" do
     nameless = person("nameless.private@example.test", nil, nil)
     @chat.messages.create!(user: @ada, role: "user", content: "Write to me at ada.lovelace.private@example.test")

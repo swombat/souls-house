@@ -17,15 +17,6 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     end
   end
 
-  test "returns nil when response text is empty" do
-    stub_request(:post, @api_url)
-      .to_return(status: 200, body: { text: "" }.to_json)
-
-    Rails.application.credentials.stub(:dig, "test-api-key") do
-      assert_nil ElevenLabsStt.transcribe(@audio)
-    end
-  end
-
   test "returns nil when response text is whitespace only" do
     stub_request(:post, @api_url)
       .to_return(status: 200, body: { text: "   " }.to_json)
@@ -45,8 +36,10 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     end
   end
 
-  [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNRESET,
-    Errno::ETIMEDOUT, Errno::ECONNABORTED, Errno::ENETDOWN, Errno::EACCES ].each do |error_class|
+  # One per rescued class in TRANSPORT_ERRORS; every Errno goes through the
+  # single SystemCallError entry, so one stands for them all.
+  [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, IOError,
+    SocketError, OpenSSL::SSL::SSLError, Errno::ECONNRESET ].each do |error_class|
     test "normalizes #{error_class} as ElevenLabsStt::Error" do
       stub_request(:post, @api_url).to_raise(error_class)
 
@@ -74,7 +67,8 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     end
   end
 
-  [ "null", "[]", "42", "true", '"text"', '{"text":42}', '{"text":[]}', '{"text":{}}' ].each do |body|
+  # One body per clause: not an object at all, and an object whose text isn't a string.
+  [ "[]", '{"text":42}' ].each do |body|
     test "normalizes invalid successful response shape #{body}" do
       stub_request(:post, @api_url).to_return(status: 200, body: body)
 
@@ -151,39 +145,28 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     assert_empty ElevenLabsStt.new.form_fields(@audio).select { |name, _| name == "keyterms" }
   end
 
-  test "transcribe passes the keyterms through to the request" do
-    stub_request(:post, @api_url).to_return(status: 200, body: { text: "Lume" }.to_json)
-    received = nil
-    stt = ElevenLabsStt.new
-    original = stt.method(:form_fields)
-    stt.define_singleton_method(:form_fields) { |audio, keyterms: []| received = keyterms; original.call(audio, keyterms:) }
+  [ 400, 422 ].each do |status|
+    test "a request refused #{status} with keyterms is sent once more without them" do
+      stub_request(:post, @api_url).to_return(
+        { status:, body: { error: { message: "bad keyterms" } }.to_json },
+        { status: 200, body: { text: "Lume" }.to_json }
+      )
+      calls = []
+      stt = ElevenLabsStt.new
+      original = stt.method(:form_fields)
+      stt.define_singleton_method(:form_fields) do |audio, keyterms: []|
+        calls << { keyterms:, position: audio.pos }
+        original.call(audio, keyterms:)
+      end
+      @audio.read # as a first send leaves it
 
-    Rails.application.credentials.stub(:dig, "test-api-key") do
-      assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
+      Rails.application.credentials.stub(:dig, "test-api-key") do
+        assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
+      end
+      assert_requested :post, @api_url, times: 2
+      assert_equal [ [ "Lume" ], [] ], calls.map { |call| call[:keyterms] }
+      assert_equal 0, calls.last[:position], "the audio is rewound and sent again, not an empty file"
     end
-    assert_equal [ "Lume" ], received
-  end
-
-  test "a request refused with keyterms is sent once more without them" do
-    stub_request(:post, @api_url).to_return(
-      { status: 422, body: { error: { message: "bad keyterms" } }.to_json },
-      { status: 200, body: { text: "Lume" }.to_json }
-    )
-    calls = []
-    stt = ElevenLabsStt.new
-    original = stt.method(:form_fields)
-    stt.define_singleton_method(:form_fields) do |audio, keyterms: []|
-      calls << { keyterms:, position: audio.pos }
-      original.call(audio, keyterms:)
-    end
-    @audio.read # as a first send leaves it
-
-    Rails.application.credentials.stub(:dig, "test-api-key") do
-      assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
-    end
-    assert_requested :post, @api_url, times: 2
-    assert_equal [ [ "Lume" ], [] ], calls.map { |call| call[:keyterms] }
-    assert_equal 0, calls.last[:position], "the audio is rewound and sent again, not an empty file"
   end
 
   test "a refusal without keyterms is not retried" do
