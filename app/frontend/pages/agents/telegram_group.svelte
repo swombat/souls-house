@@ -48,8 +48,8 @@
       {#if privacyModeOn}
         <p class="mt-1 text-xs text-amber-700 dark:text-amber-400" data-testid="telegram-group-privacy">
           Telegram's privacy mode is on for {agent.bot_username ? `@${agent.bot_username}` : 'this bot'}, so unless the
-          bot is an admin of the group, Telegram only passes it the messages that mention or reply to it. The
-          conversation around them never arrives, so there are gaps here that the group itself doesn't have.
+          bot is an admin of the group, Telegram limits which messages reach it: mentions, replies and commands get
+          through, and ordinary unaddressed conversation may be missing here.
         </p>
       {/if}
     </div>

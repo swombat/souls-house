@@ -44,9 +44,13 @@ test('says every message the bot receives is kept, and labels addressed, context
   expect(screen.queryByTestId('telegram-group-privacy')).toBeNull();
 });
 
-test('with privacy mode on, says the unaddressed conversation never arrives', () => {
+test('with privacy mode on, says unaddressed conversation may be missing, without claiming nothing else arrives', () => {
   render(TelegramGroup, { agent, group, messages, privacy_mode_on: true, settings_path: '/settings' });
 
-  expect(screen.getByTestId('telegram-group-privacy')).toHaveTextContent('privacy mode is on for @alanis_bot');
-  expect(screen.getByTestId('telegram-group-privacy')).toHaveTextContent('never arrives');
+  const note = screen.getByTestId('telegram-group-privacy');
+  expect(note).toHaveTextContent('privacy mode is on for @alanis_bot');
+  expect(note).toHaveTextContent('unless the bot is an admin of the group');
+  expect(note).toHaveTextContent('ordinary unaddressed conversation may be missing');
+  expect(note).not.toHaveTextContent('only');
+  expect(note).not.toHaveTextContent('never');
 });
