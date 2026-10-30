@@ -7,6 +7,7 @@
   import { untrack } from 'svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import { createDynamicSync } from '$lib/use-sync';
+  import { Input } from '$lib/components/shadcn/input/index.js';
 
   import { XLogo, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
 
@@ -54,6 +55,45 @@
   const isOpen = (connection) => openRows[connection.id] ?? startsOpen(connection);
   const toggle = (connection) => (openRows[connection.id] = !isOpen(connection));
   let allOpen = $derived(connections.length > 0 && connections.every(isOpen));
+  // Everything that can be connected, in one alphabetical list the filter box
+  // narrows by name or description. Polar and X live on their own pages, so
+  // they carry an arrow instead of a plus.
+  let catalogue = $derived(
+    [
+      ...services.map((service) => ({
+        key: service.key,
+        name: service.name,
+        description: serviceDescription(service),
+        href: `/accounts/${account.id}/integrations?connect=${service.key}`,
+        kind: 'service',
+      })),
+      {
+        key: 'link:polar',
+        name: 'Polar H10 / RR stream',
+        description: 'Publish your own device readings. Always personal; managed on the device streams page.',
+        href: `/accounts/${account.id}/device_streams`,
+        kind: 'polar',
+      },
+      {
+        key: 'link:x',
+        name: 'X posting',
+        description:
+          "Let this account's residents post to one connected X handle, through the account's own X app (or the house's, for accounts a site admin belongs to). Managed on the X page.",
+        href: `/x_integration?account_id=${account.id}`,
+        kind: 'x',
+      },
+    ].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  );
+  let filter = $state('');
+  let shownCatalogue = $derived.by(() => {
+    const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return catalogue;
+    return catalogue.filter((entry) => {
+      const haystack = `${entry.name} ${entry.description ?? ''}`.toLowerCase();
+      return words.every((word) => haystack.includes(word));
+    });
+  });
+
   function setAll(value) {
     openRows = Object.fromEntries(connections.map((connection) => [connection.id, value]));
   }
@@ -138,64 +178,50 @@
           or Google accounts.
         </p>
       </div>
+      <Input
+        type="search"
+        aria-label="Filter integrations"
+        placeholder="Filter integrations…"
+        autocomplete="off"
+        bind:value={filter} />
       <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each services as service}
+        {#each shownCatalogue as entry (entry.key)}
           <li>
             <a
-              href={`/accounts/${account.id}/integrations?connect=${service.key}`}
+              href={entry.href}
               class="group flex h-full items-start gap-3 rounded-xl border bg-card p-4 transition hover:border-foreground/30 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <span
-                class={`flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(service.key)}`}>
-                <ServiceIcon provider={service.key} size={22} />
-              </span>
+              {#if entry.kind === 'polar'}
+                <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white">
+                  <Pulse size={22} weight="bold" />
+                </span>
+              {:else if entry.kind === 'x'}
+                <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-black text-white">
+                  <XLogo size={22} weight="bold" />
+                </span>
+              {:else}
+                <span
+                  class={`flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(entry.key)}`}>
+                  <ServiceIcon provider={entry.key} size={22} />
+                </span>
+              {/if}
               <span class="min-w-0 flex-1">
                 <span class="flex items-center justify-between gap-2 font-medium">
-                  {service.name}
-                  <Plus size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                  {entry.name}
+                  {#if entry.kind === 'service'}
+                    <Plus size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                  {:else}
+                    <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
+                  {/if}
                 </span>
-                <span class="mt-0.5 block text-sm text-muted-foreground">{serviceDescription(service)}</span>
+                <span class="mt-0.5 block text-sm text-muted-foreground">{entry.description}</span>
               </span>
             </a>
           </li>
         {/each}
-        <li>
-          <a
-            href={`/accounts/${account.id}/device_streams`}
-            class="group flex h-full items-start gap-3 rounded-xl border bg-card p-4 transition hover:border-foreground/30 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white">
-              <Pulse size={22} weight="bold" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="flex items-center justify-between gap-2 font-medium">
-                Polar H10 / RR stream
-                <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
-              </span>
-              <span class="mt-0.5 block text-sm text-muted-foreground">
-                Publish your own device readings. Always personal; managed on the device streams page.
-              </span>
-            </span>
-          </a>
-        </li>
-        <li>
-          <a
-            href={`/x_integration?account_id=${account.id}`}
-            class="group flex h-full items-start gap-3 rounded-xl border bg-card p-4 transition hover:border-foreground/30 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-black text-white">
-              <XLogo size={22} weight="bold" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="flex items-center justify-between gap-2 font-medium">
-                X posting
-                <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
-              </span>
-              <span class="mt-0.5 block text-sm text-muted-foreground">
-                Let this account's residents post to one connected X handle, through the account's own X app (or the
-                house's, for accounts a site admin belongs to). Managed on the X page.
-              </span>
-            </span>
-          </a>
-        </li>
       </ul>
+      {#if shownCatalogue.length === 0}
+        <p class="text-sm text-muted-foreground">No integration matches “{filter.trim()}”.</p>
+      {/if}
     </section>
   {/if}
 </AccountSettingsLayout>

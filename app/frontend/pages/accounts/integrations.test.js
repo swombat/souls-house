@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import Integrations from './integrations.svelte';
 
@@ -31,5 +31,43 @@ describe('device integrations entry point', () => {
       'href',
       '/accounts/selected-house/integrations?connect=github'
     );
+  });
+});
+
+describe('connect a new integration list', () => {
+  const services = [
+    { key: 'xero', name: 'Xero' },
+    { key: 'dropbox', name: 'Dropbox' },
+    { key: 'google_workspace', name: 'Google Workspace' },
+    { key: 'github', name: 'GitHub repository' },
+  ];
+  const connectNames = () =>
+    screen
+      .getAllByRole('link')
+      .filter((link) => link.closest('#connect-new'))
+      .map((link) => link.querySelector('.font-medium').textContent.trim());
+
+  it('lists every integration, including Polar and X, alphabetically', () => {
+    render(Integrations, { account: { id: 'h' }, services });
+    expect(connectNames()).toEqual([
+      'Dropbox',
+      'GitHub repository',
+      'Google Workspace',
+      'Polar H10 / RR stream',
+      'X posting',
+      'Xero',
+    ]);
+  });
+
+  it('narrows the list as you type, matching name or description', async () => {
+    render(Integrations, { account: { id: 'h' }, services });
+    const box = screen.getByRole('searchbox', { name: 'Filter integrations' });
+    await fireEvent.input(box, { target: { value: 'goo' } });
+    expect(connectNames()).toEqual(['Google Workspace']);
+    await fireEvent.input(box, { target: { value: 'invoices' } });
+    expect(connectNames()).toEqual(['Xero']);
+    await fireEvent.input(box, { target: { value: 'zzz' } });
+    expect(connectNames()).toEqual([]);
+    expect(screen.getByText(/No integration matches/)).toBeInTheDocument();
   });
 });
