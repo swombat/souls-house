@@ -54,7 +54,7 @@ class HouseInferenceGrant < ApplicationRecord
       end
       check!(model_id)
       month = HouseInference::Offering.month
-      house_inference_calls.create!(month: month, model_id: model_id,
+      house_inference_calls.create!(month: month, model_id: model_id, free_pool: true,
         provider_route: offering.fetch(:provider), charge_usd: offering.fetch(:reservation_usd), agent_id: agent_id)
     end
   end

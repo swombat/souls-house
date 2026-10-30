@@ -163,6 +163,7 @@ class ResidentEntitlement < ApplicationRecord
       reservation = offering.fetch(:reservation_usd)
       check_house_call!(model_id, reservation, agent_id: agent_id)
       house_inference_calls.create!(agent_id: agent_id, month: HouseInference::Offering.month, model_id: model_id,
+        free_pool: complimentary?,
         provider_route: offering.fetch(:provider), charge_usd: reservation)
     end
   end

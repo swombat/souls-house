@@ -103,6 +103,66 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0"), entitlement.allowance_limit
   end
 
+  test "upgrading keeps past free spend in the free pool, and it doesn't add paid spend" do
+    @agent.update!(model_id: @model)
+    entitlement = free!(@agent)
+    month = HouseInference::Offering.month
+    configured do
+      entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id).settle!({ "cost" => 0.5 })
+    end
+    before = HouseInferenceCall.free.where(month: month).sum(:charge_usd)
+    assert_equal BigDecimal("0.5"), before
+
+    sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_up_1",
+      tier: "conversation", stripe_status: "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    assert entitlement.reload.active?
+    assert_equal before, HouseInferenceCall.free.where(month: month).sum(:charge_usd)
+
+    configured do
+      entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id).settle!({ "cost" => 0.25 })
+    end
+    assert_equal before, HouseInferenceCall.free.where(month: month).sum(:charge_usd)
+  end
+
+  test "cancelling back to free doesn't move past paid spend into the free pool" do
+    @agent.update!(model_id: @model)
+    entitlement = free!(@agent)
+    month = HouseInference::Offering.month
+    sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_down_1",
+      tier: "conversation", stripe_status: "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    configured do
+      entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id).settle!({ "cost" => 0.4 })
+    end
+    assert_equal BigDecimal("0"), HouseInferenceCall.free.where(month: month).sum(:charge_usd)
+
+    sub.update!(stripe_status: "canceled")
+    entitlement.apply_subscription!(sub, now: @now)
+    assert entitlement.reload.complimentary?
+    assert_equal BigDecimal("0"), HouseInferenceCall.free.where(month: month).sum(:charge_usd)
+    # The resident's own $10 still counts what it spent while paid.
+    assert_equal BigDecimal("9.6"), entitlement.allowance_remaining
+  end
+
+  test "the backfill puts a resident whose only entitlement is an abandoned checkout on free hosting" do
+    require Rails.root.join("db/migrate/20261030080000_backfill_free_hosting_entitlements")
+    @agent.update_columns(runtime: "external")
+    @agent.account.update_columns(billing_required: false)
+    ResidentEntitlement.where(agent: @agent).delete_all
+    pending = ResidentEntitlement.for_agent!(@agent)
+    pending.update_columns(checkout_session_id: "cs_abandoned")
+    assert pending.reload.pending?
+
+    ActiveRecord::Migration.suppress_messages { BackfillFreeHostingEntitlements.new.up }
+
+    pending.reload
+    assert pending.complimentary?
+    assert_equal "complimentary", pending.source
+    assert_equal "cs_abandoned", pending.checkout_session_id
+    assert pending.funds_calls?
+  end
+
   test "the backfill gives free hosting once, only to hosted residents with no entitlement in accounts that don't pay" do
     require Rails.root.join("db/migrate/20261030080000_backfill_free_hosting_entitlements")
     ResidentEntitlement.where(agent: [ @agent, @other ]).delete_all

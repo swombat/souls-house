@@ -6,15 +6,21 @@ class HouseInferenceCall < ApplicationRecord
   belongs_to :house_inference_grant, optional: true
   belongs_to :resident_entitlement, optional: true
   belongs_to :agent, optional: true
-  attr_readonly :house_inference_grant_id, :resident_entitlement_id, :agent_id
+  attr_readonly :house_inference_grant_id, :resident_entitlement_id, :agent_id, :free_pool
   validates :charge_usd, numericality: { greater_than_or_equal_to: 0 }
 
   scope :on_grants, -> { where.not(house_inference_grant_id: nil) }
-  # Calls the house pays for out of free allowances: the per-user grants and
-  # free-hosting residents' own allowances. They share the house-wide ceiling.
-  scope :free, -> {
-    on_grants.or(where(resident_entitlement_id: ResidentEntitlement.where(state: "complimentary").select(:id)))
-  }
+  # Calls the house paid for out of free allowances (per-user grants and free
+  # hosting's own allowance). They share the house-wide ceiling. Fixed when the
+  # call is reserved, so a plan starting or ending later doesn't move past
+  # spend between pools.
+  scope :free, -> { where(free_pool: true) }
+
+  # Callers that reserve set it; otherwise it is decided from the ledger once,
+  # at creation, and never changes.
+  before_validation on: :create do
+    self.free_pool = house_inference_grant_id.present? || resident_entitlement&.complimentary? || false if free_pool.nil?
+  end
 
   # Idempotent. Missing/ambiguous usage retains the conservative charge; a crash
   # leaves pending admission blocked until an operator reconciles that call.

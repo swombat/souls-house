@@ -1606,6 +1606,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_080000) do
     t.bigint "agent_id"
     t.decimal "charge_usd", precision: 14, scale: 8, null: false
     t.datetime "created_at", null: false
+    t.boolean "free_pool", null: false
     t.bigint "house_inference_grant_id"
     t.string "model_id", null: false
     t.date "month", null: false
@@ -1617,6 +1618,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_080000) do
     t.index ["agent_id"], name: "index_house_inference_calls_on_agent_id"
     t.index ["house_inference_grant_id", "month"], name: "index_house_calls_on_grant_month"
     t.index ["house_inference_grant_id"], name: "index_house_inference_calls_on_house_inference_grant_id"
+    t.index ["month", "free_pool"], name: "index_house_calls_on_month_free_pool"
     t.index ["month"], name: "index_house_inference_calls_on_month"
     t.index ["resident_entitlement_id", "month"], name: "index_house_calls_on_entitlement_month"
     t.check_constraint "charge_usd >= 0::numeric", name: "house_calls_nonnegative_charge"
