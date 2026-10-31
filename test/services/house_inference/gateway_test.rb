@@ -62,74 +62,45 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal 'settled', @grant.house_inference_calls.last.status
   end
 
-  test 'truncated stream disconnect and provider failure retain bounded charge' do
+  test 'a failure before any generation releases the reservation' do
+    # Truncated stream with no generation id, a provider error, and the
+    # resident's side dropping the stream: none reached a model's output.
     upstream([ "data: {}\n\n" ]) do
       assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
     end
-    assert_equal BigDecimal('0.75'), @grant.spent
     upstream([], status: '503') do
       assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
     end
-    assert_equal BigDecimal('1.5'), @grant.spent
     upstream([ "data: {}\n\n" ]) do
       assert_raises(HouseInference::Error) do
         HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| raise IOError }
       end
     end
-    assert_equal BigDecimal('2.25'), @grant.spent
-    assert_not @grant.house_inference_calls.where(status: 'pending').exists?
+    assert_equal BigDecimal('0'), @grant.spent
+    assert_equal [ 'released' ] * 3, @grant.house_inference_calls.order(:id).pluck(:status)
+    assert_equal [ nil, 503, nil ], @grant.house_inference_calls.order(:id).pluck(:http_status)
   end
 
-  test 'only the routing refusal releases its reservation; other 4xx and 5xx keep it' do
-    refusal = JSON.generate({ 'error' => { 'code' => 404, 'message' => 'No endpoints found that can handle the requested parameters. To learn more about provider routing, visit: https://openrouter.ai/docs' } })
-    upstream([ refusal ], status: '404') do
-      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
-    end
-    call = @grant.house_inference_calls.last
-    assert_equal [ 'settled', BigDecimal('0') ], [ call.status, call.charge_usd ]
-    assert_equal BigDecimal('0'), @grant.spent
-
-    spent = BigDecimal('0')
-    [ [ '408', '' ], [ '400', refusal ], [ '404', JSON.generate({ 'error' => { 'message' => 'Model not found' } }) ],
-      [ '404', 'not json' ], [ '429', refusal ], [ '502', refusal ] ].each do |status, body|
+  test 'every refused status releases and records the status, never the body' do
+    refusal = JSON.generate({ 'error' => { 'code' => 404, 'message' => 'No endpoints found that can handle the requested parameters.' } })
+    [ [ '404', refusal ], [ '408', '' ], [ '400', refusal ], [ '404', 'not json' ], [ '402', '' ],
+      [ '429', refusal ], [ '502', refusal ] ].each do |status, body|
       upstream([ body ], status: status) do
         assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
       end
-      spent += BigDecimal('0.75')
-      assert_equal spent, @grant.spent, "#{status} #{body[0, 30]} must keep the conservative charge"
+      call = @grant.house_inference_calls.order(:id).last
+      assert_equal [ 'released', BigDecimal('0'), status.to_i ], [ call.status, call.charge_usd, call.http_status ], status
     end
-    assert_not @grant.house_inference_calls.where(status: 'pending').exists?
+    assert_equal BigDecimal('0'), @grant.spent
   end
 
-  def refusal_response(chunks, status: '404')
-    response = Net::HTTPResponse::CODE_TO_OBJ.fetch(status).new('1.1', status, 'test')
-    response.define_singleton_method(:read_body) { |&block| chunks.each(&block) }
-    response
-  end
-
-  test 'routing refusal classifier honours the absolute deadline, the byte bound and the JSON shape' do
-    refusal = JSON.generate({ 'error' => { 'message' => 'No endpoints found that can handle the requested parameters.' } })
-    now = 100.0
-    Process.stub(:clock_gettime, ->(*) { now }) do
-      assert HouseInference::Gateway.routing_refusal?(refusal_response([ refusal ]), deadline: 200.0)
-      # Slow body: the deadline passes between chunks, or after the last one.
-      slow = refusal_response([ refusal[0, 10], refusal[10..] ])
-      slow.define_singleton_method(:read_body) { |&block| block.call(refusal[0, 10]); now = 300.0; block.call(refusal[10..]) }
-      assert_not HouseInference::Gateway.routing_refusal?(slow, deadline: 200.0)
-      now = 100.0
-      late = refusal_response([ refusal ])
-      late.define_singleton_method(:read_body) { |&block| block.call(refusal); now = 300.0 }
-      assert_not HouseInference::Gateway.routing_refusal?(late, deadline: 200.0)
-      now = 100.0
-      # Oversized body, even if it would otherwise match.
-      assert_not HouseInference::Gateway.routing_refusal?(refusal_response([ refusal, ' ' * 17.kilobytes ]), deadline: 200.0)
-      # Valid JSON of the wrong shape is not a refusal, and does not raise.
-      [ '[]', 'null', '"No endpoints found that can handle the requested parameters"', '{"error":"No endpoints found that can handle the requested parameters"}',
-        '{"error":{"message":["No endpoints found that can handle the requested parameters"]}}', '{"error":null}' ].each do |body|
-        assert_equal false, HouseInference::Gateway.routing_refusal?(refusal_response([ body ]), deadline: 200.0), body
-      end
-      assert_not HouseInference::Gateway.routing_refusal?(refusal_response([ refusal ], status: '400'), deadline: 200.0)
+  test 'a stream that started and then broke keeps the conservative charge' do
+    # The generation id proves a model ran; it may have been billed.
+    upstream([ "data: {\"id\":\"gen-cut\",\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n" ]) do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
     end
+    call = @grant.house_inference_calls.sole
+    assert_equal [ 'uncertain', BigDecimal('0.75'), 'gen-cut' ], [ call.status, call.charge_usd, call.upstream_id ]
   end
 
   test 'arbitrary model fails before a call is reserved' do
