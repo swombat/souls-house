@@ -28,6 +28,7 @@ import {
   YoutubeLogo,
   XLogo,
   Receipt,
+  Bank,
   Ghost,
   ChalkboardSimple,
   Waveform,
@@ -402,6 +403,13 @@ export const moreFeatures = [
     description:
       'Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.',
     icon: Receipt,
+  },
+  {
+    key: 'monzo',
+    title: 'Monzo',
+    description:
+      'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
+    icon: Bank,
   },
   {
     key: 'oura',

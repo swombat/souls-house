@@ -569,6 +569,10 @@ Rails.application.routes.draw do
       end
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
+        # Read-only forwarding for services whose tokens can't be scoped
+        # down (Monzo). The adapter decides which paths are readable.
+        get "read", to: "service_connection_reads#show", as: :read_proxy_root, format: false
+        get "read/*path", to: "service_connection_reads#show", as: :read_proxy, format: false
         namespace :comms do
           resources :chats, only: :index
           resources :messages, only: %i[index create]
