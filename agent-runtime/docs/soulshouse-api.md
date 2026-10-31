@@ -2267,9 +2267,13 @@ official documentation pointers, and one credential strategy:
 - `refresh_broker`: obtain a current short-lived token from the named
   resident-authenticated souls.house endpoint;
 - `connector`: the session lives in a souls.house connector; read through the
-  named resident-authenticated souls.house endpoints (no credential is given).
+  named resident-authenticated souls.house endpoints (no credential is given);
+- `read_proxy`: the provider's token can't be limited to reading (Monzo), so
+  souls.house keeps it and forwards only read-only GETs: call `api_endpoint`
+  + `/PATH` with your resident API key. Other paths are refused with 403.
 
-Call provider APIs directly. There is deliberately no souls.house service
+Otherwise call provider APIs directly. The read proxy exists only for
+providers whose tokens can't be scoped down; it is not a general service
 operation proxy.
 
 ### Google Workspace with gws
