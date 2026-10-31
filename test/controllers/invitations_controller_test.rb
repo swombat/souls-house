@@ -71,7 +71,7 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
   test "a member cannot invite someone as owner" do
     sign_in users(:member)
 
-    assert_no_difference -> { @account.memberships.count } do
+    assert_no_difference [ -> { @account.memberships.count }, "User.count" ] do
       post account_invitations_path(@account), params: {
         email: "would-be-owner@example.com",
         role: "owner"
@@ -114,10 +114,12 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
     owner_user = personal_account.users.first
     sign_in owner_user
 
-    post account_invitations_path(personal_account), params: {
-      email: "test@example.com",
-      role: "owner"
-    }
+    assert_no_difference "User.count" do
+      post account_invitations_path(personal_account), params: {
+        email: "never-created@example.com",
+        role: "owner"
+      }
+    end
 
     assert_redirected_to account_path(personal_account)
     # role=owner so the role rule passes and the one-user rule is what refuses.

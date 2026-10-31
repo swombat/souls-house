@@ -136,7 +136,9 @@ module Api
       end
 
       test "only an owner's key can invite someone as owner" do
-        post api_v1_account_invitations_path, params: { email: "would-be-owner@example.com", role: "owner" }, headers: @member_headers, as: :json
+        assert_no_difference "User.count" do
+          post api_v1_account_invitations_path, params: { email: "would-be-owner@example.com", role: "owner" }, headers: @member_headers, as: :json
+        end
         assert_response :unprocessable_entity
         assert_includes response.body, "Only an owner can invite someone as owner"
 

@@ -14,8 +14,8 @@ module Api
         def create
           email = params[:email].to_s
           role = params[:role].to_s
-          invitation = @account.invite_member(email: email, role: role, invited_by: current_api_user)
-          return render_invalid(invitation) unless invitation.save
+          invitation = @account.send_invitation(email: email, role: role, invited_by: current_api_user)
+          return render_invalid(invitation) unless invitation.persisted?
 
           audit(:invite_member, invitation, invited_email: email, role: role)
           render json: { invitation: invitation_json(invitation) }, status: :created
