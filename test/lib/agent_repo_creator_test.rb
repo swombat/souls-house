@@ -109,7 +109,56 @@ class AgentRepoCreatorTest < ActiveSupport::TestCase
     ENV["SOULSHOUSE_AGENT_RUNTIME_VM_HOST"] = old_vm_host
   end
 
+  test "a 404 from a just-generated repo is retried until GitHub catches up" do
+    calls = 0
+    result = without_retry_wait do
+      creator.send(:with_repo_retry) do
+        calls += 1
+        raise AgentRepoCreator::GitHubError, "Not Found" if calls < 3
+
+        :written
+      end
+    end
+
+    assert_equal :written, result
+    assert_equal 3, calls
+  end
+
+  test "any other GitHub error surfaces at once, unwrapped, without retrying" do
+    calls = 0
+    error = assert_raises(AgentRepoCreator::GitHubError) do
+      without_retry_wait do
+        creator.send(:with_repo_retry) { calls += 1; raise AgentRepoCreator::GitHubError, "Bad credentials" }
+      end
+    end
+
+    assert_equal "Bad credentials", error.message
+    assert_equal 1, calls
+  end
+
+  test "a repo whose 404s never clear surfaces the original error, not the retry wrapper" do
+    calls = 0
+    error = assert_raises(AgentRepoCreator::GitHubError) do
+      without_retry_wait do
+        creator.send(:with_repo_retry) { calls += 1; raise AgentRepoCreator::GitHubError, "Not Found" }
+      end
+    end
+
+    assert_equal "Not Found", error.message
+    assert_equal AgentRepoCreator::REPO_ATTEMPTS, calls
+  end
+
   private
+
+  # The retry sleeps to let GitHub's replicas catch up; in a test that wait is
+  # only wall-clock time, so it runs at zero delay.
+  def without_retry_wait
+    previous = AgentRepoCreator.repo_retry_delay
+    AgentRepoCreator.repo_retry_delay = 0
+    yield
+  ensure
+    AgentRepoCreator.repo_retry_delay = previous
+  end
 
   def creator
     @creator ||= AgentRepoCreator.new(account: @account, agent: @agent, repo_name: "research-agent")

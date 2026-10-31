@@ -5,6 +5,10 @@ class AgentRepoCreator
   API_ROOT = "https://api.github.com"
   DEFAULT_RUNTIME_DOMAIN = "helixagents.swombat.io"
   DEFAULT_VM_HOST = "helix-agents"
+  REPO_ATTEMPTS = 5
+  REPO_RETRY_DELAY = 1.0
+
+  class_attribute :repo_retry_delay, default: REPO_RETRY_DELAY
 
   Result = Data.define(:owner, :name, :html_url, :ssh_url, :clone_url, :default_branch)
   DeployKey = Data.define(:id, :private_key, :public_key)
@@ -164,16 +168,15 @@ class AgentRepoCreator
   end
 
   def with_repo_retry
-    attempts = 0
-    begin
-      attempts += 1
-      yield
-    rescue GitHubError => e
-      raise if attempts >= 5 || !e.message.match?(/404|Not Found/i)
-
-      sleep(1)
-      retry
-    end
+    ChronoMachines.retry(
+      max_attempts: REPO_ATTEMPTS,
+      base_delay: repo_retry_delay,
+      jitter_factor: 0,
+      retryable_exceptions: [ GitHubError ],
+      delay_from: ->(exception:, attempt:) { exception.message.match?(/404|Not Found/i) ? nil : :halt }
+    ) { yield }
+  rescue ChronoMachines::MaxRetriesExceededError => e
+    raise e.original_exception
   end
 
   def github_request(method, path, body: nil)

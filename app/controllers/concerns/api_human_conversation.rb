@@ -12,7 +12,7 @@ module ApiHumanConversation
 
   # before_action: the web refuses these actions while chats are switched off.
   def require_chats_feature!
-    return if Setting.instance.allow_chats?
+    return if Setting.feature_enabled?(:chats)
 
     render json: { error: CHATS_DISABLED, code: "feature_disabled" }, status: :forbidden
   end
