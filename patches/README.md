@@ -1,5 +1,23 @@
 # Temporary dependency fixes
 
+## svelte-streamdown — patched Mermaid 11
+
+The scoped `package.json` override keeps Streamdown's diagram renderer on
+Mermaid `^11.16.1` (locked to 11.17.2), fixing XY-chart infinite-loop and radar
+tick-count denial of service (GHSA-2v8p-3f2j-5mp7, GHSA-rhh3-jpg6-66xh).
+The separate top-level Mermaid 12 dependency does not replace Streamdown's
+nested import. Keep the existing Streamdown source patch below.
+
+Owner: Mira. Remove the override when Streamdown itself requires a patched
+Mermaid version, retaining the dependency-resolution and browser rendering tests.
+The lockfile's version 3 is required for scoped overrides in pinned Bun 1.4.4.
+
+Transitive review, 2026-10-31: the resolved sanitizer is DOMPurify 3.4.17.
+KaTeX 0.16.x still matches GHSA-238p-pmpm-9mq7, which requires pre-existing
+prototype pollution or attacker control of the renderer-options prototype.
+No such path was established in this check; this is not a blanket clean-audit
+claim. An out-of-range KaTeX upgrade is intentionally outside this diagram fix.
+
 ## svelte-streamdown 2.6.1 — keep dollar-prefixed code out of math
 
 `Block.svelte` unconditionally repairs incomplete Markdown, ignoring the public
