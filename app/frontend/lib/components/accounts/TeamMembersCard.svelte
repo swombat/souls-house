@@ -10,6 +10,7 @@
   let {
     members = [],
     canManage = false,
+    canInviteOwner = false,
     currentUserId = null,
     showInviteForm = $bindable(false),
     formatDate,
@@ -40,7 +41,7 @@
   <CardContent>
     {#if showInviteForm}
       <div class="mb-6 p-4 border rounded-lg bg-muted/50">
-        <InviteMemberForm on:close={() => (showInviteForm = false)} on:invite={onInvite} />
+        <InviteMemberForm {canInviteOwner} on:close={() => (showInviteForm = false)} on:invite={onInvite} />
       </div>
     {/if}
 
