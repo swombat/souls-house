@@ -90,10 +90,12 @@ module HouseInference
       raise Error.new('House inference was interrupted.', status: 502)
     ensure
       # Nothing generated (no text, tool call or reasoning; an id or a
-      # role-only frame alone is not output): the resident pays nothing. Once
-      # output arrived, a known usage cost settles; otherwise the
-      # conservative charge stays for reconciliation. The id is kept either way.
-      if generated || usage.is_a?(Hash)
+      # role-only frame alone is not output): the resident pays nothing,
+      # unless the provider reported a known cost. Usage without a cost
+      # (empty, or token counts only) doesn't count. Once output arrived, a
+      # known cost settles; otherwise the conservative charge stays for
+      # reconciliation. The id is kept either way.
+      if generated || (usage.is_a?(Hash) && !HouseInference::UsageCost.call(usage).first.nil?)
         call&.settle!(usage, upstream_id: upstream_id)
       else
         call&.release!(upstream_id: upstream_id)

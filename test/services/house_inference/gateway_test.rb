@@ -124,6 +124,17 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal [ 'settled', BigDecimal('0.003') ], [ call.status, call.charge_usd ]
   end
 
+  test 'usage without a known cost does not stop a call with no output from being released' do
+    role = { 'id' => 'gen-empty-usage', 'choices' => [ { 'delta' => { 'role' => 'assistant' } } ] }
+    [ {}, { 'prompt_tokens' => 12, 'completion_tokens' => 0 } ].each do |usage|
+      call = broken_stream(role, { 'usage' => usage })
+      assert_equal [ 'released', BigDecimal('0'), 'gen-empty-usage' ], [ call.status, call.charge_usd, call.upstream_id ], usage.inspect
+    end
+    # A known cost with no output still settles at that cost.
+    call = broken_stream(role, { 'usage' => { 'cost' => 0.0001 } })
+    assert_equal [ 'settled', BigDecimal('0.0001') ], [ call.status, call.charge_usd ]
+  end
+
   test 'arbitrary model fails before a call is reserved' do
     @input['model'] = 'expensive/other-model'
     assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
