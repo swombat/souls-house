@@ -136,6 +136,23 @@
             </DropdownMenu.Item>
           {/each}
         {/if}
+        {#if expiredSubscriptions.failing?.length}
+          <DropdownMenu.Separator />
+          <DropdownMenu.GroupHeading>
+            <div class="text-xs font-normal text-muted-foreground">Failing residents</div>
+          </DropdownMenu.GroupHeading>
+          {#each expiredSubscriptions.failing as item (item.agent_id)}
+            <DropdownMenu.Item data-testid="failing-resident" onclick={() => router.visit(item.url)}>
+              <WarningCircle class="size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm truncate">{item.agent_name}</div>
+                <div class="text-xs text-muted-foreground truncate">
+                  Scheduled runs failing{#if accounts.length > 1}&nbsp;· {item.account_name}{/if}
+                </div>
+              </div>
+            </DropdownMenu.Item>
+          {/each}
+        {/if}
         {#if pendingInvitations.items?.length}
           <DropdownMenu.Separator />
           <DropdownMenu.GroupHeading>

@@ -5,6 +5,8 @@ require "test_helper"
 # nobody is told", not a method.
 class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
 
+  include ActionCable::TestHelper
+
   setup do
     @agent = agents(:research_assistant)
     @agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7, endpoint_url: "https://agent.example.com", trigger_bearer_token: "tr_valid")
@@ -28,34 +30,27 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     run = scheduled_run("wake", "failed", at: 1.hour.ago)
     perform_enqueued_jobs(only: ScheduledRunFailureNoticeJob) { ScheduledRunFailureNoticeJob.perform_now(run.id) }
     assert_empty failing_streaks
-    assert_nil notice_chat
   end
 
-  test "the second failed scheduled run opens one conversation in Main that wakes nobody, once per streak" do
+  test "the second failed scheduled run records the streak once, opens no conversation and refreshes the owner's count" do
     scheduled_run("wake", "failed", at: 2.hours.ago, runtime_status: "error", runtime_returncode: 1, transport_status: 500)
     second = scheduled_run("memory_aggregation_daily", "failed", at: 1.hour.ago, runtime_status: "error", runtime_returncode: 1, transport_status: 500)
-    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    chats_before = Chat.count
+    messages_before = Message.count
+    assert_broadcast_on("Account:#{@agent.account.to_param}", action: "refresh") do
+      ScheduledRunFailureNoticeJob.perform_now(second.id)
+    end
     ScheduledRunFailureNoticeJob.perform_now(second.id)
     third = scheduled_run("wake", "failed", at: 30.minutes.ago, runtime_status: "error", runtime_returncode: 1, transport_status: 500)
     ScheduledRunFailureNoticeJob.perform_now(third.id)
 
     streak = failing_streaks.sole
-    chat = Chat.find(streak.data.fetch("chat_id"))
-    assert_nil chat.room
-    assert_equal [ @agent ], chat.agents.to_a
-    assert_equal @agent.account, chat.account
-    assert_empty MessageDispatch.where(chat: chat)
-    message = chat.messages.sole
-    assert_equal "system", message.role
-    assert_nil message.agent_id
-    assert_match(/\A\[System Notice\] #{@agent.name}'s scheduled runs are failing: the run ended in an error \(2nd failed scheduled run in a row since \d+ \w+ \d\d:\d\d CES?T\)\./, message.content)
-    assert_includes message.content, "ended as a failed run (some work may have happened before it failed)"
-    assert_includes message.content, "conversations are separate"
-    link = message.notice_link.stringify_keys
-    assert_equal "Why?", link["label"]
-    assert_equal Rails.application.routes.url_helpers.edit_account_agent_path(@agent.account, @agent, tab: "interactions"), link["path"]
+    assert_equal chats_before, Chat.count, "a failing resident is a count beside the account, not a conversation (Daniel, 31 Oct)"
+    assert_equal messages_before, Message.count
+    assert_nil streak.data["chat_id"]
     assert_equal 2, streak.data["count"]
     assert_equal "runtime_error", streak.data["category"]
+    assert_equal @agent, ScheduledRunFailureNotice.open_streak(@agent).auditable
   end
 
   test "a completed conversation run does not clear the scheduled streak, and a completed scheduled run closes it once" do
@@ -71,16 +66,15 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
 
     recovery = recoveries.sole
     assert_equal failing_streaks.sole.id, recovery.data["streak_id"]
-    chat = Chat.find(failing_streaks.sole.data.fetch("chat_id"))
-    assert_equal 2, chat.messages.count
-    assert_match(/\A\[System Notice\] #{@agent.name}'s scheduled runs are completing again as of \d+ \w+ \d\d:\d\d CES?T, after about 2 hours of failures\./, chat.messages.last.content)
+    assert_equal recovered.id, recovery.data["run_id"]
+    assert_nil ScheduledRunFailureNotice.open_streak(@agent)
 
-    # A new streak after recovery is a new notice, in a new conversation.
+    # A new streak after recovery is recorded again.
     scheduled_run("wake", "failed", at: 40.minutes.ago)
     again = scheduled_run("wake", "failed", at: 20.minutes.ago)
     ScheduledRunFailureNoticeJob.perform_now(again.id)
     assert_equal 2, failing_streaks.count
-    assert_not_equal chat.id, failing_streaks.last.data["chat_id"]
+    assert_equal failing_streaks.last, ScheduledRunFailureNotice.open_streak(@agent)
   end
 
   test "a completed conversation run alone closes nothing" do
@@ -98,7 +92,7 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     run = scheduled_run("wake", "failed", at: 1.hour.ago, provider: "house", runtime_status: "error", runtime_returncode: 1, transport_status: 500)
     assert_equal "runtime_error", run.failure_category
     ScheduledRunFailureNoticeJob.perform_now(run.id)
-    assert_no_match(/allowance/, notice_chat.messages.sole.content)
+    assert_equal "runtime_error", failing_streaks.sole.data["category"]
   end
 
   test "the shim's auth class is said as an authentication error, not as a missing or expired credential" do
@@ -108,9 +102,9 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
       runtime_returncode: 1, transport_status: 500, response_body: { "status" => "error", "error_kind" => "auth_expired" })
     assert_equal "authentication_error", run.failure_category
     ScheduledRunFailureNoticeJob.perform_now(run.id)
-    content = notice_chat.messages.sole.content
-    assert_includes content, "the run's output looked like an authentication error"
-    assert_no_match(/missing|expired|SECRET|sk-or/, content)
+    data = failing_streaks.sole.data
+    assert_equal "authentication_error", data["category"]
+    assert_no_match(/SECRET|sk-or/, data.to_json)
   end
 
   test "an old completion arriving after newer failures does not close the newer streak" do
@@ -178,7 +172,6 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     ScheduledRunFailureNoticeJob.perform_now(second.id)
     ScheduledRunFailureNoticeJob.perform_now(first.id)
     assert_equal first.id, recoveries.sole.data["run_id"]
-    assert_match(/after about 2 hours of failures/, notice_chat.messages.last.content)
   end
 
   test "a recovery followed by 201 failures before any job runs still closes the old streak and opens the new one" do
@@ -223,12 +216,11 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_empty recoveries, "the completion before the streak ended nothing"
     assert_includes current.map(&:id), notice.data["anchor_run_id"]
     assert_nil notice.data["since"]
-    assert_includes notice_chat.messages.sole.content, "4 or more failed scheduled runs in a row"
+    assert_equal 4, notice.data["count"]
 
     recovered = scheduled_run("memory_aggregation_daily", "completed", at: 1.hour.ago)
     ScheduledRunFailureNotice.stub(:scan_budget, 4) { ScheduledRunFailureNoticeJob.perform_now(recovered.id) }
     assert_equal recovered.id, recoveries.sole.data["run_id"]
-    assert_match(/completing again as of \d+ \w+ \d\d:\d\d CES?T\.\z/, notice_chat.messages.last.content)
   end
 
   test "a failure the fields don't explain is said as unknown" do
@@ -236,7 +228,7 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     run = scheduled_run("wake", "failed", at: 1.hour.ago)
     assert_equal "unknown", run.failure_category
     ScheduledRunFailureNoticeJob.perform_now(run.id)
-    assert_includes notice_chat.messages.sole.content, "the run failed and the cause isn't identified"
+    assert_equal "unknown", failing_streaks.sole.data["category"]
   end
 
   test "nothing is said for a resident switched off, asleep for billing, or under a roll hold" do
@@ -283,11 +275,6 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
 
   def recoveries
     AuditLog.where(action: ScheduledRunFailureNotice::RECOVERED, auditable: @agent).order(:id)
-  end
-
-  def notice_chat
-    streak = failing_streaks.last
-    streak && Chat.find(streak.data.fetch("chat_id"))
   end
 
   def running_run(kind, chat: nil)
