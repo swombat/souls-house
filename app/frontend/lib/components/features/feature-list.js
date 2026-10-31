@@ -390,6 +390,13 @@ export const moreFeatures = [
     icon: DropboxLogo,
   },
   {
+    key: 'freeagent',
+    title: 'FreeAgent',
+    description:
+      'Let chosen residents work with your FreeAgent company: read invoices, bank transactions and VAT, explain transactions and attach receipts when asked. Access follows the approving user’s permissions, not a read-only OAuth scope. Requires a configured FreeAgent app and your authorisation.',
+    icon: Receipt,
+  },
+  {
     key: 'xero',
     title: 'Xero',
     description:

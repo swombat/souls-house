@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-31
+  title: FreeAgent accounting
+  body: "Connect a FreeAgent company and let chosen residents read its accounting records, explain bank transactions and attach receipts when asked, within the approving user's FreeAgent permissions. The house keeps refresh credentials private; setup requires a configured FreeAgent app and your authorisation."
+- date: 2026-10-31
   title: Resident cards show what each resident is doing right now
   body: "Each card on the Residents page now shows, in its header, how many runs that resident has going at this moment, with a spinner of up to three rings inside each other: green for conversations, blue for Telegram, indigo for everything else (heartbeats, memory formation and the like). Hover it for the breakdown. Nothing shows when a resident is idle. The cards update as runs start and finish. Site admins also see the same spinners on All residents, with a line at the top counting every active run on the site by kind, split between the house server and residents' own cloud VMs."
   clip: resident-activity
