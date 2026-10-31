@@ -30,6 +30,41 @@ def spec(**overrides):
     return base
 
 
+def telemetry():
+    return {"schema_version": 1, "runtime": {"chaos_version": "47.14.5", "provider": "anthropic"},
+            "session": {"outcome": "rolled", "roll_reason": "safeguard-detected", "chaos_process_id": "c-1"},
+            "prompt": {"mode": "full", "bytes": 61830},
+            "usage": {"input_tokens": 120, "output_tokens": 30, "cache_read_input_tokens": 9000,
+                      "cache_creation_input_tokens": 0, "provider_request_count": 1}}
+
+
+HOUSE_FIXTURE = os.path.join(os.path.dirname(__file__), "..", "fixtures", "files", "runner_fitted_results.json")
+
+
+def house_boundary_fixture():
+    """Fitted results for the Rails boundary test, with DISPATCH/LEDGER placeholders."""
+    def record(**inner):
+        body = {"status": "ok", "returncode": 0, "stdout": "done", "stderr": "", "session_id": "synthetic",
+                "chaos_session_id": "c-1", "usage": {"input_tokens": 120}, "telemetry": telemetry()}
+        body.update(inner)
+        return {"outcome": "done", "result": {"status": 200, "body": {
+            "id": "DISPATCH", "ledger_id": "LEDGER", "state": "finished",
+            "result": {"status": 200, "body": body}}}}
+
+    big = telemetry()
+    big["prompt"] = {"components": "<" * 30_000}
+    cases = {
+        "success": record(full_invocation_text="<" * 12_000 + "p" * 50_000),
+        "timeout": record(status="timeout", returncode=None, timeout_secs=900, stdout="&" * 4_000,
+                          telemetry=big, full_invocation_text="p" * 61_830),
+    }
+    fixture = {}
+    for name, result in cases.items():
+        fitted, cuts = runner.fit_result(result)
+        fixture[name] = {"cuts": cuts, "result": fitted}
+    return fixture
+
+
 def command(kind="start_resident", payload=None, generation=1, cid="a" * 32):
     return {"id": cid, "kind": kind, "generation": generation, "payload": payload if payload is not None else spec()}
 
@@ -403,11 +438,16 @@ class PollTest(unittest.TestCase):
     # never closes and keeps its session busy. The result is fitted first.
     def shim_record(self, **inner):
         body = {"status": "ok", "returncode": 0, "stdout": "tail", "stderr": "", "session_id": "s-1",
-                "chaos_session_id": "c-1", "usage": {"input_tokens": 1}, "telemetry": {"version": 1}}
+                "chaos_session_id": "c-1", "usage": {"input_tokens": 1}, "session_roll_reason": "safeguard-detected",
+                "telemetry": telemetry()}
         body.update(inner)
         return {"outcome": "done", "result": {"status": 200, "body": {
             "id": DISPATCH, "ledger_id": "led_1", "state": "finished", "updated_at": "t",
             "result": {"status": 200, "body": body}}}}
+
+    def assert_fits_both(self, fitted):
+        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        self.assertLessEqual(runner.house_json_bytes(fitted), runner.RESULT_MAX_BYTES)
 
     def test_a_result_that_fits_is_posted_unchanged(self):
         result = self.shim_record(full_invocation_text="x" * 1000)
@@ -418,43 +458,81 @@ class PollTest(unittest.TestCase):
     def test_the_invocation_text_is_the_first_thing_cut(self):
         fitted, cuts = runner.fit_result(self.shim_record(full_invocation_text="p" * 90_000))
         self.assertEqual(cuts, ["full_invocation_text"])
-        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        self.assert_fits_both(fitted)
         inner = fitted["result"]["body"]["result"]["body"]
         self.assertNotIn("full_invocation_text", inner)
         self.assertEqual((inner["status"], inner["returncode"], inner["stdout"]), ("ok", 0, "tail"))
         self.assertEqual(fitted["result"]["body"]["state"], "finished")
 
-    def test_then_the_output_tails_then_the_closing_fields_and_the_turn_still_closes(self):
+    # Review of 27925ddb: RunnerCommand#record_result! re-encodes with Rails
+    # to_json, which writes "<" as \u003c. 12,000 "<" are 12 KB on the wire and
+    # 72 KB there, so a body that passed the signature gate became "unknown".
+    def test_the_rails_encoding_is_fitted_too(self):
+        record = self.shim_record(full_invocation_text="<" * 12_000)
+        self.assertLessEqual(len(runner.encode_body(record)), runner.RESULT_MAX_BYTES)
+        self.assertGreater(runner.house_json_bytes(record), runner.RESULT_MAX_BYTES)
+        fitted, cuts = runner.fit_result(record)
+        self.assertEqual(cuts, ["full_invocation_text"])
+        self.assert_fits_both(fitted)
+
+        fitted, cuts = runner.fit_result(self.shim_record(stdout="&" * 6_000, stderr=">" * 6_000))
+        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr"])
+        self.assert_fits_both(fitted)
+        # U+2028 is three bytes raw and six escaped by both encoders.
+        self.assertEqual(runner.house_json_bytes({"error": "\u2028"}), len('{"error":"\\u2028"}'))
+        self.assertEqual(runner.house_json_bytes({"error": "<&>"}), len('{"error":"\\u003c\\u0026\\u003e"}'))
+
+    def test_then_the_output_tails_then_every_long_string_and_the_turn_still_closes(self):
         record = self.shim_record(full_invocation_text="p" * 90_000, stdout="o" * 40_000, stderr="e" * 40_000)
         fitted, cuts = runner.fit_result(record)
         self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr"])
-        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        self.assert_fits_both(fitted)
         inner = fitted["result"]["body"]["result"]["body"]
         self.assertEqual(inner["stdout"], "..." + "o" * runner.RESULT_TAIL_BYTES)
-        self.assertEqual(inner["telemetry"], {"version": 1})
+        self.assertEqual(inner["telemetry"], telemetry())
+        self.assertEqual(fitted["error"], "trimmed to fit the house transport: full_invocation_text, stdout/stderr")
 
-        record = self.shim_record(stdout="o" * 2_000, telemetry={"blob": "t" * 90_000})
+        big = telemetry()
+        big["prompt"] = {"components": "<" * 30_000}
+        record = self.shim_record(status="timeout", returncode=None, timeout_secs=900, telemetry=big,
+                                  error="chaos exceeded its deadline", error_kind="subscription_limit",
+                                  subscription_usage={"window": "5h"}, extra="x" * 90_000)
         fitted, cuts = runner.fit_result(record)
-        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr", "body"])
-        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr", "long strings"])
+        self.assert_fits_both(fitted)
         outer = fitted["result"]["body"]
         self.assertEqual((outer["id"], outer["ledger_id"], outer["state"]), (DISPATCH, "led_1", "finished"))
-        self.assertNotIn("updated_at", outer)
         inner = outer["result"]["body"]
-        self.assertEqual((outer["result"]["status"], inner["status"], inner["returncode"]), (200, "ok", 0))
-        self.assertEqual(inner["usage"], {"input_tokens": 1})
-        self.assertNotIn("telemetry", inner)
-        self.assertNotIn("stdout", inner)
-        self.assertIn("trimmed to fit the house transport", inner["error"])
+        self.assertEqual((outer["result"]["status"], inner["status"], inner["returncode"], inner["timeout_secs"]),
+                         (200, "timeout", None, 900))
+        self.assertEqual(inner["extra"], "..." + "x" * runner.RESULT_TAIL_BYTES)
+        # What closes the turn and its accounting survives whole: versioned
+        # telemetry (usage, session freshness), the roll reason, provider
+        # failure, and the runtime's own error.
+        self.assertEqual(inner["telemetry"]["usage"], telemetry()["usage"])
+        self.assertEqual(inner["telemetry"]["session"], telemetry()["session"])
+        self.assertEqual(inner["session_roll_reason"], "safeguard-detected")
+        self.assertEqual((inner["error_kind"], inner["subscription_usage"]), ("subscription_limit", {"window": "5h"}))
+        self.assertEqual(inner["error"], "chaos exceeded its deadline")
+        self.assertEqual(fitted["error"],
+                         "trimmed to fit the house transport: full_invocation_text, stdout/stderr, long strings")
+        # A failure's own error is never replaced by the trim note, only cut to its tail.
+        fitted, _ = runner.fit_result({"outcome": "failed", "error": "e" * 90_000})
+        self.assertEqual(fitted, {"outcome": "failed", "error": "..." + "e" * runner.RESULT_TAIL_BYTES})
 
-    def test_a_result_that_cannot_carry_the_closing_fields_is_reported_unknown_not_lost(self):
-        record = self.shim_record()
-        record["result"]["body"]["id"] = "i" * 90_000
+    def test_a_result_that_still_does_not_fit_is_reported_unknown_not_lost(self):
+        record = self.shim_record(telemetry={"k%d" % i: i for i in range(20_000)})
         fitted, cuts = runner.fit_result(record)
         self.assertEqual(fitted, {"outcome": "unknown", "error": "result too large"})
         self.assertEqual(cuts[-1], "result")
-        fitted, _ = runner.fit_result({"outcome": "failed", "error": "e" * 90_000})
-        self.assertEqual(fitted, {"outcome": "unknown", "error": "result too large"})
+
+    # The Rails side of this boundary (test/jobs/resident_turn_poll_job_test.rb)
+    # replays these exact fitted results through RunnerCommand#record_result!
+    # and the poll job. The fixture is generated here so the two cannot drift.
+    @unittest.skipUnless(os.path.exists(HOUSE_FIXTURE), "packaged copy carries no Rails fixtures")
+    def test_the_house_boundary_fixture_is_what_fit_result_produces(self):
+        with open(HOUSE_FIXTURE) as handle:
+            self.assertEqual(json.load(handle), house_boundary_fixture())
 
     def test_the_bound_is_measured_on_the_bytes_that_are_signed(self):
         # 20,000 characters of "é" are 40,000 UTF-8 bytes and 120,000 bytes once
@@ -513,7 +591,7 @@ class PollTest(unittest.TestCase):
                          runner.signed_headers(key, "POST", "/api/v1/host_runner/commands/" + "a" * 32 + "/result",
                                                posted.data, "rnr_abc", timestamp=posted.headers["X-runner-timestamp"],
                                                nonce=posted.headers["X-runner-nonce"])["X-Runner-Signature"])
-        self.assertIn("trimmed to fit the house transport: full_invocation_text", stderr.getvalue())
+        self.assertIn("result trimmed: full_invocation_text", stderr.getvalue())
         # The remembered answer is the full one: a redelivery is fitted again, the same way.
         self.assertIn("full_invocation_text", json.dumps(state.result_for("a" * 32)))
 
@@ -831,6 +909,12 @@ class FetchImageFailureTest(unittest.TestCase):
         self.assertIn("deadline", error)
         self.assertEqual((reads, written), ([], []))
 
+
+if __name__ == "__main__" and os.environ.get("REGENERATE_HOUSE_FIXTURE"):
+    with open(HOUSE_FIXTURE, "w") as handle:
+        json.dump(house_boundary_fixture(), handle, indent=1, sort_keys=True)
+        handle.write("\n")
+    sys.exit(0)
 
 if __name__ == "__main__":
     unittest.main()
