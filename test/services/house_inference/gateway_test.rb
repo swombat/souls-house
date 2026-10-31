@@ -94,13 +94,34 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal BigDecimal('0'), @grant.spent
   end
 
-  test 'a stream that started and then broke keeps the conservative charge' do
-    # The generation id proves a model ran; it may have been billed.
-    upstream([ "data: {\"id\":\"gen-cut\",\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n\n" ]) do
-      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+  def broken_stream(*frames, &block)
+    chunks = frames.map { |frame| "data: #{JSON.generate(frame)}\n\n" }
+    upstream(chunks) do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call(&block || ->(_) {}) }
     end
-    call = @grant.house_inference_calls.sole
-    assert_equal [ 'uncertain', BigDecimal('0.75'), 'gen-cut' ], [ call.status, call.charge_usd, call.upstream_id ]
+    @grant.house_inference_calls.order(:id).last
+  end
+
+  test 'an id or a role-only frame is not output: the call is released, keeping the id' do
+    call = broken_stream({ 'id' => 'gen-role', 'choices' => [ { 'delta' => { 'role' => 'assistant', 'content' => '' } } ] })
+    assert_equal [ 'released', BigDecimal('0'), 'gen-role' ], [ call.status, call.charge_usd, call.upstream_id ]
+    # The same, broken on the resident's side instead of the provider's.
+    call = broken_stream({ 'id' => 'gen-role-2', 'choices' => [ { 'delta' => { 'role' => 'assistant' } } ] }) { |_| raise IOError }
+    assert_equal [ 'released', 'gen-role-2' ], [ call.status, call.upstream_id ]
+  end
+
+  test 'a stream that produced text, a tool call or reasoning and then broke keeps the conservative charge' do
+    [ { 'content' => 'hel' },
+      { 'tool_calls' => [ { 'index' => 0, 'function' => { 'name' => 'lookup' } } ] },
+      { 'reasoning' => 'thinking' } ].each_with_index do |delta, i|
+      call = broken_stream({ 'id' => "gen-cut-#{i}", 'choices' => [ { 'delta' => { 'role' => 'assistant' }.merge(delta) } ] })
+      assert_equal [ 'uncertain', BigDecimal('0.75'), "gen-cut-#{i}" ], [ call.status, call.charge_usd, call.upstream_id ], delta.keys.first
+    end
+  end
+
+  test 'a broken stream that reported its usage settles at that cost' do
+    call = broken_stream({ 'id' => 'gen-usage', 'choices' => [ { 'delta' => { 'content' => 'hi' } } ] }, { 'usage' => { 'cost' => 0.003 } })
+    assert_equal [ 'settled', BigDecimal('0.003') ], [ call.status, call.charge_usd ]
   end
 
   test 'arbitrary model fails before a call is reserved' do

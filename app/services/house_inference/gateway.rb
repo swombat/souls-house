@@ -20,6 +20,7 @@ module HouseInference
       buffer = +''
       usage = nil
       upstream_id = nil
+      generated = false
       completed = false
       streaming = @input['stream'] == true
       total_bytes = 0
@@ -63,6 +64,7 @@ module HouseInference
             raise Error.new('The house provider returned an invalid stream event.', status: 502) unless event.is_a?(Hash)
             raise Error.new('The house provider interrupted this response.', status: 502) if event['error']
             upstream_id ||= event['id']
+            generated ||= self.class.generated?(event)
             usage = event['usage'] if event['usage'].is_a?(Hash)
             event['model'] = @input['model'] if event.key?('model')
             yield "data: #{JSON.generate(event)}\n\n"
@@ -75,6 +77,7 @@ module HouseInference
           raise Error.new('The house provider returned an invalid completion.', status: 502)
         end
         usage, upstream_id = result['usage'], result['id']
+        generated = self.class.generated?(result)
         result['model'] = @input['model']
         completed = true
       end
@@ -86,13 +89,27 @@ module HouseInference
       # Do not log upstream bodies, requests, credentials or exception messages.
       raise Error.new('House inference was interrupted.', status: 502)
     ensure
-      # Without an upstream id no generation reached the resident: release.
-      # With one, the model ran and may have been billed, so the conservative
-      # charge stays for reconciliation.
-      if upstream_id.nil?
-        call&.release!
+      # Nothing generated (no text, tool call or reasoning; an id or a
+      # role-only frame alone is not output): the resident pays nothing. Once
+      # output arrived, a known usage cost settles; otherwise the
+      # conservative charge stays for reconciliation. The id is kept either way.
+      if generated || usage.is_a?(Hash)
+        call&.settle!(usage, upstream_id: upstream_id)
       else
-        call&.settle!(nil, upstream_id: upstream_id)
+        call&.release!(upstream_id: upstream_id)
+      end
+    end
+
+    # Whether a stream event or completion carries model output.
+    def self.generated?(payload)
+      choices = payload['choices']
+      return false unless choices.is_a?(Array)
+      choices.any? do |choice|
+        next false unless choice.is_a?(Hash)
+        part = choice['delta'] || choice['message']
+        next false unless part.is_a?(Hash)
+        %w[content reasoning].any? { |key| part[key].is_a?(String) && !part[key].empty? } ||
+          %w[tool_calls reasoning_details].any? { |key| part[key].is_a?(Array) && part[key].any? }
       end
     end
 
