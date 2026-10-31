@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import sys
@@ -395,6 +397,125 @@ class PollTest(unittest.TestCase):
         self.assertEqual(sent[1].full_url, "https://house.example/api/v1/host_runner/commands/" + "a" * 32 + "/result")
         self.assertIn("X-runner-signature", sent[1].headers)
         self.assertEqual(json.loads(sent[1].data)["outcome"], "failed")
+
+    # #673: the house refuses a signed body over 64 KiB before it can record
+    # anything, so a finished turn whose relayed answer is larger than that
+    # never closes and keeps its session busy. The result is fitted first.
+    def shim_record(self, **inner):
+        body = {"status": "ok", "returncode": 0, "stdout": "tail", "stderr": "", "session_id": "s-1",
+                "chaos_session_id": "c-1", "usage": {"input_tokens": 1}, "telemetry": {"version": 1}}
+        body.update(inner)
+        return {"outcome": "done", "result": {"status": 200, "body": {
+            "id": DISPATCH, "ledger_id": "led_1", "state": "finished", "updated_at": "t",
+            "result": {"status": 200, "body": body}}}}
+
+    def test_a_result_that_fits_is_posted_unchanged(self):
+        result = self.shim_record(full_invocation_text="x" * 1000)
+        fitted, cuts = runner.fit_result(result)
+        self.assertEqual(cuts, [])
+        self.assertIs(fitted, result)
+
+    def test_the_invocation_text_is_the_first_thing_cut(self):
+        fitted, cuts = runner.fit_result(self.shim_record(full_invocation_text="p" * 90_000))
+        self.assertEqual(cuts, ["full_invocation_text"])
+        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        inner = fitted["result"]["body"]["result"]["body"]
+        self.assertNotIn("full_invocation_text", inner)
+        self.assertEqual((inner["status"], inner["returncode"], inner["stdout"]), ("ok", 0, "tail"))
+        self.assertEqual(fitted["result"]["body"]["state"], "finished")
+
+    def test_then_the_output_tails_then_the_closing_fields_and_the_turn_still_closes(self):
+        record = self.shim_record(full_invocation_text="p" * 90_000, stdout="o" * 40_000, stderr="e" * 40_000)
+        fitted, cuts = runner.fit_result(record)
+        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr"])
+        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        inner = fitted["result"]["body"]["result"]["body"]
+        self.assertEqual(inner["stdout"], "..." + "o" * runner.RESULT_TAIL_BYTES)
+        self.assertEqual(inner["telemetry"], {"version": 1})
+
+        record = self.shim_record(stdout="o" * 2_000, telemetry={"blob": "t" * 90_000})
+        fitted, cuts = runner.fit_result(record)
+        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr", "body"])
+        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        outer = fitted["result"]["body"]
+        self.assertEqual((outer["id"], outer["ledger_id"], outer["state"]), (DISPATCH, "led_1", "finished"))
+        self.assertNotIn("updated_at", outer)
+        inner = outer["result"]["body"]
+        self.assertEqual((outer["result"]["status"], inner["status"], inner["returncode"]), (200, "ok", 0))
+        self.assertEqual(inner["usage"], {"input_tokens": 1})
+        self.assertNotIn("telemetry", inner)
+        self.assertNotIn("stdout", inner)
+        self.assertIn("trimmed to fit the house transport", inner["error"])
+
+    def test_a_result_that_cannot_carry_the_closing_fields_is_reported_unknown_not_lost(self):
+        record = self.shim_record()
+        record["result"]["body"]["id"] = "i" * 90_000
+        fitted, cuts = runner.fit_result(record)
+        self.assertEqual(fitted, {"outcome": "unknown", "error": "result too large"})
+        self.assertEqual(cuts[-1], "result")
+        fitted, _ = runner.fit_result({"outcome": "failed", "error": "e" * 90_000})
+        self.assertEqual(fitted, {"outcome": "unknown", "error": "result too large"})
+
+    def test_the_bound_is_measured_on_the_bytes_that_are_signed(self):
+        # 20,000 characters of "é" are 40,000 UTF-8 bytes and 120,000 bytes once
+        # json.dumps escapes them; only the last count is what the house sees.
+        record = self.shim_record(stdout="é" * 20_000)
+        self.assertLess(len(json.dumps(record).encode("utf-8")), 200_000)
+        fitted, cuts = runner.fit_result(record)
+        self.assertEqual(cuts, ["full_invocation_text", "stdout/stderr"])
+        self.assertLessEqual(len(runner.encode_body(fitted)), runner.RESULT_MAX_BYTES)
+        # Just under the limit as sent is posted as it is.
+        small = self.shim_record(stdout="é" * 10_000)
+        self.assertLessEqual(len(runner.encode_body(small)), runner.RESULT_MAX_BYTES)
+        self.assertEqual(runner.fit_result(small)[1], [])
+
+    def test_an_oversized_turn_answer_is_posted_trimmed_and_signed_over_the_trimmed_bytes(self):
+        sent = []
+
+        class Response:
+            def __init__(self, payload):
+                self.status = 200
+                self._body = json.dumps(payload).encode()
+
+            def read(self):
+                return self._body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def opener(request, timeout=None):
+            sent.append(request)
+            if request.full_url.endswith("/commands/next"):
+                return Response({"command": command(kind="turn_status",
+                                                    payload={"container_name": "agent-pilot-1", "dispatch_id": DISPATCH})})
+            return Response({"status": "recorded"})
+
+        answer = self.shim_record(full_invocation_text="p" * 90_000)["result"]["body"]
+        http = FakeHttp(status=200, body=answer)
+        host = runner.ResidentHost(tempfile.mkdtemp(), docker=FakeDocker(images=(IMAGE,)), http=http)
+        host.start_resident(spec())
+        state = runner.CommandState(tempfile.mkdtemp())
+        key = Ed25519PrivateKey.generate()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            handled = runner.poll_command_once(self.CONFIG, key, state, host, opener=opener)
+        self.assertTrue(handled)
+        posted = sent[1]
+        self.assertLessEqual(len(posted.data), runner.RESULT_MAX_BYTES)
+        body = json.loads(posted.data)
+        self.assertEqual(body["outcome"], "done")
+        self.assertEqual(body["result"]["body"]["state"], "finished")
+        self.assertNotIn("full_invocation_text", body["result"]["body"]["result"]["body"])
+        self.assertEqual(posted.headers["X-runner-signature"],
+                         runner.signed_headers(key, "POST", "/api/v1/host_runner/commands/" + "a" * 32 + "/result",
+                                               posted.data, "rnr_abc", timestamp=posted.headers["X-runner-timestamp"],
+                                               nonce=posted.headers["X-runner-nonce"])["X-Runner-Signature"])
+        self.assertIn("trimmed to fit the house transport: full_invocation_text", stderr.getvalue())
+        # The remembered answer is the full one: a redelivery is fitted again, the same way.
+        self.assertIn("full_invocation_text", json.dumps(state.result_for("a" * 32)))
 
     def test_main_polls_only_when_enabled_and_keeps_heartbeating(self):
         state = tempfile.mkdtemp()

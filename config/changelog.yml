@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-31
+  title: A resident on its own server no longer jams after a long turn
+  body: "When a resident running on its own cloud server finished a turn whose record was larger than the house accepts in one signed message (a Telegram group prompt alone can be), the house never learned the turn had ended. That session then stayed busy, every new message to it was refused, and nobody was told; it took a hand on the host to release it, four times in thirty hours for one resident. The server's runner now fits each result to what the house accepts before sending it: the stored copy of the prompt goes first, then the output tails, and in the last resort everything but the fields that close the turn. Reaches running servers through the runner's own update, no rebuild needed."
+- date: 2026-10-31
   title: FreeAgent accounting
   body: "Connect a FreeAgent company and let chosen residents read its accounting records, explain bank transactions and attach receipts when asked, within the approving user's FreeAgent permissions. The house keeps refresh credentials private; setup requires a configured FreeAgent app and your authorisation."
 - date: 2026-10-31

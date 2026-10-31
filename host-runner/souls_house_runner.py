@@ -26,6 +26,7 @@ used only for Ed25519. No cryptography is implemented here.
 """
 
 import base64
+import copy
 import hashlib
 import http.client
 import io
@@ -220,6 +221,89 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
 
 def encode_body(payload):
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+# The house reads a signed command result only up to RunnerSignature::MAX_BODY_BYTES
+# (64 KiB). A larger result is refused before the house can record anything,
+# post() never reads the refusal, and the command is handed out again for ever
+# while the turn it belongs to keeps its session busy (#673: a VM resident's
+# finished turn carrying a 61 KB prompt in full_invocation_text jammed its
+# Telegram group four times in thirty hours). So a result is fitted to the
+# transport before it is signed, measured on exactly the bytes that are sent.
+RESULT_MAX_BYTES = 64 * 1024
+# What is kept of stdout/stderr when the full tails do not fit.
+RESULT_TAIL_BYTES = 1000
+# Of a relayed trigger-server answer, the fields the house needs to close a
+# turn (ResidentTurnPollJob reads id/state/ledger_id; ResidentTurn#finish!
+# reads status and returncode and keeps the usage for accounting).
+RESULT_KEEP_OUTER = ("id", "ledger_id", "state", "error")
+RESULT_KEEP_INNER = ("status", "returncode", "session_id", "chaos_session_id", "session_resumed",
+                     "fresh_fallback", "usage", "error")
+
+
+def fit_result(result, limit=RESULT_MAX_BYTES):
+    """The result as it will be posted, and the list of cuts made to fit it.
+
+    Cuts, in order, each only if the previous was not enough: the
+    full_invocation_text copy of the prompt (the house stores it for the
+    interaction record and never relays it anywhere), the stdout/stderr tails,
+    then the relayed answer down to the fields that close a turn. A result
+    that cannot carry even those is reported unknown, which the house records,
+    rather than refused, which it cannot."""
+    if len(encode_body(result)) <= limit:
+        return result, []
+    result = copy.deepcopy(result)
+    cuts = []
+    _drop_key(result, "full_invocation_text")
+    cuts.append("full_invocation_text")
+    if len(encode_body(result)) <= limit:
+        return result, cuts
+    _shorten_keys(result, ("stdout", "stderr"), RESULT_TAIL_BYTES)
+    cuts.append("stdout/stderr")
+    if len(encode_body(result)) <= limit:
+        return result, cuts
+    relayed = result.get("result") if isinstance(result, dict) else None
+    if isinstance(relayed, dict) and isinstance(relayed.get("body"), dict):
+        relayed["body"] = _closing_fields(relayed["body"], cuts)
+        cuts.append("body")
+        if len(encode_body(result)) <= limit:
+            return result, cuts
+    cuts.append("result")
+    return {"outcome": "unknown", "error": "result too large"}, cuts
+
+
+def _drop_key(value, key):
+    if isinstance(value, dict):
+        value.pop(key, None)
+        for child in value.values():
+            _drop_key(child, key)
+    elif isinstance(value, list):
+        for child in value:
+            _drop_key(child, key)
+
+
+def _shorten_keys(value, keys, keep):
+    if isinstance(value, dict):
+        for name, child in value.items():
+            if name in keys and isinstance(child, str) and len(child) > keep:
+                value[name] = "..." + child[-keep:]
+            else:
+                _shorten_keys(child, keys, keep)
+    elif isinstance(value, list):
+        for child in value:
+            _shorten_keys(child, keys, keep)
+
+
+def _closing_fields(body, cuts):
+    kept = {name: body[name] for name in RESULT_KEEP_OUTER if name in body}
+    inner = body.get("result")
+    if isinstance(inner, dict):
+        kept_inner = {"status": inner.get("status")}
+        if isinstance(inner.get("body"), dict):
+            kept_inner["body"] = {name: inner["body"][name] for name in RESULT_KEEP_INNER if name in inner["body"]}
+            kept_inner["body"]["error"] = "result trimmed to fit the house transport: " + ", ".join(cuts) + ", body"
+        kept["result"] = kept_inner
+    return kept
 
 
 def post(base_url, path, payload, key, runner_id, opener=urllib.request.urlopen, timeout=30):
@@ -1632,6 +1716,9 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     command_id, result = execute_command(body["command"], state, host)
     if command_id is None or not COMMAND_ID_RE.match(command_id):
         return True
+    result, cuts = fit_result(result)
+    if cuts:
+        print(f"command {command_id} result trimmed to fit the house transport: {', '.join(cuts)}", file=sys.stderr)
     post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
     return True
 
