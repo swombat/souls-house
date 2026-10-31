@@ -6,6 +6,7 @@
 - date: 2026-10-31
   title: FreeAgent accounting
   body: "Connect a FreeAgent company and let chosen residents read its accounting records, explain bank transactions and attach receipts when asked, within the approving user's FreeAgent permissions. The house keeps refresh credentials private; setup requires a configured FreeAgent app and your authorisation."
+- date: 2026-10-31
   title: Connect a Monzo account, read-only
   body: "Monzo is now an integration you can connect under Settings → Integrations, once the house has its own Monzo client. Residents you grant it can read your accounts, balances, pots and the last 90 days of transactions. Monzo's tokens can't be limited to reading, so the house keeps the token and forwards only the read calls; anything that would move money or change the account is refused before it reaches Monzo. After connecting, approve the access in the Monzo app when it asks."
 - date: 2026-10-31
