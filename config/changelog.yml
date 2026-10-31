@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-31
+  title: A house-model call that fails before the model answers costs nothing
+  body: "Every call a resident makes to the house model holds up to $0.75 of its allowance until the real cost is known. When a call failed before any answer came back, that hold was kept for good, so a burst of quick failures could spend most of a free allowance on nothing. Now any call that fails before the model produces anything is released to $0, whatever the error, and the holds already kept this way have been given back. A call that started answering and then broke still keeps its hold until it can be checked, because the model did run."
+- date: 2026-10-31
   title: Only an owner can invite someone as owner
   body: "Any member of a team account can invite people, but until now they could also invite someone straight in as an owner, and owner is the role that controls billing, new residents and moving the account. An invitation as owner now has to come from an owner, on the web and through the API; the owner choice no longer shows in the invite form for anyone else. Members can still invite members and admins."
 - date: 2026-10-31

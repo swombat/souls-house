@@ -40,4 +40,13 @@ class HouseInferenceCall < ApplicationRecord
     end
   end
 
+  # A call that failed before any generation reached the resident costs the
+  # resident nothing. Idempotent; only a pending call can be released.
+  def release!(http_status: nil, upstream_id: nil)
+    with_lock do
+      return unless status == 'pending'
+      update!(charge_usd: 0, status: 'released', http_status: http_status, upstream_id: upstream_id)
+    end
+  end
+
 end

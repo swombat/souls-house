@@ -20,6 +20,7 @@ module HouseInference
       buffer = +''
       usage = nil
       upstream_id = nil
+      generated = false
       completed = false
       streaming = @input['stream'] == true
       total_bytes = 0
@@ -37,12 +38,11 @@ module HouseInference
       # A retry is a new admitted call, never a hidden repeat of a billed POST.
       http.request(request) do |response|
         unless response.is_a?(Net::HTTPSuccess)
-          # Only OpenRouter's own routing refusal is known to be unbilled: a 404
-          # saying no endpoint can serve the request, decided before any
-          # provider sees it (live check, 2026-10-10). It releases the
-          # reservation. Every other failure, including timeouts and other 4xx,
-          # keeps the conservative charge for reconciliation.
-          call.settle!({ 'cost' => 0 }) if self.class.routing_refusal?(response, deadline: deadline)
+          # A refused request delivered nothing, so the resident pays nothing
+          # for it, whatever the status (Daniel, JwMQEe, 2026-10-31). If the
+          # provider billed the house anyway, that is the house's cost. The
+          # status is kept (never the body) so refusals can be told apart.
+          call.release!(http_status: response.code.to_i)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
         end
         response.read_body do |chunk|
@@ -64,6 +64,7 @@ module HouseInference
             raise Error.new('The house provider returned an invalid stream event.', status: 502) unless event.is_a?(Hash)
             raise Error.new('The house provider interrupted this response.', status: 502) if event['error']
             upstream_id ||= event['id']
+            generated ||= self.class.generated?(event)
             usage = event['usage'] if event['usage'].is_a?(Hash)
             event['model'] = @input['model'] if event.key?('model')
             yield "data: #{JSON.generate(event)}\n\n"
@@ -76,6 +77,7 @@ module HouseInference
           raise Error.new('The house provider returned an invalid completion.', status: 502)
         end
         usage, upstream_id = result['usage'], result['id']
+        generated = self.class.generated?(result)
         result['model'] = @input['model']
         completed = true
       end
@@ -85,9 +87,32 @@ module HouseInference
       result
     rescue JSON::ParserError, IOError, SystemCallError, Timeout::Error
       # Do not log upstream bodies, requests, credentials or exception messages.
-      raise Error.new('House inference was interrupted. The call’s safety charge is retained pending reconciliation.', status: 502)
+      raise Error.new('House inference was interrupted.', status: 502)
     ensure
-      call&.settle!(nil, upstream_id: upstream_id)
+      # Nothing generated (no text, tool call or reasoning; an id or a
+      # role-only frame alone is not output): the resident pays nothing,
+      # unless the provider reported a known cost. Usage without a cost
+      # (empty, or token counts only) doesn't count. Once output arrived, a
+      # known cost settles; otherwise the conservative charge stays for
+      # reconciliation. The id is kept either way.
+      if generated || (usage.is_a?(Hash) && !HouseInference::UsageCost.call(usage).first.nil?)
+        call&.settle!(usage, upstream_id: upstream_id)
+      else
+        call&.release!(upstream_id: upstream_id)
+      end
+    end
+
+    # Whether a stream event or completion carries model output.
+    def self.generated?(payload)
+      choices = payload['choices']
+      return false unless choices.is_a?(Array)
+      choices.any? do |choice|
+        next false unless choice.is_a?(Hash)
+        part = choice['delta'] || choice['message']
+        next false unless part.is_a?(Hash)
+        %w[content reasoning].any? { |key| part[key].is_a?(String) && !part[key].empty? } ||
+          %w[tool_calls reasoning_details].any? { |key| part[key].is_a?(Array) && part[key].any? }
+      end
     end
 
     private
@@ -104,28 +129,6 @@ module HouseInference
       grant = HouseInferenceGrant.find_by(agent: @agent)
       raise Error.new('This resident has no house allowance.', status: 403) unless grant
       grant.reserve!(offering, @input['model'], agent_id: @agent.id)
-    end
-
-    ROUTING_REFUSAL = /\ANo endpoints found that (?:can handle|support) the requested parameters/
-    REFUSAL_BODY_LIMIT = 16.kilobytes
-    # Bounded in bytes and by the call's absolute deadline: the refusal body is
-    # a small JSON error, never a completion. Anything else, including valid
-    # JSON of another shape, is not a refusal.
-    def self.routing_refusal?(response, deadline:)
-      return false unless response.code == '404'
-      body = +''
-      response.read_body do |chunk|
-        return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        body << chunk
-        return false if body.bytesize > REFUSAL_BODY_LIMIT
-      end
-      return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-      parsed = JSON.parse(body)
-      error = parsed['error'] if parsed.is_a?(Hash)
-      message = error['message'] if error.is_a?(Hash)
-      message.is_a?(String) && ROUTING_REFUSAL.match?(message)
-    rescue JSON::ParserError, IOError, SystemCallError, Timeout::Error
-      false
     end
 
   end
