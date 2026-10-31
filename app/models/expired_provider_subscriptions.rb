@@ -12,6 +12,12 @@
 # Owners only (Daniel, 2026-10-27, elXOke): reconnecting a lapsed login is the
 # owner's job, so a member or admin of someone else's account (site admins
 # included) is not shown that account's expired subscriptions.
+#
+# The same black count carries residents whose scheduled runs are failing
+# (Daniel, 2026-10-31, YDbPQj: "a black notification like the subscription
+# failure... and then they can click on the resident"). Each open streak
+# recorded by ScheduledRunFailureNotice adds one, listed under `failing`, for
+# the same owners and with the same exclusions the streak itself uses.
 class ExpiredProviderSubscriptions
 
   def self.summary_for(user)
@@ -24,9 +30,10 @@ class ExpiredProviderSubscriptions
 
   def summary
     items = expired_items
+    failing = failing_items
     by_account = Hash.new(0)
-    items.each { |item| by_account[item[:account_id]] += 1 }
-    { total: items.size, accounts: by_account, items: items }
+    (items + failing).each { |item| by_account[item[:account_id]] += 1 }
+    { total: items.size + failing.size, accounts: by_account, items: items, failing: failing }
   end
 
   private
@@ -53,6 +60,35 @@ class ExpiredProviderSubscriptions
       SQL
       .includes(:account)
       .order(:account_id, :name)
+  end
+
+  def failing_items
+    agents = Agent.where(account_id: owned_account_ids, active: true)
+      .where.not(runtime: Agent::RuntimeAvailability::RETIRED_RUNTIMES)
+    ids = agents.pluck(:id)
+    return [] if ids.empty?
+
+    streaks = AuditLog.where(action: ScheduledRunFailureNotice::FAILING, auditable_type: "Agent", auditable_id: ids)
+    closed = AuditLog.where(action: ScheduledRunFailureNotice::RECOVERED, auditable_type: "Agent", auditable_id: ids)
+      .pluck(Arel.sql("data->>'streak_id'")).compact.map(&:to_i)
+    open_ids = streaks.where.not(id: closed).order(:id).index_by(&:auditable_id)
+    return [] if open_ids.empty?
+
+    agents.where(id: open_ids.keys).includes(:account).order(:account_id, :name)
+      .reject { |agent| agent.billing_held? || ResidentSwitchedOffNotice.open_holds(agent).exists? }
+      .map { |agent| failing_item_for(agent, open_ids.fetch(agent.id)) }
+  end
+
+  def failing_item_for(agent, streak)
+    category = streak.data&.dig("category").presence || "unknown"
+    {
+      account_id: agent.account.to_param,
+      account_name: agent.account.name,
+      agent_id: agent.to_param,
+      agent_name: agent.name,
+      cause: RunFailureNotice::NO_REPLY_CAUSES.fetch(category, RunFailureNotice::NO_REPLY_CAUSES.fetch("unknown")),
+      url: Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "interactions")
+    }
   end
 
   def owned_account_ids

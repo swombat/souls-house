@@ -6,22 +6,27 @@
 # never set, a key refused) and the first person to know was reading the
 # host by hand.
 #
-# From the second consecutive failed scheduled run, the people of the
-# resident's home account are told once, in a conversation of its own in
-# Main with the resident in it (a system line wakes nobody), with an audit
-# entry as the record; and once more, in the same conversation, when a
-# scheduled run completes again. The audit rows are the latch: a streak with
-# no "completing again" row is open, and an open streak is never announced
+# From the second consecutive failed scheduled run the streak is recorded as
+# an audit row, and the owner sees the resident in the navbar's black count
+# (ExpiredProviderSubscriptions#summary, beside expired subscriptions), with
+# the resident listed under "Failing residents" in the account menu, linking
+# to its Runs tab. When a scheduled run completes again a closing row is
+# written and the resident drops out of the count. The rows are the latch: a
+# streak with no closing row is open, and an open streak is never recorded
 # twice however long it lasts. A completed conversation run does not close
 # it: a resident can answer in rooms while every wake fails, and that is
-# exactly the failure worth a line.
+# exactly the failure worth showing.
+#
+# Until 31 Oct 2026 (#677) this opened a conversation in Main for each
+# streak; Daniel found that the wrong tool for the job ("a whole
+# conversation"), so it is a count, not a conversation.
 #
 # This reads terminal failed runs. It says nothing about the recall or
 # journal hooks that run inside a run; a hook can fail inside a completed
 # run, and that needs different evidence.
 #
-# Nothing is said about a resident asleep for billing, switched off, or under
-# a failed-roll hold: each already has its own notice.
+# Nothing is recorded for a resident asleep for billing, switched off, or
+# under a failed-roll hold: each already has its own notice.
 class ScheduledRunFailureNotice
 
   FAILING = "scheduled_runs_failing".freeze
@@ -72,58 +77,20 @@ class ScheduledRunFailureNotice
   end
 
   def failing!(streak)
-    # A truncated streak has no known start: no time is stored or said, and
-    # the anchor for finding its recovery is the oldest failure the scan saw
-    # in it, never the run whose job happened to ask (which may be old).
-    since = streak.since
-    category = streak.categories.first || "unknown"
-    Agent.transaction do
-      chat = @agent.account.chats.create_with_message!(
-        { title: "#{@agent.name}'s scheduled runs are failing", manual_responses: true },
-        agent_ids: [ @agent.id ], automatic_response: false
-      )
-      chat.messages.create!(role: "system", content: failing_text(streak, since, category), notice_link: link)
-      AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
-        data: { chat_id: chat.id, run_id: @run.id, first_run_id: streak.first_run_id,
-                anchor_run_id: streak.first_run_id || streak.oldest_seen_id, since: since&.iso8601,
-                count: streak.count, category: category })
-    end
+    # A truncated streak has no known start: no time is stored, and the
+    # anchor for finding its recovery is the oldest failure the scan saw in
+    # it, never the run whose job happened to ask (which may be old).
+    AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
+      data: { run_id: @run.id, first_run_id: streak.first_run_id,
+              anchor_run_id: streak.first_run_id || streak.oldest_seen_id, since: streak.since&.iso8601,
+              count: streak.count, category: streak.categories.first || "unknown" })
+    refresh_owner_count!
   end
 
   def completing_again!(streak, success)
-    chat = Chat.find_by(id: streak.data&.dig("chat_id"), account_id: @agent.account_id)
-    at = success.finished_at
-    Agent.transaction do
-      chat ||= @agent.account.chats.create_with_message!(
-        { title: "#{@agent.name}'s scheduled runs are completing again", manual_responses: true },
-        agent_ids: [ @agent.id ], automatic_response: false
-      )
-      chat.messages.create!(role: "system", content: completing_text(streak, at), notice_link: link)
-      AuditLog.create!(user: nil, account: @agent.account, action: RECOVERED, auditable: @agent,
-        data: { streak_id: streak.id, chat_id: chat.id, run_id: success.id, at: at.iso8601 })
-    end
-  end
-
-  def failing_text(streak, since, category)
-    name = @agent.name
-    cause = RunFailureNotice::NO_REPLY_CAUSES.fetch(category)
-    tally = if streak.truncated
-      "#{streak.count} or more failed scheduled runs in a row"
-    else
-      "#{streak.count.ordinalize} failed scheduled run in a row since #{time_label(since)}"
-    end
-    "[System Notice] #{name}'s scheduled runs are failing: #{cause} (#{tally}). " \
-      "Each of these wakes or memory sessions ended as a failed run (some work may have happened before it failed); " \
-      "conversations are separate and may still work. " \
-      "The Runs tab shows each run."
-  end
-
-  def completing_text(streak, at)
-    since = streak.data&.dig("since").presence && Time.zone.parse(streak.data["since"])
-    return "[System Notice] #{@agent.name}'s scheduled runs are completing again as of #{time_label(at)}." unless since
-
-    "[System Notice] #{@agent.name}'s scheduled runs are completing again as of #{time_label(at)}, " \
-      "after #{ActionController::Base.helpers.distance_of_time_in_words(since, at)} of failures."
+    AuditLog.create!(user: nil, account: @agent.account, action: RECOVERED, auditable: @agent,
+      data: { streak_id: streak.id, run_id: success.id, at: success.finished_at.iso8601 })
+    refresh_owner_count!
   end
 
   private
@@ -161,14 +128,10 @@ class ScheduledRunFailureNotice
     @agent.active? && !@agent.billing_held? && !ResidentSwitchedOffNotice.open_holds(@agent).exists?
   end
 
-  # The resident's Runs tab, which the people of its home account can open.
-  def link
-    { label: "Why?", path: Rails.application.routes.url_helpers.edit_account_agent_path(@agent.account, @agent, tab: "interactions") }
-  end
-
-  def time_label(at)
-    zone = ActiveSupport::TimeZone[@agent.account.owner&.timezone.to_s] || ActiveSupport::TimeZone["UTC"]
-    at.in_time_zone(zone).strftime("%-d %b %H:%M %Z")
+  # The navbar count is read from the audit rows on each page load; touching
+  # the resident commits its account refresh marker so an open page updates.
+  def refresh_owner_count!
+    @agent.touch
   end
 
 end

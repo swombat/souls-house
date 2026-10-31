@@ -122,6 +122,45 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     assert_equal [ agents(:code_reviewer).to_param ], summary[:items].pluck(:agent_id)
   end
 
+  test "a resident whose scheduled runs are failing adds one to the black count and is listed with its Runs tab" do
+    agent = agents(:code_reviewer)
+    streak = fail_streak!(agent, "authentication_error")
+
+    summary = ExpiredProviderSubscriptions.summary_for(@user)
+    assert_equal 1, summary[:total]
+    assert_equal 1, summary[:accounts][agent.account.to_param]
+    assert_empty summary[:items]
+    item = summary[:failing].sole
+    assert_equal "Code Reviewer", item[:agent_name]
+    assert_equal "the run's output looked like an authentication error", item[:cause]
+    assert_includes item[:url], "tab=interactions"
+
+    expire!(agent, "anthropic")
+    assert_equal 2, ExpiredProviderSubscriptions.summary_for(@user)[:total], "an expired login and failing runs are two problems"
+
+    AuditLog.create!(user: nil, account: agent.account, action: ScheduledRunFailureNotice::RECOVERED, auditable: agent,
+      data: { streak_id: streak.id })
+    summary = ExpiredProviderSubscriptions.summary_for(@user)
+    assert_empty summary[:failing]
+    assert_equal 1, summary[:total]
+  end
+
+  test "failing residents are shown to owners only, and not while switched off, retired or asleep for billing" do
+    agent = agents(:other_account_agent)
+    fail_streak!(agent)
+    member = users(:existing_user)
+    assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
+    assert_equal 1, ExpiredProviderSubscriptions.summary_for(@user)[:failing].size
+
+    agent.update_columns(active: false)
+    assert_empty ExpiredProviderSubscriptions.summary_for(@user)[:failing]
+    agent.update_columns(active: true, runtime: Agent::RuntimeAvailability::RETIRED_RUNTIMES.first)
+    assert_empty ExpiredProviderSubscriptions.summary_for(@user)[:failing]
+    agent.update_columns(runtime: "external")
+    ResidentEntitlement.create!(agent: agent, account: agent.account, source: "stripe", state: "held", held_at: Time.current, tier: "conversation")
+    assert_empty ExpiredProviderSubscriptions.summary_for(@user)[:failing]
+  end
+
   private
 
   def expire!(agent, provider)
@@ -129,6 +168,11 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
       provider_auth_modes: { provider => "oauth_account" },
       provider_connections: { provider => { "status" => "expired", "email" => "x@example.com" } }
     )
+  end
+
+  def fail_streak!(agent, category = "runtime_error")
+    AuditLog.create!(user: nil, account: agent.account, action: ScheduledRunFailureNotice::FAILING, auditable: agent,
+      data: { count: 2, category: category })
   end
 
 end
