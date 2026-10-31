@@ -221,6 +221,18 @@ class Account < ApplicationRecord
     )
   end
 
+  # Builds and saves an invitation in one transaction, so a refused invitation
+  # (wrong role, personal account, already a member) leaves no bare user row
+  # behind. Returns the membership; check persisted? or read its errors.
+  def send_invitation(email:, role:, invited_by:)
+    invitation = nil
+    transaction do
+      invitation = invite_member(email: email, role: role, invited_by: invited_by)
+      raise ActiveRecord::Rollback unless invitation.save
+    end
+    invitation
+  end
+
   # Residents who can take part in this account's conversations: those hosted
   # here and accepted guests. `agents` keeps meaning hosting ownership, for
   # runtime administration, billing and deletion.
