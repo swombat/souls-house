@@ -68,6 +68,34 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Invitation sent to member-invited@example.com", flash[:notice]
   end
 
+  test "a member cannot invite someone as owner" do
+    sign_in users(:member)
+
+    assert_no_difference -> { @account.memberships.count } do
+      post account_invitations_path(@account), params: {
+        email: "would-be-owner@example.com",
+        role: "owner"
+      }
+    end
+
+    assert_redirected_to account_path(@account)
+    assert_equal "Only an owner can invite someone as owner", flash[:alert]
+  end
+
+  test "an owner can invite someone as owner" do
+    sign_in users(:owner)
+
+    post account_invitations_path(@account), params: {
+      email: "co-owner@example.com",
+      role: "owner"
+    }
+
+    assert_redirected_to account_path(@account)
+    assert_equal "Invitation sent to co-owner@example.com", flash[:notice]
+    invited = @account.memberships.joins(:user).find_by!(users: { email_address: "co-owner@example.com" })
+    assert invited.owner?
+  end
+
   test "requires account membership" do
     other_account = accounts(:other)
     # Admin doesn't have access to this other account
@@ -88,12 +116,12 @@ class InvitationsControllerTest < ActionDispatch::IntegrationTest
 
     post account_invitations_path(personal_account), params: {
       email: "test@example.com",
-      role: "member"
+      role: "owner"
     }
 
     assert_redirected_to account_path(personal_account)
-    # Check for the actual validation error from personal account rules
-    assert_match /Personal accounts cannot invite members|must be owner for personal accounts/, flash[:alert]
+    # role=owner so the role rule passes and the one-user rule is what refuses.
+    assert_match /Personal accounts can only have one user/, flash[:alert]
   end
 
 end

@@ -7,6 +7,8 @@
 
   const dispatch = createEventDispatcher();
 
+  let { canInviteOwner = false } = $props();
+
   let email = $state('');
   let role = $state('member');
 
@@ -46,12 +48,14 @@
             <span class="font-medium">Admin</span> - Can manage members and settings
           </Label>
         </div>
-        <div class="flex items-center space-x-2">
-          <RadioGroupItem value="owner" id="owner" />
-          <Label for="owner" class="font-normal cursor-pointer">
-            <span class="font-medium">Owner</span> - Full access to account and billing
-          </Label>
-        </div>
+        {#if canInviteOwner}
+          <div class="flex items-center space-x-2">
+            <RadioGroupItem value="owner" id="owner" />
+            <Label for="owner" class="font-normal cursor-pointer">
+              <span class="font-medium">Owner</span> - Full access to account and billing
+            </Label>
+          </div>
+        {/if}
       </RadioGroup>
     </div>
   </div>

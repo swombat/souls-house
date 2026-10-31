@@ -135,6 +135,16 @@ module Api
         assert_equal users(:admin), log.user
       end
 
+      test "only an owner's key can invite someone as owner" do
+        post api_v1_account_invitations_path, params: { email: "would-be-owner@example.com", role: "owner" }, headers: @member_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_includes response.body, "Only an owner can invite someone as owner"
+
+        post api_v1_account_invitations_path, params: { email: "co-owner@example.com", role: "owner" }, headers: @owner_headers, as: :json
+        assert_response :created
+        assert_equal "owner", response.parsed_body.dig("invitation", "role")
+      end
+
       test "an invalid invitation is refused with the model's errors" do
         post api_v1_account_invitations_path, params: { email: "newcomer@example.com", role: "emperor" }, headers: @admin_headers, as: :json
         assert_response :unprocessable_entity
