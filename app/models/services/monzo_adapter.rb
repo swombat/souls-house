@@ -113,16 +113,42 @@ module Services
       Response.new(status: response.code.to_i, body: response.body.to_s)
     end
 
+    # Disconnecting always withdraws the house's own access (the caller
+    # deletes the payload); this asks Monzo to end the grant too, and logs
+    # when it couldn't.
     def revoke(connection)
-      token = connection.credential_payload_hash["access_token"]
-      return if token.blank?
-
-      uri = URI(LOGOUT_URL)
-      request = Net::HTTP::Post.new(uri)
-      request["Authorization"] = "Bearer #{token}"
-      http(uri) { |client| client.request(request) }
+      revoke!(connection)
     rescue StandardError => e
-      Rails.logger.warn("Monzo logout failed for service connection #{connection.id}: #{e.class}")
+      Rails.logger.warn("Monzo logout failed for service connection #{connection.id}: #{e.class}: #{e.message}")
+    end
+
+    # Logs the grant out at Monzo with a current token. Serialised with
+    # refresh under the row lock: refreshing invalidates the previous access
+    # token, so a token read before someone else refreshed would be refused
+    # and leave the current grant alive. Raises when Monzo refuses.
+    def revoke!(connection)
+      # Raised after the lock, never inside it: a refresh made here has
+      # already rotated the token at Monzo, and rolling back its stored
+      # result would lose the only live refresh token.
+      response = under_lock(connection) do |payload|
+        next if payload["access_token"].blank? && payload["refresh_token"].blank?
+
+        token = token_fresh?(payload) ? payload.fetch("access_token") : refresh!(connection, payload).fetch("access_token")
+        uri = URI(LOGOUT_URL)
+        request = Net::HTTP::Post.new(uri)
+        request["Authorization"] = "Bearer #{token}"
+        begin
+          http(uri) { |client| client.request(request) }
+        rescue Error => e
+          e
+        end
+      end
+      raise response if response.is_a?(Error)
+      raise Error, "Monzo logout failed (#{response.code})" if response && !response.is_a?(Net::HTTPSuccess)
+    rescue DeadGrant
+      # Monzo already refuses this grant's refresh token: nothing is left to
+      # log out, and under_lock has marked the connection.
+      nil
     end
 
     private

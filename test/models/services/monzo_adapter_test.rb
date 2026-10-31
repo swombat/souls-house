@@ -163,4 +163,73 @@ class Services::MonzoAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  LOGOUT_URL = Services::MonzoAdapter::LOGOUT_URL
+
+  test "logout uses the current token even when the caller holds a stale copy" do
+    connection = fresh_connection
+    stale = ServiceConnection.find(connection.id)
+    stale.credential_payload_hash # loaded before someone else refreshes
+    connection.replace_credential_payload_without_reconciliation!(
+      "access_token" => "rotated", "refresh_token" => "r2", "expires_at" => 2.hours.from_now.utc.iso8601
+    )
+    current = stub_request(:post, LOGOUT_URL).with(headers: { "Authorization" => "Bearer rotated" }).to_return(status: 200, body: "{}")
+
+    with_credentials { @adapter.revoke!(stale) }
+
+    assert_requested current
+    assert_not_requested :post, LOGOUT_URL, headers: { "Authorization" => "Bearer good" }
+  end
+
+  test "logout with an expired access token refreshes first, and keeps the rotated refresh token" do
+    connection = monzo_connection("access_token" => "old", "refresh_token" => "r1", "expires_at" => 1.minute.ago.utc.iso8601)
+    stub_request(:post, TOKEN_URL).with(body: hash_including("refresh_token" => "r1"))
+      .to_return(status: 200, body: { access_token: "new", refresh_token: "r2", expires_in: 21_600 }.to_json)
+    logout = stub_request(:post, LOGOUT_URL).with(headers: { "Authorization" => "Bearer new" }).to_return(status: 200, body: "{}")
+
+    with_credentials { @adapter.revoke!(connection) }
+
+    assert_requested logout
+    assert_equal "r2", connection.reload.credential_payload_hash["refresh_token"]
+  end
+
+  test "a refused logout raises, and a refresh made for it is not rolled back" do
+    connection = monzo_connection("access_token" => "old", "refresh_token" => "r1", "expires_at" => 1.minute.ago.utc.iso8601)
+    stub_request(:post, TOKEN_URL).to_return(status: 200, body: { access_token: "new", refresh_token: "r2", expires_in: 21_600 }.to_json)
+    stub_request(:post, LOGOUT_URL).to_return(status: 401, body: "{}")
+
+    error = assert_raises(Services::MonzoAdapter::Error) { with_credentials { @adapter.revoke!(connection) } }
+    assert_match "logout failed (401)", error.message
+    assert_equal "r2", connection.reload.credential_payload_hash["refresh_token"]
+  end
+
+  test "disconnecting withdraws the house's access even when Monzo refuses the logout" do
+    connection = fresh_connection
+    stub_request(:post, LOGOUT_URL).to_return(status: 500, body: "")
+
+    with_credentials { connection.disconnect! }
+
+    assert_equal "revoked", connection.reload.status
+    assert_empty connection.credential_payload_hash.to_h
+  end
+
+  test "reconnecting a connection whose grant Monzo already refuses goes ahead" do
+    connection = monzo_connection("access_token" => "old", "refresh_token" => "r1", "expires_at" => 1.minute.ago.utc.iso8601)
+    stub_request(:post, TOKEN_URL).to_return(status: 401, body: { code: "unauthorized.bad_refresh_token" }.to_json)
+
+    with_credentials { connection.begin_reauthorization! }
+
+    assert_equal "reauthorizing", connection.reload.status
+    assert_not_requested :post, LOGOUT_URL
+  end
+
+  test "reconnecting a live connection logs the old grant out first" do
+    connection = fresh_connection
+    logout = stub_request(:post, LOGOUT_URL).with(headers: { "Authorization" => "Bearer good" }).to_return(status: 200, body: "{}")
+
+    with_credentials { connection.begin_reauthorization! }
+
+    assert_requested logout
+    assert_equal "reauthorizing", connection.reload.status
+  end
+
 end
