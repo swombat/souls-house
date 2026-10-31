@@ -26,6 +26,7 @@ used only for Ed25519. No cryptography is implemented here.
 """
 
 import base64
+import copy
 import hashlib
 import http.client
 import io
@@ -220,6 +221,91 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
 
 def encode_body(payload):
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+# The house reads a signed command result only up to RunnerSignature::MAX_BODY_BYTES
+# (64 KiB). A larger result is refused before the house can record anything,
+# post() never reads the refusal, and the command is handed out again for ever
+# while the turn it belongs to keeps its session busy (#673: a VM resident's
+# finished turn carrying a 61 KB prompt in full_invocation_text jammed its
+# Telegram group four times in thirty hours). So a result is fitted to the
+# transport before it is signed.
+#
+# There are two size checks, and the result must pass both: the signed body as
+# sent (measured exactly), and RunnerCommand#record_result!, which re-encodes
+# the outcome/error/result slice with Rails to_json and records "unknown" above
+# RESULT_BYTES. Rails escapes <, > and & as \u003c (six bytes for one) and
+# U+2028/U+2029 likewise, so 12 KB of "<" on the wire is 72 KB there.
+RESULT_MAX_BYTES = 64 * 1024
+# Headroom on the Rails estimate for what it does not model exactly (Ruby
+# prints some floats longer than Python, e.g. 1.0e-05 for 1e-05).
+RESULT_HOUSE_MARGIN_BYTES = 1024
+# What is kept of a cut string: its last characters, after "...".
+RESULT_TAIL_BYTES = 1000
+
+
+def house_json_bytes(result):
+    """Bytes RunnerCommand#record_result! measures for this result (Rails to_json)."""
+    sliced = {k: result[k] for k in ("outcome", "error", "result") if k in result} if isinstance(result, dict) else {}
+    text = json.dumps(sliced, separators=(",", ":"), ensure_ascii=False)
+    escaped = sum(5 * text.count(c) for c in "<>&") + sum(3 * text.count(c) for c in "\u2028\u2029")
+    return len(text.encode("utf-8", "surrogatepass")) + escaped
+
+
+def result_fits(result, limit=RESULT_MAX_BYTES):
+    return len(encode_body(result)) <= limit and house_json_bytes(result) + RESULT_HOUSE_MARGIN_BYTES <= limit
+
+
+def fit_result(result, limit=RESULT_MAX_BYTES):
+    """The result as it will be posted, and the list of cuts made to fit it.
+
+    Cuts, in order, each only if the previous was not enough: the
+    full_invocation_text copy of the prompt (the house stores it for the
+    interaction record and never relays it anywhere), the stdout/stderr tails,
+    then every other long string, to its tail. Structure is never cut, so what
+    the house reads to close a turn (id/ledger_id/state, status, returncode,
+    session ids, versioned telemetry with its usage and session freshness,
+    session_roll_reason, error_kind, subscription_usage) survives whole. The
+    cuts are named in the command's own error, which the house keeps with the
+    command and does not read as the turn's outcome. A result that still does
+    not fit is reported unknown, which the house records, rather than refused,
+    which it cannot."""
+    if result_fits(result, limit):
+        return result, []
+    result = copy.deepcopy(result)
+    cuts = []
+    for cut in ("full_invocation_text", "stdout/stderr", "long strings"):
+        if cut == "full_invocation_text":
+            _drop_key(result, cut)
+        else:
+            _shorten_keys(result, cut == "stdout/stderr" and ("stdout", "stderr"), RESULT_TAIL_BYTES)
+        cuts.append(cut)
+        noted = dict(result)
+        noted.setdefault("error", "trimmed to fit the house transport: " + ", ".join(cuts))
+        if result_fits(noted, limit):
+            return noted, cuts
+    cuts.append("result")
+    return {"outcome": "unknown", "error": "result too large"}, cuts
+
+
+def _drop_key(value, key):
+    if isinstance(value, dict):
+        value.pop(key, None)
+        for child in value.values():
+            _drop_key(child, key)
+    elif isinstance(value, list):
+        for child in value:
+            _drop_key(child, key)
+
+
+def _shorten_keys(value, keys, keep):
+    """Cut strings under the named keys (every string when keys is falsy) to their tail."""
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for name, child in list(items):
+        if isinstance(child, str) and len(child) > keep and (not keys or name in keys):
+            value[name] = "..." + child[-keep:]
+        else:
+            _shorten_keys(child, keys, keep)
 
 
 def post(base_url, path, payload, key, runner_id, opener=urllib.request.urlopen, timeout=30):
@@ -1632,6 +1718,9 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     command_id, result = execute_command(body["command"], state, host)
     if command_id is None or not COMMAND_ID_RE.match(command_id):
         return True
+    result, cuts = fit_result(result)
+    if cuts:
+        print(f"command {command_id} result trimmed: {', '.join(cuts)}", file=sys.stderr)
     post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
     return True
 
