@@ -10,7 +10,7 @@ module Services
     TOKEN_URL = "https://api.freeagent.com/v2/token_endpoint"
     USER_URL = "https://api.freeagent.com/v2/users/me"
     COMPANY_URL = "https://api.freeagent.com/v2/company"
-    USER_AGENT = "souls.house FreeAgent integration"
+    USER_AGENT = "SoulsHouse FreeAgent integration"
     AUTHORITY_SUMMARY = "Acts as the approving FreeAgent user, within their FreeAgent permission level; no read-only OAuth scope."
     TIMEOUT = 15
 
