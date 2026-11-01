@@ -1020,6 +1020,40 @@ class SweepTest(unittest.TestCase):
             s.sweep()
         self.assertEqual([["docker", "tag", "stock:deploy-x", "stock:latest"]], commands)
 
+    def test_failed_births_alias_tag_is_held_not_swallowed(self):
+        run = self.root / "runs" / ("a" * 32)
+        run.mkdir(parents=True)
+        gate.atomic(run / "status.json", {"id": "a" * 32, "state": "partial", "skipped": [2]})
+        self.pending([2])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state["residents"][0]["stock"] = True
+        state.update(births_image_moved=False, births_allowed=True)
+        gate.atomic(self.root / "pending-rolls.json", state)
+        s = worker.Sweeper()
+        s.settings["stock_aliases"] = ["stock:latest"]
+
+        def run_cmd(args, **kw):
+            raise subprocess.CalledProcessError(1, args)
+        with patch.object(s, "rails", return_value={"result": "healthy"}), \
+             patch.object(s, "run", side_effect=run_cmd):
+            s.sweep()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([], queue["residents"])
+        self.assertTrue(queue["births_alias_failed"])
+        self.assertFalse(queue["births_image_moved"])
+        receipt = json.loads((run / "status.json").read_text())
+        self.assertEqual("partial", receipt["state"])
+        self.assertTrue(receipt["births_alias_failed"])
+        self.assertIn("births alias tag failed", receipt["step"])
+        # The next tick neither rerolls the healthy resident nor retries the tag.
+        s = worker.Sweeper()
+        s.settings["stock_aliases"] = ["stock:latest"]
+        with patch.object(s, "rails") as rails, patch.object(s, "run") as tag:
+            s.sweep()
+        rails.assert_not_called()
+        tag.assert_not_called()
+        self.assertTrue((self.root / "pending-rolls.json").exists())
+
     def test_nothing_pending_does_nothing(self):
         self.assertEqual(("nothing pending", []), self.sweep({}))
 

@@ -568,8 +568,12 @@ class Sweeper(Worker):
         data["skipped"] = waiting
         data["held"] = state["held"]
         data["births_image_moved"] = state["births_image_moved"]
+        if state.get("births_alias_failed"):
+            data["births_alias_failed"] = True
         if state["held"]:
             data["step"] = "resident roll failed; held for operator review"
+        elif state.get("births_alias_failed"):
+            data["step"] = "births alias tag failed; held for operator review"
         elif waiting:
             data["step"] = "busy residents roll when idle"
         elif data["state"] == "partial":
@@ -604,19 +608,24 @@ class Sweeper(Worker):
                     elif result.get("result") in ("healthy", "current"):
                         self.log.write(f"resident {resident['id']}: {result['result']}\n")
                         if (resident.get("stock") and state.get("births_allowed", True)
-                                and not state["held"] and not state["births_image_moved"]):
+                                and not state["held"] and not state["births_image_moved"]
+                                and not state.get("births_alias_failed")):
                             try:
                                 for alias in self.settings.get("stock_aliases", []):
                                     self.run(["docker", "tag", resident["image"], alias])
                                 state["births_image_moved"] = True
-                            except Exception:
-                                self.log.write("births alias tag failed\n")
+                            except Exception as error:
+                                # Held like a failed roll: kept on the receipt and in
+                                # the file, never retried here. The resident itself
+                                # is healthy and is not rolled again.
+                                self.log.write(f"births alias tag failed: {type(error).__name__}\n")
+                                state["births_alias_failed"] = True
                     else:
                         state["held"].append(resident["id"])
                 state["residents"] = waiting
                 state["checked_at"] = int(time.time())
                 self.receipt(state)
-                if waiting or state["held"]:
+                if waiting or state["held"] or state.get("births_alias_failed"):
                     atomic(pending_rolls(), state)
                 else:
                     atomic(ROOT / "last-sweep.json", state)
