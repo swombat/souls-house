@@ -98,6 +98,46 @@ resident's Chaos configuration, for both fresh and existing volumes. This enable
 `defer_once` after a compaction warning and `compact_now`, within Chaos's fixed
 safety ceiling. An explicit resident setting, including `"disabled"`, is preserved.
 
+Two more defaults are written the same way, only when the key is absent, in the
+main home and in `oauth-runtime`:
+
+- `model_auto_compact_token_limit = 400000`. Chaos compacts at the smaller of
+  this and 90% of the current model's context window whenever that window is
+  known (`ModelInfo::auto_compact_token_limit`), recomputed per turn from the
+  turn's own model. A resident switched to a 128k model therefore compacts at
+  about 115k. With no known window Chaos's default is no limit, so 400k is
+  never later than the default. A home that pins `model_context_window` for
+  every model loses that protection; the house does not set it.
+- `protected_context_files`: the identity files Chaos snapshots at session
+  start and restores verbatim after every compaction. House homes:
+  `identity/soul.md` and `identity/self-narrative.md`. Imported homes: the
+  manifest's `protected_context` list (paths inside the home root) if it
+  declares one, otherwise its `soul` and `narrative`. A path that escapes the
+  root, or a manifest that cannot be read, leaves the key absent. Files missing
+  at session start appear as Chaos warnings and are not protected.
+
+Setting either key yourself, including `protected_context_files = []`, opts
+out; boot never rewrites it. New values apply to sessions started after the
+boot that wrote them. A declaration boot refuses (a path outside the root, a
+non-list) leaves the key absent and prints one metadata-only line on stderr.
+
+For house homes the shim leaves soul and self-narrative out of the fresh
+prompt when every Chaos home of the resident (main and `oauth-runtime`) will
+snapshot them whole: listed, present, and under the
+`protected_context_max_bytes` cap. If any of that can't be confirmed, the
+prompt keeps its copy. Imported homes' wake content is the home's own and is
+not changed.
+
+Memory index: house homes have none (their memory is the graph and the
+journals, which change and are not protected). An imported home that keeps an
+index lists it in `protected_context` in its manifest.
+
+Orientation: Chaos reads the protected files when the session is spawned
+(`spawn.rs`), and SessionStart hooks run at the first turn, after that. A file
+a wake hook writes is therefore one session late. Text like the which-body
+paragraph can only be protected if something writes it before `chaos exec`
+starts the session.
+
 Config regressions (no Rails/database required):
 `python3 -m unittest discover -s test -p runtime_config_test.py`.
 
