@@ -28,9 +28,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function checked() {
-  const on = screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
+  const on = screen.getAllByRole('radio').filter((r) => r.checked);
   expect(on).toHaveLength(1);
-  return on[0].textContent;
+  return on[0].closest('label').textContent;
 }
 
 async function loaded(current = 'std-aria') {
@@ -105,4 +105,23 @@ test('each voice is a tappable row with its own colour; a row Preview picks and 
   );
   expect(screen.getByRole('button', { name: 'Use this voice' })).not.toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Preview No voice' })).not.toBeInTheDocument();
+});
+
+test('voices are native radios in one named group, so arrow keys and the single tab stop come from the browser', async () => {
+  await loaded('std-aria');
+  const radios = screen.getAllByRole('radio');
+  expect(radios).toHaveLength(3);
+  for (const r of radios) {
+    expect(r.tagName).toBe('INPUT');
+    expect(r.type).toBe('radio');
+    expect(r.name).toBe('agent-voice');
+  }
+  expect(screen.getByRole('radiogroup', { name: 'Voice' })).toBeInTheDocument();
+
+  // Keyboard selection changes the pick the same way a tap does.
+  const brian = screen.getByRole('radio', { name: /Brian/ });
+  brian.focus();
+  await fireEvent.click(brian); // what the browser dispatches when an arrow key moves the selection
+  expect(checked()).toMatch(/Brian/);
+  expect(screen.getByRole('button', { name: 'Use this voice' })).not.toBeDisabled();
 });

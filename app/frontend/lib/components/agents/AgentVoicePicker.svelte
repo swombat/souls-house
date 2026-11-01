@@ -136,19 +136,24 @@
       <div
         id="agent-voice"
         role="radiogroup"
-        aria-label="Voice"
+        aria-labelledby="agent-voice-label"
         class="max-w-xl max-h-80 overflow-y-auto overscroll-contain rounded-md border border-input divide-y divide-border">
         {#snippet row(id, name, detail, colour, icon)}
           {@const isSelected = (selected || '') === id}
           <div
             class="flex items-center gap-3 px-3 py-2 {isSelected ? 'bg-accent' : 'hover:bg-muted/50'}"
             data-testid="voice-option">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={isSelected}
-              class="flex min-w-0 flex-1 items-center gap-3 text-left"
-              onclick={() => choose(id)}>
+            <!-- Native radios sharing one name: the browser gives arrow-key selection
+                 and a single tab stop for the group, as the old select did. -->
+            <label
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+              <input
+                type="radio"
+                name="agent-voice"
+                class="sr-only"
+                value={id}
+                checked={isSelected}
+                onchange={() => choose(id)} />
               <span
                 class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
                 style="background-color: {colour}"
@@ -160,7 +165,7 @@
                 {#if detail}<span class="block truncate text-xs text-muted-foreground">{detail}</span>{/if}
               </span>
               {#if isSelected}<Check size={18} weight="bold" class="shrink-0 text-primary" />{/if}
-            </button>
+            </label>
             {#if id && voices.some((v) => v.voice_id === id)}
               <Button
                 type="button"
