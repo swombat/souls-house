@@ -1,11 +1,13 @@
 class Chats::VisualTagsController < ApplicationController
 
+  # The picker saves with a JSON request and shows the new tag at once; the
+  # sidebar refreshes in the background from the chat's account broadcast. So
+  # JSON gets the stored tag and the row's updated_at (the picker
+  # reconciles list snapshots against it), not a redirect that would re-render the whole page.
   def update
     chat = current_account.chats.kept.find(params[:chat_id])
     unless params.key?(:visual_tag_id)
-      redirect_back_or_to chat_view_path(chat),
-        inertia: { errors: { visual_tag_id: "must be provided (or null to clear)" } }
-      return
+      return respond_with_errors(chat, visual_tag_id: "must be provided (or null to clear)")
     end
 
     tag = VisualTag.resolve_for(current_account, params[:visual_tag_id])
@@ -16,13 +18,23 @@ class Chats::VisualTagsController < ApplicationController
       chat.update!(visual_tag: tag)
       ConversationTagEvent.changed!(chat: chat, from: previous, to: tag, by: Current.user)
     end
-    redirect_back_or_to chat_view_path(chat)
+    respond_to do |format|
+      format.json { render json: { visual_tag: chat.visual_tag&.as_json, updated_at: chat.updated_at } }
+      format.any { redirect_back_or_to chat_view_path(chat) }
+    end
   rescue ActiveRecord::InvalidForeignKey
-    redirect_back_or_to chat_view_path(chat),
-      inertia: { errors: { visual_tag_id: "This tag is no longer available. Refresh the palette and try again." } }
+    respond_with_errors(chat, visual_tag_id: "This tag is no longer available. Refresh the palette and try again.")
   rescue ActiveRecord::RecordInvalid => error
-    redirect_back_or_to chat_view_path(chat),
-      inertia: { errors: error.record.errors.to_hash }
+    respond_with_errors(chat, error.record.errors.to_hash)
+  end
+
+  private
+
+  def respond_with_errors(chat, errors)
+    respond_to do |format|
+      format.json { render json: { errors: errors }, status: :unprocessable_entity }
+      format.any { redirect_back_or_to chat_view_path(chat), inertia: { errors: errors } }
+    end
   end
 
 end
