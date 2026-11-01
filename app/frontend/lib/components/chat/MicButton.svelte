@@ -65,6 +65,7 @@
   });
 
   onDestroy(() => {
+    if (mediaRecorder?.state === 'recording') abandon(mediaRecorder);
     release();
     failureHold?.();
     failureHold = null;
@@ -82,9 +83,22 @@
     }
   }
 
+  // Stops a recorder this button has lost track of, without transcribing it.
+  function abandon(recorder) {
+    if (!recorder) return;
+    recorder.onstop = () => recorder.stream?.getTracks().forEach((track) => track.stop());
+    if (recorder.state !== 'inactive') recorder.stop();
+    else recorder.stream?.getTracks().forEach((track) => track.stop());
+  }
+
   async function startRecording() {
+    // Asking for the microphone is async; until it answers, further clicks must not start a
+    // second recorder (a double click once left one running, unseen, with its hold never
+    // released, so every navigation asked "discard the recording?" until a reload).
+    state = 'starting';
+    let stream = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -127,11 +141,15 @@
         await transcribe(blob, actualMimeType);
       };
 
+      // Backstop: never overwrite a recorder or hold without stopping and releasing it.
+      if (mediaRecorder && mediaRecorder !== recorder) abandon(mediaRecorder);
+      release();
       recorder.start();
       mediaRecorder = recorder;
       state = 'recording';
       releaseHold = holdForRecording();
     } catch (err) {
+      stream?.getTracks().forEach((track) => track.stop());
       state = 'idle';
       release();
       if (err.name === 'NotAllowedError') {

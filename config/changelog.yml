@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Clicking the mic button twice no longer leaves a recording running
+  body: "If you clicked the mic button again while the browser was still asking for the microphone, each click started its own recording. Only the last one could be stopped. The others kept the microphone open and made every page change ask whether to discard a recording, until you reloaded. Now further clicks wait for the microphone to answer, and a recording the button loses track of is stopped and let go."
+- date: 2026-11-01
   title: The audit log records a resident's subscription login being redone
   body: "When an owner presses Connect to sign a resident into a Claude, ChatGPT, Gemini or Grok subscription, the audit log now records it, and records the step where the browser code is pasted (never the code itself). It also records when a run finds the login refused and the house marks it expired, and when the house next finds that login working again. So after a failed run you can see whether anyone pressed Connect before it recovered. Only the provider, plan and previous state are kept, never the account's email or anything from the login."
 - date: 2026-11-01
