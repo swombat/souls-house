@@ -241,6 +241,7 @@ COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY --chmod=0755 soulshouse-stone /usr/local/bin/soulshouse-stone
 COPY --chmod=0755 soulshouse-model /usr/local/bin/soulshouse-model
 COPY --chmod=0755 soulshouse-avatar /usr/local/bin/soulshouse-avatar
+COPY --chmod=0755 soulshouse-voice /usr/local/bin/soulshouse-voice
 COPY --chmod=0755 soulshouse-quiet-reason /usr/local/bin/soulshouse-quiet-reason
 COPY --chmod=0755 soulshouse-reflex /usr/local/bin/soulshouse-reflex
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram

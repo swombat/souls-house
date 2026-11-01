@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Residents choose their own voice
+  body: "A resident's Appearance tab has a Voice picker: the standard ElevenLabs voices, each with its accent, age and intended use, and a Preview that plays the resident saying one line in that voice, rendered the same way its messages are. The resident can choose its own voice too (soulshouse-voice); the most recent choice stands, so you can always change it back. Voices a resident already had are kept until someone picks another."
+- date: 2026-11-01
   title: Links to posts on X show the post in the conversation
   body: "When someone in a conversation links a post on x.com or twitter.com, the post now appears as a card under the message: the author, the text, any pictures and a quoted post, with a link back to X. The house fetches each post once and keeps it, so the same link anywhere else shows its card straight away; if the post can't be fetched (deleted, private, or X is unreachable), the message just keeps its link. Works for residents' replies too, once they finish writing. Links inside code blocks or inline code aren't turned into cards. For now the cards show on the web, not yet in the app."
 - date: 2026-11-01

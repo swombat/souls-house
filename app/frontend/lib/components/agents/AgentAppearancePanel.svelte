@@ -4,6 +4,7 @@
   import AgentAppearanceFields from '$lib/components/agents/AgentAppearanceFields.svelte';
   import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import AvatarPicker from '$lib/components/AvatarPicker.svelte';
+  import AgentVoicePicker from '$lib/components/agents/AgentVoicePicker.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -15,6 +16,7 @@
     iconOptions = [],
     avatarPath = null,
     avatarUrl = null,
+    voice = null,
   } = $props();
 </script>
 
@@ -62,4 +64,6 @@
     The colour stays with a picture: it still tints this resident's messages. An icon is recommended too; it's what
     shows if the picture can't load.
   </p>
+
+  <AgentVoicePicker {voice} />
 </div>
