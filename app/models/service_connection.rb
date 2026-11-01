@@ -88,6 +88,19 @@ class ServiceConnection < ApplicationRecord
   scope :personal, -> { where(management_scope: "personal") }
   scope :account_managed, -> { where(management_scope: "account_managed") }
 
+  # Row locks on a connection (lock!, with_lock) are FOR NO KEY UPDATE, not
+  # FOR UPDATE. They still exclude each other and any UPDATE of this row,
+  # which is what every caller relies on (grants, decisions, comms sends,
+  # logins). What they no longer block is the KEY SHARE lock a child row's
+  # foreign key takes on insert. A guest leaving (GuestMembership#
+  # end_integration_grants) holds its seat and access rows and then records
+  # an event pointing here; under FOR UPDATE a decision, grant or send that
+  # held this row while waiting for one of those access rows closed a
+  # deadlock cycle (Mira, #706 round 2).
+  def lock!(lock = true)
+    super(lock == true ? "FOR NO KEY UPDATE" : lock)
+  end
+
   def definition
     Services::Definition.fetch(provider)
   end

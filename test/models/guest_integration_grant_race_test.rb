@@ -124,4 +124,84 @@ class GuestIntegrationGrantRaceTest < ActiveSupport::TestCase
     assert access.enabled?
   end
 
+  # Mira's round 2 (#706): a guest leaving holds its seat and access rows,
+  # then records guest_left, whose foreign key takes KEY SHARE on the
+  # connection. Every path that holds the connection while it waits on one
+  # of those rows (or on the seat) must not close a cycle with it. The
+  # other path runs the real model method; it takes its connection lock and
+  # then waits on the departure, which is released and must finish.
+  test "departure and revoke do not deadlock through the audit foreign key" do
+    access = @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+    access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+
+    assert_departure_completes_beside(access) { AgentServiceAccess.find(access.id).revoke_home!(actor: @daniel) }
+  end
+
+  test "departure and a home decision do not deadlock" do
+    access = @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+
+    assert_departure_completes_beside(access) do
+      AgentServiceAccess.find(access.id).approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    end
+  end
+
+  test "departure and the sharing side's switch do not deadlock" do
+    access = @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+
+    assert_departure_completes_beside(access) { @lume.set_service_access!(@connection, enabled: false, actor: @anna) }
+  end
+
+  test "departure and a send grant do not deadlock" do
+    with_send_providers("whatsapp") do
+      @whatsapp = build_whatsapp_connection(@sharing, @anna)
+      access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
+
+      assert_departure_completes_beside(access) { AgentServiceAccess.find(access.id).change_send_grant!(true, actor: @anna) }
+    end
+  end
+
+  test "a connection's row lock no longer blocks a child row's foreign key" do
+    sql = []
+    callback = ->(*, payload) { sql << payload[:sql] }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      ServiceConnection.transaction { @connection.lock! }
+    end
+    assert sql.any? { |statement| statement.include?("FOR NO KEY UPDATE") }, sql.join("\n")
+  end
+
+  private
+
+  def assert_departure_completes_beside(access, &other_path)
+    rows_held = Concurrent::CountDownLatch.new(1)
+    release = Concurrent::CountDownLatch.new(1)
+    depart = in_thread do
+      GuestMembership.transaction do
+        seat = GuestMembership.lock.find(@seat.id)
+        # Where end_integration_grants has locked the access rows and not
+        # yet recorded guest_left.
+        AgentServiceAccess.lock.find(access.id)
+        rows_held.count_down
+        raise "release timeout" unless release.wait(10)
+        seat.destroy!
+      end
+    end
+    assert rows_held.wait(5)
+    other = in_thread(&other_path)
+    sleep 0.5 # the other path takes the connection and waits on the departure
+    release.count_down
+
+    assert depart.join(15), "departure stuck"
+    assert other.join(15), "the other path stuck"
+    errors = [ depart.value, other.value ].select { |status, _| status == :error }.map(&:last)
+    assert_not errors.any? { |error| error.is_a?(ActiveRecord::Deadlocked) },
+               errors.map { |error| "#{error.class}: #{error.message}" }.join("\n")
+    assert_equal :ok, depart.value.first, -> { "departure raised #{depart.value.last.inspect}" }
+    assert_not GuestMembership.exists?(@seat.id)
+    assert_not AgentServiceAccess.exists?(access.id)
+  ensure
+    release&.count_down
+    depart&.join(15)
+    other&.join(15)
+  end
+
 end

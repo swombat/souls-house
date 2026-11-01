@@ -57,7 +57,7 @@ whose snapshot no longer matches the connection (it is re-asked with the
 current authority), one older than 14 days (closed as `expired`), and one
 whose seat is gone. The brief named a Main-line notice in the home as
 well; that was dropped for the count, on the same grounds Daniel gave for
-scheduled-run failures on 31 Oct (#677: a count, not a conversation).
+scheduled-run failures on 31 Oct (#693: a count, not a conversation).
 
 Lock order for every decision (approve, decline, revoke, expire) is the
 connection, then the access row, as for send grants. An authority change
@@ -66,6 +66,13 @@ racing it waits, then sees the change and is refused (the request was
 re-asked under a new generation). The sweeper rechecks the request's age
 under the locks, so a request withdrawn and asked again since it was
 selected keeps its own 14 days.
+
+Connection locks (`ServiceConnection#lock!`, `with_lock`) are
+`FOR NO KEY UPDATE`. A guest leaving holds its seat and its access rows and
+then inserts a `guest_left` event whose foreign key takes `KEY SHARE` on the
+connection. Under `FOR UPDATE`, any path that held the connection while
+waiting on one of those rows (a revoke, a grant, a send) closed a deadlock
+cycle. `NO KEY UPDATE` still excludes other lockers and connection UPDATEs.
 
 ## Re-asking
 
