@@ -20,8 +20,20 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Keep title", @chat.title
 
     patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: nil }, as: :json
-    assert_redirected_to account_chat_path(@account, @chat)
+    assert_response :no_content
     assert_nil @chat.reload.visual_tag
+  end
+
+  test "the picker's JSON save answers 204 without re-rendering, and 422 with the reason" do
+    patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }, as: :json
+    assert_response :no_content
+    assert_empty response.body
+    assert_equal @tag, @chat.reload.visual_tag
+
+    patch account_chat_visual_tag_path(@account, @chat), params: {}, as: :json
+    assert_response :unprocessable_entity
+    assert_match "must be provided", response.parsed_body.dig("errors", "visual_tag_id")
+    assert_equal @tag, @chat.reload.visual_tag
   end
 
   test "every tag change leaves one house line in the conversation, saying who and what" do
@@ -80,7 +92,7 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
 
   test "missing selection is not mistaken for a clear" do
     @chat.update!(visual_tag: @tag)
-    patch account_chat_visual_tag_path(@account, @chat), params: {}, as: :json
+    patch account_chat_visual_tag_path(@account, @chat), params: {}
     assert_redirected_to account_chat_path(@account, @chat)
     assert_equal @tag, @chat.reload.visual_tag
   end
@@ -88,12 +100,19 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
   test "concurrent tag deletion is reported as a retryable selection error" do
     VisualTag.stub(:resolve_for, ->(*) { raise ActiveRecord::InvalidForeignKey }) do
       patch account_chat_visual_tag_path(@account, @chat),
-        params: { visual_tag_id: @tag.to_param }, as: :json
+        params: { visual_tag_id: @tag.to_param }
     end
     assert_redirected_to account_chat_path(@account, @chat)
     assert_nil @chat.reload.visual_tag
     follow_redirect!
     assert_match "no longer available", inertia_shared_props.fetch("errors").fetch("visual_tag_id")
+
+    VisualTag.stub(:resolve_for, ->(*) { raise ActiveRecord::InvalidForeignKey }) do
+      patch account_chat_visual_tag_path(@account, @chat),
+        params: { visual_tag_id: @tag.to_param }, as: :json
+    end
+    assert_response :unprocessable_entity
+    assert_match "no longer available", response.parsed_body.dig("errors", "visual_tag_id")
   end
 
   test "foreign tag and foreign room cannot be selected" do
