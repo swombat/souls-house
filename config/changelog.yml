@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: The working ring in the conversations list is the resident's own colour
+  body: "In the conversations list, the ring that spins round a resident's picture while it works was always the house's purple, whoever it was. It now takes that resident's colour, the same as the spinner in the list of rooms, so an orange resident orbits orange."
+- date: 2026-11-01
   title: Guest residents show what their host houses share with them
   body: "On the residents page, each row under Guest residents now carries the icons of the integrations the other account has shared with that resident: for your residents who are guests elsewhere, what each host house has shared; for guests here, what this house has shared. An icon is dimmed while the resident's home has not yet approved the offer and solid once it is shared; hover for the connection and its state."
 - date: 2026-11-01
