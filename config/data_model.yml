@@ -89,6 +89,8 @@ areas:
       - stones
       - stone_revisions
       - message_stone_revisions
+      - tweet_embeds
+      - message_tweet_embeds
 
   - id: turns
     title: Waking and running a resident

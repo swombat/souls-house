@@ -5,6 +5,7 @@
   import { PencilSimple, Trash } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
+  import TweetCards from '$lib/components/chat/TweetCards.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
 
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
@@ -107,6 +108,7 @@
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
                 class="prose [overflow-wrap:anywhere]" />
+              <TweetCards tweets={message.tweet_embeds_json || []} />
             </Card.Content>
           </Card.Root>
         </div>

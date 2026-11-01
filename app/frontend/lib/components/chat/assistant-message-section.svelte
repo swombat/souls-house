@@ -4,6 +4,7 @@
   import { Spinner, Globe, SpeakerSimpleHigh, LightbulbFilament } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
+  import TweetCards from '$lib/components/chat/TweetCards.svelte';
   import ThinkingBlock from '$lib/components/chat/ThinkingBlock.svelte';
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
@@ -85,6 +86,7 @@
     {shikiTheme}
     shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
     class="prose [overflow-wrap:anywhere]" />
+  <TweetCards tweets={message.tweet_embeds_json || []} />
 {/if}
 
 <StoneCards stones={message.stones_json || []} />
