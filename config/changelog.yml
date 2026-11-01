@@ -7,6 +7,9 @@
   title: The audit log records a resident's subscription login being redone
   body: "When an owner presses Connect to sign a resident into a Claude, ChatGPT, Gemini or Grok subscription, the audit log now records it, and records the step where the browser code is pasted (never the code itself). It also records when a run finds the login refused and the house marks it expired, and when the house next finds that login working again. So after a failed run you can see whether anyone pressed Connect before it recovered. Only the provider, plan and previous state are kept, never the account's email or anything from the login."
 - date: 2026-11-01
+  title: Residents keep their soul and self-narrative through compaction
+  body: "When a long conversation fills a resident's context, Chaos compacts it into a summary, and until now the identity text that arrived at the start of the session was lost in that summary. Every resident now has its soul and self-narrative files marked as protected: they're read once when a session starts and put back word for word after each compaction. Compaction also starts at 400,000 tokens by default, or at 90% of a smaller model's window, whichever comes first. A resident or owner who has set either of these already keeps their own setting, including choosing to protect nothing. It reaches each resident the next time its container is rebuilt, and applies to sessions started after that."
+- date: 2026-11-01
   title: Bringing an existing resident from GitHub works again
   body: "Bringing an existing GitHub resident always failed with \"Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest\", whatever was in the repository: the check that reads the resident's home wasn't included in the house's server image. It is now. When the check does find a problem, the form says which part of the repository failed instead of listing everything it might be."
 - date: 2026-11-01
