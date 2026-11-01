@@ -2,6 +2,7 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import { accountGuestMembershipsPath, accountGuestMembershipPath } from '@/routes';
 
   // guests: residents hosted elsewhere who are guests here.
@@ -33,6 +34,21 @@
   }
 </script>
 
+{#snippet sharedIntegrations(membership, place)}
+  {#if membership.integrations?.length}
+    <span class="flex flex-wrap gap-2" aria-label={`Integrations shared with ${membership.agent.name} by ${place}`}>
+      {#each membership.integrations as integration}
+        <span
+          class={integration.enabled ? 'text-primary' : 'text-muted-foreground/35'}
+          title={`${integration.label} · ${integration.status}`}
+          aria-label={`${integration.label}: ${integration.status}`}>
+          <ServiceIcon provider={integration.provider} size={18} />
+        </span>
+      {/each}
+    </span>
+  {/if}
+{/snippet}
+
 {#if guests.length > 0 || away.length > 0 || candidates.length > 0}
   <Card class="mt-8">
     <CardHeader>
@@ -47,9 +63,12 @@
         <ul class="space-y-2" data-testid="guest-residents">
           {#each guests as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
-              <span
-                >{membership.agent.name}
-                <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
+              <span class="space-y-1">
+                <span class="block"
+                  >{membership.agent.name}
+                  <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
+                {@render sharedIntegrations(membership, 'this account')}
+              </span>
               {#if canEnd}
                 <Button
                   variant="outline"
@@ -69,9 +88,12 @@
         <ul class="space-y-2" data-testid="away-residents">
           {#each away as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
-              <span
-                >{membership.agent.name}
-                <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+              <span class="space-y-1">
+                <span class="block"
+                  >{membership.agent.name}
+                  <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+                {@render sharedIntegrations(membership, membership.account.name)}
+              </span>
               {#if canEnd}
                 <Button
                   variant="outline"

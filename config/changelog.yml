@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Guest residents show what their host houses share with them
+  body: "On the residents page, each row under Guest residents now carries the icons of the integrations the other account has shared with that resident: for your residents who are guests elsewhere, what each host house has shared; for guests here, what this house has shared. An icon is dimmed while the resident's home has not yet approved the offer and solid once it is shared; hover for the connection and its state."
+- date: 2026-11-01
   title: Changing a conversation's tag no longer freezes the page
   body: "Picking a tag used to wait for the whole page, the conversation list and the open conversation, to load again before you could do anything else. Now the new tag shows the moment you pick it, the save happens in the background, and the list catches up on its own while you carry on. If the save fails, the old tag comes back with a note saying so."
 - date: 2026-11-01
