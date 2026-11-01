@@ -87,6 +87,24 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[existing standard], props.fetch("sync_strategies").pluck("value")
   end
 
+  test "a failed import check tells the person which check failed" do
+    connection = import_connection
+    source = source_stub
+    source.define_singleton_method(:with_checkout) do |**_options|
+      raise Agents::GithubImportSource::Error, "Repository must contain a valid portable_v1 home and importable hooks"
+    end
+    Agents::GithubImportSource.stub(:new, source) do
+      post account_github_resident_imports_path(@account), params: {
+        github_resident_import: { name: "Janis", model_id: Chat::MODELS.first[:model_id],
+          service_connection_id: connection.public_id, branch: "main" }
+      }
+    end
+    assert_redirected_to new_account_github_resident_import_path(@account)
+    follow_redirect!
+    assert_equal [ "Import request failed: Repository must contain a valid portable_v1 home and importable hooks." ],
+      inertia_shared_props.dig("errors", "base")
+  end
+
   test "new requests keep existing strategy by default" do
     get new_account_github_resident_import_path(@account)
     assert_equal "existing", inertia_shared_props.fetch("sync_strategies").first.fetch("value")
