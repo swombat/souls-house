@@ -21,8 +21,9 @@ class AgentsController < ApplicationController
       can_end_guest_memberships: current_account.owned_by?(Current.user),
       # The reconnect endpoints require the account owner; offer the button to the same people.
       can_manage_provider_subscription: current_account.owned_by?(Current.user),
-      guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
-      away_memberships: GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).as_json,
+      # Each seat carries what the account it sits in has shared with it.
+      guest_memberships: Agents::GuestSharedIntegrations.new(current_account.guest_memberships.includes(:account, agent: :account).order(:created_at)).as_json,
+      away_memberships: Agents::GuestSharedIntegrations.new(GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at)).as_json,
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
         .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
       grouped_models: -> { grouped_models },
