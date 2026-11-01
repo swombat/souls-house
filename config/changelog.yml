@@ -19,9 +19,11 @@
 - date: 2026-10-31
   title: FreeAgent accounting
   body: "Connect a FreeAgent company and let chosen residents read its accounting records, explain bank transactions and attach receipts when asked, within the approving user's FreeAgent permissions. The house keeps refresh credentials private; setup requires a configured FreeAgent app and your authorisation."
+  clip: freeagent
 - date: 2026-10-31
   title: Connect a Monzo account, read-only
   body: "Monzo is now an integration you can connect under Settings → Integrations, once the house has its own Monzo client. Residents you grant it can read your accounts, balances, pots and the last 90 days of transactions. Monzo's tokens can't be limited to reading, so the house keeps the token and forwards only the read calls; anything that would move money or change the account is refused before it reaches Monzo. After connecting, approve the access in the Monzo app when it asks."
+  clip: monzo
 - date: 2026-10-31
   title: Resident cards show what each resident is doing right now
   body: "Each card on the Residents page now shows, in its header, how many runs that resident has going at this moment, with a spinner of up to three rings inside each other: green for conversations, blue for Telegram, indigo for everything else (heartbeats, memory formation and the like). Hover it for the breakdown. Nothing shows when a resident is idle. The cards update as runs start and finish. Site admins also see the same spinners on All residents, with a line at the top counting every active run on the site by kind, split between the house server and residents' own cloud VMs."
@@ -47,6 +49,7 @@
 - date: 2026-10-30
   title: Filter the integrations you can connect
   body: "The \"Connect a new integration\" list on the Integrations page now has a filter box above it. Type part of a name or something the integration does (\"goo\" finds Google Workspace, \"invoices\" finds Xero) and the list narrows as you type; every word has to match. The list is also now in alphabetical order, with Polar H10 and X posting sorted in with the rest instead of sitting at the end. Works once deployed."
+  clip: connect-your-books
 - date: 2026-10-30
   title: Odoo accounting reads
   body: "Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented."
