@@ -16,6 +16,11 @@ CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
 SHA = re.compile(r"[0-9a-f]{40}")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+# Host residents a Rebuild found busy. The run records them here and ends; the
+# minute timer (`worker.py sweep`) rolls each one in the first minute it is
+# idle, so a resident who is busy for hours still moves the same day.
+def pending_rolls():
+    return ROOT / "pending-rolls.json"
 
 
 def github(path):
@@ -328,35 +333,80 @@ class Worker:
         # Residents now running the stock image this run built. Births use the
         # stock alias, so it moves once one of them proves the image runs.
         proven = []
+        held = []
+        # This run covers every resident, so an older run's list is superseded.
+        # The intended work is written BEFORE any attempt and checkpointed after
+        # each one, so no error later in this run (timeout, probe, VM) can lose
+        # a resident the sweep still has to roll.
+        pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                   for r in residents]
+        queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
+                 "held": held, "stock_image": stock,
+                 # Not ours to roll, but unresolved: the receipt never claims
+                 # completion while any of these remain (VM skips, unreachable).
+                 "external_skipped": list(unreachable),
+                 # Set only once the alias tag has actually succeeded.
+                 "births_image_moved": False, "births_allowed": True}
+        atomic(pending_rolls(), queue)
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
             resident_id = resident["id"]
-            image = development if str(resident_id) in self.settings["custom_residents"] else stock
-            old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
-            if version_tuple(version) < version_tuple(old_version):
+            entry = next(e for e in pending if e["id"] == resident_id)
+            image = entry["image"]
+            try:
+                old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
+                                        "--version"], capture=True)
+                downgrade = version_tuple(version) < version_tuple(old_version)
+            except Exception:
+                old_version, downgrade = None, False
+            if downgrade:
+                pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
-            self.report("waiting for idle resident", resident_id=resident_id)
-            deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
-            while True:
-                result = self.rails(script, {
-                    "DEPLOY_RESIDENT_ID": str(resident_id),
-                    "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
-                if result["result"] in ("healthy", "current"):
-                    atomic(self.directory / f"resident-{resident_id}.json", result)
-                    self.report("resident healthy", resident_id=resident_id)
-                    if image == stock:
-                        proven.append(resident_id)
-                    break
-                if result["result"] != "busy":
-                    raise RuntimeError("Unexpected restart result")
-                if time.monotonic() >= deadline:
-                    skipped.append(resident_id)
-                    self.report("busy resident left unchanged", skipped=skipped)
-                    break
-                time.sleep(15)
+            self.report("rolling resident if idle", resident_id=resident_id)
+            if old_version is None:
+                result = {"result": "unknown"}
+            else:
+                try:
+                    result = self.rails(script, {
+                        "DEPLOY_RESIDENT_ID": str(resident_id),
+                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
+                except Exception:
+                    # Outcome unknown (transport, timeout or the roll script).
+                    # Held, never retried automatically; the others carry on.
+                    result = {"result": "unknown"}
+            if result.get("result") in ("healthy", "current"):
+                pending.remove(entry)
+                atomic(self.directory / f"resident-{resident_id}.json", result)
+                self.report("resident healthy", resident_id=resident_id)
+                if image == stock:
+                    proven.append(resident_id)
+            elif result.get("result") == "busy":
+                skipped.append(resident_id)
+                self.report("busy resident will roll when idle", skipped=skipped)
+            else:
+                pending.remove(entry)
+                held.append(resident_id)
+                queue["births_allowed"] = False
+            atomic(pending_rolls(), queue)
+        host_waiting = {e["id"] for e in pending}
+        if held:
+            queue["external_skipped"] += [r["id"] for r in vm_running]
+            atomic(pending_rolls(), queue)
+            self.report("resident roll failed; held for operator review", held=held)
+            raise RuntimeError("Unexpected restart result")
         if vm_running:
-            self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            try:
+                self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            except Exception:
+                # A VM that failed casts doubt on the image: births stay put.
+                queue["births_allowed"] = False
+                queue["external_skipped"] = [i for i in skipped if i not in host_waiting] + \
+                    [r["id"] for r in vm_running if r["id"] not in proven and r["id"] not in skipped]
+                atomic(pending_rolls(), queue)
+                raise
+        queue["external_skipped"] = [i for i in skipped if i not in host_waiting]
+        atomic(pending_rolls(), queue)
         # A partial run still moves the alias: what was skipped was busy or
         # unreachable, not broken, and new residents (on the host or their own
         # VM) must be born on the Chaos the house is moving to, not on the last
@@ -364,6 +414,11 @@ class Worker:
         if proven:
             for alias in self.settings["stock_aliases"]:
                 self.run(["docker", "tag", stock, alias])
+            queue["births_image_moved"] = True
+        if pending:
+            atomic(pending_rolls(), queue)
+        else:
+            pending_rolls().unlink(missing_ok=True)
         if skipped:
             self.report("runtime rollout incomplete", state="partial", skipped=skipped,
                         births_image_moved=bool(proven))
@@ -446,11 +501,25 @@ class Worker:
                   "assert root/'runtime_hooks.py' in paths; "
                   "[compile(p.read_bytes(),str(p),'exec') for p in paths]"], timeout=60)
 
+    def acquire(self, lock):
+        """The minute sweep holds this lock for one pass. A deploy that starts
+        mid-pass waits for it (bounded) instead of failing and latching."""
+        deadline = time.monotonic() + self.settings.get("sweep_lock_wait_seconds", 1800)
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise
+                self.report("waiting for resident sweep to finish")
+                time.sleep(5)
+
     def execute(self):
         try:
             # Same lock for manual runtime operations, as documented.
             with (ROOT / "deployment.lock").open("a") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.acquire(lock)
                 self.checkout()
                 if self.data["state"] == "superseded":
                     return
@@ -471,8 +540,106 @@ class Worker:
             self.log.close()
 
 
+class Sweeper(Worker):
+    """The minute timer's half of a Rebuild. Each tick, every resident still
+    waiting in pending-rolls.json gets one roll attempt: idle ones move, busy
+    ones wait for the next minute. It never waits for a resident. A deploy that
+    starts mid-tick waits for the lock (Worker.execute), so a tick never fails
+    a deploy; while a deploy holds the lock the tick does nothing.
+
+    A roll that fails, or whose outcome is unknown, is HELD: kept in the file
+    and on the run's receipt, never retried automatically (retrying a broken
+    image every minute is the loop the 29 Oct crash taught us to avoid). The
+    others carry on. The run's receipt follows the sweep, and the first stock
+    resident it proves moves the births alias if the run itself couldn't."""
+
+    def __init__(self):
+        self.settings = json.loads((CONFIG / "settings.json").read_text())
+        self.log = (ROOT / "sweep.log").open("a")
+
+    def receipt(self, state):
+        path = ROOT / "runs" / state["run"] / "status.json"
+        if not path.exists():
+            return
+        data = json.loads(path.read_text())
+        if data.get("state") not in ("partial", "failed"):
+            return
+        waiting = [r["id"] for r in state["residents"]] + state.get("external_skipped", [])
+        data["skipped"] = waiting
+        data["held"] = state["held"]
+        data["births_image_moved"] = state["births_image_moved"]
+        if state.get("births_alias_failed"):
+            data["births_alias_failed"] = True
+        if state["held"]:
+            data["step"] = "resident roll failed; held for operator review"
+        elif state.get("births_alias_failed"):
+            data["step"] = "births alias tag failed; held for operator review"
+        elif waiting:
+            data["step"] = "busy residents roll when idle"
+        elif data["state"] == "partial":
+            data.update(state="success", step="all residents healthy")
+        atomic(path, data)
+
+    def sweep(self):
+        try:
+            with (ROOT / "deployment.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return "deploy running"
+                if not pending_rolls().exists():
+                    return "nothing pending"
+                state = json.loads(pending_rolls().read_text())
+                state.setdefault("held", [])
+                state.setdefault("births_image_moved", False)
+                script = (CODE / "roll-resident.rb").read_text()
+                waiting = []
+                for resident in state["residents"]:
+                    try:
+                        result = self.rails(script, {
+                            "DEPLOY_RESIDENT_ID": str(resident["id"]),
+                            "DEPLOY_RESIDENT_IMAGE": resident["image"],
+                            "DEPLOY_CHAOS_VERSION": state["chaos_version"]})
+                    except Exception as error:
+                        self.log.write(f"\nresident {resident['id']}: {type(error).__name__}\n")
+                        result = {"result": "unknown"}
+                    if result.get("result") == "busy":
+                        waiting.append(resident)
+                    elif result.get("result") in ("healthy", "current"):
+                        self.log.write(f"resident {resident['id']}: {result['result']}\n")
+                        if (resident.get("stock") and state.get("births_allowed", True)
+                                and not state["held"] and not state["births_image_moved"]
+                                and not state.get("births_alias_failed")):
+                            try:
+                                for alias in self.settings.get("stock_aliases", []):
+                                    self.run(["docker", "tag", resident["image"], alias])
+                                state["births_image_moved"] = True
+                            except Exception as error:
+                                # Held like a failed roll: kept on the receipt and in
+                                # the file, never retried here. The resident itself
+                                # is healthy and is not rolled again.
+                                self.log.write(f"births alias tag failed: {type(error).__name__}\n")
+                                state["births_alias_failed"] = True
+                    else:
+                        state["held"].append(resident["id"])
+                state["residents"] = waiting
+                state["checked_at"] = int(time.time())
+                self.receipt(state)
+                if waiting or state["held"] or state.get("births_alias_failed"):
+                    atomic(pending_rolls(), state)
+                else:
+                    atomic(ROOT / "last-sweep.json", state)
+                    pending_rolls().unlink()
+                return f"{len(waiting)} waiting, {len(state['held'])} held"
+        finally:
+            self.log.close()
+
+
 if __name__ == "__main__":
     os.umask(0o077)
+    if sys.argv[1:] == ["sweep"]:
+        print(Sweeper().sweep())
+        sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
     # Serialize startup with the privileged gate, which has already written

@@ -25,7 +25,7 @@ ROOT = Path("/var/lib/house-deploy")
 OPERATIONS = ("rails", "chaos", "both", "runtime")
 TERMINAL = ("success", "failed", "partial", "interrupted", "superseded")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
-          "chaos_version", "skipped", "absent", "resident_id", "expected_revision",
+          "chaos_version", "skipped", "held", "births_alias_failed", "absent", "resident_id", "expected_revision",
           "accepted_migrations", "migration_changes", "acknowledged")
 ACCEPT_ENTRY = re.compile(r"(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}\.sql@[0-9a-f]{40}")
 MAX_ACCEPTED = 20

@@ -1,4 +1,5 @@
 """No Docker, SSH, credentials, network, or production DB used by these tests."""
+import fcntl
 import importlib.util
 import json
 import shutil
@@ -430,12 +431,25 @@ class WorkerTest(unittest.TestCase):
 
     def test_worker_lock_rejects_overlap(self):
         import fcntl
+        self.w.settings["sweep_lock_wait_seconds"] = 0
         with (self.root / "deployment.lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             with patch.object(self.w, "checkout") as checkout:
                 self.w.execute()
             checkout.assert_not_called()
         self.assertEqual("failed", self.w.data["state"])
+
+    def test_deploy_starting_during_a_sweep_waits_instead_of_failing(self):
+        import fcntl
+        lock = (self.root / "deployment.lock").open("w")
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The sweep's pass ends while the deploy is waiting.
+        with patch.object(worker.time, "sleep", side_effect=lambda _s: lock.close()), \
+             patch.object(self.w, "checkout") as checkout, \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        checkout.assert_called_once()
+        self.assertEqual("success", self.w.data["state"])
 
     def test_success_only_after_both_phases(self):
         calls = []
@@ -751,6 +765,9 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("partial", self.w.data["state"])
         self.assertEqual([1], self.w.data["skipped"])
         self.assertTrue(self.w.data["births_image_moved"])
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], [r["id"] for r in pending["residents"]])
+        self.assertEqual("stock:deploy-" + "a" * 32, pending["residents"][0]["image"])
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
     def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
@@ -777,6 +794,92 @@ class WorkerTest(unittest.TestCase):
             rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] == "0" else {"result": "broken"})
         with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
             self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_busy_then_failing_resident_keeps_the_busy_one_pending(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40, "c" * 40])
+        rails = self.w.rails.side_effect
+        outcomes = {"0": "busy", "1": "broken"}
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] not in outcomes
+            else {"result": outcomes[env["DEPLOY_RESIDENT_ID"]]})
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], [r["id"] for r in pending["residents"]])
+        self.assertEqual([1], pending["held"])
+        self.assertFalse(pending["births_allowed"])
+        # Resident 2 still had its turn after 1 failed.
+        self.assertTrue((self.w.directory / "resident-2.json").exists())
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def assert_queue_survives(self, fail):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None else
+            {"result": "busy"} if env["DEPLOY_RESIDENT_ID"] == "0" else fail("rails"))
+        run = self.w.run.side_effect
+        probes = []
+
+        def probe(args, **kw):
+            # The first r1 probe is the pinned pre-check; fail the roll's own.
+            if args[:3] == ["docker", "exec", "r1"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return fail("probe")
+            return run(args, **kw)
+        self.w.run.side_effect = probe
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], [r["id"] for r in queue["residents"]])
+        self.assertEqual([1], queue["held"])
+
+    def test_busy_then_rails_timeout_keeps_the_queue(self):
+        def fail(where):
+            if where == "rails":
+                raise subprocess.TimeoutExpired("rails", 300)
+            return "chaos 47.11.0.1"
+        self.assert_queue_survives(fail)
+
+    def test_busy_then_version_probe_failure_keeps_the_queue(self):
+        def fail(where):
+            raise OSError("probe")
+        self.assert_queue_survives(fail)
+
+    def test_sweep_never_claims_completion_over_an_unresolved_vm(self):
+        self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                            vm={1: dict(image=self.RUNNING, start=[{"result": "busy"}], status=[])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "0"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], queue["external_skipped"])
+        s = worker.Sweeper()
+        with patch.object(s, "rails", return_value={"result": "healthy"}), \
+             patch.object(s, "run"):
+            s.sweep()
+        receipt = json.loads((self.w.directory / "status.json").read_text())
+        self.assertEqual(("partial", [1]), (receipt["state"], receipt["skipped"]))
+
+    def test_failing_vm_blocks_births_and_records_no_phantom_tag(self):
+        commands = self.pinned_fixture(
+            ["c" * 40, "c" * 40, "c" * 40], missing=(2,), on_vm=(2,),
+            vm={2: dict(image=self.RUNNING, start=[{"result": "started", "command_id": 9}],
+                        status=[{"result": "failed"}])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "1"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        with self.assertRaises(RuntimeError):
+            self.w.rebuild_residents()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertFalse(queue["births_image_moved"])
+        self.assertFalse(queue["births_allowed"])
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
     def test_failed_vm_restart_stops_the_run_without_moving_the_alias(self):
@@ -844,6 +947,122 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("agent", args[args.index("--user") + 1])
         self.assertEqual("none", args[args.index("--network") + 1])
         self.assertIn("p.read_bytes()", args[-1])
+
+
+class SweepTest(unittest.TestCase):
+    """Busy residents left by a Rebuild roll in the first idle minute."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        config = self.root / "config"
+        config.mkdir()
+        (config / "settings.json").write_text("{}")
+        (self.root / "roll-resident.rb").write_text("")
+        for p in (patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config),
+                  patch.object(worker, "CODE", self.root)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def pending(self, ids):
+        gate.atomic(self.root / "pending-rolls.json", {
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "failed": [],
+            "residents": [{"id": i, "image": "stock:deploy-x"} for i in ids]})
+
+    def sweep(self, results):
+        s = worker.Sweeper()
+        calls = []
+
+        def rails(code, env=None):
+            calls.append(int(env["DEPLOY_RESIDENT_ID"]))
+            outcome = results[int(env["DEPLOY_RESIDENT_ID"])]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return {"result": outcome}
+        with patch.object(s, "rails", side_effect=rails):
+            return s.sweep(), calls
+
+    def test_idle_rolls_busy_waits_failure_is_held_not_dropped(self):
+        self.pending([1, 2, 3])
+        message, calls = self.sweep({1: "healthy", 2: "busy", 3: RuntimeError("transport")})
+        self.assertEqual([1, 2, 3], calls)
+        self.assertEqual("1 waiting, 1 held", message)
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([2], [r["id"] for r in state["residents"]])
+        self.assertEqual([3], state["held"])
+        # Held is never retried automatically.
+        self.assertEqual([2], self.sweep({2: "busy"})[1])
+
+    def test_last_resident_rolled_clears_the_list_and_completes_the_receipt(self):
+        run = self.root / "runs" / ("a" * 32)
+        run.mkdir(parents=True)
+        gate.atomic(run / "status.json", {"id": "a" * 32, "state": "partial", "skipped": [2]})
+        self.pending([2])
+        self.assertEqual("0 waiting, 0 held", self.sweep({2: "healthy"})[0])
+        self.assertFalse((self.root / "pending-rolls.json").exists())
+        self.assertTrue((self.root / "last-sweep.json").exists())
+        receipt = json.loads((run / "status.json").read_text())
+        self.assertEqual(("success", []), (receipt["state"], receipt["skipped"]))
+
+    def test_first_stock_resident_the_sweep_proves_moves_births(self):
+        self.pending([2, 3])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        for r in state["residents"]:
+            r["stock"] = True
+        state.update(births_image_moved=False, births_allowed=True)
+        gate.atomic(self.root / "pending-rolls.json", state)
+        s = worker.Sweeper()
+        s.settings["stock_aliases"] = ["stock:latest"]
+        commands = []
+        with patch.object(s, "rails", return_value={"result": "healthy"}), \
+             patch.object(s, "run", side_effect=lambda args, **kw: commands.append(args)):
+            s.sweep()
+        self.assertEqual([["docker", "tag", "stock:deploy-x", "stock:latest"]], commands)
+
+    def test_failed_births_alias_tag_is_held_not_swallowed(self):
+        run = self.root / "runs" / ("a" * 32)
+        run.mkdir(parents=True)
+        gate.atomic(run / "status.json", {"id": "a" * 32, "state": "partial", "skipped": [2]})
+        self.pending([2])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state["residents"][0]["stock"] = True
+        state.update(births_image_moved=False, births_allowed=True)
+        gate.atomic(self.root / "pending-rolls.json", state)
+        s = worker.Sweeper()
+        s.settings["stock_aliases"] = ["stock:latest"]
+
+        def run_cmd(args, **kw):
+            raise subprocess.CalledProcessError(1, args)
+        with patch.object(s, "rails", return_value={"result": "healthy"}), \
+             patch.object(s, "run", side_effect=run_cmd):
+            s.sweep()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([], queue["residents"])
+        self.assertTrue(queue["births_alias_failed"])
+        self.assertFalse(queue["births_image_moved"])
+        receipt = json.loads((run / "status.json").read_text())
+        self.assertEqual("partial", receipt["state"])
+        self.assertTrue(receipt["births_alias_failed"])
+        self.assertIn("births alias tag failed", receipt["step"])
+        # The next tick neither rerolls the healthy resident nor retries the tag.
+        s = worker.Sweeper()
+        s.settings["stock_aliases"] = ["stock:latest"]
+        with patch.object(s, "rails") as rails, patch.object(s, "run") as tag:
+            s.sweep()
+        rails.assert_not_called()
+        tag.assert_not_called()
+        self.assertTrue((self.root / "pending-rolls.json").exists())
+
+    def test_nothing_pending_does_nothing(self):
+        self.assertEqual(("nothing pending", []), self.sweep({}))
+
+    def test_a_running_deploy_holds_the_tick(self):
+        self.pending([1])
+        with (self.root / "deployment.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.assertEqual(("deploy running", []), self.sweep({1: "healthy"}))
+        self.assertTrue((self.root / "pending-rolls.json").exists())
 
 
 if __name__ == "__main__":
