@@ -46,15 +46,18 @@ class TweetEmbed < ApplicationRecord
   end
 
   # Distinct status ids linked in a message's text, first appearance first,
-  # at most MAX_PER_MESSAGE. Links inside code are text, not links.
+  # at most MAX_PER_MESSAGE. Links in fenced code (``` or ~~~) and inline
+  # code are text, not links. Indented code blocks are not detected.
   def self.status_ids_in(content)
-    text = content.to_s.gsub(/```.*?(```|\z)/m, " ").gsub(/`[^`\n]*`/, " ")
+    text = content.to_s.gsub(/^ {0,3}(```|~~~).*?(^ {0,3}\1|\z)/m, " ").gsub(/`[^`\n]*`/, " ")
     text.scan(URL_IN_TEXT).filter_map { status_id_from(it) }.uniq.first(MAX_PER_MESSAGE)
   end
 
   # The shared row for an id, made once even when two messages race to it.
+  # The insert sits in a savepoint so losing the race inside a caller's
+  # transaction doesn't abort it.
   def self.for_status_id!(id)
-    find_or_create_by!(provider_tweet_id: id)
+    find_by(provider_tweet_id: id) || transaction(requires_new: true) { create!(provider_tweet_id: id) }
   rescue ActiveRecord::RecordNotUnique
     find_by!(provider_tweet_id: id)
   end

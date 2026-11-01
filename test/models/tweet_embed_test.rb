@@ -96,6 +96,10 @@ class TweetEmbedTest < ActiveSupport::TestCase
     assert_equal %w[3 1 2], TweetEmbed.status_ids_in(content)
   end
 
+  test "tilde fences are code too" do
+    assert_equal %w[2], TweetEmbed.status_ids_in("~~~\nhttps://x.com/a/status/1\n~~~\nhttps://x.com/a/status/2")
+  end
+
   # --- linking and fetching ---
 
   test "a posted link becomes a card once fetched, with escaped-as-text content and only twimg media" do
@@ -168,10 +172,18 @@ class TweetEmbedTest < ActiveSupport::TestCase
     end
   end
 
-  test "racing to create the shared row ends with one row" do
+  test "losing the race to create the shared row, inside a transaction, ends with one row and a usable transaction" do
     first = TweetEmbed.for_status_id!(EXAMPLE_ID)
-    TweetEmbed.stub(:find_or_create_by!, ->(*) { raise ActiveRecord::RecordNotUnique, "dup" }) do
-      assert_equal first, TweetEmbed.for_status_id!(EXAMPLE_ID)
+    lookups = 0
+    real_find_by = TweetEmbed.method(:find_by)
+    # The first lookup misses (the other worker hasn't committed yet), so the
+    # insert runs and hits the unique index.
+    racing_find_by = ->(*args, **kw) { (lookups += 1) == 1 ? nil : real_find_by.call(*args, **kw) }
+    TweetEmbed.transaction do
+      TweetEmbed.stub(:find_by, racing_find_by) do
+        assert_equal first, TweetEmbed.for_status_id!(EXAMPLE_ID)
+      end
+      assert_equal 1, TweetEmbed.count, "the outer transaction still works after the lost insert"
     end
   end
 
@@ -253,6 +265,24 @@ class TweetEmbedTest < ActiveSupport::TestCase
     assert_no_enqueued_jobs(only: TweetEmbedSyncJob) { post("https://example.com/status/1 and words") }
   end
 
+  test "a sync job that runs after the message started streaming again reads nothing" do
+    reply = post("see https://x.com/a/status/#{EXAMPLE_ID}", role: "assistant")
+    reply.update_columns(streaming: true, content: "half https://x.com/a/status/99")
+    assert_no_enqueued_jobs(only: TweetEmbedFetchJob) { TweetEmbedSyncJob.perform_now(reply.id) }
+    assert_empty reply.reload.message_tweet_embeds
+    assert_equal 0, TweetEmbed.count
+  end
+
+  test "sync jobs for one message read its current text, not the text they were queued for" do
+    message = post("first https://x.com/a/status/11")
+    message.update!(content: "now https://x.com/a/status/22")
+    # Two jobs are queued (one per save); whichever runs, each reads the row
+    # under its lock as it is now.
+    assert_enqueued_jobs 2, only: TweetEmbedSyncJob
+    2.times { TweetEmbedSyncJob.perform_now(message.id) }
+    assert_equal [ "22" ], message.reload.message_tweet_embeds.map { it.tweet_embed.provider_tweet_id }
+  end
+
   # --- arriving in an open conversation ---
 
   test "the open conversation is told when a card lands, and app clients get a revision" do
@@ -277,6 +307,36 @@ class TweetEmbedTest < ActiveSupport::TestCase
       assert_no_enqueued_jobs(only: TweetEmbedFetchJob) { TweetEmbedSyncJob.perform_now(message.id) }
     end
     assert_equal 1, message.reload.tweet_embeds_json.size
+  end
+
+  test "a fetch that lands while a message is being linked still refreshes the conversation" do
+    embed = TweetEmbed.for_status_id!(EXAMPLE_ID)
+    stale = TweetEmbed.find(embed.id)
+    message = post("https://x.com/a/status/#{EXAMPLE_ID}")
+    # The fetch finishes (and announces to messages already linked: none)
+    # after this sync read the row as pending.
+    embed.record_fetched!(example_tweet)
+    TweetEmbed.stub(:for_status_id!, stale) do
+      assert_equal "pending", stale.state
+      assert_broadcasts("Chat:#{@chat.obfuscated_id}", 1) do
+        assert_no_enqueued_jobs(only: TweetEmbedFetchJob) { TweetEmbedSyncJob.perform_now(message.id) }
+      end
+    end
+    assert_equal 1, message.reload.tweet_embeds_json.size
+  end
+
+  test "the app-sync announcement is made only once the revision it names is written" do
+    message = post("https://x.com/a/status/#{EXAMPLE_ID}")
+    TweetEmbedSyncJob.perform_now(message.id)
+    seen = []
+    stream = Message::Revisioned.stream_name(@chat.id)
+    record = ->(name, data) { seen << [ data[:latest_revision], Message.where(id: message.id).pick(:revision) ] if name == stream }
+    with_lookup(FakeLookup.new([ example_tweet ])) do
+      ActionCable.server.stub(:broadcast, record) { TweetEmbedFetchJob.perform_now(TweetEmbed.sole.id) }
+    end
+    announced, stored = seen.sole
+    assert_equal announced, stored, "the row must already hold the announced revision when the announcement goes out"
+    assert_equal announced, message.reload.revision
   end
 
   test "the shared card says nothing about who linked it" do

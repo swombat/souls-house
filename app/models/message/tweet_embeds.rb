@@ -18,16 +18,27 @@ module Message::TweetEmbeds
 
   # Point this message at the shared rows for the posts its text links, and
   # drop links an edit removed. => the TweetEmbeds still waiting for a fetch.
-  # When what the message shows changed here (a cached card added, a link
-  # removed), the open conversation is told now; a pending card is told when
-  # its fetch lands.
+  #
+  # Runs under a lock on the message row and reads the message afresh there,
+  # so two sync jobs for one message apply in turn and each reconciles the
+  # text as it is now, not as it was when the job was queued; a message that
+  # has started streaming again since is left alone (its own end will queue
+  # another sync).
+  #
+  # When what the message shows changed (a cached card added, a card's link
+  # removed), the open conversation is told after commit. A fetch can land
+  # while this links (and announce before the link exists), so the linked
+  # rows are read again once the links are committed.
   def sync_tweet_embeds!
-    ids = discarded? ? [] : TweetEmbed.status_ids_in(content)
-    embeds = ids.map { TweetEmbed.for_status_id!(it) }
     shown_changed = false
+    linked = []
+    outcome = with_lock do
+      next :streaming if streaming?
 
-    transaction do
-      removed = message_tweet_embeds.where.not(tweet_embed_id: embeds.map(&:id))
+      ids = discarded? ? [] : TweetEmbed.status_ids_in(content)
+      embeds = ids.map { TweetEmbed.for_status_id!(it) }
+
+      removed = message_tweet_embeds.unscope(:order).where.not(tweet_embed_id: embeds.map(&:id))
       shown_changed = true if removed.joins(:tweet_embed).where(tweet_embeds: { state: "fetched" }).exists?
       removed.delete_all
       embeds.each_with_index do |embed, position|
@@ -35,25 +46,35 @@ module Message::TweetEmbeds
         next unless link.new_record? || link.position != position
 
         link.update!(position: position)
-        shown_changed = true if embed.state == "fetched"
-      rescue ActiveRecord::RecordNotUnique
-        nil
+        linked << embed.id
       end
+      embeds
     end
     message_tweet_embeds.reset
+    return [] if outcome == :streaming
+
+    states = TweetEmbed.where(id: outcome.map(&:id)).pluck(:id, :state).to_h
+    shown_changed ||= linked.any? { states[it] == "fetched" }
     tweet_card_arrived! if shown_changed
-    embeds.select { it.state == "pending" }
+    outcome.select { states[it.id] == "pending" }
   end
 
   def tweet_embeds_json
     message_tweet_embeds.filter_map { it.tweet_embed.card_json }
   end
 
-  # A card finished arriving: the open conversation reloads its messages
-  # (Chat broadcast) and app clients see a new revision.
+  # What this message shows changed without its own save: take a revision
+  # and write it in one transaction, so the app-sync announcement (made after
+  # commit by Revisioned) never precedes the row it announces; then tell the
+  # open web conversation, also after commit.
   def tweet_card_arrived!
-    update_columns_with_revision(updated_at: Time.current)
-    ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", { action: "refresh", prop: "messages" })
+    channel = "Chat:#{chat.obfuscated_id}"
+    transaction do
+      update_columns_with_revision(updated_at: Time.current)
+      ActiveRecord.after_all_transactions_commit do
+        ActionCable.server.broadcast(channel, { action: "refresh", prop: "messages" })
+      end
+    end
   end
 
   private
