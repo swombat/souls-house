@@ -2,6 +2,7 @@
   import { Microphone, MicrophoneSlash, Spinner } from 'phosphor-svelte';
   import { onDestroy, onMount } from 'svelte';
   import { holdForRecording } from '$lib/recording-guard';
+  import { abandonRecorder, micErrorMessage, recorderOptions, stopStream } from '$lib/mic-recorder';
   import {
     clearRecovery,
     loadRecovery,
@@ -67,7 +68,7 @@
 
   onDestroy(() => {
     destroyed = true;
-    if (mediaRecorder?.state === 'recording') abandon(mediaRecorder);
+    if (mediaRecorder?.state === 'recording') abandonRecorder(mediaRecorder);
     release();
     failureHold?.();
     failureHold = null;
@@ -86,39 +87,19 @@
     }
   }
 
-  // Stops a recorder this button has lost track of, without transcribing it.
-  function abandon(recorder) {
-    if (!recorder) return;
-    recorder.onstop = () => recorder.stream?.getTracks().forEach((track) => track.stop());
-    if (recorder.state !== 'inactive') recorder.stop();
-    else recorder.stream?.getTracks().forEach((track) => track.stop());
-  }
-
   async function startRecording() {
-    // Asking for the microphone is async; until it answers, further clicks must not start a
-    // second recorder (a double click once left one running, unseen, with its hold never
-    // released, so every navigation asked "discard the recording?" until a reload).
+    // Until the mic answers, further clicks must not start a second, unseen recorder.
     state = 'starting';
     let stream = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // The button may have gone (the person left the conversation) while the prompt was open;
-      // starting now would leave an invisible recorder and a hold nobody can release.
+      // Left the conversation while the prompt was open: start nothing, hold nothing.
       if (destroyed) {
-        stream.getTracks().forEach((track) => track.stop());
+        stopStream(stream);
         return;
       }
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : '';
-
-      const options = mimeType ? { mimeType } : {};
-      const recorder = new MediaRecorder(stream, options);
+      const recorder = new MediaRecorder(stream, recorderOptions());
       audioChunks = [];
 
       recorder.ondataavailable = (event) => {
@@ -126,16 +107,14 @@
           audioChunks.push(event.data);
         }
       };
-
       recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
+        stopStream(stream);
 
         if (audioChunks.length === 0) {
           state = 'idle';
           release();
           return;
         }
-
         const actualMimeType = recorder.mimeType || 'audio/webm';
         const blob = new Blob(audioChunks, { type: actualMimeType });
         audioChunks = [];
@@ -151,23 +130,17 @@
       };
 
       // Backstop: never overwrite a recorder or hold without stopping and releasing it.
-      if (mediaRecorder && mediaRecorder !== recorder) abandon(mediaRecorder);
+      if (mediaRecorder && mediaRecorder !== recorder) abandonRecorder(mediaRecorder);
       release();
       recorder.start();
       mediaRecorder = recorder;
       state = 'recording';
       releaseHold = holdForRecording();
     } catch (err) {
-      stream?.getTracks().forEach((track) => track.stop());
+      stopStream(stream);
       state = 'idle';
       release();
-      if (err.name === 'NotAllowedError') {
-        onerror?.('Microphone access denied. Please allow microphone access in your browser settings.');
-      } else if (err.name === 'NotFoundError') {
-        onerror?.('No microphone found. Please connect a microphone and try again.');
-      } else {
-        onerror?.('Could not start recording');
-      }
+      onerror?.(micErrorMessage(err));
     }
   }
 
