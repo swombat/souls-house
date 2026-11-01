@@ -20,6 +20,8 @@ class Admin::ResidentsController < ApplicationController
   def residents
     accounts = Account.where(id: Agent.select(:account_id)).includes(:owner).order(:name)
     placements = AgentPlacement.where(agent_id: Agent.select(:id)).index_by(&:agent_id)
+    @operations = current_operations(placements.values)
+    @prices = HouseSample.of_kind("pricing").order(sampled_at: :desc).first&.metrics&.dig("hetzner_eur_per_month")
     accounts.flat_map do |account|
       owner = { account_name: account.name, owner_email: account.owner&.email_address }
       Agents::ResidentDirectory.new(account).call do |agent|
@@ -32,7 +34,36 @@ class Admin::ResidentsController < ApplicationController
   def hosting(placement)
     return { kind: "local", state: placement&.state || "ready" } if placement.nil? || placement.backend == "local"
 
-    { kind: "cloud", state: placement.state, location: placement.location }
+    { kind: "cloud", state: placement.state, location: placement.location }.merge(machine(placement))
+  end
+
+  # The VM's type, size and monthly list price (Daniel, JOyQre 2026-11-01).
+  # Type and size come from the placement's current purchase; the price is
+  # the last pricing sample's gross Hetzner list price for that type in that
+  # location, nil when no sample has it. Never calls the provider.
+  def machine(placement)
+    operation = @operations[placement.id]
+    return {} unless operation
+
+    type = operation.server_type
+    location = placement.location || operation.location
+    size = Billing::Tier::MACHINES[type] || {}
+    price = @prices.dig(type, location) if @prices.is_a?(Hash) && location
+    { server_type: type, vcpus: size[:vcpus], ram_gb: size[:ram_gb], disk_gb: size[:disk_gb],
+      eur_per_month: price.is_a?(Numeric) ? price : nil }
+  end
+
+  # The purchase for the server the placement points at, else its one
+  # unresolved purchase (HostingLocation's rule).
+  def current_operations(placements)
+    cloud = placements.reject { |placement| placement.backend == "local" }
+    operations = CloudProcurementOperation.where(agent_placement_id: cloud.map(&:id)).order(id: :desc).group_by(&:agent_placement_id)
+    cloud.each_with_object({}) do |placement, current|
+      candidates = operations.fetch(placement.id, [])
+      current[placement.id] =
+        candidates.find { |operation| placement.provider_server_id && operation.provider_server_id == placement.provider_server_id } ||
+        candidates.find(&:unresolved?)
+    end
   end
 
   def require_site_admin
