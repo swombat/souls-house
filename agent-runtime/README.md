@@ -98,6 +98,29 @@ resident's Chaos configuration, for both fresh and existing volumes. This enable
 `defer_once` after a compaction warning and `compact_now`, within Chaos's fixed
 safety ceiling. An explicit resident setting, including `"disabled"`, is preserved.
 
+Two more defaults are written the same way, only when the key is absent, in the
+main home and in `oauth-runtime`:
+
+- `model_auto_compact_token_limit = 400000`. Chaos compacts at the smaller of
+  this and 90% of the current model's context window whenever that window is
+  known (`ModelInfo::auto_compact_token_limit`), recomputed per turn from the
+  turn's own model. A resident switched to a 128k model therefore compacts at
+  about 115k. With no known window Chaos's default is no limit, so 400k is
+  never later than the default. A home that pins `model_context_window` for
+  every model loses that protection; the house does not set it.
+- `protected_context_files`: the identity files Chaos snapshots at session
+  start and restores verbatim after every compaction. House homes:
+  `identity/soul.md` and `identity/self-narrative.md`. Imported homes: the
+  manifest's `protected_context` list (paths inside the home root) if it
+  declares one, otherwise its `soul` and `narrative`. A path that escapes the
+  root, or a manifest that cannot be read, leaves the key absent. Files missing
+  at session start appear as Chaos warnings and are not protected.
+
+Setting either key yourself, including `protected_context_files = []`, opts
+out; boot never rewrites it. New values apply to sessions started after the
+boot that wrote them. Wake-hook output (for example the which-body paragraph)
+is not a file and is not protected.
+
 Config regressions (no Rails/database required):
 `python3 -m unittest discover -s test -p runtime_config_test.py`.
 
