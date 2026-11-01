@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Bringing an existing resident from GitHub works again
+  body: "Bringing an existing GitHub resident always failed with \"Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest\", whatever was in the repository: the check that reads the resident's home wasn't included in the house's server image. It is now. When the check does find a problem, the form says which part of the repository failed instead of listing everything it might be."
+- date: 2026-11-01
   title: Links to posts on X show the post in the conversation
   body: "When someone in a conversation links a post on x.com or twitter.com, the post now appears as a card under the message: the author, the text, any pictures and a quoted post, with a link back to X. The house fetches each post once and keeps it, so the same link anywhere else shows its card straight away; if the post can't be fetched (deleted, private, or X is unreachable), the message just keeps its link. Works for residents' replies too, once they finish writing. Links inside code blocks or inline code aren't turned into cards. For now the cards show on the web, not yet in the app."
 - date: 2026-11-01

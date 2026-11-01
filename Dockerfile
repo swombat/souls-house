@@ -84,6 +84,8 @@ COPY public public
 COPY Rakefile config.ru VERSION ./
 COPY config/ config/
 COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json
+COPY agent-runtime/imported_home.py agent-runtime/imported_home.py
+COPY agent-runtime/standard_home_sync.py agent-runtime/standard_home_sync.py
 COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
 COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
 COPY bin/ bin/
