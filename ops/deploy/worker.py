@@ -16,6 +16,11 @@ CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
 SHA = re.compile(r"[0-9a-f]{40}")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+# Host residents a Rebuild found busy. The run records them here and ends; the
+# minute timer (`worker.py sweep`) rolls each one in the first minute it is
+# idle, so a resident who is busy for hours still moves the same day.
+def pending_rolls():
+    return ROOT / "pending-rolls.json"
 
 
 def github(path):
@@ -328,6 +333,9 @@ class Worker:
         # Residents now running the stock image this run built. Births use the
         # stock alias, so it moves once one of them proves the image runs.
         proven = []
+        pending = []
+        # This run covers every resident, so an older run's list is superseded.
+        pending_rolls().unlink(missing_ok=True)
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
             resident_id = resident["id"]
@@ -336,25 +344,24 @@ class Worker:
                                     "--version"], capture=True)
             if version_tuple(version) < version_tuple(old_version):
                 raise RuntimeError("Refusing runtime version downgrade")
-            self.report("waiting for idle resident", resident_id=resident_id)
-            deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
-            while True:
-                result = self.rails(script, {
-                    "DEPLOY_RESIDENT_ID": str(resident_id),
-                    "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
-                if result["result"] in ("healthy", "current"):
-                    atomic(self.directory / f"resident-{resident_id}.json", result)
-                    self.report("resident healthy", resident_id=resident_id)
-                    if image == stock:
-                        proven.append(resident_id)
-                    break
-                if result["result"] != "busy":
-                    raise RuntimeError("Unexpected restart result")
-                if time.monotonic() >= deadline:
-                    skipped.append(resident_id)
-                    self.report("busy resident left unchanged", skipped=skipped)
-                    break
-                time.sleep(15)
+            self.report("rolling resident if idle", resident_id=resident_id)
+            result = self.rails(script, {
+                "DEPLOY_RESIDENT_ID": str(resident_id),
+                "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
+            if result["result"] in ("healthy", "current"):
+                atomic(self.directory / f"resident-{resident_id}.json", result)
+                self.report("resident healthy", resident_id=resident_id)
+                if image == stock:
+                    proven.append(resident_id)
+                continue
+            if result["result"] != "busy":
+                raise RuntimeError("Unexpected restart result")
+            skipped.append(resident_id)
+            pending.append({"id": resident_id, "image": image})
+            self.report("busy resident will roll when idle", skipped=skipped)
+        if pending:
+            atomic(pending_rolls(), {"run": self.data["id"], "chaos_version": version,
+                             "residents": pending, "failed": []})
         if vm_running:
             self.roll_vm_residents(vm_running, stock, version, skipped, proven)
         # A partial run still moves the alias: what was skipped was busy or
@@ -471,8 +478,64 @@ class Worker:
             self.log.close()
 
 
+class Sweeper(Worker):
+    """The minute timer's half of a Rebuild. Each tick, every resident still in
+    pending-rolls.json gets one roll attempt: idle ones move, busy ones wait for the next
+    minute. Never waits and never holds the deployment lock past one pass, so
+    Deploy Rails and new Rebuilds are not blocked by a busy resident; while any
+    deploy holds the lock the tick does nothing. A roll that fails takes that
+    resident off the list: roll-resident.rb has already switched it off and
+    told its people, and retrying a broken image every minute is the loop the
+    29 Oct crash taught us to avoid. The others carry on."""
+
+    def __init__(self):
+        self.settings = json.loads((CONFIG / "settings.json").read_text())
+        self.log = (ROOT / "sweep.log").open("a")
+
+    def sweep(self):
+        try:
+            with (ROOT / "deployment.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return "deploy running"
+                if not pending_rolls().exists():
+                    return "nothing pending"
+                state = json.loads(pending_rolls().read_text())
+                script = (CODE / "roll-resident.rb").read_text()
+                waiting = []
+                for resident in state["residents"]:
+                    try:
+                        result = self.rails(script, {
+                            "DEPLOY_RESIDENT_ID": str(resident["id"]),
+                            "DEPLOY_RESIDENT_IMAGE": resident["image"],
+                            "DEPLOY_CHAOS_VERSION": state["chaos_version"]})
+                    except Exception as error:
+                        self.log.write(f"\nresident {resident['id']}: {type(error).__name__}: {error}\n")
+                        result = {"result": "failed"}
+                    if result["result"] == "busy":
+                        waiting.append(resident)
+                    elif result["result"] in ("healthy", "current"):
+                        self.log.write(f"resident {resident['id']}: {result['result']}\n")
+                    else:
+                        state["failed"].append(resident["id"])
+                state["residents"] = waiting
+                state["checked_at"] = int(time.time())
+                if waiting:
+                    atomic(pending_rolls(), state)
+                else:
+                    atomic(ROOT / "last-sweep.json", state)
+                    pending_rolls().unlink()
+                return f"{len(waiting)} waiting"
+        finally:
+            self.log.close()
+
+
 if __name__ == "__main__":
     os.umask(0o077)
+    if sys.argv[1:] == ["sweep"]:
+        print(Sweeper().sweep())
+        sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
     # Serialize startup with the privileged gate, which has already written

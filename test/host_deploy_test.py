@@ -1,4 +1,5 @@
 """No Docker, SSH, credentials, network, or production DB used by these tests."""
+import fcntl
 import importlib.util
 import json
 import shutil
@@ -751,6 +752,9 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("partial", self.w.data["state"])
         self.assertEqual([1], self.w.data["skipped"])
         self.assertTrue(self.w.data["births_image_moved"])
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], [r["id"] for r in pending["residents"]])
+        self.assertEqual("stock:deploy-" + "a" * 32, pending["residents"][0]["image"])
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
     def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
@@ -844,6 +848,66 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("agent", args[args.index("--user") + 1])
         self.assertEqual("none", args[args.index("--network") + 1])
         self.assertIn("p.read_bytes()", args[-1])
+
+
+class SweepTest(unittest.TestCase):
+    """Busy residents left by a Rebuild roll in the first idle minute."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        config = self.root / "config"
+        config.mkdir()
+        (config / "settings.json").write_text("{}")
+        (self.root / "roll-resident.rb").write_text("")
+        for p in (patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config),
+                  patch.object(worker, "CODE", self.root)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def pending(self, ids):
+        gate.atomic(self.root / "pending-rolls.json", {
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "failed": [],
+            "residents": [{"id": i, "image": "stock:deploy-x"} for i in ids]})
+
+    def sweep(self, results):
+        s = worker.Sweeper()
+        calls = []
+
+        def rails(code, env=None):
+            calls.append(int(env["DEPLOY_RESIDENT_ID"]))
+            outcome = results[int(env["DEPLOY_RESIDENT_ID"])]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return {"result": outcome}
+        with patch.object(s, "rails", side_effect=rails):
+            return s.sweep(), calls
+
+    def test_idle_rolls_busy_waits_failed_drops(self):
+        self.pending([1, 2, 3])
+        message, calls = self.sweep({1: "healthy", 2: "busy", 3: RuntimeError("boom")})
+        self.assertEqual([1, 2, 3], calls)
+        self.assertEqual("1 waiting", message)
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([2], [r["id"] for r in state["residents"]])
+        self.assertEqual([3], state["failed"])
+
+    def test_last_resident_rolled_clears_the_list(self):
+        self.pending([2])
+        self.assertEqual("0 waiting", self.sweep({2: "healthy"})[0])
+        self.assertFalse((self.root / "pending-rolls.json").exists())
+        self.assertTrue((self.root / "last-sweep.json").exists())
+
+    def test_nothing_pending_does_nothing(self):
+        self.assertEqual(("nothing pending", []), self.sweep({}))
+
+    def test_a_running_deploy_holds_the_tick(self):
+        self.pending([1])
+        with (self.root / "deployment.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.assertEqual(("deploy running", []), self.sweep({1: "healthy"}))
+        self.assertTrue((self.root / "pending-rolls.json").exists())
 
 
 if __name__ == "__main__":
