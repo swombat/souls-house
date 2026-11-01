@@ -8,28 +8,41 @@
   let { chat, accountId, tags = [] } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
-  // for the conversation list to reload. `shown` is the optimistic tag (null =
-  // no tag) until the next props for this row arrive, then the server's again.
-  let shown = $state(undefined);
+  // for the conversation list to reload. Three layers, highest first:
+  // - `optimistic`: the last click, while any save for it is in flight or queued;
+  // - `confirmed`: the last tag the server acknowledged, with the row's updated_at
+  //   from that write. It is the rollback target if a later save fails, and it
+  //   holds until a list snapshot at least that new arrives, so a refresh that
+  //   read the row before the write can't put an older tag back;
+  // - the `chat` prop.
+  let optimistic = $state(undefined);
+  let confirmed = $state(null);
   let saving = false;
   let queued = undefined;
-  let settled = false;
-  const current = $derived(shown === undefined ? chat.visual_tag : shown);
+
+  const time = (value) => (value ? Date.parse(value) : NaN);
+  // A snapshot supersedes the acknowledged write when it is at least as new. Without
+  // a timestamp, only a snapshot that already shows the acknowledged tag does.
+  function supersedes(row, ack) {
+    const rowAt = time(row.updated_at);
+    const ackAt = time(ack.at);
+    if (!Number.isNaN(rowAt) && !Number.isNaN(ackAt)) return rowAt >= ackAt;
+    return (row.visual_tag?.id || null) === (ack.tag?.id || null);
+  }
+
+  const current = $derived(
+    optimistic !== undefined ? optimistic : confirmed && !supersedes(chat, confirmed) ? confirmed.tag : chat.visual_tag
+  );
   const label = $derived(current?.label || 'No tag');
 
   $effect(() => {
-    chat;
-    if (settled && !saving) {
-      settled = false;
-      shown = undefined;
-    }
+    if (confirmed && supersedes(chat, confirmed)) confirmed = null;
   });
 
   function selectTag(id) {
     if ((current?.id || null) === id) return;
     error = '';
-    shown = id === null ? null : tags.find((tag) => tag.id === id) || null;
-    settled = false;
+    optimistic = id === null ? null : tags.find((tag) => tag.id === id) || null;
     if (saving) {
       queued = id; // one write at a time, so the last click is the one that lands
       return;
@@ -39,7 +52,7 @@
 
   async function save(id) {
     saving = true;
-    let ok = false;
+    let result = null;
     try {
       const response = await fetch(`/accounts/${accountId}/chats/${chat.id}/visual_tag`, {
         method: 'PATCH',
@@ -50,24 +63,22 @@
         },
         body: JSON.stringify({ visual_tag_id: id }),
       });
-      ok = response.ok;
+      if (response.ok) result = await response.json();
     } catch {
-      ok = false;
+      result = null;
     }
     saving = false;
+    if (result) confirmed = { tag: result.visual_tag || null, at: result.updated_at };
     if (queued !== undefined) {
       const next = queued;
       queued = undefined;
       save(next);
       return;
     }
-    if (!ok) {
-      shown = undefined;
-      error = 'Could not change visual tag. Please try again.';
-      return;
-    }
-    settled = true;
-    // The account broadcast refreshes these too; asking directly covers a dropped socket.
+    optimistic = undefined;
+    if (!result) error = 'Could not change visual tag. Please try again.';
+    // The account broadcast refreshes these too; asking directly covers a dropped socket
+    // and, after a failure, shows whatever the server really holds.
     reloadProps(['chats', 'visual_tags']);
   }
 </script>

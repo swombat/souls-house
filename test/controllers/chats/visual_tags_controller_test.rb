@@ -20,15 +20,18 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Keep title", @chat.title
 
     patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: nil }, as: :json
-    assert_response :no_content
+    assert_response :ok
+    assert_nil response.parsed_body["visual_tag"]
     assert_nil @chat.reload.visual_tag
   end
 
-  test "the picker's JSON save answers 204 without re-rendering, and 422 with the reason" do
+  test "the picker's JSON save answers with the stored tag and its time, not a page, and 422 with the reason" do
     patch account_chat_visual_tag_path(@account, @chat), params: { visual_tag_id: @tag.to_param }, as: :json
-    assert_response :no_content
-    assert_empty response.body
+    assert_response :ok
+    assert_equal @tag.to_param, response.parsed_body.dig("visual_tag", "id")
     assert_equal @tag, @chat.reload.visual_tag
+    assert_operator Time.iso8601(response.parsed_body["updated_at"]), :<=, @chat.updated_at
+    assert_operator Time.iso8601(response.parsed_body["updated_at"]), :>=, @chat.updated_at.floor(3)
 
     patch account_chat_visual_tag_path(@account, @chat), params: {}, as: :json
     assert_response :unprocessable_entity

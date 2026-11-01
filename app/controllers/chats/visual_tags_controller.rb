@@ -2,7 +2,8 @@ class Chats::VisualTagsController < ApplicationController
 
   # The picker saves with a JSON request and shows the new tag at once; the
   # sidebar refreshes in the background from the chat's account broadcast. So
-  # JSON gets 204, not a redirect that would re-render the whole page.
+  # JSON gets the stored tag and the row's updated_at (the picker
+  # reconciles list snapshots against it), not a redirect that would re-render the whole page.
   def update
     chat = current_account.chats.kept.find(params[:chat_id])
     unless params.key?(:visual_tag_id)
@@ -18,7 +19,7 @@ class Chats::VisualTagsController < ApplicationController
       ConversationTagEvent.changed!(chat: chat, from: previous, to: tag, by: Current.user)
     end
     respond_to do |format|
-      format.json { head :no_content }
+      format.json { render json: { visual_tag: chat.visual_tag&.as_json, updated_at: chat.updated_at } }
       format.any { redirect_back_or_to chat_view_path(chat) }
     end
   rescue ActiveRecord::InvalidForeignKey
