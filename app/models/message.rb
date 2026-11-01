@@ -15,6 +15,7 @@ class Message < ApplicationRecord
   include Message::Revisioned
   include Message::ReplyAttention
   include Message::SafeguardLabel
+  include Message::TweetEmbeds
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -226,7 +227,7 @@ class Message < ApplicationRecord
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
                   :progress_message, :progress_break_after, :progress_status, :progress_run_id, :runtime_interaction_id,
                   :completed, :created_at_formatted, :created_at_hour, :streaming,
-                  :files_json, :stones_json, :content_html, :tools_used, :tool_status,
+                  :files_json, :stones_json, :tweet_embeds_json, :content_html, :tools_used, :tool_status,
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,
                   :editable, :deletable, :controls_admin_only,
                   :moderation_flagged, :moderation_severity, :moderation_scores,

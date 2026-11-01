@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_31_174600) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1730,6 +1730,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_174600) do
     t.index ["stone_revision_id"], name: "index_message_stone_revisions_on_stone_revision_id"
   end
 
+  create_table "message_tweet_embeds", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.bigint "tweet_embed_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id", "tweet_embed_id"], name: "index_message_tweet_embeds_on_message_id_and_tweet_embed_id", unique: true
+    t.index ["message_id"], name: "index_message_tweet_embeds_on_message_id"
+    t.index ["tweet_embed_id"], name: "index_message_tweet_embeds_on_tweet_embed_id"
+  end
+
   create_table "messages", force: :cascade do |t|
     t.bigint "agent_id"
     t.bigint "ai_model_id"
@@ -2716,6 +2727,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_174600) do
     t.check_constraint "source::text = ANY (ARRAY['manual'::character varying::text, 'correction'::character varying::text, 'harvested'::character varying::text])", name: "transcription_glossary_terms_source"
   end
 
+  create_table "tweet_embeds", force: :cascade do |t|
+    t.string "provider_tweet_id", null: false
+    t.string "state", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.datetime "next_attempt_at"
+    t.datetime "claimed_at"
+    t.string "last_error"
+    t.string "author_handle"
+    t.string "author_name"
+    t.text "text"
+    t.datetime "posted_at"
+    t.string "url"
+    t.jsonb "media", default: [], null: false
+    t.jsonb "related", default: {}, null: false
+    t.boolean "is_quote", default: false, null: false
+    t.boolean "is_reply", default: false, null: false
+    t.datetime "fetched_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider_tweet_id"], name: "index_tweet_embeds_on_provider_tweet_id", unique: true
+    t.index ["state", "next_attempt_at"], name: "index_tweet_embeds_on_state_and_next_attempt_at"
+  end
+
   create_table "tweet_logs", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
@@ -3015,6 +3049,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_174600) do
   add_foreign_key "message_handoffs", "pending_wakes", on_delete: :nullify
   add_foreign_key "message_stone_revisions", "messages", on_delete: :cascade
   add_foreign_key "message_stone_revisions", "stone_revisions", on_delete: :cascade
+  add_foreign_key "message_tweet_embeds", "messages", on_delete: :cascade
+  add_foreign_key "message_tweet_embeds", "tweet_embeds"
   add_foreign_key "messages", "agent_runtime_interactions", column: "runtime_interaction_id"
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
