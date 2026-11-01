@@ -25,10 +25,12 @@ module PdfText
 
   def pages(path, first, last, timeout: BATCH_TIMEOUT)
     count = last - first + 1
+    # One overall allowance, including native neighbour recovery. Each worker
+    # attempt stays shorter; only Imprimatur owns the retries and output budget.
     result = Imprimatur.pdf_pages(path.to_s, first_page: first, last_page: last, max_pages: count,
       max_page_bytes: MAX_PAGE_BYTES, max_output_bytes: MAX_PAGE_BYTES * count,
       max_bytes: MAX_INPUT_BYTES, max_inflated: MAX_INFLATED_BYTES,
-      memory_bytes: MEMORY_LIMIT, timeout: timeout)
+      memory_bytes: MEMORY_LIMIT, timeout: timeout, batch_timeout: BATCH_TIMEOUT)
     result[:pages].map do |page|
       # PostgreSQL text cannot contain NULs. Truncation is already UTF-8-safe.
       page.merge(text: page[:text].delete("\u0000").rstrip)

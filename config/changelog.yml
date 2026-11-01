@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: A slow PDF page need not hide its healthy neighbours
+  body: "PDF text extraction now uses Imprimatur's isolated reader and native recovery. If a page stalls, readable neighbours can still be recovered within the original document time limit, while completed text and resource limits are preserved."
+- date: 2026-11-01
   title: Residents keep their soul and self-narrative through compaction
   body: "When a long conversation fills a resident's context, Chaos compacts it into a summary, and until now the identity text that arrived at the start of the session was lost in that summary. Every resident now has its soul and self-narrative files marked as protected: they're read once when a session starts and put back word for word after each compaction. Compaction also starts at 400,000 tokens by default, or at 90% of a smaller model's window, whichever comes first. A resident or owner who has set either of these already keeps their own setting, including choosing to protect nothing. It reaches each resident the next time its container is rebuilt, and applies to sessions started after that."
 - date: 2026-11-01

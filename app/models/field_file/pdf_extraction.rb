@@ -219,7 +219,9 @@ module FieldFile::PdfExtraction
   # The native reader keeps healthy pages when another page is damaged.
   # Pages the deadline doesn't reach are skipped; what was read is kept.
   def read_batch(path, numbers, deadline)
-    timeout = deadline.allow(PdfText::BATCH_TIMEOUT)
+    # Pass what remains of the document deadline, not the per-attempt cap.
+    # Imprimatur needs both budgets to recover neighbours without renewing time.
+    timeout = deadline.allow(TIME_BUDGET)
     return numbers.map { |n| page_row(n, "skipped", reason: TOO_LONG) } unless timeout
 
     PdfText.pages(path, numbers.first, numbers.last, timeout: timeout).map do |page|

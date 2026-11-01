@@ -133,7 +133,9 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
 
   test "an expired native read marks its pages failed rather than blank" do
     file = pdf("text_only.pdf")
-    with_constant(PdfText, :BATCH_TIMEOUT, 0) { file.extract_pdf! }
+    native = Imprimatur.method(:pdf_pages)
+    expired = ->(path, **options) { native.call(path, **options.merge(timeout: 0)) }
+    Imprimatur.stub(:pdf_pages, expired) { file.extract_pdf! }
     file.reload
 
     assert_equal "partial", file.pdf_status
