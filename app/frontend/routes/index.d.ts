@@ -140,20 +140,6 @@ export const accountAgentHostingDiagnosticsPath: ((
 
 /**
  * Generates rails route to
- * /accounts/:account_id/residents/:agent_id/memories(.:format)
- * @param {any} accountId
- * @param {any} agentId
- * @param {object | undefined} options
- * @returns {string} route path
- */
-export const accountAgentMemoriesPath: ((
-  accountId: RequiredRouteParameter,
-  agentId: RequiredRouteParameter,
-  options?: {format?: OptionalRouteParameter} & RouteOptions
-) => string) & RouteHelperExtras;
-
-/**
- * Generates rails route to
  * /accounts/:account_id/residents/:agent_id/memories/:memory_id/discard(.:format)
  * @param {any} accountId
  * @param {any} agentId

@@ -253,7 +253,7 @@ Rails.application.routes.draw do
           resource :send_grant, only: :update, controller: "service_send_grants"
         end
         resource :tailnet, only: [ :show, :create ]
-        resources :memories, only: [ :create ] do
+        resources :memories, only: [] do
           resource :discard, only: [ :create, :destroy ], module: :memories
           resource :protection, only: [ :create, :destroy ], module: :memories
         end

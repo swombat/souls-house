@@ -631,16 +631,6 @@ export const accountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route({"accoun
 
 /**
  * Generates rails route to
- * /accounts/:account_id/residents/:agent_id/memories(.:format)
- * @param {any} accountId
- * @param {any} agentId
- * @param {object | undefined} options
- * @returns {string} route path
- */
-export const accountAgentMemoriesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"residents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"memories"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
-
-/**
- * Generates rails route to
  * /accounts/:account_id/residents/:agent_id/memories/:memory_id/discard(.:format)
  * @param {any} accountId
  * @param {any} agentId
