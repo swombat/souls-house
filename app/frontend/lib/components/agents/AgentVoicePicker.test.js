@@ -27,9 +27,15 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+function checked() {
+  const on = screen.getAllByRole('radio').filter((r) => r.getAttribute('aria-checked') === 'true');
+  expect(on).toHaveLength(1);
+  return on[0].textContent;
+}
+
 async function loaded(current = 'std-aria') {
   const view = render(AgentVoicePicker, { voice: voiceProp(current) });
-  await screen.findByRole('option', { name: /Brian/ });
+  await screen.findByRole('radio', { name: /Brian/ });
   return view;
 }
 
@@ -67,23 +73,36 @@ test('a failed preview can be retried and the retry gets a fresh element', async
 
 test('a voice saved elsewhere (the resident chose one) shows here, so changing it back is possible', async () => {
   const view = await loaded('std-aria');
-  const select = screen.getByRole('combobox');
-  expect(select.value).toBe('std-aria');
+  expect(checked()).toMatch(/Aria/);
 
   await view.rerender({ voice: voiceProp('std-brian') });
-  await waitFor(() => expect(select.value).toBe('std-brian'));
+  await waitFor(() => expect(checked()).toMatch(/Brian/));
   expect(screen.getByRole('button', { name: 'Use this voice' })).toBeDisabled();
 
-  await fireEvent.change(select, { target: { value: 'std-aria' } });
+  await fireEvent.click(screen.getByRole('radio', { name: /Aria/ }));
   expect(screen.getByRole('button', { name: 'Use this voice' })).not.toBeDisabled();
 });
 
 test('an unsaved pick is not overwritten when the saved voice changes underneath', async () => {
   const view = await loaded('std-aria');
-  const select = screen.getByRole('combobox');
-  await fireEvent.change(select, { target: { value: '' } });
+  await fireEvent.click(screen.getByRole('radio', { name: /No voice/ }));
 
   await view.rerender({ voice: voiceProp('std-brian') });
-  expect(select.value).toBe('');
+  expect(checked()).toMatch(/No voice/);
   expect(screen.getByRole('button', { name: 'Remove voice' })).not.toBeDisabled();
+});
+
+test('each voice is a tappable row with its own colour; a row Preview picks and plays that voice', async () => {
+  await loaded('std-aria');
+  const rows = screen.getAllByTestId('voice-option');
+  expect(rows).toHaveLength(3); // No voice, Aria, Brian
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Preview Brian' }));
+  expect(checked()).toMatch(/Brian/);
+  expect(screen.getByTestId('voice-preview-audio').getAttribute('src')).toBe(
+    '/accounts/a/agents/r/voice_preview/std-brian'
+  );
+  expect(screen.getByRole('button', { name: 'Use this voice' })).not.toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Preview No voice' })).not.toBeInTheDocument();
 });
