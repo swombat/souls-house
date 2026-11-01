@@ -333,52 +333,80 @@ class Worker:
         # Residents now running the stock image this run built. Births use the
         # stock alias, so it moves once one of them proves the image runs.
         proven = []
-        pending, held = [], []
+        held = []
         # This run covers every resident, so an older run's list is superseded.
-        pending_rolls().unlink(missing_ok=True)
+        # The intended work is written BEFORE any attempt and checkpointed after
+        # each one, so no error later in this run (timeout, probe, VM) can lose
+        # a resident the sweep still has to roll.
+        pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                   for r in residents]
+        queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
+                 "held": held, "stock_image": stock,
+                 # Not ours to roll, but unresolved: the receipt never claims
+                 # completion while any of these remain (VM skips, unreachable).
+                 "external_skipped": list(unreachable),
+                 # Set only once the alias tag has actually succeeded.
+                 "births_image_moved": False, "births_allowed": True}
+        atomic(pending_rolls(), queue)
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
             resident_id = resident["id"]
-            image = development if str(resident_id) in self.settings["custom_residents"] else stock
-            old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
-            if version_tuple(version) < version_tuple(old_version):
+            entry = next(e for e in pending if e["id"] == resident_id)
+            image = entry["image"]
+            try:
+                old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
+                                        "--version"], capture=True)
+                downgrade = version_tuple(version) < version_tuple(old_version)
+            except Exception:
+                old_version, downgrade = None, False
+            if downgrade:
+                pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
             self.report("rolling resident if idle", resident_id=resident_id)
-            try:
-                result = self.rails(script, {
-                    "DEPLOY_RESIDENT_ID": str(resident_id),
-                    "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
-            except RuntimeError:
-                # Outcome unknown (transport or the roll script). Held, never
-                # retried automatically; the others still get their turn.
+            if old_version is None:
                 result = {"result": "unknown"}
-            if result["result"] in ("healthy", "current"):
+            else:
+                try:
+                    result = self.rails(script, {
+                        "DEPLOY_RESIDENT_ID": str(resident_id),
+                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
+                except Exception:
+                    # Outcome unknown (transport, timeout or the roll script).
+                    # Held, never retried automatically; the others carry on.
+                    result = {"result": "unknown"}
+            if result.get("result") in ("healthy", "current"):
+                pending.remove(entry)
                 atomic(self.directory / f"resident-{resident_id}.json", result)
                 self.report("resident healthy", resident_id=resident_id)
                 if image == stock:
                     proven.append(resident_id)
-                continue
-            if result["result"] != "busy":
+            elif result.get("result") == "busy":
+                skipped.append(resident_id)
+                self.report("busy resident will roll when idle", skipped=skipped)
+            else:
+                pending.remove(entry)
                 held.append(resident_id)
-                continue
-            skipped.append(resident_id)
-            pending.append({"id": resident_id, "image": image, "stock": image == stock})
-            self.report("busy resident will roll when idle", skipped=skipped)
-        # Written before anything else can fail, so busy residents are never
-        # lost to a later error in this run.
-        if pending or held:
-            atomic(pending_rolls(), {
-                "run": self.data["id"], "chaos_version": version, "residents": pending,
-                "held": held, "stock_image": stock,
-                # A roll that failed casts doubt on the image: births stay put.
-                "births_image_moved": bool(proven) and not held,
-                "births_allowed": not held})
+                queue["births_allowed"] = False
+            atomic(pending_rolls(), queue)
+        host_waiting = {e["id"] for e in pending}
         if held:
+            queue["external_skipped"] += [r["id"] for r in vm_running]
+            atomic(pending_rolls(), queue)
             self.report("resident roll failed; held for operator review", held=held)
             raise RuntimeError("Unexpected restart result")
         if vm_running:
-            self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            try:
+                self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            except Exception:
+                # A VM that failed casts doubt on the image: births stay put.
+                queue["births_allowed"] = False
+                queue["external_skipped"] = [i for i in skipped if i not in host_waiting] + \
+                    [r["id"] for r in vm_running if r["id"] not in proven and r["id"] not in skipped]
+                atomic(pending_rolls(), queue)
+                raise
+        queue["external_skipped"] = [i for i in skipped if i not in host_waiting]
+        atomic(pending_rolls(), queue)
         # A partial run still moves the alias: what was skipped was busy or
         # unreachable, not broken, and new residents (on the host or their own
         # VM) must be born on the Chaos the house is moving to, not on the last
@@ -386,6 +414,11 @@ class Worker:
         if proven:
             for alias in self.settings["stock_aliases"]:
                 self.run(["docker", "tag", stock, alias])
+            queue["births_image_moved"] = True
+        if pending:
+            atomic(pending_rolls(), queue)
+        else:
+            pending_rolls().unlink(missing_ok=True)
         if skipped:
             self.report("runtime rollout incomplete", state="partial", skipped=skipped,
                         births_image_moved=bool(proven))
@@ -531,7 +564,7 @@ class Sweeper(Worker):
         data = json.loads(path.read_text())
         if data.get("state") not in ("partial", "failed"):
             return
-        waiting = [r["id"] for r in state["residents"]]
+        waiting = [r["id"] for r in state["residents"]] + state.get("external_skipped", [])
         data["skipped"] = waiting
         data["held"] = state["held"]
         data["births_image_moved"] = state["births_image_moved"]
@@ -572,9 +605,12 @@ class Sweeper(Worker):
                         self.log.write(f"resident {resident['id']}: {result['result']}\n")
                         if (resident.get("stock") and state.get("births_allowed", True)
                                 and not state["held"] and not state["births_image_moved"]):
-                            for alias in self.settings.get("stock_aliases", []):
-                                self.run(["docker", "tag", resident["image"], alias])
-                            state["births_image_moved"] = True
+                            try:
+                                for alias in self.settings.get("stock_aliases", []):
+                                    self.run(["docker", "tag", resident["image"], alias])
+                                state["births_image_moved"] = True
+                            except Exception:
+                                self.log.write("births alias tag failed\n")
                     else:
                         state["held"].append(resident["id"])
                 state["residents"] = waiting

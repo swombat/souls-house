@@ -813,6 +813,75 @@ class WorkerTest(unittest.TestCase):
         self.assertTrue((self.w.directory / "resident-2.json").exists())
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
+    def assert_queue_survives(self, fail):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None else
+            {"result": "busy"} if env["DEPLOY_RESIDENT_ID"] == "0" else fail("rails"))
+        run = self.w.run.side_effect
+        probes = []
+
+        def probe(args, **kw):
+            # The first r1 probe is the pinned pre-check; fail the roll's own.
+            if args[:3] == ["docker", "exec", "r1"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return fail("probe")
+            return run(args, **kw)
+        self.w.run.side_effect = probe
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], [r["id"] for r in queue["residents"]])
+        self.assertEqual([1], queue["held"])
+
+    def test_busy_then_rails_timeout_keeps_the_queue(self):
+        def fail(where):
+            if where == "rails":
+                raise subprocess.TimeoutExpired("rails", 300)
+            return "chaos 47.11.0.1"
+        self.assert_queue_survives(fail)
+
+    def test_busy_then_version_probe_failure_keeps_the_queue(self):
+        def fail(where):
+            raise OSError("probe")
+        self.assert_queue_survives(fail)
+
+    def test_sweep_never_claims_completion_over_an_unresolved_vm(self):
+        self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                            vm={1: dict(image=self.RUNNING, start=[{"result": "busy"}], status=[])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "0"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], queue["external_skipped"])
+        s = worker.Sweeper()
+        with patch.object(s, "rails", return_value={"result": "healthy"}), \
+             patch.object(s, "run"):
+            s.sweep()
+        receipt = json.loads((self.w.directory / "status.json").read_text())
+        self.assertEqual(("partial", [1]), (receipt["state"], receipt["skipped"]))
+
+    def test_failing_vm_blocks_births_and_records_no_phantom_tag(self):
+        commands = self.pinned_fixture(
+            ["c" * 40, "c" * 40, "c" * 40], missing=(2,), on_vm=(2,),
+            vm={2: dict(image=self.RUNNING, start=[{"result": "started", "command_id": 9}],
+                        status=[{"result": "failed"}])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "1"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        with self.assertRaises(RuntimeError):
+            self.w.rebuild_residents()
+        queue = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertFalse(queue["births_image_moved"])
+        self.assertFalse(queue["births_allowed"])
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
     def test_failed_vm_restart_stops_the_run_without_moving_the_alias(self):
         commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
                                    status=[{"result": "failed"}])
