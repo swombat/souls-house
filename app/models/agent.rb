@@ -383,14 +383,10 @@ class Agent < ApplicationRecord
 
   def record_provider_connection!(provider, attributes)
     safe_attributes = attributes.to_h.stringify_keys.slice("email", "plan", "status", "connected_at")
-    previous_status = provider_connection(provider)["status"]
     update!(
       provider_connections: provider_connections.to_h.merge(provider.to_s => safe_attributes),
       provider_auth_modes: provider_auth_modes.to_h.merge(provider.to_s => "oauth_account")
     )
-    if safe_attributes["status"] == "connected" && previous_status != "connected"
-      audit_provider_connection!(PROVIDER_SIGNED_IN, provider, previous_status:, plan: safe_attributes["plan"])
-    end
   end
 
   def clear_provider_connection!(provider)
@@ -415,14 +411,29 @@ class Agent < ApplicationRecord
     end
   end
 
-  # A subscription sign-in completing, and the runtime marking one expired,
-  # each leave an audit row (Daniel, 2026-11-01, exGRgY: "if there isn't an
-  # audit log event for this, please add it"). Transitions only: the settings
-  # page polls status, so a row per poll would bury the ones that matter.
+  # Provider subscription sign-ins leave an audit trail (Daniel, 2026-11-01,
+  # exGRgY: "if there isn't an audit log event for this, please add it").
+  # A sign-in is the ceremony, not a status: Connect pressed (sign_in_started),
+  # then connected seen on a later status read (signed_in), once per start.
+  # An expired login that comes back with no ceremony is `recovered`, so the
+  # trail can answer "did anyone sign in again between failure and recovery?"
+  # (Mira, #704 review). `expired` is the house marking a login expired after a
+  # run's auth failure; it is not proof the provider expired anything.
   # Metadata only (provider, plan, previous status), never the account email
-  # or anything from the token.
+  # or anything from the token or the one-time code.
+  PROVIDER_SIGN_IN_STARTED = "agent.provider.sign_in_started".freeze
+  PROVIDER_SIGN_IN_ENDED = "agent.provider.sign_in_ended".freeze
   PROVIDER_SIGNED_IN = "agent.provider.signed_in".freeze
+  PROVIDER_RECOVERED = "agent.provider.recovered".freeze
   PROVIDER_EXPIRED = "agent.provider.expired".freeze
+
+  # True while the newest ceremony row for this provider is a start: Connect was
+  # pressed and neither a completed sign-in nor a cancel/timeout has closed it.
+  def provider_sign_in_pending?(provider)
+    AuditLog.where(auditable: self, action: [ PROVIDER_SIGN_IN_STARTED, PROVIDER_SIGN_IN_ENDED, PROVIDER_SIGNED_IN ])
+      .where("data->>'provider' = ?", provider.to_s)
+      .order(:id).last&.action == PROVIDER_SIGN_IN_STARTED
+  end
 
   def audit_provider_connection!(action, provider, **data)
     AuditLog.create!(

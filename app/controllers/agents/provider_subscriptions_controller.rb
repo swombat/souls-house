@@ -19,6 +19,7 @@ class Agents::ProviderSubscriptionsController < ApplicationController
 
   def create
     result = auth_client.start(provider:)
+    audit(Agent::PROVIDER_SIGN_IN_STARTED, @agent, provider:) unless result["status"] == "connected"
     render json: result
   rescue AgentProviderAuthClient::Error => e
     render_client_error(e)
@@ -48,7 +49,9 @@ class Agents::ProviderSubscriptionsController < ApplicationController
   end
 
   def cancel
-    render json: auth_client.cancel(provider:)
+    result = auth_client.cancel(provider:)
+    end_pending_sign_in!("cancelled")
+    render json: result
   rescue AgentProviderAuthClient::Error => e
     render_client_error(e)
   end
@@ -72,6 +75,7 @@ class Agents::ProviderSubscriptionsController < ApplicationController
   def persist_status!(result)
     case result["status"]
     when "connected"
+      previous_status = @agent.provider_connection(provider)["status"]
       @agent.record_provider_connection!(
         provider,
         email: result["email"],
@@ -79,9 +83,21 @@ class Agents::ProviderSubscriptionsController < ApplicationController
         status: "connected",
         connected_at: @agent.provider_connection(provider)["connected_at"] || Time.current.iso8601
       )
+      if @agent.provider_sign_in_pending?(provider)
+        audit(Agent::PROVIDER_SIGNED_IN, @agent, **{ provider:, plan: result["plan"], previous_status: }.compact)
+      elsif previous_status == "expired"
+        audit(Agent::PROVIDER_RECOVERED, @agent, **{ provider:, plan: result["plan"] }.compact)
+      end
+    when "expired"
+      # The runtime's sign-in attempt timed out (auth_status), not the login.
+      end_pending_sign_in!("attempt_expired")
     when "none"
       @agent.clear_provider_connection!(provider) if @agent.provider_connection(provider).present?
     end
+  end
+
+  def end_pending_sign_in!(reason)
+    audit(Agent::PROVIDER_SIGN_IN_ENDED, @agent, provider:, reason:) if @agent.provider_sign_in_pending?(provider)
   end
 
   def render_client_error(error)

@@ -43,34 +43,17 @@ class AgentProviderAuthTest < ActiveSupport::TestCase
     assert_empty agent.provider_connection("openai")
   end
 
-  test "a completed sign-in is audited once, not on every status poll" do
-    agent = agents(:research_assistant)
-
-    assert_difference -> { AuditLog.where(action: Agent::PROVIDER_SIGNED_IN, auditable: agent).count }, 1 do
-      agent.record_provider_connection!("anthropic", email: "owner@example.com", plan: "Max", status: "connected")
-      agent.record_provider_connection!("anthropic", email: "owner@example.com", plan: "Max", status: "connected")
-    end
-
-    row = AuditLog.where(action: Agent::PROVIDER_SIGNED_IN, auditable: agent).last
-    assert_equal agent.account_id, row.account_id
-    assert_equal({ "agent_id" => agent.id, "provider" => "anthropic", "plan" => "Max" }, row.data)
-    assert_not_includes row.data.to_json, "owner@example.com"
-  end
-
-  test "expiry is audited, and signing in again after it is audited as a new sign-in" do
+  test "a house-marked expiry is audited once per transition" do
     agent = agents(:research_assistant)
     agent.record_provider_connection!("anthropic", status: "connected")
+    assert_equal 0, AuditLog.where(auditable: agent).where("action LIKE 'agent.provider.%'").count
 
     assert_difference -> { AuditLog.where(action: Agent::PROVIDER_EXPIRED, auditable: agent).count }, 1 do
       agent.mark_provider_connection_status!("anthropic", "expired")
       agent.mark_provider_connection_status!("anthropic", "expired")
     end
-    assert_equal "connected", AuditLog.where(action: Agent::PROVIDER_EXPIRED, auditable: agent).last.data["previous_status"]
-
-    agent.record_provider_connection!("anthropic", status: "connected")
-    resigned = AuditLog.where(action: Agent::PROVIDER_SIGNED_IN, auditable: agent).order(:id).last
-    assert_equal "expired", resigned.data["previous_status"]
-    assert_equal 2, AuditLog.where(action: Agent::PROVIDER_SIGNED_IN, auditable: agent).count
+    row = AuditLog.where(action: Agent::PROVIDER_EXPIRED, auditable: agent).last
+    assert_equal({ "agent_id" => agent.id, "provider" => "anthropic", "previous_status" => "connected" }, row.data)
   end
 
 end

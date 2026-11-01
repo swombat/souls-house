@@ -140,4 +140,70 @@ class Agents::ProviderSubscriptionsControllerTest < ActionDispatch::IntegrationT
     assert_empty @agent.provider_connection("openai")
   end
 
+  test "an expired login that comes back with no sign-in is recovered, not signed in" do
+    @agent.record_provider_connection!("anthropic", status: "connected", plan: "Max")
+    @agent.mark_provider_connection_status!("anthropic", "expired")
+
+    2.times { get_status("anthropic", "connected") }
+
+    assert_equal 0, provider_audits(Agent::PROVIDER_SIGNED_IN).count
+    assert_equal 1, provider_audits(Agent::PROVIDER_RECOVERED).count
+    assert_equal "connected", @agent.reload.provider_connection("anthropic")["status"]
+  end
+
+  test "a sign-in while the house still says connected is recorded once, after Connect" do
+    @agent.record_provider_connection!("anthropic", status: "connected", plan: "Max")
+
+    start_sign_in("anthropic")
+    assert_equal 1, provider_audits(Agent::PROVIDER_SIGN_IN_STARTED).count
+    2.times { get_status("anthropic", "connected") }
+
+    rows = provider_audits(Agent::PROVIDER_SIGNED_IN)
+    assert_equal 1, rows.count
+    assert_equal({ "provider" => "anthropic", "plan" => "Max", "previous_status" => "connected" }, rows.last.data)
+    assert_equal 0, provider_audits(Agent::PROVIDER_RECOVERED).count
+  end
+
+  test "a cancelled sign-in does not turn a later recovery into a sign-in" do
+    @agent.record_provider_connection!("anthropic", status: "connected")
+    @agent.mark_provider_connection_status!("anthropic", "expired")
+
+    start_sign_in("anthropic")
+    client = Object.new
+    client.define_singleton_method(:cancel) { |provider:| { "status" => "none", "provider" => provider } }
+    AgentProviderAuthClient.stub(:new, client) do
+      post cancel_account_agent_provider_subscription_path(@account, @agent), params: { provider: "anthropic" }, as: :json
+    end
+    assert_response :success
+    get_status("anthropic", "connected")
+
+    assert_equal 1, provider_audits(Agent::PROVIDER_SIGN_IN_ENDED).count
+    assert_equal 0, provider_audits(Agent::PROVIDER_SIGNED_IN).count
+    assert_equal 1, provider_audits(Agent::PROVIDER_RECOVERED).count
+  end
+
+  private
+
+  def provider_audits(action)
+    AuditLog.where(auditable: @agent, action:)
+  end
+
+  def start_sign_in(provider)
+    client = Object.new
+    client.define_singleton_method(:start) { |provider:| { "status" => "pending", "provider" => provider } }
+    AgentProviderAuthClient.stub(:new, client) do
+      post account_agent_provider_subscription_path(@account, @agent), params: { provider: }, as: :json
+    end
+    assert_response :success
+  end
+
+  def get_status(provider, status)
+    client = Object.new
+    client.define_singleton_method(:status) { |provider:| { "status" => status, "provider" => provider, "plan" => "Max" } }
+    AgentProviderAuthClient.stub(:new, client) do
+      get account_agent_provider_subscription_path(@account, @agent), params: { provider: }, as: :json
+    end
+    assert_response :success
+  end
+
 end
