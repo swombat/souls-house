@@ -383,10 +383,14 @@ class Agent < ApplicationRecord
 
   def record_provider_connection!(provider, attributes)
     safe_attributes = attributes.to_h.stringify_keys.slice("email", "plan", "status", "connected_at")
+    previous_status = provider_connection(provider)["status"]
     update!(
       provider_connections: provider_connections.to_h.merge(provider.to_s => safe_attributes),
       provider_auth_modes: provider_auth_modes.to_h.merge(provider.to_s => "oauth_account")
     )
+    if safe_attributes["status"] == "connected" && previous_status != "connected"
+      audit_provider_connection!(PROVIDER_SIGNED_IN, provider, previous_status:, plan: safe_attributes["plan"])
+    end
   end
 
   def clear_provider_connection!(provider)
@@ -400,12 +404,36 @@ class Agent < ApplicationRecord
     connection = provider_connection(provider)
     return if connection.blank?
 
+    previous_status = connection["status"]
     update!(
       provider_connections: provider_connections.to_h.merge(
         provider.to_s => connection.merge("status" => status.to_s)
       )
     )
+    if status.to_s == "expired" && previous_status != "expired"
+      audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+    end
   end
+
+  # A subscription sign-in completing, and the runtime marking one expired,
+  # each leave an audit row (Daniel, 2026-11-01, exGRgY: "if there isn't an
+  # audit log event for this, please add it"). Transitions only: the settings
+  # page polls status, so a row per poll would bury the ones that matter.
+  # Metadata only (provider, plan, previous status), never the account email
+  # or anything from the token.
+  PROVIDER_SIGNED_IN = "agent.provider.signed_in".freeze
+  PROVIDER_EXPIRED = "agent.provider.expired".freeze
+
+  def audit_provider_connection!(action, provider, **data)
+    AuditLog.create!(
+      action:,
+      auditable: self,
+      account_id:,
+      user: Current.user,
+      data: { agent_id: id, provider: provider.to_s, **data }.compact
+    )
+  end
+  private :audit_provider_connection!
 
   def soul_seed
     system_prompt
