@@ -1928,7 +1928,9 @@ def protected_identity_files():
                                     timeout=30, env={**os.environ, "CHAOS_HOME": str(home)})
             settings = json.loads(result.stdout) if result.returncode == 0 else {}
             files = [Path(f).resolve() for f in settings.get("protected_context_files") or []]
-            cap = int(settings.get("protected_context_max_bytes") or PROTECTED_CONTEXT_DEFAULT_CAP)
+            # 0 is a real cap (Chaos snapshots nothing); only absence means the default.
+            cap = settings.get("protected_context_max_bytes")
+            cap = PROTECTED_CONTEXT_DEFAULT_CAP if cap is None else int(cap)
             if sum(path.stat().st_size for path in files) > cap:
                 files = []
         except Exception:

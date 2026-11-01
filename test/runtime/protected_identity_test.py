@@ -62,6 +62,8 @@ class ProtectedIdentityTest(unittest.TestCase):
             'settings unreadable': lambda: self.settings.pop(self.oauth),
             'over the cap (Chaos would truncate)': lambda: [s.update(protected_context_max_bytes=10)
                                                            for s in self.settings.values()],
+            'cap of zero (Chaos snapshots nothing)': lambda: [s.update(protected_context_max_bytes=0)
+                                                             for s in self.settings.values()],
             'listed file missing': lambda: [s.update(protected_context_files=self.files + ['/nonexistent'])
                                             for s in self.settings.values()],
         }
