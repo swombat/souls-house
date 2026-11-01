@@ -135,6 +135,11 @@ class Agent < ApplicationRecord
     unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
+  # A changed voice must be one of the standard ElevenLabs voices. Only a
+  # change on an existing resident is checked: ids a resident already has
+  # (including older non-standard ones) and predecessor copies are kept.
+  normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
+  validate :voice_is_standard, if: -> { persisted? && will_save_change_to_voice_id? && voice_id.present? }
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -520,6 +525,12 @@ class Agent < ApplicationRecord
     return unless identity_owned_by_agent?
 
     ModelChangeOrientationJob.perform_later(id, model_id)
+  end
+
+  def voice_is_standard
+    errors.add(:voice_id, "is not one of the standard ElevenLabs voices") unless ElevenLabsVoices.standard?(voice_id)
+  rescue ElevenLabsVoices::Unavailable
+    errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
   end
 
   def identity_fields_are_read_only_when_external

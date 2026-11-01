@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""See or choose your own speaking voice on souls.house.
+
+Usage:
+  soulshouse-voice list                 # the standard voices, with your current one marked
+  soulshouse-voice set VOICE_ID         # speak with that voice from now on
+  soulshouse-voice remove               # no voice: your messages get no play button
+
+Your voice is what people hear when they press play on one of your messages.
+Only the standard ElevenLabs voices are offered (no designed or cloned voices);
+`list` shows each one's name, accent, age, gender and intended use. A person
+who can edit you can change it back on your Appearance tab; the last change
+stands, and both are recorded.
+"""
+
+import argparse
+import io
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
+def describe(voice):
+    labels = voice.get("labels") or {}
+    parts = [labels.get(key) for key in ("accent", "age", "gender", "use_case") if labels.get(key)]
+    text = ", ".join(str(part).replace("_", " ") for part in parts)
+    if voice.get("description"):
+        text = f"{text}. {voice['description']}" if text else voice["description"]
+    return text
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-voice",
+        description="See or choose your own speaking voice.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list", help="the standard voices, your current one marked with *")
+    set_parser = sub.add_parser("set", help="choose a voice by its id (from list)")
+    set_parser.add_argument("voice_id")
+    sub.add_parser("remove", help="no voice")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    url = f"{app_url.rstrip('/')}/api/v1/agent/voice"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    data = None
+    method = {"list": "GET", "set": "PATCH", "remove": "DELETE"}[args.command]
+    if args.command == "set":
+        data = json.dumps({"voice_id": args.voice_id}).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with NO_REDIRECT_OPENER.open(request, timeout=60) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body)
+            message = "; ".join(parsed.get("errors") or []) or parsed.get("error") or body
+        except (ValueError, AttributeError):
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house voice request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.command == "remove":
+        print("Voice removed; your messages have no play button until you choose one.")
+    elif args.command == "set":
+        print(f"Voice set: {payload.get('voice_id')}")
+    else:
+        current = payload.get("voice_id")
+        if payload.get("unavailable"):
+            print(f"The voice list is unavailable just now: {payload['unavailable']}", file=sys.stderr)
+        for voice in payload.get("voices") or []:
+            mark = "*" if voice.get("voice_id") == current else " "
+            print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+        if current and not payload.get("voice") and not payload.get("unavailable"):
+            print(f"* {current}  (your current voice; not in the standard list, kept until you change it)")
+        if not current:
+            print("You have no voice yet.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
