@@ -221,12 +221,14 @@ module CommsSending
   end
 
   # Read under the connection's lock, with the access row locked second.
+  # Effective, not just enabled: a guest's send waits for its home's
+  # approval, at claim and again at dispatch (re-asking can land between).
   def require_sendable!(connection, agent)
     raise Refused.new(:not_available, :not_found, "Sending is not available for this connection") unless available_for?(connection)
     raise Refused.new(:not_connected, :conflict, "This service connection is not currently connected") unless connection.status == "connected"
 
     access = connection.agent_service_accesses.lock.find_by(agent_id: agent.id)
-    raise Refused.new(:send_not_granted, :forbidden, "This resident may read this connection but not send through it") unless access&.enabled? && access.can_send?
+    raise Refused.new(:send_not_granted, :forbidden, "This resident may read this connection but not send through it") unless access&.effective? && access.can_send?
   end
 
   # At claim: sends dispatched inside the window, plus pending claims made

@@ -6,7 +6,7 @@ class Api::V1::ServiceConnectionTokensController < ActionController::API
     return render(json: { error: "A resident API key is required" }, status: :forbidden) unless current_api_agent
 
     connection = current_api_agent.service_connections
-      .merge(AgentServiceAccess.enabled)
+      .merge(AgentServiceAccess.effective)
       .find_by_public_id!(params[:service_connection_id])
 
     unless connection.credential_strategy == "refresh_broker"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_01_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -374,8 +374,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
     t.bigint "service_connection_id", null: false
     t.datetime "updated_at", null: false
     t.boolean "can_send", default: false, null: false
+    t.string "home_approval", default: "not_required", null: false
+    t.datetime "home_approval_requested_at"
+    t.datetime "home_approval_at"
+    t.bigint "home_approval_by_id"
+    t.integer "home_approval_generation", default: 0, null: false
+    t.jsonb "home_approval_authority", default: {}, null: false
     t.index ["agent_id", "service_connection_id"], name: "idx_on_agent_id_service_connection_id_9030aefd71", unique: true
     t.index ["agent_id"], name: "index_agent_service_accesses_on_agent_id"
+    t.index ["home_approval", "home_approval_requested_at"], name: "idx_agent_service_accesses_home_approval"
+    t.index ["home_approval_by_id"], name: "index_agent_service_accesses_on_home_approval_by_id"
     t.index ["service_connection_id"], name: "index_agent_service_accesses_on_service_connection_id"
   end
 
@@ -1588,6 +1596,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
     t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
     t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
     t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying::text, 'standard'::character varying::text])", name: "github_resident_import_sync_strategy"
+  end
+
+  create_table "guest_access_approval_events", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "actor_user_id"
+    t.string "action", null: false
+    t.string "reason"
+    t.integer "generation", null: false
+    t.datetime "created_at", null: false
+    t.index ["actor_user_id"], name: "index_guest_access_approval_events_on_actor_user_id"
+    t.index ["agent_id", "service_connection_id", "created_at"], name: "idx_guest_access_approval_events_access_time"
+    t.index ["agent_id"], name: "index_guest_access_approval_events_on_agent_id"
+    t.index ["service_connection_id"], name: "index_guest_access_approval_events_on_service_connection_id"
   end
 
   create_table "guest_memberships", force: :cascade do |t|
@@ -2919,6 +2941,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
   add_foreign_key "agent_runtime_interactions", "stalled_thread_sweeps", on_delete: :nullify
   add_foreign_key "agent_service_accesses", "agents"
   add_foreign_key "agent_service_accesses", "service_connections"
+  add_foreign_key "agent_service_accesses", "users", column: "home_approval_by_id", on_delete: :nullify
   add_foreign_key "agents", "accounts"
   add_foreign_key "agents", "agent_runtime_interactions", column: "first_conversation_interaction_id", on_delete: :nullify
   add_foreign_key "agents", "api_keys", column: "outbound_api_key_id"
@@ -3025,6 +3048,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
   add_foreign_key "github_resident_imports", "service_connections"
   add_foreign_key "github_resident_imports", "users", column: "approved_by_id"
   add_foreign_key "github_resident_imports", "users", column: "requested_by_id"
+  add_foreign_key "guest_access_approval_events", "agents", on_delete: :cascade
+  add_foreign_key "guest_access_approval_events", "service_connections", on_delete: :cascade
+  add_foreign_key "guest_access_approval_events", "users", column: "actor_user_id", on_delete: :nullify
   add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
   add_foreign_key "guest_memberships", "agents", on_delete: :cascade
   add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify

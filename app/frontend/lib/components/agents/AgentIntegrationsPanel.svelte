@@ -6,6 +6,8 @@
   import { CheckCircle, TelegramLogo } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
+  import SharedConnectionsPanel from '$lib/components/agents/SharedConnectionsPanel.svelte';
+  import { authorityDescription } from '$lib/connection-authority';
 
   let {
     form,
@@ -18,6 +20,8 @@
     sendingTestNotification = false,
     registeringWebhook = false,
     serviceConnections = [],
+    sharedConnections = [],
+    canDecideGuestAccess = false,
     onsendTestNotification,
     onregisterWebhook,
   } = $props();
@@ -42,29 +46,6 @@
 
   function toggleService(connection, enabled) {
     router.patch(connection.access_update_url, { enabled }, { preserveScroll: true });
-  }
-
-  function authorityDescription(connection) {
-    if (connection.authority_summary) return connection.authority_summary;
-
-    const labels = {
-      drive: 'Drive',
-      docs: 'Docs',
-      sheets: 'Sheets',
-      slides: 'Slides',
-      calendar: 'Calendar',
-      gmail: 'Gmail',
-      meet: 'Meet',
-    };
-    const authority = Object.entries(connection.effective_authority || {})
-      .filter(([, level]) => level !== 'none')
-      .map(
-        ([product, level]) => `${labels[product] || product}: ${level === 'write' ? 'read and write' : 'read only'}`
-      );
-    if (authority.length > 0) return authority.join('; ');
-
-    const scopes = connection.granted_scopes || [];
-    return scopes.length > 0 ? scopes.join(', ') : 'Google did not confirm the granted scopes';
   }
 </script>
 
@@ -175,5 +156,6 @@
         </button>
       </div>
     </div>
+    <SharedConnectionsPanel {agent} {sharedConnections} {canDecideGuestAccess} />
   </div>
 {/if}

@@ -243,6 +243,7 @@ areas:
       - service_connections
       - service_authorization_attempts
       - agent_service_accesses
+      - guest_access_approval_events
       - comms_chats
       - comms_messages
       - comms_sends

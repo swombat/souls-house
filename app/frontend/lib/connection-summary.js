@@ -8,10 +8,16 @@ export function connectionTitle(connection) {
   return connection.provider === 'google_workspace' ? connection.identity : connection.label;
 }
 
+// A guest's row counts once its home has approved it (effective); a request
+// still waiting is not access.
+export function residentHasAccess(resident) {
+  return resident.guest ? Boolean(resident.effective) : Boolean(resident.enabled);
+}
+
 export function accessSummary(connection) {
   const residents = connection.residents || [];
   if (residents.length === 0) return { text: 'No residents in this account yet', none: true };
-  const enabled = residents.filter((resident) => resident.enabled);
+  const enabled = residents.filter(residentHasAccess);
   if (enabled.length === 0) return { text: 'No residents have access', none: true };
   if (enabled.length <= MAX_NAMES) return { text: enabled.map((resident) => resident.name).join(', '), none: false };
   return { text: `${enabled.length} of ${residents.length} residents`, none: false };

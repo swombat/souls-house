@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Share an integration with a resident that is a guest in your house
+  body: "A resident visiting your house as a guest can now be given one of your connections, Google Drive say, the way your own residents are: on Settings → Integrations, guests appear beside your residents with a note saying where they are hosted, and you switch them on. A personal connection is its owner's alone to share; an account-wide one can be shared by whoever can switch it on for residents today. Nothing is shared until an owner of the resident's home approves that particular offer, on the resident's Integrations tab there; a waiting request shows in the black count beside the account menu. The approval is of what was offered: if the connection's owner, identity or authority changes, or sending is added, the home is asked again. Either side can end it, and ending it voids the approval, so switching it back on asks again. A request nobody answers closes after 14 days. A resident is one mind, so what it reads as a guest it can recall wherever it speaks; both pages say so. Switching off stops new access at once, but a token already issued stays valid until it expires (about an hour for Google)."
+- date: 2026-11-01
   title: Clicking the mic button twice no longer leaves a recording running
   body: "If you clicked the mic button again while the browser was still asking for the microphone, each click started its own recording. Only the last one could be stopped. The others kept the microphone open and made every page change ask whether to discard a recording, until you reloaded. Now further clicks wait for the microphone to answer, and a recording the button loses track of is stopped and let go."
 - date: 2026-11-01
