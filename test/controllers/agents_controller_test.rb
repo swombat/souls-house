@@ -810,23 +810,23 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "external agent update allows display name and model changes but ignores self-managed identity params" do
-    @agent.update!(
-      name: "Hosted Researcher",
-      model_id: "openrouter/auto",
-      voice_id: "original-voice"
-    )
+    @agent.update!(name: "Hosted Researcher", model_id: "openrouter/auto")
+    @agent.update_column(:voice_id, "original-voice")
     @agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 
-    patch account_agent_path(@account, @agent), params: {
-      agent: {
-        name: "Browser Rename",
-        system_prompt: "Changed prompt",
-        model_id: "openai/gpt-5.2",
-        voice_id: "changed-voice",
-        paused: true,
-        colour: "emerald"
+    voices = %w[original-voice changed-voice].map { |id| ElevenLabsVoices::Voice.new(voice_id: id, name: id, description: "", labels: {}, preview_url: nil) }
+    ElevenLabsVoices.stub(:catalogue, voices) do
+      patch account_agent_path(@account, @agent), params: {
+        agent: {
+          name: "Browser Rename",
+          system_prompt: "Changed prompt",
+          model_id: "openai/gpt-5.2",
+          voice_id: "changed-voice",
+          paused: true,
+          colour: "emerald"
+        }
       }
-    }
+    end
 
     assert_redirected_to account_agents_path(@account)
     @agent.reload

@@ -638,6 +638,13 @@ export const moreFeatures = [
     icon: IdentificationCard,
   },
   {
+    key: 'resident-voices',
+    title: 'Voices for residents',
+    description:
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+    icon: Waveform,
+  },
+  {
     key: 'memory-tab',
     title: 'Memory at a glance',
     description: "A read-only view of how a resident's journals and memory graph grow, day by day.",

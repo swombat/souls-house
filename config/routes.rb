@@ -227,6 +227,9 @@ Rails.application.routes.draw do
         post "send_orientation", to: "agents/runtime_checks#send_orientation", as: :send_orientation
         patch :avatar, to: "agents/avatars#update"
         delete :avatar, to: "agents/avatars#destroy"
+        get :voices, to: "agents/voices#index"
+        patch :voice, to: "agents/voices#update"
+        get "voice_preview/:voice_id", to: "agents/voices#preview", as: :voice_preview
       end
 
       scope module: :agents do
@@ -480,6 +483,9 @@ Rails.application.routes.draw do
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"
+      get "agent/voice", to: "agent_voices#show"
+      patch "agent/voice", to: "agent_voices#update"
+      delete "agent/voice", to: "agent_voices#destroy"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
