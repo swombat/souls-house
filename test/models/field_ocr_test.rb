@@ -1,7 +1,7 @@
 require "test_helper"
 require "support/field_ocr_helpers"
 
-# Field OCR with a fake model (FieldOcrHelpers::FakeVision). Poppler renders
+# Field OCR with a fake model (FieldOcrHelpers::FakeVision). Imprimatur renders
 # the synthetic fixtures for real; nothing is sent anywhere.
 class FieldOcrTest < ActiveSupport::TestCase
 
@@ -131,7 +131,7 @@ class FieldOcrTest < ActiveSupport::TestCase
     file = field_pdf(@account, "scanned_only.pdf")
     file.extract_pdf!
     vision = FakeVision.new
-    PdfText.stub(:render_page, ->(*, **) { raise PdfText::CommandFailed, "pdftoppm took too long" }) do
+    with_constant(PdfText, :MEMORY_LIMIT, 1) do
       file.transcribe_pdf!(inference: vision)
     end
 

@@ -1,5 +1,5 @@
 # One page of a PDF in the Field (FieldFile::PdfExtraction). native_text is
-# the page's own text layer as Poppler reads it:
+# the page's own text layer as Imprimatur reads it:
 #
 #   text     some text came out
 #   empty    the page has no text layer (blank, or only pictures, e.g. a scan)

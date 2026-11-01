@@ -80,7 +80,7 @@ module FieldFile::PdfOcr
   def transcribe_page(path, page, call, render_timeout, deadline, inference)
     png = begin
       PdfText.render_page(path, page.page_number, timeout: render_timeout)
-    rescue PdfText::CommandFailed => e
+    rescue Imprimatur::Error, SystemCallError, IOError, ArgumentError => e
       call.release!
       mark_model(page, "failed", "The page could not be turned into an image (#{e.message})")
       return nil
