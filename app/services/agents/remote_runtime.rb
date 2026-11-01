@@ -232,7 +232,7 @@ module Agents
           return :busy if Backup::VmResident.held?(agent)
 
           accesses = agent.agent_service_accesses.includes(:service_connection).map do |access|
-            { "id" => access.id, "enabled" => access.enabled?, "revision" => access.service_connection.credential_revision.to_s }
+            { "id" => access.id, "enabled" => access.effective?, "revision" => access.service_connection.credential_revision.to_s }
           end
           command = start!(agent)
           # The exact image this restart carries. Settlement releases turns
@@ -346,10 +346,12 @@ module Agents
     def reconcile_refreshed_services!(agent, snapshot, now)
       snapshot["accesses"].each do |entry|
         access = agent.agent_service_accesses.includes(:service_connection).find_by(id: entry["id"])
-        next unless access && access.enabled? == entry["enabled"] &&
+        # "enabled" is the effective grant (a guest row waiting for its
+        # home is not in the manifest, so it is never marked provisioned).
+        next unless access && access.effective? == entry["enabled"] &&
           access.service_connection.credential_revision.to_s == entry["revision"]
 
-        if access.enabled?
+        if access.effective?
           access.mark_provisioned!
         else
           access.update!(provisioned_revision: nil, provisioned_at: now, provisioning_status: "removed",

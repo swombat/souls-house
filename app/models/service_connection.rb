@@ -748,11 +748,12 @@ class ServiceConnection < ApplicationRecord
   end
 
   # Lock order as withdraw_send_grants: this connection's row is held by the
-  # UPDATE; the access rows are locked second. Only an approval whose
-  # snapshot no longer matches is re-asked; a re-auth of the same identity
-  # with the same authority keeps it.
+  # UPDATE; the access rows are locked second. An approval, or a request
+  # still waiting, whose snapshot no longer matches is re-asked (a new
+  # generation, so a page showing the old one is refused); a re-auth of
+  # the same identity with the same authority keeps it.
   def re_request_guest_approvals
-    agent_service_accesses.where(enabled: true, home_approval: "approved").lock.each do |access|
+    agent_service_accesses.where(enabled: true, home_approval: %w[approved pending]).lock.each do |access|
       next unless access.home_approval_stale?
 
       access.request_home_approval!(actor: nil, reason: "authority_changed")

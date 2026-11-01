@@ -261,9 +261,15 @@ class AgentServiceAccess < ApplicationRecord
   # rather than approved by a stale button. A refusal that moves the row
   # (expiry, re-asking with changed authority) commits before it is raised;
   # raising inside the transaction would roll that move back.
+  #
+  # Lock order (as change_send_grant!): the connection first, then this
+  # row. A change to the connection's authority holds the connection's row
+  # until it commits (ServiceConnection#re_request_guest_approvals runs
+  # inside that UPDATE), so a decision either sees the change, and re-asks,
+  # or commits first and is then re-asked by it.
   def approve_home!(actor:, generation:)
     refusal = transaction do
-      lock!
+      lock_connection_then_row!
       next refusal if (refusal = refusal_for(generation))
 
       update!(home_approval: "approved", home_approval_at: Time.current, home_approval_by: actor)
@@ -276,7 +282,7 @@ class AgentServiceAccess < ApplicationRecord
 
   def decline_home!(actor:, generation:)
     refusal = transaction do
-      lock!
+      lock_connection_then_row!
       next refusal if (refusal = refusal_for(generation))
 
       update!(enabled: false, home_approval: "declined", home_approval_at: Time.current, home_approval_by: actor)
@@ -291,7 +297,7 @@ class AgentServiceAccess < ApplicationRecord
   # cannot restore it without a new approval.
   def revoke_home!(actor:)
     transaction do
-      lock!
+      lock_connection_then_row!
       raise HomeApprovalRefused, "This access is not approved" unless enabled? && home_approval == "approved"
 
       update!(enabled: false, home_approval: "revoked", home_approval_at: Time.current, home_approval_by: actor)
@@ -300,10 +306,13 @@ class AgentServiceAccess < ApplicationRecord
     self
   end
 
+  # The sweeper selected this row as an old request; read under the locks,
+  # a request renewed since (withdrawn and asked again) is a new one and
+  # keeps its own fourteen days.
   def expire_home!
     transaction do
-      lock!
-      next unless enabled? && home_approval == "pending"
+      lock_connection_then_row!
+      next unless enabled? && home_approval_expired?
 
       update!(enabled: false, home_approval: "expired")
       GuestAccessApprovalEvent.record!(self, action: "expired", actor: nil)
@@ -327,6 +336,11 @@ class AgentServiceAccess < ApplicationRecord
   end
 
   private
+
+  def lock_connection_then_row!
+    service_connection.lock!
+    lock!
+  end
 
   # Why a decision on this row cannot be taken now, or nil. Called under the
   # row's lock; may move the row (expire it, or re-ask) and returns the

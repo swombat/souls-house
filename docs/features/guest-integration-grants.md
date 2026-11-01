@@ -55,17 +55,30 @@ waiting request is counted in the navbar's black count
 generation they saw; a stale one is refused server-side, as is a request
 whose snapshot no longer matches the connection (it is re-asked with the
 current authority), one older than 14 days (closed as `expired`), and one
-whose seat is gone.
+whose seat is gone. The brief named a Main-line notice in the home as
+well; that was dropped for the count, on the same grounds Daniel gave for
+scheduled-run failures on 31 Oct (#677: a count, not a conversation).
+
+Lock order for every decision (approve, decline, revoke, expire) is the
+connection, then the access row, as for send grants. An authority change
+holds the connection's row from its UPDATE until it commits, so a decision
+racing it waits, then sees the change and is refused (the request was
+re-asked under a new generation). The sweeper rechecks the request's age
+under the locks, so a request withdrawn and asked again since it was
+selected keeps its own 14 days.
 
 ## Re-asking
 
 `ServiceConnection#re_request_guest_approvals` (same transaction as the
-change) sends an approved grant back to `pending` when the owner, external
+change) sends an approved grant, or a request still waiting, back to `pending`
+under a new generation when the owner, external
 subject, management scope or authority metadata changes and the snapshot no
 longer matches. A plain re-auth of the same identity with the same scopes
 keeps the approval. Letting a guest send as the owner
 (`change_send_grant!`) is a widening and re-asks; taking sending away
-narrows and keeps it.
+narrows and keeps it. Sending is checked as `effective` at claim and again
+at dispatch (`CommsSending#require_sendable!`), so a send claimed under an
+approval that is re-asked before it goes out is refused at dispatch.
 
 ## Ending it
 

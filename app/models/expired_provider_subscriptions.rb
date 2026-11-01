@@ -53,6 +53,7 @@ class ExpiredProviderSubscriptions
         agent = access.agent
         connection = access.service_connection
         {
+          key: "guest-access-#{access.id}",
           account_id: agent.account.to_param,
           account_name: agent.account.name,
           agent_id: agent.to_param,

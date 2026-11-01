@@ -158,7 +158,7 @@
           <DropdownMenu.GroupHeading>
             <div class="text-xs font-normal text-muted-foreground">Awaiting your approval</div>
           </DropdownMenu.GroupHeading>
-          {#each expiredSubscriptions.awaiting as item (`${item.agent_id}:${item.connection_label}:${item.sharing_account_name}`)}
+          {#each expiredSubscriptions.awaiting as item (item.key)}
             <DropdownMenu.Item data-testid="awaiting-guest-access" onclick={() => router.visit(item.url)}>
               <WarningCircle class="size-4 shrink-0" />
               <div class="min-w-0 flex-1">
