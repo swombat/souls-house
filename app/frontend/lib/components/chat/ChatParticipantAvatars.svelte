@@ -11,6 +11,13 @@
       ...participants.filter((p) => !(p.type === 'agent' && workingAgentIds.includes(p.id))),
     ].slice(0, Math.max(7, workingAgentIds.length))
   );
+
+  // The working ring takes the resident's own colour, in the same shades the
+  // rooms spinner (RoomWorkingSpinner) uses, so Lume orbits orange and Mira
+  // violet. Primary only for a resident without a colour.
+  function ringClass(colour) {
+    return colour ? `text-${colour}-600 dark:text-${colour}-300` : 'text-primary';
+  }
 </script>
 
 <div class="participants flex items-center -space-x-1">
@@ -24,7 +31,10 @@
         aria-label={working ? `${participant.name} is working` : participant.name}
         title={working ? `${participant.name} is working` : participant.name}>
         {#if working}
-          <span class="working-ring" aria-hidden="true"></span>
+          <span
+            class="working-ring {ringClass(participant.colour)}"
+            data-colour={participant.colour || ''}
+            aria-hidden="true"></span>
         {/if}
         <AgentAvatar
           agent={{
@@ -85,7 +95,7 @@
   .working-ring {
     position: absolute;
     inset: -3px;
-    border: 2px solid var(--color-primary);
+    border: 2px solid currentColor;
     border-right-color: transparent;
     border-bottom-color: transparent;
     border-radius: 50%;
@@ -102,7 +112,7 @@
   @media (prefers-reduced-motion: reduce) {
     .working-ring {
       animation: none;
-      border-color: var(--color-primary);
+      border-color: currentColor;
     }
   }
 </style>
