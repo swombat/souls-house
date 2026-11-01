@@ -112,6 +112,8 @@ class AgentsController < ApplicationController
       provider_subscription: -> { Agents::ProviderSubscriptionPresentation.call(@agent) },
       hosting_location: -> { Agents::HostingLocation.call(@agent) },
       service_connections: -> { service_connections_for_agent },
+      shared_connections: -> { shared_connections_for_agent },
+      can_decide_guest_access: -> { current_account.owned_by?(Current.user) },
       can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
       interactions: -> { interactions_props(load_interactions.call.last) },
       interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
@@ -332,6 +334,41 @@ class AgentsController < ApplicationController
           access_update_url: account_agent_service_access_path(current_account, @agent, connection.public_id),
           tailnet_url: connection.provider == "tailscale" ? account_agent_tailnet_path(current_account, @agent) : nil
         )
+      end
+  end
+
+  # Connections other houses share with this resident as their guest
+  # (JWblqj): what was offered, by whom, with what authority, and where the
+  # request stands. The home decides here; the sharing side's switch is on
+  # its own Integrations page.
+  def shared_connections_for_agent
+    @agent.agent_service_accesses
+      .includes(:home_approval_by, service_connection: %i[account connected_by_user])
+      .select(&:foreign?)
+      .sort_by { |access| [ access.home_approval == "pending" ? 0 : 1, access.service_connection_id ] }
+      .map do |access|
+        connection = access.service_connection
+        {
+          id: connection.public_id,
+          provider: connection.provider,
+          provider_name: connection.definition.name,
+          identity: connection.external_identity,
+          label: connection.display_label,
+          status: connection.status,
+          management_scope: connection.management_scope,
+          shared_from: connection.account.name,
+          shared_by: connection.connected_by_name,
+          granted_scopes: connection.granted_scopes,
+          effective_authority: connection.effective_authority,
+          authority_summary: connection.credential_metadata.to_h["authority_summary"],
+          authority_warnings: connection.authority_warnings,
+          enabled: access.enabled?,
+          can_send: access.can_send?,
+          provisioning_status: access.provisioning_status,
+          decision_url: account_agent_guest_access_approval_path(current_account, @agent, connection.public_id),
+          history: GuestAccessApprovalEvent.where(agent_id: @agent.id, service_connection_id: connection.id)
+            .includes(:actor_user).order(created_at: :desc, id: :desc).limit(10).map(&:as_json)
+        }.merge(access.home_approval_json)
       end
   end
 

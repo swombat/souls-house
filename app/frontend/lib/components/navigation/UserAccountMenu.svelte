@@ -153,6 +153,23 @@
             </DropdownMenu.Item>
           {/each}
         {/if}
+        {#if expiredSubscriptions.awaiting?.length}
+          <DropdownMenu.Separator />
+          <DropdownMenu.GroupHeading>
+            <div class="text-xs font-normal text-muted-foreground">Awaiting your approval</div>
+          </DropdownMenu.GroupHeading>
+          {#each expiredSubscriptions.awaiting as item (`${item.agent_id}:${item.connection_label}:${item.sharing_account_name}`)}
+            <DropdownMenu.Item data-testid="awaiting-guest-access" onclick={() => router.visit(item.url)}>
+              <WarningCircle class="size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm truncate">{item.agent_name}</div>
+                <div class="text-xs text-muted-foreground truncate">
+                  {item.sharing_account_name} shares {item.provider_name}{#if accounts.length > 1}&nbsp;· {item.account_name}{/if}
+                </div>
+              </div>
+            </DropdownMenu.Item>
+          {/each}
+        {/if}
         {#if pendingInvitations.items?.length}
           <DropdownMenu.Separator />
           <DropdownMenu.GroupHeading>

@@ -255,6 +255,9 @@ Rails.application.routes.draw do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"
         end
+        # The home's answer when another house shares a connection with this
+        # resident (JWblqj): approve, decline or revoke. Owners only.
+        resources :guest_access_approvals, only: :update
         resource :tailnet, only: [ :show, :create ]
         resources :memories, only: [] do
           resource :discard, only: [ :create, :destroy ], module: :memories

@@ -192,6 +192,13 @@ production:
     queue: default
     schedule: every 15 minutes
 
+  # Guest integration requests unanswered for 14 days are closed
+  # (GuestAccessRequestSweepJob).
+  guest_access_request_sweep:
+    class: GuestAccessRequestSweepJob
+    queue: default
+    schedule: every hour at minute 50
+
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob
     queue: default

@@ -18,6 +18,11 @@
 # failure... and then they can click on the resident"). Each open streak
 # recorded by ScheduledRunFailureNotice adds one, listed under `failing`, for
 # the same owners and with the same exclusions the streak itself uses.
+#
+# And it carries integrations another house wants to share with one of the
+# owner's residents, waiting for the owner's approval (JWblqj), listed under
+# `awaiting`; each links to the resident's Integrations tab, where the
+# decision is made.
 class ExpiredProviderSubscriptions
 
   def self.summary_for(user)
@@ -31,12 +36,34 @@ class ExpiredProviderSubscriptions
   def summary
     items = expired_items
     failing = failing_items
+    awaiting = awaiting_items
     by_account = Hash.new(0)
-    (items + failing).each { |item| by_account[item[:account_id]] += 1 }
-    { total: items.size + failing.size, accounts: by_account, items: items, failing: failing }
+    (items + failing + awaiting).each { |item| by_account[item[:account_id]] += 1 }
+    { total: items.size + failing.size + awaiting.size, accounts: by_account, items: items, failing: failing, awaiting: awaiting }
   end
 
   private
+
+  def awaiting_items
+    AgentServiceAccess.awaiting_home_approval
+      .joins(:agent).where(agents: { account_id: owned_account_ids })
+      .includes(agent: :account, service_connection: :account)
+      .order(:home_approval_requested_at)
+      .map do |access|
+        agent = access.agent
+        connection = access.service_connection
+        {
+          account_id: agent.account.to_param,
+          account_name: agent.account.name,
+          agent_id: agent.to_param,
+          agent_name: agent.name,
+          connection_label: connection.display_label,
+          provider_name: connection.definition.name,
+          sharing_account_name: connection.account.name,
+          url: Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "integrations")
+        }
+      end
+  end
 
   def expired_items
     candidates.flat_map do |agent|

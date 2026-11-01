@@ -48,7 +48,7 @@ module Api
         scope = WatchedRepository.live.where(account_id: current_api_account.id)
         return scope.where(account_id: human_account!.id) unless current_api_agent
 
-        scope.where(service_connection_id: AgentServiceAccess.enabled.where(agent: current_api_agent).select(:service_connection_id))
+        scope.where(service_connection_id: AgentServiceAccess.effective.where(agent: current_api_agent).select(:service_connection_id))
       end
 
       def repository_json(repository)
@@ -62,7 +62,7 @@ module Api
       def connect_scope
         if current_api_agent
           account = current_api_agent.account
-          granted = AgentServiceAccess.enabled.where(agent: current_api_agent).select(:service_connection_id)
+          granted = AgentServiceAccess.effective.where(agent: current_api_agent).select(:service_connection_id)
           [ account, account.service_connections.where(provider: "github", status: "connected", id: granted).to_a ]
         else
           account = human_account!

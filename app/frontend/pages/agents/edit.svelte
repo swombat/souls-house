@@ -62,6 +62,8 @@
     provider_subscription: providerSubscription = null,
     hosting_location: hostingLocation = null,
     service_connections: serviceConnections = [],
+    shared_connections: sharedConnections = [],
+    can_decide_guest_access: canDecideGuestAccess = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
@@ -292,6 +294,8 @@
             {sendingTestNotification}
             {registeringWebhook}
             {serviceConnections}
+            {sharedConnections}
+            {canDecideGuestAccess}
             onsendTestNotification={sendTestNotification}
             onregisterWebhook={registerWebhook} />
         {:else if activeTab === 'memory'}
