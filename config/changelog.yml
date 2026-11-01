@@ -4,8 +4,8 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
-  title: The audit log shows when a resident's subscription login is signed in again
-  body: "When an owner connects a resident to a Claude, ChatGPT, Gemini or Grok subscription, the audit log now records the sign-in being started and completed (or cancelled). When a run finds the login refused and the house marks it expired, that is recorded too, and so is a login that starts working again with nobody signing in. So after a failed run you can see whether anyone signed in again before it recovered. Only the provider, plan and previous state are kept, never the account's email or anything from the login itself."
+  title: The audit log records a resident's subscription login being redone
+  body: "When an owner presses Connect to sign a resident into a Claude, ChatGPT, Gemini or Grok subscription, the audit log now records it, and records the step where the browser code is pasted (never the code itself). It also records when a run finds the login refused and the house marks it expired, and when the house next finds that login working again. So after a failed run you can see whether anyone pressed Connect before it recovered. Only the provider, plan and previous state are kept, never the account's email or anything from the login."
 - date: 2026-11-01
   title: Bringing an existing resident from GitHub works again
   body: "Bringing an existing GitHub resident always failed with \"Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest\", whatever was in the repository: the check that reads the resident's home wasn't included in the house's server image. It is now. When the check does find a problem, the form says which part of the repository failed instead of listing everything it might be."

@@ -397,43 +397,58 @@ class Agent < ApplicationRecord
   end
 
   def mark_provider_connection_status!(provider, status)
-    connection = provider_connection(provider)
-    return if connection.blank?
+    with_lock do
+      connection = provider_connection(provider)
+      next if connection.blank?
 
-    previous_status = connection["status"]
-    update!(
-      provider_connections: provider_connections.to_h.merge(
-        provider.to_s => connection.merge("status" => status.to_s)
+      previous_status = connection["status"]
+      update!(
+        provider_connections: provider_connections.to_h.merge(
+          provider.to_s => connection.merge("status" => status.to_s)
+        )
       )
-    )
-    if status.to_s == "expired" && previous_status != "expired"
-      audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+      if status.to_s == "expired" && previous_status != "expired"
+        audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+      end
     end
   end
 
-  # Provider subscription sign-ins leave an audit trail (Daniel, 2026-11-01,
+  # A status read found the provider account connected. Records it, and
+  # audits the change when it was not already connected. Under the row lock,
+  # so competing polls write the observation once.
+  def observe_provider_connected!(provider, email:, plan:)
+    with_lock do
+      previous = provider_connection(provider)
+      record_provider_connection!(
+        provider,
+        email:, plan:, status: "connected",
+        connected_at: previous["connected_at"] || Time.current.iso8601
+      )
+      if previous["status"] != "connected"
+        audit_provider_connection!(PROVIDER_CONNECTION_OBSERVED, provider, previous_status: previous["status"], plan:)
+      end
+    end
+  end
+
+  # Provider subscription logins leave an audit trail (Daniel, 2026-11-01,
   # exGRgY: "if there isn't an audit log event for this, please add it").
-  # A sign-in is the ceremony, not a status: Connect pressed (sign_in_started),
-  # then connected seen on a later status read (signed_in), once per start.
-  # An expired login that comes back with no ceremony is `recovered`, so the
-  # trail can answer "did anyone sign in again between failure and recovery?"
-  # (Mira, #704 review). `expired` is the house marking a login expired after a
-  # run's auth failure; it is not proof the provider expired anything.
+  # Only what Rails actually knows, named as that (Mira, #704 rounds 1-2):
+  #   sign_in_started       an owner pressed Connect
+  #   sign_in_code_submitted an owner pasted the browser code (never stored)
+  #   connection_observed   a status read found the login connected when the
+  #                         house had it as expired, absent or unknown. Not
+  #                         proof a sign-in succeeded: the runtime can report
+  #                         older credentials that still work.
+  #   expired               the house marked the login expired after a run's
+  #                         auth failure; not proof the provider expired it.
+  # So "did anyone sign in again between a failure and its recovery?" is
+  # answered by whether a sign_in_started row sits between them.
   # Metadata only (provider, plan, previous status), never the account email
   # or anything from the token or the one-time code.
   PROVIDER_SIGN_IN_STARTED = "agent.provider.sign_in_started".freeze
-  PROVIDER_SIGN_IN_ENDED = "agent.provider.sign_in_ended".freeze
-  PROVIDER_SIGNED_IN = "agent.provider.signed_in".freeze
-  PROVIDER_RECOVERED = "agent.provider.recovered".freeze
+  PROVIDER_SIGN_IN_CODE_SUBMITTED = "agent.provider.sign_in_code_submitted".freeze
+  PROVIDER_CONNECTION_OBSERVED = "agent.provider.connection_observed".freeze
   PROVIDER_EXPIRED = "agent.provider.expired".freeze
-
-  # True while the newest ceremony row for this provider is a start: Connect was
-  # pressed and neither a completed sign-in nor a cancel/timeout has closed it.
-  def provider_sign_in_pending?(provider)
-    AuditLog.where(auditable: self, action: [ PROVIDER_SIGN_IN_STARTED, PROVIDER_SIGN_IN_ENDED, PROVIDER_SIGNED_IN ])
-      .where("data->>'provider' = ?", provider.to_s)
-      .order(:id).last&.action == PROVIDER_SIGN_IN_STARTED
-  end
 
   def audit_provider_connection!(action, provider, **data)
     AuditLog.create!(
