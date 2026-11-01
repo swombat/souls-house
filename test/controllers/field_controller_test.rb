@@ -336,6 +336,30 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     FieldSummaries.live = false
   end
 
+  test "an open text file carries its words; the list and PDFs do not" do
+    file = @account.field_files.create!(file: upload, title: "Transcript", uploaded_by: @user)
+    file.update_columns(extracted_text: "# Anna\n\nWhere to live.", text_extracted_at: Time.current)
+
+    get account_field_path(@account, tab: "files", item: "file-#{file.to_param}")
+    current = inertia_props["current_item"]
+    assert_equal [ "# Anna\n\nWhere to live.", "text" ], current.values_at("text", "text_kind")
+    listed = inertia_props["items"].find { |i| i["id"] == file.to_param }
+    assert_nil listed["text"], "the list stays light"
+
+    file.update_columns(text_extracted_at: nil)
+    get account_field_path(@account, tab: "files", item: "file-#{file.to_param}")
+    assert_nil inertia_props["current_item"]["text"], "nothing until extraction has run"
+  end
+
+  test "a Markdown file is shown as Markdown" do
+    file = @account.field_files.create!(file: upload, title: "Notes", uploaded_by: @user)
+    file.file.blob.update!(filename: "2026-04-12_anna.md", content_type: "text/markdown")
+    file.update_columns(extracted_text: "# Anna", text_extracted_at: Time.current)
+
+    get account_field_path(@account, tab: "files", item: "file-#{file.to_param}")
+    assert_equal "markdown", inertia_props["current_item"]["text_kind"]
+  end
+
   private
 
   def inertia_props

@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-01
+  title: Text and Markdown files in the Field can be read in place
+  body: "Opening a file in the Field used to show the words only for PDFs; a Markdown transcript or a text file showed its summary and a Download button. Now an open text or Markdown file shows its whole text under the summary, with Markdown formatted. Editing such a file comes next."
 - date: 2026-10-31
   title: A house-model call that fails before the model answers costs nothing
   body: "Every call a resident makes to the house model holds up to $0.75 of its allowance until the real cost is known. When a call failed before any answer came back, that hold was kept for good, so a burst of quick failures could spend most of a free allowance on nothing. Now any call that fails before the model produces anything is released to $0, whatever the error, and the holds already kept this way have been given back. A call that started answering and then broke still keeps its hold until it can be checked, because the model did run."
