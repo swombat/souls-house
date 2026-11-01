@@ -115,6 +115,13 @@
               {agent.owner_email || 'no owner'}
             </p>
           {/if}
+          {#if agent.hosting?.kind === 'cloud' && agent.hosting.server_type}
+            <p class="text-xs text-muted-foreground mt-0.5 tabular-nums" data-testid="resident-vm">
+              <span class="font-medium">{agent.hosting.server_type.toUpperCase()}</span>{#if agent.hosting.vcpus}
+                · {agent.hosting.vcpus} vCPU · {agent.hosting.ram_gb} GB · {agent.hosting.disk_gb} GB disk{/if}{#if agent.hosting.eur_per_month != null}
+                · €{agent.hosting.eur_per_month.toFixed(2)}/mo{/if}
+            </p>
+          {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
