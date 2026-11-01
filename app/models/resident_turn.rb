@@ -106,7 +106,11 @@ class ResidentTurn < ApplicationRecord
   # Settles the dispatch when it no longer stands. Lock order: turn, then
   # dispatch (admission holds the turn lock here); nothing takes a dispatch
   # lock and then a turn lock.
+  # A new resident's queued greeting also stops standing once a person has
+  # written to it first (Agents::FirstConversation.turn_deliverable?).
   def dispatch_deliverable?
+    return false unless Agents::FirstConversation.turn_deliverable?(agent_runtime_interaction)
+
     dispatch = agent_runtime_interaction.message_dispatch
     dispatch.nil? || dispatch.with_lock { dispatch.deliverable! }
   end

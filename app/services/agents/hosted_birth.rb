@@ -43,6 +43,7 @@ module Agents
       end
 
       agent.assign_attributes(
+        created_by_user: creator,
         active: true,
         runtime: "provisioning",
         birth_committed_at: now,

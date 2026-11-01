@@ -69,6 +69,19 @@ has already read; provider-side revocation is separate.
 
 ## Dispatch, session continuity and replies
 
+New residents default to continuing conversation and heartbeat sessions. The
+database defaults do not change existing residents or explicit imported choices;
+the two switches remain independent under Settings → Advanced settings. VM
+placements use the same runtime image and continuity payload via the runner, and
+their external/offline runtime (or committed birth) makes those switches editable.
+This is continuity, not a measured promise of lower subscription consumption.
+
+Telegram busy responses are retried by `TelegramAgentTriggerJob` every 30 seconds,
+up to 60 attempts. Only a successful completed trigger advances the message
+cursor; before the first success all inbound messages remain pending, including
+text from earlier busy attempts. Retries are bounded, not a guarantee of delivery
+through an indefinitely unavailable runtime.
+
 - [ExternalAgentResponseRequest](../app/lib/external_agent_response_request.rb)
   prepares full and delta conversation requests, checks eligibility/reachability
   and records the interaction. Its full transcript is bounded; omitted history

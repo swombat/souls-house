@@ -67,6 +67,13 @@ rescue StandardError
     attributes = {active: false, paused: true}
     attributes[:container_image] = actual.strip if inspected.success? && !actual.strip.empty?
     a.reload.update!(attributes)
+    # Say so to the resident's people, with an audit entry (#641). A notice
+    # that fails must not hide the roll's own failure.
+    begin
+      ResidentSwitchedOffNotice.switched_off!(a, image: target)
+    rescue StandardError
+      nil
+    end
   end
   raise
 end

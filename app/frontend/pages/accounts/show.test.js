@@ -30,6 +30,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'members',
     'can_be_personal',
     'can_manage',
+    'can_invite_owner',
     'resident_handoff_cap',
     'reflexes_enabled',
   ]);

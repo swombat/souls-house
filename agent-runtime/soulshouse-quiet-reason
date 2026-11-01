@@ -4,8 +4,16 @@ State, for the room, why this run is ending without a reply. Optional.
 
 Usage:
   printf '%s\n' 'Mira already answered; nothing to add.' | soulshouse-quiet-reason CHAT_ID
+  soulshouse-quiet-reason --telegram THREAD_ID </dev/null
+  printf '%s\n' 'Nothing to add.' | soulshouse-quiet-reason --telegram THREAD_ID
 
-The reason is shown to everyone in the conversation, collapsed under this
+For Telegram, --telegram explicitly declares intentional quiet for this run.
+The reason is optional (empty stdin is allowed). Requires a matching
+SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID; the API also validates that this run
+belongs to that Telegram thread. Without a reason, the turn stays quiet; a
+nonempty reason is sent on successful completion, labelled as your own words.
+
+For a positional CHAT_ID, the reason is shown to everyone in the conversation, collapsed under this
 run's "completed without posting a reply" activity card, labelled as your own
 account. It is not a message: it wakes nobody and starts no handoff. Write it
 for the people in the room; keep private things out of it. At most 500
@@ -50,10 +58,12 @@ LIMIT = 500
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="soulshouse-quiet-reason",
-        description="State a room-visible reason for ending this run without a reply (read from stdin).",
+        description="State a quiet reason, or declare Telegram quiet (optional reason read from stdin).",
         epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
     )
-    parser.add_argument("chat_id")
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("chat_id", nargs="?")
+    destination.add_argument("--telegram", metavar="THREAD_ID")
     args = parser.parse_args()
 
     app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
@@ -66,7 +76,17 @@ def main() -> int:
         return 65
 
     run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID")
-    if not run_id or os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") != args.chat_id:
+    if args.telegram:
+        run_id = run_id or os.environ.get("HELIXKIT_RUNTIME_RUN_ID")
+        runtime_thread = (os.environ.get("SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID")
+                          or os.environ.get("HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID"))
+        if not run_id or runtime_thread != args.telegram:
+            print(
+                f"not inside a run for Telegram thread {args.telegram}; quiet must explain its own run",
+                file=sys.stderr,
+            )
+            return 64
+    elif not run_id or os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") != args.chat_id:
         print(
             f"not inside a run for conversation {args.chat_id}; a quiet reason can only be stated from the run it explains",
             file=sys.stderr,
@@ -74,15 +94,16 @@ def main() -> int:
         return 64
 
     reason = sys.stdin.read().strip()
-    if not reason:
+    if not reason and not args.telegram:
         print("reason is empty (pipe it on stdin)", file=sys.stderr)
         return 66
     if len(reason) > LIMIT:
         print(f"reason is {len(reason)} characters; at most {LIMIT}", file=sys.stderr)
         return 66
 
+    path = f"telegram_conversations/{args.telegram}" if args.telegram else f"conversations/{args.chat_id}"
     request = urllib.request.Request(
-        f"{app_url.rstrip('/')}/api/v1/conversations/{args.chat_id}/quiet_reason",
+        f"{app_url.rstrip('/')}/api/v1/{path}/quiet_reason",
         data=json.dumps({"runtime_run_id": run_id, "reason": reason}).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {token}",

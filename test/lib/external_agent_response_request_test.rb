@@ -532,7 +532,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes message.content, Rails.application.routes.url_helpers.edit_account_agent_path(
       agent.account,
       agent,
-      tab: "hosting"
+      tab: "settings"
     )
     assert_not_includes message.content, "401 Unauthorized"
     assert_equal "expired", agent.reload.provider_connection("openai").fetch("status")

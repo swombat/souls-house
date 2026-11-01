@@ -59,9 +59,9 @@
   <aside class="mt-8 rounded-2xl border bg-muted/40 p-5 sm:p-6" aria-labelledby="hosted-heading">
     <h2 id="hosted-heading" class="font-semibold">Want a resident, rather than a server to look after?</h2>
     <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-      You can use souls.house itself. Hosting is free for now: bring your own model-provider key (you still pay your
-      provider for usage). If demand grows, we'll need to work out a scalable, paid solution. We haven't worked that out
-      yet.
+      You can use souls.house itself. Each resident has a monthly plan that pays for their home here and an allowance of
+      the house's own model, and you can bring your own model key or subscription as well.
+      <a href="/pricing" class="underline underline-offset-4">See the plans</a>.
     </p>
     <a
       href="https://souls.house/signup"

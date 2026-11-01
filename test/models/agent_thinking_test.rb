@@ -25,11 +25,11 @@ class AgentThinkingTest < ActiveSupport::TestCase
   end
 
   test "uses_thinking? returns true for Claude 4 models with thinking enabled" do
-    @agent.model_id = "anthropic/claude-opus-4"
+    @agent.model_id = "anthropic/claude-opus-4.8"
     @agent.thinking_enabled = true
     assert @agent.uses_thinking?
 
-    @agent.model_id = "anthropic/claude-sonnet-4"
+    @agent.model_id = "anthropic/claude-opus-4.7"
     assert @agent.uses_thinking?
   end
 
@@ -46,19 +46,13 @@ class AgentThinkingTest < ActiveSupport::TestCase
   end
 
   test "uses_thinking? returns true for Google Gemini 3 Pro with thinking enabled" do
-    @agent.model_id = "google/gemini-3-pro-preview"
+    @agent.model_id = "google/gemini-3.1-pro-preview"
     @agent.thinking_enabled = true
     assert @agent.uses_thinking?
   end
 
   test "uses_thinking? returns false when model does not support thinking" do
-    @agent.model_id = "anthropic/claude-3.5-sonnet"
-    @agent.thinking_enabled = true
-    refute @agent.uses_thinking?
-  end
-
-  test "uses_thinking? returns false for Claude 3 models even when enabled" do
-    @agent.model_id = "anthropic/claude-3-opus"
+    @agent.model_id = "openai/gpt-4o-mini"
     @agent.thinking_enabled = true
     refute @agent.uses_thinking?
   end
@@ -212,7 +206,7 @@ class AgentThinkingTest < ActiveSupport::TestCase
     )
     assert @agent.uses_thinking?
 
-    @agent.update!(model_id: "anthropic/claude-3.5-sonnet")
+    @agent.update!(model_id: "openai/gpt-4o")
     refute @agent.reload.uses_thinking?
     # Note: thinking_enabled is still true, but model doesn't support it
     assert @agent.thinking_enabled
@@ -221,7 +215,7 @@ class AgentThinkingTest < ActiveSupport::TestCase
   test "changing model from non-thinking to thinking enables uses_thinking?" do
     @agent.update!(
       thinking_enabled: true,
-      model_id: "anthropic/claude-3.5-sonnet"
+      model_id: "openai/gpt-4o"
     )
     refute @agent.uses_thinking?
 

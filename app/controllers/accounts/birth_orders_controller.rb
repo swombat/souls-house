@@ -32,11 +32,13 @@ class Accounts::BirthOrdersController < ApplicationController
     open_beginning = ActiveModel::Type::Boolean.new.cast(attrs.delete(:open_beginning))
     attrs[:system_prompt] = "" if open_beginning
     tier = Billing::Tier.find(params.require(:tier)) || raise(Billing::PaidBirth::Refused, "Choose a plan.")
+    rate = params[:rate].presence || "standard"
+    raise Billing::PaidBirth::Refused, "Choose a plan." unless Billing::Tier::RATES.include?(rate)
     return if provider_key_refused?
 
     order, client_secret, payment_method_id = Billing::PaidBirth.new.start!(account: current_account,
-      creator: Current.user, attributes: attrs, open_beginning: open_beginning, tier: tier)
-    audit("start_paid_birth", order, tier: tier.id, resident_name: order.resident_name)
+      creator: Current.user, attributes: attrs, open_beginning: open_beginning, tier: tier, rate: rate)
+    audit("start_paid_birth", order, tier: tier.id, rate: rate, resident_name: order.resident_name)
     render json: payment_json(order, client_secret, payment_method_id), status: :created
   end
 

@@ -174,22 +174,26 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
     assert_not response.parsed_body.dig("rhythm", "can_resume")
   end
 
-  test "clearing the selection holds at once and readding needs an explicit resume" do
+  test "clearing the selection places no hold; slots skip visibly until someone is selected again" do
     rhythm = make_rhythm
     patch api_v1_rhythm_path(rhythm), params: { rhythm: { resident_ids: [] } }, headers: @headers, as: :json
     assert_response :ok
     assert_empty rhythm.reload.agents
-    assert_equal [ "no_selected_residents" ], rhythm.open_holds.pluck(:reason)
-    post resume_api_v1_rhythm_path(rhythm), headers: @headers
-    assert_response :conflict
-    assert_equal "no_selected_residents", response.parsed_body["reason"]
+    assert_not rhythm.held?
+    assert_equal "active", response.parsed_body.dig("rhythm", "state")
 
-    patch api_v1_rhythm_path(rhythm), params: { rhythm: { resident_ids: [ @resident.to_param ] } }, headers: @headers, as: :json
-    assert_response :ok
-    assert rhythm.reload.held?
+    now = Time.current
+    rhythm.update_column(:next_run_at, now - 1.minute)
+    assert_equal :unavailable, rhythm.fire!(now: now).status
+    get api_v1_rhythm_path(rhythm), headers: @headers
+    assert_equal "no_selected_residents", response.parsed_body.dig("rhythm", "last_skip", "reason")
+    # Resume has nothing to release and nothing to refuse.
     post resume_api_v1_rhythm_path(rhythm), headers: @headers
     assert_response :ok
     assert_equal "active", response.parsed_body["result"]
+
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { resident_ids: [ @resident.to_param ] } }, headers: @headers, as: :json
+    assert_response :ok
     assert_not rhythm.reload.held?
   end
 

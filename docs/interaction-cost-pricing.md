@@ -70,6 +70,16 @@ discount ends, the row should move to the list price. No cache-write price is
 listed, so cache writes fall back to the input rate. OpenRouter only; Inception
 is a new group in souls.house.
 
+GPT-6.1 Terra (added October 26, 2026, the day OpenAI released it; system card
+deploymentsafety.openai.com/gpt-6-1-terra): input 1, cache read 0.05, cache
+write 1.25, output 5, from the OpenRouter standard endpoint for
+`openai/gpt-6.1-terra` (OpenAI provider, `openai/gpt-6.1-terra-20261026`) on
+2026-10-26. The same provider lists flex (0.5 / 2.5) and priority (2 / 10)
+tiers and a long-context tier above 272k prompt tokens (2 in / 7.5 out) that
+these estimates do not model. Direct id `gpt-6.1-terra`. Same reasoning
+controls as GPT-6.1 Sol (none to max). Recheck against OpenAI's pricing page,
+which returned HTTP 403 from the house.
+
 Kimi K3.1 Pro (added October 24, 2026, the day Moonshot AI released it,
 kimi.com/en/blog/kimi-k3-1-pro): input 2, cache read 0.20, output 10, from the
 OpenRouter standard endpoint for `moonshotai/kimi-k3.1-pro` (Moonshot AI
@@ -141,3 +151,17 @@ suite uses its isolated worker databases.
 
 No database migration or runtime-image rebuild is required for this change.
 Production web deployment is a separate step from merging the source.
+
+## October 2026 additions
+
+OCTOBER_MODELS take their list prices from the OpenRouter catalogue
+(`/api/v1/models`), reverified on 2026-10-26 (USD per million tokens,
+input / output / cache read):
+Qwen3.8 Max (`qwen/qwen3.8-max-0902`) 2 / 6 / 0.25; Qwen3.8 Max Prime 4 / 12 / 0.5;
+GLM 5.3 0.0699 / 1.4 / 0.0689; GLM 5.3 Prime 2.8 / 8.8 / 0.56. Other Qwen and GLM
+models added to the catalogue at the same time stay unpriced.
+
+GLM 5.3 was first recorded on 2026-10-25 at 0.079 input and 0.078 cache read;
+by 2026-10-26 OpenRouter listed the lower rates above. The other three were
+unchanged. GLM 5.3's price has moved once already, so recheck it before
+relying on old GLM 5.3 estimates.

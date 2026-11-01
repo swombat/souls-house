@@ -38,12 +38,12 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
       call = entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id)
       call.settle!({ "cost" => 0.02 })
       assert_equal "settled", call.reload.status
-      assert_equal BigDecimal("7.98"), entitlement.allowance_remaining
+      assert_equal BigDecimal("9.98"), entitlement.allowance_remaining
       assert_equal entitlement.id, call.resident_entitlement_id
       assert_equal @agent.id, call.agent_id
       assert_nil call.house_inference_grant_id
     end
-    assert_equal BigDecimal("8"), entitlement.allowance_limit
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
   end
 
   test "two paid residents on one account have independent ledgers and need no free grant" do
@@ -56,8 +56,8 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
 
     configured do
       spend!(first, @agent, 7.5)
-      assert_equal BigDecimal("0.5"), first.allowance_remaining
-      assert_equal BigDecimal("8"), second.allowance_remaining
+      assert_equal BigDecimal("2.5"), first.allowance_remaining
+      assert_equal BigDecimal("10"), second.allowance_remaining
     end
   end
 
@@ -65,7 +65,7 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     @agent.update!(model_id: @model)
     entitlement, = pay!(@agent, "conversation")
     configured do
-      spend!(entitlement, @agent, 7.3)
+      spend!(entitlement, @agent, 9.3)
       assert_equal BigDecimal("0.7"), entitlement.allowance_remaining
       error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
       assert_equal "house_allowance_exhausted", error.code
@@ -78,9 +78,9 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     @agent.update!(model_id: @model)
     entitlement, = pay!(@agent, "conversation")
     configured do
-      spend!(entitlement, @agent, 6.0)
+      spend!(entitlement, @agent, 8.0)
       entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) # pending at 0.75
-      entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) # pending at 0.75 → 7.5
+      entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) # pending at 0.75 → 9.5
       assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
     end
   end
@@ -148,8 +148,8 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("5"), entitlement.allowance_remaining
 
     travel_to Time.utc(2026, 11, 2)
-    assert_equal BigDecimal("8"), entitlement.allowance_limit
-    assert_equal BigDecimal("8"), entitlement.allowance_remaining
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
+    assert_equal BigDecimal("10"), entitlement.allowance_remaining
   end
 
   test "an upgrade raises the limit at once, but spend so far still counts" do
@@ -162,6 +162,52 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("18"), entitlement.allowance_remaining
   end
 
+  # At cost: the plan funds calls (it is paid) but includes no allowance. The
+  # two-clock rule (docs/proposals/2026-10-28-billing-codes-at-cost.md): a
+  # switch mid-month keeps the month's ceiling; zero starts on the 1st.
+  test "at cost includes no allowance; a mid-month switch keeps the month's ceiling until the 1st" do
+    @agent.update!(model_id: @model)
+    entitlement, sub = pay!(@agent, "conversation")
+    configured { spend!(entitlement, @agent, 4) }
+
+    travel_to Time.utc(2026, 10, 20)
+    sub.update!(rate: "at_cost")
+    entitlement.apply_subscription!(sub, now: Time.current)
+    entitlement.reload
+    assert_equal "at_cost", entitlement.rate
+    assert entitlement.paid?
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
+    assert_equal BigDecimal("6"), entitlement.allowance_remaining
+    configured do
+      error = assert_raises(HouseInference::Error) do
+        entitlement.reserve_house_call!(@offering.merge(reservation_usd: BigDecimal("7")), @model, agent_id: @agent.id)
+      end
+      assert_match(/used up for this month/, error.message)
+    end
+
+    travel_to Time.utc(2026, 11, 2)
+    assert_equal BigDecimal("0"), entitlement.allowance_limit
+    assert_equal BigDecimal("0"), entitlement.allowance_remaining
+    configured do
+      error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
+      assert_match(/includes no house-model allowance/, error.message)
+    end
+    assert_equal "at_cost", entitlement.allowance_presentation[:rate]
+  end
+
+  test "a resident born at cost has a zero ceiling from the start" do
+    @agent.update!(model_id: @model)
+    sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_ac",
+      tier: "work", rate: "at_cost", stripe_status: "active")
+    entitlement = ResidentEntitlement.for_agent!(@agent)
+    entitlement.apply_subscription!(sub, now: Time.current)
+    assert_equal BigDecimal("0"), entitlement.reload.allowance_limit
+    configured do
+      error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
+      assert_match(/includes no house-model allowance/, error.message)
+    end
+  end
+
   test "a lapse and repayment, or a replacement checkout, in the same month doesn't refill it" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "conversation")
@@ -172,7 +218,7 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
 
     replacement, = pay!(@agent, "conversation", id: "sub_replacement")
     assert replacement.active?
-    assert_equal BigDecimal("1"), replacement.allowance_remaining
+    assert_equal BigDecimal("3"), replacement.allowance_remaining
   end
 
   test "a downgrade after the month rolled over still counts the outgoing tier for the new month" do
@@ -201,7 +247,7 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("5"), replacement.allowance_remaining
 
     travel_to Time.utc(2026, 12, 1)
-    assert_equal BigDecimal("8"), replacement.allowance_limit
+    assert_equal BigDecimal("10"), replacement.allowance_limit
   end
 
   test "grace expiry in a new month also marks the month before the plan ends" do

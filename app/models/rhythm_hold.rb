@@ -4,7 +4,7 @@ class RhythmHold < ApplicationRecord
   belongs_to :user, optional: true
   belongs_to :agent, optional: true
 
-  validates :kind, inclusion: { in: %w[human agent system] }
+  validates :kind, inclusion: { in: %w[human agent] }
   validates :reason, presence: true
   validates :reason, length: { maximum: 2000 }
   validates :user, presence: true, on: :create, if: -> { kind == "human" }

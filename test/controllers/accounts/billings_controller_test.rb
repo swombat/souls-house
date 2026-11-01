@@ -14,6 +14,30 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     sign_in(@user)
   end
 
+  test "the owner moves a paid resident to another plan from the Billing tab" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "active")
+    Billing.stub(:client, @stripe) do
+      Billing::SubscriptionSync.new("sub_1", client: @stripe).call
+      post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "life" }
+    end
+
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/now on Life/, flash[:notice])
+    assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier
+    assert AuditLog.exists?(action: "change_plan", user: @user)
+
+    get account_billing_path(@account)
+    assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost],
+      inertia_shared_props["change_offers"].map { |offer| offer["id"] }
+
+    sign_in(users(:regular_user))
+    Billing.stub(:client, @stripe) do
+      post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "work" }
+    end
+    assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier, "only the owner changes plans"
+  end
+
   test "shows each hosted resident's plan and the catalogue" do
     ResidentEntitlement.create!(agent: @agent, account: @account, source: "complimentary",
       state: "complimentary", complimentary_granted_at: Time.current)

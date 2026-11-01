@@ -12,7 +12,7 @@ class ReplyDismissal < ApplicationRecord
       dismissal.save!
       ReplyExpectation.joins(:message).state_open.where(user: user, messages: { chat_id: chat.id })
         .where("messages.id <= ?", dismissal.through_message_id).find_each do |expectation|
-          expectation.update!(state: :dismissed)
+          expectation.dismiss!
         end
     end
   end

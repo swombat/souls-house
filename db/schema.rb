@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_01_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -344,6 +344,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.jsonb "wake_source_kinds", default: [], null: false
     t.text "quiet_reason"
     t.datetime "quiet_reason_at"
+    t.datetime "telegram_completion_notice_at"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -403,6 +404,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.string "github_repo_name"
     t.string "github_repo_owner"
     t.string "github_repo_url"
+    t.datetime "health_failing_since"
+    t.string "health_failure_kind"
     t.string "health_state", default: "unknown", null: false
     t.integer "heartbeat_wakes_per_day", default: 2, null: false
     t.string "home_profile", default: "house", null: false
@@ -426,8 +429,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.bigint "outbound_api_key_id"
     t.string "outbound_api_token"
     t.boolean "paused", default: false, null: false
-    t.boolean "persistent_session", default: false, null: false
-    t.boolean "persistent_wake_session", default: false, null: false
+    t.boolean "persistent_session", default: true, null: false
+    t.boolean "persistent_wake_session", default: true, null: false
     t.string "portable_home_id"
     t.jsonb "portability_custody", default: {}, null: false
     t.jsonb "provider_auth_modes", default: {}, null: false
@@ -440,6 +443,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.string "restic_password"
     t.string "runtime", default: "deprecated", null: false
     t.datetime "runtime_ready_at"
+    t.integer "runtime_restart_count"
     t.string "sandbox_host"
     t.text "sandbox_last_error"
     t.datetime "sandbox_last_error_at"
@@ -453,6 +457,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.text "system_prompt"
     t.string "telegram_bot_token"
     t.string "telegram_bot_username"
+    t.boolean "telegram_reads_all_group_messages"
     t.string "telegram_webhook_token"
     t.integer "thinking_budget", default: 10000
     t.boolean "thinking_enabled", default: false, null: false
@@ -468,11 +473,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.boolean "follow_through", default: false, null: false
     t.jsonb "switchable_model_ids", default: [], null: false
     t.boolean "resident_may_switch_model", default: false, null: false
+    t.bigint "created_by_user_id"
+    t.bigint "first_conversation_chat_id"
+    t.string "first_conversation_greeting"
+    t.datetime "first_conversation_woken_at"
+    t.bigint "first_conversation_interaction_id"
+    t.integer "first_conversation_attempts", default: 0, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
     t.index ["account_id"], name: "index_agents_on_account_id"
     t.index ["container_name"], name: "index_agents_on_container_name", unique: true
+    t.index ["created_by_user_id"], name: "index_agents_on_created_by_user_id"
+    t.index ["first_conversation_chat_id"], name: "index_agents_on_first_conversation_chat_id"
+    t.index ["first_conversation_interaction_id"], name: "index_agents_on_first_conversation_interaction_id"
     t.index ["github_resident_import_id"], name: "index_agents_on_github_resident_import_id", unique: true
     t.index ["outbound_api_key_id"], name: "index_agents_on_outbound_api_key_id"
     t.index ["portable_home_id"], name: "index_agents_on_portable_home_id", unique: true
@@ -480,6 +494,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true
     t.index ["uuid"], name: "index_agents_on_uuid", unique: true
+    t.check_constraint "first_conversation_greeting IS NULL OR (first_conversation_greeting::text = ANY (ARRAY['owed'::character varying, 'sent'::character varying, 'spent'::character varying, 'skipped'::character varying]::text[]))", name: "agents_first_conversation_greeting_values"
     t.check_constraint "turn_timeout_minutes >= 1 AND turn_timeout_minutes <= 1440", name: "agents_turn_timeout_minutes_range"
   end
 
@@ -576,6 +591,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
   end
 
+  create_table "billing_code_redemptions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "billing_code_id", null: false
+    t.string "effect", null: false
+    t.bigint "redeemed_by_id", null: false
+    t.datetime "redeemed_at", null: false
+    t.datetime "withdrawn_at"
+    t.bigint "withdrawn_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "billing_code_id"], name: "index_billing_code_redemptions_once_per_account", unique: true
+    t.index ["account_id"], name: "index_billing_code_redemptions_live_by_account", where: "(withdrawn_at IS NULL)"
+    t.index ["account_id"], name: "index_billing_code_redemptions_on_account_id"
+    t.index ["billing_code_id"], name: "index_billing_code_redemptions_on_billing_code_id"
+    t.index ["redeemed_by_id"], name: "index_billing_code_redemptions_on_redeemed_by_id"
+    t.index ["withdrawn_by_id"], name: "index_billing_code_redemptions_on_withdrawn_by_id"
+  end
+
+  create_table "billing_codes", force: :cascade do |t|
+    t.string "code", null: false
+    t.string "effect", null: false
+    t.integer "max_redemptions"
+    t.integer "redemptions_count", default: 0, null: false
+    t.datetime "expires_at"
+    t.datetime "revoked_at"
+    t.bigint "created_by_id", null: false
+    t.text "note"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "lower((code)::text)", name: "index_billing_codes_on_lower_code", unique: true
+    t.index ["created_by_id"], name: "index_billing_codes_on_created_by_id"
+    t.check_constraint "effect::text = 'at_cost'::text", name: "billing_codes_effect_known"
+  end
+
   create_table "billing_customers", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "stripe_customer_id", null: false
@@ -627,6 +676,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.text "summary"
     t.datetime "summary_generated_at"
     t.string "title"
+    t.integer "title_sweep_attempts", default: 0, null: false
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
     t.bigint "visual_tag_id"
@@ -1556,7 +1606,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.bigint "agent_id"
     t.decimal "charge_usd", precision: 14, scale: 8, null: false
     t.datetime "created_at", null: false
+    t.boolean "free_pool", null: false
     t.bigint "house_inference_grant_id"
+    t.integer "http_status"
     t.string "model_id", null: false
     t.date "month", null: false
     t.string "provider_route", null: false
@@ -1567,6 +1619,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.index ["agent_id"], name: "index_house_inference_calls_on_agent_id"
     t.index ["house_inference_grant_id", "month"], name: "index_house_calls_on_grant_month"
     t.index ["house_inference_grant_id"], name: "index_house_inference_calls_on_house_inference_grant_id"
+    t.index ["month", "free_pool"], name: "index_house_calls_on_month_free_pool"
     t.index ["month"], name: "index_house_inference_calls_on_month"
     t.index ["resident_entitlement_id", "month"], name: "index_house_calls_on_entitlement_month"
     t.check_constraint "charge_usd >= 0::numeric", name: "house_calls_nonnegative_charge"
@@ -1675,6 +1728,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.index ["message_id", "stone_revision_id"], name: "idx_on_message_id_stone_revision_id_c117e2b9a3", unique: true
     t.index ["message_id"], name: "index_message_stone_revisions_on_message_id"
     t.index ["stone_revision_id"], name: "index_message_stone_revisions_on_stone_revision_id"
+  end
+
+  create_table "message_tweet_embeds", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.bigint "tweet_embed_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id", "tweet_embed_id"], name: "index_message_tweet_embeds_on_message_id_and_tweet_embed_id", unique: true
+    t.index ["message_id"], name: "index_message_tweet_embeds_on_message_id"
+    t.index ["tweet_embed_id"], name: "index_message_tweet_embeds_on_tweet_embed_id"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -2109,13 +2173,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.uuid "reference", default: -> { "gen_random_uuid()" }, null: false
+    t.string "rate", default: "standard", null: false
+    t.string "stripe_price_id"
+    t.bigint "billing_code_redemption_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
+    t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
   end
 
   create_table "resident_entitlements", force: :cascade do |t|
@@ -2136,11 +2205,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.datetime "updated_at", null: false
     t.date "allowance_month"
     t.decimal "allowance_limit_usd", precision: 14, scale: 8
+    t.string "rate", default: "standard", null: false
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
     t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_subscriptions", force: :cascade do |t|
@@ -2154,10 +2225,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.datetime "last_synced_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "rate", default: "standard", null: false
+    t.string "stripe_price_id"
+    t.integer "plan_changes_count", default: 0, null: false
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id", unique: true
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -2206,10 +2281,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_rhythm_holds_on_agent_id"
     t.index ["rhythm_id", "agent_id"], name: "index_rhythm_holds_one_open_agent", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'agent'::text))"
-    t.index ["rhythm_id", "kind"], name: "index_rhythm_holds_one_open_system", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'system'::text))"
     t.index ["rhythm_id", "user_id"], name: "index_rhythm_holds_one_open_human", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'human'::text))"
     t.index ["rhythm_id"], name: "index_rhythm_holds_on_rhythm_id"
     t.index ["user_id"], name: "index_rhythm_holds_on_user_id"
+    t.check_constraint "(kind::text = ANY (ARRAY['human'::character varying, 'agent'::character varying]::text[])) OR released_at IS NOT NULL", name: "rhythm_holds_open_kind_known"
   end
 
   create_table "rhythm_occurrences", force: :cascade do |t|
@@ -2256,6 +2331,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.bigint "creator_agent_id"
     t.string "room_choice", default: "resident_default", null: false
     t.bigint "room_id"
+    t.datetime "last_skipped_at"
+    t.string "last_skip_reason"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"
@@ -2562,6 +2639,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   end
 
   create_table "telegram_messages", force: :cascade do |t|
+    t.boolean "addressed", default: true, null: false
     t.text "caption"
     t.datetime "created_at", null: false
     t.string "media_error"
@@ -2578,6 +2656,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.text "transcription"
     t.datetime "updated_at", null: false
     t.datetime "wake_enqueued_at"
+    t.bigint "reply_to_telegram_message_id"
+    t.bigint "sender_telegram_user_id"
+    t.bigint "agent_runtime_interaction_id"
+    t.index ["agent_runtime_interaction_id"], name: "index_telegram_messages_on_agent_runtime_interaction_id"
     t.index ["telegram_subscription_id", "telegram_message_id"], name: "idx_on_telegram_subscription_id_telegram_message_id_9eb10802be", unique: true, where: "(telegram_message_id IS NOT NULL)"
     t.index ["telegram_subscription_id"], name: "index_telegram_messages_on_telegram_subscription_id"
   end
@@ -2591,12 +2673,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.bigint "telegram_chat_id", null: false
     t.string "telegram_username"
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
+    t.string "chat_kind", default: "direct", null: false
+    t.string "title"
+    t.boolean "allowed", default: false, null: false
+    t.datetime "allowed_at"
+    t.bigint "allowed_by_id"
+    t.datetime "removed_at"
+    t.boolean "answers_bots", default: false, null: false
+    t.string "answer_bot_usernames", default: [], null: false, array: true
+    t.integer "bot_wake_streak", default: 0, null: false
+    t.bigint "bot_cap_notice_message_id"
     t.index ["agent_id", "telegram_chat_id"], name: "index_telegram_subscriptions_on_agent_id_and_telegram_chat_id", unique: true
     t.index ["agent_id", "user_id"], name: "index_telegram_subscriptions_on_agent_id_and_user_id", unique: true
     t.index ["agent_id"], name: "index_telegram_subscriptions_on_agent_id"
+    t.index ["allowed_by_id"], name: "index_telegram_subscriptions_on_allowed_by_id"
     t.index ["pending_safeguard_detection_id"], name: "index_telegram_subscriptions_on_pending_safeguard_detection_id"
     t.index ["user_id"], name: "index_telegram_subscriptions_on_user_id"
+    t.check_constraint "bot_wake_streak >= 0 AND bot_wake_streak <= 3", name: "telegram_subscriptions_bot_wake_streak"
+    t.check_constraint "chat_kind::text = 'direct'::text AND user_id IS NOT NULL OR chat_kind::text = 'group'::text AND user_id IS NULL", name: "telegram_subscriptions_kind_user"
   end
 
   create_table "tool_calls", force: :cascade do |t|
@@ -2630,6 +2725,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
     t.index ["created_by_agent_id"], name: "index_transcription_glossary_terms_on_created_by_agent_id"
     t.index ["created_by_user_id"], name: "index_transcription_glossary_terms_on_created_by_user_id"
     t.check_constraint "source::text = ANY (ARRAY['manual'::character varying::text, 'correction'::character varying::text, 'harvested'::character varying::text])", name: "transcription_glossary_terms_source"
+  end
+
+  create_table "tweet_embeds", force: :cascade do |t|
+    t.string "provider_tweet_id", null: false
+    t.string "state", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.datetime "next_attempt_at"
+    t.datetime "claimed_at"
+    t.string "last_error"
+    t.string "author_handle"
+    t.string "author_name"
+    t.text "text"
+    t.datetime "posted_at"
+    t.string "url"
+    t.jsonb "media", default: [], null: false
+    t.jsonb "related", default: {}, null: false
+    t.boolean "is_quote", default: false, null: false
+    t.boolean "is_reply", default: false, null: false
+    t.datetime "fetched_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider_tweet_id"], name: "index_tweet_embeds_on_provider_tweet_id", unique: true
+    t.index ["state", "next_attempt_at"], name: "index_tweet_embeds_on_state_and_next_attempt_at"
   end
 
   create_table "tweet_logs", force: :cascade do |t|
@@ -2802,8 +2920,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   add_foreign_key "agent_service_accesses", "agents"
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agents", "accounts"
+  add_foreign_key "agents", "agent_runtime_interactions", column: "first_conversation_interaction_id", on_delete: :nullify
   add_foreign_key "agents", "api_keys", column: "outbound_api_key_id"
+  add_foreign_key "agents", "chats", column: "first_conversation_chat_id", on_delete: :nullify
   add_foreign_key "agents", "github_resident_imports"
+  add_foreign_key "agents", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "api_key_requests", "api_keys"
   add_foreign_key "api_keys", "accounts"
   add_foreign_key "api_keys", "agents"
@@ -2813,6 +2934,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "billing_code_redemptions", "accounts"
+  add_foreign_key "billing_code_redemptions", "billing_codes"
+  add_foreign_key "billing_code_redemptions", "users", column: "redeemed_by_id"
+  add_foreign_key "billing_code_redemptions", "users", column: "withdrawn_by_id"
+  add_foreign_key "billing_codes", "users", column: "created_by_id"
   add_foreign_key "billing_customers", "accounts"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
@@ -2923,6 +3049,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   add_foreign_key "message_handoffs", "pending_wakes", on_delete: :nullify
   add_foreign_key "message_stone_revisions", "messages", on_delete: :cascade
   add_foreign_key "message_stone_revisions", "stone_revisions", on_delete: :cascade
+  add_foreign_key "message_tweet_embeds", "messages", on_delete: :cascade
+  add_foreign_key "message_tweet_embeds", "tweet_embeds"
   add_foreign_key "messages", "agent_runtime_interactions", column: "runtime_interaction_id"
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
@@ -2974,6 +3102,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
   add_foreign_key "resident_birth_orders", "accounts"
   add_foreign_key "resident_birth_orders", "agents"
+  add_foreign_key "resident_birth_orders", "billing_code_redemptions"
   add_foreign_key "resident_birth_orders", "users", column: "creator_id"
   add_foreign_key "resident_entitlements", "accounts"
   add_foreign_key "resident_entitlements", "agents"
@@ -3026,10 +3155,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_190000) do
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"
   add_foreign_key "stones", "chats", on_delete: :cascade
+  add_foreign_key "telegram_messages", "agent_runtime_interactions"
   add_foreign_key "telegram_messages", "telegram_subscriptions"
   add_foreign_key "telegram_subscriptions", "agents"
   add_foreign_key "telegram_subscriptions", "safeguard_detections", column: "pending_safeguard_detection_id", on_delete: :nullify
   add_foreign_key "telegram_subscriptions", "users"
+  add_foreign_key "telegram_subscriptions", "users", column: "allowed_by_id", on_delete: :nullify
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "transcription_glossary_terms", "accounts"
   add_foreign_key "transcription_glossary_terms", "agents", column: "created_by_agent_id", on_delete: :nullify

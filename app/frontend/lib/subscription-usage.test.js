@@ -8,6 +8,7 @@ import {
   resetDescription,
   usageLine,
   weeklyRemainingPercent,
+  allowanceRemainingPercent,
 } from './subscription-usage';
 
 const now = Date.parse('2026-08-31T00:00:00Z');
@@ -16,20 +17,75 @@ it.each([null, undefined, '', 'unavailable', NaN])(
   'keeps unknown weekly remaining (%s) distinct from zero',
   (remaining) => {
     const usage = {
-      windows: [{ id: 'session', label: 'Session', remaining_percent: remaining, resets_at: '2026-10-11T00:00:00Z' }],
+      windows: [{ id: 'weekly', label: 'Weekly', remaining_percent: remaining, resets_at: '2026-10-11T00:00:00Z' }],
     };
-    expect(weeklyRemainingPercent(usage, 'openai')).toBeNull();
+    expect(weeklyRemainingPercent(usage, 'anthropic')).toBeNull();
   }
 );
 
 it('preserves genuinely exhausted weekly usage', () => {
   const usage = {
-    windows: [{ id: 'session', label: 'Session', remaining_percent: 0, resets_at: '2026-10-11T00:00:00Z' }],
+    windows: [{ id: 'weekly', label: 'Weekly', remaining_percent: 0, resets_at: '2026-10-11T00:00:00Z' }],
   };
-  expect(weeklyRemainingPercent(usage, 'openai')).toBe(0);
+  expect(weeklyRemainingPercent(usage, 'anthropic')).toBe(0);
+});
+
+it('uses the minimum known OpenAI allowance without inventing a weekly duration', () => {
+  const usage = {
+    windows: [
+      { id: 'session', label: 'Session', remaining_percent: 70 },
+      { id: 'weekly', label: 'Weekly', remaining_percent: 20 },
+      { label: 'codex-spark weekly', remaining_percent: 1 },
+      { id: 'unknown', remaining_percent: null },
+    ],
+  };
+  expect(allowanceRemainingPercent(usage, 'openai')).toBe(20);
+  expect(weeklyRemainingPercent(usage, 'openai')).toBeNull();
+  expect(allowanceRemainingPercent(usage, 'openai', 'codex-spark')).toBe(1);
+  expect(allowanceRemainingPercent({ windows: [{ remaining_percent: '' }] }, 'openai')).toBeNull();
+  expect(allowanceRemainingPercent({ windows: [{ remaining_percent: 0 }] }, 'openai')).toBe(0);
 });
 
 describe('subscription usage display', () => {
+  it.each([
+    ['short-only', [{ id: 'session', label: 'Session', resets_at: '2026-08-31T04:00:00Z' }]],
+    ['six days until reset', [{ id: 'session', label: 'Session', resets_at: '2026-09-06T00:00:00Z' }]],
+    [
+      'both windows',
+      [
+        { id: 'session', label: 'Session', resets_at: '2026-08-31T04:00:00Z' },
+        { id: 'weekly', label: 'Weekly', resets_at: '2026-09-06T00:00:00Z' },
+      ],
+    ],
+    ['unknown duration', [{ id: 'primary', label: 'Primary', resets_at: null }]],
+  ])('does not infer OpenAI durations: %s', (_name, rawWindows) => {
+    const usage = { windows: rawWindows.map((window) => ({ ...window, remaining_percent: 60 })) };
+    const windows = displayUsageWindows(usage, 'openai');
+    expect(windows).toHaveLength(rawWindows.length);
+    expect(windows.map((window) => window.resets_at)).toEqual(rawWindows.map((window) => window.resets_at));
+    for (const window of windows) {
+      expect(window.displayLabel).toMatch(/^Allowance(?: \d+)?$/);
+      expect(usageLine(window, now)).toContain('60% left');
+      expect(predictedUsage(window, now)).toBeNull();
+    }
+    expect(predictedWeeklyUsage(windows, now)).toBeNull();
+    expect(weeklyRemainingPercent(usage, 'openai')).toBeNull();
+  });
+
+  it('keeps the verified Anthropic window semantics', () => {
+    const windows = displayUsageWindows(
+      {
+        windows: [
+          { label: 'Session', remaining_percent: 60, resets_at: '2026-08-31T02:30:00Z' },
+          { label: 'Weekly', remaining_percent: 60, resets_at: '2026-09-03T12:00:00Z' },
+        ],
+      },
+      'anthropic'
+    );
+    expect(windows.map((window) => window.displayLabel)).toEqual(['5-hour', 'Weekly']);
+    expect(windows.map((window) => predictedUsage(window, now))).toEqual([80, 80]);
+  });
+
   it('shows only the selected Gemini quota family', () => {
     const windows = displayUsageWindows(
       {

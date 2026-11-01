@@ -1,5 +1,5 @@
 <script>
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
 
   let { residents = [], selected = $bindable([]) } = $props();
 
@@ -10,7 +10,6 @@
 
 <div class="flex flex-wrap gap-2" role="group" aria-label="Residents">
   {#each residents as resident (resident.id)}
-    {@const Icon = agentIconFor(resident.icon)}
     {@const isSelected = selected.includes(resident.id)}
     <button
       type="button"
@@ -26,7 +25,7 @@
           ? `bg-transparent border-${resident.colour}-300 dark:border-${resident.colour}-700 hover:bg-${resident.colour}-50 dark:hover:bg-${resident.colour}-950 text-${resident.colour}-600 dark:text-${resident.colour}-400`
           : 'bg-muted hover:bg-muted/80 text-muted-foreground border-border'}
              {resident.paused === true ? 'opacity-60' : ''}">
-      <Icon size={14} weight="duotone" />
+      <AgentAvatar agent={resident} class="w-4 h-4 rounded-full flex items-center justify-center" iconSize={14} />
       {resident.name}
       {#if resident.unavailable}
         <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Unavailable</span>

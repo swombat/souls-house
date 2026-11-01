@@ -158,7 +158,8 @@ class ChatsController < ApplicationController
     else
       # Quiet rhythm runs live on their rhythm's page (Chat::QuietRhythmRun).
       chats = chats.listed
-      chats.active.pinned_first.latest + chats.archived.latest
+      active_chats = chats.active.pinned_first.latest
+      params[:show_archived] == "true" ? active_chats + chats.archived.latest : active_chats
     end
   end
 

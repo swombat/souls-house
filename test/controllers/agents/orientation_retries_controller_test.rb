@@ -35,4 +35,16 @@ class Agents::OrientationRetriesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to onboarding_account_agent_path(@account, @agent)
   end
 
+  test "retry refuses while the runtime is unhealthy and keeps the old error" do
+    @agent.update!(health_state: "unhealthy")
+
+    assert_no_enqueued_jobs only: OrientNewAgentJob do
+      post account_agent_orientation_retry_path(@account, @agent)
+    end
+
+    assert_redirected_to onboarding_account_agent_path(@account, @agent)
+    assert_match "must be healthy", flash[:alert]
+    assert_equal "Previous attempt failed", @agent.reload.orientation_last_error
+  end
+
 end

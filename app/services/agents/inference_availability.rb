@@ -36,7 +36,7 @@ module Agents
 
     def self.house_error(agent)
       entitlement = ResidentEntitlement.find_by(agent: agent)
-      if entitlement&.paid?
+      if entitlement&.funds_calls?
         offering = HouseInference::Offering.find(agent.model_id)
         entitlement.check_house_call!(agent.model_id, offering.fetch(:reservation_usd))
         return nil

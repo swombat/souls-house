@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Read one page from a connected Twenty CRM. Never follows redirects or writes."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+import yaml
+
+
+class TwentyError(Exception):
+    pass
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise TwentyError("Twenty returned a redirect; not following it with credentials")
+
+
+OPENER = urllib.request.build_opener(RefuseRedirects)
+OBJECTS = {"people": "person", "companies": "company", "opportunities": "opportunity"}
+
+
+def limit_value(value):
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 100")
+    if not 1 <= number <= 100:
+        raise argparse.ArgumentTypeError("limit must be from 1 to 100")
+    return number
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--connection")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--connection", default=argparse.SUPPRESS)
+    # JSON is always emitted; accept the familiar explicit flag too.
+    parser.add_argument("--json", action="store_true")
+    common.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in OBJECTS:
+        command = sub.add_parser(name, parents=[common])
+        command.add_argument("--limit", type=limit_value, default=20)
+        command.add_argument("--after", help="pageInfo cursor; reads only one page")
+        if name != "opportunities":
+            command.add_argument("--search", help="name substring (letters, numbers, spaces, . @ _ -)")
+    get = sub.add_parser("get", parents=[common])
+    get.add_argument("object", choices=OBJECTS)
+    get.add_argument("uuid")
+    return parser
+
+
+def load_connection(connection_id):
+    path = Path(os.environ.get("SOULSHOUSE_SERVICES_FILE")
+                or os.environ.get("HELIXKIT_SERVICES_FILE") or "/run/helixkit/services.yml")
+    try:
+        manifest = yaml.safe_load(path.read_text())
+    except (OSError, ValueError, yaml.YAMLError, RecursionError):
+        raise TwentyError("Cannot read a valid service manifest")
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("services"), list):
+        raise TwentyError("Invalid service manifest")
+    services = manifest["services"]
+    if any(not isinstance(service, dict) for service in services):
+        raise TwentyError("Invalid service manifest")
+    connections = [s for s in services if s.get("provider") == "twenty"]
+    if connection_id:
+        connections = [s for s in connections if s.get("connection_id") == connection_id]
+    if not connections:
+        raise TwentyError("No matching Twenty connection")
+    if len(connections) != 1:
+        raise TwentyError("Several Twenty connections; choose one with --connection")
+    service = connections[0]
+    credentials, metadata = service.get("credentials"), service.get("metadata")
+    if not isinstance(credentials, dict) or not isinstance(metadata, dict):
+        raise TwentyError("Invalid Twenty connection")
+    key, base = credentials.get("api_key"), metadata.get("api_base")
+    if not isinstance(key, str) or not key or any(ord(c) <= 32 or ord(c) >= 127 for c in key):
+        raise TwentyError("Invalid Twenty API key; reconnect the service")
+    if not isinstance(base, str) or any(ord(c) <= 32 or ord(c) >= 127 for c in base):
+        raise TwentyError("Invalid Twenty API URL")
+    try:
+        url = urllib.parse.urlsplit(base)
+        valid = (url.scheme == "https" and url.hostname and url.port != 0
+                 and url.username is None and url.password is None
+                 and not url.query and not url.fragment and "?" not in base and "#" not in base
+                 and re.fullmatch(r"(?:/[a-zA-Z0-9_-]+)*/rest", url.path.rstrip("/"))
+                 and "\\" not in base)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise TwentyError("Twenty API URL must be HTTPS with /rest and no credentials, query or fragment")
+    return key, base.rstrip("/")
+
+
+def call(base, key, path):
+    request = urllib.request.Request(base + path, method="GET", headers={
+        "Authorization": "Bearer " + key, "Accept": "application/json",
+        "User-Agent": "soulshouse-twenty",
+    })
+    try:
+        with OPENER.open(request, timeout=30) as response:
+            result = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        raise TwentyError(f"Twenty answered HTTP {error.code}") from None
+    except (urllib.error.URLError, OSError, TimeoutError):
+        raise TwentyError("Could not reach Twenty (network error or timeout)") from None
+    except (ValueError, RecursionError):
+        raise TwentyError("Twenty returned invalid JSON") from None
+    if not isinstance(result, dict) or not isinstance(result.get("data"), dict):
+        raise TwentyError("Twenty returned an invalid response shape")
+    return result
+
+
+def run(args):
+    query = {}
+    if args.command == "get":
+        try:
+            record_id = str(uuid.UUID(args.uuid))
+        except ValueError:
+            raise TwentyError("get requires a UUID") from None
+        plural = args.object
+        path = f"/{plural}/{record_id}?depth=0"
+    else:
+        plural = args.command
+        query["limit"] = args.limit
+        query["depth"] = 0
+        if args.after is not None:
+            if not args.after or len(args.after) > 4096 or any(ord(c) < 33 or ord(c) > 126 for c in args.after):
+                raise TwentyError("Invalid pagination cursor")
+            query["starting_after"] = args.after
+        search = getattr(args, "search", None)
+        if search is not None:
+            # Keep user text out of the REST filter grammar. In particular,
+            # commas, quotes, parentheses and wildcard operators are refused.
+            if not re.fullmatch(r"[\w .@-]{1,200}", search) or not search.strip():
+                raise TwentyError("Search accepts only letters, numbers, spaces, . @ _ - (1..200 characters)")
+            value = json.dumps("%" + search + "%")
+            query["filter"] = (f'or(name.firstName[ilike]:{value},name.lastName[ilike]:{value})'
+                               if plural == "people" else f"name[ilike]:{value}")
+        path = "/" + plural + "?" + urllib.parse.urlencode(query)
+    key, base = load_connection(args.connection)
+    result = call(base, key, path)
+    if args.command == "get":
+        valid = isinstance(result["data"].get(OBJECTS[plural]), dict)
+    else:
+        records, page = result["data"].get(plural), result.get("pageInfo")
+        valid = (isinstance(records, list) and all(isinstance(record, dict) for record in records)
+                 and isinstance(page, dict)
+                 and all(isinstance(page.get(flag), bool) for flag in ("hasNextPage", "hasPreviousPage"))
+                 and all(page.get(cursor) is None or isinstance(page.get(cursor), str)
+                         for cursor in ("startCursor", "endCursor")))
+    if not valid:
+        raise TwentyError("Twenty returned an invalid response shape")
+    print(json.dumps(result, indent=2))
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        run(args)
+    except TwentyError as error:
+        print(f"soulshouse-twenty: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

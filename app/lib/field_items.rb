@@ -140,8 +140,10 @@ module FieldItems
   end
 
   # The open file (`content: true`) carries its PDF pages' text, up to
-  # VIEWER_PAGES pages; the Field list does not.
+  # VIEWER_PAGES pages, or a plain-text file's own words (a Markdown
+  # transcript, a .txt, a .vtt); the Field list carries neither.
   VIEWER_PAGES = 50
+  MARKDOWN_EXTENSIONS = %w[md markdown mdown mkd].freeze
 
   def file_json(file, tags = [], content: false)
     url_helpers = Rails.application.routes.url_helpers
@@ -168,8 +170,20 @@ module FieldItems
       tags: tags,
       text_extraction: file.pdf_extraction_json,
       pages: (viewer_pages(file) if content && file.pdf_readable?),
+      text: (file.extracted_text if content && file_text_readable?(file)),
+      text_kind: (file_text_kind(file) if content && file_text_readable?(file)),
       download_url: (url_helpers.rails_blob_url(file.file, only_path: true, disposition: :attachment) if file.file.attached?)
     }
+  end
+
+  def file_text_readable?(file)
+    file.text_extracted_at.present? && file.text_extractable? && file.extracted_text.present?
+  end
+
+  def file_text_kind(file)
+    extension = File.extname(file.filename.to_s).delete_prefix(".").downcase
+    markdown = file.content_type.to_s == "text/markdown" || MARKDOWN_EXTENSIONS.include?(extension)
+    markdown ? "markdown" : "text"
   end
 
   def viewer_pages(file)

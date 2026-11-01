@@ -15,6 +15,7 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
   include Agent::HostedSetup
+  include RetainsReplacedAttachment
 
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
@@ -35,6 +36,9 @@ class Agent < ApplicationRecord
   has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
+  belongs_to :created_by_user, class_name: "User", optional: true
+  belongs_to :first_conversation_chat, class_name: "Chat", optional: true
+  belongs_to :first_conversation_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_many :chat_agents, dependent: :destroy
   has_many :room_model_defaults, dependent: :delete_all
   has_many :agent_backup_snapshots, dependent: :destroy
@@ -81,7 +85,7 @@ class Agent < ApplicationRecord
     telegram_bot_token telegram_webhook_token trigger_bearer_token
   ].freeze
   LIST_JSON_ATTRIBUTES = %i[
-    name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason inference_setup_message
+    name model_id model_label active? paused? colour icon avatar_url runtime health_state deprecated? unavailability_reason inference_setup_message
   ].freeze
 
   # "Imported" is a class of home profile: a reviewed private home cloned into
@@ -111,6 +115,13 @@ class Agent < ApplicationRecord
   validates :refinement_prompt, length: { maximum: 10_000 }
   validates :colour, inclusion: { in: VALID_COLOURS }, allow_nil: true
   validates :icon, inclusion: { in: VALID_ICONS }, allow_nil: true
+  # A picture, like a person's: shown wherever the resident's face is drawn,
+  # in place of the icon. Colour stays; the icon is still recommended for the
+  # places too small for a picture to read.
+  has_one_attached :avatar
+  retains_replaced_attachment :avatar, history: :retired_avatars
+  validates :avatar, content_type: [ "image/png", "image/jpeg", "image/gif", "image/webp" ],
+                     size: { less_than: 5.megabytes }
   validates :thinking_budget,
              numericality: { greater_than_or_equal_to: 1000, less_than_or_equal_to: 50000 },
              allow_nil: true
@@ -133,6 +144,17 @@ class Agent < ApplicationRecord
       ResidentEntitlement.where(agent_id: id).where.not(state: "held").where.not(hold_released_at: nil).exists?
   }
   after_create_commit :apply_default_service_accesses
+  # Switching a resident back on ends any failed-roll hold on it, so a later
+  # deliberate pause isn't reported as the roll's (RollHoldWatchJob).
+  after_update_commit :close_roll_holds, if: lambda {
+    (saved_change_to_active? || saved_change_to_paused?) && active? && !paused?
+  }
+  # A new resident speaks first once its first wake has settled
+  # (Agents::FirstConversation). Every orientation writer lands here.
+  after_update_commit -> { Agents::FirstConversation.offer_later(self) }, if: lambda {
+    saved_change_to_orientation_completed_at?(from: nil) ||
+      (saved_change_to_orientation_last_error_at? && orientation_last_error_at.present?)
+  }
   after_save :refresh_integration_presentation, if: -> {
     (saved_changes.keys & %w[id account_id name active github_resident_import_id runtime colour icon]).any?
   }
@@ -238,12 +260,13 @@ class Agent < ApplicationRecord
 
   json_attributes :name, :system_prompt, :reflection_prompt, :memory_reflection_prompt,
                   :summary_prompt, :refinement_prompt, :refinement_threshold,
-                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon,
+                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon, :avatar_url,
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
-                  :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
+                   :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
                    :last_health_check_at, :health_state, :consecutive_health_failures,
+                   :health_failing_since, :health_failure_kind, :runtime_restart_count,
                    :github_repo_url, :github_repo_owner, :github_repo_name,
                    :github_deploy_key_id, :container_name, :sandbox_host, :container_image,
                       :sandbox_last_error, :sandbox_last_error_at, :birth_committed_at,
@@ -261,7 +284,7 @@ class Agent < ApplicationRecord
     hash.except!(*SENSITIVE_JSON_ATTRIBUTES.map(&:to_s))
 
     if options&.dig(:as) == :resident_card
-      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
+      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon", "avatar_url",
         "deprecated?", "runtime", "reasoning_effort", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
     end
 
@@ -277,6 +300,23 @@ class Agent < ApplicationRecord
     return json_attrs unless options&.dig(:as) == :list
 
     LIST_JSON_ATTRIBUTES
+  end
+
+  def avatar_url
+    return nil unless avatar.attached?
+
+    helpers = Rails.application.routes.url_helpers
+    if avatar.variable?
+      helpers.rails_representation_url(avatar.variant(resize_to_fill: [ 200, 200 ]), only_path: true)
+    else
+      helpers.rails_blob_url(avatar, only_path: true)
+    end
+  end
+
+  # After the picture is set or removed here: the resident's Telegram bot
+  # follows (SyncTelegramBotPhotoJob). No-op without a linked bot.
+  def sync_telegram_photo_later
+    SyncTelegramBotPhotoJob.perform_later(self) if telegram_configured?
   end
 
   def model_label
@@ -434,6 +474,12 @@ class Agent < ApplicationRecord
     return unless EXTERNALLY_MANAGED_ATTRIBUTES.any? { |field| will_save_change_to_attribute?(field) }
 
     errors.add(:base, "Identity and runtime-managed fields are resident-owned and read-only in souls.house")
+  end
+
+  def close_roll_holds
+    ResidentSwitchedOffNotice.close_open_holds!(self)
+  rescue StandardError => error
+    Rails.logger.warn "[RollHold] agent #{id}: #{error.class}: #{error.message}"
   end
 
 end

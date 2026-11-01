@@ -56,6 +56,97 @@ module Api
         assert_equal "Thread reply", @subscription.telegram_messages.last.text
       end
 
+      test "text and media-only replies link to their exact Telegram turn" do
+        run = telegram_run
+        neighbouring_turn = telegram_run
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 78 } }.to_json)
+        Net::HTTP.stub :post, fake_ok do
+          post api_v1_telegram_messages_url,
+            params: { reply_to: @subscription.to_param, text: "Thread reply", runtime_run_id: run.run_id },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :created
+        assert_equal run.id, @subscription.telegram_messages.last.agent_runtime_interaction_id
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 79 } }.to_json)
+        capture_multipart_requests(fake_ok) do
+          post api_v1_telegram_messages_url,
+            params: { reply_to: @subscription.to_param, media: fixture_file_upload("test.txt", "text/plain"), runtime_run_id: run.run_id },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :created
+        assert_equal 2, run.linked_telegram_messages.where.not(telegram_message_id: nil).count
+        assert_empty neighbouring_turn.linked_telegram_messages
+      end
+
+      test "recipient sends link only the triggering thread and stale or unknown runs still deliver unlinked" do
+        run = telegram_run
+        other = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 222)
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 78 } }.to_json)
+        Net::HTTP.stub :post, fake_ok do
+          post api_v1_telegram_messages_url,
+            params: { recipient: "all", text: "Both", runtime_run_id: run.run_id },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :created
+        assert_equal run.id, @subscription.telegram_messages.last.agent_runtime_interaction_id
+        assert_nil other.telegram_messages.last.agent_runtime_interaction_id
+        run.update!(finished_at: Time.current)
+        [ run.run_id, SecureRandom.uuid ].each_with_index do |stale_id, index|
+          receipt_id = 79 + index
+          fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => receipt_id } }.to_json)
+          Net::HTTP.stub :post, fake_ok do
+            post api_v1_telegram_messages_url,
+              params: { reply_to: @subscription.to_param, text: "Late", runtime_run_id: stale_id },
+              headers: { "Authorization" => "Bearer #{@token}" }
+          end
+          assert_response :created
+          assert_nil @subscription.telegram_messages.last.agent_runtime_interaction_id
+          assert_equal receipt_id, @subscription.telegram_messages.last.telegram_message_id
+        end
+        assert_equal 1, run.linked_telegram_messages.count
+      end
+
+      test "completion between correlation lookup and send still delivers media unlinked" do
+        run = telegram_run
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 79 } }.to_json)
+        completing_check = lambda do |**_options|
+          run.update!(finished_at: Time.current)
+          OpenStruct.new(call: OpenStruct.new(detected?: false))
+        end
+        SafeguardResponseCheck.stub :new, completing_check do
+          capture_multipart_requests(fake_ok) do
+            post api_v1_telegram_messages_url,
+              params: { reply_to: @subscription.to_param, media: fixture_file_upload("test.txt", "text/plain"), runtime_run_id: run.run_id },
+              headers: { "Authorization" => "Bearer #{@token}" }
+          end
+        end
+        assert_response :created
+        message = @subscription.telegram_messages.last
+        assert_nil message.agent_runtime_interaction_id
+        assert_equal 79, message.telegram_message_id
+        assert message.media.attached?
+        assert_empty run.linked_telegram_messages
+      end
+
+      test "failed sends do not leave a delivered reply for the turn" do
+        run = telegram_run
+        fake_failed = OpenStruct.new(body: { "ok" => false, "description" => "Bad Request" }.to_json)
+        Net::HTTP.stub :post, fake_failed do
+          post api_v1_telegram_messages_url,
+            params: { reply_to: @subscription.to_param, text: "Not sent", runtime_run_id: run.run_id },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :bad_gateway
+        assert_empty run.linked_telegram_messages
+      end
+
+      def telegram_run
+        @agent.agent_runtime_interactions.create!(
+          trigger_kind: "telegram", run_id: SecureRandom.uuid, started_at: Time.current,
+          conversation_obfuscated_id: @subscription.to_param, provider_auth_mode: "api_key"
+        )
+      end
+
       test "agent-scoped key sends an attached image as a Telegram photo" do
         fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 79 } }.to_json)
 

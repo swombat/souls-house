@@ -30,7 +30,7 @@ ARG BUN_VERSION=1.4.4
 # =============================================================================
 # Stage 1 — choose prebuilt binaries (default) or an explicit source build.
 # =============================================================================
-FROM rust:1.98-bookworm AS chaos-source
+FROM rust:1.98-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546 AS chaos-source
 
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
@@ -63,7 +63,7 @@ RUN cargo build --release --locked --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bi
 
 # The default path downloads the exact commit artifact instead of compiling Rust.
 # BuildKit skips chaos-source entirely unless explicitly selected.
-FROM debian:bookworm-slim AS chaos-prebuilt
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS chaos-prebuilt
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
 ARG TARGETARCH
@@ -240,6 +240,7 @@ COPY docs/memory-quick-reference.md /usr/local/share/helixkit-agent/memory-quick
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY --chmod=0755 soulshouse-stone /usr/local/bin/soulshouse-stone
 COPY --chmod=0755 soulshouse-model /usr/local/bin/soulshouse-model
+COPY --chmod=0755 soulshouse-avatar /usr/local/bin/soulshouse-avatar
 COPY --chmod=0755 soulshouse-quiet-reason /usr/local/bin/soulshouse-quiet-reason
 COPY --chmod=0755 soulshouse-reflex /usr/local/bin/soulshouse-reflex
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
@@ -251,6 +252,8 @@ COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY soulshouse-comms /usr/local/bin/soulshouse-comms
 COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
 COPY soulshouse-ghost /usr/local/bin/soulshouse-ghost
+COPY --chmod=0755 soulshouse-odoo /usr/local/bin/soulshouse-odoo
+COPY soulshouse-twenty /usr/local/bin/soulshouse-twenty
 COPY soulshouse-integrations /usr/local/bin/soulshouse-integrations
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 # Imported Git homes use repo-scoped SSH deploy keys.
@@ -260,7 +263,7 @@ COPY github_import_approval.py github_import_credential.py /home/agent/
 COPY --chmod=0755 github-import-trust-setup /usr/local/bin/github-import-trust-setup
 COPY runtime_settings.py runtime_hooks.py /usr/local/share/helixkit-agent/
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet /usr/local/bin/soulshouse-ghost /usr/local/bin/soulshouse-integrations \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet /usr/local/bin/soulshouse-ghost /usr/local/bin/soulshouse-twenty /usr/local/bin/soulshouse-integrations \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 

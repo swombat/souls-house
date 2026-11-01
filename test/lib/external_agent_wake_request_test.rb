@@ -22,10 +22,9 @@ class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
     assert_includes text, "No current attention candidates were found"
   end
 
-  test "persistent wake sessions are opt in" do
-    agent = agents(:research_assistant)
-
-    assert_not agent.persistent_wake_session?
+  test "persistent wake sessions default on but an explicit fresh choice remains off" do
+    assert Agent.new.persistent_wake_session?
+    assert_not Agent.new(persistent_wake_session: false).persistent_wake_session?
   end
 
   test "heartbeat wakes default to twice daily" do

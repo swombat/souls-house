@@ -33,21 +33,25 @@ class ExpiredSubscriptionsSyncTest < ActionDispatch::IntegrationTest
     assert_equal [ @personal.to_param ], summary.fetch("items").pluck("agent_id")
   end
 
-  test "partial refetch drops an account whose membership was removed during the signed in session" do
+  test "partial refetch follows the owner role during the signed in session" do
     third = expired_agent(accounts(:another_team))
     sign_in(@user)
-    assert_equal 3, refetch_summary.fetch("total")
+    # An admin of an account is not shown its expired subscriptions; only owners are.
+    assert_equal 2, refetch_summary.fetch("total")
 
-    # This admin membership is removable, unlike the fixture's last-owner membership.
-    memberships(:team_admin).destroy!
+    memberships(:team_admin).update_columns(role: "owner")
+    summary = refetch_summary
+    assert_equal 3, summary.fetch("total")
+    assert_includes summary.fetch("items").pluck("agent_id"), third.to_param
 
+    memberships(:team_admin).update_columns(role: "member")
     summary = refetch_summary
     assert_equal 2, summary.fetch("total")
     assert_not_includes summary.fetch("accounts").keys, third.account.to_param
     assert_not_includes summary.fetch("items").pluck("agent_id"), third.to_param
   end
 
-  test "site admin channel access does not widen the partial summary beyond confirmed memberships" do
+  test "site admin channel access does not widen the partial summary beyond owned accounts" do
     admin = users(:site_admin_user)
     own = expired_agent(accounts(:site_admin_account))
     pending = accounts(:team_account).add_user!(admin)
@@ -63,6 +67,10 @@ class ExpiredSubscriptionsSyncTest < ActionDispatch::IntegrationTest
     assert_equal({ own.account.to_param => 1 }, summary.fetch("accounts"))
 
     pending.confirm!
+    # A confirmed member, site admin or not, still does not see another owner's lapsed login.
+    assert_equal [ own.to_param ], refetch_summary.fetch("items").pluck("agent_id")
+
+    pending.update_columns(role: "owner")
     summary = refetch_summary
     assert_equal 2, summary.fetch("total")
     assert_equal [ own.to_param, @team.to_param ].sort, summary.fetch("items").pluck("agent_id").sort

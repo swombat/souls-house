@@ -173,10 +173,12 @@ class AboutSheet
     @buyable ||= billing == true ? tiers.select(&:purchasable?) : []
   end
 
+  # Only what a plan delivers today (Billing::Tier#features).
   def price(tier)
-    machine = tier.machine
-    "$#{tier.monthly_usd} a month, with $#{tier.allowance_usd} of house-model use; " \
-      "#{machine[:vcpus]} vCPUs, #{machine[:ram_gb]} GB memory, #{machine[:disk_gb]} GB disk."
+    line = "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
+    line += " and #{tier.swarm_searches} Field swarm searches a month" if tier.swarm_search?
+    line += ", and sub-agents" if tier.features[:subagents]
+    "#{line}."
   end
 
   def where_it_runs

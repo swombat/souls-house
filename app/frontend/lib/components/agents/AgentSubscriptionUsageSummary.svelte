@@ -121,16 +121,24 @@
               <div class="h-full bg-primary rounded-full" style:width={`${used ?? 0}%`}></div>
             </div>
             <div class="flex justify-between mt-1 text-[10px]">
-              <span class="text-foreground">{used == null ? 'Unknown' : `${Math.round(used * 10) / 10}% used`}</span>
-              <span
-                title="Projected usage at reset at the average consumption rate so far in this window. Not a guarantee."
-                class={tone === 'danger'
-                  ? 'text-red-600 dark:text-red-400'
-                  : tone === 'warning'
-                    ? 'text-amber-700 dark:text-amber-300'
-                    : 'text-sky-600 dark:text-sky-400'}>
-                {prediction === null ? 'Forecast unavailable' : `${prediction}% predicted`}
+              <span class="text-foreground">
+                {used == null
+                  ? 'Unknown'
+                  : subscription.provider === 'openai'
+                    ? `${Math.round((100 - used) * 10) / 10}% left`
+                    : `${Math.round(used * 10) / 10}% used`}
               </span>
+              {#if subscription.provider !== 'openai'}
+                <span
+                  title="Projected usage at reset at the average consumption rate so far in this window. Not a guarantee."
+                  class={tone === 'danger'
+                    ? 'text-red-600 dark:text-red-400'
+                    : tone === 'warning'
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-sky-600 dark:text-sky-400'}>
+                  {prediction === null ? 'Forecast unavailable' : `${prediction}% predicted`}
+                </span>
+              {/if}
             </div>
           </div>
         {/each}

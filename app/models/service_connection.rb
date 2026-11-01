@@ -225,6 +225,12 @@ class ServiceConnection < ApplicationRecord
       # let send, on a provider sending is switched on for.
       endpoints["send_endpoint"] = endpoints["messages_endpoint"] if sendable_by?(agent)
       endpoints
+    when "read_proxy"
+      # The payload holds a token that can write. Residents get the house's
+      # read-only proxy, never the payload.
+      {
+        "api_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_read_proxy_root_path(public_id)}"
+      }
     else
       credential_payload_hash
     end

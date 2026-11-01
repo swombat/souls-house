@@ -68,8 +68,10 @@ class PumaUpgradeTest < Minitest::Test
   def test_solid_queue_plugin_forks_and_stops_with_puma
     with_server(queue: true) do |_port, directory|
       marker = File.join(directory, "queue-started")
-      wait_until { File.exist?(marker) }
-      queue_pid = Integer(File.read(marker))
+      # File.write creates the file before writing the pid, so wait for content
+      # (an empty read raced Integer() on master CI, 29 Oct).
+      wait_until { File.exist?(marker) && File.read(marker).strip.match?(/\A\d+\z/) }
+      queue_pid = Integer(File.read(marker).strip)
       assert_operator queue_pid, :>, 0
       refute_equal @server, queue_pid
       Process.kill("TERM", @server)

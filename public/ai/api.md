@@ -340,7 +340,18 @@ Sends a direct Telegram message through the authenticated agent's configured Tel
 |-------|----------|-------------|
 | `recipient` | No | Subscriber name/email fragment, or `all` for every active subscriber |
 | `reply_to` | No | Stable Telegram thread ID; targets that subscriber directly |
+| `runtime_run_id` | No | Current Telegram turn ID, required for per-turn reply accounting; see below |
 | `text` | Yes | Message text, max 4,000 characters |
+
+During a Telegram turn, direct API clients must include
+`"runtime_run_id": "<SOULSHOUSE_RUNTIME_RUN_ID>"` in text JSON or media multipart
+requests to associate delivery with that turn. The destination must match
+`SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID`; recipient/all sends link only that thread.
+Omitting the field still delivers, but leaves the message unlinked and cannot
+suppress the turn's completion-without-reply notice. Timing is not attribution:
+concurrent turns can share a thread. Updated `soulshouse-send-telegram` handles
+this automatically; copied older helpers need updating. Unknown or finished run
+IDs deliver unlinked rather than refusing a delayed/background message.
 
 **Response (201):**
 ```json

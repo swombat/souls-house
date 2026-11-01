@@ -1,9 +1,17 @@
 module Agents
-  # A resident's consecutive failed conversation runs, newest first, back to
+  # A resident's consecutive failed runs of one kind, newest first.
+  #
+  # kind: :conversation (the default) counts failed conversation runs back to
   # the last completed run of any kind: a completed wake or rhythm run shows
   # the runtime works, so it ends the streak too. Busy, lost, cancelled and
-  # non-conversation failed runs are paged past: they neither count nor end
-  # it. A streak is a count and a start time, not a diagnosis.
+  # non-conversation failed runs are paged past: they neither count nor end it.
+  #
+  # kind: :scheduled counts failed wake and memory-aggregation runs back to
+  # the last completed run of those kinds. A completed conversation run does
+  # not end it: a resident can answer in rooms while every wake fails, and
+  # that is the streak worth telling the owner about.
+  #
+  # A streak is a count and a start time, not a diagnosis.
   #
   # The scan is bounded. If it stops before reaching a completed run or the
   # start of the resident's history, the result is truncated: the count is a
@@ -14,8 +22,17 @@ module Agents
     BATCH = 200
     MAX_SCAN = 2_000
 
-    Result = Data.define(:count, :since, :categories, :truncated) do
+    # first_run_id is the oldest failure's id: the streak's identity, so a
+    # notice can be latched to one streak however late its jobs arrive. Nil
+    # when the streak is truncated (its start is not known). oldest_seen_id
+    # is the oldest failure the scan did see, truncated or not: a run inside
+    # this streak, never one before it.
+    Result = Data.define(:count, :since, :categories, :truncated, :first_run_id, :oldest_seen_id) do
       def self.none = new(count: 0, since: nil, categories: [], truncated: false)
+
+      def initialize(count:, since:, categories:, truncated:, first_run_id: nil, oldest_seen_id: nil)
+        super
+      end
 
       # Only when every failure in a complete streak was a runtime that
       # couldn't be reached may the card say the runtime isn't starting.
@@ -39,9 +56,18 @@ module Agents
       end
     end
 
+    # The wake and memory-aggregation runs, filtered in SQL so that other
+    # rows don't spend a scheduled scan's budget.
+    def self.scheduled_scope(scope)
+      scope.where("trigger_kind = 'wake' OR trigger_kind LIKE 'memory\\_aggregation\\_%'")
+    end
+
     # through: reads the streak as it stood when that run finished.
-    def self.call(agent, through: nil, batch: BATCH, max_scan: MAX_SCAN)
+    def self.call(agent, through: nil, kind: :conversation, batch: BATCH, max_scan: MAX_SCAN)
+      counts = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(run) { run.trigger_kind == "conversation" }
+      ends = kind == :scheduled ? ->(run) { run.scheduled_run? } : ->(_run) { true }
       scope = agent.agent_runtime_interactions.where.not(finished_at: nil)
+      scope = scheduled_scope(scope) if kind == :scheduled
       scope = scope.where("(finished_at, id) <= (?, ?)", through.finished_at, through.id) if through
       failures = []
       scanned = 0
@@ -53,10 +79,12 @@ module Agents
         rows.each do |run|
           case run.streak_outcome
           when :success
-            bounded = true
-            break
+            if ends.call(run)
+              bounded = true
+              break
+            end
           when :failure
-            failures << run if run.trigger_kind == "conversation"
+            failures << run if counts.call(run)
           end
         end
         # Fewer rows than asked for means the start of history was reached.
@@ -71,7 +99,8 @@ module Agents
       truncated = !bounded
       Result.new(
         count: failures.size, since: (failures.last&.started_at unless truncated),
-        categories: failures.map(&:failure_category), truncated: truncated
+        categories: failures.map(&:failure_category), truncated: truncated,
+        first_run_id: (failures.last&.id unless truncated), oldest_seen_id: failures.last&.id
       )
     end
 

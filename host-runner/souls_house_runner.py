@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust) and anything
+submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -26,8 +26,10 @@ used only for Ed25519. No cryptography is implemented here.
 """
 
 import base64
+import copy
 import hashlib
 import http.client
+import io
 import json
 import os
 import re
@@ -63,7 +65,8 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
-                           "backup_resident", "provider_auth", "check_runtime_trust"})
+                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
+                           "update_runner"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -204,6 +207,13 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         # The house sends a GitHub import's runtime trust check only to a
         # runner that carries it; an older one would refuse the kind anyway.
         "runtime_trust_check": RUNTIME_TRUST_CHECK_VERSION,
+        # The house asks for a resident's card numbers only from a runner
+        # that can measure them; an older one would refuse the kind.
+        "home_stats": HOME_STATS_VERSION,
+        # Which packaged runner this process is running (#593), not what is
+        # on disk: the house queues update_runner when it differs from the
+        # bundle Rails currently ships. None for the birth files.
+        "runner_bundle_sha256": running_runner_bundle(),
     }
 
 
@@ -211,6 +221,91 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
 
 def encode_body(payload):
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+# The house reads a signed command result only up to RunnerSignature::MAX_BODY_BYTES
+# (64 KiB). A larger result is refused before the house can record anything,
+# post() never reads the refusal, and the command is handed out again for ever
+# while the turn it belongs to keeps its session busy (#673: a VM resident's
+# finished turn carrying a 61 KB prompt in full_invocation_text jammed its
+# Telegram group four times in thirty hours). So a result is fitted to the
+# transport before it is signed.
+#
+# There are two size checks, and the result must pass both: the signed body as
+# sent (measured exactly), and RunnerCommand#record_result!, which re-encodes
+# the outcome/error/result slice with Rails to_json and records "unknown" above
+# RESULT_BYTES. Rails escapes <, > and & as \u003c (six bytes for one) and
+# U+2028/U+2029 likewise, so 12 KB of "<" on the wire is 72 KB there.
+RESULT_MAX_BYTES = 64 * 1024
+# Headroom on the Rails estimate for what it does not model exactly (Ruby
+# prints some floats longer than Python, e.g. 1.0e-05 for 1e-05).
+RESULT_HOUSE_MARGIN_BYTES = 1024
+# What is kept of a cut string: its last characters, after "...".
+RESULT_TAIL_BYTES = 1000
+
+
+def house_json_bytes(result):
+    """Bytes RunnerCommand#record_result! measures for this result (Rails to_json)."""
+    sliced = {k: result[k] for k in ("outcome", "error", "result") if k in result} if isinstance(result, dict) else {}
+    text = json.dumps(sliced, separators=(",", ":"), ensure_ascii=False)
+    escaped = sum(5 * text.count(c) for c in "<>&") + sum(3 * text.count(c) for c in "\u2028\u2029")
+    return len(text.encode("utf-8", "surrogatepass")) + escaped
+
+
+def result_fits(result, limit=RESULT_MAX_BYTES):
+    return len(encode_body(result)) <= limit and house_json_bytes(result) + RESULT_HOUSE_MARGIN_BYTES <= limit
+
+
+def fit_result(result, limit=RESULT_MAX_BYTES):
+    """The result as it will be posted, and the list of cuts made to fit it.
+
+    Cuts, in order, each only if the previous was not enough: the
+    full_invocation_text copy of the prompt (the house stores it for the
+    interaction record and never relays it anywhere), the stdout/stderr tails,
+    then every other long string, to its tail. Structure is never cut, so what
+    the house reads to close a turn (id/ledger_id/state, status, returncode,
+    session ids, versioned telemetry with its usage and session freshness,
+    session_roll_reason, error_kind, subscription_usage) survives whole. The
+    cuts are named in the command's own error, which the house keeps with the
+    command and does not read as the turn's outcome. A result that still does
+    not fit is reported unknown, which the house records, rather than refused,
+    which it cannot."""
+    if result_fits(result, limit):
+        return result, []
+    result = copy.deepcopy(result)
+    cuts = []
+    for cut in ("full_invocation_text", "stdout/stderr", "long strings"):
+        if cut == "full_invocation_text":
+            _drop_key(result, cut)
+        else:
+            _shorten_keys(result, cut == "stdout/stderr" and ("stdout", "stderr"), RESULT_TAIL_BYTES)
+        cuts.append(cut)
+        noted = dict(result)
+        noted.setdefault("error", "trimmed to fit the house transport: " + ", ".join(cuts))
+        if result_fits(noted, limit):
+            return noted, cuts
+    cuts.append("result")
+    return {"outcome": "unknown", "error": "result too large"}, cuts
+
+
+def _drop_key(value, key):
+    if isinstance(value, dict):
+        value.pop(key, None)
+        for child in value.values():
+            _drop_key(child, key)
+    elif isinstance(value, list):
+        for child in value:
+            _drop_key(child, key)
+
+
+def _shorten_keys(value, keys, keep):
+    """Cut strings under the named keys (every string when keys is falsy) to their tail."""
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for name, child in list(items):
+        if isinstance(child, str) and len(child) > keep and (not keys or name in keys):
+            value[name] = "..." + child[-keep:]
+        else:
+            _shorten_keys(child, keys, keep)
 
 
 def post(base_url, path, payload, key, runner_id, opener=urllib.request.urlopen, timeout=30):
@@ -314,6 +409,7 @@ RESIDENT_ENV_KEYS = frozenset({
     "SOULSHOUSE_REQUIRE_HOUSE_TRUST", "TZ",
     "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
     "XAI_API_KEY", "ZAI_API_KEY", "MOONSHOT_API_KEY", "MINIMAX_API_KEY",
+    "HF_TOKEN",
 }) | IMPORTED_HOME_ENV_KEYS
 # External-service credentials (Gmail and the like), copied into the
 # container before it starts, exactly as Agents::Sandbox does locally. The
@@ -327,6 +423,57 @@ PROVIDER_AUTH_CALLS = frozenset({
     ("POST", "/auth/start"), ("POST", "/auth/cancel"), ("POST", "/auth/code"), ("POST", "/auth/disconnect"),
 })
 PROVIDER_AUTH_PARAMS = frozenset({"provider", "model", "refresh", "code"})
+TAILNET_ACTIONS = frozenset({"status", "up"})
+TAILNET_SECONDS = 45
+TAILNET_OUTPUT_MAX = 16384
+# home_stats: the journal entry count and persistent disk use on a resident's
+# card, measured inside the resident exactly as the house measures a local
+# one (Agents::JournalEntryStats). Only the two numbers leave the resident.
+# The script is fixed in the runner; Rails sends a container name, never
+# code. It is a byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and
+# a house test keeps the two equal.
+HOME_STATS_VERSION = 1
+HOME_STATS_SECONDS = 30
+HOME_STATS_SCRIPT = r"""import json, pathlib, re, subprocess
+root = pathlib.Path("/home/agent/identity/memory/daily-journals")
+if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
+    raise RuntimeError("invalid journal directory")
+count = 0
+try:
+    paths = list(root.iterdir())
+except FileNotFoundError:
+    paths = []
+for path in paths:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
+        continue
+    fence = None
+    with path.open(encoding="utf-8") as journal:
+        for line in journal:
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+            if marker:
+                run = marker[1]
+                if fence is None:
+                    fence = run
+                elif run[0] == fence[0] and len(run) >= len(fence):
+                    fence = None
+                continue
+            if fence is None and re.match(r"^##[ \t]+\S", line):
+                count += 1
+# Allocated bytes, including hidden files; du does not follow symlinks.
+# Explicit volume roots exclude the image layer and temporary filesystems.
+storage_bytes = None
+try:
+    roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
+    if any(pathlib.Path(path).is_symlink() for path in roots):
+        raise ValueError("invalid volume root")
+    measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=10, check=True)
+    sizes = [int(line.split()[0]) for line in measurement.stdout.splitlines()]
+    if len(sizes) == len(roots) and all(size >= 0 for size in sizes):
+        storage_bytes = sum(sizes)
+except (OSError, ValueError, subprocess.SubprocessError):
+    pass
+print(json.dumps({"count": count, "storage_bytes": storage_bytes}))
+"""
 VOLUME_MOUNTS = (
     ("identity", "/home/agent/identity"),
     ("chaos", "/home/agent/.chaos"),
@@ -566,8 +713,17 @@ class ResidentHost:
     can see exactly what would run."""
 
     def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None,
-                 backup_request=None, docker_exit=_docker_exit):
+                 backup_request=None, docker_exit=_docker_exit, fetch_runner_bundle=None, runner_dir=None,
+                 self_check=None, running_dir=None):
         self.state_dir = state_dir
+        # fetch_runner_bundle(sha256, write) streams a runner bundle from the
+        # house; self_check(directory) runs the staged runner's --self-check.
+        self.fetch_runner_bundle = fetch_runner_bundle
+        self.runner_dir = runner_dir or RUNNER_DIR
+        # Where this process's code really lives (versions/<…> once updated).
+        self.running_dir = os.path.realpath(running_dir or RUNNING_DIR)
+        self.self_check = self_check or _runner_self_check
+        self.restart_requested = False
         self.docker = docker
         self.docker_exit = docker_exit
         self.http = http
@@ -817,6 +973,115 @@ class ResidentHost:
             return self.http("GET", url, token, timeout=20)
         return self.http("POST", url, token, body=params or None, timeout=20)
 
+    def tailnet(self, payload):
+        """The resident's own Tailscale node (#593): soulshouse-tailnet status
+        or up, run inside the resident as its agent user, exactly as the house
+        does for a local resident. Only those two actions, always --json, no
+        other arguments; the answer is returned whatever the exit."""
+        name = payload.get("container_name")
+        self._known_resident(name)
+        action = payload.get("action")
+        _require(isinstance(action, str) and action in TAILNET_ACTIONS, f"tailnet action not allowed: {action!r}")
+        ok, output = self.docker(["docker", "exec", "-u", "agent", "-e", "HOME=/home/agent", name,
+                                  "timeout", str(TAILNET_SECONDS), "soulshouse-tailnet", action, "--json"],
+                                 timeout=TAILNET_SECONDS + 15)
+        return {"ok": bool(ok), "output": (output or "")[-TAILNET_OUTPUT_MAX:]}
+
+    def home_stats(self, payload):
+        """The numbers on the resident's card: dated journal entry headings
+        and persistent disk use, counted inside the resident by the fixed
+        HOME_STATS_SCRIPT. Returns {"count", "storage_bytes"}; storage_bytes
+        may be None. Anything malformed fails the command, so the house shows
+        the card as unavailable rather than wrong."""
+        name = payload.get("container_name")
+        self._known_resident(name)
+        ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STATS_SECONDS),
+                                  "python3", "-c", HOME_STATS_SCRIPT], timeout=HOME_STATS_SECONDS + 15)
+        if not ok:
+            raise CommandFailed("could not measure the resident's home")
+        try:
+            measured = json.loads((output or "").strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            raise CommandFailed("the resident's home measurement was unreadable")
+        count = measured.get("count") if isinstance(measured, dict) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise CommandFailed("the resident's home measurement was unreadable")
+        size = measured.get("storage_bytes")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            size = None
+        return {"count": count, "storage_bytes": size}
+
+    def update_runner(self, payload):
+        """Install the house's current runner bundle (#593). Fetched by
+        digest, checked, compiled, written to versions/<digest>/ and
+        self-checked there, then activated by one atomic rename of the
+        `current` link that both entry files resolve through, so the two
+        files always change together. The previous pair stays on disk behind
+        `previous`. The runner restarts once the answer is sent. A retry for
+        the installed digest is answered as already done; a failure or a
+        killed process at any step leaves a consistent pair running."""
+        digest = payload.get("sha256")
+        _require(isinstance(digest, str) and SEED_DIGEST_RE.match(digest), "bad sha256")
+        size = payload.get("bytes")
+        _require(isinstance(size, int) and not isinstance(size, bool) and 0 < size <= RUNNER_BUNDLE_MAX_BYTES,
+                 "bad bytes")
+        if installed_runner_bundle(self.runner_dir) == digest:
+            # Installed but perhaps not running (an earlier attempt switched
+            # `current` and then failed): restart onto it.
+            self.restart_requested = self.restart_requested or self._current_is_not_running()
+            return {"state": "current", "sha256": digest, "already": True}
+        if self.fetch_runner_bundle is None:
+            raise CommandFailed("no way to fetch runner bundles on this runner")
+        data = bytearray()
+
+        def write(chunk):
+            if len(data) + len(chunk) > size:
+                raise CommandFailed("runner bundle is larger than announced")
+            data.extend(chunk)
+
+        ok, error = self.fetch_runner_bundle(digest, write)
+        if not ok:
+            raise CommandFailed(f"could not fetch the runner bundle: {error}")
+        if len(data) != size or hashlib.sha256(bytes(data)).hexdigest() != digest:
+            raise CommandFailed("runner bundle does not match its digest")
+        files = unpack_runner_bundle(bytes(data))
+        versions = os.path.join(self.runner_dir, RUNNER_VERSIONS)
+        os.makedirs(versions, mode=0o755, exist_ok=True)
+        staging = tempfile.mkdtemp(prefix=RUNNER_STAGE_PREFIX, dir=versions)
+        try:
+            os.chmod(staging, 0o755)
+            for name, source in files.items():
+                _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
+            if not self.self_check(staging):
+                raise CommandFailed("the new runner failed its self-check; the old one stays")
+            _write_synced(os.path.join(staging, RUNNER_BUNDLE_MARKER), (digest + "\n").encode(), 0o644)
+            _fsync_dir(staging)
+            # A fresh name each time, so an install never touches the
+            # directory `current` or `previous` points at.
+            version = f"{digest}-{secrets.token_hex(4)}"
+            target = os.path.join(versions, version)
+            os.rename(staging, target)
+            _fsync_dir(versions)
+            adopt_flat_runner(self.runner_dir)
+            # The rollback reference moves first: killed between the two
+            # renames, `previous` and `current` both name the running pair.
+            old = _link_target(os.path.join(self.runner_dir, RUNNER_CURRENT))
+            if old:
+                _swap_link(self.runner_dir, RUNNER_PREVIOUS, old)
+            _swap_link(self.runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, version))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+            # Whatever failed after the switch (an fsync, say), `current` is
+            # what the next start runs; restart onto it now.
+            self.restart_requested = self.restart_requested or self._current_is_not_running()
+        prune_runner_versions(self.runner_dir)
+        return {"state": "installed", "sha256": digest}
+
+    def _current_is_not_running(self):
+        # By bundle digest, not directory: the birth pair moved behind
+        # `current` is the same runner (both None) and needs no restart.
+        return installed_runner_bundle(self.runner_dir) != running_runner_bundle(self.running_dir)
+
     def backup_resident(self, payload):
         from backup_proxy import run_backup
         if self.backup_request is None:
@@ -1007,6 +1272,184 @@ SEED_MAX_UNPACKED = 256 * 1024 * 1024
 SEED_MAX_ENTRIES = 20000
 SEED_DEADLINE = 10 * 60
 
+# update_runner (#593): the packaged runner (the same compacted two-file
+# tar.xz cloud-init carries at birth), fetched from the house by digest and
+# checked. Layout after the first update:
+#   versions/<digest>/{souls_house_runner.py, backup_proxy.py, bundle.sha256}
+#   current  -> versions/<digest>        (one atomic rename switches both files)
+#   previous -> versions/<older>         (the last usable pair, kept on disk)
+#   souls_house_runner.py -> current/souls_house_runner.py   (systemd's path)
+#   backup_proxy.py       -> current/backup_proxy.py
+# Python puts the script's resolved directory first on sys.path, so the
+# runner always imports the backup module of its own version. The runner then
+# exits RUNNER_RESTART_EXIT and systemd (Restart=on-failure) starts the new code.
+RUNNER_BUNDLE_PATH = "/api/v1/host_runner/runner_bundles/{id}"
+RUNNER_BUNDLE_MAX_BYTES = 256 * 1024
+# Per unpacked file; an entry over it is refused, never cut to a prefix.
+RUNNER_SOURCE_MAX_BYTES = 256 * 1024
+RUNNER_BUNDLE_DEADLINE = 2 * 60
+RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
+RUNNER_BUNDLE_MARKER = "bundle.sha256"
+RUNNER_VERSIONS = "versions"
+RUNNER_CURRENT = "current"
+RUNNER_PREVIOUS = "previous"
+RUNNER_STAGE_PREFIX = ".stage-"
+RUNNER_BIRTH_PREFIX = "birth-"
+RUNNER_DIR = os.path.dirname(os.path.abspath(__file__))
+RUNNING_DIR = os.path.dirname(os.path.realpath(__file__))
+RUNNER_RESTART_EXIT = 75
+RUNNER_SELF_CHECK_SECONDS = 30
+
+
+def installed_runner_bundle(runner_dir=RUNNER_DIR):
+    """The digest `current` points at; None for the files cloud-init
+    unpacked at birth (no `current` yet) or an unreadable marker."""
+    try:
+        with open(os.path.join(runner_dir, RUNNER_CURRENT, RUNNER_BUNDLE_MARKER)) as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value if SEED_DIGEST_RE.match(value) else None
+
+
+def running_runner_bundle(running_dir=RUNNING_DIR):
+    """The digest of the bundle this process was started from, read beside
+    the resolved script; None for the birth files."""
+    try:
+        with open(os.path.join(running_dir, RUNNER_BUNDLE_MARKER)) as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value if SEED_DIGEST_RE.match(value) else None
+
+
+def _write_synced(path, data, mode):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(path, mode)
+
+
+def _fsync_dir(path):
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def _link_target(path):
+    try:
+        return os.readlink(path)
+    except OSError:
+        return None
+
+
+def _swap_link(directory, name, target):
+    """Point directory/name at target (relative) in one rename."""
+    temporary = os.path.join(directory, f".{name}.{secrets.token_hex(4)}")
+    os.symlink(target, temporary)
+    try:
+        os.replace(temporary, os.path.join(directory, name))
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    _fsync_dir(directory)
+
+
+def adopt_flat_runner(runner_dir=RUNNER_DIR):
+    """Move a runner still on its birth layout (two regular files) behind
+    `current` without changing what runs. Idempotent, and safe to kill at
+    any step: the birth pair is copied to versions/birth-<hash>/ first, then
+    `current` is pointed at that copy, then each entry file becomes a link
+    through `current`. Every intermediate state resolves to the same pair."""
+    current = os.path.join(runner_dir, RUNNER_CURRENT)
+    if not os.path.islink(current):
+        sources = {}
+        for name in RUNNER_BUNDLE_FILES:
+            with open(os.path.join(runner_dir, name), "rb") as handle:
+                sources[name] = handle.read()
+        fingerprint = hashlib.sha256(b"".join(hashlib.sha256(sources[name]).digest()
+                                              for name in sorted(sources))).hexdigest()[:16]
+        versions = os.path.join(runner_dir, RUNNER_VERSIONS)
+        os.makedirs(versions, mode=0o755, exist_ok=True)
+        birth = os.path.join(versions, RUNNER_BIRTH_PREFIX + fingerprint)
+        if not os.path.isdir(birth):
+            staging = tempfile.mkdtemp(prefix=RUNNER_STAGE_PREFIX, dir=versions)
+            try:
+                os.chmod(staging, 0o755)
+                for name, source in sources.items():
+                    _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
+                _fsync_dir(staging)
+                os.rename(staging, birth)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+            _fsync_dir(versions)
+        _swap_link(runner_dir, RUNNER_CURRENT, os.path.join(RUNNER_VERSIONS, os.path.basename(birth)))
+    for name in RUNNER_BUNDLE_FILES:
+        entry = os.path.join(runner_dir, name)
+        wanted = os.path.join(RUNNER_CURRENT, name)
+        if _link_target(entry) != wanted:
+            _swap_link(runner_dir, name, wanted)
+
+
+def prune_runner_versions(runner_dir=RUNNER_DIR):
+    """Remove every version but `current` and `previous`, abandoned stages,
+    and link temporaries a killed swap left behind. Best effort: a leftover
+    costs disk, never correctness."""
+    for name in os.listdir(runner_dir):
+        if any(name.startswith(f".{link}.") for link in (RUNNER_CURRENT, RUNNER_PREVIOUS, *RUNNER_BUNDLE_FILES)):
+            try:
+                os.unlink(os.path.join(runner_dir, name))
+            except OSError:
+                pass
+    versions = os.path.join(runner_dir, RUNNER_VERSIONS)
+    keep = {os.path.basename(target or "") for target in
+            (_link_target(os.path.join(runner_dir, RUNNER_CURRENT)),
+             _link_target(os.path.join(runner_dir, RUNNER_PREVIOUS)))}
+    try:
+        names = os.listdir(versions)
+    except OSError:
+        return
+    for name in names:
+        if name not in keep:
+            shutil.rmtree(os.path.join(versions, name), ignore_errors=True)
+
+
+def unpack_runner_bundle(data):
+    """The bundle's files as {name: bytes}: exactly RUNNER_BUNDLE_FILES, each a
+    regular file of at most RUNNER_SOURCE_MAX_BYTES whose source compiles.
+    Anything else is refused whole; nothing is ever cut to a prefix."""
+    files = {}
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as archive:
+            for member in archive.getmembers():
+                if member.name not in RUNNER_BUNDLE_FILES or not member.isreg() or member.name in files:
+                    raise BadCommand(f"unexpected entry in runner bundle: {member.name!r}")
+                if member.size > RUNNER_SOURCE_MAX_BYTES:
+                    raise BadCommand(f"runner bundle {member.name} is larger than {RUNNER_SOURCE_MAX_BYTES} bytes")
+                handle = archive.extractfile(member)
+                source = handle.read(RUNNER_SOURCE_MAX_BYTES + 1)
+                if len(source) > RUNNER_SOURCE_MAX_BYTES or len(source) != member.size:
+                    raise BadCommand(f"runner bundle {member.name} is not the size its header says")
+                files[member.name] = source
+    except (tarfile.TarError, EOFError, OSError) as error:
+        raise BadCommand(f"runner bundle is not a valid archive: {error}")
+    if set(files) != set(RUNNER_BUNDLE_FILES):
+        raise BadCommand("runner bundle is missing a file")
+    for name, source in files.items():
+        try:
+            compile(source, name, "exec")
+        except (SyntaxError, ValueError) as error:
+            raise BadCommand(f"runner bundle {name} does not compile: {error}")
+    return files
+
+
 
 def _seed_member_path(name):
     """A relative path with no '..', no absolute part and no empty segment."""
@@ -1107,6 +1550,44 @@ def fetch_seed(config, key, digest, write, opener=None, deadline=SEED_DEADLINE):
             while True:
                 if time.monotonic() >= ends_at:
                     return False, "seed fetch passed its deadline"
+                chunk = read(IMAGE_CHUNK)
+                if not chunk:
+                    return True, ""
+                write(chunk)
+    except urllib.error.HTTPError as error:
+        return False, f"house answered {error.code}"
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        return False, f"{type(error).__name__}: {error}"
+
+
+def _runner_self_check(directory):
+    """The staged runner imports cleanly (its own --self-check, which loads
+    every module and exits 0) with this Python, before it replaces us."""
+    try:
+        completed = subprocess.run([sys.executable, os.path.join(directory, "souls_house_runner.py"), "--self-check"],
+                                   cwd=directory, capture_output=True, timeout=RUNNER_SELF_CHECK_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def fetch_runner_bundle(config, key, digest, write, opener=None, deadline=RUNNER_BUNDLE_DEADLINE):
+    """Signed GET of one runner bundle from the house. Same rules as a seed:
+    no redirects, bounded in time. Returns (ok, error)."""
+    if not SEED_DIGEST_RE.match(digest or ""):
+        return False, "bad runner bundle digest"
+    path = RUNNER_BUNDLE_PATH.format(id=digest)
+    request = urllib.request.Request(config["rails_url"].rstrip("/") + path, method="GET",
+                                     headers=signed_headers(key, "GET", path, b"", config["runner_id"]))
+    ends_at = time.monotonic() + deadline
+    try:
+        with (opener or _IMAGE_OPENER.open)(request, timeout=60) as response:
+            if response.status != 200:
+                return False, f"house answered {response.status}"
+            read = response.read1 if hasattr(response, "read1") else response.read
+            while True:
+                if time.monotonic() >= ends_at:
+                    return False, "runner bundle fetch passed its deadline"
                 chunk = read(IMAGE_CHUNK)
                 if not chunk:
                     return True, ""
@@ -1237,6 +1718,9 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     command_id, result = execute_command(body["command"], state, host)
     if command_id is None or not COMMAND_ID_RE.match(command_id):
         return True
+    result, cuts = fit_result(result)
+    if cuts:
+        print(f"command {command_id} result trimmed: {', '.join(cuts)}", file=sys.stderr)
     post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
     return True
 
@@ -1311,7 +1795,8 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         from backup_proxy import make_signed_request
         host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
                             fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
-                            backup_request=make_signed_request(config, key, signed_headers))
+                            backup_request=make_signed_request(config, key, signed_headers),
+                            fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
         host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
@@ -1324,6 +1809,10 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
             except Exception as error:  # a broken poll must not stop heartbeats
                 print(f"command poll failed: {error}", file=sys.stderr)
                 handled = False
+            if getattr(host, "restart_requested", False):
+                # A new runner is installed and its answer is sent: exit so
+                # systemd starts it (Restart=on-failure).
+                return RUNNER_RESTART_EXIT
             if not handled:
                 sleep(COMMAND_IDLE_SECONDS)
         return 0
@@ -1337,5 +1826,11 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 if __name__ == "__main__":
     # Keep one set of command exception types for the backup module.
     sys.modules.setdefault("souls_house_runner", sys.modules[__name__])
+    if sys.argv[1:] == ["--self-check"]:
+        # update_runner runs this on a staged runner before swapping it in:
+        # every import above has succeeded, and the staged backup module
+        # (beside this file, first on sys.path) loads too.
+        import backup_proxy  # noqa: F401
+        sys.exit(0)
     signal.signal(signal.SIGTERM, lambda _signal, _frame: sys.exit(143))
     sys.exit(main())

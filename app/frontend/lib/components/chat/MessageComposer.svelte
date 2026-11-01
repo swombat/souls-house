@@ -3,6 +3,8 @@
   import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
   import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
+  import { fileDropZone } from '$lib/file-drop-zone';
+  import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
@@ -23,6 +25,7 @@
   } = $props();
 
   let selectedFiles = $state([]);
+  let uploader = $state(null);
   let submitting = $state(false);
   let pendingAudioSignedId = $state(null);
   let textareaRef = $state(null);
@@ -185,6 +188,15 @@
     }
   }
 
+  // A screenshot or image on the clipboard becomes an attachment; text pastes as text.
+  function handlePaste(event) {
+    if (submitting || disabled) return;
+    const files = filesFromPaste(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    uploader?.addFiles(files);
+  }
+
   function autoResize() {
     if (!textareaRef) return;
     textareaRef.style.height = 'auto';
@@ -193,9 +205,13 @@
 </script>
 
 <!-- Message input -->
-<div class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4" data-testid="message-composer">
+<div
+  class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
+  data-testid="message-composer"
+  use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: submitting || disabled }}>
   <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
     <FileUploadInput
+      bind:this={uploader}
       bind:files={selectedFiles}
       disabled={submitting || disabled}
       maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
@@ -204,6 +220,7 @@
       <textarea
         bind:this={textareaRef}
         value={draftState.content}
+        onpaste={handlePaste}
         onkeydown={handleKeydown}
         oninput={(event) => {
           draft?.edit(event.currentTarget.value);

@@ -166,6 +166,9 @@ class CommitBadgesTest < ActiveSupport::TestCase
   test "repositories that are removed, switched off or on a disconnected connection are not sources" do
     repository(WEB, commit_badges: true).update!(removed_at: Time.current)
     repository(API, commit_badges: true)
+    repository("acme/off", commit_badges: false)
+    assert_equal [ API ], CommitBadges.config_for(@account, @owner)[:repos]
+
     @connection.update!(status: "revoked")
 
     assert_equal [], CommitBadges.config_for(@account, @owner)[:repos]

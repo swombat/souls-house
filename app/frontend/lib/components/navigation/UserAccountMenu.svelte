@@ -14,6 +14,7 @@
     Check,
     Plus,
     WarningCircle,
+    EnvelopeSimple,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -22,6 +23,7 @@
   import Avatar from '$lib/components/Avatar.svelte';
   import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
   import ExpiredSubscriptionsBadge from './ExpiredSubscriptionsBadge.svelte';
+  import PendingInvitationsBadge from './PendingInvitationsBadge.svelte';
 
   let {
     currentUser,
@@ -29,6 +31,7 @@
     accounts = [],
     replyAttention = {},
     expiredSubscriptions = {},
+    pendingInvitations = {},
     allowAccountCreation = true,
     currentTheme = 'system',
     onThemeChange = () => {},
@@ -63,6 +66,7 @@
     {/if}
     <ReplyAttentionBadge count={replyAttention.total} />
     <ExpiredSubscriptionsBadge count={expiredSubscriptions.total} />
+    <PendingInvitationsBadge count={pendingInvitations.total} />
   </DropdownMenu.Trigger>
   <DropdownMenu.Content
     bind:ref={content}
@@ -129,6 +133,43 @@
                   <div class="text-xs text-muted-foreground truncate">{item.account_name}</div>
                 {/if}
               </div>
+            </DropdownMenu.Item>
+          {/each}
+        {/if}
+        {#if expiredSubscriptions.failing?.length}
+          <DropdownMenu.Separator />
+          <DropdownMenu.GroupHeading>
+            <div class="text-xs font-normal text-muted-foreground">Failing residents</div>
+          </DropdownMenu.GroupHeading>
+          {#each expiredSubscriptions.failing as item (item.agent_id)}
+            <DropdownMenu.Item data-testid="failing-resident" onclick={() => router.visit(item.url)}>
+              <WarningCircle class="size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm truncate">{item.agent_name}</div>
+                <div class="text-xs text-muted-foreground truncate">
+                  Scheduled runs failing{#if accounts.length > 1}&nbsp;· {item.account_name}{/if}
+                </div>
+              </div>
+            </DropdownMenu.Item>
+          {/each}
+        {/if}
+        {#if pendingInvitations.items?.length}
+          <DropdownMenu.Separator />
+          <DropdownMenu.GroupHeading>
+            <div class="text-xs font-normal text-muted-foreground">Invitations</div>
+          </DropdownMenu.GroupHeading>
+          {#each pendingInvitations.items as invitation (invitation.id)}
+            <DropdownMenu.Item
+              data-testid="accept-invitation"
+              onclick={() => router.post(`/invitations/${invitation.id}/accept`)}>
+              <EnvelopeSimple class="size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="text-sm truncate">{invitation.account_name}</div>
+                {#if invitation.invited_by}
+                  <div class="text-xs text-muted-foreground truncate">from {invitation.invited_by}</div>
+                {/if}
+              </div>
+              <span class="shrink-0 text-xs font-semibold">Accept</span>
             </DropdownMenu.Item>
           {/each}
         {/if}

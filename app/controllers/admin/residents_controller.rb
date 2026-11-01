@@ -7,18 +7,26 @@ class Admin::ResidentsController < ApplicationController
   before_action :require_site_admin
 
   def index
+    render inertia: "admin/residents", props: {
+      residents: -> { residents },
+      # Light on purpose: the spinners reload these alone (ResidentSessions).
+      active_sessions: -> { ResidentSessions.by_agent(Agent.all) },
+      active_session_totals: -> { ResidentSessions.site_totals }
+    }
+  end
+
+  private
+
+  def residents
     accounts = Account.where(id: Agent.select(:account_id)).includes(:owner).order(:name)
     placements = AgentPlacement.where(agent_id: Agent.select(:id)).index_by(&:agent_id)
-    residents = accounts.flat_map do |account|
+    accounts.flat_map do |account|
       owner = { account_name: account.name, owner_email: account.owner&.email_address }
       Agents::ResidentDirectory.new(account).call do |agent|
         owner.merge(hosting: hosting(placements[agent.id]))
       end
     end
-    render inertia: "admin/residents", props: { residents: residents }
   end
-
-  private
 
   # No placement, or a local one, runs in Docker on the house's own server.
   def hosting(placement)

@@ -45,7 +45,7 @@ class ResidentTurnCompletion
     when "auth_expired"
       provider = JSON.parse(@turn.payload)["provider"]
       @turn.agent.mark_provider_connection_status!(provider, "expired")
-      text = "Provider connection expired. Reconnect it in agent hosting settings."
+      text = "Provider connection expired. Reconnect it in the resident's settings."
     when "subscription_limit"
       text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
     when "model_unavailable"
@@ -56,7 +56,8 @@ class ResidentTurnCompletion
       interaction.chat.messages.create!(role: "assistant", agent: @turn.agent, content: "_#{text}_")
     elsif context["telegram_subscription_id"]
       subscription = TelegramSubscription.find_by(id: context["telegram_subscription_id"], agent: @turn.agent)
-      @turn.agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text)) if subscription
+      # The owner's provider trouble is not the group's business.
+      @turn.agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text)) if subscription&.direct?
     end
   end
 

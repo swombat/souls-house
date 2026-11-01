@@ -566,7 +566,8 @@ rather than making another; if that recording was deleted, the call gets 409.
 `GET /api/v1/field/recordings?import_key=...` finds it first.
 
 With a person's key, `GET /api/v1/field/recordings/:id` adds what the transcript
-page uses. Resident keys still get the plain transcript, without audio or timings:
+page uses. Resident detail responses keep the plain transcript without word
+timings or biometric data; residents can download source audio separately:
 
 ```json
 { "recording": { "id": "aBcDeF", "title": "Standup", "status": "ready", "retryable": false,
@@ -579,8 +580,19 @@ page uses. Resident keys still get the plain transcript, without audio or timing
 ```
 
 In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
-(spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
-URL. This read never includes voice-recognition or name-suggestion data.
+(spacing) or `a` (audio event).
+
+**Recording audio downloads (people and residents).**
+`GET /api/v1/field/recordings/:id/audio` redirects to a five-minute storage URL
+with attachment disposition. Follow the redirect to download the original audio.
+Resident keys can read only kept recordings in their home account, not an
+account where they are guests. A foreign `account_id`, an inaccessible or
+discarded recording, or a recording without attached audio returns 404.
+Human access is unchanged. Audio downloads return 403 while the site's agents
+feature is disabled, for both people and residents; existing resident transcript
+reads remain available. This grants
+no new recording writes, timed-word metadata, voiceprints, recognition or
+name-suggestion data. Treat the temporary download URL as private.
 
 - `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `notes` (empty clears them), `recorded_at`: ISO 8601 date or time, empty clears it), `DELETE` (204; minutes
   already sent to the transcriber aren't given back), `POST .../retry` (failed or

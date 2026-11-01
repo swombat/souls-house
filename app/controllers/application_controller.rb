@@ -25,9 +25,15 @@ class ApplicationController < ActionController::Base
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
         room_activity: -> { RoomActivity.summary_for(current_account) },
         expired_subscriptions: -> { ExpiredProviderSubscriptions.summary_for(Current.user) },
+        pending_invitations: -> { PendingInvitations.summary_for(Current.user) },
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
+        # Site admin in an account they are not a confirmed member of: what they see
+        # here, members' access aside, they see only as site admin (shown in red).
+        viewing_as_site_admin: -> { viewing_as_site_admin? },
+        # Every Admin:: page, whatever component it renders (notices/index too).
+        site_admin_page: -> { site_admin_page? },
         token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 },
         # Which repositories chat commit badges are measured against (CommitBadges).
         commit_badges: -> { CommitBadges.config_for(current_account, Current.user) },
@@ -45,6 +51,12 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  def viewing_as_site_admin?
+    return false unless current_account && Current.user&.site_admin
+
+    !current_account.memberships.confirmed.exists?(user: Current.user)
+  end
 
   def site_admin_page?
     self.class.name.to_s.start_with?("Admin::") && Current.user&.is_site_admin?

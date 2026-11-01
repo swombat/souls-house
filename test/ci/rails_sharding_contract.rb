@@ -6,6 +6,7 @@ require "fileutils"
 require "stringio"
 require "open3"
 require "rbconfig"
+require "json"
 require_relative "../../scripts/lib/rails_test_shard"
 
 class RailsTestShardTest < Minitest::Test
@@ -50,6 +51,30 @@ class RailsTestShardTest < Minitest::Test
     plan = RailsTestShard::Plan.new(@root)
     assert_equal [["test/a_test.rb"], ["test/b_test.rb", "test/c_test.rb"]], plan.shards(2)
     assert_equal plan.shards(3), RailsTestShard::Plan.new(@root).shards(3)
+  end
+
+  def test_measured_seconds_outweigh_byte_size_and_scale_unmeasured_files
+    write("test/a_test.rb", "#" * 10)
+    write("test/b_test.rb", "#" * 400)
+    write("test/c_test.rb", "#" * 400)
+    write("test/d_test.rb", "#" * 200)
+    write("test/ci/rails_timings.json",
+      JSON.generate("test/a_test.rb" => 10, "test/b_test.rb" => 1, "test/c_test.rb" => 1, "test/gone_test.rb" => 50))
+    plan = RailsTestShard::Plan.new(@root)
+    # d has no time: 200 bytes at the measured 12 s / 810 bytes. A deleted file's time is ignored.
+    assert_in_delta 200 * 12.0 / 810, plan.weight(["test/d_test.rb"]), 0.001
+    assert_equal [["test/a_test.rb"], %w[test/b_test.rb test/c_test.rb test/d_test.rb]], plan.shards(2)
+    output = StringIO.new
+    assert_equal 0, RailsTestShard.run(["1", "2"], root: @root, executor: ->(_) { true }, out: output)
+    assert_equal "Rails shard 1/2: 1 files, 10 s of measured test time\ntest/a_test.rb\n", output.string
+  end
+
+  def test_repository_timings_are_current_enough_to_balance_on
+    plan = RailsTestShard::Plan.new(ROOT)
+    measured = plan.timings.keys & plan.files
+    assert_operator measured.size, :>=, (plan.files.size * 0.8).ceil,
+      "test/ci/rails_timings.json has gone stale: bin/test, then ruby scripts/rails-test-timings.rb"
+    assert plan.timings.values.all? { |seconds| seconds.is_a?(Numeric) && seconds >= 0 }
   end
 
   def test_static_requires_and_noncode_mentions

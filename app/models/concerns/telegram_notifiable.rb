@@ -8,11 +8,32 @@ module TelegramNotifiable
   class TelegramMediaPermanentError < TelegramMediaError; end
   class TelegramMediaTooLarge < TelegramMediaPermanentError; end
   class TelegramMediaInvalid < TelegramMediaPermanentError; end
+  # Raised before any HTTP when a send targets a group that is not allowed,
+  # or that the bot has left (#596). Every send path goes through here.
+  class TelegramGroupNotAllowed < TelegramError; end
+
+  # Flood control (429) or Telegram's own trouble (5xx): worth trying again,
+  # after retry_after seconds when Telegram gives one.
+  class TelegramRetryableError < TelegramError
+
+    attr_reader :retry_after
+
+    def initialize(message, retry_after: nil)
+      super(message)
+      @retry_after = retry_after
+    end
+
+  end
 
   DownloadedTelegramFile = Struct.new(:tempfile, :file_path, :byte_size, keyword_init: true)
 
   included do
-    has_many :telegram_subscriptions, dependent: :destroy
+    # Direct subscribers only. Every existing caller (broadcast to "all",
+    # subscriber counts, the attention feed) means people; a group must be
+    # reached through telegram_groups on purpose (#596).
+    has_many :telegram_subscriptions, -> { where(chat_kind: "direct") }, dependent: :destroy, inverse_of: :agent
+    has_many :telegram_groups, -> { where(chat_kind: "group") },
+      class_name: "TelegramSubscription", dependent: :destroy, inverse_of: :agent
     has_many :telegram_messages, through: :telegram_subscriptions
 
     encrypts :telegram_bot_token
@@ -28,6 +49,7 @@ module TelegramNotifiable
   end
 
   def telegram_send_message(chat_id, text, **options)
+    ensure_telegram_chat_sendable!(chat_id)
     body = { chat_id: chat_id, text: text, parse_mode: "HTML" }.merge(options)
     result = telegram_api_request("sendMessage", body)
 
@@ -36,7 +58,7 @@ module TelegramNotifiable
     result
   end
 
-  def telegram_send_photo(chat_id, photo, filename:, content_type:, caption: nil)
+  def telegram_send_photo(chat_id, photo, filename:, content_type:, caption: nil, reply_parameters: nil)
     telegram_send_media(
       "sendPhoto",
       chat_id,
@@ -44,11 +66,12 @@ module TelegramNotifiable
       photo,
       filename: filename,
       content_type: content_type,
-      caption: caption
+      caption: caption,
+      reply_parameters: reply_parameters
     )
   end
 
-  def telegram_send_document(chat_id, document, filename:, content_type:, caption: nil)
+  def telegram_send_document(chat_id, document, filename:, content_type:, caption: nil, reply_parameters: nil)
     telegram_send_media(
       "sendDocument",
       chat_id,
@@ -56,7 +79,8 @@ module TelegramNotifiable
       document,
       filename: filename,
       content_type: content_type,
-      caption: caption
+      caption: caption,
+      reply_parameters: reply_parameters
     )
   end
 
@@ -127,7 +151,7 @@ module TelegramNotifiable
     webhook_url = "#{public_url}/telegram/webhook/#{telegram_webhook_token}"
     result = telegram_api_request("setWebhook", {
       url: webhook_url,
-      allowed_updates: [ "message", "callback_query" ],
+      allowed_updates: [ "message", "callback_query", "my_chat_member" ],
       secret_token: telegram_webhook_secret
     })
 
@@ -163,6 +187,34 @@ module TelegramNotifiable
     )
   end
 
+  # getMe's can_read_all_group_messages is true only when BotFather's privacy
+  # mode is off. The Bot API marks it optional, so with privacy on it may be
+  # absent rather than false; a successful getMe without it means false.
+  # Telegram then sends the bot only commands, mentions and replies to it
+  # from a group (unless it is an admin there). A failed getMe keeps the
+  # stored value. Stored, never fetched while rendering a page.
+  def refresh_telegram_bot_info!
+    return unless telegram_bot_token.present?
+
+    result = telegram_api_request("getMe", {})
+    return Rails.logger.warn("[Telegram] getMe failed for agent #{id}: #{result['description']}") unless result["ok"]
+
+    value = result.dig("result", "can_read_all_group_messages") == true
+    update_column(:telegram_reads_all_group_messages, value) unless value == telegram_reads_all_group_messages
+  end
+
+  # The bot's own Telegram user id is the number before the colon in its
+  # token; replies to the bot carry it as reply_to_message.from.id.
+  def telegram_bot_user_id
+    telegram_bot_token.to_s[/\A(\d+):/, 1]&.to_i
+  end
+
+  # Every thread the resident may address by id through its API: its direct
+  # subscribers and its groups. Callers still check deliverable? before a send.
+  def telegram_threads
+    TelegramSubscription.where(agent_id: id)
+  end
+
   def telegram_deep_link_for(user)
     # Telegram deep link params only allow [A-Za-z0-9_] and max 64 chars,
     # so we store a short random token in Rails cache instead of signing
@@ -171,25 +223,72 @@ module TelegramNotifiable
     "https://t.me/#{telegram_bot_username}?start=#{token}"
   end
 
+  # The bot's own profile photo (Bot API setMyProfilePhoto). Telegram takes
+  # a static photo only as a fresh JPEG upload, attached by name.
+  def telegram_set_profile_photo!(jpeg_io)
+    jpeg_io.rewind
+    form = [
+      [ "photo", { type: "static", photo: "attach://profile_photo" }.to_json ],
+      [ "profile_photo", jpeg_io, { filename: "profile.jpg", content_type: "image/jpeg" } ]
+    ]
+    result = telegram_multipart_request("setMyProfilePhoto", form)
+    raise_telegram_refusal!(result) unless result["ok"]
+
+    result
+  end
+
+  def telegram_remove_profile_photo!
+    result = telegram_api_request("removeMyProfilePhoto", {})
+    raise_telegram_refusal!(result) unless result["ok"]
+
+    result
+  end
+
   private
 
-  def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:)
+  def raise_telegram_refusal!(result)
+    code = result["error_code"].to_i
+    if code == 429 || code >= 500
+      raise TelegramRetryableError.new(result["description"], retry_after: result.dig("parameters", "retry_after"))
+    end
+
+    raise TelegramError, result["description"]
+  end
+
+  def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:, reply_parameters: nil)
+    ensure_telegram_chat_sendable!(chat_id)
     media.rewind
     form = [ [ "chat_id", chat_id.to_s ] ]
+    form << [ "reply_parameters", reply_parameters.to_json ] if reply_parameters
     form.concat([ [ "caption", caption ], [ "parse_mode", "HTML" ] ]) if caption.present?
     form << [ media_key.to_s, media, { filename: filename, content_type: content_type } ]
 
+    result = telegram_multipart_request(method, form)
+
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
+  end
+
+  def telegram_multipart_request(method, form)
     uri = telegram_api_uri(method)
     request = Net::HTTP::Post.new(uri)
     request.set_form(form, "multipart/form-data")
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|
       http.request(request)
     end
-    result = JSON.parse(response.body)
+    JSON.parse(response.body)
+  end
 
-    raise TelegramError, result["description"] unless result["ok"]
+  # The send boundary for groups: read from the database at the moment of
+  # sending, so a revocation made after any earlier check still wins. A chat
+  # with no group record (a direct chat) is unaffected.
+  def ensure_telegram_chat_sendable!(chat_id)
+    group = telegram_groups.find_by(telegram_chat_id: chat_id)
+    return unless group
+    return if group.deliverable?
 
-    result
+    raise TelegramGroupNotAllowed, "group is not allowed"
   end
 
   def telegram_api_request(method, body)

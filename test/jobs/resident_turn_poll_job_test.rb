@@ -334,6 +334,49 @@ class ResidentTurnPollJobTest < ActiveSupport::TestCase
       end
     end
 
+    # #673: a finished turn's answer is fitted by the runner (host-runner
+    # fit_result) to both the signed-body cap and record_result!'s Rails
+    # to_json cap. These are the exact bodies it produces (the Python suite
+    # regenerates and compares the fixture), replayed through the house: the
+    # command is recorded done, the turn finishes with its accounting and
+    # freshness proof, and the session admits the next turn.
+    %w[success timeout].each do |name|
+      test "a fitted #{name} answer closes the turn and frees the session" do
+        fixture = JSON.parse(file_fixture("runner_fitted_results.json").read).fetch(name)
+        answer = JSON.parse(fixture["result"].to_json.gsub('"DISPATCH"', @turn.dispatch_id.to_json).gsub('"LEDGER"', @ledger.to_json))
+        sleeper = lambda do |_seconds|
+          command = RunnerCommand.where.not(state: RunnerCommand::TERMINAL).order(:id).first
+          next unless command
+
+          command.deliver!(now: Time.current) if command.state == "queued"
+          command.record_result!(answer, now: Time.current)
+        end
+        ResidentTurn.stub(:enabled?, true) do
+          RemoteTriggerClient.stub(:new, ->(**kwargs) { RemoteTriggerClient.allocate.tap { |c| c.send(:initialize, **kwargs, sleeper:) } }) do
+            ResidentTurnPollJob.perform_now(@turn.id)
+          end
+        end
+
+        assert_equal %w[done], RunnerCommand.pluck(:state)
+        assert_includes fixture["cuts"], "full_invocation_text"
+        assert_equal "finished", @turn.reload.state
+        interaction = @turn.agent_runtime_interaction.reload
+        assert interaction.finished_at?
+        assert_equal name == "success" ? "ok" : "timeout", interaction.runtime_status
+        assert_equal 1, interaction.telemetry_schema_version
+        assert_equal "c-1", interaction.chaos_session_id
+        inner = answer.dig("result", "body", "result")
+        assert SafeguardRoll.confirmed_fresh?(inner), "the trimmed answer still proves the session rolled"
+
+        ResidentTurn.stub(:enabled?, true) do
+          following = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake", session_id: "synthetic",
+            started_at: Time.current, endpoint_url: Agents::Endpoint.url_for(@agent))
+          next_turn = ResidentTurn.enqueue!(following, { session_id: "synthetic", request: "prompt" })
+          assert_equal [ next_turn.id ], ResidentTurn.admit!
+        end
+      end
+    end
+
     test "a revoked runner gets no command at all" do
       @enrollment.revoke!
       ResidentTurn.stub(:enabled?, true) { ResidentTurnPollJob.perform_now(@turn.id) }

@@ -8,6 +8,7 @@ export const STATES = {
   removed: { label: 'Removed', tone: 'bg-muted text-muted-foreground' },
   not_ready: { label: 'Not ready to play', tone: 'bg-muted text-muted-foreground' },
   preparing: { label: 'Preparing…', tone: 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100' },
+  spare: { label: 'Not needed', tone: 'bg-muted text-muted-foreground' },
 };
 
 export function seconds(ms) {

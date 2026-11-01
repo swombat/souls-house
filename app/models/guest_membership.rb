@@ -51,7 +51,7 @@ class GuestMembership < ApplicationRecord
   def as_json(*)
     {
       id: to_param,
-      agent: { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon },
+      agent: { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon, avatar_url: agent.avatar_url },
       account: { id: account.to_param, name: account.name },
       home_account: { id: agent.account.to_param, name: agent.account.name },
       added_at: created_at.iso8601

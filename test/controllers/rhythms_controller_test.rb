@@ -153,18 +153,21 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_not Rhythm.exists?(rhythm.id)
   end
 
-  test "human clearing the selection holds immediately and readding does not silently resume" do
+  test "human clearing the selection places no hold; slots skip until someone is selected again" do
     rhythm = make_rhythm
     patch account_rhythm_path(@account, rhythm), params: { rhythm: { resident_ids: [] } }
     assert_redirected_to account_rhythm_path(@account, rhythm)
     assert_empty rhythm.reload.agents
-    assert_equal [ "no_selected_residents" ], rhythm.open_holds.pluck(:reason)
-    assert_equal "paused", RhythmPresentation.new(rhythm, user: @user).as_json[:state]
+    assert_not rhythm.held?
+    assert_equal "active", RhythmPresentation.new(rhythm, user: @user).as_json[:state]
+    now = Time.current
+    rhythm.update_column(:next_run_at, now - 1.minute)
+    assert_equal "no_selected_residents", rhythm.fire!(now: now).reason
+    assert_equal "no residents are selected",
+      RhythmPresentation.new(rhythm.reload, user: @user).as_json.dig(:last_skip, :explanation)
 
     patch account_rhythm_path(@account, rhythm), params: { rhythm: { resident_ids: [ @resident.to_param ] } }
     assert_redirected_to account_rhythm_path(@account, rhythm)
-    assert rhythm.reload.held?
-    post resume_account_rhythm_path(@account, rhythm)
     assert_not rhythm.reload.held?
   end
 

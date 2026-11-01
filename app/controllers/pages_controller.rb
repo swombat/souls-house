@@ -6,7 +6,8 @@ class PagesController < ApplicationController
 
   def home
     @share_video = true
-    render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE) }
+    render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE),
+      from_usd: Billing::Tier.all.map(&:monthly_usd).min }
   end
 
   def features
@@ -27,6 +28,20 @@ class PagesController < ApplicationController
 
   def self_host_technical
     render inertia: "self-host-technical"
+  end
+
+  # Public: the live schema by concern, for people reading the open source. The
+  # areas come from config/data_model.yml; the tables from the database.
+  def data_model
+    area = params[:area] ? DataModel.find(params[:area]) : DataModel.areas.first
+    raise ActiveRecord::RecordNotFound, "no data-model area #{params[:area]}" unless area
+
+    render inertia: "data-model", props: {
+      areas: DataModel.areas_json,
+      area: DataModel.area_json(area),
+      table_count: DataModel.schema_tables.size,
+      map_url: DataModel::REPOSITORY_PATH
+    }
   end
 
   # Public, unlinked for now. Plans come from the catalogue, never from copy, and the

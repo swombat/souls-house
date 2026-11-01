@@ -184,6 +184,8 @@ IDENTITY_FINGERPRINT_FILES = [
 if imported_home.enabled():
     IDENTITY_FINGERPRINT_FILES += ["instructions.md", "resident-home.json"]
 IDENTITY_FILE_LIMIT = 80_000
+# Chaos's protected_context_max_bytes default (sys/kern/kern/src/config.rs).
+PROTECTED_CONTEXT_DEFAULT_CAP = 128 * 1024
 JOURNAL_MOST_RECENT_LIMIT = 12_000
 JOURNAL_MOST_RECENT_TAIL = 10_000
 JOURNAL_TOTAL_LIMIT = 16_000
@@ -373,6 +375,10 @@ def trigger():
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
+    _activity_context.telegram_run = (
+        (payload.get("runtime_run_id"), conversation_id)
+        if payload.get("trigger_kind") == "telegram" else None
+    )
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
@@ -411,6 +417,7 @@ def trigger():
         if reporter:
             reporter.disabled = True
         _activity_context.reporter = None
+        _activity_context.telegram_run = None
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         _unregister_running_session(session_id)
@@ -814,6 +821,25 @@ def require_house_trust(cwd, chaos_home):
     )
 
 
+SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
+
+
+def shell_env_excludes(env):
+    """The tool shell's exclude list, as a TOML array literal.
+
+    Chaos patterns have only `*` and `?`, so "every *KEY* name but one"
+    can't be one glob. `*KEY?*` covers names with KEY in the middle; names
+    ending in KEY are listed exactly from the environment Chaos is about to
+    inherit, minus SHELL_ENV_ALLOWED_KEYS.
+    """
+    ending_in_key = sorted(
+        name for name in env
+        if name.upper().endswith("KEY") and name not in SHELL_ENV_ALLOWED_KEYS
+    )
+    patterns = ["*KEY?*", "*SECRET*", "TRIGGER_BEARER_TOKEN", *ending_in_key]
+    return json.dumps(patterns, separators=(",", ":"))
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -843,6 +869,16 @@ def run_chaos(
         api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
         if api_key_env:
             env.pop(api_key_env, None)
+    # Invocation-local correlation also exists without a conversation activity
+    # reporter (Telegram). Never mutate the process-wide environment.
+    for key in ("SOULSHOUSE_RUNTIME_RUN_ID", "SOULSHOUSE_RUNTIME_CHAT_ID",
+                "SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID", "HELIXKIT_RUNTIME_RUN_ID",
+                "HELIXKIT_RUNTIME_CHAT_ID", "HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID"):
+        env.pop(key, None)
+    telegram_run = getattr(_activity_context, "telegram_run", None)
+    if telegram_run and telegram_run[0]:
+        env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])
+        env["SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID"] = str(telegram_run[1])
     args = [CHAOS_BIN, "exec"]
     if json_output:
         # Machine-readable JSONL: process.started carries the process_id we
@@ -871,10 +907,13 @@ def run_chaos(
         # including the resident's outbound bearer token, even with
         # inherit="all". Disable that broad default, then retain explicit
         # protection for provider keys, secrets, and the inbound trigger token.
+        # OPENROUTER_API_KEY is the one key a resident's own tools may use
+        # (image generation and the like): the house only passes it in when
+        # the account has its own key or falls back to house keys.
         "--headless",
         "-c", "shell_environment_policy.inherit=\"all\"",
         "-c", "shell_environment_policy.ignore_default_excludes=true",
-        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]',
+        "-c", f"shell_environment_policy.exclude={shell_env_excludes(env)}",
     ]
     if auth_mode == "oauth_account" and selected_provider == "anthropic":
         # Headless clamp is startup config, so this applies equally to fresh and
@@ -1139,6 +1178,9 @@ def instrumented_response(
             unsupported_chaos_schema=events["unsupported_telemetry_schema_version"],
         ),
     }
+    telegram_run = getattr(_activity_context, "telegram_run", None)
+    if telegram_run and telegram_run[0]:
+        response["telegram_delivery_run_id"] = telegram_run[0]
     if roll:
         response["session_roll_reason"] = roll
     error_kind = classify_provider_error(response, runtime.get("provider"))
@@ -1839,10 +1881,13 @@ def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, component
 def identity_context() -> str:
     """Return identity and current hosting context, with soul first."""
     sections = []
+    # Files Chaos snapshots in full at session start are not sent again here:
+    # one copy, and it is the copy that survives compaction.
+    protected = protected_identity_files()
 
     # Keep soul.md first. This is the agent's own chosen/exported identity text,
     # and should be the first thing the model sees before runtime scaffolding.
-    soul = read_identity_file("soul.md")
+    soul = "" if _is_protected("soul.md", protected) else read_identity_file("soul.md")
     if soul:
         sections.append(soul)
 
@@ -1854,11 +1899,45 @@ def identity_context() -> str:
         ("self-narrative.md", "Self-narrative"),
         ("bootstrap.md", "Bootstrap notes"),
     ]:
+        if _is_protected(filename, protected):
+            continue
         content = read_identity_file(filename)
         if content:
             sections.append(f"## {label}: identity/{filename}\n\n{content}")
 
     return "\n\n".join(sections)
+
+
+def _is_protected(filename, protected):
+    return str((AGENT_IDENTITY_PATH / filename).resolve()) in protected
+
+
+def protected_identity_files():
+    """Paths that every Chaos home this resident runs in will snapshot whole.
+
+    A home whose settings cannot be read, whose list names a file that is
+    missing, or whose files exceed its protected-context cap (Chaos would keep
+    a truncated copy) protects nothing here. The fallback is a duplicate in
+    the prompt, never a missing soul.
+    """
+    homes = [CHAOS_HOME] + ([OAUTH_CHAOS_HOME] if OAUTH_CHAOS_HOME.is_dir() else [])
+    covered = None
+    for home in homes:
+        try:
+            result = subprocess.run([CHAOS_BIN, "config", "get"], capture_output=True, text=True,
+                                    timeout=30, env={**os.environ, "CHAOS_HOME": str(home)})
+            settings = json.loads(result.stdout) if result.returncode == 0 else {}
+            files = [Path(f).resolve() for f in settings.get("protected_context_files") or []]
+            # 0 is a real cap (Chaos snapshots nothing); only absence means the default.
+            cap = settings.get("protected_context_max_bytes")
+            cap = PROTECTED_CONTEXT_DEFAULT_CAP if cap is None else int(cap)
+            if sum(path.stat().st_size for path in files) > cap:
+                files = []
+        except Exception:
+            files = []
+        paths = {str(path) for path in files}
+        covered = paths if covered is None else covered & paths
+    return covered or set()
 
 
 def imported_runtime_context():

@@ -54,8 +54,10 @@ module Billing
     end
 
     # Returns [order, client_secret, payment_method_id].
-    def start!(account:, creator:, attributes:, open_beginning:, tier:)
-      refuse!(account, creator, tier)
+    def start!(account:, creator:, attributes:, open_beginning:, tier:, rate: "standard")
+      offer = tier&.offer(rate)
+      refuse!(account, creator, offer)
+      refuse_house_model_at_cost!(offer, attributes, account: account, creator: creator)
       payment_method = current_payment_method!(account)
       Agents::VmBirthPolicy.current.refuse!(kind: :birth)
       raise Refused, "Give the resident a name first." if attributes[:name].to_s.strip.empty?
@@ -64,7 +66,11 @@ module Billing
       end
 
       settle_earlier!(account, creator)
-      order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id,
+      # The price is pinned on the order: an uncertain create is replayed with
+      # the same idempotency key, so its parameters must not move when the
+      # catalogue is re-costed in between (#619).
+      order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
+        stripe_price_id: offer.price_id, billing_code_redemption: account.grant_for(offer.rate),
         birth_attributes: attributes.to_h, open_beginning: open_beginning)
       order.update!(stripe_payment_method_id: payment_method.id)
       subscription = open_subscription!(order)
@@ -112,7 +118,7 @@ module Billing
         next false if remote && remote.status.in?(PAID)
 
         @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
-        order.update!(state: "abandoned", birth_attributes: {})
+        order.abandon!
         true
       end
       complete!(order) unless abandoned
@@ -121,11 +127,27 @@ module Billing
 
     private
 
-    def refuse!(account, creator, tier)
+    def refuse!(account, creator, offer)
       raise Refused, "This account doesn't pay per resident." unless account.billing_required?
       raise Refused, "Only the account's owner can pay for a new resident." unless account.owned_by?(creator)
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
-      raise Refused, "That plan can't be bought yet." unless tier&.purchasable?
+      raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
+      raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer.rate)
+    end
+
+    # At cost includes no house-model allowance, so a resident on a
+    # house-funded model would be born unable to think. Judged on the model
+    # the birth would actually use (the draft's, or the default HostedBirth
+    # would supply), refused before any money moves; the wizard says the same
+    # before the button.
+    def refuse_house_model_at_cost!(offer, attributes, account:, creator:)
+      return unless offer.at_cost?
+
+      model_id = attributes[:model_id].presence || Agents::HostedBirth.default_model_id(account: account, creator: creator)
+      return unless HouseInference::Offering.find(model_id.to_s)
+
+      raise Refused, "At cost includes no house model. Choose a model you connect a subscription or key for, " \
+                     "or a plan with an allowance."
     end
 
     def current_payment_method!(account)
@@ -137,18 +159,28 @@ module Billing
     # with the same key and the same stored card, returns the one Stripe made
     # the first time. Stripe's answer is recorded before anything else can
     # happen to the order.
+    #
+    # The payload for a standard order is byte-for-byte what it was before
+    # rates existed: an uncertain order opened by an older deploy is replayed
+    # by a newer one under the same idempotency key, and Stripe refuses a key
+    # whose parameters moved. Only an at-cost order carries its rate.
     def open_subscription!(order)
-      tier = order.tier_record
+      offer = order.offer
       customer = BillingCustomer.find_by!(account: order.account)
+      metadata = { birth_order: order.reference, account_id: order.account_id.to_s, tier: offer.tier.id }
+      unless offer.standard?
+        metadata[:rate] = offer.rate
+        metadata[:redemption_id] = order.billing_code_redemption_id.to_s
+      end
       subscription = @client.v1.subscriptions.create({
         customer: customer.stripe_customer_id,
-        items: [ { price: tier.price_id } ],
+        items: [ { price: order.stripe_price_id.presence || offer.price_id } ],
         default_payment_method: order.stripe_payment_method_id,
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
-        description: "#{tier.name} hosting for #{order.resident_name}",
-        metadata: { birth_order: order.reference, account_id: order.account_id.to_s, tier: tier.id },
+        description: "#{offer.name} hosting for #{order.resident_name}",
+        metadata: metadata,
         expand: [ "latest_invoice.confirmation_secret" ]
       }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
       order.update!(stripe_subscription_id: subscription.id, last_error: nil)
@@ -196,7 +228,7 @@ module Billing
           next unless earlier.pending?
 
           @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
-          earlier.update!(state: "abandoned", birth_attributes: {})
+          earlier.abandon!
         end
       end
     end
@@ -230,7 +262,7 @@ module Billing
         begin
           agent = Agents::HostedBirth.new(account: order.account, creator: order.creator,
             attributes: order.birth_attributes.symbolize_keys, open_beginning: order.open_beginning, paid: true).create!
-          order.update!(state: "born", agent: agent, born_at: Time.current, birth_attributes: {}, last_error: nil)
+          order.mark_born!(agent: agent)
         rescue ActiveRecord::RecordInvalid, Agents::HostedProvisioning::ConfigurationError => error
           failure = error
           raise ActiveRecord::Rollback
@@ -246,14 +278,14 @@ module Billing
       if remote.metadata["agent_id"].to_s != order.agent_id.to_s
         @client.v1.subscriptions.update(remote.id, {
           metadata: { agent_id: order.agent_id.to_s, birth_order: order.reference },
-          description: "#{order.tier_record.name} hosting for #{order.agent.name}"
+          description: "#{order.offer.name} hosting for #{order.agent.name}"
         })
       end
       SubscriptionSync.new(remote.id, client: @client).call
     end
 
     def fail!(order, remote, error)
-      order.reload.update!(state: "failed", last_error: error.message.first(500))
+      order.reload.record_failure!(error.message)
       Rails.error.report(error, handled: true,
         context: { subsystem: "billing", birth_order_id: order.id, stripe_subscription_id: remote&.id })
       raise error

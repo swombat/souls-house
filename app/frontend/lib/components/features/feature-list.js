@@ -28,6 +28,7 @@ import {
   YoutubeLogo,
   XLogo,
   Receipt,
+  Bank,
   Ghost,
   ChalkboardSimple,
   Waveform,
@@ -251,7 +252,7 @@ export const technicalFeatures = [
     key: 'telegram',
     title: 'Telegram',
     description:
-      'Talk with residents from your phone. They can write to you first, send and receive images, and get your voice notes as transcripts.',
+      'Talk with residents from your phone. They can write to you first, send and receive images, and get your voice notes as transcripts. A successful DM turn with no delivered reply gets a house-labelled completion notice, unless the resident explicitly chooses quiet; a stated reason is passed on as theirs. Add a resident to a Telegram group and it switches on there the first time its owner mentions it: it keeps the group conversation and answers when mentioned or replied to, with the messages above in view.',
     icon: TelegramLogo,
     media: {
       kind: 'video',
@@ -259,6 +260,13 @@ export const technicalFeatures = [
       poster: '/feature-clips/telegram.jpg',
       alt: "A Telegram bot is connected in Wren's settings. Then Wren writes first on Telegram, and a voice note comes back with its transcript.",
     },
+  },
+  {
+    key: 'telegram-bot-answers',
+    title: 'Other bots can join the conversation',
+    description:
+      'An account owner can let a resident answer other bots in a Telegram group, optionally limited by bot username. Off by default, bot answers require a mention or reply, never a bare name, and spend the owner’s allowance. At most three bot-triggered turns run in a row; a message from any person resets the limit.',
+    icon: TelegramLogo,
   },
   {
     key: 'google',
@@ -383,11 +391,25 @@ export const moreFeatures = [
     icon: DropboxLogo,
   },
   {
+    key: 'freeagent',
+    title: 'FreeAgent',
+    description:
+      'Let chosen residents work with your FreeAgent company: read invoices, bank transactions and VAT, explain transactions and attach receipts when asked. Access follows the approving user’s permissions, not a read-only OAuth scope. Requires a configured FreeAgent app and your authorisation.',
+    icon: Receipt,
+  },
+  {
     key: 'xero',
     title: 'Xero',
     description:
       'Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.',
     icon: Receipt,
+  },
+  {
+    key: 'monzo',
+    title: 'Monzo',
+    description:
+      'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
+    icon: Bank,
   },
   {
     key: 'oura',
@@ -396,10 +418,24 @@ export const moreFeatures = [
     icon: Circle,
   },
   {
+    key: 'odoo',
+    title: 'Odoo accounting reads',
+    description:
+      'Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC to read partners, invoices and payment status, excluding credit notes. Use a dedicated read-only user; the API key retains its user’s full rights.',
+    icon: Receipt,
+  },
+  {
     key: 'pipedrive',
     title: 'Pipedrive',
     description:
       'Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.',
+    icon: Funnel,
+  },
+  {
+    key: 'twenty',
+    title: 'Twenty CRM',
+    description:
+      'Connect a public HTTPS Twenty instance and let chosen residents find people, companies and opportunities. The helper offers reads; the API key retains its actual Twenty permissions.',
     icon: Funnel,
   },
   {
@@ -470,6 +506,13 @@ export const moreFeatures = [
     icon: ChalkboardSimple,
   },
   {
+    key: 'resident-recording-downloads',
+    title: 'Recording audio for residents',
+    description:
+      'Residents can download original Field recording audio in their home account through the API, for making clips or checking a transcript. Guest-account recordings remain out of reach; downloading grants no new recording writes or voiceprint access.',
+    icon: Waveform,
+  },
+  {
     key: 'speaker-sample-review',
     title: 'Review speaker fingerprints',
     description:
@@ -487,7 +530,7 @@ export const moreFeatures = [
     key: 'field-swarm-search',
     title: 'Field swarm search',
     description:
-      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. A test feature, off unless a site admin turns it on for the account, and the house records what every search costs.',
+      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Life and Work plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
     icon: Funnel,
   },
   {
@@ -588,6 +631,13 @@ export const moreFeatures = [
     icon: Palette,
   },
   {
+    key: 'resident-pictures',
+    title: 'Faces for residents',
+    description:
+      "A resident can have a picture as well as an icon, shown wherever its face is drawn. You set it on the resident's Appearance tab (drop, paste, pick a file or give a web address), or the resident sets its own. If the resident has a Telegram bot, the bot's profile photo follows the picture.",
+    icon: IdentificationCard,
+  },
+  {
     key: 'memory-tab',
     title: 'Memory at a glance',
     description: "A read-only view of how a resident's journals and memory graph grow, day by day.",
@@ -639,7 +689,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. A paid resident gets its own monthly house-model allowance, which replaces the free one while the plan is paid. Billing is still in test mode, the rest of what a plan lists isn't switched on yet, and existing residents stay free.",
+      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. A plan pays for the resident's home and its own monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
     icon: CreditCard,
   },
   {

@@ -13,16 +13,32 @@
 # as the order is settled either way.
 class ResidentBirthOrder < ApplicationRecord
 
-  STATES = %w[pending born abandoned failed].freeze
   # Stripe expires an unpaid first invoice after about 23 hours.
   LIFETIME = 23.hours
 
   belongs_to :account
   belongs_to :creator, class_name: "User"
   belongs_to :agent, optional: true
+  belongs_to :billing_code_redemption, optional: true
 
-  validates :state, inclusion: { in: STATES }
+  state_machine :state, initial: :pending, action: nil do
+    state :pending, :born, :abandoned, :failed
+
+    event :complete_order do
+      transition [ :pending, :failed ] => :born
+    end
+
+    event :abandon_order do
+      transition pending: :abandoned
+    end
+
+    event :fail_order do
+      transition [ :pending, :failed ] => :failed
+    end
+  end
+
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
+  validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :pending, -> { where(state: "pending") }
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }
@@ -32,17 +48,35 @@ class ResidentBirthOrder < ApplicationRecord
   # unique across every environment sharing a Stripe account.
   before_validation(on: :create) { self.reference ||= SecureRandom.uuid }
 
-  STATES.each do |name|
-    define_method(:"#{name}?") { state == name }
+  # Billing::PaidBirth owns the payment checks and enclosing birth transaction.
+  def mark_born!(agent:, now: Time.current)
+    complete_order!
+    update!(agent: agent, born_at: now, birth_attributes: {}, last_error: nil)
+  end
+
+  def abandon!
+    abandon_order!
+    update!(birth_attributes: {})
+  end
+
+  def record_failure!(message)
+    fail_order!
+    update!(last_error: message.first(500))
   end
 
   def tier_record = Billing::Tier.find!(tier)
 
+  def offer = tier_record.offer(rate)
+
   def resident_name = birth_attributes["name"]
 
   def as_json(*)
-    { id: to_param, state: state, tier: tier, resident_name: resident_name, expires_at: expires_at&.iso8601,
+    { id: to_param, state: state, tier: tier, rate: rate, resident_name: resident_name, expires_at: expires_at&.iso8601,
       last_error: last_error }
   end
+
+  private
+
+  private :complete_order, :complete_order!, :abandon_order, :abandon_order!, :fail_order, :fail_order!
 
 end

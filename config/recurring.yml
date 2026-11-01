@@ -37,6 +37,13 @@ production:
     queue: default
     schedule: every day at 4:40am
 
+  # Titles conversations the create-time GenerateTitleJob left untitled, on
+  # the house key and another model family (TitleSweepJob).
+  title_sweep:
+    class: TitleSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
     queue: default
@@ -47,6 +54,13 @@ production:
   # Judges quiet rooms for the stalled-thread sweeper (StalledThreadSweeper).
   # Does nothing while Setting#stalled_sweep_minutes is 0. Shadow only: it
   # records verdicts and wakes nobody.
+  # Re-offers a new resident's first conversation if a job was lost between
+  # opening it and waking the resident (Agents::FirstConversation).
+  first_conversation_sweep:
+    class: FirstConversationSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   stalled_thread_sweep:
     class: StalledThreadSweepJob
     queue: default
@@ -172,6 +186,11 @@ production:
     class: AgentHealthCheckJob
     queue: default
     schedule: every 5 minutes
+
+  roll_hold_watch:
+    class: RollHoldWatchJob
+    queue: default
+    schedule: every 15 minutes
 
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob

@@ -28,6 +28,23 @@ module Agents
       end
     end
 
+    test "a VM Telegram turn carries persistent session policy and the delta through admission" do
+      @agent.update!(runtime: "external", persistent_session: true)
+      subscription = @agent.telegram_subscriptions.create!(user: users(:user_1), telegram_chat_id: 111)
+      message = subscription.telegram_messages.create!(role: "user", text: "A VM conversation", sent_at: Time.current)
+      with_async do
+        result = ExternalAgentTelegramRequest.new(agent: @agent, subscription: subscription, telegram_message: message).call
+        assert_equal 202, result[:status]
+        turn = ResidentTurn.where(agent: @agent).last
+        assert_equal "runner://#{@enrollment.public_id}", turn.agent_runtime_interaction.endpoint_url
+        payload = JSON.parse(turn.payload)
+        assert payload["persistent_session"]
+        assert_equal @agent.runtime_session_policy.stringify_keys, payload["session_policy"]
+        assert_includes payload["request_delta"], message.text
+        assert_equal "#{@agent.uuid}-telegram-#{subscription.id}", payload["session_id"]
+      end
+    end
+
     test "every missing condition makes it not dispatchable, and nothing falls back to local" do
       cases = {
         "synchronous turns" => -> { },
@@ -103,6 +120,42 @@ module Agents
       assert_raises(RemoteRuntime::Unavailable) do
         RemoteRuntime.provider_auth!(@agent, method: "GET", path: "/auth/status", wait: 0.1.seconds, poll: 0.05)
       end
+    end
+
+    test "tailnet status is relayed through the runner, and an old runner's refusal says so" do
+      answer_next = lambda do |result|
+        Thread.new do
+          command = nil
+          40.times do
+            command = RunnerCommand.where(kind: "tailnet", state: "queued").last
+            break if command
+            sleep 0.05
+          end
+          command.deliver!(now: Time.current)
+          command.record_result!(result, now: Time.current)
+        end
+      end
+
+      waiter = answer_next.call({ "outcome" => "done", "result" => { "ok" => true, "output" => "{}" } })
+      answer = RemoteRuntime.tailnet!(@agent, action: "status", wait: 5.seconds, poll: 0.05)
+      waiter.join
+      assert_equal({ "ok" => true, "output" => "{}" }, answer)
+
+      waiter = answer_next.call({ "outcome" => "refused", "error" => "command not allowed on this runner: 'tailnet'" })
+      assert_raises(RemoteRuntime::RunnerTooOld) do
+        RemoteRuntime.tailnet!(@agent, action: "up", wait: 5.seconds, poll: 0.05)
+      end
+      waiter.join
+
+      waiter = answer_next.call({ "outcome" => "failed", "error" => "no resident agent-x on this host" })
+      error = assert_raises(RemoteRuntime::Unavailable) do
+        RemoteRuntime.tailnet!(@agent, action: "status", wait: 5.seconds, poll: 0.05)
+      end
+      waiter.join
+      assert_not_kind_of RemoteRuntime::RunnerTooOld, error
+      assert_match(/no resident/, error.message)
+
+      assert_raises(ArgumentError) { RemoteRuntime.tailnet!(@agent, action: "down") }
     end
 
     test "start! needs an image ID and queues one start_resident for this placement" do

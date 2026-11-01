@@ -128,11 +128,18 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "Aria", order.resident_name
     assert_predicate order.last_error, :present?
 
+    assert_no_difference "Agent.count" do
+      assert_raises(Agents::HostedProvisioning::ConfigurationError) { paid_birth.complete!(order) }
+    end
+    assert_equal "Aria", order.reload.resident_name
+
     Setting.instance.update!(new_residents_on_vm: false)
     assert_difference "Agent.count", 1 do
       paid_birth.complete!(order)
     end
     assert order.reload.born?
+    assert_equal({}, order.birth_attributes)
+    assert_nil order.last_error
   end
 
   test "asking again replaces an earlier unpaid order and cancels its subscription" do
@@ -343,6 +350,100 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "pm_mastercard", result[:payment_method_id], "paying then uses the card now on the account"
     assert_equal 1, @stripe.created_subscriptions.size
     assert_equal "pm_visa", @stripe.created_subscriptions.sole.first[:default_payment_method]
+  end
+
+  # #619: a re-costing between the first attempt and its replay must not
+  # change the replayed parameters, which share an idempotency key.
+  test "the replay uses the price the order was opened with, even after the plan is re-costed" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    assert_equal CONVERSATION_PRICE, order.stripe_price_id
+    assert_equal "standard", order.rate
+
+    ENV["STRIPE_PRICE_CONVERSATION"] = "price_test_conversation_v2,#{CONVERSATION_PRICE}"
+    assert_equal "price_test_conversation_v2", @tier.price_id
+    paid_birth.payment(order)
+
+    assert_equal 1, @stripe.created_subscriptions.size
+    assert_equal [ { price: CONVERSATION_PRICE } ], @stripe.created_subscriptions.sole.first[:items]
+  end
+
+  test "an at-cost order opens the at-cost price and says so to Stripe" do
+    grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    order, = paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+      attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    assert_equal "at_cost", order.rate
+    assert_equal CONVERSATION_AT_COST_PRICE, order.stripe_price_id
+    assert_equal grant, order.billing_code_redemption
+    params, = @stripe.created_subscriptions.sole
+    assert_equal [ { price: CONVERSATION_AT_COST_PRICE } ], params[:items]
+    assert_equal "at_cost", params[:metadata][:rate]
+    assert_equal grant.id.to_s, params[:metadata][:redemption_id]
+    assert_equal "Conversation at cost hosting for Aria", params[:description]
+  end
+
+  # Cross-deploy replay: an uncertain order opened by the deploy before rates
+  # existed is replayed by this one under the same idempotency key, so a
+  # standard order's payload must be exactly what that deploy sent.
+  test "a standard order's payload is exactly the pre-rates shape, and a replay sends it again unchanged" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    first, = @stripe.created_subscriptions.sole
+    assert_equal({
+      customer: "cus_1",
+      items: [ { price: CONVERSATION_PRICE } ],
+      default_payment_method: "pm_visa",
+      payment_behavior: "default_incomplete",
+      payment_settings: { save_default_payment_method: "on_subscription" },
+      automatic_tax: { enabled: true },
+      description: "Conversation hosting for Aria",
+      metadata: { birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation" },
+      expand: [ "latest_invoice.confirmation_secret" ]
+    }, first)
+
+    # The fake refuses a replay whose payload differs from the first call.
+    paid_birth.payment(order)
+    assert_equal 1, @stripe.created_subscriptions.size
+  end
+
+  test "an at-cost order needs a grant the account holds" do
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    end
+    assert_match(/can't buy plans at that rate/, error.message)
+    assert_equal 0, @stripe.created_subscriptions.size
+    assert_equal 0, ResidentBirthOrder.count
+  end
+
+  test "an at-cost order on a house-funded model is refused before any money moves" do
+    BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: HouseInference::Offering::DEFAULT_MODEL_ID })
+    end
+    assert_match(/includes no house model/, error.message)
+    assert_equal 0, @stripe.created_subscriptions.size
+    assert_equal 0, ResidentBirthOrder.count
+  end
+
+  test "an at-cost order with no model named is judged on the default the birth would use" do
+    BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    HouseInference::Offering.stub(:configured?, true) do
+      assert_equal HouseInference::Offering::DEFAULT_MODEL_ID,
+        Agents::HostedBirth.default_model_id(account: @account, creator: @owner), "the default is a house model here"
+      error = assert_raises(Billing::PaidBirth::Refused) do
+        paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost",
+          attributes: { name: "Aria", system_prompt: "Be curious." })
+      end
+      assert_match(/includes no house model/, error.message)
+    end
+    assert_equal 0, ResidentBirthOrder.count
   end
 
   test "births that don't pay are refused in an account that pays" do

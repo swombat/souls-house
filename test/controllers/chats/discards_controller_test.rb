@@ -3,99 +3,47 @@ require "test_helper"
 class Chats::DiscardsControllerTest < ActionDispatch::IntegrationTest
 
   setup do
-    @user = users(:user_1)
-    @account = accounts(:personal_account)
-    @chat = @account.chats.create!(
-      model_id: "openrouter/auto",
-      title: "Test Conversation"
-    )
+    @team_account = accounts(:team_account)
+    @member = users(:existing_user)
+    @team_chat = @team_account.chats.create!(model_id: "openrouter/auto", title: "Team Chat")
 
-    post login_path, params: {
-      email_address: @user.email_address,
-      password: "password123"
-    }
+    post login_path, params: { email_address: @member.email_address, password: "password123" }
     assert_redirected_to root_path
   end
 
-  test "create soft deletes the chat for admin" do
-    assert @account.manageable_by?(@user)
-    assert_not @chat.discarded?
-
-    post account_chat_discard_path(@account, @chat)
-
-    assert_redirected_to account_chats_path(@account)
-    @chat.reload
-    assert @chat.discarded?
-  end
-
-  test "create creates audit log" do
-    assert_difference "AuditLog.count" do
-      post account_chat_discard_path(@account, @chat)
+  # require_admin is manageable_by?, which any confirmed member passes; site
+  # admins and non-members never reach a different branch through this route.
+  test "a confirmed member discards and restores a chat, and both are audited" do
+    assert_difference "AuditLog.count", 1 do
+      post account_chat_discard_path(@team_account, @team_chat)
     end
+    assert_redirected_to account_chats_path(@team_account)
+    assert @team_chat.reload.discarded?
+    assert_equal [ "discard_chat", @team_chat ], [ AuditLog.last.action, AuditLog.last.auditable ]
 
-    audit = AuditLog.last
-    assert_equal "discard_chat", audit.action
-    assert_equal @chat.id, audit.auditable_id
-  end
-
-  test "create allows confirmed members" do
-    team_account = accounts(:team_account)
-    member_user = users(:existing_user)
-    team_chat = team_account.chats.create!(model_id: "openrouter/auto", title: "Team Chat")
-
-    delete logout_path
-    post login_path, params: {
-      email_address: member_user.email_address,
-      password: "password123"
-    }
-
-    post account_chat_discard_path(team_account, team_chat)
-
-    assert_redirected_to account_chats_path(team_account)
-    team_chat.reload
-    assert team_chat.discarded?
-  end
-
-  test "destroy restores a discarded chat for admin" do
-    @chat.discard!
-    assert @chat.discarded?
-
-    delete account_chat_discard_path(@account, @chat)
-
-    assert_redirected_to account_chats_path(@account)
-    @chat.reload
-    assert_not @chat.discarded?
-  end
-
-  test "destroy creates audit log" do
-    @chat.discard!
-
-    assert_difference "AuditLog.count" do
-      delete account_chat_discard_path(@account, @chat)
+    assert_difference "AuditLog.count", 1 do
+      delete account_chat_discard_path(@team_account, @team_chat)
     end
-
-    audit = AuditLog.last
-    assert_equal "restore_chat", audit.action
-    assert_equal @chat.id, audit.auditable_id
+    assert_redirected_to account_chats_path(@team_account)
+    assert_not @team_chat.reload.discarded?
+    assert_equal [ "restore_chat", @team_chat ], [ AuditLog.last.action, AuditLog.last.auditable ]
   end
 
-  test "destroy allows confirmed members" do
-    team_account = accounts(:team_account)
-    member_user = users(:existing_user)
-    team_chat = team_account.chats.create!(model_id: "openrouter/auto", title: "Team Chat")
-    team_chat.discard!
+  test "a chat in an account the user is not in is not found and stays as it was" do
+    foreign_account = accounts(:other)
+    assert_not foreign_account.memberships.exists?(user: @member)
+    kept = foreign_account.chats.create!(model_id: "openrouter/auto", title: "Foreign")
+    discarded = foreign_account.chats.create!(model_id: "openrouter/auto", title: "Foreign discarded")
+    discarded.discard!
 
-    delete logout_path
-    post login_path, params: {
-      email_address: member_user.email_address,
-      password: "password123"
-    }
-
-    delete account_chat_discard_path(team_account, team_chat)
-
-    assert_redirected_to account_chats_path(team_account)
-    team_chat.reload
-    assert_not team_chat.discarded?
+    assert_no_difference "AuditLog.count" do
+      post account_chat_discard_path(foreign_account, kept)
+      assert_response :not_found
+      delete account_chat_discard_path(foreign_account, discarded)
+      assert_response :not_found
+    end
+    assert_not kept.reload.discarded?
+    assert discarded.reload.discarded?
   end
 
 end

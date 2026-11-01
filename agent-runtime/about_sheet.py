@@ -115,15 +115,13 @@ def hosting_note(status, now=None):
     """The hosting-context lines about the sheet, given this session's refresh status."""
     found = current(now)
     pointer = (
-        "If it doesn't say, say you don't know and point to the account's owner or "
-        "the house's /features page."
+        "The house's /features page and the account's owner also know what it offers."
     )
     if not found:
         return (
             "## About souls.house\n"
-            "No sheet about souls.house is available in this container yet. If you are asked what "
-            "souls.house is or offers, say you don't know and point to the account's owner or the "
-            "house's /features page."
+            "No sheet about souls.house is available in this container yet. The house's "
+            "/features page and the account's owner know what it offers."
         )
     path, age, source = found
     if source == "live" and not status.startswith("failed"):
@@ -140,8 +138,8 @@ def hosting_note(status, now=None):
         )
     return (
         "## About souls.house\n"
-        f"Answer questions about souls.house itself (what it is, what it offers, apps, plans and "
-        f"prices, the Field) from {where}. Say that is where the answer comes from. {pointer}"
+        f"There is a sheet about souls.house itself (what it is, what it offers, apps, plans and "
+        f"prices, the Field) at {where}. {pointer}"
     )
 
 

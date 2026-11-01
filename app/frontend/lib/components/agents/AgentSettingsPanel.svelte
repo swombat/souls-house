@@ -4,6 +4,7 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import AgentModelPanel from '$lib/components/agents/AgentModelPanel.svelte';
   import AgentConversationModels from '$lib/components/agents/AgentConversationModels.svelte';
+  import AgentHostingLocation from '$lib/components/agents/AgentHostingLocation.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -12,6 +13,12 @@
     selectedModel = $bindable(),
     runtimeManaged = false,
     houseAllowance = null,
+    // Rendered right after the model choice: the subscription decides how
+    // that model is paid for.
+    subscription = null,
+    // Where the runtime lives (main server or its own VM); null when the
+    // resident has no hosted runtime.
+    hostingLocation = null,
   } = $props();
 
   const ADVANCED_FIELDS = [
@@ -46,6 +53,8 @@
       defaultModelId={selectedModel}
       agentName={$form.agent.name || 'this resident'} />
   </AgentModelPanel>
+
+  {#if subscription}{@render subscription()}{/if}
 
   <div class="space-y-4">
     <div>
@@ -96,6 +105,10 @@
 
   {#if advancedOpen}
     <div id="advanced-settings" class="space-y-8">
+      {#if hostingLocation}
+        <AgentHostingLocation {hostingLocation} />
+      {/if}
+
       <div class="space-y-4">
         <div>
           <h2 class="text-lg font-semibold">Availability</h2>
@@ -142,6 +155,7 @@
           </div>
           <Switch
             id="persistent_session"
+            aria-label="Persistent conversation sessions"
             checked={$form.agent.persistent_session}
             disabled={!runtimeManaged}
             onCheckedChange={(checked) => ($form.agent.persistent_session = checked)} />
@@ -156,6 +170,7 @@
           </div>
           <Switch
             id="persistent_wake_session"
+            aria-label="Persistent heartbeat session"
             checked={$form.agent.persistent_wake_session}
             disabled={!runtimeManaged}
             onCheckedChange={(checked) => ($form.agent.persistent_wake_session = checked)} />

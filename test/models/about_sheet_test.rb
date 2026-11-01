@@ -45,8 +45,11 @@ class AboutSheetTest < ActiveSupport::TestCase
     text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"))
     assert_includes text, "Plans are open."
     Billing::Tier.all.each do |tier|
-      assert_includes text, "$#{tier.monthly_usd} a month, with $#{tier.allowance_usd} of house-model use"
+      assert_includes text, "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
     end
+    assert_includes text, "and 20 Field swarm searches a month."
+    assert_includes text, "and 100 Field swarm searches a month, and sub-agents."
+    refute_match(/vCPU|GB memory|GB disk|transcription|backup/i, text[/## Plans and prices.*?(?=\n## )/m])
     refute_includes text, "open soon"
     source = AboutSheet.features.find { |row| row[:key] == "billing" }[:description].squish
     assert_includes text, "**Pay for a resident**: #{source}"

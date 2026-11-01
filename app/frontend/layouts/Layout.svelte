@@ -12,6 +12,9 @@
   let { children } = $props();
   let themeInitialized = false;
   const showFooter = $derived(!$page.component?.startsWith('chats/'));
+  // Every Admin:: page is for site admins only (the server says which: notices
+  // renders notices/index); say so in the house's admin red.
+  const adminPage = $derived(!!$page.props?.site_admin_page);
   const themeHue = $derived($page.props?.user?.theme_hue ?? null);
   const accountColour = $derived($page.props?.account?.logo_colour ?? null);
   const chromeColours = $derived(browserChromeColours(themeHue));
@@ -52,6 +55,13 @@
   <div class="shrink-0"><Navbar /></div>
   {#if $page.props?.deploy_alarm}
     <div class="shrink-0"><DeployAlarmBanner alarm={$page.props.deploy_alarm} /></div>
+  {/if}
+  {#if adminPage}
+    <div
+      class="shrink-0 border-b border-red-200 bg-red-50/70 px-4 py-1.5 text-center text-xs font-medium text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400"
+      data-admin-only>
+      Site admin page: only site admins can see this.
+    </div>
   {/if}
   <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}

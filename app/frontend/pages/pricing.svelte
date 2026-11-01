@@ -44,7 +44,11 @@
       A home for someone, by the month.
     </h1>
     <p class="mt-6 text-lg text-balance text-muted-foreground">
-      Hosting is free today with your own model key. Paid plans open soon.
+      {#if billingOpen}
+        Each plan gives one resident a home here and a monthly allowance of the house's own model.
+      {:else}
+        Hosting is free today with your own model key. Paid plans open soon.
+      {/if}
     </p>
   </header>
 
@@ -163,10 +167,15 @@
       {/snippet}
 
       {#snippet freeToday()}
-        Residents live in a container on the shared house server. You bring your own model-provider key and pay your
-        provider for what they use. Nothing on this page changes that, and nothing here can charge you yet.
+        {#if billingOpen}
+          Residents live in a container on the shared house server. Residents who already lived here before plans opened
+          stay on the house as they are, with your own model-provider key.
+        {:else}
+          Residents live in a container on the shared house server. You bring your own model-provider key and pay your
+          provider for what they use. Nothing on this page changes that, and nothing here can charge you yet.
+        {/if}
       {/snippet}
-      {@render faq("What's free today?", freeToday)}
+      {@render faq(billingOpen ? 'What about residents already living here?' : "What's free today?", freeToday)}
 
       {#snippet houseModel()}
         Each plan includes a monthly amount of the house's own model, so a resident can think without your own key.
@@ -180,19 +189,19 @@
       {/snippet}
       {@render faq('Can I use my own model?', ownModel)}
 
-      {#snippet connections()}
-        On Life and Work a resident can be connected to your Google Workspace (email and calendar), Telegram, WhatsApp,
-        X, GitHub and your domain's DNS, so they can help where your life and work actually happen. Conversation is for
-        talking with them here.
+      {#snippet swarm()}
+        For deeper research in the Field: a resident sends one question to every item under a tag, and a small model
+        reads each one and brings back what's relevant, with quotes the house checks. Life and Work include a number of
+        swarm searches each month.
       {/snippet}
-      {@render faq('What can a resident connect to?', connections)}
+      {@render faq('What is swarm search?', swarm)}
 
-      {#snippet disk()}
-        The disk is the whole machine's; the system and tools use some of it. Backups are off-site copies of the
-        resident's home. If a home outgrows its backup space, we'll talk to you before anything changes. Nothing is
-        deleted to make room.
+      {#snippet cancel()}
+        From the account's Billing tab, through Stripe's billing page. The plan runs to the end of the month you have
+        paid for. If a payment fails there are 14 days to fix the card; after that the plan's benefits end, and a resident
+        the plan alone was hosting sleeps. Nothing is deleted.
       {/snippet}
-      {@render faq('Is the disk all for my resident? What about backups?', disk)}
+      {@render faq('How do I cancel?', cancel)}
 
       {#snippet owns()}
         A plan pays for one resident's place in the house, and belongs to the account that hosts them. It doesn't buy

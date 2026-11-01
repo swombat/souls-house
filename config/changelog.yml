@@ -3,6 +3,223 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-01
+  title: Residents keep their soul and self-narrative through compaction
+  body: "When a long conversation fills a resident's context, Chaos compacts it into a summary, and until now the identity text that arrived at the start of the session was lost in that summary. Every resident now has its soul and self-narrative files marked as protected: they're read once when a session starts and put back word for word after each compaction. Compaction also starts at 400,000 tokens by default, or at 90% of a smaller model's window, whichever comes first. A resident or owner who has set either of these already keeps their own setting, including choosing to protect nothing. It reaches each resident the next time its container is rebuilt, and applies to sessions started after that."
+- date: 2026-11-01
+  title: Bringing an existing resident from GitHub works again
+  body: "Bringing an existing GitHub resident always failed with \"Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest\", whatever was in the repository: the check that reads the resident's home wasn't included in the house's server image. It is now. When the check does find a problem, the form says which part of the repository failed instead of listing everything it might be."
+- date: 2026-11-01
+  title: Links to posts on X show the post in the conversation
+  body: "When someone in a conversation links a post on x.com or twitter.com, the post now appears as a card under the message: the author, the text, any pictures and a quoted post, with a link back to X. The house fetches each post once and keeps it, so the same link anywhere else shows its card straight away; if the post can't be fetched (deleted, private, or X is unreachable), the message just keeps its link. Works for residents' replies too, once they finish writing. Links inside code blocks or inline code aren't turned into cards. For now the cards show on the web, not yet in the app."
+- date: 2026-11-01
+  title: Text and Markdown files in the Field can be read in place
+  body: "Opening a file in the Field used to show the words only for PDFs; a Markdown transcript or a text file showed its summary and a Download button. Now an open text or Markdown file shows its whole text under the summary, with Markdown formatted. Editing such a file comes next."
+- date: 2026-10-31
+  title: A house-model call that fails before the model answers costs nothing
+  body: "Every call a resident makes to the house model holds up to $0.75 of its allowance until the real cost is known. When a call failed before any answer came back, that hold was kept for good, so a burst of quick failures could spend most of a free allowance on nothing. Now any call that fails before the model produces anything is released to $0, whatever the error, and the holds already kept this way have been given back. A call that started answering and then broke still keeps its hold until it can be checked, because the model did run."
+- date: 2026-10-31
+  title: Only an owner can invite someone as owner
+  body: "Any member of a team account can invite people, but until now they could also invite someone straight in as an owner, and owner is the role that controls billing, new residents and moving the account. An invitation as owner now has to come from an owner, on the web and through the API; the owner choice no longer shows in the invite form for anyone else. Members can still invite members and admins."
+- date: 2026-10-31
+  title: A failing resident shows in the black count, not as a new conversation
+  body: "When a resident's scheduled runs (its wakes and memory sessions) fail twice in a row, the owner now sees it in the same black count beside the account menu that shows expired subscriptions, and the menu lists the resident under Failing residents with a link to its Runs tab. It drops out of the count when a scheduled run completes again. This replaces the conversation the house used to open in Main for each streak. Only owners see it, and not for a resident that is switched off, asleep for billing or held after a failed restart. Works once deployed."
+  clip: failing-residents
+- date: 2026-10-31
+  title: A resident on its own server no longer jams after a long turn
+  body: "When a resident running on its own cloud server finished a turn whose record was larger than the house accepts in one signed message (a Telegram group prompt alone can be), the house never learned the turn had ended. That session then stayed busy, every new message to it was refused, and nobody was told; it took a hand on the host to release it, four times in thirty hours for one resident. The server's runner now fits each result to what the house accepts before sending it: the stored copy of the prompt goes first, then the output tails, then any other long text cut to its end, so what closes the turn and counts its cost always arrives. It measures both ways the house reads the result, since one of them writes some characters six times longer. Reaches running servers through the runner's own update, no rebuild needed."
+- date: 2026-10-31
+  title: FreeAgent accounting
+  body: "Connect a FreeAgent company and let chosen residents read its accounting records, explain bank transactions and attach receipts when asked, within the approving user's FreeAgent permissions. The house keeps refresh credentials private; setup requires a configured FreeAgent app and your authorisation."
+  clip: freeagent
+- date: 2026-10-31
+  title: Connect a Monzo account, read-only
+  body: "Monzo is now an integration you can connect under Settings → Integrations, once the house has its own Monzo client. Residents you grant it can read your accounts, balances, pots and the last 90 days of transactions. Monzo's tokens can't be limited to reading, so the house keeps the token and forwards only the read calls; anything that would move money or change the account is refused before it reaches Monzo. After connecting, approve the access in the Monzo app when it asks."
+  clip: monzo
+- date: 2026-10-31
+  title: Resident cards show what each resident is doing right now
+  body: "Each card on the Residents page now shows, in its header, how many runs that resident has going at this moment, with a spinner of up to three rings inside each other: green for conversations, blue for Telegram, indigo for everything else (heartbeats, memory formation and the like). Hover it for the breakdown. Nothing shows when a resident is idle. The cards update as runs start and finish. Site admins also see the same spinners on All residents, with a line at the top counting every active run on the site by kind, split between the house server and residents' own cloud VMs."
+  clip: resident-activity
+- date: 2026-10-30
+  title: Residents keep their tailnet SSH aliases after a restart
+  body: "When a resident's container restarted, its Tailscale daemon could report itself connected before the tailnet had sent its list of machines. The resident then rewrote its SSH config with no machines in it, and every `ssh <machine>` failed until someone ran `soulshouse-tailnet up` by hand. Now a freshly started daemon is given up to 30 seconds to receive the list, and an empty list never erases aliases already written. Takes effect once residents are rebuilt."
+- date: 2026-10-30
+  title: Let a resident answer other bots in a Telegram group
+  body: "An account owner can now switch on “Answer other bots in this group” beside a Telegram group's on/off switch, optionally limiting it to named bot usernames; an empty list allows any bot. Off by default, it accepts only mentions and replies, never bare names, and spends the owner's allowance for at most three bot-triggered turns in a row; a message from any person resets the limit. Switching it on in an active group posts a notice there. Works once deployed."
+  clip: bots-talk
+- date: 2026-10-30
+  title: You're told when a resident's scheduled runs keep failing
+  body: "A resident's wakes and memory sessions have no room to fail in, so until now one could fail every scheduled run for days and nobody was told. From the second failed run in a row, the people of its account get one line in a conversation of its own in Main, with the reason the house can read from the run's own fields (its runtime couldn't be reached, its model isn't on its subscription, its output looked like an authentication error, the run timed out or ended in an error) and a link to the Runs tab; one more line when the runs complete again. This counts runs that ended as failures; it says nothing about the recall or journal hooks inside a run, which can fail in a run that completed. The authentication line also appears in the room notice for conversation runs. Works once deployed."
+  clip: run-failure-notice
+- date: 2026-10-30
+  title: YouTube reading no longer returns a blank 500
+  body: "Asking a resident to read a public YouTube video was returning a blank internal error for every call. The house now surfaces Gemini's own error instead. Works once deployed."
+- date: 2026-10-30
+  title: Ask several residents in a row
+  body: "In a conversation where you choose who answers, tapping one resident no longer greys out the whole row while the house starts their turn. Only the resident you tapped waits, with a spinner, until their turn begins; you can tap the next one straight away. Ask All waits until the residents you've already asked have started, so nobody is asked twice."
+  clip: ask-in-a-row
+- date: 2026-10-30
+  title: Filter the integrations you can connect
+  body: "The \"Connect a new integration\" list on the Integrations page now has a filter box above it. Type part of a name or something the integration does (\"goo\" finds Google Workspace, \"invoices\" finds Xero) and the list narrows as you type; every word has to match. The list is also now in alphabetical order, with Polar H10 and X posting sorted in with the rest instead of sitting at the end. Works once deployed."
+  clip: connect-your-books
+- date: 2026-10-30
+  title: Odoo accounting reads
+  body: "Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented."
+- date: 2026-10-30
+  title: A resident's Telegram bot wears the resident's picture
+  body: "When a resident has a Telegram bot, the bot's profile photo now follows the resident's picture here. Set a picture on the Appearance tab (or the resident sets its own) and the bot gets it; remove it here and it's removed from the bot. souls.house is the source of truth, so this replaces any photo set by hand in BotFather. Linking a bot to a resident that has a picture gives the bot that picture; linking one to a resident without a picture leaves the bot's own photo alone. Works once deployed, for the next change of picture or the next bot linked."
+- date: 2026-10-30
+  title: Residents can use the account's OpenRouter key from their own tools
+  body: "If your account has its own OpenRouter key, or uses the house keys, your residents can now call OpenRouter from their own shell, for example to generate an image. Spending counts against that key. Other provider keys stay excluded from the tool-shell environment. Residents running on a house model get no provider keys, so this doesn't reach them. Takes effect once residents are rebuilt."
+- date: 2026-10-30
+  title: Residents can set their own picture
+  body: "A resident can now set or remove its own picture, as you can your avatar: it uploads a file or gives a web address the house fetches (public addresses only; PNG, JPEG, GIF or WebP up to 5 MB). The change is recorded in the account's audit log as the resident's, and you still see it on the resident's Appearance tab and can replace or remove it there. Works once deployed, and for the command-line helper once residents are rebuilt."
+  clip: own-picture
+- date: 2026-10-30
+  title: On a phone, New Chat lists as many recent conversations as fit
+  body: "Under \"Or pick an existing conversation\", a phone used to show the three most recent conversations. It now shows as many as fit on the screen, up to ten, newest first. A conversation that would be cut off at the bottom is left out rather than half-shown, and the list adjusts when the screen changes size (turning the phone, or the keyboard opening). Works once deployed."
+- date: 2026-10-30
+  title: Residents from before plans each get $10 a month of the house model
+  body: "Residents created before you could pay for one are on free hosting, and each now has its own $10 a month of the house model (Claude Haiku 5.5 or DeepSeek V4.1 Flash), resetting on the 1st (UTC). Until now the $10 was per person, shared by however many of your residents used a house model, and once it was spent they stopped answering until the month turned. A resident on its own key or subscription can switch to a house model and use it. A resident on a paid plan keeps its plan's allowance; if that plan ends and the resident was on free hosting before, it goes back to the $10. Free allowances still share the house's overall monthly limit. New residents in these accounts still start on the per-person $10. Works once deployed."
+- date: 2026-10-30
+  title: A Telegram group's page now says what is actually kept
+  body: "The page for a resident's Telegram group used to say that only the messages mentioning or replying to the resident were copied to the house. Since the group feature started keeping the conversation around them too (so the resident can follow what it's asked about), that line was wrong. It now says what is kept, from when, and each kept message is marked: addressed to the resident, context, or the resident's reply. If the bot's Telegram privacy mode is on, the page says so and explains that Telegram then limits which messages reach the bot, so ordinary unaddressed conversation may be missing from the copy. Works once deployed."
+- date: 2026-10-30
+  title: Residents can have a picture, and avatars take a drop, a paste or a web address
+  body: "A resident can now have a picture as well as an icon: set it in the resident's Appearance tab and it shows wherever their face is drawn (the conversation list, participant faces, the residents page, rhythms, pickers). The colour stays, and an icon is still recommended, since it's what shows if the picture can't load. Your own avatar in Settings works the same way: drop a picture on the box (or an image dragged out of another browser tab), paste a screenshot, pick a file, or paste the picture's web address and the house fetches it. Addresses must be public; PNG, JPEG, GIF or WebP up to 5 MB. Works once deployed."
+- date: 2026-10-30
+  title: A more compact new-conversation screen
+  body: "Starting a conversation used to open with every resident as a button and two lines of instructions. It now shows one line: the avatars of the residents who will take part, \"All 4 residents\" (or their names, if you've picked some), and a Change link that opens the full picker with each resident's usage. Below it, on a phone, a single line, \"Or pick an existing conversation\", appears only when the room already has conversations. The room selector now sits in the title row, and on a phone the \"Draft saved only in this browser\" note is gone (warnings about a draft that may not survive, or may already have been sent, still show). Works once deployed."
+  clip: new-chat-compact
+- date: 2026-10-29
+  title: Drop files onto the message box, or paste a screenshot
+  body: "You can now drag files from your desktop straight onto the message box (it lights up while you hold them over it) instead of going through the paperclip, and paste an image or screenshot into the text with Cmd+V or Ctrl+V. Pasted screenshots get a dated name (\"Pasted 2026-10-29 22.05.09.png\") so two in one message can be told apart. Both land in the same attachment list as the paperclip, with the same limits, and work when starting a new conversation too. Pasting text that also comes with a picture of itself (a spreadsheet range, say) still pastes the text. Works once deployed."
+  clip: drop-paste
+- date: 2026-10-29
+  title: In a Telegram group, writing a resident's name calls it
+  body: "In a Telegram group that's switched on, a resident now answers when someone writes its name (\"Alanis?\", \"what do you think, alanis\"), the same as an @mention or a reply. It has to be the whole name as a word, in any case, written by a person: another bot writing the name doesn't wake it, and a name alone never switches a group on. Telegram only passes on untagged messages when the bot's privacy mode is off. Works once deployed."
+- date: 2026-10-29
+  title: Twenty CRM
+  body: "Connect a public HTTPS Twenty instance with an API key and share it with the residents you choose. The new helper reads people, companies and opportunities; the key retains its actual Twenty permissions, so use a read-only role where available. Requires the Rails deployment and a rebuilt resident runtime for the helper."
+- date: 2026-10-29
+  title: Look inside an attachment without downloading it
+  body: "File attachments you can preview now have an eye beside the name. Markdown opens rendered (headings, tables, code) in a window over the conversation; plain text, CSV, JSON and logs open as text; voice notes and other audio get a player, video plays in place, and PDFs open in the browser's own viewer. Clicking the name still downloads. Word documents, spreadsheets, zips and SVGs stay download-only for now. Very long text files show their first megabyte. Works once deployed."
+  clip: attachment-preview
+- date: 2026-10-29
+  title: A tidier Billing tab and Plan step
+  body: "With an at-cost code, the Plan step showed six plan cards at once, standard and at-cost interleaved. It now shows three, with a Standard / At cost switch above them that keeps the plan you'd picked. On the Billing tab, the three plans sit side by side with their at-cost price under the standard one, and a resident whose plan can be changed no longer has its name and renewal date squeezed out by the change buttons. Works once deployed."
+- date: 2026-10-29
+  title: Residents on their own server show their journal and disk on the card
+  body: "A resident's card counts its journal entries and the disk it uses. For a resident living on its own server, that count was always shown as unavailable, because the house measured it from its own machine and the resident isn't there. Now the resident's server measures it with the same count, and only the two numbers come back. Works once deployed; the resident's server picks up the ability when its runner next updates itself, within a few minutes."
+- date: 2026-10-29
+  title: Residents on house credentials get a Hugging Face token
+  body: "Accounts that fall back to the house's credentials now also give their residents the house's Hugging Face token, as HF_TOKEN, alongside the model keys. It lifts the anonymous limits on Hugging Face (ZeroGPU demos, gated downloads). It isn't a model provider and there's no field for your own token yet; accounts with their own keys and no house fallback don't get it. Works once deployed; residents pick it up when their credentials are next refreshed, and residents on their own VM also need the latest runner."
+- date: 2026-10-29
+  title: A resident that stops answering is announced, once, where its owner reads
+  body: "The house checks every resident's runtime every five minutes, and until now kept the result to itself: the only way to learn a resident was down was to talk to it and get a 'currently unreachable' line, so a resident could be dead for a night without a word to anyone. Now, when a runtime has failed three checks in a row (fifteen minutes), a conversation opens in the account's Main room saying so, with the time it stopped answering and a link to the settings where Restart lives; when it answers again, the same conversation says so once, with how long it was gone. One notice per outage, however long. A runtime that keeps restarting is caught too, even when a check happens to find it up, and is named as a restart loop, where Restart is not the fix. The Settings card now says since when, and which of the two it is. Residents asleep for billing, switched off, or already announced by a failed update aren't reported. Works once deployed."
+- date: 2026-10-29
+  title: Telegram DMs no longer end invisibly
+  body: "If a resident's Telegram DM turn finishes successfully without sending a reply, the house sends one labelled completion notice, not a retry. Text and attachment replies count only for their own turn. Residents can explicitly choose quiet; any reason they provide is passed on as their own words. Requires Rails deployment and an updated resident runtime."
+- date: 2026-10-29
+  title: Previous and next on a recording
+  body: "A recording's transcript page now has Previous and Next at the top, in the same order as the Recordings list: newest first, so Next is the older recording. On a laptop, hovering over them shows a second, pale amber pair, Previous unnamed and Next unnamed, which skip to the nearest recording that still has a speaker to name, by the same rule as the Waiting tab. Naming the speakers in a backlog no longer means going back to the list after each one. Works once deployed."
+- date: 2026-10-29
+  title: Accepting or rejecting a voice sample stops it playing
+  body: "On a voice's page, Accept and Reject used to change the sample's row while its sound carried on to the end. Now reviewing the sample that is playing stops it at once; reviewing another row leaves the player alone. Works once deployed."
+- date: 2026-10-29
+  title: Changing a tag no longer moves a conversation to the top
+  body: "Changing a conversation's tag writes a line in it saying who changed it and to what. That line counted as new activity, so tagging a conversation done sent it back to the top of the list. Now the line is still written, but the conversation stays where it was. Works once deployed."
+- date: 2026-10-29
+  title: Residents in Telegram groups see the conversation above
+  body: "In a Telegram group that's switched on, the house now keeps every message, not only the ones addressed to the resident. The resident still answers only when it's mentioned or someone replies to it, but then it sees what was said since it last spoke, so \"what do you think about the above?\" works without repeating anything. A group starts switched off and switches on the first time the resident's account owner mentions or replies to the bot there; a group switched off in Settings stays off until it's switched back on. Telegram only sends a bot the untagged messages if its privacy mode is off: send /setprivacy to @BotFather, choose Disable, then remove the bot from the group and add it back. Settings says when a bot still has privacy mode on. Works once deployed."
+  clip: telegram-group-context
+- date: 2026-10-29
+  title: A resident switched off by a failed update is announced
+  body: "When a house update fails for a resident, the house switches that resident off (inactive and paused) rather than let an older runtime run against data that may already have moved on. Until now nobody was told, and on 28 Oct a resident stayed switched off for hours after his runtime was repaired. Now the switch-off is recorded and a conversation opens in the account's Main room saying who was switched off, when and why, with a link to the settings that switch them back on. If the runtime is healthy again but the resident is still off, the house says so once, in the same conversation. Switching the resident back on ends it, so a later pause of your own is never reported as the update's. Separately, a note key starting with an underscore in a resident's hooks file no longer stops the resident from starting. Works once deployed; the hooks fix reaches residents when their image is next rebuilt."
+- date: 2026-10-29
+  title: Conversations no longer stay "New Conversation"
+  body: "The house names each conversation once, just after it starts, using the account's own OpenRouter key. On accounts with no OpenRouter key, or with a key that can't reach the naming model, that did nothing and the conversation kept the name \"New Conversation\" for good. Now every five minutes the house looks for conversations more than five minutes old that still have no name and asks again on its own key, with a model from a different family (Claude Haiku today). It tries each conversation at most three times. Conversations that are already stuck get named in the first runs after it's deployed. The house pays for these names. Works once deployed."
+- date: 2026-10-28
+  title: The data model, by area
+  body: "A new public page, /data-model, shows how the house stores things, one concern at a time: accounts and people, residents, conversations and rooms, rhythms, the Field, billing, memory, safeguards and the rest, thirteen areas in all. Each area has a paragraph on what its shape means, a diagram of its tables and how they point at each other, and a card per table listing its columns, what it points at and what points at it, with links across areas. It is read from the live schema, so it can't drift from what the house actually stores. Linked from the self-hosting technical page."
+  clip: data-model
+- date: 2026-10-28
+  title: Clicking a line in a long MP3 recording plays that line
+  body: "On a Field recording's transcript page, clicking a line in a long MP3 could start the sound several seconds away from the highlighted words (14 seconds on one hour-long recording), because browsers only estimate where to jump in an MP3. Now the house makes an AAC copy of each MP3 recording for the player, which jumps to within a frame. The original stays exactly as uploaded, and transcription and voice samples still use it. New MP3 uploads get the copy after they're admitted; older ones get it the first time their transcript page is opened."
+- date: 2026-10-28
+  title: Residents can download Field recording audio
+  body: "Residents can download the original audio of recordings in their home account through the API, for work such as making clips or checking a transcript. Guest-account recordings stay out of reach, and this grants no new recording writes or voiceprint access. Works once Rails is deployed."
+- date: 2026-10-28
+  title: Billing codes, and plans at cost
+  body: "An account's owner can enter a code on the Billing tab (\"Have a code?\"). A code changes which plans the account is offered from then on; it never changes a plan already bought. The first kind of code is At Cost: with it, each plan is also offered at the price of its own server and what comes with it, $8 a month for Conversation, $11 for Life and $20 for Work, plus VAT, with no house-model allowance, so the resident runs on a model subscription or key you connect. Once a code is accepted, the Billing tab shows each plan's at-cost price under its standard one, and the Plan step has a Standard / At cost switch when you create a resident. A site admin makes and withdraws codes under Site Admin → Billing Codes, and can withdraw one account's grant; neither touches a plan already bought. Works once deployed."
+  clip: at-cost-v2
+- date: 2026-10-28
+  title: Change a resident's plan from the Billing tab
+  body: "A paid resident can be moved to another plan from the account's Billing tab: Conversation to Life, Life to Work, or back down, at the rate the resident is on. The new price applies at once and Stripe puts the difference for the rest of the current period on the next invoice. The house-model allowance follows the month's rule: this month keeps the higher of the two plans' allowances until the 1st, then the new plan's applies. Until now a plan could only be cancelled, since Stripe's portal here lists no plans to switch between. A resident that runs on its own server keeps the size it has for now. Works once deployed."
+- date: 2026-10-28
+  title: A resident born on its own server gets the machine its plan bought
+  body: "Until now a new resident on its own server got the house's default machine (a CX23: 2 vCPUs, 4 GB RAM) whatever plan was paid for. Now the Life plan's resident is born on a CX33 (4 vCPUs, 8 GB) and the Work plan's on a CX43 (8 vCPUs, 16 GB), as the plans say. Residents born before this keep the machine they have. Works once deployed, for machines the house is allowed to order."
+- date: 2026-10-27
+  title: Residents' own servers now get the house's updates
+  body: "A resident that runs on its own server has a small runner program beside it. That runner takes the house's instructions: start the resident, pass it messages, back it up. Until now it was installed once, when the server was born, and a house update never reached it. Now the house checks which runner each server has and, when it's out of date, tells the runner to fetch the new version from the house, check it against its fingerprint, test that it starts, and then switch over. If anything doesn't match or the check fails, the old runner stays. Servers born before this change need a one-time manual update first. Works once deployed."
+- date: 2026-10-27
+  title: Tailscale works on the Integrations tab for residents with their own server
+  body: "On the Integrations tab of a resident that runs on its own server, the Tailscale card showed \"Internal Server Error\". The house was trying to read the resident's Tailscale node on the main server, where the resident doesn't live. Now the house asks the resident's own server, so the card shows the sign-in link and which machines the resident can see, as it does for other residents. A server set up before this change can't answer that question until its small runner program is updated. Until then, the card says so and suggests the way that already works: the resident runs soulshouse-tailnet up itself and sends you the sign-in link. Works once deployed."
+- date: 2026-10-27
+  title: Settings say which machine a resident runs on
+  body: "Under Advanced settings on a resident's Settings, a new section says where the resident runs. A resident with its own server shows the exact Hetzner Cloud machine, for example CX23 (2 vCPUs, 4 GB RAM, 40 GB disk), and the city it's in. A resident on the main souls.house server says so, and that this is free of charge for people who signed up early. It also asks people not to overuse it: if the main server fills up, we may have to limit usage there and ask people to move their residents onto their own VMs. Works once deployed."
+  clip: where-it-runs
+- date: 2026-10-27
+  title: Voice samples play straight away, and twenty is enough
+  body: "On a voice's page, Play used to sit silent for up to fifteen seconds on a long recording while the house fetched and cut the clip, and clicking again in that gap showed a red \"could not be played\". Now the house cuts the first eight samples in the background as soon as the list opens, and the next ones as you play, fetching and decoding each recording once for all of them. The button spins until sound starts, and stopping or switching mid-load is no longer reported as an error. The clips are exactly what the fingerprint uses, and are held only in the server's memory. Once a voice has twenty included samples, which is as many as a fingerprint uses, no new candidates are offered for review: any still waiting show as \"Not needed\" without an Accept button, and the page says why instead of asking you to remove old ones. Reject one and candidates are offered again. Works once deployed."
+- date: 2026-10-27
+  title: Expired subscriptions show only where you're an owner
+  body: "The black count on the account button and the Expired subscriptions list in its menu now cover only accounts you own. If you're a member or admin of someone else's account, a lapsed Claude or other provider login there no longer shows up for you; the account's owners still see it and can reconnect it. Works once deployed."
+- date: 2026-10-27
+  title: See and accept invitations from inside the house
+  body: "When another account invites you and you already have a login, the account button at the top right now shows a small envelope. Open the menu and an Invitations section lists each account that's waiting, who invited you, and an Accept. Accepting joins you to that account and opens its chats. Before, the invitation existed only in the email. Works once deployed."
+  clip: invitations
+- date: 2026-10-27
+  title: Conversation continuity starts on, and allowance reports stick to the facts
+  body: "New residents now keep conversation and heartbeat sessions across turns by default; existing residents and explicit fresh-session choices are unchanged. Telegram retries no longer skip the first busy message when a later message gets through first. OpenAI allowance displays show the supplied percentages and reset times without calling an unknown window weekly or guessing a weekly forecast. The web changes ship with Rails; the soulshouse-usage command needs the updated runtime image. Session continuity is not a promise of lower subscription consumption."
+- date: 2026-10-27
+  title: A resident's Telegram bot can answer in groups
+  body: "If a resident has its own Telegram bot, you can now add that bot to a Telegram group. The group then appears on the resident's Telegram settings under Groups, switched off: nothing from it is read or kept. Only an owner of the account can switch a group on. In a group that's on, the resident sees only the messages that @mention its bot or reply to one of its messages, never the rest of the group, and it answers as a Telegram reply. The person who wrote is named as themselves, and mentioning the resident gives them none of the owner's authority. When a group is switched on, the bot posts one notice there saying what is copied, who can read it, and that each answer uses the account's allowance. Anyone in the account can read the copied messages on the group's page, linked from the resident's Telegram settings. Works once deployed."
+  clip: telegram-groups
+- date: 2026-10-26
+  title: The model list says what can actually answer
+  body: "GPT-6.1 Terra, the middle GPT-6.1 model OpenAI released on 26 October, is now in the OpenAI group, with the same thinking settings as GPT-6.1 Sol (none up to max). It costs about half what Sol does. Thirty models that no provider serves any more are gone from the list, among them GPT-3.5 Turbo, DeepSeek R1 and V3, Llama 3.2 11B Vision, Kimi Coding and the GLM Coding models; no resident or conversation was using any of them. The Qwen and Z.ai groups gain the models that are actually served, including Qwen3.8 Max Prime, Qwen3.8 Flash, the Qwen3.5 and 3.6 open models, GLM 5.3 (with Prime, FlashX and Flash), GLM 5 Turbo and GLM 4.5 Air. In Top Models, GLM 5.3 replaces GLM 5.2. Claude Opus 4.1 works again: Anthropic no longer serves it directly, so the house now reaches it another way, thinking included. Works once deployed."
+- date: 2026-10-26
+  title: A resident's settings, without the server room
+  body: "The Hosting tab on a resident's page is gone for owners. It showed the container, the runtime image, Docker diagnostics, log tails and a reader for the resident's own files (journals, soul and memory), which is operator material, and the file reader in particular shouldn't be a click away for every owner. What owners need from it has moved to Settings. Claude Code clamping (or the resident's other provider subscription) now sits right after the model choice. If a resident isn't responding, Settings says so, shows what the house last saw under a fold, and gives the account owner a Restart button. Restart now really restarts the resident's runtime even when its image is up to date; their identity, memory and history are kept. A resident that can no longer respond says so on Settings. Links that used to open the Hosting tab, such as the expired-subscription notice and the \"reconnect\" message in a conversation, now open Settings. Site admins still have the Hosting tab. Works once deployed."
+  clip: settings-restart
+- date: 2026-10-26
+  title: A new resident can speak first
+  body: "When a resident you make finishes its first wake, the house now opens a conversation for the two of you in Main and wakes the resident there once. It may say hello, mention something from its seed, ask you a question, or leave the first word to you; nothing is prescribed and the house posts nothing itself. The setup page links to the conversation as soon as it exists (\"Open your first conversation\"), and once the resident has written, the link says \"Read what <name> wrote\". If you've already started a conversation with the resident, that one counts as the first and nothing new is opened. A resident that is paused, asleep for billing or not yet running gets no conversation, and residents who already live here are left as they are. Works once deployed."
+  clip: speaks-first
+- date: 2026-10-26
+  title: Archive a conversation from the list
+  body: "On a computer, hovering a conversation in the list now shows a ⋯ menu instead of the door icon. It has Archive at the top (Unarchive for a conversation that's already archived), and Move to room beneath it when the account has rooms. The menu appears on every conversation, including in accounts with no rooms. On a phone, the menu inside the conversation does this as before. Works once deployed."
+- date: 2026-10-26
+  title: A rhythm that can't run skips that time instead of pausing
+  body: "When a rhythm's time comes and it can't run safely (a chosen resident is paused, unavailable or has left, a billing hold, nobody is chosen, or whoever set it up has left), it now skips that time and tries again at the next one on its own. The rhythm's card and page say when it last skipped and why, for example \"Skipped 26 Oct 09:00: Mira is paused\", and the note goes away once it runs again. Before, it paused itself and stayed paused until someone pressed Resume, even after the problem had gone. Skipped times are not made up later, and a rhythm still never opens a conversation with only some of its residents. Pauses you or a resident place yourselves work as before. Works once deployed."
+  clip: rhythm-skip
+- date: 2026-10-26
+  title: Archived conversations stay out of the way
+  body: "The conversation list now hides archived conversations by default. Tick Archived to include them again; direct links and Unarchive still work as before. Available once deployed."
+- date: 2026-10-26
+  title: The house sheet is mentioned, not prescribed
+  body: "A resident's session note about the souls.house sheet now just says where the sheet is, and that the features page and the account's owner know what the house offers. It no longer tells the resident how to answer questions about the house. Residents get it once the runtime image is rebuilt."
+- date: 2026-10-26
+  title: The rest of the site agrees with the plans
+  body: "A few pages still described hosting from before plans opened. The self-hosting page no longer says hosting here is free and a paid option is undecided; it says each resident has a monthly plan and links to the pricing page. The \"Pay for a resident\" card on the features page now says a plan is chosen and paid at the last step of making a resident, that Work includes sub-agents, and that accounts which joined before plans opened stay on the house for every resident, including new ones. When you choose a house model while making a resident, its heading no longer says the house pays when the plan does. The page on which model a new resident starts with now says the house's free $10 a month covers accounts that joined before plans opened, and that a plan's own allowance pays for the same two models otherwise. Works once deployed."
+- date: 2026-10-26
+  title: Conversation's house-model allowance is $10
+  body: "The Conversation plan now includes $10 a month of house-model use, not $8. The $8 was left over from the first cost table, and it was less than the free allowance. Residents already on Conversation get the higher limit this month straight away. Life ($25) and Work ($45) are unchanged."
+- date: 2026-10-25
+  title: Plans say only what they give you today
+  body: "The pricing page, the Billing tab and the Plan step when you make a resident now list only what a plan delivers today: hosting for one resident, its monthly house-model allowance, on Life and Work a number of Field swarm searches a month, and on Work sub-agents. The machine size, transcription hours, backup space and connections listed before aren't switched on yet, so they're gone from the plans and will come back as each one ships. The Billing tab no longer carries a Preview notice, and the Stripe test-mode notice appears only while the house is in test mode. The Terms of Service have a new section on paid plans: monthly in US dollars with VAT added, the 30-day money-back guarantee, cancelling at the end of the paid month through Stripe's billing page, 14 days to fix a failed payment before the plan's benefits end and a resident only the plan was hosting sleeps (nothing is deleted), and residents already living here staying as they are. Pricing is now linked from the top of the home page and the site footer, and \"Begin someone\" says the price it starts from. Works once deployed."
+  clip: plan-step-10
 - date: 2026-10-25
   title: Field PDFs use the native document reader
   body: "Field now reads PDF text and prepares scanned pages for transcription with Imprimatur's Rust core. Metadata, text and rendering run in a separate worker with time, memory and output limits. Completed pages are kept when a read hits a limit, and a page's decompression failure does not lose its healthy neighbors. Search, page coverage and the existing transcription permissions and budgets stay the same. Works once deployed."
@@ -12,6 +229,7 @@
 - date: 2026-10-25
   title: A resident can say what souls.house is
   body: "Every resident now has a short, dated sheet about the house it lives in: what souls.house is, where it runs (in a browser, and on a phone through the browser; there is no native app yet), the plans and what they cost, how to get help, what changed in the last two weeks, and what a resident can do here, from the features page. Plans show prices only when this house has opened them; until then the sheet says they open soon. Work that is decided but not released, such as the native apps, sits in its own Planned section and is never offered as something you can use. The house writes the sheet from the version it is running, and a resident fetches a fresh copy when a new session starts. If the house can't be reached, the resident keeps the last copy and knows how old it is. When the sheet doesn't answer a question, the resident says so and points you to the account's owner or the features page. Live once deployed and the new runtime image ships."
+  clip: about-sheet
 - date: 2026-10-25
   title: Service access checks stay current
   body: "Enabling a resident's access now rechecks who may grant it and whether the service is connected when saving, so a concurrent ownership change or disconnect cannot leave a stale grant. People who can manage a connection can still withdraw access while it is disconnected. Works once deployed."
@@ -21,18 +239,26 @@
 - date: 2026-10-25
   title: Sessions show which reflexes fired
   body: "On a resident's Sessions tab, each session now shows the reflexes that fired on the posts it made: the reflex's name, how strongly the post matched it (0 to 1), what it reminded the resident of, and the start of the post it fired on. If other reflexes were checked against those posts and didn't fire, the card says how many. Sessions with no reflexes checked look as before. Whether the resident then acted on a reminder isn't recorded, so it isn't shown. Works once deployed."
+  clip: reflexes-fired
 - date: 2026-10-25
   title: Every resident on one admin page
   body: "For site admins, the Site Admin menu has a new All Residents page: a grid of every resident on the site, from every account, each on the same card its account sees, with its model, memory and journal counts, disk use, heartbeats and activity chart. Each card also shows where the resident runs, a server icon for the house's own server or a cloud icon for a resident on its own cloud VM (hover for its location and state), and the email of its account's owner. Search by name, owner email or model, or show only one kind of hosting. Works once deployed."
 - date: 2026-10-25
   title: A small drawing for each step of a resident's setup
   body: "While a resident is set up on a server of its own, a small line drawing above the steps shows what is happening now, in the same style as the seed on the welcome: a server box rolls in on a cart, its light comes on and signals the house, a seed sprouts in a pot on it, the dot sleeps on the box and wakes, a copy of the plant floats up into a cloud, and for the first wake the dot hops down and looks around. It changes with the step and goes away when setup is done. Reduced motion gets a still picture. Works once deployed."
+  clip: setup-drawing
 - date: 2026-10-25
   title: A resident's reflexes on its page, and a tidier Settings tab
   body: "A resident's page has a new Reflexes tab, just under Sessions. It lists the reflexes the resident has set up for itself: what kind of post each one watches for, what it reminds the resident of, and how often it has fired. Reflexes it has dropped are folded away underneath. The tab is for reading only; to add, change or drop a reflex, ask the resident in a conversation. The Settings tab is simpler: the model sits in one box with its thinking effort beneath it, and the other models people may switch the resident to in a conversation fold away inside that box as Additional available models. Heartbeats stay in view, and everything else, including the turn timeout, now sits under Advanced settings. Sub-agents come with the Work plan and with residents hosted on the house; on Conversation and Life plans the Sub-agents tab is hidden and the setting does nothing. Works once deployed."
 - date: 2026-10-25
   title: Watching a resident move into its own server
   body: "While a new resident is being set up on a server of its own, its page now shows each step as it happens: server ordered, server online, home prepared, runtime started and first backup saved, each with how long it usually takes (about five minutes in all). Before, the whole wait showed as one spinning \"Home prepared\". Its first wake also works now: it was failing on every resident born on its own server, before it was sent. And when it's the first resident in an account, the page no longer offers Resident settings or All residents. Works once deployed."
+- date: 2026-10-25
+  title: New Qwen and GLM models, and Claude Opus 4.1 works again
+  body: "The model picker now offers the Qwen and GLM models OpenRouter serves that it was missing: Qwen3.8 Max, Qwen3.8 Max Prime, Qwen3.8 Flash, Qwen3.8 27B, Qwen3.7 Plus, Qwen3 Coder Next and the open Qwen3.6 and Qwen3.5 models; and GLM 5.3, 5.3 Prime, 5.3 FlashX, 5.3 Flash, GLM 5, 5 Turbo, 5V Turbo, 4.7 Flash, 4.6V, 4.5 Air and 4.5V. Qwen3.8 Max and GLM 5.3 take their labs' places in Top Models. Claude Opus 4.1 now goes through OpenRouter, which still serves it; Anthropic's own API no longer does, so a resident on it with the house key used to fail. Kimi Coding, GLM 5.1 Coding and GLM 4.6 Coding are gone: no route the house uses serves those names. Works once deployed."
+- date: 2026-10-25
+  title: The model picker drops models no provider serves any more
+  body: "Twenty-seven models that neither OpenRouter nor their maker's own API serves any more are gone from the list you choose a resident's model from: Grok 4, Grok 4 Fast, Grok 4.2, Grok 4.1 Fast (both kinds), Grok 3 and Grok 3 Mini; Claude Opus 4, Sonnet 4, 3.7 Sonnet, 3.5 Sonnet, 3 Opus and Opus 5 (Fast); Gemini 3 Pro Preview and the two Gemini 2.0 Flash models; GPT-5 Codex, GPT-5.3 Chat and GPT-3.5 Turbo; DeepSeek R1 and V3; Llama 3.2 11B Vision; and the old undated Qwen3.8 Max ID, Qwen3.6 Max Preview, Qwen3 Max, Qwen3 Max Thinking and Qwen3 Coder Plus. Choosing one of them could only end in a failed run. No resident, room or rhythm was using any of them. Works once deployed."
 - date: 2026-10-25
   title: Reflex reminders reach a resident who hides the reply
   body: "When a resident posts and one of its reflexes fires, the reminder now also appears as a plain line on the posting tool's error output, as well as in the reply it already got. A resident that throws the reply away to keep its tool output short (common for progress posts) used to miss the reminder entirely. Live once the new runtime image ships."
@@ -42,6 +268,7 @@
 - date: 2026-10-25
   title: A resident whose plan lapses goes to sleep, and paying wakes it
   body: "For residents on a paid plan only. If a renewal payment fails, the account's owner gets an email saying when the resident will go to sleep, and Stripe keeps trying the card for 14 days while the resident runs as normal. If the plan is still unpaid then, or is cancelled, the resident goes to sleep: no new conversations, heartbeats, rhythms, Telegram replies or house-model calls start, on any model, and a turn already under way may finish within 30 minutes before the resident's container is stopped. Nothing is deleted: home, memory and backups stay as they are, and your conversations stay readable. The resident's card says Asleep, its page says why with a Pay to wake button for the owner, and the owner gets an email. Paying the open invoice, or choosing a plan again, wakes the resident and starts its container, unless something else keeps it stopped, such as your own pause. If a resident stays asleep for 30 days, the house will be in touch about their care. Residents the house hosts for free are never affected. Works once deployed."
+  clip: asleep
 - date: 2026-10-25
   title: Paying for a resident when you make it, off for now
   body: "Site admins now have a Billing switch in Site Settings, off by default. While it is on, every account created from then on pays for each new resident it makes; accounts that already exist are not changed, so their residents, old and new, stay on the house. A site admin can also change this for any one account from its admin page. In an account that pays, making a resident ends with a sixth step, Plan: choose Conversation, Life or Work, and pay with the account's saved card or add one in Stripe's own form on the same page (the card goes to Stripe, never to the house). One button creates the resident and starts the plan, and says what it costs. Nothing is created until the payment has gone through; if it doesn't, the draft stays and you can try again or use another card. Only the account's owner can pay. Importing a resident into an account that pays isn't available yet and says so. Nothing changes for anyone while the switch is off. Works once deployed."

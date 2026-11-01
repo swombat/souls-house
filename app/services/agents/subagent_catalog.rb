@@ -74,7 +74,7 @@ module Agents
       if house_funded?
         "This resident runs on house-funded inference, which does not pass account keys to its runtime. Switch it to an account key or a subscription to choose sub-agent models."
       else
-        "Add an API key in account settings, or connect a subscription on the Hosting tab, to choose sub-agent models."
+        "Add an API key in account settings, or connect a subscription on the resident's Settings tab, to choose sub-agent models."
       end
     end
 

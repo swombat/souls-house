@@ -1,5 +1,7 @@
 <script>
   import AgentHostingPanel from '$lib/components/agents/agent-hosting-panel.svelte';
+  import AgentRuntimeStatus from '$lib/components/agents/AgentRuntimeStatus.svelte';
+  import AgentSubscriptionSettings from '$lib/components/agents/AgentSubscriptionSettings.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import {
@@ -40,18 +42,24 @@
     billing_hold: billingHold = null,
     telegram_configuration: telegramConfiguration = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
+    telegram_groups: telegramGroups = [],
+    can_manage_telegram_groups: canManageTelegramGroups = false,
     grouped_models = {},
     colour_options = [],
     icon_options = [],
     active_tab: activeTabProp = null,
     local_dev_endpoint_mode: localDevEndpointMode = false,
     identity_export_url: identityExportUrl = null,
+    avatar_path: avatarPath = null,
     memory_overview_url: memoryOverviewUrl = null,
     memory_history_url: memoryHistoryUrl = null,
     hosting_diagnostics_url: hostingDiagnosticsUrl = null,
+    can_view_hosting: canViewHosting = false,
+    can_restart_runtime: canRestartRuntime = false,
     runtime_observability_url: runtimeObservabilityUrl = null,
     sandbox_recreation_url: sandboxRecreationUrl = null,
     provider_subscription: providerSubscription = null,
+    hosting_location: hostingLocation = null,
     service_connections: serviceConnections = [],
     can_manage_provider_subscription: canManageProviderSubscription = false,
     interactions = [],
@@ -91,15 +99,21 @@
   const updateTelegramSync = createDynamicSync();
   $effect(() => {
     updateTelegramSync({
-      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count'],
+      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count', 'telegram_groups'],
     });
   });
 
   let selectedModel = $state(agent.model_id);
   let sendingTestNotification = $state(false);
   let registeringWebhook = $state(false);
+  // Hosting is site-admin only; old ?tab=hosting links land on Settings,
+  // where the subscription now lives.
   let activeTab = $state(
-    activeTabProp === 'identity' ? 'appearance' : activeTabProp === 'model' ? 'settings' : activeTabProp || 'appearance'
+    activeTabProp === 'identity'
+      ? 'appearance'
+      : activeTabProp === 'model' || (activeTabProp === 'hosting' && !canViewHosting)
+        ? 'settings'
+        : activeTabProp || 'appearance'
   );
   let runtimeManaged = $derived(
     Boolean(agent.birth_committed_at) || agent.runtime === 'external' || agent.runtime === 'offline'
@@ -130,7 +144,7 @@
     { id: 'settings', label: 'Settings', icon: Gear },
     ...(showSubagents ? [{ id: 'subagents', label: 'Sub-agents', icon: UsersThree }] : []),
     { id: 'integrations', label: 'Integrations', icon: Plug },
-    { id: 'hosting', label: 'Hosting', icon: CloudArrowUp },
+    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
     { id: 'memory', label: 'Memory', icon: Graph },
@@ -218,7 +232,7 @@
 
       <!-- Content area -->
       <div class="flex-1 min-w-0 space-y-6">
-        {#if hostingVisited}
+        {#if hostingVisited && canViewHosting}
           <div hidden={activeTab !== 'hosting'}>
             <AgentHostingPanel
               {agent}
@@ -226,9 +240,7 @@
               {runtimeManaged}
               {sandboxRecreationUrl}
               {identityExportUrl}
-              {hostingDiagnosticsUrl}
-              {providerSubscription}
-              {canManageProviderSubscription} />
+              {hostingDiagnosticsUrl} />
           </div>
         {/if}
 
@@ -239,14 +251,24 @@
             bind:icon={$form.agent.icon}
             nameError={$form.errors.name}
             colourOptions={colour_options}
-            iconOptions={icon_options} />
+            iconOptions={icon_options}
+            {avatarPath}
+            avatarUrl={agent.avatar_url} />
         {:else if activeTab === 'settings'}
+          <AgentRuntimeStatus {agent} {sandboxRecreationUrl} canRestart={canRestartRuntime} />
           <AgentSettingsPanel
             {houseAllowance}
             {form}
             groupedModels={grouped_models}
             {runtimeManaged}
-            bind:selectedModel />
+            {hostingLocation}
+            bind:selectedModel>
+            {#snippet subscription()}
+              {#if providerSubscription}
+                <AgentSubscriptionSettings {account} {providerSubscription} {canManageProviderSubscription} />
+              {/if}
+            {/snippet}
+          </AgentSettingsPanel>
         {:else if activeTab === 'subagents' && showSubagents}
           <AgentSubagentsPanel
             bind:enabled={$form.agent.subagents_enabled}
@@ -262,6 +284,8 @@
             {account}
             {telegramConfiguration}
             {telegramSubscriberCount}
+            {telegramGroups}
+            {canManageTelegramGroups}
             {sendingTestNotification}
             {registeringWebhook}
             {serviceConnections}

@@ -87,9 +87,9 @@ test('in an account that pays per resident, the house path says the plan pays fo
     houseOffered: true,
     selectedModel: 'house/claude-haiku-5.5',
     keyPath: 'house',
-    planAllowance: [8, 45],
+    planAllowance: [10, 45],
   });
-  expect(screen.getByText("The plan includes $8 to $45 a month of the house's models.")).toBeInTheDocument();
+  expect(screen.getByText("The plan includes $10 to $45 a month of the house's models.")).toBeInTheDocument();
   expect(screen.getByTestId('house-path-terms')).toHaveTextContent('Included in the plan.');
   expect(screen.queryByText(/One funded resident per person/)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();

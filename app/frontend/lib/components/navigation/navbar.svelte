@@ -94,6 +94,11 @@
       show: !currentUser,
     },
     {
+      href: '/pricing',
+      label: 'Pricing',
+      show: !currentUser,
+    },
+    {
       href: currentAccount?.id ? `/accounts/${currentAccount.id}/chats` : '#',
       label: 'Chats',
       show: !!currentUser && siteSettings?.allow_chats,
@@ -254,6 +259,7 @@
       <UserAccountMenu
         replyAttention={$page.props?.reply_attention || {}}
         expiredSubscriptions={$page.props?.expired_subscriptions || {}}
+        pendingInvitations={$page.props?.pending_invitations || {}}
         allowAccountCreation={siteSettings?.allow_account_creation !== false}
         {currentUser}
         {currentAccount}

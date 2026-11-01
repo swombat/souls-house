@@ -15,6 +15,7 @@ class TwitterApiIo
 
   BASE = "https://api.twitterapi.io"
   SEARCH_PATH = "/twitter/tweet/advanced_search"
+  TWEETS_PATH = "/twitter/tweets"
   PAGE_SIZE = 20
   USD_PER_TWEET = BigDecimal("0.00015")
   MIN_USD_PER_CALL = BigDecimal("0.00015")
@@ -72,6 +73,34 @@ class TwitterApiIo
     raise Error.new("TwitterAPI.io answered without a tweet list", status: status) unless data.is_a?(Hash) && data["tweets"].is_a?(Array)
 
     Page.new(tweets: data["tweets"], next_cursor: data["next_cursor"].presence, has_next_page: data["has_next_page"] == true)
+  rescue JSON::ParserError
+    raise Error.new("TwitterAPI.io answered with something that isn't JSON", status: status)
+  rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError, IOError => e
+    raise Error.new("Couldn't reach TwitterAPI.io (#{e.class.name})")
+  end
+
+  # Tweets by id (GET /twitter/tweets?tweet_ids=…), for inline tweet cards
+  # (TweetEmbed). => the provider's tweet hashes that came back; an id the
+  # provider doesn't return is not in the list. Same billing as search: per
+  # returned tweet, at least the per-call minimum.
+  def tweets(ids)
+    ids = Array(ids).map(&:to_s)
+    raise ArgumentError, "tweet ids must be digits" unless ids.any? && ids.all? { it.match?(/\A\d{1,32}\z/) }
+
+    uri = URI(BASE + TWEETS_PATH)
+    uri.query = URI.encode_www_form(tweet_ids: ids.join(","))
+    request = Net::HTTP::Get.new(uri)
+    request["X-API-Key"] = @api_key
+    request["Accept"] = "application/json"
+    response = build_http(uri).start { |http| http.request(request) }
+
+    status = response.code.to_i
+    raise Error.new("TwitterAPI.io answered #{status}", status: status) unless response.is_a?(Net::HTTPSuccess)
+
+    data = JSON.parse(response.body)
+    raise Error.new("TwitterAPI.io answered without a tweet list", status: status) unless data.is_a?(Hash) && data["tweets"].is_a?(Array)
+
+    data["tweets"].select { it.is_a?(Hash) }
   rescue JSON::ParserError
     raise Error.new("TwitterAPI.io answered with something that isn't JSON", status: status)
   rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError, IOError => e

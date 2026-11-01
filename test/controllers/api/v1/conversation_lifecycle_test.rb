@@ -197,12 +197,12 @@ class Api::V1::ConversationLifecycleTest < ActionDispatch::IntegrationTest
   # -- model and web access (chats#update) -----------------------------------
 
   test "a person changes the model and web access" do
-    patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4", web_access: true }, headers: @headers, as: :json
+    patch api_v1_conversation_path(@chat), params: { model_id: "anthropic/claude-opus-4.8", web_access: true }, headers: @headers, as: :json
     assert_response :success
-    assert_equal "anthropic/claude-opus-4", response.parsed_body.dig("conversation", "model_id")
+    assert_equal "anthropic/claude-opus-4.8", response.parsed_body.dig("conversation", "model_id")
     assert_equal true, response.parsed_body.dig("conversation", "web_access")
     @chat.reload
-    assert_equal "anthropic/claude-opus-4", @chat.model_id
+    assert_equal "anthropic/claude-opus-4.8", @chat.model_id
     assert @chat.web_access
   end
 
@@ -217,7 +217,7 @@ class Api::V1::ConversationLifecycleTest < ActionDispatch::IntegrationTest
     @chat.agents << @agent
     patch api_v1_conversation_path(@chat), params: { web_access: true }, headers: @resident_headers, as: :json
     assert_response :forbidden
-    patch api_v1_conversation_path(@chat), params: { title: "Renamed", model_id: "anthropic/claude-opus-4" }, headers: @resident_headers, as: :json
+    patch api_v1_conversation_path(@chat), params: { title: "Renamed", model_id: "anthropic/claude-opus-4.8" }, headers: @resident_headers, as: :json
     assert_response :forbidden
     @chat.reload
     assert_not @chat.web_access

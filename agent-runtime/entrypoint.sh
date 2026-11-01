@@ -64,6 +64,13 @@ gosu agent sh -c 'soulshouse-tailnet boot >>"$HOME/state/tailnet-boot.log" 2>&1'
 # Migrate before provider/account commands, journald, or incoming work. Keep
 # preferences in the database; config.toml is bootstrap-only in Chaos 47.6.
 export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
+# A house resident's subscription home is created here, not on first
+# subscription use, so settings, hooks and workspace trust below are all
+# provisioned in it before its first turn (#636 review). Imported homes keep
+# their own reviewed oauth-runtime step.
+if [ "$HOME_CLASS" != "imported" ]; then
+    mkdir -p "$CHAOS_HOME/oauth-runtime"
+fi
 chown -R 1000:1000 "$CHAOS_HOME"
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
 
@@ -147,6 +154,11 @@ if [ "$HOME_CLASS" = "imported" ]; then
     gosu agent python3 /home/agent/imported_home.py --hook-import-check
 fi
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_hooks.py
+# A house resident's own workspace is trusted, or Chaos silently skips its
+# memory hooks (#631). Imported homes keep their reviewed operator step.
+if [ "$HOME_CLASS" != "imported" ]; then
+    gosu agent python3 /usr/local/share/helixkit-agent/runtime_hooks.py --house-trust
+fi
 
 # A portable home gets only its sync worker, never its host-owned scheduled jobs.
 if [ "$HOME_CLASS" = "imported" ]; then

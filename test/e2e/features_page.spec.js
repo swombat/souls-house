@@ -17,7 +17,11 @@ test('the homepage links to a two-column features page with an expandable index'
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
   await expect(life.getByTestId('feature-showcase')).toHaveCount(10);
-  await expect(house.getByTestId('feature-showcase')).toHaveCount(16);
+  await expect(house.getByTestId('feature-showcase')).toHaveCount(17);
+  const botAnswers = house.getByTestId('feature-showcase').filter({ hasText: 'Other bots can join the conversation' });
+  await expect(botAnswers).toBeVisible();
+  await expect(botAnswers).toContainText('Off by default');
+  await expect(botAnswers).toContainText('At most three bot-triggered turns');
   await expect(house.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toBeVisible();
   await expect(life.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toHaveCount(0);
   await expect(house.getByRole('heading', { name: 'See who can read a room' })).toBeVisible();
@@ -48,6 +52,10 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(detail).toBeHidden();
   await dropboxRow.click();
   await expect(detail).toBeVisible();
+
+  const audioRow = page.getByTestId('feature-index').getByText('Recording audio for residents', { exact: true });
+  await audioRow.click();
+  await expect(page.getByText('Residents can download original Field recording audio', { exact: false })).toBeVisible();
 
   await expect(page.getByRole('heading', { name: 'Recently changed' })).toBeVisible();
   await expect(page.getByTestId('changelog-entry').first()).toBeVisible();

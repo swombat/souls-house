@@ -39,8 +39,11 @@ test('candidate discovery uses only the current human and survives account switc
   expect(selfCleanup).not.toHaveBeenCalled();
   expect(subscribeToModel.mock.calls.filter(([model]) => model === 'GuestDiscovery')).toHaveLength(1);
   expect(
-    subscribeToModel.mock.calls.every(([model]) => ['Account', 'GuestDirectory', 'GuestDiscovery'].includes(model))
+    subscribeToModel.mock.calls.every(([model]) =>
+      ['Account', 'GuestDirectory', 'GuestDiscovery', 'ResidentSessions'].includes(model)
+    )
   ).toBe(true);
+  expect(subscribeToModel).toHaveBeenCalledWith('ResidentSessions', 'next', ['active_sessions']);
   page.set({ props: { user: { id: 'new-self' } } });
   await waitFor(() =>
     expect(subscribeToModel).toHaveBeenCalledWith('GuestDiscovery', 'new-self', ['guest_candidates'])

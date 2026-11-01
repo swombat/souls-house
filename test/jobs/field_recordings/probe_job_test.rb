@@ -12,7 +12,9 @@ class FieldRecordings::ProbeJobTest < ActiveJob::TestCase
 
   test "a readable recording is measured and admitted" do
     recording = claimed_recording(account: @account, user: @user)
-    FieldRecordings::ProbeJob.perform_now(recording.id)
+    assert_enqueued_with(job: FieldRecordings::PlaybackJob, args: [ recording.id ]) do
+      FieldRecordings::ProbeJob.perform_now(recording.id)
+    end
 
     recording.reload
     assert recording.queued?

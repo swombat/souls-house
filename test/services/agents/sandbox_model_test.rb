@@ -6,6 +6,7 @@ module Agents
     test "Recent direct models route through API and OAuth with direct provider IDs" do
       {
         "openai/gpt-6-sol" => [ "openai", "gpt-6-sol" ],
+        "openai/gpt-6.1-terra" => [ "openai", "gpt-6.1-terra" ],
         "openai/gpt-6-luna" => [ "openai", "gpt-6-luna" ],
         "anthropic/claude-opus-5.5" => [ "anthropic", "claude-opus-5-5" ],
         "anthropic/claude-fable-5.1" => [ "anthropic", "claude-fable-5-1" ],

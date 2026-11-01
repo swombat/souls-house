@@ -57,7 +57,7 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
       available: false,
       connection: { status: 'expired' },
     },
-    active_tab: 'hosting',
+    active_tab: 'settings',
   };
   const view = render(EditResident, props);
   await waitFor(() =>

@@ -40,6 +40,19 @@ class AccountTest < ActiveSupport::TestCase
     assert_equal({ "MOONSHOT_API_KEY" => "moonshot-key" }, account.ai_provider_keys)
   end
 
+  test "the house Hugging Face token reaches only accounts on the house fallback" do
+    account = accounts(:team_account)
+    account.update!(use_system_ai_credentials: true)
+    house = ->(*path) { path == %i[huggingface token] ? "hf_house" : nil }
+
+    Rails.application.credentials.stub(:dig, house) do
+      assert_equal "hf_house", account.ai_provider_keys["HF_TOKEN"]
+
+      account.update!(use_system_ai_credentials: false)
+      assert_not account.ai_provider_keys.key?("HF_TOKEN")
+    end
+  end
+
   # === Core add_user! Method Tests ===
 
   test "add_user! creates new Membership for new membership" do

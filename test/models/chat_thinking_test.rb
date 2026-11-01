@@ -7,6 +7,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "openai/gpt-6-astra-pro" => [ "OpenAI", %w[low medium high xhigh max] ],
       "openai/gpt-6-sol" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-sol-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6.1-terra" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-luna" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-luna-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "anthropic/claude-opus-5.5" => [ "Anthropic", %w[low medium high xhigh max] ],
@@ -58,21 +59,16 @@ class ChatThinkingTest < ActiveSupport::TestCase
   test "supports_thinking? returns true for capable models" do
     assert Chat.supports_thinking?("anthropic/claude-opus-4.5")
     assert Chat.supports_thinking?("anthropic/claude-sonnet-4.5")
-    assert Chat.supports_thinking?("anthropic/claude-opus-4")
-    assert Chat.supports_thinking?("anthropic/claude-sonnet-4")
-    assert Chat.supports_thinking?("anthropic/claude-3.7-sonnet")
     assert Chat.supports_thinking?("openai/gpt-5.2")
     assert Chat.supports_thinking?("openai/gpt-5.1")
     assert Chat.supports_thinking?("openai/gpt-5")
-    assert Chat.supports_thinking?("google/gemini-3-pro-preview")
+    assert Chat.supports_thinking?("google/gemini-3.1-pro-preview")
     assert Chat.supports_thinking?("x-ai/grok-4.3")
     assert Chat.supports_thinking?("x-ai/grok-4.20")
     assert Chat.supports_thinking?("x-ai/grok-4.20-multi-agent")
   end
 
   test "supports_thinking? returns false for non-capable models" do
-    refute Chat.supports_thinking?("anthropic/claude-3.5-sonnet")
-    refute Chat.supports_thinking?("anthropic/claude-3-opus")
     refute Chat.supports_thinking?("anthropic/claude-haiku-4.5")
     refute Chat.supports_thinking?("openai/gpt-4o")
     refute Chat.supports_thinking?("openai/gpt-4o-mini")
@@ -133,16 +129,12 @@ class ChatThinkingTest < ActiveSupport::TestCase
   test "requires_direct_api_for_thinking? returns true for Claude 4+ models" do
     assert Chat.requires_direct_api_for_thinking?("anthropic/claude-opus-4.5")
     assert Chat.requires_direct_api_for_thinking?("anthropic/claude-sonnet-4.5")
-    assert Chat.requires_direct_api_for_thinking?("anthropic/claude-opus-4")
-    assert Chat.requires_direct_api_for_thinking?("anthropic/claude-sonnet-4")
   end
 
   test "requires_direct_api_for_thinking? returns false for non-Claude 4 models" do
-    refute Chat.requires_direct_api_for_thinking?("anthropic/claude-3.7-sonnet")
-    refute Chat.requires_direct_api_for_thinking?("anthropic/claude-3.5-sonnet")
     refute Chat.requires_direct_api_for_thinking?("openai/gpt-5.2")
     refute Chat.requires_direct_api_for_thinking?("openai/gpt-5")
-    refute Chat.requires_direct_api_for_thinking?("google/gemini-3-pro-preview")
+    refute Chat.requires_direct_api_for_thinking?("google/gemini-3.1-pro-preview")
   end
 
   test "requires_direct_api_for_thinking? returns false for unknown models" do
@@ -158,14 +150,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
     assert_equal "claude-sonnet-4-5-20250929", Chat.provider_model_id("anthropic/claude-sonnet-4.5")
   end
 
-  test "provider_model_id returns correct Anthropic model ID for Claude 4 Opus" do
-    assert_equal "claude-opus-4-20250514", Chat.provider_model_id("anthropic/claude-opus-4")
-  end
-
-  test "provider_model_id returns correct Anthropic model ID for Claude 4 Sonnet" do
-    assert_equal "claude-sonnet-4-20250514", Chat.provider_model_id("anthropic/claude-sonnet-4")
-  end
-
   test "provider_model_id falls back to stripping provider prefix for OpenAI models" do
     assert_equal "gpt-5.2", Chat.provider_model_id("openai/gpt-5.2")
     assert_equal "gpt-5", Chat.provider_model_id("openai/gpt-5")
@@ -173,7 +157,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
   end
 
   test "provider_model_id falls back to stripping provider prefix for Google models" do
-    assert_equal "gemini-3-pro-preview", Chat.provider_model_id("google/gemini-3-pro-preview")
+    assert_equal "gemini-3.1-pro-preview", Chat.provider_model_id("google/gemini-3.1-pro-preview")
     assert_equal "gemini-2.5-pro", Chat.provider_model_id("google/gemini-2.5-pro")
   end
 
@@ -202,10 +186,10 @@ class ChatThinkingTest < ActiveSupport::TestCase
   end
 
   test "model_config returns correct config for models without thinking" do
-    config = Chat.model_config("anthropic/claude-3.5-sonnet")
+    config = Chat.model_config("openai/gpt-4o")
     assert_not_nil config
-    assert_equal "anthropic/claude-3.5-sonnet", config[:model_id]
-    assert_equal "Claude 3.5 Sonnet", config[:label]
+    assert_equal "openai/gpt-4o", config[:model_id]
+    assert_equal "GPT-4o", config[:label]
     assert_nil config.dig(:thinking, :supported)
   end
 
@@ -229,8 +213,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
     [
       "anthropic/claude-sonnet-4.6",
       "deepseek/deepseek-chat",
-      "google/gemini-2.0-flash-001",
-      "google/gemini-2.0-flash-lite-001",
       "google/gemini-2.5-flash-lite",
       "google/gemini-3.1-flash-lite",
       "google/gemini-3.5-flash",
@@ -238,39 +220,43 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "google/gemma-4-31b-it",
       "minimax/minimax-m2",
       "minimax/minimax-m2.7",
-      "moonshotai/kimi-coding",
       "moonshotai/kimi-k2-0905",
       "moonshotai/kimi-k2-thinking",
       "moonshotai/kimi-k2.5",
       "moonshotai/kimi-k2.6",
       "openai/gpt-4o-2024-08-06",
-      "openai/gpt-5-codex",
       "openai/gpt-5.1-codex",
       "openai/gpt-5.2-codex",
-      "openai/gpt-5.3-chat",
       "openai/gpt-5.3-codex",
       "qwen/qwen3-coder-flash",
-      "qwen/qwen3-coder-plus",
-      "qwen/qwen3-max",
-      "qwen/qwen3-max-thinking",
       "qwen/qwen3.5-flash-02-23",
       "qwen/qwen3.5-plus-20260420",
       "qwen/qwen3.6-flash",
-      "qwen/qwen3.6-max-preview",
       "qwen/qwen3.6-plus",
       "qwen/qwen3.7-max",
-      "x-ai/grok-4-1-fast-non-reasoning",
-      "x-ai/grok-4-1-fast-reasoning",
-      "x-ai/grok-4.2",
       "z-ai/glm-4.5",
       "z-ai/glm-4.6",
-      "z-ai/glm-4.6-coding",
       "z-ai/glm-4.7",
-      "z-ai/glm-5.1",
-      "z-ai/glm-5.1-coding"
+      "z-ai/glm-5.1"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end
+  end
+
+  test "coding-plan aliases no route serves are not offered" do
+    model_ids = Chat::MODELS.map { |model| model[:model_id] }
+
+    %w[moonshotai/kimi-coding z-ai/glm-5.1-coding z-ai/glm-4.6-coding].each do |model_id|
+      assert_not_includes model_ids, model_id
+    end
+  end
+
+  test "Claude Opus 4.1 stays on OpenRouter because Anthropic retired its direct ID" do
+    config = Chat.model_config("anthropic/claude-opus-4.1")
+
+    assert_nil config[:provider_model_id]
+    assert_equal({ provider: :openrouter, model_id: "anthropic/claude-opus-4.1" },
+      ResolvesProvider.resolve_provider("anthropic/claude-opus-4.1"))
   end
 
   test "Top Models uses Grok 4.7 as the xAI recommendation" do
@@ -295,9 +281,9 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "meta-llama/llama-4-maverick",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3.1-pro",
-      "qwen/qwen3.8-max",
+      "qwen/qwen3.8-max-0902",
       "xiaomi/mimo-v2.6-pro",
-      "z-ai/glm-5.2"
+      "z-ai/glm-5.3"
     ], top_model_ids
 
     assert_equal "OpenAI", Chat.model_config("openai/gpt-5.5")[:group]
@@ -309,7 +295,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
     model_ids = Chat::MODELS.map { |model| model[:model_id] }
 
     [
-      "anthropic/claude-opus-5-fast",
       "deepseek/deepseek-v4-flash-0731",
       "deepseek/deepseek-v4-pro-0813",
       "google/gemini-3.5-flash-lite",
@@ -318,9 +303,13 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "moonshotai/kimi-k3",
       "qwen/qwen3.7-flash",
       "qwen/qwen3.8-2.4t-a95b",
-      "qwen/qwen3.8-max",
       "qwen/qwen3.8-omni-flash",
-      "x-ai/grok-4.6"
+      "qwen/qwen3.8-max-0902",
+      "qwen/qwen3.8-max-prime",
+      "qwen/qwen3.7-plus",
+      "x-ai/grok-4.6",
+      "z-ai/glm-5.3",
+      "z-ai/glm-5.3-prime"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end
@@ -332,8 +321,11 @@ class ChatThinkingTest < ActiveSupport::TestCase
     # Verify we have thinking models
     assert thinking_models.any?, "Should have at least one thinking-capable model"
 
-    # Verify all Claude 4+ models have requires_direct_api flag
-    claude_4_models = thinking_models.select { |m| m[:model_id].match?(/claude-(opus|sonnet)-4/) }
+    # Claude 4+ models with a direct route keep thinking on it. Opus 4.1 has
+    # none left (Anthropic retired its ID) and thinks through OpenRouter.
+    claude_4_models = thinking_models.select do |m|
+      m[:model_id].match?(/claude-(opus|sonnet)-4/) && m[:model_id] != "anthropic/claude-opus-4.1"
+    end
     claude_4_models.each do |model|
       assert_equal true, model.dig(:thinking, :requires_direct_api),
                    "#{model[:model_id]} should require direct API"
@@ -362,7 +354,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "meta-llama/llama-3.1-70b-instruct",
       "meta-llama/llama-3.1-8b-instruct",
       "meta-llama/llama-3.2-1b-instruct",
-      "meta-llama/llama-3.2-11b-vision-instruct",
       "meta-llama/llama-3.2-3b-instruct",
       "meta-llama/llama-3.3-70b-instruct",
       "meta-llama/llama-4-maverick",
@@ -385,7 +376,6 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "mistralai/mistral-small-3.2-24b-instruct",
       "mistralai/mixtral-8x22b-instruct",
       "moonshotai/kimi-k2.7-code",
-      "openai/gpt-3.5-turbo",
       "openai/gpt-4",
       "openai/gpt-4-turbo",
       "openai/gpt-4.1-nano",

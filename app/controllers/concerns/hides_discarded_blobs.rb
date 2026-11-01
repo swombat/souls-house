@@ -12,7 +12,8 @@
 # that each trusted the other type's attachments as live could let two discarded
 # owners keep each other's blob served.
 #
-# Retained history attachments (a removed or replaced avatar or logo, see
+# Retained history attachments (a removed or replaced avatar, a resident's
+# picture, or a logo, see
 # RetainsReplacedAttachment) count as hidden too: their owner is live, but the
 # image is no longer its current one. A blob still attached somewhere live
 # stays served.
@@ -35,6 +36,7 @@ module HidesDiscardedBlobs
 
   RETIRED_ATTACHMENT_NAMES = {
     "Profile" => "retired_avatars",
+    "Agent" => "retired_avatars",
     "Setting" => "retired_logos"
   }.freeze
 

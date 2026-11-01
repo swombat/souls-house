@@ -45,7 +45,6 @@ class Rhythm < ApplicationRecord
   before_validation :resolve_room_public_id
   before_validation :clear_room_unless_named
   before_validation :reset_next_run, if: :schedule_changed?
-  after_save :hold_empty_selection
   after_save :apply_resident_models, if: -> { @pending_resident_models }
   after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
 
@@ -197,7 +196,7 @@ class Rhythm < ApplicationRecord
     with_lock do
       rhythm_agents.where(agent: agent).destroy_all
       # Never remove a departing resident's holds, nor delete their invitation.
-      add_system_hold!("no_selected_residents") unless agents.reload.exists?
+      # An empty selection is not held: each slot is skipped with its reason.
       Result.new(status: held? ? :held : :active)
     end
   end
@@ -230,8 +229,12 @@ class Rhythm < ApplicationRecord
       next Result.new(status: :held, reason: "This rhythm has open holds") if held?
       next Result.new(status: :not_due) unless manual || next_run_at <= now
 
+      # A slot that cannot fire safely is skipped whole, never opened with a
+      # reduced group. The reason is kept on the rhythm and the schedule moves
+      # past the slot, so the next due slot simply tries again: nothing is
+      # held, and nobody has to resume anything once the cause is gone.
       if (reason = unavailable_reason)
-        add_system_hold!(reason)
+        update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: reason) unless manual
         next Result.new(status: :unavailable, reason: reason)
       end
 
@@ -261,7 +264,9 @@ class Rhythm < ApplicationRecord
         title: occurrence_title, rhythm_title: title, opening: opening, scheduled_for: scheduled_for,
         manual: manual, request_key: manual ? request_key : nil
       )
-      update!(next_run_at: next_occurrence(after: now)) unless manual
+      fired = { last_skipped_at: nil, last_skip_reason: nil }
+      fired[:next_run_at] = next_occurrence(after: now) unless manual
+      update!(fired)
       Result.new(status: :created, occurrence: occurrence)
     end
     result
@@ -292,20 +297,11 @@ class Rhythm < ApplicationRecord
         # Selection changes never erase a resident's hold. Its author can still
         # release it after being removed from the selection or guest membership.
         own_holds = open_holds.where(kind: "agent", agent_id: holder.id)
-        system_holds = open_holds.where(kind: "system")
-        can_release_system = manageable_by_agent?(holder) && system_holds.exists?
-        next Result.new(status: :forbidden) unless own_holds.exists? || can_release_system
-        if can_release_system && (reason = unavailable_reason)
-          next Result.new(status: :unavailable, reason: reason)
-        end
+        next Result.new(status: :forbidden) unless own_holds.exists?
 
         released = own_holds.update_all(released_at: Time.current, updated_at: Time.current)
-        released += system_holds.update_all(released_at: Time.current, updated_at: Time.current) if can_release_system
       elsif holder.is_a?(User) && manageable_by?(holder)
-        if open_holds.where(kind: "system").exists? && (reason = unavailable_reason)
-          next Result.new(status: :unavailable, reason: reason)
-        end
-        released = open_holds.where(kind: %w[human system]).update_all(released_at: Time.current, updated_at: Time.current)
+        released = open_holds.where(kind: "human").update_all(released_at: Time.current, updated_at: Time.current)
       else
         next Result.new(status: :forbidden)
       end
@@ -423,18 +419,7 @@ class Rhythm < ApplicationRecord
       { kind: "human", user_id: holder.id } if manageable_by?(holder)
     when Agent
       { kind: "agent", agent_id: holder.id } if agents.exists?(holder.id) || manageable_by_agent?(holder)
-    when :system
-      { kind: "system" }
     end
-  end
-
-  def add_system_hold!(reason)
-    hold = open_holds.find_or_initialize_by(kind: "system")
-    hold.update!(reason: reason)
-  end
-
-  def hold_empty_selection
-    add_system_hold!("no_selected_residents") unless agents.exists?
   end
 
   def unavailable_reason

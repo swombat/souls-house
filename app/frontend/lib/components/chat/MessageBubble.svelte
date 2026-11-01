@@ -5,6 +5,7 @@
   import { PencilSimple, Trash } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
+  import TweetCards from '$lib/components/chat/TweetCards.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
 
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
@@ -17,6 +18,7 @@
   import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { siteName } from '$lib/branding';
+  import { ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
 
   import { elapsedBetween } from '$lib/progress-messages';
 
@@ -64,20 +66,24 @@
           {#if message.editable}
             <button
               onclick={() => onedit(message)}
-              class="shrink-0 p-1.5 rounded-full text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted
+              class="shrink-0 p-1.5 rounded-full hover:bg-muted
                      opacity-50 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity
-                     focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
-              title="Edit message">
+                     focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring {message.controls_admin_only
+                ? ADMIN_ONLY_TEXT
+                : 'text-muted-foreground/50 hover:text-muted-foreground'}"
+              title={message.controls_admin_only ? 'Edit message (site admins only)' : 'Edit message'}>
               <PencilSimple size={20} weight="regular" />
             </button>
           {/if}
           {#if message.deletable}
             <button
               onclick={() => ondelete(message.id)}
-              class="shrink-0 p-1.5 rounded-full text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950
+              class="shrink-0 p-1.5 rounded-full hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950
                      opacity-50 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity
-                     focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
-              title="Delete message">
+                     focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring {message.controls_admin_only
+                ? ADMIN_ONLY_TEXT
+                : 'text-muted-foreground/50'}"
+              title={message.controls_admin_only ? 'Delete message (site admins only)' : 'Delete message'}>
               <Trash size={20} weight="regular" />
             </button>
           {/if}
@@ -102,6 +108,7 @@
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
                 class="prose [overflow-wrap:anywhere]" />
+              <TweetCards tweets={message.tweet_embeds_json || []} />
             </Card.Content>
           </Card.Root>
         </div>

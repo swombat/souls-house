@@ -18,7 +18,8 @@ test('simple self-hosting paths hand off to an agent without exposing technical 
     'https://souls.house/signup'
   );
   await expect(page.getByRole('heading', { name: 'Give your agent the guide.' })).toBeVisible();
-  await expect(page.getByText('Hosting is free for now:', { exact: false })).toBeVisible();
+  await expect(page.getByText('Each resident has a monthly plan', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'See the plans' })).toHaveAttribute('href', '/pricing');
   await expect(page.getByRole('heading', { name: '1. Choose a machine' })).toHaveCount(0);
 
   const helper = page

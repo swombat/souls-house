@@ -1,7 +1,7 @@
 # Build context: services/telegram-connector.
 #   docker build -t <registry>/souls-house-comms-telegram services/telegram-connector
-# Base pinned by digest: the image deployed 2026-10-13 (sha256:fc81a39d…) was built from these.
-FROM python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641 AS build
+# Build and runtime use the same digest-pinned Trixie base.
+FROM python:3.13-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962 AS build
 ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
 COPY requirements.txt ./
@@ -21,7 +21,7 @@ RUN /venv/bin/python -m unittest discover -s tests -t . \
  && /venv/bin/python -m compileall -q connector /venv \
  && mkdir -p /out/data
 
-FROM python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+FROM python:3.13-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/venv/bin:/usr/local/bin:/usr/bin:/bin \
     COMMS_DATA_DIR=/data
 COPY --from=build /venv /venv

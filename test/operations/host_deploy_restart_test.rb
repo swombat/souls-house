@@ -84,6 +84,25 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     assert_not @agent.reload.active?
     assert @agent.paused?
     assert_equal "fixture:new", @agent.container_image
+    hold = AuditLog.find_by!(action: "resident_switched_off_by_roll", auditable: @agent)
+    assert_nil hold.user
+    notice = Chat.find(hold.data.fetch("chat_id")).messages.sole
+    assert_equal "system", notice.role
+    assert_includes notice.content, "#{@agent.name} was switched off by a failed house update"
+  end
+
+  test "a failing notice never hides the roll's own failure" do
+    sandbox = Object.new
+    def sandbox.recreate! = raise("fixture failure")
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, sandbox) do
+        ResidentSwitchedOffNotice.stub(:switched_off!, ->(*) { raise "notice failure" }) do
+          error = assert_raises(RuntimeError) { run_script }
+          assert_equal "fixture failure", error.message
+        end
+      end
+    end
+    assert_not @agent.reload.active?
   end
 
 end

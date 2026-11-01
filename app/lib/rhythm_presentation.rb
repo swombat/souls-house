@@ -50,6 +50,10 @@ class RhythmPresentation
       can_leave: !!(present && selected.include?(@agent)),
       errors: @rhythm.errors.to_hash(true),
       holds: holds.map { |hold| hold_payload(hold) },
+      # The last slot that could not fire safely and was skipped, cleared by
+      # the next conversation it opens. Nothing is held: the next due slot
+      # tries again on its own.
+      last_skip: last_skip,
       occurrences: history ? @rhythm.occurrences.includes(:chat, message: :message_dispatch)
         .order(created_at: :desc).limit(30).map { |occurrence| occurrence_payload(occurrence) } : [],
       recent_runs: recent ? recent_runs : []
@@ -82,7 +86,7 @@ class RhythmPresentation
 
   def resident_payload(resident, model_id)
     {
-      id: resident.to_param, name: resident.name, colour: resident.colour,
+      id: resident.to_param, name: resident.name, colour: resident.colour, icon: resident.icon, avatar_url: resident.avatar_url,
       model_id: model_id, model_label: Agent.label_for_model(model_id.presence || resident.model_id),
       model_selected: model_id.present?
     }
@@ -113,15 +117,39 @@ class RhythmPresentation
 
   def can_release?(hold)
     return hold.agent == @agent if hold.kind == "agent"
-    return true if @rhythm.manageable_by?(@user)
 
-    hold.kind == "system" && @rhythm.manageable_by_agent?(@agent)
+    @rhythm.manageable_by?(@user)
+  end
+
+  def last_skip
+    return unless @rhythm.last_skipped_at
+
+    { at: @rhythm.last_skipped_at.iso8601, reason: @rhythm.last_skip_reason,
+      explanation: self.class.skip_explanation(@rhythm.last_skip_reason) }
+  end
+
+  # Rhythm#unavailable_reason codes, said plainly. A code may carry a name
+  # after a colon ("resident_paused: Mira").
+  def self.skip_explanation(reason)
+    code, name = reason.to_s.split(": ", 2)
+    case code
+    when "creator_not_member" then "its creator is no longer in this account"
+    when "creator_unavailable" then "its creator can't take conversations right now"
+    when "creator_paused" then "its creator is paused"
+    when "billing_hold" then name ? "#{name}'s billing is on hold" : "its creator's billing is on hold"
+    when "live_activity_disabled" then "live activity is switched off"
+    when "no_selected_residents" then "no residents are selected"
+    when "resident_not_present" then "#{name} is no longer in this account"
+    when "resident_unavailable" then "#{name} can't take conversations right now"
+    when "resident_paused" then "#{name} is paused"
+    else reason.to_s
+    end
   end
 
   def hold_payload(hold)
     {
       id: hold.id.to_s, holder_type: hold.kind,
-      holder_name: hold.kind == "system" ? "System" : (hold.agent&.name || display_name(hold.user)),
+      holder_name: hold.agent&.name || display_name(hold.user),
       reason: hold.reason, created_at: hold.created_at.iso8601, can_release: can_release?(hold)
     }
   end

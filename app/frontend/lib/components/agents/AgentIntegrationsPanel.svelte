@@ -13,6 +13,8 @@
     account,
     telegramConfiguration = null,
     telegramSubscriberCount = 0,
+    telegramGroups = [],
+    canManageTelegramGroups = false,
     sendingTestNotification = false,
     registeringWebhook = false,
     serviceConnections = [],
@@ -73,6 +75,8 @@
     {telegramConfiguration}
     accountId={account.id}
     {telegramSubscriberCount}
+    {telegramGroups}
+    {canManageTelegramGroups}
     {sendingTestNotification}
     {registeringWebhook}
     {onsendTestNotification}

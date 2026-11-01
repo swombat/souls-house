@@ -34,6 +34,11 @@ class PricingPageTest < ActionDispatch::IntegrationTest
       end
       assert_equal %w[conversation life work], tiers.map { |row| row["id"] }
       assert tiers.none? { |row| row.key?("memory_gb") || row.key?("cpu_shares") }, "container limits stay server-side"
+      # Going live (Daniel, 2026-10-25): a plan shows only what it delivers today.
+      tiers.each do |row|
+        assert_equal %w[allowance_usd hosting subagents swarm_searches], row["features"].keys.sort, row["id"]
+        assert_equal row["id"] == "work", row["features"]["subagents"], "sub-agents only on Work"
+      end
     end
   end
 
@@ -58,11 +63,10 @@ class PricingPageTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "is not linked from the header or footer" do
-    navigation = Rails.root.join("app/frontend/lib/components/navigation")
-    Dir[navigation.join("**/*.svelte")].each do |file|
-      assert_no_match %r{/pricing\b}, File.read(file), "#{file} links /pricing"
-    end
+  # Linked once plans went live (Daniel, 2026-10-25); the footer, not the header.
+  test "is linked from the footer" do
+    footer = Rails.root.join("app/frontend/lib/components/navigation/Footer.svelte").read
+    assert_match %r{href="/pricing"}, footer
   end
 
   private

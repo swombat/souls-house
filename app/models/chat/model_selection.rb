@@ -50,9 +50,9 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Top Models" },
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "Top Models", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Top Models", thinking: { supported: true } },
-    { model_id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
     { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Top Models", thinking: { supported: true } },
-    { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Top Models", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Top Models", thinking: { supported: true } },
 
     # OpenAI
     { model_id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI", provider_model_id: "gpt-6-astra", thinking: { supported: true } },
@@ -60,6 +60,7 @@ module Chat::ModelSelection
     { model_id: "openai/gpt-6-astra-pro", label: "GPT-6 Astra Pro", group: "OpenAI", thinking: { supported: true } },
     { model_id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", group: "OpenAI", provider_model_id: "gpt-6.1-sol", thinking: { supported: true } },
     { model_id: "openai/gpt-6.1-sol-pro", label: "GPT-6.1 Sol Pro", group: "OpenAI", thinking: { supported: true } },
+    { model_id: "openai/gpt-6.1-terra", label: "GPT-6.1 Terra", group: "OpenAI", provider_model_id: "gpt-6.1-terra", thinking: { supported: true } },
     { model_id: "openai/gpt-6-sol", label: "GPT-6 Sol", group: "OpenAI", provider_model_id: "gpt-6-sol", thinking: { supported: true } },
     { model_id: "openai/gpt-6-sol-pro", label: "GPT-6 Sol Pro", group: "OpenAI", thinking: { supported: true } },
     { model_id: "openai/gpt-6-luna", label: "GPT-6 Luna", group: "OpenAI", provider_model_id: "gpt-6-luna", thinking: { supported: true } },
@@ -85,12 +86,6 @@ module Chat::ModelSelection
     },
     { model_id: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini", group: "OpenAI", provider_model_id: "gpt-5.4-mini", thinking: { supported: true } },
     { model_id: "openai/gpt-5.4-nano", label: "GPT-5.4 Nano", group: "OpenAI", provider_model_id: "gpt-5.4-nano", thinking: { supported: true } },
-    {
-      model_id: "openai/gpt-5.3-chat",
-      label: "GPT-5.3 Chat",
-      group: "OpenAI",
-      thinking: { supported: true }
-    },
     {
       model_id: "openai/gpt-5.3-codex",
       label: "GPT-5.3 Codex",
@@ -123,12 +118,6 @@ module Chat::ModelSelection
       label: "GPT-5",
       group: "OpenAI",
       provider_model_id: "gpt-5",
-      thinking: { supported: true }
-    },
-    {
-      model_id: "openai/gpt-5-codex",
-      label: "GPT-5 Codex",
-      group: "OpenAI",
       thinking: { supported: true }
     },
     {
@@ -183,7 +172,6 @@ module Chat::ModelSelection
     { model_id: "openai/gpt-4.1-nano", label: "GPT-4.1 Nano", group: "OpenAI" },
     { model_id: "openai/gpt-4-turbo", label: "GPT-4 Turbo", group: "OpenAI" },
     { model_id: "openai/gpt-4", label: "GPT-4", group: "OpenAI" },
-    { model_id: "openai/gpt-3.5-turbo", label: "GPT-3.5 Turbo", group: "OpenAI" },
     {
       model_id: "openai/gpt-4o",
       label: "GPT-4o",
@@ -208,12 +196,6 @@ module Chat::ModelSelection
     { model_id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", group: "Anthropic", provider_model_id: "claude-opus-5-5", thinking: { supported: true, requires_direct_api: true } },
     { model_id: "anthropic/claude-fable-5.1", label: "Claude Fable 5.1", group: "Anthropic", provider_model_id: "claude-fable-5-1", thinking: { supported: true, requires_direct_api: true } },
     { model_id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", group: "Anthropic", provider_model_id: "claude-haiku-5-5", thinking: { supported: true, requires_direct_api: true } },
-    {
-      model_id: "anthropic/claude-opus-5-fast",
-      label: "Claude Opus 5 (Fast)",
-      group: "Anthropic",
-      thinking: { supported: true }
-    },
     {
       model_id: "anthropic/claude-sonnet-5",
       label: "Claude Sonnet 5",
@@ -281,44 +263,11 @@ module Chat::ModelSelection
       provider_model_id: "claude-haiku-4-5-20251001"
     },
     {
+      # Anthropic retired the direct ID; OpenRouter still serves it via Bedrock.
       model_id: "anthropic/claude-opus-4.1",
       label: "Claude Opus 4.1",
       group: "Anthropic",
-      provider_model_id: "claude-opus-4-1-20250805",
-      thinking: { supported: true, requires_direct_api: true }
-    },
-    {
-      model_id: "anthropic/claude-opus-4",
-      label: "Claude Opus 4",
-      group: "Anthropic",
-      provider_model_id: "claude-opus-4-20250514",
-      thinking: { supported: true, requires_direct_api: true }
-    },
-    {
-      model_id: "anthropic/claude-sonnet-4",
-      label: "Claude Sonnet 4",
-      group: "Anthropic",
-      provider_model_id: "claude-sonnet-4-20250514",
-      thinking: { supported: true, requires_direct_api: true }
-    },
-    {
-      model_id: "anthropic/claude-3.7-sonnet",
-      label: "Claude 3.7 Sonnet",
-      group: "Anthropic",
-      provider_model_id: "claude-3-7-sonnet-latest",
       thinking: { supported: true }
-    },
-    {
-      model_id: "anthropic/claude-3.5-sonnet",
-      label: "Claude 3.5 Sonnet",
-      group: "Anthropic",
-      provider_model_id: "claude-3-5-sonnet-latest"
-    },
-    {
-      model_id: "anthropic/claude-3-opus",
-      label: "Claude 3 Opus",
-      group: "Anthropic",
-      provider_model_id: "claude-3-opus-latest"
     },
 
     # Google
@@ -386,14 +335,6 @@ module Chat::ModelSelection
       audio_input: true
     },
     {
-      model_id: "google/gemini-3-pro-preview",
-      label: "Gemini 3 Pro",
-      group: "Google",
-      provider_model_id: "gemini-3-pro-preview",
-      thinking: { supported: true },
-      audio_input: true
-    },
-    {
       model_id: "google/gemini-3-flash-preview",
       label: "Gemini 3 Flash",
       group: "Google",
@@ -423,20 +364,6 @@ module Chat::ModelSelection
       audio_input: true
     },
     {
-      model_id: "google/gemini-2.0-flash-001",
-      label: "Gemini 2.0 Flash",
-      group: "Google",
-      provider_model_id: "gemini-2.0-flash-001",
-      audio_input: true
-    },
-    {
-      model_id: "google/gemini-2.0-flash-lite-001",
-      label: "Gemini 2.0 Flash Lite",
-      group: "Google",
-      provider_model_id: "gemini-2.0-flash-lite-001",
-      audio_input: true
-    },
-    {
       model_id: "google/gemma-4-31b-it",
       label: "Gemma 4 31B",
       group: "Google",
@@ -453,7 +380,6 @@ module Chat::ModelSelection
 
     # xAI - Grok models
     # grok-4.7/4.6/4.3/4.20: Support configurable reasoning on the direct xAI API
-    # grok-4/grok-3: Built-in reasoning but not exposed/configurable
     { model_id: "x-ai/grok-4.7", label: "Grok 4.7", group: "xAI", provider_model_id: "grok-4.7", thinking: { supported: true } },
     {
       model_id: "x-ai/grok-4.6",
@@ -495,57 +421,11 @@ module Chat::ModelSelection
       provider_model_id: "grok-build-0.1"
     },
     {
-      model_id: "x-ai/grok-4.2",
-      label: "Grok 4.2",
-      group: "xAI",
-      provider_model_id: "grok-4.2",
-      thinking: { supported: true }
-    },
-    {
-      model_id: "x-ai/grok-4-1-fast-reasoning",
-      label: "Grok 4.1 Fast Reasoning",
-      group: "xAI",
-      provider_model_id: "grok-4-1-fast-reasoning",
-      thinking: { supported: true }
-    },
-    {
-      model_id: "x-ai/grok-4-1-fast-non-reasoning",
-      label: "Grok 4.1 Fast Non-Reasoning",
-      group: "xAI",
-      provider_model_id: "grok-4-1-fast-non-reasoning"
-    },
-    {
       model_id: "x-ai/grok-4.20-multi-agent",
       label: "Grok 4.20 Multi-Agent",
       group: "xAI",
       provider_model_id: "grok-4.20-multi-agent-0309",
       thinking: { supported: true }
-    },
-    {
-      model_id: "x-ai/grok-3-mini",
-      label: "Grok 3 Mini",
-      group: "xAI",
-      provider_model_id: "grok-3-mini",
-      thinking: { supported: true }
-    },
-    {
-      model_id: "x-ai/grok-4-fast",
-      label: "Grok 4 Fast",
-      group: "xAI",
-      provider_model_id: "grok-4-fast",
-      thinking: { supported: true }
-    },
-    {
-      model_id: "x-ai/grok-4",
-      label: "Grok 4",
-      group: "xAI",
-      provider_model_id: "grok-4"
-    },
-    {
-      model_id: "x-ai/grok-3",
-      label: "Grok 3",
-      group: "xAI",
-      provider_model_id: "grok-3"
     },
 
     # DeepSeek
@@ -562,14 +442,11 @@ module Chat::ModelSelection
       group: "DeepSeek",
       provider_model_id: "deepseek-v4-flash"
     },
-    { model_id: "deepseek/deepseek-r1", label: "DeepSeek R1", group: "DeepSeek" },
-    { model_id: "deepseek/deepseek-v3", label: "DeepSeek V3", group: "DeepSeek" },
 
     # Moonshot / Kimi
     { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3", label: "Kimi K3", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2.7-code", label: "Kimi K2.7 Code", group: "Moonshot / Kimi" },
-    { model_id: "moonshotai/kimi-coding", label: "Kimi Coding", group: "Moonshot / Kimi" },
     { model_id: "moonshotai/kimi-k2.6", label: "Kimi K2.6", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2.5", label: "Kimi K2.5", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", group: "Moonshot / Kimi", thinking: { supported: true } },
@@ -612,23 +489,31 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-3.1-8b-instruct", label: "Llama 3.1 8B Instruct", group: "Meta" },
     { model_id: "meta-llama/llama-3.2-1b-instruct", label: "Llama 3.2 1B Instruct", group: "Meta" },
     { model_id: "meta-llama/llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct", group: "Meta" },
-    { model_id: "meta-llama/llama-3.2-11b-vision-instruct", label: "Llama 3.2 11B Vision Instruct", group: "Meta" },
 
     # Qwen
+    { model_id: "qwen/qwen3.8-max-prime", label: "Qwen3.8 Max Prime", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-2.4t-a95b", label: "Qwen3.8 2.4T A95B", group: "Qwen", thinking: { supported: true } },
-    { model_id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-omni-flash", label: "Qwen3.8 Omni Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-27b", label: "Qwen3.8 27B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus", group: "Qwen", thinking: { supported: true } },
-    { model_id: "qwen/qwen3.6-max-preview", label: "Qwen3.6 Max Preview", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.6-flash", label: "Qwen3.6 Flash", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.6-27b", label: "Qwen3.6 27B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.6-35b-a3b", label: "Qwen3.6 35B A3B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.5-plus-20260420", label: "Qwen3.5 Plus (2026-04-20)", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-plus-02-15", label: "Qwen3.5 Plus (02-15)", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.5-flash-02-23", label: "Qwen3.5 Flash (02-23)", group: "Qwen", thinking: { supported: true } },
-    { model_id: "qwen/qwen3-max-thinking", label: "Qwen3 Max Thinking", group: "Qwen", thinking: { supported: true } },
-    { model_id: "qwen/qwen3-max", label: "Qwen3 Max", group: "Qwen" },
+    { model_id: "qwen/qwen3.5-397b-a17b", label: "Qwen3.5 397B A17B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-122b-a10b", label: "Qwen3.5 122B A10B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-35b-a3b", label: "Qwen3.5 35B A3B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-27b", label: "Qwen3.5 27B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.5-9b", label: "Qwen3.5 9B", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3-coder-next", label: "Qwen3 Coder Next", group: "Qwen" },
     { model_id: "qwen/qwen3-coder-flash", label: "Qwen3 Coder Flash", group: "Qwen" },
-    { model_id: "qwen/qwen3-coder-plus", label: "Qwen3 Coder Plus", group: "Qwen" },
 
     # Xiaomi (OpenRouter)
     { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Xiaomi", thinking: { supported: true } },
@@ -636,13 +521,22 @@ module Chat::ModelSelection
     { model_id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash", group: "Xiaomi", thinking: { supported: true } },
 
     # Z.ai
+    { model_id: "z-ai/glm-5.3-prime", label: "GLM 5.3 Prime", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flashx", label: "GLM 5.3 FlashX", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.1", label: "GLM 5.1", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-5.1-coding", label: "GLM 5.1 Coding", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5-turbo", label: "GLM 5 Turbo", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5v-turbo", label: "GLM 5V Turbo", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5", label: "GLM 5", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-4.7", label: "GLM 4.7", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.7-flash", label: "GLM 4.7 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-4.6", label: "GLM 4.6", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-4.6-coding", label: "GLM 4.6 Coding", group: "Z.ai", thinking: { supported: true } },
-    { model_id: "z-ai/glm-4.5", label: "GLM 4.5", group: "Z.ai", thinking: { supported: true } }
+    { model_id: "z-ai/glm-4.6v", label: "GLM 4.6V", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5", label: "GLM 4.5", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5-air", label: "GLM 4.5 Air", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-4.5v", label: "GLM 4.5V", group: "Z.ai", thinking: { supported: true } }
   ].freeze
 
   REASONING_OPTIONS = {
@@ -701,11 +595,6 @@ module Chat::ModelSelection
       label: "Reasoning effort",
       default: "high",
       options: %i[none low medium high]
-    },
-    grok_fast: {
-      label: "Reasoning effort",
-      default: "high",
-      options: %i[low high]
     },
     grok_multi_agent: {
       label: "Reasoning effort",
@@ -774,7 +663,7 @@ module Chat::ModelSelection
 
     def reasoning_profile_for(model_id)
       case model_id
-      when "openai/gpt-6.1-sol", "openai/gpt-6.1-sol-pro", "openai/gpt-6-sol", "openai/gpt-6-sol-pro", "openai/gpt-6-luna", "openai/gpt-6-luna-pro"
+      when "openai/gpt-6.1-sol", "openai/gpt-6.1-sol-pro", "openai/gpt-6.1-terra", "openai/gpt-6-sol", "openai/gpt-6-sol-pro", "openai/gpt-6-luna", "openai/gpt-6-luna-pro"
         REASONING_PROFILES[:openai_max].merge(options: %i[none low medium high xhigh max])
       when "openai/gpt-6-astra-pro"
         REASONING_PROFILES[:openai_max]
@@ -802,8 +691,6 @@ module Chat::ModelSelection
         REASONING_PROFILES[:gemini_pro]
       when %r{\Ax-ai/grok-.*multi-agent}
         REASONING_PROFILES[:grok_multi_agent]
-      when %r{\Ax-ai/grok-(?:3-mini|4-1-fast-reasoning)}
-        REASONING_PROFILES[:grok_fast]
       when %r{\Ax-ai/grok-}
         REASONING_PROFILES[:grok]
       when %r{\A(?:deepseek|inception|meta|moonshotai|minimax|qwen|xiaomi|z-ai)/}

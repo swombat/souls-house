@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/shadcn/button';
   import { Input } from '$lib/components/shadcn/input';
   import { Label } from '$lib/components/shadcn/label';
+  import TelegramSettingsGroups from './telegram-settings-groups.svelte';
   import { siteName } from '$lib/branding';
   import { router } from '@inertiajs/svelte';
   import { onDestroy } from 'svelte';
@@ -12,6 +13,8 @@
     accountId,
     telegramConfiguration = null,
     telegramSubscriberCount,
+    telegramGroups = [],
+    canManageTelegramGroups = false,
     sendingTestNotification,
     registeringWebhook,
     onsendTestNotification,
@@ -198,6 +201,13 @@
         </Button>
       </div>
     </div>
+
+    <TelegramSettingsGroups
+      {agent}
+      {username}
+      configuration={telegramConfiguration}
+      groups={telegramGroups}
+      canManage={canManageTelegramGroups} />
   {/if}
 
   <div class="flex justify-end gap-3">

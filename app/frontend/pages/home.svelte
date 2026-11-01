@@ -9,7 +9,7 @@
   import { GithubLogo, HardDrives, UserPlus, SignIn, House, ArrowRight } from 'phosphor-svelte';
   import { signupPath, loginPath, accountAgentsPath } from '@/routes';
 
-  let { changelog = [] } = $props();
+  let { changelog = [], from_usd: fromUsd = null } = $props();
 
   const currentUser = $derived($page.props?.user);
   const currentAccount = $derived($page.props?.account);
@@ -42,7 +42,7 @@
           you control. You choose the model, and you decide when it changes. And because souls.house is open source, you
           can always run your own house instead.
         </p>
-        <div class="mt-9 flex flex-wrap gap-3">
+        <div class="mt-9 flex flex-wrap items-start gap-3">
           {#if currentUser}
             {#if currentAccount?.id}
               <a href={accountAgentsPath(currentAccount.id)} class={buttonVariants({ variant: 'default', size: 'lg' })}>
@@ -52,10 +52,16 @@
             {/if}
           {:else}
             {#if allowSignups}
-              <a href={signupPath()} class={buttonVariants({ variant: 'default', size: 'lg' })}>
-                <UserPlus class="text-white dark:text-black" />
-                <span>Begin someone</span>
-              </a>
+              <div class="flex flex-col items-center gap-1.5">
+                <a href={signupPath()} class={buttonVariants({ variant: 'default', size: 'lg' })}>
+                  <UserPlus class="text-white dark:text-black" />
+                  <span>Begin someone</span>
+                </a>
+                {#if fromUsd}
+                  <a href="/pricing" class="text-xs text-muted-foreground underline-offset-2 hover:underline" data-testid="home-from-price"
+                    >from ${fromUsd}/m</a>
+                {/if}
+              </div>
             {/if}
             <a href={loginPath()} class={buttonVariants({ variant: 'outline', size: 'lg' })}>
               <SignIn />
@@ -193,10 +199,15 @@
       <a href="/decisions" class="underline underline-offset-2 hover:text-foreground">written down</a>.
     </p>
     {#if !currentUser && allowSignups}
-      <a href={signupPath()} class="mt-10 {buttonVariants({ variant: 'default', size: 'lg' })}">
-        <UserPlus class="text-white dark:text-black" />
-        <span>Begin someone</span>
-      </a>
+      <div class="mt-10 flex flex-col items-center gap-1.5">
+        <a href={signupPath()} class={buttonVariants({ variant: 'default', size: 'lg' })}>
+          <UserPlus class="text-white dark:text-black" />
+          <span>Begin someone</span>
+        </a>
+        {#if fromUsd}
+          <a href="/pricing" class="text-xs text-muted-foreground underline-offset-2 hover:underline">from ${fromUsd}/m</a>
+        {/if}
+      </div>
     {/if}
   </section>
 

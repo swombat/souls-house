@@ -20,8 +20,8 @@ class CiWorkflowTest(unittest.TestCase):
 
     def test_job_budget_and_partitions(self):
         matrix = self.jobs["application"]["strategy"]["matrix"]["include"]
-        self.assertEqual(len(matrix) + len(self.jobs) - 1, 9)
-        for suite, total in (("rails", 2), ("e2e", 3), ("components", 1)):
+        self.assertEqual(len(matrix) + len(self.jobs) - 1, 13)
+        for suite, total in (("rails", 4), ("e2e", 5), ("components", 1)):
             rows = [row for row in matrix if row["suite"] == suite]
             self.assertEqual(sorted(row["shard"] for row in rows), list(range(1, total + 1)))
             self.assertTrue(all(row["total"] == total for row in rows))
@@ -53,7 +53,9 @@ class CiWorkflowTest(unittest.TestCase):
         browser = steps["Browser end-to-end tests"]["run"]
         self.assertIn("--no-deps", browser)
         self.assertIn("--workers=1", browser)
-        self.assertIn("--shard=${{ matrix.shard }}/${{ matrix.total }}", browser)
+        self.assertIn("files=$(node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ matrix.total }})", browser)
+        self.assertIn("$files", browser)
+        self.assertNotIn("--shard=", browser)
         self.assertEqual(steps["Browser component tests"]["run"], "bun run test:ct")
         self.assertIn("matrix.shard", steps["Preserve browser failure reports"]["with"]["name"])
         self.assertNotIn("matrix.suite != 'rails'", steps["Prepare test database"]["if"])
@@ -61,6 +63,24 @@ class CiWorkflowTest(unittest.TestCase):
         bases = re.findall(r"^FROM (.+)$", dockerfile, re.M)
         self.assertEqual(len(bases), 3)
         self.assertTrue(all(re.search(r"@sha256:[0-9a-f]{64}(?: AS \w+)?$", base) for base in bases))
+
+    def test_asset_build_is_cached_on_every_input_and_reused_by_every_suite(self):
+        steps = {step.get("name"): step for step in self.jobs["application"]["steps"] if "name" in step}
+        cache = steps["Restore the test asset build"]
+        self.assertNotIn("if", cache)
+        self.assertEqual(cache["with"]["path"].split(), ["public/vite-test", "tmp/cache/vite"])
+        key = cache["with"]["key"]
+        self.assertNotIn("restore-keys", cache["with"])
+        for build_input in ("app/frontend/**", "app/views/**", "app/helpers/**", "config/vite.json",
+                            "vite.config.js", "package.json", "bun.lock", ".github/ci/Dockerfile"):
+            self.assertIn(f"'{build_input}'", key)
+        names = [step.get("name") for step in self.jobs["application"]["steps"]]
+        self.assertLess(names.index("Restore the test asset build"), names.index("Build test assets"))
+        # vite_ruby's digest decides whether the restored build is current, so it
+        # has to see the same inputs, and the browser backend must not force a rebuild.
+        vite = yaml.safe_load((ROOT / "config/vite.json").read_text())
+        self.assertEqual(vite["all"]["watchAdditionalPaths"], ["app/views/**/*", "app/helpers/**/*", "bun.lock"])
+        self.assertNotIn("--force", (ROOT / "playwright/run-backend.rb").read_text())
 
     def test_aggregate_rejects_failure_cancel_and_skip(self):
         result = self.jobs["result"]

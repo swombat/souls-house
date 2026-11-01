@@ -56,6 +56,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_not response.parsed_body.fetch("props").key?("grouped_models")
   end
 
+  test "a sessions-only partial counts this account's running sessions without building the cards" do
+    resident = @account.agents.where.not(id: @agent.id).first || @agent
+    AgentRuntimeInteraction.create!(agent: resident, trigger_kind: "wake", started_at: Time.current,
+      run_id: SecureRandom.uuid, execution_state: "running")
+    Agents::ResidentDirectory.stub :new, ->(*) { flunk "a sessions refresh built resident cards" } do
+      get account_agents_path(@account), headers: {
+        "X-Inertia" => "true",
+        "X-Inertia-Version" => ViteRuby.digest,
+        "X-Inertia-Partial-Component" => "agents/index",
+        "X-Inertia-Partial-Data" => "active_sessions"
+      }
+      assert_response :success
+    end
+    sessions = response.parsed_body.dig("props", "active_sessions")
+    assert_equal({ "chat" => 0, "telegram" => 0, "other" => 1 }, sessions.fetch(resident.to_param))
+    assert sessions.keys.all? { |id| @account.agents.find_by_obfuscated_id(id) }, "only this account's residents"
+  end
+
   test "birth claims funding atomically and a second birth creates no resident key or job" do
     attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
     assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
@@ -507,7 +525,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       }
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal @agent.to_param, subscription.fetch("id")
@@ -524,7 +542,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       health_state: "healthy"
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal "anthropic", subscription.fetch("provider")
@@ -540,7 +558,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       health_state: "healthy"
     )
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     subscription = inertia_shared_props.fetch("provider_subscription")
     assert_equal "gemini", subscription.fetch("provider")
@@ -549,10 +567,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, subscription.fetch("available")
   end
 
+  test "edit hides the hosting tab and its diagnostics from owners who are not site admins" do
+    @agent.update!(runtime: "external", health_state: "unhealthy")
+    assert_not @user.is_site_admin?
+
+    get edit_account_agent_path(@account, @agent)
+
+    assert_equal false, inertia_shared_props.fetch("can_view_hosting")
+    assert_nil inertia_shared_props["hosting_diagnostics_url"]
+  end
+
   test "edit omits provider subscription setup for deprecated inline agents" do
     @agent.update!(model_id: "openai/gpt-5", runtime: "deprecated")
 
-    get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
+    get edit_account_agent_path(@account, @agent), params: { tab: "settings" }
 
     assert_nil inertia_shared_props["provider_subscription"]
   end

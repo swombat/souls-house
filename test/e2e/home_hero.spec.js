@@ -78,3 +78,17 @@ test('the memory section shows both the journal and the memory graph, and the gr
   await page.screenshot({ path: test.info().outputPath('memory.png') });
   expect(errors).toEqual([]);
 });
+
+test('a visitor can reach pricing from the top of the homepage', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+
+  await expect(page.locator('nav a[href="/pricing"]').first()).toBeVisible();
+  const begin = page.getByRole('link', { name: 'Begin someone' }).first();
+  if (await begin.isVisible()) {
+    const from = page.getByTestId('home-from-price');
+    await expect(from).toHaveText(/^from \$\d+\/m$/);
+    await expect(from).toHaveAttribute('href', '/pricing');
+  }
+  if (process.env.HOME_HERO_SHOT) await page.screenshot({ path: process.env.HOME_HERO_SHOT });
+});

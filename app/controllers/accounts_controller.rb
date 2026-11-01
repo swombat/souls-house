@@ -50,6 +50,7 @@ class AccountsController < ApplicationController
       can_be_personal: @account.can_be_personal?,
       members: -> { account_members_json },
       can_manage: @account.manageable_by?(Current.user),
+      can_invite_owner: @account.owned_by?(Current.user),
       current_user_id: Current.user.id,
       resident_handoff_cap: @account.resident_handoff_cap,
       reflexes_enabled: @account.reflexes_enabled,

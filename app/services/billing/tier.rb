@@ -5,7 +5,8 @@
 # machine, the house-model allowance, Scribe transcription at $0.22/h, Restic
 # backups at S3 list price, swarm reads and Stripe's fee. Every plan keeps a
 # positive margin even when someone uses all of it. Change a number here and
-# re-cost it.
+# re-cost it. Conversation's allowance is $10 (Daniel, WjNvXj/JzPOVe;
+# applied 2026-10-26 after it had stayed at the $8 of the first table).
 #
 # memory_gb and cpu_shares are the container limits while residents still live
 # on the shared house server; the machine is what a plan gets once hosting moves
@@ -26,6 +27,18 @@ module Billing
     # once plans open; nothing enforces them until checkout is gated on it.
     CONNECTIONS = %w[google_workspace telegram whatsapp x github dns].freeze
 
+    # The rates a tier can be bought at (Billing::Offer).
+    RATES = %w[standard at_cost].freeze
+
+    # At cost, per tier, in USD a month (Daniel, jBVrDj 2026-10-28): the
+    # machine and what it drags with it, rounded up to the dollar. Costed
+    # against net Hetzner list price (reverse charge) at ECB 1.115 USD/EUR,
+    # the primary IPv4 and Stripe's UK fee on an EU card; the test holds the
+    # working. No house-model allowance. Re-cost by hand when Hetzner or the
+    # exchange rate moves: that makes a new Stripe price, and the old id
+    # stays in the list (#619).
+    AT_COST_MONTHLY_USD = { "conversation" => 8, "life" => 11, "work" => 20 }.freeze
+
     attr_reader :id, :name, :monthly_usd, :allowance_usd, :memory_gb, :cpu_shares, :server_type,
       :transcription_hours, :backup_gb, :swarm_searches, :connections
 
@@ -45,7 +58,7 @@ module Billing
     end
 
     CATALOGUE = [
-      new(id: "conversation", name: "Conversation", monthly_usd: 20, allowance_usd: 8, memory_gb: 4, cpu_shares: 1024,
+      new(id: "conversation", name: "Conversation", monthly_usd: 20, allowance_usd: 10, memory_gb: 4, cpu_shares: 1024,
         server_type: "cx23", transcription_hours: 5, backup_gb: 10),
       new(id: "life", name: "Life", monthly_usd: 50, allowance_usd: 25, memory_gb: 8, cpu_shares: 2048,
         server_type: "cx33", transcription_hours: 20, backup_gb: 50, swarm_searches: 20, connections: CONNECTIONS),
@@ -68,38 +81,41 @@ module Billing
     end
 
     def self.for_price(price_id)
-      return nil if price_id.blank?
-
-      CATALOGUE.find { |tier| tier.price_id == price_id }
+      Offer.for_price(price_id)&.tier
     end
 
     def self.with_swarm_search = CATALOGUE.select(&:swarm_search?)
 
-    # Stripe price IDs differ between test and live mode, so they are configuration.
-    def price_id
-      Rails.application.credentials.dig(:stripe, :prices, id.to_sym).presence ||
-        ENV["STRIPE_PRICE_#{id.upcase}"].presence
-    end
+    def offer(rate = "standard") = Offer.new(tier: self, rate: rate.to_s)
 
+    def offers = RATES.map { |rate| offer(rate) }
+
+    # The standard offer's prices; see Billing::Offer.
+    def price_ids = offer.price_ids
+    def price_id = offer.price_id
     def purchasable? = price_id.present?
 
     def machine = MACHINES.fetch(server_type)
 
     def swarm_search? = swarm_searches.positive?
 
-    # What the plan includes, for the public page and the Billing tab.
+    # What the plan includes, for the public page, the Billing tab, the
+    # creation wizard and the about-sheet. Only what a plan delivers today
+    # (Daniel, 2026-10-25, going live): hosting for one resident, the monthly
+    # house-model allowance (ResidentEntitlement) and swarm searches
+    # (Account#field_swarm_plan_searches), and sub-agents on the plans in
+    # Agent::Subagents::SUBAGENT_TIERS. The machine, transcription hours, backup space
+    # and connections above stay for costing and are not shown until each one
+    # ships; add it here when it does.
     def features
-      {
-        server_type: server_type, vcpus: machine[:vcpus], ram_gb: machine[:ram_gb], disk_gb: machine[:disk_gb],
-        allowance_usd: allowance_usd, transcription_hours: transcription_hours, backup_gb: backup_gb,
-        swarm_searches: swarm_searches, connections: connections
-      }
+      { hosting: true, allowance_usd: allowance_usd, swarm_searches: swarm_searches,
+        subagents: id.in?(Agent::Subagents::SUBAGENT_TIERS) }
     end
 
     def as_json(*)
       {
         id: id, name: name, monthly_usd: monthly_usd, allowance_usd: allowance_usd,
-        memory_gb: memory_gb, purchasable: purchasable?, features: features
+        purchasable: purchasable?, features: features
       }
     end
 

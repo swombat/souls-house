@@ -20,6 +20,7 @@
     can_be_personal,
     members = [],
     can_manage = false,
+    can_invite_owner = false,
     current_user_id,
     resident_handoff_cap = 6,
     reflexes_enabled = false,
@@ -34,6 +35,7 @@
         'members',
         'can_be_personal',
         'can_manage',
+        'can_invite_owner',
         'resident_handoff_cap',
         'reflexes_enabled',
       ],
@@ -149,6 +151,7 @@
     <TeamMembersCard
       members={activeMembers}
       canManage={can_manage}
+      canInviteOwner={can_invite_owner}
       currentUserId={current_user_id}
       bind:showInviteForm
       {formatDate}

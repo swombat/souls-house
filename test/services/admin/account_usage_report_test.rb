@@ -117,7 +117,7 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
 
   test "includes resident identity and current model OAuth mode rather than unrelated subscriptions" do
     @agent.update_columns(
-      runtime: "external", model_id: "anthropic/claude-opus-4", icon: "Moon", colour: "violet",
+      runtime: "external", model_id: "anthropic/claude-opus-4.8", icon: "Moon", colour: "violet",
       provider_auth_modes: { "anthropic" => "oauth_account", "openai" => "oauth_account" },
       provider_connections: { "anthropic" => { "status" => "connected", "email" => "private@example.com" } }
     )
@@ -130,7 +130,7 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
 
   test "shows OpenRouter API routing even when another provider has an OAuth connection" do
     @agent.update_columns(
-      runtime: "external", model_id: "anthropic/claude-opus-4",
+      runtime: "external", model_id: "anthropic/claude-opus-4.8",
       provider_auth_modes: { "openai" => "oauth_account" }
     )
     Account.stub(:system_ai_api_key, nil) do
@@ -140,7 +140,7 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
 
   test "deprecated inline residents use API even with old subscription settings" do
     @agent.update_columns(
-      runtime: "inline", model_id: "anthropic/claude-opus-4",
+      runtime: "inline", model_id: "anthropic/claude-opus-4.8",
       provider_auth_modes: { "anthropic" => "oauth_account" }
     )
     @account.update!(anthropic_api_key: "account-test-key")

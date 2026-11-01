@@ -39,6 +39,7 @@ test('pays with the saved card, then waits for the house to say the resident is 
   expect(postJson).toHaveBeenNthCalledWith(1, '/accounts/a/birth_orders', {
     agent: { name: 'Aria' },
     tier: 'conversation',
+    rate: 'standard',
   });
   expect(stripe.confirmCardPayment).toHaveBeenCalledWith('pi_1_secret', { payment_method: 'pm_visa' });
   expect(result.redirectTo).toBe('/accounts/a/agents/x/onboarding');

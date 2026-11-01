@@ -118,3 +118,16 @@ test('uses progressively deeper blues for journal layers and peach for nodes', a
     expect(heading.closest('li').className).toMatch(/dark:bg-/);
   }
 });
+
+test('memory history sits in the red site-admins-only box; members get no box', async () => {
+  const { unmount } = render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  const region = await screen.findByRole('region', { name: 'Memory history' });
+  const box = region.closest('[data-admin-only]');
+  expect(box).not.toBeNull();
+  expect(box.className).toContain('bg-red-50');
+  expect(box).toHaveTextContent('Site admins only');
+  unmount();
+  const member = render(ResidentMemoryPanel, { overviewUrl: '/overview' });
+  await screen.findByText('17');
+  expect(member.container.querySelector('[data-admin-only]')).toBeNull();
+});

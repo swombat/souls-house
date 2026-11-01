@@ -16,6 +16,8 @@ class AgentsController < ApplicationController
       github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       # Directory-only hints must not rebuild cards or claim journal-stat jobs.
       agents: -> { Agents::ResidentDirectory.new(current_account).call },
+      # Light on purpose: the spinners reload this alone (ResidentSessions).
+      active_sessions: -> { ResidentSessions.by_agent(current_account.agents) },
       can_end_guest_memberships: current_account.owned_by?(Current.user),
       # The reconnect endpoints require the account owner; offer the button to the same people.
       can_manage_provider_subscription: current_account.owned_by?(Current.user),
@@ -85,8 +87,10 @@ class AgentsController < ApplicationController
       reflexes: -> { reflexes_props },
       # Count/provider partials must not mint another registration token.
       telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
-      telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username } },
+      telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username, reads_all_group_messages: @agent.telegram_reads_all_group_messages } },
       telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
+      telegram_groups: -> { TelegramGroupPresentation.list(@agent, account: current_account) },
+      can_manage_telegram_groups: -> { current_account.owned_by?(Current.user) },
       memories: -> { memories_for_display },
       grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,
@@ -94,12 +98,18 @@ class AgentsController < ApplicationController
       active_tab: params[:tab],
       local_dev_endpoint_mode: Agents::Config.publish_ports?,
       identity_export_url: identity_export_account_agent_path(current_account, @agent),
+      avatar_path: avatar_account_agent_path(current_account, @agent),
       memory_overview_url: account_agent_memory_overview_path(current_account, @agent),
       memory_history_url: Current.user.is_site_admin? ? history_account_agent_memory_overview_path(current_account, @agent) : nil,
-      hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
+      # The Hosting tab is site-admin only; owners get health, Restart and the
+      # subscription on Settings.
+      can_view_hosting: Current.user.is_site_admin?,
+      can_restart_runtime: current_account.owned_by?(Current.user) && @agent.externally_hosted?,
+      hosting_diagnostics_url: Current.user.is_site_admin? ? account_agent_hosting_diagnostics_path(current_account, @agent) : nil,
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),
       provider_subscription: -> { Agents::ProviderSubscriptionPresentation.call(@agent) },
+      hosting_location: -> { Agents::HostingLocation.call(@agent) },
       service_connections: -> { service_connections_for_agent },
       can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
       interactions: -> { interactions_props(load_interactions.call.last) },
@@ -207,6 +217,7 @@ class AgentsController < ApplicationController
       test_mode: Billing.test_mode?,
       publishable_key: Billing.publishable_key,
       tiers: Billing::Tier.all.select(&:purchasable?).as_json,
+      offers: current_account.purchasable_offers.as_json,
       payment_method: payment_method,
       payment_method_error: payment_method_error,
       contact_email: Billing.contact_email,

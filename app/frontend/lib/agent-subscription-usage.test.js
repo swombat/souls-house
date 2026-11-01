@@ -1,7 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { agentNameWithUsage, sortAgentsByAvailability } from './agent-subscription-usage';
+import { agentNameWithUsage, sortAgentsByAvailability, loadAgentRemaining } from './agent-subscription-usage';
 
 describe('agent subscription usage labels', () => {
+  it('keeps a low OpenAI warning and availability ordering using both supplied windows', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          windows: [
+            { id: 'session', remaining_percent: 80 },
+            { id: 'weekly', remaining_percent: 20 },
+          ],
+        }),
+      })
+    );
+    try {
+      const low = {
+        id: 'openai-low',
+        name: 'Mira',
+        provider_subscription: {
+          available: true,
+          auth_mode: 'oauth_account',
+          provider: 'openai',
+          connection: { status: 'connected' },
+        },
+      };
+      const remaining = await loadAgentRemaining('minimum-allowance', low);
+      expect(remaining).toBe(20);
+      expect(agentNameWithUsage(low.name, remaining, false)).toBe('Mira (20% left)');
+      expect(
+        sortAgentsByAvailability([{ id: 'api', name: 'API' }, low, { id: 'high', name: 'High' }], {
+          [low.id]: remaining,
+          high: 70,
+        }).map((agent) => agent.id)
+      ).toEqual(['high', low.id, 'api']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('shows usage when the site setting is enabled', () => {
     expect(agentNameWithUsage('Wing', 72, true)).toBe('Wing (72% left)');
   });

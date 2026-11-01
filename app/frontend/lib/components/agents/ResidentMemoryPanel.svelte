@@ -1,5 +1,6 @@
 <script>
   import ResidentMemoryHistory from './resident-memory-history.svelte';
+  import AdminOnlySection from '$lib/components/admin/AdminOnlySection.svelte';
   import { onMount } from 'svelte';
   import MemoryActivityChart from './MemoryActivityChart.svelte';
 
@@ -93,6 +94,8 @@
   {/if}
 
   {#if historyUrl}
-    <ResidentMemoryHistory {historyUrl} />
+    <AdminOnlySection>
+      <ResidentMemoryHistory {historyUrl} />
+    </AdminOnlySection>
   {/if}
 </div>

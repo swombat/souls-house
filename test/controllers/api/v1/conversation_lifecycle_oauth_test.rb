@@ -117,7 +117,7 @@ class Api::V1::ConversationLifecycleOauthTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     patch api_v1_conversation_message_path(@team_chat, @team_message), params: { content: "x" }, headers: auth, as: :json
     assert_response :not_found
-    patch api_v1_conversation_path(@team_chat), params: { model_id: "anthropic/claude-opus-4" }, headers: auth, as: :json
+    patch api_v1_conversation_path(@team_chat), params: { model_id: "anthropic/claude-opus-4.8" }, headers: auth, as: :json
     assert_response :not_found
     post api_v1_conversation_discard_path(@team_chat), headers: auth, as: :json
     assert_response :not_found

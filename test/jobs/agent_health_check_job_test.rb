@@ -59,6 +59,71 @@ class AgentHealthCheckJobTest < ActiveJob::TestCase
     assert_nil @agent.last_health_check_at
   end
 
+  test "the first failure stamps when the run began; recovery clears it" do
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 500)
+    began = nil
+    freeze_time do
+      2.times { AgentHealthCheckJob.perform_now }
+      @agent.reload
+      began = Time.current
+      assert_equal Time.current, @agent.health_failing_since
+      assert_equal "unanswered", @agent.health_failure_kind
+    end
+    travel 10.minutes
+    AgentHealthCheckJob.perform_now
+    assert_equal 3, @agent.reload.consecutive_health_failures
+    # Compared with the frozen start, not "10.minutes.ago": the clock runs
+    # between the frozen block and travel, and CI crossed a second boundary.
+    assert_equal began.to_i, @agent.health_failing_since.to_i
+
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: "{}")
+    AgentHealthCheckJob.perform_now
+    @agent.reload
+    assert_nil @agent.health_failing_since
+    assert_nil @agent.health_failure_kind
+  end
+
+  def with_restart_counts(*counts)
+    @agent.update!(container_name: "sh-test-research-assistant")
+    sandbox = Object.new
+    sandbox.define_singleton_method(:restart_count) { counts.shift }
+    Agents::Sandbox.stub(:new, sandbox) { yield }
+  end
+
+  test "a container that restarted since the last probe fails the check even when the probe passes" do
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: "{}")
+    with_restart_counts(7, 7, 9) do
+      2.times { AgentHealthCheckJob.perform_now }
+      assert_equal "healthy", @agent.reload.health_state
+      assert_equal 7, @agent.runtime_restart_count
+      AgentHealthCheckJob.perform_now
+    end
+    @agent.reload
+    assert_equal "unhealthy", @agent.health_state
+    assert_equal "restarting", @agent.health_failure_kind
+    assert_equal 1, @agent.consecutive_health_failures
+    assert_equal 9, @agent.runtime_restart_count
+  end
+
+  test "a recreated container starts a fresh baseline, and no count at all is no verdict" do
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: "{}")
+    with_restart_counts(12, 0, nil) do
+      3.times { AgentHealthCheckJob.perform_now }
+    end
+    @agent.reload
+    assert_equal "healthy", @agent.health_state
+    assert_equal 0, @agent.consecutive_health_failures
+    assert_equal 0, @agent.runtime_restart_count
+  end
+
+  test "the restart count is not asked of a resident with no container" do
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: "{}")
+    Agents::Sandbox.stub(:new, ->(*) { raise "docker was asked" }) do
+      AgentHealthCheckJob.perform_now
+    end
+    assert_equal "healthy", @agent.reload.health_state
+  end
+
   test "records only standard sync safe status without raw errors" do
     request = import_request(account: @agent.account, connection: import_connection(account: @agent.account), sync_strategy: "standard")
     @agent.update_columns(github_resident_import_id: request.id)

@@ -111,6 +111,13 @@
         <div class="font-medium">{rhythm.state === 'paused' ? 'Not while paused' : (nextRun ?? '—')}</div>
       </div>
     </div>
+    {#if rhythm.last_skip}
+      <p class="mt-4 text-sm text-muted-foreground" data-testid="rhythm-last-skip">
+        Skipped {formatWhen(rhythm.last_skip.at, zone)}: {rhythm.last_skip.explanation}.{rhythm.state === 'paused'
+          ? ''
+          : ' The next slot tries again on its own.'}
+      </p>
+    {/if}
 
     <section class="mt-8">
       <h2 class="mb-2 text-sm font-medium text-muted-foreground">Opening message</h2>
@@ -128,9 +135,6 @@
                   {hold.holder_name}
                   {#if hold.holder_type === 'agent'}<span class="font-normal text-muted-foreground">
                       (resident)</span
-                    >{/if}
-                  {#if hold.holder_type === 'system'}<span class="font-normal text-muted-foreground">
-                      (automatic)</span
                     >{/if}
                 </div>
                 {#if hold.reason}<p class="mt-0.5 text-muted-foreground">{hold.reason}</p>{/if}

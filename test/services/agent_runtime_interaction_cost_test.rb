@@ -185,6 +185,35 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "0.016", cost.dig(:components_usd, :cache_read_input)
   end
 
+  test "October Qwen and GLM prices: input, output and cache read per rule" do
+    {
+      "qwen/qwen3.8-max-0902" => [ "qwen/qwen3.8-max", "8.25", "0.25" ],
+      "qwen3.8-max" => [ "qwen/qwen3.8-max", "8.25", "0.25" ],
+      "qwen/qwen3.8-max-prime" => [ "qwen/qwen3.8-max-prime", "16.5", "0.5" ],
+      "z-ai/glm-5.3" => [ "z-ai/glm-5.3", "1.5388", "0.0689" ],
+      "glm-5.3" => [ "z-ai/glm-5.3", "1.5388", "0.0689" ],
+      "z-ai/glm-5.3-prime" => [ "z-ai/glm-5.3-prime", "12.16", "0.56" ]
+    }.each do |model, (pricing_model, total, cache_read)|
+      cost = build_interaction(
+        provider: "openrouter", model: model,
+        uncached_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000,
+        output_tokens: 1_000_000
+      ).estimated_cost
+      assert_equal "estimated", cost[:status], model
+      assert_equal pricing_model, cost[:pricing_model], model
+      assert_equal "2026-10-26", cost[:pricing_as_of], model
+      assert_equal total, cost[:amount_usd], model
+      assert_equal cache_read, cost.dig(:components_usd, :cache_read_input), model
+    end
+  end
+
+  test "October price rules do not swallow neighbouring Qwen and GLM IDs" do
+    %w[qwen/qwen3.8-max-prime-0902 qwen/qwen3.8-max-preview z-ai/glm-5.3-flash
+       z-ai/glm-5.3-flashx z-ai/glm-5.3-prime-turbo].each do |model|
+      assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
+    end
+  end
+
   test "Gemini 4 Argon uses launch pricing until December and doubles after" do
     launch = build_interaction(
       provider: "openrouter", model: "google/gemini-4-argon",
@@ -236,6 +265,21 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "estimated", cost[:status]
     assert_equal "0.765", cost[:amount_usd]
     assert_equal "0.015", cost.dig(:components_usd, :cache_read_input)
+  end
+
+  test "GPT-6.1 Terra is priced from the OpenAI standard endpoint" do
+    [ "openai/gpt-6.1-terra", "gpt-6.1-terra" ].each do |model|
+      cost = build_interaction(
+        model: model,
+        uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+        cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+      ).estimated_cost
+      assert_equal "estimated", cost[:status], model
+      assert_equal "7.3", cost[:amount_usd], model
+      assert_equal "1.25", cost.dig(:components_usd, :cache_creation_input), model
+      assert_equal "0.05", cost.dig(:components_usd, :cache_read_input), model
+    end
+    assert_equal "gpt-6.1-terra", Chat.provider_model_id("openai/gpt-6.1-terra")
   end
 
   test "Kimi K3.1 Pro is priced from the Moonshot AI standard endpoint" do

@@ -1,5 +1,5 @@
 <script>
-  import { agentNameWithUsage, loadAgentWeeklyRemaining } from '$lib/agent-subscription-usage';
+  import { agentNameWithUsage, loadAgentRemaining } from '$lib/agent-subscription-usage';
 
   let { accountId, agent, showUsage = false, mobileGauge = false } = $props();
   let remaining = $state(null);
@@ -25,7 +25,7 @@
       remaining = null;
     }
 
-    loadAgentWeeklyRemaining(accountId, agent).then((value) => {
+    loadAgentRemaining(accountId, agent).then((value) => {
       if (!cancelled) remaining = value;
     });
 

@@ -19,6 +19,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('shows both OpenAI remaining allowances and resets without invented durations or forecasts', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'available',
+        windows: [
+          {
+            id: 'session',
+            label: 'Session',
+            remaining_percent: 60,
+            resets_at: new Date(Date.now() + 2 * 3600000).toISOString(),
+          },
+          {
+            id: 'weekly',
+            label: 'Weekly',
+            remaining_percent: 30,
+            resets_at: new Date(Date.now() + 6 * 86400000).toISOString(),
+          },
+        ],
+      }),
+    })
+  );
+  render(Summary, { accountId: 'a', agentId: 'b', subscription: { ...subscription, provider: 'openai' } });
+  expect(await screen.findByText('60% left')).toBeVisible();
+  expect(screen.getByText('30% left')).toBeVisible();
+  expect(screen.getAllByRole('meter')).toHaveLength(2);
+  expect(screen.getByText('Allowance 1')).toBeVisible();
+  expect(screen.getByText('Allowance 2')).toBeVisible();
+  expect(screen.getAllByText(/^resets in/)).toHaveLength(2);
+  expect(screen.queryByText(/predicted|Forecast|Weekly|5-hour/)).not.toBeInTheDocument();
+});
+
 test('keeps both quota bars visible at a limit, showing used rather than remaining', async () => {
   vi.stubGlobal(
     'fetch',
