@@ -20,6 +20,7 @@
   let state = $state('idle');
 
   let mediaRecorder = null;
+  let destroyed = false;
   let audioChunks = [];
   // Held from the moment recording starts until the transcript (or an error) is back, so a
   // background refresh after a deploy cannot reload the page and lose the audio.
@@ -65,6 +66,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     if (mediaRecorder?.state === 'recording') abandon(mediaRecorder);
     release();
     failureHold?.();
@@ -72,6 +74,7 @@
   });
 
   const isRecording = $derived(state === 'recording');
+  const isStarting = $derived(state === 'starting');
   const isTranscribing = $derived(state === 'transcribing');
   const isFailed = $derived(state === 'failed');
 
@@ -99,6 +102,12 @@
     let stream = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // The button may have gone (the person left the conversation) while the prompt was open;
+      // starting now would leave an invisible recorder and a hold nobody can release.
+      if (destroyed) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -295,12 +304,14 @@
            disabled:pointer-events-none disabled:opacity-50"
     title={isRecording
       ? 'Stop recording'
-      : isTranscribing
-        ? 'Transcribing...'
-        : isFailed
-          ? 'Retry or discard the voice note first'
-          : 'Record voice message'}>
-    {#if isTranscribing}
+      : isStarting
+        ? 'Starting…'
+        : isTranscribing
+          ? 'Transcribing...'
+          : isFailed
+            ? 'Retry or discard the voice note first'
+            : 'Record voice message'}>
+    {#if isTranscribing || isStarting}
       <Spinner size={18} class="animate-spin" />
     {:else if isRecording}
       <MicrophoneSlash size={18} />
