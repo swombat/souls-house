@@ -402,15 +402,69 @@ class Agent < ApplicationRecord
   end
 
   def mark_provider_connection_status!(provider, status)
-    connection = provider_connection(provider)
-    return if connection.blank?
+    with_lock do
+      connection = provider_connection(provider)
+      next if connection.blank?
 
-    update!(
-      provider_connections: provider_connections.to_h.merge(
-        provider.to_s => connection.merge("status" => status.to_s)
+      previous_status = connection["status"]
+      update!(
+        provider_connections: provider_connections.to_h.merge(
+          provider.to_s => connection.merge("status" => status.to_s)
+        )
       )
+      if status.to_s == "expired" && previous_status != "expired"
+        audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+      end
+    end
+  end
+
+  # A status read found the provider account connected. Records it, and
+  # audits the change when it was not already connected. Under the row lock,
+  # so competing polls write the observation once.
+  def observe_provider_connected!(provider, email:, plan:)
+    with_lock do
+      previous = provider_connection(provider)
+      record_provider_connection!(
+        provider,
+        email:, plan:, status: "connected",
+        connected_at: previous["connected_at"] || Time.current.iso8601
+      )
+      if previous["status"] != "connected"
+        audit_provider_connection!(PROVIDER_CONNECTION_OBSERVED, provider, previous_status: previous["status"], plan:)
+      end
+    end
+  end
+
+  # Provider subscription logins leave an audit trail (Daniel, 2026-11-01,
+  # exGRgY: "if there isn't an audit log event for this, please add it").
+  # Only what Rails actually knows, named as that (Mira, #704 rounds 1-2):
+  #   sign_in_started       an owner pressed Connect
+  #   sign_in_code_submitted an owner pasted the browser code (never stored)
+  #   connection_observed   a status read found the login connected when the
+  #                         house had it as expired, absent or unknown. Not
+  #                         proof a sign-in succeeded: the runtime can report
+  #                         older credentials that still work.
+  #   expired               the house marked the login expired after a run's
+  #                         auth failure; not proof the provider expired it.
+  # So "did anyone sign in again between a failure and its recovery?" is
+  # answered by whether a sign_in_started row sits between them.
+  # Metadata only (provider, plan, previous status), never the account email
+  # or anything from the token or the one-time code.
+  PROVIDER_SIGN_IN_STARTED = "agent.provider.sign_in_started".freeze
+  PROVIDER_SIGN_IN_CODE_SUBMITTED = "agent.provider.sign_in_code_submitted".freeze
+  PROVIDER_CONNECTION_OBSERVED = "agent.provider.connection_observed".freeze
+  PROVIDER_EXPIRED = "agent.provider.expired".freeze
+
+  def audit_provider_connection!(action, provider, **data)
+    AuditLog.create!(
+      action:,
+      auditable: self,
+      account_id:,
+      user: Current.user,
+      data: { agent_id: id, provider: provider.to_s, **data }.compact
     )
   end
+  private :audit_provider_connection!
 
   def soul_seed
     system_prompt
