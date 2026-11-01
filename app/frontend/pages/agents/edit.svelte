@@ -84,6 +84,7 @@
       'cost_report',
       'reflexes',
       'subagents_available',
+      'voice',
     ],
   });
 

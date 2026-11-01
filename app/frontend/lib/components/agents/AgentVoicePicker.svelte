@@ -13,6 +13,10 @@
   let busy = $state(false);
   let error = $state(null);
   let previewSrc = $state(null);
+  // Each Preview press gets a fresh audio element, so a repeat or a retry
+  // after an error plays again instead of waiting on an element that has
+  // already loaded (or already failed).
+  let previewAttempt = $state(0);
   let previewLoading = $state(false);
   let previewError = $state(null);
 
@@ -37,6 +41,17 @@
   });
 
   const current = $derived(voice?.current_voice_id ?? null);
+
+  // The saved voice can change under the page (the resident chose one, or
+  // another person did): follow it unless the person here has picked
+  // something else they haven't saved yet.
+  let lastSeenCurrent = voice?.current_voice_id ?? null;
+  $effect(() => {
+    const next = current;
+    if (next === lastSeenCurrent) return;
+    if ((selected || null) === lastSeenCurrent) selected = next ?? '';
+    lastSeenCurrent = next;
+  });
   const currentIsStandard = $derived(!current || voices.some((v) => v.voice_id === current));
   const chosen = $derived(voices.find((v) => v.voice_id === selected) ?? null);
   const changed = $derived((selected || null) !== current);
@@ -55,6 +70,7 @@
     previewError = null;
     previewLoading = true;
     previewSrc = voice.preview_path_template.replace('VOICE_ID', encodeURIComponent(chosen.voice_id));
+    previewAttempt += 1;
   }
 
   function save() {
@@ -129,16 +145,19 @@
         </p>
       {/if}
       {#if previewSrc}
-        <audio
-          class="w-full max-w-xl"
-          controls
-          autoplay
-          src={previewSrc}
-          oncanplay={() => (previewLoading = false)}
-          onerror={() => {
-            previewLoading = false;
-            previewError = 'The preview couldn’t be rendered just now.';
-          }}></audio>
+        {#key previewAttempt}
+          <audio
+            class="w-full max-w-xl"
+            data-testid="voice-preview-audio"
+            controls
+            autoplay
+            src={previewSrc}
+            oncanplay={() => (previewLoading = false)}
+            onerror={() => {
+              previewLoading = false;
+              previewError = 'The preview couldn’t be rendered just now.';
+            }}></audio>
+        {/key}
       {/if}
       {#if previewError}
         <p class="text-sm text-destructive">{previewError}</p>
