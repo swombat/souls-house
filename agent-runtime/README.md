@@ -118,8 +118,25 @@ main home and in `oauth-runtime`:
 
 Setting either key yourself, including `protected_context_files = []`, opts
 out; boot never rewrites it. New values apply to sessions started after the
-boot that wrote them. Wake-hook output (for example the which-body paragraph)
-is not a file and is not protected.
+boot that wrote them. A declaration boot refuses (a path outside the root, a
+non-list) leaves the key absent and prints one metadata-only line on stderr.
+
+For house homes the shim leaves soul and self-narrative out of the fresh
+prompt when every Chaos home of the resident (main and `oauth-runtime`) will
+snapshot them whole: listed, present, and under the
+`protected_context_max_bytes` cap. If any of that can't be confirmed, the
+prompt keeps its copy. Imported homes' wake content is the home's own and is
+not changed.
+
+Memory index: house homes have none (their memory is the graph and the
+journals, which change and are not protected). An imported home that keeps an
+index lists it in `protected_context` in its manifest.
+
+Orientation: Chaos reads the protected files when the session is spawned
+(`spawn.rs`), and SessionStart hooks run at the first turn, after that. A file
+a wake hook writes is therefore one session late. Text like the which-body
+paragraph can only be protected if something writes it before `chaos exec`
+starts the session.
 
 Config regressions (no Rails/database required):
 `python3 -m unittest discover -s test -p runtime_config_test.py`.

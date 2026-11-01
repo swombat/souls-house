@@ -184,6 +184,8 @@ IDENTITY_FINGERPRINT_FILES = [
 if imported_home.enabled():
     IDENTITY_FINGERPRINT_FILES += ["instructions.md", "resident-home.json"]
 IDENTITY_FILE_LIMIT = 80_000
+# Chaos's protected_context_max_bytes default (sys/kern/kern/src/config.rs).
+PROTECTED_CONTEXT_DEFAULT_CAP = 128 * 1024
 JOURNAL_MOST_RECENT_LIMIT = 12_000
 JOURNAL_MOST_RECENT_TAIL = 10_000
 JOURNAL_TOTAL_LIMIT = 16_000
@@ -1879,10 +1881,13 @@ def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, component
 def identity_context() -> str:
     """Return identity and current hosting context, with soul first."""
     sections = []
+    # Files Chaos snapshots in full at session start are not sent again here:
+    # one copy, and it is the copy that survives compaction.
+    protected = protected_identity_files()
 
     # Keep soul.md first. This is the agent's own chosen/exported identity text,
     # and should be the first thing the model sees before runtime scaffolding.
-    soul = read_identity_file("soul.md")
+    soul = "" if _is_protected("soul.md", protected) else read_identity_file("soul.md")
     if soul:
         sections.append(soul)
 
@@ -1894,11 +1899,43 @@ def identity_context() -> str:
         ("self-narrative.md", "Self-narrative"),
         ("bootstrap.md", "Bootstrap notes"),
     ]:
+        if _is_protected(filename, protected):
+            continue
         content = read_identity_file(filename)
         if content:
             sections.append(f"## {label}: identity/{filename}\n\n{content}")
 
     return "\n\n".join(sections)
+
+
+def _is_protected(filename, protected):
+    return str((AGENT_IDENTITY_PATH / filename).resolve()) in protected
+
+
+def protected_identity_files():
+    """Paths that every Chaos home this resident runs in will snapshot whole.
+
+    A home whose settings cannot be read, whose list names a file that is
+    missing, or whose files exceed its protected-context cap (Chaos would keep
+    a truncated copy) protects nothing here. The fallback is a duplicate in
+    the prompt, never a missing soul.
+    """
+    homes = [CHAOS_HOME] + ([OAUTH_CHAOS_HOME] if OAUTH_CHAOS_HOME.is_dir() else [])
+    covered = None
+    for home in homes:
+        try:
+            result = subprocess.run([CHAOS_BIN, "config", "get"], capture_output=True, text=True,
+                                    timeout=30, env={**os.environ, "CHAOS_HOME": str(home)})
+            settings = json.loads(result.stdout) if result.returncode == 0 else {}
+            files = [Path(f).resolve() for f in settings.get("protected_context_files") or []]
+            cap = int(settings.get("protected_context_max_bytes") or PROTECTED_CONTEXT_DEFAULT_CAP)
+            if sum(path.stat().st_size for path in files) > cap:
+                files = []
+        except Exception:
+            files = []
+        paths = {str(path) for path in files}
+        covered = paths if covered is None else covered & paths
+    return covered or set()
 
 
 def imported_runtime_context():

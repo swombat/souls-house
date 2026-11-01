@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tomllib
 
 DEFAULTS = {
@@ -41,7 +42,8 @@ def _inside(root, relative):
     return path if path.is_relative_to(root) else None
 
 
-def protected_files():
+def protected_files(report=lambda reason: print(
+        f"Protected context default not written: {reason}", file=sys.stderr)):
     """The resident's identity files, resolved from its own home.
 
     House homes: identity/soul.md and identity/self-narrative.md. Imported
@@ -49,7 +51,9 @@ def protected_files():
     empty list protects nothing), else its `soul` and `narrative`. Files that
     are missing at session start are reported by Chaos as warnings, never
     counted as protected. Returns None when the home cannot be resolved, so
-    the key stays absent rather than holding a guess.
+    the key stays absent rather than holding a guess, and reports why in
+    metadata only (no paths, no manifest text). A declared [] is a quiet
+    opt-out.
     """
     profile = os.environ.get("SOULSHOUSE_HOME_PROFILE") or "house"
     if profile == "house":
@@ -57,19 +61,26 @@ def protected_files():
         return [str(identity / name) for name in HOUSE_PROTECTED_FILES]
     root_env = IMPORTED_ROOT_ENV.get(profile)
     if not root_env or not os.environ.get(root_env):
+        report(f"profile {profile!r} has no home root")
         return None
     root = Path(os.environ[root_env]).resolve()
     try:
         manifest = json.loads((root / "resident-home.json").read_text())
     except (OSError, ValueError):
+        report("the home manifest could not be read")
         return None
     declared = manifest.get("protected_context")
+    key = "protected_context"
     if declared is None:
+        key = "soul/narrative"
         declared = [manifest.get("soul"), manifest.get("narrative")]
     if not isinstance(declared, list):
+        report(f"manifest {key} is not a list")
         return None
     resolved = [_inside(root, relative) for relative in declared]
-    if any(path is None for path in resolved):
+    refused = [i for i, path in enumerate(resolved) if path is None]
+    if refused:
+        report(f"manifest {key} entries {refused} are not paths inside the home root")
         return None
     return [str(path) for path in resolved]
 

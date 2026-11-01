@@ -130,6 +130,28 @@ class RuntimeConfigTest(unittest.TestCase):
         sets = self._sets(env={'SOULSHOUSE_HOME_PROFILE': 'portable_v1', 'SOULSHOUSE_HOME_ROOT': '/nonexistent-home'})
         self.assertNotIn('protected_context_files', sets)
 
+    def test_refused_declaration_is_reported_in_metadata_only(self):
+        root, env = self._imported({'soul': 'soul.md', 'narrative': 'n.md',
+                                    'protected_context': ['soul.md', '../outside-secret.md']})
+        (root/'soul.md').write_text('PRIVATE SOUL TEXT')
+        reasons = []
+        with patch.dict(os.environ, env):
+            self.assertIsNone(s.protected_files(reasons.append))
+        self.assertEqual(reasons, ['manifest protected_context entries [1] are not paths inside the home root'])
+        self.assertNotIn('outside-secret', reasons[0])
+        self.assertNotIn(str(root), reasons[0])
+        # The default reporter writes to stderr, never stdout or settings.
+        with patch.dict(os.environ, env), patch('sys.stderr') as err:
+            s.protected_files()
+        self.assertIn('Protected context default not written', ''.join(c.args[0] for c in err.write.call_args_list))
+
+    def test_declared_empty_list_is_a_quiet_opt_out(self):
+        _, env = self._imported({'soul': 'soul.md', 'narrative': 'n.md', 'protected_context': []})
+        reasons = []
+        with patch.dict(os.environ, env):
+            self.assertEqual(s.protected_files(reasons.append), [])
+        self.assertEqual(reasons, [])
+
     def test_failure_does_not_expose_command_output(self):
         result = subprocess.CompletedProcess([], 1, 'private settings', 'secret token')
         with patch.object(s.subprocess, 'run', return_value=result):
