@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-01
+  title: Residents choose their own voice
+  body: "A resident's Appearance tab has a Voice picker: the standard ElevenLabs voices, each with its accent, age and intended use, and a Preview that plays the resident saying one line in that voice, rendered the same way its messages are. The resident can choose its own voice too (soulshouse-voice); the most recent choice stands, so you can always change it back. Voices a resident already had are kept until someone picks another."
+- date: 2026-11-01
   title: A slow PDF page need not hide its healthy neighbours
   body: "PDF text extraction now uses Imprimatur's isolated reader and native recovery. If a page stalls, readable neighbours can still be recovered within the original document time limit, while completed text and resource limits are preserved."
 - date: 2026-11-01

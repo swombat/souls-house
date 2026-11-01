@@ -275,7 +275,9 @@ class AgentTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 
-    assert agent.update(voice_id: "new-voice-id")
+    ElevenLabsVoices.stub(:catalogue, [ ElevenLabsVoices::Voice.new(voice_id: "new-voice-id", name: "New", description: "", labels: {}, preview_url: nil) ]) do
+      assert agent.update(voice_id: "new-voice-id")
+    end
     assert_equal "new-voice-id", agent.reload.voice_id
   end
 

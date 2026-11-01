@@ -99,6 +99,7 @@ class AgentsController < ApplicationController
       local_dev_endpoint_mode: Agents::Config.publish_ports?,
       identity_export_url: identity_export_account_agent_path(current_account, @agent),
       avatar_path: avatar_account_agent_path(current_account, @agent),
+      voice: -> { voice_props },
       memory_overview_url: account_agent_memory_overview_path(current_account, @agent),
       memory_history_url: Current.user.is_site_admin? ? history_account_agent_memory_overview_path(current_account, @agent) : nil,
       # The Hosting tab is site-admin only; owners get health, Restart and the
@@ -192,6 +193,18 @@ class AgentsController < ApplicationController
 
   # Asleep because its plan lapsed; the Billing tab is where it is paid
   # (shown only to those who can pay).
+  # The Appearance tab's voice picker. The standard voices themselves come
+  # from Agents::VoicesController#index after the page has drawn, so a slow
+  # or absent provider never holds up the settings page.
+  def voice_props
+    {
+      current_voice_id: @agent.voice_id,
+      voices_path: voices_account_agent_path(current_account, @agent),
+      update_path: voice_account_agent_path(current_account, @agent),
+      preview_path_template: voice_preview_account_agent_path(current_account, @agent, voice_id: "VOICE_ID")
+    }
+  end
+
   def billing_hold_props
     return nil unless @agent.billing_held?
 
