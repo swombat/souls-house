@@ -17,8 +17,11 @@
   // anything until End.
   let { accountId, chatId, userId, onsent, onerror, onend } = $props();
 
-  // starting | listening | hearing | transcribing | sending | muted | failed
+  // starting | listening | hearing | transcribing | sending | failed. Mute is
+  // separate: it stops what the microphone sends, whatever the earlier turns
+  // are still doing.
   let phase = $state('starting');
+  let muted = $state(false);
   let level = $state(0);
   let threshold = $state(0.012);
   let heard = $state('');
@@ -39,14 +42,16 @@
   const status = $derived.by(() => {
     if (phase === 'starting') return 'Opening the microphone…';
     if (phase === 'failed') return note || 'Voice mode could not start.';
-    if (phase === 'muted') return 'Muted. Nothing you say is sent.';
-    if (phase === 'transcribing') return 'Transcribing…';
-    if (phase === 'sending') return 'Sending…';
+    const hush = muted ? ' Muted: nothing new is sent.' : '';
+    if (phase === 'transcribing') return `Transcribing…${hush}`;
+    if (phase === 'sending') return `Sending…${hush}`;
+    if (muted) return 'Muted. Nothing you say is sent.';
     if (phase === 'hearing') return 'Hearing you…';
     return 'Listening. Speak, and pause when you are done.';
   });
 
   const END_DRAIN_MS = 6000;
+  const SEND_TIMEOUT_MS = 20_000;
   const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
 
   onMount(async () => {
@@ -96,7 +101,7 @@
       // Samples stop when the browser suspends the page (a locked phone, a
       // backgrounded tab). Say so rather than show a listening screen that isn't.
       watchdog = setInterval(() => {
-        if (phase === 'muted' || phase === 'failed' || phase === 'starting') return;
+        if (muted || phase === 'failed' || phase === 'starting') return;
         stale = performance.now() - lastSampleAt > 3000;
       }, 1000);
     } catch (error) {
@@ -161,7 +166,7 @@
       if (ended) return;
       note = error?.message || 'Transcription failed.';
       caption = '';
-      phase = capture?.muted ? 'muted' : 'listening';
+      phase = 'listening';
       return;
     }
     if (ended) return;
@@ -169,7 +174,7 @@
     const { text } = stripReleasePhrase(raw);
     if (!text) {
       note = `Heard ${Math.round(durationMs / 1000)}s of sound but no words.`;
-      phase = capture?.muted ? 'muted' : 'listening';
+      phase = 'listening';
       return;
     }
     await send(text);
@@ -181,15 +186,21 @@
     form.append('message[content]', text);
     form.append('voice_mode', '1');
     let response;
+    // A send that hangs must not hold every later turn behind it.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
     try {
       response = await fetch(accountChatMessagesPath(accountId, chatId), {
         method: 'POST',
         headers: { Accept: 'application/json', 'X-CSRF-Token': csrf(), 'X-Draft-User': userId },
         credentials: 'same-origin',
         body: form,
+        signal: abort.signal,
       });
     } catch {
       response = null;
+    } finally {
+      clearTimeout(timer);
     }
     if (ended) return;
     const data = response ? await response.json().catch(() => ({})) : {};
@@ -202,20 +213,22 @@
         await end({ drain: false });
         return;
       }
-      phase = capture?.muted ? 'muted' : 'listening';
+      phase = 'listening';
       return;
     }
     heard = text;
     sent += 1;
     onsent?.(data);
-    phase = capture?.muted ? 'muted' : 'listening';
+    phase = 'listening';
   }
 
+  // Always available once listening: muting closes any sentence in progress
+  // (it is still sent) and feeds silence from then on, while earlier turns
+  // finish transcribing and sending in the background.
   function toggleMute() {
-    if (!capture || busy) return;
-    const on = !capture.muted;
-    capture.mute(on);
-    phase = on ? 'muted' : 'listening';
+    if (!capture) return;
+    muted = !muted;
+    capture.mute(muted);
   }
 
   // End sends what was being said when it was pressed (stopping the capture
@@ -246,7 +259,7 @@
              {phase === 'hearing' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}">
       {#if phase === 'starting' || busy}
         <Spinner size={18} class="animate-spin" />
-      {:else if phase === 'muted'}
+      {:else if muted}
         <MicrophoneSlash size={18} />
       {:else}
         <Microphone size={18} />
@@ -255,18 +268,17 @@
     <div class="min-w-0 flex-1">
       <p class="text-sm" data-testid="voice-mode-status">{status}</p>
       <div class="mt-1 h-1.5 w-full rounded bg-muted overflow-hidden" aria-hidden="true">
-        <div class="h-full bg-primary transition-[width] duration-100" style:width="{phase === 'muted' ? 0 : meter}%">
-        </div>
+        <div class="h-full bg-primary transition-[width] duration-100" style:width="{muted ? 0 : meter}%"></div>
       </div>
     </div>
     <button
       type="button"
       onclick={toggleMute}
-      disabled={phase === 'starting' || phase === 'failed' || busy}
-      aria-pressed={phase === 'muted'}
-      aria-label={phase === 'muted' ? 'Unmute' : 'Mute'}
+      disabled={phase === 'starting' || phase === 'failed'}
+      aria-pressed={muted}
+      aria-label={muted ? 'Unmute' : 'Mute'}
       class="h-10 w-10 inline-flex items-center justify-center rounded-md hover:bg-accent disabled:opacity-50">
-      {#if phase === 'muted'}<Microphone size={18} />{:else}<MicrophoneSlash size={18} />{/if}
+      {#if muted}<Microphone size={18} />{:else}<MicrophoneSlash size={18} />{/if}
     </button>
     <button
       type="button"

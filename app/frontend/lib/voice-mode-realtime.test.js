@@ -184,4 +184,66 @@ describe('createTranscriber', () => {
     await expect(done).rejects.toThrow('ended');
     expect(FakeSocket.all[0].readyState).toBe(3);
   });
+
+  test('a turn that timed out keeps its own late acknowledgement and never hands its words to the next turn', async () => {
+    vi.useFakeTimers();
+    const { t } = make({ commitTimeoutMs: 1000 });
+    const connecting = t.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    const ws = FakeSocket.all[0];
+    ws.open();
+    await connecting;
+
+    t.begin(new Float32Array(10));
+    const a = t.commit();
+    const aRejected = expect(a).rejects.toThrow('in time');
+    await vi.advanceTimersByTimeAsync(1001);
+    await aRejected;
+
+    t.begin(new Float32Array(10));
+    const b = t.commit();
+    // A's acknowledgement and transcript arrive late, after B was committed.
+    ws.emit({ type: 'input_audio_buffer.committed', item_id: 'item_A' });
+    ws.emit({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item_A',
+      transcript: 'words from A',
+    });
+    ws.emit({ type: 'input_audio_buffer.committed', item_id: 'item_B' });
+    ws.emit({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'item_B',
+      transcript: 'words from B',
+    });
+    await expect(b).resolves.toBe('words from B');
+  });
+
+  test('End during the handshake closes the socket when it opens and leaves nothing connected', async () => {
+    const { t } = make();
+    const connecting = t.connect();
+    await flushPromises();
+    const ws = FakeSocket.all[0];
+    expect(ws.readyState).toBe(0);
+    t.close();
+    ws.open();
+    await expect(connecting).rejects.toThrow('ended');
+    expect(t.connected).toBe(false);
+    expect(ws.readyState).toBe(3);
+  });
+
+  test('audio queued for a connection that never opened is not replayed onto the next one', async () => {
+    const { t } = make();
+    t.begin(new Float32Array(150));
+    await flushPromises();
+    FakeSocket.all[0].onerror();
+    await flushPromises();
+    await expect(t.commit()).rejects.toThrow('connect');
+
+    t.begin(new Float32Array(150));
+    await flushPromises();
+    const second = FakeSocket.all[1];
+    second.open();
+    // Only the new turn's pre-roll, not the failed turn's audio and commit.
+    expect(second.types()).toEqual(['input_audio_buffer.append']);
+  });
 });

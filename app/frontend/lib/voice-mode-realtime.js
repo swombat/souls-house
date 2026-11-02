@@ -11,7 +11,11 @@
 //
 // onDelta(text) carries the open turn's caption as it grows. Turns are matched
 // to transcripts by the item id OpenAI assigns at commit, in commit order, so
-// completions that arrive out of order still land on the right turn. When the
+// completions that arrive out of order still land on the right turn. Every
+// commit we send gets exactly one acknowledgement (or one refusal); `acks`
+// holds the turns in the order their commits went out and is only consumed by
+// those, so a turn that has already timed out still takes its own late
+// acknowledgement and can never hand its words to the next turn. When the
 // socket drops, waiting turns fail and the next turn reconnects with a fresh
 // secret (a locked phone, a change of network).
 import { pcm16Base64 } from '$lib/voice-mode';
@@ -28,10 +32,12 @@ export function createTranscriber({
   WebSocketImpl = globalThis.WebSocket,
 } = {}) {
   let socket = null;
+  let pendingSocket = null; // the socket still handshaking, so close() can cancel it
   let opening = null;
   let outbox = [];
   let open = null; // the turn being spoken
   let waiting = []; // committed turns, oldest first, until their transcript arrives
+  let acks = []; // committed turns, in commit order, until OpenAI acknowledges the commit
   let batch = [];
   let batchLength = 0;
   let closed = false;
@@ -54,8 +60,26 @@ export function createTranscriber({
           'realtime',
           `openai-insecure-api-key.${session.client_secret}`,
         ]);
+        pendingSocket = ws;
         let settled = false;
+        const refuse = (message) => {
+          if (settled) return;
+          settled = true;
+          if (pendingSocket === ws) pendingSocket = null;
+          reject(new Error(message));
+        };
         ws.onopen = () => {
+          if (pendingSocket === ws) pendingSocket = null;
+          if (closed) {
+            // End was pressed during the handshake: this socket is not wanted.
+            refuse('Voice mode has ended.');
+            try {
+              ws.close();
+            } catch {
+              // already closed
+            }
+            return;
+          }
           settled = true;
           socket = ws;
           const pending = outbox;
@@ -63,24 +87,24 @@ export function createTranscriber({
           pending.forEach((event) => ws.send(JSON.stringify(event)));
           resolve();
         };
-        ws.onerror = () => {
-          if (!settled) {
-            settled = true;
-            reject(new Error('Could not connect to the transcriber.'));
-          }
-        };
+        ws.onerror = () => refuse('Could not connect to the transcriber.');
         ws.onclose = () => {
-          if (!settled) {
-            settled = true;
-            reject(new Error('Could not connect to the transcriber.'));
-          }
+          refuse(closed ? 'Voice mode has ended.' : 'Could not connect to the transcriber.');
           if (socket === ws) dropped();
         };
         ws.onmessage = (message) => receive(message.data);
       });
-    })().finally(() => {
-      opening = null;
-    });
+    })()
+      .catch((error) => {
+        // Nothing queued for a connection that never opened may be replayed
+        // onto the next one: the turns it belonged to fail with this error.
+        outbox = [];
+        acks = [];
+        throw error;
+      })
+      .finally(() => {
+        opening = null;
+      });
     return opening;
   }
 
@@ -88,6 +112,7 @@ export function createTranscriber({
   function dropped() {
     socket = null;
     outbox = [];
+    acks = [];
     const lost = waiting;
     waiting = [];
     lost.forEach((turn) => turn.fail(new Error('The connection to the transcriber dropped.')));
@@ -104,7 +129,9 @@ export function createTranscriber({
     const byItem = (id) => waiting.find((turn) => turn.itemId === id);
     switch (event.type) {
       case 'input_audio_buffer.committed': {
-        const turn = waiting.find((candidate) => !candidate.itemId);
+        // The oldest commit still unacknowledged, whether or not its turn has
+        // already given up waiting.
+        const turn = acks.shift();
         if (turn) turn.itemId = event.item_id;
         break;
       }
@@ -128,9 +155,9 @@ export function createTranscriber({
       }
       case 'error': {
         // A refused commit (an empty buffer, say) has no item: it belongs to
-        // the oldest turn still waiting for one.
+        // the oldest commit still unacknowledged.
         const message = event.error?.message || 'The transcriber reported an error.';
-        const turn = waiting.find((candidate) => !candidate.itemId);
+        const turn = acks.shift();
         if (turn) turn.fail(new Error(message));
         else onError?.(message);
         break;
@@ -201,6 +228,7 @@ export function createTranscriber({
       flush();
       turn.timer = setTimeout(() => turn.fail(new Error('The transcript did not arrive in time.')), commitTimeoutMs);
       waiting.push(turn);
+      acks.push(turn);
       send({ type: 'input_audio_buffer.commit' });
       return turn.done;
     },
@@ -215,16 +243,19 @@ export function createTranscriber({
       closed = true;
       const lost = waiting;
       waiting = [];
+      acks = [];
       lost.forEach((turn) => turn.fail(new Error('Voice mode has ended.')));
       open = null;
       outbox = [];
-      const ws = socket;
-      socket = null;
-      try {
-        ws?.close();
-      } catch {
-        // already closed
+      for (const ws of [socket, pendingSocket]) {
+        try {
+          ws?.close();
+        } catch {
+          // already closed
+        }
       }
+      socket = null;
+      pendingSocket = null;
     },
     get connected() {
       return Boolean(socket && socket.readyState === 1);

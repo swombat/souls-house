@@ -21,6 +21,24 @@ class ExternalAgentResponseRequestVoiceModeTest < ActiveSupport::TestCase
     assert_not_includes request.send(:trigger_intro_text), "voice mode"
   end
 
+  # After a spoken message and End, a later peer or scheduled wake must not be
+  # told the person is listening: only a wake a human caused carries the note,
+  # and the note never promises playback.
+  test "the voice mode note is only for a wake a human caused and promises no playback" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(title: "Spoken then ended", manual_responses: true, agents: [ agent ])
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Spoken.", voice_mode: true, suppress_automatic_dispatch: true)
+
+    [ [ "peer" ], [ "scheduled" ] ].each do |kinds|
+      request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: kinds)
+      assert_not_includes request.send(:trigger_intro_text), "voice mode", "#{kinds.first} wake"
+    end
+
+    human = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
+    assert_includes human.send(:trigger_intro_text), ExternalAgentResponseRequest::VOICE_MODE_NOTE
+    assert_no_match(/read aloud|will be heard|is listening/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
+  end
+
 end
 require "webmock/minitest"
 

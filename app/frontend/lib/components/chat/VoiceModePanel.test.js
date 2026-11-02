@@ -203,3 +203,50 @@ test('mute keeps the microphone open but marks the state; End stops the capture'
   await waitFor(() => expect(onend).toHaveBeenCalledWith({ sent: 0 }));
   expect(stopped).toBe(true);
 });
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+test('Mute works while an earlier turn is still transcribing, and the mic is muted at once', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const pending = deferred();
+  speak(pending.promise);
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Transcribing'));
+  const button = screen.getByRole('button', { name: 'Mute' });
+  expect(button).not.toBeDisabled();
+  await fireEvent.click(button);
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted');
+  pending.resolve('Earlier sentence.');
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].content).toBe('Earlier sentence.');
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted. Nothing you say is sent.')
+  );
+  expect(screen.getByRole('button', { name: 'Unmute' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('Mute works while a message is still being sent', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const reply = deferred();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (url, options) => {
+    await reply.promise;
+    return realFetch(url, options);
+  });
+  speak('Send this.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Sending'));
+  const button = screen.getByRole('button', { name: 'Mute' });
+  expect(button).not.toBeDisabled();
+  await fireEvent.click(button);
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted');
+  reply.resolve();
+  await waitFor(() => expect(posts).toHaveLength(1));
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted. Nothing you say is sent.')
+  );
+});

@@ -48,17 +48,34 @@ export async function startCapture({
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
   });
-  const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
-  const context = new Context();
-  // iOS leaves a fresh context suspended until a gesture has happened; the tap
-  // that opened voice mode counts, but only if we ask.
-  if (context.state === 'suspended') await context.resume().catch(() => {});
+  // From here the microphone is ours. Anything below that fails must give it
+  // back: the caller never receives a handle it could stop.
+  let context = null;
+  let source = null;
+  let node = null;
+  let workletUrl = null;
+  const release = async () => {
+    try {
+      source?.disconnect();
+      node?.disconnect();
+      if (node?.port) node.port.onmessage = null;
+    } catch {
+      // already gone
+    }
+    stream.getTracks().forEach((track) => track.stop());
+    if (workletUrl) URL.revokeObjectURL(workletUrl);
+    try {
+      await context?.close?.();
+    } catch {
+      // already closed
+    }
+  };
 
-  const detector = createTurnDetector({ sampleRate: context.sampleRate, ...detectorOptions, streamFrames: true });
-  const out = (samples) => resample(samples, context.sampleRate, outputRate);
   let muted = false;
   let stopped = false;
   let lastLevelAt = 0;
+  let detector;
+  let out;
 
   function emit(events) {
     for (const event of events) {
@@ -80,21 +97,34 @@ export async function startCapture({
     }
   }
 
-  const source = context.createMediaStreamSource(stream);
-  let node;
-  let workletUrl = null;
-  if (context.audioWorklet) {
-    workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'application/javascript' }));
-    await context.audioWorklet.addModule(workletUrl);
-    node = new AudioWorkletNode(context, 'voice-mode-tap', { numberOfOutputs: 0 });
-    node.port.onmessage = (event) => handle(event.data);
-    source.connect(node);
-  } else {
-    node = context.createScriptProcessor(4096, 1, 1);
-    node.onaudioprocess = (event) => handle(event.inputBuffer.getChannelData(0).slice());
-    source.connect(node);
-    // A ScriptProcessorNode only runs while connected to the destination.
-    node.connect(context.destination);
+  try {
+    const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+    context = new Context();
+    // iOS leaves a fresh context suspended until a gesture has happened; the tap
+    // that opened voice mode counts, but only if we ask.
+    if (context.state === 'suspended') await context.resume().catch(() => {});
+
+    detector = createTurnDetector({ sampleRate: context.sampleRate, ...detectorOptions, streamFrames: true });
+    out = (samples) => resample(samples, context.sampleRate, outputRate);
+
+    source = context.createMediaStreamSource(stream);
+    if (context.audioWorklet) {
+      workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'application/javascript' }));
+      await context.audioWorklet.addModule(workletUrl);
+      node = new AudioWorkletNode(context, 'voice-mode-tap', { numberOfOutputs: 0 });
+      node.port.onmessage = (event) => handle(event.data);
+      source.connect(node);
+    } else {
+      node = context.createScriptProcessor(4096, 1, 1);
+      node.onaudioprocess = (event) => handle(event.inputBuffer.getChannelData(0).slice());
+      source.connect(node);
+      // A ScriptProcessorNode only runs while connected to the destination.
+      node.connect(context.destination);
+    }
+  } catch (error) {
+    stopped = true;
+    await release();
+    throw error;
   }
 
   return {
@@ -112,16 +142,7 @@ export async function startCapture({
       if (stopped) return;
       stopped = true;
       emit(detector.flush());
-      try {
-        source.disconnect();
-        node.disconnect();
-        if (node.port) node.port.onmessage = null;
-      } catch {
-        // already gone
-      }
-      stream.getTracks().forEach((track) => track.stop());
-      if (workletUrl) URL.revokeObjectURL(workletUrl);
-      await context.close().catch(() => {});
+      await release();
     },
   };
 }

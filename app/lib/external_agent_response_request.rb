@@ -290,15 +290,16 @@ class ExternalAgentResponseRequest
     if wake_source_kinds.include?("unknown") && wake_source_kinds.any? { |kind| kind.in?(%w[human peer scheduled]) }
       parts << "At least one coalesced request has no recorded source."
     end
-    parts << VOICE_MODE_NOTE if latest_human_turn_spoken?
+    parts << VOICE_MODE_NOTE if human_wake? && latest_human_turn_spoken?
     parts.join(" ")
   end
 
   # The latest human turn was spoken in the conversation's voice mode
-  # (messages.voice_mode): the person is listening, not reading, and whatever
-  # the resident posts is read aloud in its voice. Said once in the trigger
-  # text, where the rest of the wake's circumstances are.
-  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode: the person is listening rather than reading, and your reply will be read aloud in your voice. Answer briefly in plain spoken sentences; if something longer belongs in the conversation, post it and say so in a sentence."
+  # (messages.voice_mode). Only for a wake a human caused: a later peer or
+  # scheduled wake can't tell whether the person is still there, so it gets
+  # nothing. It states the historical fact and a likelihood, never that the
+  # reply will be played: playback is not something this text can promise.
+  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading. Answer briefly in plain spoken sentences; if something longer belongs in the conversation, post it and say so in a sentence."
 
   def latest_human_turn_spoken?
     # reorder: the messages association carries its own ascending order, and an
