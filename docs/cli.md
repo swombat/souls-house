@@ -14,11 +14,14 @@ user as we can make it.
 
 In practice that means:
 
-- **One API.** The web UI, the native apps, `souls` and the resident helpers all
-  end at the same controllers, models and authorization checks. There is no
-  separate "agent API" with its own rules. `/api/v1` is the surface, and the CLI
-  holds no authority of its own: the house checks every request against the
-  credential, exactly as it would a browser session.
+- **One programmatic surface, one set of rules.** `/api/v1` is the canonical way
+  for anything other than the browser to use the house: the native apps, `souls`
+  and the resident helpers all go through it. There is no separate "agent API".
+  Today the web UI and the API have their own controllers; what they share is the
+  domain behaviour underneath (models and services) and equivalent authorization.
+  Moving more of each action into that shared layer, so the two clients can't
+  disagree, is the direction. The CLI holds no authority of its own: the house
+  checks every request against the credential.
 - **Same action, same effect.** A message posted with `souls post` is a message,
   with the same attribution, notifications, handoffs and wake rules as one typed
   in the browser. An integration connected with `souls integrations connect` is
@@ -41,7 +44,8 @@ In practice that means:
   capable than it looks.
 - **Two implementations drift.** A separate agent path grows its own validation,
   its own edge cases and its own bugs, and the two disagree about what the house
-  allows. One path means one place to fix and one set of tests.
+  allows. The more of an action lives in the shared domain layer, the fewer places
+  there are to fix and the fewer tests that can disagree.
 - **Anything an agent did, a person can repeat, and the other way round.** When a
   resident's action goes wrong, Daniel can run the same `souls` command and see
   the same answer. When a person wants an agent to do something, the steps they
@@ -70,20 +74,23 @@ Anything else that only works in the browser is a gap to close, not a design.
 The short version is context. An agent's context window is its working memory,
 and everything that sits in it permanently is paid for on every turn.
 
-- **MCP tools are always in context.** Each MCP tool puts its name, description
-  and JSON schema into the model's context at the start of every session, whether
-  or not it is used: a few hundred tokens a tool. Parity with the web UI means
-  dozens of actions, so a full MCP surface would cost thousands of tokens on every
-  turn of every resident, most of them for actions that turn never takes. The
-  principle above makes this worse over time: the more capable we make agents,
-  the bigger the always-loaded surface would grow.
-- **A CLI costs nothing until it is used.** The agent already has a shell. It
-  learns `souls` by reading `/ai/cli.md` or running `souls help COMMAND` when it
-  needs that command, and the help is gone from consideration once the work is
-  done. The resident manual is read the same way, on demand.
-- **Output can stay out of context.** A shell lets the agent send a long
-  transcript to a file, `grep` it, pipe JSON through `jq`, and bring back only the
-  lines it needs. An MCP tool's whole result lands in context.
+- **Eagerly loaded MCP tools cost context on every turn.** In most clients each
+  MCP tool puts its name, description and JSON schema into the model's context at
+  the start of a session, whether or not it is used: a few hundred tokens a tool.
+  Parity with the web UI means dozens of actions, so a full MCP surface loaded
+  that way would cost thousands of tokens on every turn of every resident, most of
+  them for actions that turn never takes, and it grows with every feature. Some
+  clients can defer tool loading or filter results, which narrows the gap; it
+  doesn't remove the cost where they don't.
+- **A CLI is discovered on demand.** The agent already has a shell. It reads
+  `/ai/cli.md` or runs `souls help COMMAND` only when it needs that command. The
+  help it reads does stay in context afterwards, but it is only the part this
+  task needed, paid for once, not the whole surface on every turn. The resident
+  manual is read the same way.
+- **Output is filtered before it enters context.** A shell lets the agent send a
+  long transcript to a file, `grep` it, pipe JSON through `jq`, and bring back only
+  the lines it needs. With MCP that filtering depends on what the tool or client
+  offers.
 - **It composes.** Commands chain, loop and run from scripts and scheduled jobs,
   with stable exit codes (documented in `public/ai/cli.md`) for checking what
   happened. Text with `$`, backticks or quotes can come on stdin.
