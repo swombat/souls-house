@@ -9,6 +9,7 @@ class RhythmAgent < ApplicationRecord
   validate :model_is_selectable, if: -> { model_id.present? && will_save_change_to_model_id? }
 
   after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
+  after_commit :refresh_guest_home, on: [ :create, :destroy ]
 
   # The model this resident runs on in the rhythm's conversations: the
   # selected one, or the resident's default.
@@ -20,6 +21,14 @@ class RhythmAgent < ApplicationRecord
 
   def broadcast_rhythm_activity
     RhythmActivity.broadcast_for(rhythm&.account)
+  end
+
+  # A guest's home lists the rhythms it has in the accounts it visits (the
+  # Guest residents card), so a seat added or removed refreshes that list.
+  def refresh_guest_home
+    home_id = Agent.where(id: agent_id).pick(:account_id)
+    host_id = Rhythm.where(id: rhythm_id).pick(:account_id) || rhythm&.account_id
+    GuestDirectory.refresh!([ home_id ]) if home_id && home_id != host_id
   end
 
   def normalize_model_id

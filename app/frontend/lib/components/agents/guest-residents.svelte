@@ -3,6 +3,8 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import ServiceIcon from '$lib/components/service-icon.svelte';
+  import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
+  import { Clock } from 'phosphor-svelte';
   import { accountGuestMembershipsPath, accountGuestMembershipPath, accountAgentCommitmentsPath } from '@/routes';
 
   // guests: residents hosted elsewhere who are guests here.
@@ -10,7 +12,16 @@
   // candidates: residents from your other accounts you may bring in.
   // canEnd: only account owners remove guests or withdraw residents.
   // formerGuests: residents that were guests here and left commitments here.
-  let { accountId, guests = [], away = [], candidates = [], formerGuests = [], canEnd = false } = $props();
+  // awaySessions: runs each away seat has going in the account it visits, by membership id.
+  let {
+    accountId,
+    guests = [],
+    away = [],
+    awaySessions = {},
+    candidates = [],
+    formerGuests = [],
+    canEnd = false,
+  } = $props();
 
   let selected = $state('');
 
@@ -105,9 +116,31 @@
           {#each away as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
               <span class="space-y-1">
-                <span class="block"
-                  >{membership.agent.name}
-                  <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+                <span class="flex flex-wrap items-center gap-x-3 gap-y-1"
+                  ><span
+                    >{membership.agent.name}
+                    <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+                  {#if membership.rhythms?.count > 0}
+                    {@const label = `${membership.rhythms.count} ${membership.rhythms.count === 1 ? 'rhythm' : 'rhythms'} with ${membership.agent.name} in ${membership.account.name}`}
+                    {#if membership.rhythms.url}
+                      <a
+                        href={membership.rhythms.url}
+                        data-testid="away-rhythms"
+                        class="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-muted-foreground hover:text-foreground"
+                        title={label}
+                        aria-label={label}
+                        ><Clock size={16} weight="duotone" aria-hidden="true" />{membership.rhythms.count}</a>
+                    {:else}
+                      <span
+                        data-testid="away-rhythms"
+                        class="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-muted-foreground"
+                        title={label}
+                        ><Clock size={16} weight="duotone" aria-hidden="true" /><span aria-hidden="true"
+                          >{membership.rhythms.count}</span
+                        ><span class="sr-only">{label}</span></span>
+                    {/if}
+                  {/if}
+                  <ResidentSessionsSpinner sessions={awaySessions?.[membership.id]} /></span>
                 {@render sharedIntegrations(membership, membership.account.name)}
               </span>
               {#if canEnd}

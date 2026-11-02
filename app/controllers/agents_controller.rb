@@ -24,7 +24,9 @@ class AgentsController < ApplicationController
       # Each seat carries what the account it sits in has shared with it.
       guest_memberships: Agents::GuestSharedIntegrations.new(current_account.guest_memberships.includes(:account, agent: :account).order(:created_at)).as_json,
       former_guests_with_commitments: -> { CommitmentPresentation.former_guests(account: current_account, routes: helpers) },
-      away_memberships: Agents::GuestSharedIntegrations.new(GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at)).as_json,
+      away_memberships: -> { away_seats.with_rhythms(Agents::GuestSharedIntegrations.new(away_memberships).as_json) },
+      # The away seats' spinners, reloaded with active_sessions (ResidentSessions).
+      away_sessions: -> { away_seats.sessions },
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
         .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
       grouped_models: -> { grouped_models },
@@ -148,6 +150,14 @@ class AgentsController < ApplicationController
   end
 
   private
+
+  def away_memberships
+    @away_memberships ||= GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).to_a
+  end
+
+  def away_seats
+    @away_seats ||= Agents::AwaySeats.new(away_memberships, user: Current.user, routes: helpers)
+  end
 
   # Sessions with the reflexes their posts were judged against: the ones
   # offered (name, score, the post) and a count of the rest. Whether the
