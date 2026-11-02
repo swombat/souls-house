@@ -16,6 +16,27 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def load_shim():
+    """The shim needs Flask; without it the usage half is covered by async_turn_http_test."""
+    try:
+        import flask  # noqa: F401
+    except ImportError:
+        return None
+    import os
+    import tempfile
+    from unittest.mock import patch
+    home = tempfile.mkdtemp()
+    with patch.dict(os.environ, {
+        "PATH": os.environ["PATH"], "HOME": home, "TRIGGER_BEARER_TOKEN": "synthetic",
+        "CHAOS_HOME": home, "AGENT_IDENTITY_PATH": home, "SOULSHOUSE_TURN_STORE": home + "/turns",
+    }, clear=True):
+        shim_spec = importlib.util.spec_from_file_location("runtime_activity_shim", Path(__file__).parents[1] / "agent-runtime/trigger_shim.py")
+        shim = importlib.util.module_from_spec(shim_spec)
+        sys.modules[shim_spec.name] = shim
+        shim_spec.loader.exec_module(shim)
+    return shim
+
+
 class ReporterTest(unittest.TestCase):
     def test_fast_cancellation_polling_does_not_increase_heartbeat_traffic(self):
         self.reporter.cancel_event = threading.Event()
@@ -321,11 +342,25 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
     def test_timeout_keeps_process_started_and_stderr(self):
         # #718: the timeout record must name the session Chaos had started.
         script = ("import sys,time;print('{\"type\":\"process.started\",\"process_id\":\"proc-718\"}',flush=True);"
+                  "print('{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":100,\"cached_input_tokens\":40,\"output_tokens\":7}}',flush=True);"
                   "sys.stderr.write('partial stderr');sys.stderr.flush();time.sleep(60)")
         with self.assertRaises(subprocess.TimeoutExpired) as raised:
             self.reporter.run([sys.executable, "-c", script], "", {}, .5)
         self.assertIn("proc-718", raised.exception.stdout)
         self.assertIn("partial stderr", raised.exception.stderr)
+        shim = load_shim()
+        if shim is not None:
+            with shim.app.app_context():
+                response, status = shim.timeout_response(
+                    session_id="synthetic", timeout_secs=1, runtime={"provider": "synthetic"},
+                    session={}, prompt={}, timeout_error=raised.exception,
+                )
+            body = response.get_json()
+            self.assertEqual(504, status)
+            self.assertEqual("proc-718", body["chaos_session_id"])
+            self.assertEqual(100, body["usage"]["input_tokens"])
+            self.assertEqual(7, body["usage"]["output_tokens"])
+            self.assertFalse(body["usage"]["complete"])
         self.reporter.finish(({"status": "timeout"}, 504))
 
     def test_fallback_has_distinct_attempt_identity(self):

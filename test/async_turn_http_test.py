@@ -134,16 +134,36 @@ class AsyncTurnHTTPTest(unittest.TestCase):
             timer.join()
             self.shim._activity_context.cancel_event = None
 
-    def test_timed_out_subprocess_keeps_what_chaos_already_wrote(self):
-        # #718: a run that hangs after starting must still record its session,
-        # not look like a run that never started.
+    STARTED_EVENT = '{"type":"process.started","process_id":"proc-718"}'
+    USAGE_EVENT = '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}'
+
+    def timeout_record(self, error):
+        with self.shim.app.app_context():
+            response, status = self.shim.timeout_response(
+                session_id="synthetic", timeout_secs=30,
+                runtime={"provider": "synthetic"}, session={}, prompt={},
+                timeout_error=error,
+            )
+            return response.get_json(), status
+
+    def assert_record_keeps_session_and_usage(self, error):
+        body, status = self.timeout_record(error)
+        self.assertEqual(504, status)
+        self.assertEqual("proc-718", body["chaos_session_id"])
+        self.assertEqual(100, body["usage"]["input_tokens"])
+        self.assertEqual(7, body["usage"]["output_tokens"])
+        self.assertFalse(body["usage"]["complete"])
+        self.assertIn("partial stderr", body["stderr"])
+
+    def run_synthetic_chaos(self, script_body):
         executable = Path(self.directory.name) / "synthetic-chaos"
         executable.write_text(
             "#!/bin/sh\n"
             "cat > /dev/null\n"
-            "echo '{\"type\":\"process.started\",\"process_id\":\"proc-718\"}'\n"
+            f"echo '{self.STARTED_EVENT}'\n"
+            f"echo '{self.USAGE_EVENT}'\n"
             "echo 'partial stderr' >&2\n"
-            "sleep 30\n"
+            + script_body
         )
         executable.chmod(0o700)
         cancel = threading.Event()
@@ -154,11 +174,44 @@ class AsyncTurnHTTPTest(unittest.TestCase):
             with patch.object(self.shim, "CHAOS_BIN", str(executable)):
                 with self.assertRaises(self.shim.subprocess.TimeoutExpired) as raised:
                     self.shim.run_chaos("synthetic", 30, "hello", True)
-            self.assertEqual("proc-718", self.shim.parse_events(raised.exception.stdout)["process_id"])
-            self.assertIn("partial stderr", raised.exception.stderr)
+            return raised.exception
         finally:
             timer.join()
             self.shim._activity_context.cancel_event = None
+
+    def test_timed_out_subprocess_keeps_what_chaos_already_wrote(self):
+        # #718: a run that hangs after starting must still record its session
+        # and usage, not look like a run that never started.
+        error = self.run_synthetic_chaos("sleep 30\n")
+        self.assertEqual("proc-718", self.shim.parse_events(error.stdout)["process_id"])
+        self.assert_record_keeps_session_and_usage(error)
+
+    def test_detached_descendant_holding_pipes_does_not_erase_output(self):
+        # #720 review: a setsid() descendant survives the group kill and keeps
+        # the pipes open, so the bounded final drain itself expires. What was
+        # already read must still reach the timeout record.
+        pidfile = Path(self.directory.name) / "descendant.pid"
+        script = (
+            f"python3 -c 'import os,time\n"
+            f"if os.fork()==0:\n"
+            f"    os.setsid(); open(\"{pidfile}\",\"w\").write(str(os.getpid())); time.sleep(30)\n' &\n"
+            "sleep 30\n"
+        )
+        before = time.monotonic()
+        try:
+            error = self.run_synthetic_chaos(script)
+            self.assertLess(time.monotonic() - before, 15)
+            self.assert_record_keeps_session_and_usage(error)
+        finally:
+            for _ in range(50):
+                if pidfile.exists() and pidfile.read_text():
+                    break
+                time.sleep(.1)
+            if pidfile.exists() and pidfile.read_text():
+                try:
+                    os.kill(int(pidfile.read_text()), 9)
+                except ProcessLookupError:
+                    pass
 
 
 if __name__ == "__main__":

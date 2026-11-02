@@ -967,8 +967,11 @@ def run_chaos(
                 _kill_process_group(process)
                 try:
                     stdout, stderr = process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    stdout, stderr = "", ""
+                except subprocess.TimeoutExpired as drained:
+                    # A detached descendant can hold the pipes past the kill.
+                    # The expired drain still carries what was read; keep it.
+                    stdout = _timeout_stream(drained, "stdout")
+                    stderr = _timeout_stream(drained, "stderr")
                 raise subprocess.TimeoutExpired(args, timeout_secs, output=stdout, stderr=stderr)
             finally:
                 _kill_process_group(process)
