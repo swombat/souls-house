@@ -36,7 +36,8 @@ class Accounts::AccountImportsController < ApplicationController
     started = current_account.with_lock do
       import.reload
       retry_failures = import.status == "imported" && import.ledger.dig("summary", "failures").present?
-      next "This import cannot be started now." unless (import.status.in?(%w[previewed failed]) || retry_failures) && import.upload.attached?
+      next "This import cannot be started now." unless import.status.in?(%w[previewed failed]) || retry_failures
+      next "Its uploaded archive has expired. Upload it again to retry." unless import.upload.attached?
       if (refusal = Accounts::Portability::Import.other_import_refusal(current_account, import))
         next refusal
       end

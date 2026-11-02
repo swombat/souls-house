@@ -14,7 +14,8 @@ class AccountPortability::ExpiryJob < ApplicationJob
     AccountImport.where(status: %w[previewed invalid]).where(updated_at: ..(now - UNCONFIRMED_LIFETIME)).find_each do |import|
       import.upload.purge if import.upload.attached?
     end
-    AccountImport.where(status: "failed").where(updated_at: ..(now - AccountExport::LIFETIME)).find_each do |import|
+    # Kept a week for Retry; after that a retry needs the archive uploaded again.
+    AccountImport.where(status: %w[failed imported]).where(updated_at: ..(now - AccountExport::LIFETIME)).find_each do |import|
       import.upload.purge if import.upload.attached?
     end
   end

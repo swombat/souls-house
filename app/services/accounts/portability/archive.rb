@@ -122,27 +122,30 @@ module Accounts::Portability
           raise Error, "Multi-part archives are not supported" unless on_disk == total
         end
         raise Error, "Too many archive entries" if total > MAX_ENTRIES
-        raise Error, "Invalid account archive" if cd_offset + cd_size > size || cd_size > MAX_ENTRIES * (46 + 65_535 * 3)
-        io.seek(cd_offset)
-        directory = io.read(cd_size).to_s
-        raise Error, "Invalid account archive" unless directory.bytesize == cd_size
+        raise Error, "Invalid account archive" if cd_offset + cd_size > size
+        # Walked record by record from the file: only one fixed header and
+        # one name are ever in memory, whatever the directory claims.
         names = []
         folded = Set.new
-        position = 0
-        while position < directory.bytesize
-          header = directory.byteslice(position, 46)
+        position = cd_offset
+        finish = cd_offset + cd_size
+        while position < finish
+          raise Error, "Too many archive entries" if names.length >= MAX_ENTRIES
+          io.seek(position)
+          header = io.read(46)
           raise Error, "Invalid account archive" unless header&.bytesize == 46 && header.byteslice(0, 4) == CENTRAL
           name_length, extra_length, comment_length = header.byteslice(28, 6).unpack("vvv")
-          name = directory.byteslice(position + 46, name_length)
-          raise Error, "Invalid account archive" unless name&.bytesize == name_length
+          raise Error, "Unsafe archive path" if name_length > MAX_PATH_BYTES
+          name = io.read(name_length).to_s
+          raise Error, "Invalid account archive" unless name.bytesize == name_length
           name.force_encoding(Encoding::UTF_8)
-          raise Error, "Too many archive entries" if names.length >= MAX_ENTRIES
           raise Error, "Unsafe archive path" unless name.valid_encoding?
           raise Error, "Unsupported archive member" unless name.match?(LAYOUT)
           raise Error, "Duplicate archive entry" unless folded.add?(name.downcase)
           names << name
           position += 46 + name_length + extra_length + comment_length
         end
+        raise Error, "Invalid account archive" unless position == finish
         raise Error, "Invalid account archive" unless names.length == total
         names
       end

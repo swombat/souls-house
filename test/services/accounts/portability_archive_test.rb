@@ -151,4 +151,21 @@ class Accounts::PortabilityArchiveTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "the pre-scan never holds the central directory whole" do
+    members = @members.merge((1..400).to_h { |i| [ "field/notes/n#{i + 100}/item.json", "{}" ] })
+    sizes = []
+    spy = Module.new { define_method(:read) { |length = nil, *rest| sizes << length; super(length, *rest) } }
+    Dir.mktmpdir do |dir|
+      zip = File.join(dir, "a.zip")
+      File.binwrite(zip, zip_of(members).string)
+      real = File.method(:open)
+      File.stub(:open, ->(*args, **kw, &block) { real.call(*args, **kw) { |io| io.extend(spy) if args.first == zip; block.call(io) } }) do
+        assert_equal members.length, Accounts::Portability::Archive.prescan!(zip).length
+      end
+    end
+    assert_operator sizes.compact.max, :<=, 22 + 65_535, "a read larger than the end-record window"
+    assert_operator sizes.count(46), :>=, 400, "headers are read one at a time"
+  end
+
 end

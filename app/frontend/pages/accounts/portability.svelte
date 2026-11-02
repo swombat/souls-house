@@ -37,7 +37,10 @@
   $effect(() => {
     clearInterval(timer);
     if (working)
-      timer = setInterval(() => router.reload({ only: ['exports', 'imports', 'destination_refusal'] }), 3000);
+      timer = setInterval(
+        () => router.reload({ only: ['exports', 'imports', 'destination_refusal', 'held_field_items'] }),
+        3000
+      );
   });
   onDestroy(() => clearInterval(timer));
 
