@@ -13,7 +13,7 @@ module AgentRuntimeInteraction::FailureReport
 
   FAILURE_STATES = %w[failed timed_out].freeze
   FAILURE_CATEGORIES = %w[
-    runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
+    needs_setup runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
   ].freeze
   # Runs the house starts on its own clock, with no room to fail in: the
   # scheduled wake and the memory aggregations. Telegram and orientation runs
@@ -57,6 +57,9 @@ module AgentRuntimeInteraction::FailureReport
   def failure_category
     return unless streak_outcome == :failure
     return "timed_out" if execution_state == "timed_out" || runtime_status == "timeout"
+    # The house refused a scheduled run before dispatch because the resident
+    # has no usable credential or allowance (InferenceAvailability).
+    return "needs_setup" if error_kind == Agents::InferenceAvailability::NEEDS_SETUP
     return "runtime_unavailable" if error_class.in?(UNAVAILABLE_ERROR_CLASSES)
     return "runtime_unavailable" if runtime_status.nil? && transport_status.in?(UNAVAILABLE_TRANSPORT_STATUSES)
     # The runtime's own structured classification (trigger_shim.py

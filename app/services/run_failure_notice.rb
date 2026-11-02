@@ -6,6 +6,7 @@
 class RunFailureNotice
 
   NO_REPLY_CAUSES = {
+    "needs_setup" => "it has no usable credential or allowance for its model",
     "runtime_unavailable" => "its runtime couldn't be reached",
     "model_unavailable" => "its model isn't available on its subscription",
     "runtime_error" => "the run ended in an error",

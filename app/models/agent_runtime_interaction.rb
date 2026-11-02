@@ -412,6 +412,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr: stderr,
       error_class: error_class,
       error_message: error_message,
+      setup_refusal: setup_refusal,
       container_oom_kills: container_oom_kills,
       out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
@@ -540,6 +541,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr_may_be_truncated: stderr.to_s.length >= RUNTIME_OUTPUT_CAPTURE_LIMIT,
       error_class: error_class,
       error_message: error_message,
+      setup_refusal: setup_refusal,
       container_oom_kills: container_oom_kills,
       out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
@@ -558,6 +560,15 @@ class AgentRuntimeInteraction < ApplicationRecord
       cache_ttl: cache_ttl,
       finished_at: finished_at&.iso8601
     )
+  end
+
+  # The house's own sentence when it refused a scheduled run before dispatch
+  # (Agents::InferenceAvailability.scheduled_refusal): what setup is missing.
+  # Only that one field of the response body, never the body itself.
+  def setup_refusal
+    return unless response_body.is_a?(Hash) && response_body["error_kind"] == Agents::InferenceAvailability::NEEDS_SETUP
+
+    response_body["error"].to_s.presence
   end
 
   def visible_in_chat_timeline?

@@ -625,6 +625,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, inertia_shared_props.dig("interactions_pagination", "count")
   end
 
+  test "the runs tab says why the house refused a scheduled run before dispatch" do
+    AgentRuntimeInteraction.create!(
+      agent: @agent, trigger_kind: "wake", requested_by: "souls.house scheduled wake", session_id: "w",
+      started_at: 2.minutes.ago, finished_at: 1.minute.ago, transport_status: 412, runtime_status: "error",
+      response_body: { "status" => "error", "error_kind" => "needs_setup", "error" => "Edit the resident and set up credentials." }
+    )
+
+    get edit_account_agent_path(@account, @agent), params: { tab: "interactions" }
+
+    interaction = inertia_shared_props.fetch("interactions").first
+    assert_equal "Edit the resident and set up credentials.", interaction["setup_refusal"]
+    assert_not interaction.key?("response_body")
+  end
+
   test "interaction costs are reverse chronological and paginated" do
     26.times do |index|
       AgentRuntimeInteraction.create!(
