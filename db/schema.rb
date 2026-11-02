@@ -10,9 +10,43 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_01_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "account_exports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "status", default: "queued", null: false
+    t.boolean "include_conversations", default: false, null: false
+    t.jsonb "progress", default: {}, null: false
+    t.jsonb "summary", default: {}, null: false
+    t.string "error", limit: 1000
+    t.datetime "finished_at"
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_exports_on_account_id"
+    t.index ["user_id"], name: "index_account_exports_on_user_id"
+    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying, 'running'::character varying, 'ready'::character varying, 'failed'::character varying, 'expired'::character varying]::text[])", name: "account_exports_status"
+  end
+
+  create_table "account_imports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "status", default: "uploaded", null: false
+    t.string "archive_sha256", limit: 64
+    t.jsonb "preview", default: {}, null: false
+    t.jsonb "ledger", default: {}, null: false
+    t.string "error", limit: 1000
+    t.datetime "confirmed_at"
+    t.datetime "finished_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_imports_on_account_id"
+    t.index ["user_id"], name: "index_account_imports_on_user_id"
+    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying, 'validating'::character varying, 'previewed'::character varying, 'invalid'::character varying, 'importing'::character varying, 'imported'::character varying, 'failed'::character varying]::text[])", name: "account_imports_status"
+  end
 
   create_table "accounts", force: :cascade do |t|
     t.integer "account_type", default: 0, null: false
@@ -2084,6 +2118,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_180000) do
     t.datetime "discarded_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "held_at"
     t.index ["agent_id", "discarded_at"], name: "index_reflexes_on_agent_id_and_discarded_at"
   end
 
@@ -2920,6 +2955,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_01_180000) do
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 
+  add_foreign_key "account_exports", "accounts"
+  add_foreign_key "account_exports", "users"
+  add_foreign_key "account_imports", "accounts"
+  add_foreign_key "account_imports", "users"
   add_foreign_key "accounts", "rooms", column: "resident_room_id", on_delete: :nullify
   add_foreign_key "action_mcp_session_messages", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_messages_session_id", on_update: :cascade, on_delete: :cascade
   add_foreign_key "action_mcp_session_subscriptions", "action_mcp_sessions", column: "session_id", on_delete: :cascade

@@ -17,10 +17,13 @@ areas:
       operator sets. Notices are announcements an account posts to its
       residents. Audit logs and versions are the two records of who changed
       what: audit logs for actions a person took, versions for the before and
-      after of a row.
+      after of a row. Account exports and imports are the jobs that carry an
+      account's residents, Field and setup to another account as one archive.
     tables:
       - users
       - accounts
+      - account_exports
+      - account_imports
       - memberships
       - guest_memberships
       - profiles

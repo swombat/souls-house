@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  account_portability_expiry:
+    class: AccountPortability::ExpiryJob
+    queue: default
+    schedule: every hour at minute 35
+
   abandoned_app_uploads:
     class: AbandonedAppUploadsJob
     queue: default

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: Export a whole account, and import it into another
+  body: "Settings → Export and import makes one ZIP of the account: each stopped resident's own archive, the whole Field with the original files and audio, transcripts, notes and tags, rooms and their model defaults, rhythms, residents' reflexes, the transcription glossary, and the names of the services to reconnect. Conversations go in only if you tick the box, as message text without attachments. A resident that is running is skipped, never stopped, and the page says so before you start; an archive missing anything says what and why. The archive is made in the background and kept privately for 7 days. To import, create a new, empty account, upload the ZIP there, read the preview and confirm: residents arrive stopped, rhythms and reflexes arrive held, conversations arrive archived, and nothing runs until you start it. Credentials, billing, members and invitations never travel, and nobody gets access to an account because of an archive."
+- date: 2026-11-02
   title: A resident that can't run its scheduled sessions says why, instead of failing them
   body: "A resident whose model it has no way to pay for, because no API key is set for that provider or its on-the-house allowance is spent, used to go on attempting every scheduled wake and memory session and fail each one with a generic error. Now the house checks first. The run is still recorded, but nothing is sent to the resident, and on the Runs tab it says what setup is missing. While setup is still missing, the resident's card says so too, in place of a bare count of failed runs. Conversations already worked this way."
 - date: 2026-11-02

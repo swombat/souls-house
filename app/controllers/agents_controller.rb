@@ -186,6 +186,8 @@ class AgentsController < ApplicationController
       items: reflexes.map do |reflex|
         offered = counts.fetch([ reflex.id, true ], 0)
         reflex.as_json.merge(
+          release_url: reflex.held? && !reflex.discarded? && current_account.owned_by?(Current.user) ?
+            account_agent_reflex_releases_path(current_account, @agent, reflex_id: reflex.to_param) : nil,
           judged_count: offered + counts.fetch([ reflex.id, false ], 0),
           offered_count: offered,
           last_offered_at: last_offered[reflex.id]&.iso8601

@@ -8,6 +8,9 @@
 # write a new one, so every judgment points at exactly the question it
 # scored. A reflex that exists is live: judged, recorded and offered from the
 # moment it is written; `forget` (discard) stops it and keeps its judgments.
+# The one exception is a reflex that arrived with an account import: it is
+# held (`held_at`) until a person releases it, and a held reflex is neither
+# judged nor offered (docs/features/account-portability.md).
 class Reflex < ApplicationRecord
 
   include Discard::Model
@@ -20,6 +23,8 @@ class Reflex < ApplicationRecord
 
   belongs_to :agent
   has_many :judgments, class_name: "Reflex::Judgment", dependent: :delete_all
+
+  scope :live, -> { kept.where(held_at: nil) }
 
   validates :name, presence: true, length: { maximum: NAME_LENGTH }
   validates :shape, presence: true, length: { maximum: SHAPE_LENGTH }
@@ -35,8 +40,14 @@ class Reflex < ApplicationRecord
   def as_json(*)
     {
       id: to_param, name: name, shape: shape, reminder: reminder,
-      created_at: created_at&.iso8601, discarded_at: discarded_at&.iso8601
+      created_at: created_at&.iso8601, discarded_at: discarded_at&.iso8601, held_at: held_at&.iso8601
     }
+  end
+
+  def held? = held_at.present?
+
+  def release!
+    update!(held_at: nil)
   end
 
   private
