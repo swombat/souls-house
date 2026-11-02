@@ -337,7 +337,9 @@ module TestSupport
     def voice_mode_fixture
       account = Account.find(params.fetch(:account_id))
       account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")
-      account.agents.active.find_each { |agent| agent.update!(voice_id: "TX3LPaxmHKxFdv7VOQHJ") }
+      # update_column: the voice_id validation asks ElevenLabs for its voice list
+      # over the network, which CI has no key for and a test must not depend on.
+      account.agents.active.find_each { |agent| agent.update_column(:voice_id, "TX3LPaxmHKxFdv7VOQHJ") }
       render json: { voice_mode: VoiceMode.status_for(account).to_h }
     end
 
