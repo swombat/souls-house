@@ -21,17 +21,7 @@ class ElevenLabsTts
 
   def synthesize(text, voice_id:)
     uri = URI("#{API_BASE}/#{voice_id}")
-
-    request = Net::HTTP::Post.new(uri)
-    request["xi-api-key"] = api_key
-    request["Content-Type"] = "application/json"
-    request["Accept"] = "audio/mpeg"
-
-    request.body = {
-      text: text,
-      model_id: MODEL_ID,
-      voice_settings: DEFAULT_VOICE_SETTINGS
-    }.to_json
+    request = build_request(uri, text)
 
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
       read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
@@ -39,7 +29,40 @@ class ElevenLabsTts
     handle_response(response)
   end
 
+  def self.stream(text, voice_id:, &block)
+    new.stream(text, voice_id: voice_id, &block)
+  end
+
+  # Voice mode: the audio arrives in chunks as ElevenLabs makes it, so playback
+  # can start at the first one (about half a second on eleven_v3, against two or
+  # more for the whole file). A refusal raises before anything is yielded.
+  def stream(text, voice_id:)
+    uri = URI("#{API_BASE}/#{voice_id}/stream?output_format=mp3_44100_128")
+    request = build_request(uri, text)
+
+    Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
+      read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) do |http|
+      http.request(request) do |response|
+        handle_response(response) unless response.code.to_i == 200
+        response.read_body { |chunk| yield chunk }
+      end
+    end
+  end
+
   private
+
+  def build_request(uri, text)
+    request = Net::HTTP::Post.new(uri)
+    request["xi-api-key"] = api_key
+    request["Content-Type"] = "application/json"
+    request["Accept"] = "audio/mpeg"
+    request.body = {
+      text: text,
+      model_id: MODEL_ID,
+      voice_settings: DEFAULT_VOICE_SETTINGS
+    }.to_json
+    request
+  end
 
   def api_key
     Rails.application.credentials.dig(:ai, :eleven_labs, :api_token) ||

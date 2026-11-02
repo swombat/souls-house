@@ -1,5 +1,6 @@
 <script>
   import { Waveform } from 'phosphor-svelte';
+  import { unlockAudio } from '$lib/voice-mode-playback';
 
   // Shown in place of Send while the composer is empty and voice mode is
   // offered (VoiceMode.status_for). Not a disabled button when the mode cannot
@@ -18,6 +19,7 @@
       return;
     }
     notice = '';
+    unlockAudio(); // inside the tap, or phones refuse to play replies later
     onopen?.();
   }
 </script>

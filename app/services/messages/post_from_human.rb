@@ -94,6 +94,11 @@ class Messages::PostFromHuman
     # dispatch), so a mention there would be a second wake.
     sole_resident = @chat.sole_resident.present?
     target_ids = sole_resident ? [] : @chat.mentioned_agent_ids(@content.to_s)
+    # A spoken turn carries no tag; VoiceMode.addressee says who it is for.
+    voice_busy = []
+    if @voice_mode && !sole_resident && target_ids.empty? && (addressee = VoiceMode.addressee(@chat, @content))
+      @chat.agent_response_active?(addressee) ? voice_busy << addressee : target_ids = [ addressee.id ]
+    end
     if target_ids.any? && !AgentRuntimeInteraction.live_activity_enabled?
       return Result.new(status: :dispatch_unavailable, message: message, sole_resident: sole_resident)
     end
@@ -114,6 +119,7 @@ class Messages::PostFromHuman
         # A mention of a resident already responding here waits for that run.
         unless sole_resident
           @chat.queue_wakes_for_busy!(@chat.busy_mentioned_agents(@content.to_s), requested_by: "a mention from #{message.author_name}", message: message)
+          @chat.queue_wakes_for_busy!(voice_busy, requested_by: "a spoken turn from #{message.author_name}", message: message)
         end
         saved_id = message.id
         true

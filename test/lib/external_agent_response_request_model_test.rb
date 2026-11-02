@@ -36,7 +36,9 @@ class ExternalAgentResponseRequestVoiceModeTest < ActiveSupport::TestCase
 
     human = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
     assert_includes human.send(:trigger_intro_text), ExternalAgentResponseRequest::VOICE_MODE_NOTE
-    assert_no_match(/read aloud|will be heard|is listening/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
+    # Playback is likely but not certain (the browser may have closed): "may", never a promise.
+    assert_match(/may be read aloud/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
+    assert_no_match(/will be read|will be heard|is listening/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
   end
 
 end
