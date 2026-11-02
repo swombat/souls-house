@@ -23,7 +23,7 @@ module Agents
       refusal = { "status" => "error", "error_kind" => NEEDS_SETUP, "error" => message }
       # Which house allowance refused it, when that was the reason (#678).
       code = (house_error(agent)&.code if HouseInference::Offering.find(agent.model_id))
-      refusal["refusal_code"] = code if code.in?(AgentRuntimeInteraction::FailureReport::INFERENCE_REFUSALS)
+      refusal["refusal_code"] = code if code.in?(AgentRuntimeInteraction::FailureReport::ALLOWANCE_REFUSALS)
       refusal
     end
 

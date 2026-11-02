@@ -83,6 +83,22 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
     assert_nil sibling.reload.inference_refusal, 'a concurrent run of the same resident does not borrow the refusal'
   end
 
+  test 'the house provider refusing a call is recorded too, and never overwrites an earlier refusal' do
+    run = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
+    refused = HouseInference::Error.new('refused', code: 'house_provider_refused', status: 502)
+    HouseInference::Gateway.stub(:new, ->(**) { raise refused }) do
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    end
+    assert_response :bad_gateway
+    assert_equal 'house_provider_refused', run.reload.inference_refusal
+
+    run.update_column(:inference_refusal, 'house_allowance_exhausted')
+    HouseInference::Gateway.stub(:new, ->(**) { raise refused }) do
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    end
+    assert_equal 'house_allowance_exhausted', run.reload.inference_refusal
+  end
+
   test 'a refusal that is not about the allowance is not recorded' do
     run = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
     HouseInference::Offering.stub(:configured?, false) do

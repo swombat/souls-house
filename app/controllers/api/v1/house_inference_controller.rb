@@ -69,7 +69,9 @@ module Api
         run_id = request.headers['X-Soulshouse-Run'].to_s
         return unless run_id.match?(/\A\d{1,18}\z/)
 
-        current_api_agent.agent_runtime_interactions.where(id: run_id, finished_at: nil)
+        # The first refusal is the one the run failed on; a later call's
+        # refusal doesn't overwrite it.
+        current_api_agent.agent_runtime_interactions.where(id: run_id, finished_at: nil, inference_refusal: nil)
           .update_all(inference_refusal: error.code)
       rescue StandardError => e
         Rails.logger.warn("House inference refusal not recorded (#{e.class.name})")

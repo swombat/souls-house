@@ -12,16 +12,21 @@ module AgentRuntimeInteraction::FailureReport
   extend ActiveSupport::Concern
 
   FAILURE_STATES = %w[failed timed_out].freeze
-  # The house inference gateway's refusal codes (HouseInferenceGrant,
-  # ResidentEntitlement), recorded on the run that made the refused call
-  # (inference_refusal) or carried by a scheduled run refused before
-  # dispatch (InferenceAvailability.scheduled_refusal, refusal_code).
-  INFERENCE_REFUSALS = %w[house_allowance_exhausted house_allowance_none].freeze
+  # The house inference gateway's allowance refusal codes
+  # (HouseInferenceGrant, ResidentEntitlement), recorded on the run that made
+  # the refused call (inference_refusal) or carried by a scheduled run
+  # refused before dispatch (InferenceAvailability.scheduled_refusal,
+  # refusal_code).
+  ALLOWANCE_REFUSALS = %w[house_allowance_exhausted house_allowance_none].freeze
+  # Every gateway refusal recorded on a run. house_provider_refused is the
+  # house's pinned upstream answering a call with an error status: the
+  # house's side, not the owner's (Soul Horse, 1 Nov 2026: every run).
+  INFERENCE_REFUSALS = (ALLOWANCE_REFUSALS + %w[house_provider_refused]).freeze
   # Categories that mean the resident can't pay for its model as set up:
   # the owner's fix is setup or money, not repair.
   SETUP_CATEGORIES = %w[needs_setup house_allowance_exhausted house_allowance_none].freeze
   FAILURE_CATEGORIES = %w[
-    needs_setup house_allowance_exhausted house_allowance_none subscription_limit
+    needs_setup house_allowance_exhausted house_allowance_none house_provider_refused subscription_limit
     runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
   ].freeze
   # Runs the house starts on its own clock, with no room to fail in: the
@@ -67,14 +72,14 @@ module AgentRuntimeInteraction::FailureReport
     return unless streak_outcome == :failure
     # The gateway refused a house inference call made by this run (#678).
     # Ahead of timed_out: a runtime that hangs after the refusal still
-    # failed because it couldn't pay.
+    # failed because of it.
     return inference_refusal if inference_refusal.in?(INFERENCE_REFUSALS)
     return "timed_out" if execution_state == "timed_out" || runtime_status == "timeout"
     # The house refused a scheduled run before dispatch because the resident
     # has no usable credential or allowance (InferenceAvailability); when the
     # refusal was the house allowance, its code says which.
     if error_kind == Agents::InferenceAvailability::NEEDS_SETUP
-      return refusal_code.in?(INFERENCE_REFUSALS) ? refusal_code : "needs_setup"
+      return refusal_code.in?(ALLOWANCE_REFUSALS) ? refusal_code : "needs_setup"
     end
     return "runtime_unavailable" if error_class.in?(UNAVAILABLE_ERROR_CLASSES)
     return "runtime_unavailable" if runtime_status.nil? && transport_status.in?(UNAVAILABLE_TRANSPORT_STATUSES)

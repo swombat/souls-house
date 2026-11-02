@@ -71,6 +71,14 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_equal "unknown", live_run("failed", inference_refusal: "something_else").failure_category
   end
 
+  test "the house's provider refusing a call is the house's category, not a setup one" do
+    refused = live_run("failed", runtime_status: "error", runtime_returncode: 1, inference_refusal: "house_provider_refused")
+    assert_equal "house_provider_refused", refused.failure_category
+    assert_equal "the house's model provider refused a request it made", refused.failure_reason
+    2.times { live_run("failed", inference_refusal: "house_provider_refused") }
+    assert_not Agents::RunFailureStreak.call(@agent).as_card_json[:needs_setup]
+  end
+
   test "a scheduled run refused before dispatch for its house allowance says which allowance" do
     refusal = { "status" => "error", "error_kind" => "needs_setup", "error" => "The $10 house allowance is used up." }
     assert_equal "house_allowance_exhausted",
