@@ -7,6 +7,14 @@ class ElevenLabsTts
   READ_TIMEOUT = 60
   OPEN_TIMEOUT = 10
 
+  # How the connection to ElevenLabs can fail mid-request. In a stream these
+  # become Error, so the caller can answer 502 rather than an empty 200; an
+  # error raised by the caller's own block (the browser going away) is not ours.
+  TRANSPORT_ERRORS = [
+    Net::OpenTimeout, Net::ReadTimeout, Net::HTTPBadResponse, SocketError,
+    SystemCallError, EOFError, OpenSSL::SSL::SSLError
+  ].freeze
+
   DEFAULT_VOICE_SETTINGS = {
     stability: 0.5,
     similarity_boost: 0.75,
@@ -39,14 +47,23 @@ class ElevenLabsTts
   def stream(text, voice_id:)
     uri = URI("#{API_BASE}/#{voice_id}/stream?output_format=mp3_44100_128")
     request = build_request(uri, text)
+    in_caller = false
 
     Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
       read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) do |http|
       http.request(request) do |response|
         handle_response(response) unless response.code.to_i == 200
-        response.read_body { |chunk| yield chunk }
+        response.read_body do |chunk|
+          in_caller = true
+          yield chunk
+          in_caller = false
+        end
       end
     end
+  rescue *TRANSPORT_ERRORS => e
+    raise if in_caller
+
+    raise Error, "ElevenLabs stream failed: #{e.class}: #{e.message}"
   end
 
   private

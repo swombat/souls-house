@@ -51,6 +51,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
   let queue = [];
   let current = null;
   let generation = 0;
+  let closed = false;
 
   const report = () => onchange?.(current ? current.id : null);
 
@@ -76,6 +77,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
 
   return {
     enqueue(id) {
+      if (closed) return;
       queue.push({ id, generation });
       if (!current) next();
     },
@@ -90,6 +92,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
       report();
     },
     close() {
+      closed = true;
       this.interrupt();
       audio.removeEventListener('ended', onended);
       audio.removeEventListener('error', onended);

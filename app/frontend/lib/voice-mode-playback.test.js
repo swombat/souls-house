@@ -104,3 +104,12 @@ test('closing stops playback and stops listening to the shared element', () => {
   audio.end();
   expect(changes).toEqual(['a', null]);
 });
+
+test('a closed player accepts nothing more: no reply starts after End', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.close();
+  player.enqueue('late');
+  expect(audio.play).not.toHaveBeenCalled();
+  expect(player.speaking).toBe(false);
+});

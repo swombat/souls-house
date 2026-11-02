@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 # Voice mode speech (YMaddY, PR 2). ElevenLabs is stubbed at the HTTP boundary,
 # as the house's other ElevenLabs tests do; the real stream's timing was
@@ -61,6 +62,18 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :bad_gateway
     assert_empty response.body
+  end
+
+  test "a transport failure before any audio is a 502, not an empty 200" do
+    [ Net::ReadTimeout, Errno::ECONNRESET, EOFError ].each do |failure|
+      WebMock.reset!
+      stub_request(:post, STREAM_URL).to_raise(failure)
+
+      get message_speech_path(@reply)
+
+      assert_response :bad_gateway, "#{failure} should be a 502"
+      assert_empty response.body
+    end
   end
 
 end

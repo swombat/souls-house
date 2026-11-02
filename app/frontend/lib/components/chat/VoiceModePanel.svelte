@@ -8,7 +8,7 @@
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
   import { createPlayer } from '$lib/voice-mode-playback';
-  import { initialSeen, newReplies } from '$lib/voice-mode-replies';
+  import { createReplyPicker } from '$lib/voice-mode-replies';
   import { messageSpeechPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -34,11 +34,10 @@
   let stale = $state(false);
   let speakingId = $state(null);
 
-  const seen = initialSeen(messages);
+  const picker = createReplyPicker(messages);
   const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange: (id) => (speakingId = id) });
-  $effect(() => {
-    for (const id of newReplies(messages, seen)) if (!ended) player.enqueue(id);
-  });
+  // The player is terminal once End begins, so nothing lands during its drain.
+  $effect(() => picker.take(messages).forEach((id) => player.enqueue(id)));
 
   let capture = null;
   let transcriber = null;
@@ -90,6 +89,7 @@
           stale = false;
         },
         onspeechstart: (samples) => {
+          picker.hold(messages);
           player.interrupt();
           caption = '';
           transcriber?.begin(samples);
@@ -97,11 +97,15 @@
         },
         onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
+          picker.release();
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
-        onturn: (durationMs) => enqueue(transcriber.commit(), durationMs),
+        onturn: (durationMs) => {
+          picker.release();
+          enqueue(transcriber.commit(), durationMs);
+        },
       });
       if (ended) {
         await capture.stop();

@@ -265,6 +265,7 @@ test('Mute works while a message is still being sent', async () => {
   );
 });
 
+let clock = 0;
 const reply = (id, extra = {}) => ({
   id,
   role: 'assistant',
@@ -272,6 +273,7 @@ const reply = (id, extra = {}) => ({
   completed: true,
   streaming: false,
   content: 'Spoken back.',
+  created_at: new Date(Date.UTC(2026, 10, 2, 9, 0, clock++)).toISOString(),
   ...extra,
 });
 
@@ -294,4 +296,19 @@ test('replies that arrive after voice mode opens are read aloud, the backlog is 
 
   await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
   await waitFor(() => expect(player.log.at(-1)).toEqual(['close']));
+});
+
+test('older history loaded while in voice mode is not read, and a reply interrupted mid-arrival stays unread', async () => {
+  const earlier = reply('earlier');
+  const old = reply('old');
+  const pending = reply('pending', { streaming: true, completed: false });
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [old, pending] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+
+  await rerender({ ...props, messages: [earlier, old, pending] });
+  callbacks.onspeechstart(new Float32Array(10));
+  await rerender({ ...props, messages: [earlier, old, { ...pending, streaming: false, completed: true }] });
+  const during = reply('during', { progress_message: true });
+  await rerender({ ...props, messages: [earlier, old, { ...pending, completed: true, streaming: false }, during] });
+  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([]);
 });

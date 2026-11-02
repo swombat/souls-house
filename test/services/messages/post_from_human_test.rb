@@ -293,4 +293,17 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     end
   end
 
+  test "a spoken turn tagging a busy resident waits for that resident and never falls back to the last speaker" do
+    enable_voice_mode
+    @group_chat.messages.create!(role: "assistant", agent: @bystander, content: "Here is my view.", suppress_automatic_dispatch: true)
+    AgentRuntimeInteraction.reserve!(agent: @agent, chat: @group_chat)
+
+    assert_no_difference "MessageDispatch.count" do
+      assert_difference "PendingWake.count", 1 do
+        assert speak("@Grok, what about the cost?").created?
+      end
+    end
+    assert_equal [ @agent ], PendingWake.open.where(chat: @group_chat).map(&:agent)
+  end
+
 end
