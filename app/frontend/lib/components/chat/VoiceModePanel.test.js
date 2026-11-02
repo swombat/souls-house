@@ -312,3 +312,35 @@ test('older history loaded while in voice mode is not read, and a reply interrup
   await rerender({ ...props, messages: [earlier, old, { ...pending, completed: true, streaming: false }, during] });
   expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([]);
 });
+
+test('a burst that was not speech consumes no reply: the cut-off reply and what landed meanwhile are read (#748)', async () => {
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  const first = reply('first', { author_name: 'Lume' });
+  await rerender({ ...props, messages: [first] });
+  player.options.onchange('first');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-reply').textContent).toMatch(/Lume:\s*Spoken back\./));
+
+  callbacks.onspeechstart(new Float32Array(10));
+  const during = reply('during');
+  await rerender({ ...props, messages: [first, during] });
+  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([['enqueue', 'first']]);
+
+  callbacks.ondiscard(120);
+  expect(player.log.slice(-2)).toEqual([
+    ['enqueue', 'first'],
+    ['enqueue', 'during'],
+  ]);
+});
+
+test('a sent turn supersedes what landed while the person spoke; the next reply is read', async () => {
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  transcriber.results.push('Next question.');
+  callbacks.onspeechstart(new Float32Array(10));
+  const during = reply('during');
+  await rerender({ ...props, messages: [during] });
+  callbacks.onturn(1500);
+  await rerender({ ...props, messages: [during, reply('answer')] });
+  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([['enqueue', 'answer']]);
+});

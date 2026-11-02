@@ -7,12 +7,18 @@
 // before it and is never read. A resident message still arriving at open is
 // let through explicitly. Message ids are opaque, so they say nothing about order.
 //
-// When the person starts speaking, everything then on the page is superseded,
-// including replies still arriving, and so is every resident run that has a
-// message on the page: a later message from that run (its final reply after a
-// progress note) stays silent too. A message with no run provenance is
-// superseded by its own id only; a run that had posted nothing when the person
-// spoke is not known to be superseded and is read.
+// While the person is speaking nothing is read, and nothing is decided either.
+// What happens to the replies on the page depends on how the burst ends (#748):
+// - a committed turn supersedes everything then on the page, including replies
+//   that landed while they spoke and replies still arriving, and every resident
+//   run that has a message on the page: a later message from that run (its
+//   final reply after a progress note) stays silent too. A message with no run
+//   provenance is superseded by its own id only; a run that had posted nothing
+//   when the turn was sent is not known to be superseded and is read.
+// - a discarded burst (a cough, the dog, a door: sound the detector dropped as
+//   not speech) supersedes nothing: what landed during it is read afterwards.
+// Superseding at speech-start instead meant every noise in the room silently
+// buried whatever had just arrived.
 export function speakable(message) {
   return (
     message?.role === 'assistant' &&
@@ -47,12 +53,9 @@ export function createReplyPicker(initial = []) {
 
   return {
     // New ids to read, in page order; each is returned once. While the person
-    // is speaking nothing is returned: what lands then is superseded too.
+    // is speaking nothing is returned and nothing is marked: the turn decides.
     take(messages) {
-      if (held) {
-        supersede(messages);
-        return [];
-      }
+      if (held) return [];
       const ids = [];
       for (const message of messages || []) {
         if (seen.has(message.id) || !speakable(message)) continue;
@@ -63,13 +66,19 @@ export function createReplyPicker(initial = []) {
       }
       return ids;
     },
-    // Speech started: nothing on the page now is read, even when it completes later.
-    hold(messages) {
+    // Speech started: hold everything until the burst is committed or discarded.
+    hold() {
       held = true;
-      supersede(messages);
     },
-    // The person's turn ended (sent or discarded): later replies are read again.
-    release() {
+    // The person's turn was sent: nothing on the page now is read, even when it
+    // completes later. Later replies are read again.
+    commit(messages) {
+      supersede(messages);
+      held = false;
+    },
+    // The burst was not speech: nothing is superseded, and what landed during
+    // it is read by the next take.
+    discard() {
       held = false;
     },
   };

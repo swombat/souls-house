@@ -19,6 +19,13 @@ import axios from 'axios';
 //   invite a duplicate on retry. A visit the person chose (and confirmed) passes through too;
 // - a visit the person starts themselves asks before leaving, and so does closing or reloading
 //   the tab (beforeunload).
+// A live hold ({ refreshes: false }) is for voice mode (#748), which is a conversation, not a
+// recording: the page must keep receiving replies while the microphone is open, so background
+// visits go out as usual. It still guards against the deploy case: a version conflict on a
+// background GET is cancelled and queued like any other held refresh, the hold's onconflict is
+// told, and the queued props reload once the last hold is released. Held for the whole voice
+// conversation, the ordinary hold cancelled every message reload for its whole length, so no
+// reply reached the page (or the reader) until End.
 // A quiet hold ({ warn: false }) holds refreshes without asking anything. The composers take one
 // from transcription until the message is sent: the text is saved as a draft, but the audio is
 // attached only in memory, and their own send must not be met with "discard the recording?".
@@ -44,6 +51,8 @@ export function createRecordingGuard({
 } = {}) {
   let holds = 0;
   let warningHolds = 0;
+  let refreshHolds = 0;
+  const conflictListeners = new Set();
   const queuedProps = new Set();
   let queuedEverything = false;
   // A visit the person started while a hold was on; its 409 must reach Inertia, which then
@@ -67,6 +76,7 @@ export function createRecordingGuard({
     const method = String(visit.method || 'get').toLowerCase();
 
     if (visit.async && method === 'get') {
+      if (refreshHolds === 0) return;
       event.preventDefault();
       if (!visit.prefetch) queue(visit.only);
       return;
@@ -93,6 +103,7 @@ export function createRecordingGuard({
     }
     const partial = header(error.config?.headers, 'X-Inertia-Partial-Data');
     queue(partial ? String(partial).split(',').filter(Boolean) : []);
+    conflictListeners.forEach((listener) => listener());
     return Promise.reject(new axios.CanceledError('Held while a voice note is recording'));
   }
 
@@ -113,8 +124,10 @@ export function createRecordingGuard({
     });
   }
 
-  function hold({ warn = true } = {}) {
+  function hold({ warn = true, refreshes = true, onconflict = null } = {}) {
     holds += 1;
+    if (refreshes) refreshHolds += 1;
+    if (onconflict) conflictListeners.add(onconflict);
     if (warn) {
       warningHolds += 1;
       if (warningHolds === 1) win?.addEventListener('beforeunload', onBeforeUnload);
@@ -127,6 +140,8 @@ export function createRecordingGuard({
         warningHolds -= 1;
         if (warningHolds === 0) win?.removeEventListener('beforeunload', onBeforeUnload);
       }
+      if (refreshes) refreshHolds -= 1;
+      if (onconflict) conflictListeners.delete(onconflict);
       holds -= 1;
       if (holds === 0) flush();
     };

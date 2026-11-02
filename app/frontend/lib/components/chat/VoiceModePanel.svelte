@@ -33,6 +33,10 @@
   let sent = $state(0);
   let stale = $state(false);
   let speakingId = $state(null);
+  let interruptedId = null;
+  // The reply being read, shown as text too: on a phone the panel is the only
+  // evidence that a reply exists while the person is talking.
+  const speaking = $derived(speakingId ? messages.find((m) => m.id === speakingId) : null);
 
   const picker = createReplyPicker(messages);
   const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange: (id) => (speakingId = id) });
@@ -70,8 +74,13 @@
       return;
     }
     // Held for the whole conversation: a deploy mid-walk must not reload the
-    // page and close the microphone; leaving the page asks first.
-    releaseHold = holdForRecording();
+    // page and close the microphone; leaving the page asks first. A live hold,
+    // because replies must keep reaching the page while the microphone is open
+    // (#748: an ordinary hold cancelled every message reload until End).
+    releaseHold = holdForRecording({
+      refreshes: false,
+      onconflict: () => (note = 'The house was just updated. New replies will appear when you end voice mode.'),
+    });
     transcriber = createTranscriber({
       fetchSession,
       onDelta: (text) => (caption = text),
@@ -89,7 +98,8 @@
           stale = false;
         },
         onspeechstart: (samples) => {
-          picker.hold(messages);
+          picker.hold();
+          interruptedId = speakingId;
           player.interrupt();
           caption = '';
           transcriber?.begin(samples);
@@ -97,13 +107,20 @@
         },
         onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
-          picker.release();
+          // Not speech: the reply it cut off is read again from the start, and
+          // whatever landed during the burst is read after it.
+          const resume = interruptedId;
+          interruptedId = null;
+          picker.discard();
+          if (resume) player.enqueue(resume);
+          picker.take(messages).forEach((id) => player.enqueue(id));
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
         onturn: (durationMs) => {
-          picker.release();
+          interruptedId = null;
+          picker.commit(messages);
           enqueue(transcriber.commit(), durationMs);
         },
       });
@@ -289,6 +306,12 @@
   {/if}
   {#if note}
     <p class="text-xs text-muted-foreground" data-testid="voice-mode-note">{note}</p>
+  {/if}
+  {#if speaking}
+    <p class="text-sm line-clamp-4" data-testid="voice-mode-reply">
+      <span class="font-medium">{speaking.author_name || 'Reply'}:</span>
+      {speaking.content}
+    </p>
   {/if}
   {#if caption}
     <p class="text-sm" data-testid="voice-mode-caption">{caption}</p>
