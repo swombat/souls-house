@@ -8,8 +8,9 @@ on:
       operation:
         required: true
         type: string
-      # Optional, Rails only: deploy only if master is still this commit. The
-      # host checks it against its own clone; it can't pick another commit.
+      # Optional, Rails and the automatic rebuild only: deploy only if master
+      # is still this commit. The host checks it against its own clone; it
+      # can't pick another commit.
       expected_revision:
         required: false
         type: string
@@ -25,6 +26,11 @@ on:
         required: false
         type: string
         default: ''
+    outputs:
+      # Rails only: the host found that this commit changes the resident
+      # image (agent-runtime/), so the automatic deploy rebuilds residents.
+      runtime_rebuild_needed:
+        value: ${{ jobs.deploy.outputs.runtime_rebuild_needed }}
 
 permissions:
   contents: read
@@ -45,6 +51,8 @@ jobs:
     # Environment policy is the branch boundary; the if is the actor boundary.
     # Both depend on reviewed, protected master workflow code.
     environment: production-deploy
+    outputs:
+      runtime_rebuild_needed: ${{ steps.request.outputs.runtime_rebuild_needed }}
     env:
       OPERATION: ${{ inputs.operation }}
       EXPECTED_REVISION: ${{ inputs.expected_revision }}
@@ -66,8 +74,8 @@ jobs:
           case "$OPERATION" in rails|chaos|both|runtime) ;; *) exit 2;; esac
           request="$OPERATION"
           if [[ -n "$EXPECTED_REVISION" ]]; then
-            [[ "$OPERATION" == rails && "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 2
-            request="rails expect $EXPECTED_REVISION"
+            [[ "$OPERATION" =~ ^(rails|runtime)$ && "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 2
+            request="$OPERATION expect $EXPECTED_REVISION"
           fi
           ACCEPT_MIGRATIONS="$(tr -d ' \n\r\t' <<<"$ACCEPT_MIGRATIONS")"
           if [[ -n "$ACCEPT_MIGRATIONS" ]]; then
@@ -119,6 +127,10 @@ jobs:
                 fi
                 printf '\nVerified:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
                 echo outcome=deployed >> "$GITHUB_OUTPUT"
+                if [[ "$(jq -r '.runtime_rebuild_needed // false' <<<"$receipt")" == true ]]; then
+                  echo runtime_rebuild_needed=true >> "$GITHUB_OUTPUT"
+                  echo 'Resident image changed: residents are rebuilt next.' >> "$GITHUB_STEP_SUMMARY"
+                fi
                 exit 0 ;;
               superseded)
                 printf '\nMaster moved on; nothing deployed:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
@@ -127,7 +139,22 @@ jobs:
                 # hole in #313. The host still deploys nothing; the marker
                 # step below still names this as superseded, not a crash.
                 exit 1 ;;
-              failed|partial|interrupted)
+              partial)
+                # A rebuild whose only unfinished work is busy host residents
+                # is done from here: the host's minute sweep rolls each one
+                # when it goes idle. Anything held, a failed alias, or a
+                # skipped resident the sweep won't roll (an unreachable VM)
+                # stays red.
+                if jq -e '(.held // []) == [] and (.births_alias_failed // false) == false
+                          and ((.skipped // []) | sort) == ((.waiting // [null]) | sort)' \
+                       >/dev/null <<<"$receipt"; then
+                  printf '\nImage built; busy residents roll when idle:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                  echo outcome=rolling >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                printf '\nNot complete:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+              failed|interrupted)
                 printf '\nNot complete:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
                 if changes="$(jq -er '.migration_changes // empty | join(",")' <<<"$receipt")"; then
                   printf '\nUpstream changed migrations residents already applied. After review, rerun Update Chaos with\n- acknowledge_failed_job: `%s`\n- accept_migrations: `%s`\n' "$id" "$changes" >> "$GITHUB_STEP_SUMMARY"
