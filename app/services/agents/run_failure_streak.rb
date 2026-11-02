@@ -46,10 +46,11 @@ module Agents
         !truncated && count.positive? && categories.all?("model_unavailable")
       end
 
-      # Every failure was the house refusing the run before dispatch: the
-      # resident has no usable credential or allowance for its model.
+      # Every failure was the resident unable to pay for its model as set
+      # up: refused before dispatch, or its house allowance refused a call.
       def needs_setup?
-        !truncated && count.positive? && categories.all?("needs_setup")
+        !truncated && count.positive? &&
+          categories.all? { |category| category.in?(AgentRuntimeInteraction::FailureReport::SETUP_CATEGORIES) }
       end
 
       def as_card_json

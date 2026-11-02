@@ -64,3 +64,15 @@ test('shows no refusal line for an ordinary run', () => {
   renderCard({ ...base });
   expect(screen.queryByTestId('setup-refusal')).not.toBeInTheDocument();
 });
+
+test('says why a failed run failed, in the house’s safe words', () => {
+  renderCard({ ...base, failure_reason: 'its house allowance is used up for this month' });
+  expect(screen.getByTestId('failure-reason')).toHaveTextContent(
+    'Failed: its house allowance is used up for this month',
+  );
+});
+
+test('shows no failure line for a run that did not fail', () => {
+  renderCard({ ...base, failure_reason: null });
+  expect(screen.queryByTestId('failure-reason')).not.toBeInTheDocument();
+});

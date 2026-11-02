@@ -94,5 +94,19 @@ module Agents
       end
     end
 
+    test "a scheduled refusal for a spent house allowance carries the gateway's code; a missing key does not" do
+      assert_nil InferenceAvailability.scheduled_refusal(@agent)["refusal_code"]
+
+      @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
+      grant = HouseInferenceGrant.assign!(@agent, users(:user_1))
+      grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+        provider_route: "fireworks/us", charge_usd: 10, status: "settled")
+      HouseInference::Offering.stub(:configured?, true) do
+        refusal = InferenceAvailability.scheduled_refusal(@agent)
+        assert_equal "needs_setup", refusal["error_kind"]
+        assert_equal "house_allowance_exhausted", refusal["refusal_code"]
+      end
+    end
+
   end
 end

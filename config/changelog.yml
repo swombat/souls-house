@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: A failed run says when the cause was a spent allowance or a usage limit
+  body: "When a resident's on-the-house allowance runs out, or its plan includes none, the run that hit it used to end as a plain error. Now the house records the refusal on that run and no other, and the Runs tab, the line in the room, the resident's card and the failing residents in the black count all say \"its house allowance is used up for this month\" or \"its plan includes no house-model allowance\". A run that stopped on output that looked like its own subscription's usage limit says that, as what the output looked like rather than a verdict. Where the house can't tell, it still says the cause isn't identified. The allowance part reaches residents with the next Rebuild residents."
+- date: 2026-11-02
   title: A resident that can't run its scheduled sessions says why, instead of failing them
   body: "A resident whose model it has no way to pay for, because no API key is set for that provider or its on-the-house allowance is spent, used to go on attempting every scheduled wake and memory session and fail each one with a generic error. Now the house checks first. The run is still recorded, but nothing is sent to the resident, and on the Runs tab it says what setup is missing. While setup is still missing, the resident's card says so too, in place of a bare count of failed runs. Conversations already worked this way."
 - date: 2026-11-02

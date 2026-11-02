@@ -178,6 +178,10 @@ def prepare(home, run=command):
         run(home, "set", "model_providers.house", json.dumps({
             "name": "On the house", "base_url": app_url.rstrip("/") + "/api/v1/house_inference",
             "env_key": "SOULSHOUSE_BEARER_TOKEN", "wire_api": "chat_completions",
+            # The run this call belongs to, so a refused call is recorded on
+            # that run (#678). Chaos omits the header when the env var is
+            # unset (an interactive session, an older house).
+            "env_http_headers": {"X-Soulshouse-Run": "SOULSHOUSE_INFERENCE_RUN"},
         }))
     run(home, "doctor")
 
