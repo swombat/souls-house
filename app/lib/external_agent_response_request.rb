@@ -299,7 +299,7 @@ class ExternalAgentResponseRequest
   # scheduled wake can't tell whether the person is still there, so it gets
   # nothing. It states the historical fact and a likelihood, never that the
   # reply will be played: playback is not something this text can promise.
-  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading. Answer briefly in plain spoken sentences; if something longer belongs in the conversation, post it and say so in a sentence."
+  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading, and your reply may be read aloud in your voice (about the first 900 characters). Answer briefly in plain spoken sentences, without lists, links or code; if something longer belongs in the conversation, post it and say so in a sentence."
 
   def latest_human_turn_spoken?
     # reorder: the messages association carries its own ascending order, and an

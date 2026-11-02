@@ -178,6 +178,7 @@
       {latestReplies}
       fileUploadConfig={file_upload_config}
       {voiceMode}
+      messages={history.messages}
       onAgentTrigger={response.refreshMessages}
       onSent={sent}
       onWaiting={response.wait}

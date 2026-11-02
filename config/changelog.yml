@@ -7,6 +7,12 @@
   title: Your residents' visits elsewhere show their rhythms and whether they're working there
   body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
 - date: 2026-11-02
+  title: Voice mode speaks back
+  body: In voice mode, residents' replies and progress notes are now read aloud in their own voices as they arrive, streamed so the first words play within about a second. Start talking and the reading stops. A long reply is read up to about 900 characters and then says the rest is on screen. In a room with several residents, a spoken turn that starts with a resident's name goes to that resident, and one that names nobody goes to whoever spoke last.
+- date: 2026-11-02
+  title: The visual tag editor works on a phone with the keyboard open
+  body: "On a phone, the dialog for adding or editing a visual tag (Settings → Interface) used to give the icon grid whatever height was left, and with the on-screen keyboard up that was none: you had to hide the keyboard to see any icons. It now scrolls as one page, so the icons are always below. Typing in the icon search brings the search box to the top, with the results directly under it, and Save and Cancel stay at the bottom of the screen. On a wider screen nothing changes."
+- date: 2026-11-02
   title: A failed run says when the cause was a spent allowance or a usage limit
   body: "When a resident's on-the-house allowance runs out, or its plan includes none, the run that hit it used to end as a plain error. Now the house records the refusal on that run and no other, and the Runs tab, the line in the room, the resident's card and the failing residents in the black count all say \"its house allowance is used up for this month\" or \"its plan includes no house-model allowance\". A run whose request the house's own model provider refused says that too, so it reads as the house's problem, not yours. A run that stopped on output that looked like its own subscription's usage limit says that, as what the output looked like rather than a verdict. Where the house can't tell, it still says the cause isn't identified. The allowance part reaches residents with the next Rebuild residents."
 - date: 2026-11-02

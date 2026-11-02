@@ -26,6 +26,14 @@
     event.preventDefault();
     buttons[Math.max(0, Math.min(buttons.length - 1, next))]?.focus();
   }
+  // On a phone the dialog scrolls as one page. When the keyboard opens for a search, bring the search box to the
+  // top of that page so the results sit directly beneath it instead of below the fold.
+  let searchInput = $state(null);
+  function keepSearchInView() {
+    if (typeof window === 'undefined' || !window.matchMedia?.('(max-width: 639px)').matches) return;
+    // Wait for the keyboard to finish resizing the viewport before measuring.
+    setTimeout(() => searchInput?.scrollIntoView?.({ block: 'start' }), 250);
+  }
   $effect(() => {
     query;
     category;
@@ -33,8 +41,17 @@
   });
 </script>
 
-<section class="flex min-h-0 flex-col gap-3" aria-label="Icon library">
-  <Input aria-label="Search icons" type="search" placeholder="Search all icons…" bind:value={query} {disabled} />
+<section class="flex flex-col gap-3 sm:min-h-0" aria-label="Icon library">
+  <Input
+    bind:ref={searchInput}
+    aria-label="Search icons"
+    type="search"
+    placeholder="Search all icons…"
+    class="scroll-mt-2"
+    bind:value={query}
+    onfocus={keepSearchInView}
+    oninput={keepSearchInView}
+    {disabled} />
   <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
     <span aria-live="polite">{ordered.length.toLocaleString()} icons{query ? ' found' : ' to explore'}</span>
     <select
@@ -52,7 +69,7 @@
     <VisualTagIcon icon={value} size={26} class={visualTagColour(colour)} />
     <span class="text-xs"><span class="text-muted-foreground">Current icon</span><br />{iconLabel(value)}</span>
   </div>
-  <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border bg-muted/20 p-2">
+  <div class="rounded-xl border bg-muted/20 p-2 sm:min-h-0 sm:flex-1 sm:overflow-y-auto sm:overscroll-contain">
     {#each groups as group}
       {@const icons = group.icons.filter((name) => visible.includes(name))}
       {#if icons.length}
