@@ -71,6 +71,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.text "zai_api_key"
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.boolean "recognise_voices", default: true, null: false
+    t.boolean "reflexes_enabled", default: false, null: false
     t.boolean "founding", default: false, null: false
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
@@ -84,7 +85,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "main_room_name"
     t.text "main_room_description"
     t.boolean "auto_name_voices", default: true, null: false
-    t.boolean "reflexes_enabled", default: false, null: false
     t.boolean "x_posting_house_app", default: false, null: false
     t.boolean "billing_required", default: false, null: false
     t.boolean "voice_mode_enabled", default: false, null: false
@@ -222,7 +222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.datetime "updated_at", null: false
     t.index ["agent_id", "role"], name: "index_agent_import_stages_on_agent_id_and_role", unique: true
     t.check_constraint "bytes > 0", name: "agent_import_stages_positive_bytes"
-    t.check_constraint "role::text = ANY (ARRAY['identity'::character varying, 'repo'::character varying, 'work'::character varying]::text[])", name: "agent_import_stages_role"
+    t.check_constraint "role::text = ANY (ARRAY['identity'::character varying::text, 'repo'::character varying::text, 'work'::character varying::text])", name: "agent_import_stages_role"
   end
 
   create_table "agent_memories", force: :cascade do |t|
@@ -249,26 +249,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "location"
-    t.string "seed_sha256"
-    t.binary "seed_archive"
-    t.datetime "seeded_at"
     t.datetime "admitted_by_setting_at"
     t.datetime "birth_deadline_at"
     t.bigint "birth_requested_by_id"
-    t.bigint "first_backup_command_id"
-    t.datetime "cleanup_requested_at"
     t.string "cleanup_reason"
+    t.datetime "cleanup_requested_at"
+    t.bigint "first_backup_command_id"
     t.bigint "refresh_command_id"
+    t.string "refresh_last_error"
     t.datetime "refresh_requested_at"
     t.jsonb "refresh_snapshot"
-    t.string "refresh_last_error"
+    t.binary "seed_archive"
+    t.string "seed_sha256"
+    t.datetime "seeded_at"
     t.string "kind"
     t.datetime "house_runtime_ready_at"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
-    t.check_constraint "kind IS NULL OR (kind::text = ANY (ARRAY['birth'::character varying, 'archive_import'::character varying, 'github_import'::character varying, 'migration'::character varying]::text[]))", name: "agent_placements_kind"
+    t.check_constraint "kind IS NULL OR (kind::text = ANY (ARRAY['birth'::character varying::text, 'archive_import'::character varying::text, 'github_import'::character varying::text, 'migration'::character varying::text]))", name: "agent_placements_kind"
     t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
   end
 
@@ -315,6 +315,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "chaos_telemetry_status"
     t.string "chaos_version"
     t.bigint "chat_id"
+    t.integer "container_oom_kills"
     t.string "conversation_obfuscated_id"
     t.datetime "created_at", null: false
     t.bigint "delta_prompt_bytes"
@@ -373,7 +374,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "usage_scope"
     t.bigint "follow_through_of_id"
     t.datetime "follow_through_checked_at"
-    t.integer "container_oom_kills"
     t.bigint "failure_notice_message_id"
     t.bigint "stalled_thread_sweep_id"
     t.jsonb "wake_source_kinds", default: [], null: false
@@ -436,6 +436,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "container_image"
     t.integer "container_memory_mb", default: 8192, null: false
     t.string "container_name"
+    t.integer "container_pids_limit", default: 4096, null: false
     t.datetime "created_at", null: false
     t.datetime "deprecated_at"
     t.string "deprecation_reason"
@@ -446,6 +447,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "github_repo_name"
     t.string "github_repo_owner"
     t.string "github_repo_url"
+    t.datetime "health_failing_since"
+    t.string "health_failure_kind"
     t.string "health_state", default: "unknown", null: false
     t.integer "heartbeat_wakes_per_day", default: 2, null: false
     t.string "home_profile", default: "house", null: false
@@ -483,6 +486,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "restic_password"
     t.string "runtime", default: "deprecated", null: false
     t.datetime "runtime_ready_at"
+    t.integer "runtime_restart_count"
     t.string "sandbox_host"
     t.text "sandbox_last_error"
     t.datetime "sandbox_last_error_at"
@@ -496,6 +500,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.text "system_prompt"
     t.string "telegram_bot_token"
     t.string "telegram_bot_username"
+    t.boolean "telegram_reads_all_group_messages"
     t.string "telegram_webhook_token"
     t.integer "thinking_budget", default: 10000
     t.boolean "thinking_enabled", default: false, null: false
@@ -511,17 +516,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.boolean "follow_through", default: false, null: false
     t.jsonb "switchable_model_ids", default: [], null: false
     t.boolean "resident_may_switch_model", default: false, null: false
-    t.integer "container_pids_limit", default: 4096, null: false
     t.bigint "created_by_user_id"
     t.bigint "first_conversation_chat_id"
     t.string "first_conversation_greeting"
     t.datetime "first_conversation_woken_at"
     t.bigint "first_conversation_interaction_id"
     t.integer "first_conversation_attempts", default: 0, null: false
-    t.boolean "telegram_reads_all_group_messages"
-    t.datetime "health_failing_since"
-    t.string "health_failure_kind"
-    t.integer "runtime_restart_count"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -719,11 +719,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.text "summary"
     t.datetime "summary_generated_at"
     t.string "title"
+    t.integer "title_sweep_attempts", default: 0, null: false
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
     t.bigint "visual_tag_id"
     t.bigint "room_id"
-    t.integer "title_sweep_attempts", default: 0, null: false
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -1170,7 +1170,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["day"], name: "index_field_ocr_calls_on_day"
     t.index ["field_file_id", "page_number"], name: "index_field_ocr_calls_on_field_file_id_and_page_number"
     t.check_constraint "charge_usd >= 0::numeric", name: "field_ocr_calls_nonnegative_charge"
-    t.check_constraint "status::text = ANY (ARRAY['reserved'::character varying, 'settled'::character varying, 'failed'::character varying, 'uncertain'::character varying]::text[])", name: "field_ocr_calls_status"
+    t.check_constraint "status::text = ANY (ARRAY['reserved'::character varying::text, 'settled'::character varying::text, 'failed'::character varying::text, 'uncertain'::character varying::text])", name: "field_ocr_calls_status"
   end
 
   create_table "field_recording_dispatches", force: :cascade do |t|
@@ -1259,6 +1259,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "ignored_as", default: "noise", null: false
     t.text "probe_embedding"
     t.string "probe_profile"
+    t.string "recognition_cohort"
     t.boolean "recognition_checked"
     t.boolean "sample_excluded", default: false, null: false
     t.integer "sample_review_generation", default: 0, null: false
@@ -1379,7 +1380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["account_id", "created_at"], name: "index_field_swarm_reads_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_swarm_reads_on_account_id"
     t.index ["field_swarm_search_id"], name: "index_field_swarm_reads_on_field_swarm_search_id"
-    t.check_constraint "status::text = ANY (ARRAY['read'::character varying, 'failed'::character varying, 'rate_limited'::character varying, 'timed_out'::character varying]::text[])", name: "field_swarm_reads_status"
+    t.check_constraint "status::text = ANY (ARRAY['read'::character varying::text, 'failed'::character varying::text, 'rate_limited'::character varying::text, 'timed_out'::character varying::text])", name: "field_swarm_reads_status"
   end
 
   create_table "field_swarm_searches", force: :cascade do |t|
@@ -1408,7 +1409,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["account_id"], name: "index_field_swarm_searches_on_account_id"
     t.index ["agent_id"], name: "index_field_swarm_searches_on_agent_id"
     t.index ["user_id"], name: "index_field_swarm_searches_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['running'::character varying, 'complete'::character varying, 'failed'::character varying]::text[])", name: "field_swarm_searches_status"
+    t.check_constraint "status::text = ANY (ARRAY['running'::character varying::text, 'complete'::character varying::text, 'failed'::character varying::text])", name: "field_swarm_searches_status"
   end
 
   create_table "field_taggings", force: :cascade do |t|
@@ -1429,7 +1430,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["field_tag_id"], name: "index_field_taggings_on_field_tag_id"
     t.index ["taggable_type", "taggable_id"], name: "index_field_taggings_on_taggable"
     t.index ["tagged_by_type", "tagged_by_id"], name: "index_field_taggings_on_tagged_by"
-    t.check_constraint "taggable_type::text = ANY (ARRAY['FieldFile'::character varying, 'FieldRecording'::character varying, 'Whiteboard'::character varying, 'FieldTweet'::character varying, 'FieldSong'::character varying]::text[])", name: "field_taggings_taggable_type"
+    t.check_constraint "taggable_type::text = ANY (ARRAY['FieldFile'::character varying::text, 'FieldRecording'::character varying::text, 'Whiteboard'::character varying::text, 'FieldTweet'::character varying::text, 'FieldSong'::character varying::text])", name: "field_taggings_taggable_type"
   end
 
   create_table "field_tags", force: :cascade do |t|
@@ -1478,8 +1479,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["field_tweet_source_id"], name: "index_field_tweet_calls_on_field_tweet_source_id"
     t.index ["funding", "created_at"], name: "index_field_tweet_calls_on_funding_and_created_at"
     t.check_constraint "charge_usd >= 0::numeric", name: "field_tweet_calls_nonnegative_charge"
-    t.check_constraint "funding::text = ANY (ARRAY['house'::character varying, 'own'::character varying]::text[])", name: "field_tweet_calls_funding"
-    t.check_constraint "status::text = ANY (ARRAY['reserved'::character varying, 'settled'::character varying, 'failed'::character varying, 'uncertain'::character varying]::text[])", name: "field_tweet_calls_status"
+    t.check_constraint "funding::text = ANY (ARRAY['house'::character varying::text, 'own'::character varying::text])", name: "field_tweet_calls_funding"
+    t.check_constraint "status::text = ANY (ARRAY['reserved'::character varying::text, 'settled'::character varying::text, 'failed'::character varying::text, 'uncertain'::character varying::text])", name: "field_tweet_calls_status"
   end
 
   create_table "field_tweet_sources", force: :cascade do |t|
@@ -1511,7 +1512,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["account_id"], name: "index_field_tweet_sources_on_account_id", unique: true
     t.index ["created_by_type", "created_by_id"], name: "index_field_tweet_sources_on_created_by"
     t.index ["next_attempt_at"], name: "index_field_tweet_sources_on_next_attempt_at"
-    t.check_constraint "state::text = ANY (ARRAY['active'::character varying, 'paused'::character varying, 'needs_attention'::character varying]::text[])", name: "field_tweet_sources_state"
+    t.check_constraint "state::text = ANY (ARRAY['active'::character varying::text, 'paused'::character varying::text, 'needs_attention'::character varying::text])", name: "field_tweet_sources_state"
   end
 
   create_table "field_tweets", force: :cascade do |t|
@@ -1576,7 +1577,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "request_digest"
     t.jsonb "idempotency_receipts", default: {}, null: false
     t.datetime "removed_at"
-    t.boolean "excluded", default: false, null: false
     t.integer "review_generation", default: 0, null: false
     t.string "confirmed_digest"
     t.bigint "confirmed_by_id"
@@ -1584,6 +1584,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.datetime "confirmed_at"
     t.string "learning_status"
     t.string "learning_error"
+    t.boolean "excluded", default: false, null: false
     t.text "rollback_embedding"
     t.string "rollback_profile"
     t.index ["account_id", "content_sha256"], name: "index_voice_samples_on_account_content", unique: true, where: "((content_sha256 IS NOT NULL) AND (removed_at IS NULL))"
@@ -1710,19 +1711,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   end
 
   create_table "house_inference_calls", force: :cascade do |t|
+    t.bigint "agent_id"
     t.decimal "charge_usd", precision: 14, scale: 8, null: false
     t.datetime "created_at", null: false
+    t.boolean "free_pool", null: false
     t.bigint "house_inference_grant_id"
+    t.integer "http_status"
     t.string "model_id", null: false
     t.date "month", null: false
     t.string "provider_route", null: false
+    t.bigint "resident_entitlement_id"
     t.string "status", default: "pending", null: false
     t.datetime "updated_at", null: false
     t.string "upstream_id"
-    t.bigint "agent_id"
-    t.bigint "resident_entitlement_id"
-    t.boolean "free_pool", null: false
-    t.integer "http_status"
     t.index ["agent_id"], name: "index_house_inference_calls_on_agent_id"
     t.index ["house_inference_grant_id", "month"], name: "index_house_calls_on_grant_month"
     t.index ["house_inference_grant_id"], name: "index_house_inference_calls_on_house_inference_grant_id"
@@ -1804,17 +1805,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   end
 
   create_table "message_handoffs", force: :cascade do |t|
-    t.bigint "message_id", null: false
     t.bigint "chat_id", null: false
-    t.bigint "requester_agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "delivered_at"
+    t.bigint "message_id", null: false
+    t.bigint "pending_wake_id"
+    t.string "reason"
     t.bigint "recipient_agent_id", null: false
+    t.bigint "requester_agent_id"
+    t.bigint "runtime_interaction_id"
     t.string "source", null: false
     t.string "status", default: "pending", null: false
-    t.string "reason"
-    t.bigint "runtime_interaction_id"
-    t.bigint "pending_wake_id"
-    t.datetime "delivered_at"
-    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["chat_id", "recipient_agent_id", "status"], name: "index_message_handoffs_on_chat_recipient_status"
     t.index ["chat_id"], name: "index_message_handoffs_on_chat_id"
@@ -1823,8 +1824,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["recipient_agent_id"], name: "index_message_handoffs_on_recipient_agent_id"
     t.index ["requester_agent_id"], name: "index_message_handoffs_on_requester_agent_id"
     t.index ["runtime_interaction_id"], name: "index_message_handoffs_on_runtime_interaction_id"
-    t.check_constraint "source::text = ANY (ARRAY['tag'::character varying, 'field'::character varying]::text[])", name: "message_handoffs_source"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'triggered'::character varying, 'held'::character varying, 'delivered'::character varying, 'blocked'::character varying]::text[])", name: "message_handoffs_status"
+    t.check_constraint "source::text = ANY (ARRAY['tag'::character varying::text, 'field'::character varying::text])", name: "message_handoffs_source"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'triggered'::character varying::text, 'held'::character varying::text, 'delivered'::character varying::text, 'blocked'::character varying::text])", name: "message_handoffs_status"
   end
 
   create_table "message_stone_revisions", force: :cascade do |t|
@@ -2092,13 +2093,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   end
 
   create_table "pending_wake_sources", force: :cascade do |t|
-    t.bigint "pending_wake_id", null: false
+    t.datetime "created_at", null: false
     t.string "kind", null: false
     t.bigint "message_id"
-    t.bigint "user_id"
+    t.bigint "pending_wake_id", null: false
     t.bigint "requester_agent_id"
-    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
     t.jsonb "wake_source_kinds", default: [], null: false
     t.index ["message_id"], name: "index_pending_wake_sources_on_message_id"
     t.index ["pending_wake_id"], name: "index_pending_wake_sources_on_pending_wake_id"
@@ -2107,17 +2108,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   end
 
   create_table "pending_wakes", force: :cascade do |t|
-    t.bigint "chat_id", null: false
     t.bigint "agent_id", null: false
-    t.string "requested_by", null: false
-    t.integer "requests_count", default: 1, null: false
+    t.bigint "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.string "drop_reason"
+    t.datetime "dropped_at"
     t.datetime "first_requested_at", null: false
     t.datetime "last_requested_at", null: false
-    t.datetime "released_at"
-    t.datetime "dropped_at"
-    t.string "drop_reason"
     t.bigint "released_interaction_id"
-    t.datetime "created_at", null: false
+    t.datetime "released_at"
+    t.integer "requests_count", default: 1, null: false
+    t.string "requested_by", null: false
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_pending_wakes_on_agent_id"
     t.index ["chat_id", "agent_id"], name: "index_pending_wakes_one_open_per_resident_room", unique: true, where: "((released_at IS NULL) AND (dropped_at IS NULL))"
@@ -2252,8 +2253,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.jsonb "fulfilment"
     t.string "reconcile_status", default: "pending", null: false
     t.string "reconcile_error"
-    t.datetime "cancelled_at"
     t.string "cancel_reason"
+    t.datetime "cancelled_at"
     t.string "undeliverable_reason"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -2292,8 +2293,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
   end
 
   create_table "resident_entitlements", force: :cascade do |t|
@@ -2339,7 +2340,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.integer "plan_changes_count", default: 0, null: false
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
-    t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY ((ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying])::text[]))"
+    t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id", unique: true
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_subscriptions_rate_known"
   end
@@ -2654,7 +2655,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.boolean "show_usage_in_chat", default: false, null: false
     t.string "site_name", default: "souls.house", null: false
     t.datetime "updated_at", null: false
+    t.datetime "field_naming_cutover_at"
     t.string "follow_through_scope", default: "off", null: false
+    t.string "reflexes_scope", default: "disabled", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
     t.boolean "new_residents_on_vm", default: false, null: false
     t.integer "vm_resident_limit", default: 0, null: false
@@ -2671,9 +2674,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.integer "stalled_sweep_minutes", default: 0, null: false
     t.integer "stalled_sweep_cursor", default: 0, null: false
     t.boolean "stalled_sweep_wake", default: false, null: false
-    t.datetime "field_naming_cutover_at"
     t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
-    t.string "reflexes_scope", default: "disabled", null: false
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
     t.string "voice_mode_scope", default: "account_choice", null: false
@@ -2749,6 +2750,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   end
 
   create_table "telegram_messages", force: :cascade do |t|
+    t.boolean "addressed", default: true, null: false
     t.text "caption"
     t.datetime "created_at", null: false
     t.string "media_error"
@@ -2767,7 +2769,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.datetime "wake_enqueued_at"
     t.bigint "reply_to_telegram_message_id"
     t.bigint "sender_telegram_user_id"
-    t.boolean "addressed", default: true, null: false
     t.bigint "agent_runtime_interaction_id"
     t.index ["agent_runtime_interaction_id"], name: "index_telegram_messages_on_agent_runtime_interaction_id"
     t.index ["telegram_subscription_id", "telegram_message_id"], name: "idx_on_telegram_subscription_id_telegram_message_id_9eb10802be", unique: true, where: "(telegram_message_id IS NOT NULL)"
@@ -2834,7 +2835,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.index ["account_id"], name: "index_transcription_glossary_terms_on_account_id"
     t.index ["created_by_agent_id"], name: "index_transcription_glossary_terms_on_created_by_agent_id"
     t.index ["created_by_user_id"], name: "index_transcription_glossary_terms_on_created_by_user_id"
-    t.check_constraint "source::text = ANY (ARRAY['manual'::character varying, 'correction'::character varying, 'harvested'::character varying]::text[])", name: "transcription_glossary_terms_source"
+    t.check_constraint "source::text = ANY (ARRAY['manual'::character varying::text, 'correction'::character varying::text, 'harvested'::character varying::text])", name: "transcription_glossary_terms_source"
   end
 
   create_table "tweet_embeds", force: :cascade do |t|
