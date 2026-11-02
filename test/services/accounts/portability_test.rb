@@ -374,8 +374,8 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     import = previewed_import(bytes)
     import.update!(status: "importing")
     # Another worker's session, outside the test's own connection.
-    config = ActiveRecord::Base.connection_db_config.configuration_hash
-    other = PG.connect(host: config[:host], port: config[:port], dbname: config[:database], user: config[:username], password: config[:password])
+    info = ActiveRecord::Base.connection.raw_connection.conninfo_hash
+    other = PG.connect(**info.select { |key, value| %i[host port dbname user password].include?(key) && value.present? })
     other.exec_params("SELECT pg_advisory_lock($1, $2)", [ Accounts::Portability::Import::LOCK_CLASS, @destination.id ])
     assert_enqueued_with(job: AccountPortability::ImportJob, args: [ import.id ]) do
       with_resident_import_seams { AccountPortability::ImportJob.perform_now(import.id) }
