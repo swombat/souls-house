@@ -62,9 +62,7 @@
   }
 
   onMount(() => {
-    // Arrived from New Chat's wave: that tap already unlocked audio, so open
-    // voice mode now. Taken once; a reload never opens the microphone.
-    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true;
+    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true; // New Chat's wave, taken once
     draft = new ConversationDraft({
       userId,
       accountId,
