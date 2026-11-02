@@ -12,5 +12,7 @@
   ],
   "custom_residents": {},
   "idle_wait_seconds": 600,
+  "roll_concurrency": 6,
+  "vm_roll_concurrency": 32,
   "vm_restart_wait_seconds": 3600
 }
