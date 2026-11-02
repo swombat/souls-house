@@ -11,7 +11,7 @@ module FieldFile::TextExtraction
   TEXT_CONTENT_TYPES = %w[application/json application/xml application/x-yaml application/yaml application/x-subrip].freeze
 
   included do
-    after_create_commit -> { FieldFiles::ExtractTextJob.perform_later(id) }, if: :text_extractable?
+    after_create_commit -> { FieldFiles::ExtractTextJob.perform_later(id) }, if: -> { text_extractable? && !import_held? }
   end
 
   def text_extractable?
@@ -26,7 +26,7 @@ module FieldFile::TextExtraction
   # Postgres text can't hold them) and stores them. update_columns: this is
   # derived data, not an edit, so updated_at and broadcasts stay as they were.
   def extract_text!
-    return false unless kept? && text_extractable?
+    return false unless kept? && text_extractable? && !import_held?
 
     text = file.download.dup.force_encoding(Encoding::UTF_8).scrub("�").delete("\u0000")
     text = text.delete_prefix("﻿")

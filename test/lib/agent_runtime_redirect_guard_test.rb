@@ -55,6 +55,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-x" => { args: %w[search redirect guards] },
     "soulshouse-youtube" => { args: %w[ask https://www.youtube.com/watch?v=dQw4w9WgXcQ what] },
     "soulshouse-reflex" => { args: %w[list] },
+    "soulshouse-commitment" => { args: %w[list] },
     "soulshouse-gws" => { args: %w[drive files list], manifest: :google_workspace },
     "soulshouse-comms" => { args: %w[chats], manifest: :whatsapp },
     "github_import_approval.py" => { python: "import github_import_approval as g; g.fetch_approval()" },
@@ -101,7 +102,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
 
     %w[
       soulshouse-comms soulshouse-gws soulshouse-model soulshouse-post-message soulshouse-send-telegram
-      soulshouse-usage soulshouse-x soulshouse-youtube github_import_approval.py soulshouse-reflex
+      soulshouse-usage soulshouse-x soulshouse-youtube github_import_approval.py soulshouse-reflex soulshouse-commitment
       soulshouse-quiet-reason soulshouse-ghost soulshouse-integrations soulshouse-stone memory_client.py
       runtime_activity.py
     ].each { |name| assert_includes senders, name }

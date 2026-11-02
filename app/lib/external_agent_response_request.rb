@@ -213,6 +213,7 @@ class ExternalAgentResponseRequest
       safeguard_notice_text,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
@@ -227,6 +228,19 @@ class ExternalAgentResponseRequest
     ]
     parts << "Initiation reason: #{initiation_reason}" if initiation_reason.present?
     parts.compact_blank.join("\n\n")
+  end
+
+  # A due commitment this run was woken for (Commitment#wake!, directly or
+  # through a held wake), carried in the request itself so it reaches the
+  # resident whatever the transcript window keeps.
+  def commitment_cue_text
+    return unless @interaction&.persisted?
+
+    commitments = Commitment.where(wake_interaction_id: @interaction.id)
+    if (wake = @interaction.released_pending_wake)
+      commitments = commitments.or(Commitment.where(pending_wake_id: wake.id))
+    end
+    commitments.where(status: "activated").includes(:activation_message, :account).order(:id).map(&:cue_text).join("\n\n").presence
   end
 
   # The run a follow-through nudge continues, when this run is one.
@@ -276,7 +290,21 @@ class ExternalAgentResponseRequest
     if wake_source_kinds.include?("unknown") && wake_source_kinds.any? { |kind| kind.in?(%w[human peer scheduled]) }
       parts << "At least one coalesced request has no recorded source."
     end
+    parts << VOICE_MODE_NOTE if human_wake? && latest_human_turn_spoken?
     parts.join(" ")
+  end
+
+  # The latest human turn was spoken in the conversation's voice mode
+  # (messages.voice_mode). Only for a wake a human caused: a later peer or
+  # scheduled wake can't tell whether the person is still there, so it gets
+  # nothing. It states the historical fact and a likelihood, never that the
+  # reply will be played: playback is not something this text can promise.
+  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading. Answer briefly in plain spoken sentences; if something longer belongs in the conversation, post it and say so in a sentence."
+
+  def latest_human_turn_spoken?
+    # reorder: the messages association carries its own ascending order, and an
+    # appended order(id: :desc) would be ignored behind it.
+    chat.messages.kept.where(role: "user").reorder(id: :desc).pick(:voice_mode) == true
   end
 
   def ordinary_trigger_intro_text
@@ -588,6 +616,7 @@ class ExternalAgentResponseRequest
       selection.prompt_section,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import ChatInputArea from './ChatInputArea.svelte';
 
 // The chat page passes agentIsResponding whenever any resident is running.
@@ -28,4 +28,38 @@ test('an unrespondable conversation still disables the bar', () => {
     accountId: 'account',
   });
   expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+});
+
+// Voice mode (VoiceMode): an empty composer offers the wave button in place of
+// Send when the account's mode is on; when it cannot start, a tap says why.
+const chat = { id: 'chat', manual_responses: false, respondable: true };
+
+test('without voice mode the empty composer shows Send', () => {
+  render(ChatInputArea, {
+    chat,
+    accountId: 'account',
+    voiceMode: { offered: false, available: false, reason: 'account_disabled' },
+  });
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  expect(screen.queryByTestId('voice-mode-button')).toBeNull();
+});
+
+test('with voice mode available the empty composer offers the wave button', () => {
+  render(ChatInputArea, { chat, accountId: 'account', voiceMode: { offered: true, available: true, reason: null } });
+  const wave = screen.getByRole('button', { name: 'Start voice mode' });
+  expect(wave).toHaveAttribute('aria-disabled', 'false');
+  expect(screen.queryByRole('button', { name: 'Send message' })).toBeNull();
+});
+
+test('offered without a key, the wave button explains itself when tapped instead of starting', async () => {
+  render(ChatInputArea, {
+    chat,
+    accountId: 'account',
+    voiceMode: { offered: true, available: false, reason: 'no_transcription_key' },
+  });
+  const wave = screen.getByRole('button', { name: 'Start voice mode' });
+  expect(wave).toHaveAttribute('aria-disabled', 'true');
+  await fireEvent.click(wave);
+  expect(screen.getByTestId('voice-mode-notice')).toHaveTextContent('OpenAI API key');
+  expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
 });

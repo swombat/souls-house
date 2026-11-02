@@ -13,6 +13,7 @@
     BookOpenText,
     DoorOpen,
     UserSound,
+    Archive,
   } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
@@ -39,6 +40,7 @@
     { id: 'voices', label: 'Voices', icon: UserSound, href: `/accounts/${account.id}/field/voices` },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar, href: accountCostsPath(account.id) },
     { id: 'billing', label: 'Billing', icon: CreditCard, href: `/accounts/${account.id}/billing` },
+    { id: 'portability', label: 'Export and import', icon: Archive, href: `/accounts/${account.id}/portability` },
   ]);
 
   const activeLabel = $derived(tabs.find((tab) => tab.id === active)?.label);

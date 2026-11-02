@@ -75,6 +75,18 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "disabled", Setting.instance.reload.reflexes_scope
   end
 
+  test "a site admin sets the voice mode scope to one of three states" do
+    sign_in @admin
+    %w[disabled enabled account_choice].each do |scope|
+      patch admin_settings_path, params: { setting: { voice_mode_scope: scope } }
+      assert_redirected_to admin_settings_path
+      assert_equal scope, Setting.instance.reload.voice_mode_scope
+    end
+
+    patch admin_settings_path, params: { setting: { voice_mode_scope: "everyone" } }
+    assert_equal "account_choice", Setting.instance.reload.voice_mode_scope
+  end
+
   test "non-admins cannot change the reflexes scope" do
     sign_in @user
     patch admin_settings_path, params: { setting: { reflexes_scope: "enabled" } }

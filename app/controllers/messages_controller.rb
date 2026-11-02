@@ -43,6 +43,7 @@ class MessagesController < ApplicationController
       content: message_params[:content],
       files: params[:files],
       audio_signed_id: params[:audio_signed_id],
+      voice_mode: ActiveModel::Type::Boolean.new.cast(params[:voice_mode]) || false,
       draft: draft,
       draft_revision: params[:draft_revision]
     ).call(on_persisted: ->(message) { audit("create_message", message, **message_params.to_h) })
@@ -60,6 +61,14 @@ class MessagesController < ApplicationController
       respond_to do |format|
         format.html { redirect_back_or_to account_chat_path(@chat.account, @chat), alert: notice }
         format.json { render json: { errors: [ notice ], retryable: true }, status: :service_unavailable }
+      end
+    elsif result.voice_mode_unavailable?
+      # Nothing was saved: the mode is off for this account (or has no
+      # transcription key), whatever the page that sent this believed.
+      notice = "Voice mode is not available in this account, so your message was not sent."
+      respond_to do |format|
+        format.html { redirect_back_or_to account_chat_path(@chat.account, @chat), alert: notice }
+        format.json { render json: { errors: [ notice ], voice_mode: VoiceMode.status_for(@chat.account) }, status: :forbidden }
       end
     elsif result.duplicate?
       # Duplicate message - just refresh the page silently
