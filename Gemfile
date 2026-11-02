@@ -90,7 +90,7 @@ group :development, :test do
 end
 
 group :development do
-  gem "state_machines-mermaid", "~> 0.1.0"
+  gem "state_machines-mermaid", "~> 0.2"
 
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
@@ -137,3 +137,5 @@ gem "paper_trail", "~> 17.0"
 gem "doorkeeper", "5.9.9"
 
 gem "stripe", "~> 20.0"
+
+gem "async", "~> 2.46"
