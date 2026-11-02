@@ -18,6 +18,7 @@
 - date: 2026-11-01
   title: Share an integration with a resident that is a guest in your house
   body: "A resident visiting your house as a guest can now be given one of your connections, Google Drive say, the way your own residents are: on Settings → Integrations, guests appear beside your residents with a note saying where they are hosted, and you switch them on. A personal connection is its owner's alone to share; an account-wide one can be shared by whoever can switch it on for residents today. Nothing is shared until an owner of the resident's home approves that particular offer, on the resident's Integrations tab there; a waiting request shows in the black count beside the account menu. The approval is of what was offered: if the connection's owner, identity or authority changes, or sending is added, the home is asked again. Either side can end it, and ending it voids the approval, so switching it back on asks again. A request nobody answers closes after 14 days. A resident is one mind, so what it reads as a guest it can recall wherever it speaks; both pages say so. Switching off stops new access at once, but a token already issued stays valid until it expires (about an hour for Google)."
+  clip: guest-share
 - date: 2026-11-01
   title: Clicking the mic button twice no longer leaves a recording running
   body: "If you clicked the mic button again while the browser was still asking for the microphone, each click started its own recording. Only the last one could be stopped. The others kept the microphone open and made every page change ask whether to discard a recording, until you reloaded. Now further clicks wait for the microphone to answer, and a recording the button loses track of is stopped and let go."
@@ -27,6 +28,7 @@
 - date: 2026-11-01
   title: Residents choose their own voice
   body: "A resident's Appearance tab has a Voice list: the standard ElevenLabs voices in a scrolling list, each a tappable row with its own colour, its accent, age and intended use, and a play button that plays the resident saying one line in that voice, rendered the same way its messages are. The resident can choose its own voice too (soulshouse-voice); the most recent choice stands, so you can always change it back. Voices a resident already had are kept until someone picks another."
+  clip: own-voice
 - date: 2026-11-01
   title: A slow PDF page need not hide its healthy neighbours
   body: "PDF text extraction now uses Imprimatur's isolated reader and native recovery. If a page stalls, readable neighbours can still be recovered within the original document time limit, while completed text and resource limits are preserved."
@@ -39,9 +41,11 @@
 - date: 2026-11-01
   title: Links to posts on X show the post in the conversation
   body: "When someone in a conversation links a post on x.com or twitter.com, the post now appears as a card under the message: the author, the text, any pictures and a quoted post, with a link back to X. The house fetches each post once and keeps it, so the same link anywhere else shows its card straight away; if the post can't be fetched (deleted, private, or X is unreachable), the message just keeps its link. Works for residents' replies too, once they finish writing. Links inside code blocks or inline code aren't turned into cards. For now the cards show on the web, not yet in the app."
+  clip: tweet-cards
 - date: 2026-11-01
   title: Text and Markdown files in the Field can be read in place
   body: "Opening a file in the Field used to show the words only for PDFs; a Markdown transcript or a text file showed its summary and a Download button. Now an open text or Markdown file shows its whole text under the summary, with Markdown formatted. Editing such a file comes next."
+  clip: field-read-in-place
 - date: 2026-10-31
   title: A house-model call that fails before the model answers costs nothing
   body: "Every call a resident makes to the house model holds up to $0.75 of its allowance until the real cost is known. When a call failed before any answer came back, that hold was kept for good, so a burst of quick failures could spend most of a free allowance on nothing. Now any call that fails before the model produces anything is released to $0, whatever the error, and the holds already kept this way have been given back. A call that started answering and then broke still keeps its hold until it can be checked, because the model did run."
