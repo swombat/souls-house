@@ -67,16 +67,43 @@ VM identities; voiceprints and voice samples; tweets collected into the Field.
   to the text; a Field item a person brought is attributed to the importer, and
   one a resident brought to that resident's copy. No user is matched by name or
   email, and no membership, invitation or guest access is created.
+- **Field items arrive held from automatic reading** (`import_held_at` on
+  files and recordings). Whatever the source had already extracted, OCR'd and
+  summarised travels with them (including a PDF's per-page text and
+  transcriptions), and nothing new is read: no text or PDF extraction, no OCR,
+  no summary, and the hourly summary sweep skips them. One owner action on the
+  page, **Release** (audited), sends them through what a new upload would.
+- **Recording speakers** travel with their labels, order, talk and clip times,
+  ignored state and name. Names travel as archive-local voice keys, so two
+  labels on one voice stay on one voice; each key becomes a new voice here,
+  never an existing one matched by name (a clashing name gets a number).
+  Voice prints, samples, recognition and suggestion state never travel, and
+  imported names are not a training source for voice prints.
 - Rooms are matched by name or created.
 
-## Retries
+## Retries, concurrency and results
 
 Every created thing is written to the import's `ledger` under its archive key
 in the same transaction as the thing itself. A resident's own import commits
 on its own, so its archive's export ID is noted first, and a retry finds that
-copy by it instead of making another. A failed import keeps what it created
-and **Retry import** continues from there. Field media is uploaded before its
-row and purged if the row is not created.
+copy by it instead of making another. Field media is uploaded before its row
+and purged if the row is not created.
+
+One import runs per account at a time: each run holds a Postgres advisory lock
+on the account, and a second worker re-queues instead of creating alongside
+it. Upload and confirm serialise on the account row; once one import is
+confirmed, no other import can start in that account.
+
+The result separates **not in the archive** (skipped at export, a nested
+resident archive that failed validation; permanent) from **not created here
+this time** (a plan refusal, a validation error; recoverable). Recoverable
+failures stay out of the ledger, and **Retry what did not arrive** tries them
+again. Any of either makes the result "Imported, with gaps", with every reason
+shown.
+
+Each included resident's own archive is validated with the resident archive's
+boundary before the preview, so the preview says which residents will really
+arrive.
 
 ## Limits
 
@@ -87,7 +114,11 @@ their own v1 limits and are validated again on import.
 
 ## Validation (hostile input)
 
-Byte counts are enforced while extracting. Refused: traversal, absolute or
+Before rubyzip reads anything, the raw central directory is scanned (classic
+and ZIP64 end records): the real record count, case-folded duplicate names
+(rubyzip would otherwise collapse them), every name against the format's
+fixed layout, and no bytes after the end record. Nothing is written for a
+name outside the layout. Byte counts are enforced while extracting. Refused: traversal, absolute or
 backslash paths, control characters, duplicate or case-colliding names, links
 and special files, encrypted entries, unknown versions, members outside the
 allowlist, an inventory that differs from the archive's contents, references

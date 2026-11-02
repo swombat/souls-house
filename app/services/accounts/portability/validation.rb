@@ -60,7 +60,14 @@ module Accounts::Portability
       end
 
       field = @archive.field
-      hash!(field, Archive::FIELD_KINDS + %w[tags])
+      hash!(field, Archive::FIELD_KINDS + %w[tags voices])
+      @voice_keys = list!(field["voices"], 10_000).map do |voice|
+        hash!(voice, %w[key name])
+        key!(voice["key"])
+        string!(voice["name"], FieldVoice::MAX_NAME_LENGTH)
+        voice["key"]
+      end
+      unique!(@voice_keys)
       tag_keys = list!(field["tags"], 10_000).map do |tag|
         hash!(tag, %w[key name])
         key!(tag["key"])
@@ -133,8 +140,28 @@ module Accounts::Portability
         raise Error, "Invalid media record" unless media["byte_size"].is_a?(Integer) && media["sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
       end
       case kind
+      when "files"
+        list!(doc["pages"] || [], 100_000).each do |page|
+          hash!(page, %w[page_number native_status])
+          raise Error, "Invalid PDF page" unless page["page_number"].is_a?(Integer) && page["page_number"].positive? &&
+            page["native_status"].in?(FieldFilePage::NATIVE_STATUSES) && (page["model_status"].nil? || page["model_status"].in?(FieldFilePage::MODEL_STATUSES))
+          %w[native_text model_text].each { |f| string!(page[f], 1_000_000, nil_ok: true, blank_ok: true) }
+          %w[native_reason model_reason model_id].each { |f| string!(page[f], 500, nil_ok: true, blank_ok: true) }
+        end
+        raise Error, "Invalid PDF state" unless doc["pdf_status"].nil? || doc["pdf_status"].in?(FieldFile::PdfExtraction::STATUSES)
+        raise Error, "Invalid PDF state" unless doc["pdf_coverage"].nil? || doc["pdf_coverage"].is_a?(Hash)
       when "recordings"
         raise Error, "Invalid recording status" unless doc["status"].in?(FieldRecording::STATUSES)
+        list!(doc["speakers"] || [], 200).each do |speaker|
+          hash!(speaker, %w[label position])
+          string!(speaker["label"], 100)
+          raise Error, "Invalid speaker" unless speaker["position"].is_a?(Integer) && [ true, false, nil ].include?(speaker["ignored"]) &&
+            (speaker["ignored_as"].nil? || speaker["ignored_as"].in?(FieldRecordingSpeaker::IGNORED_AS)) &&
+            %w[talk_ms clip_start_ms clip_end_ms].all? { |f| speaker[f].nil? || speaker[f].is_a?(Integer) }
+          ref!(speaker["voice_key"], @voice_keys, nil_ok: true)
+        end
+        labels = (doc["speakers"] || []).map { |sp| sp["label"] }
+        unique!(labels)
         raise Error, "Invalid recording transcript" unless doc["transcript_turns"].nil? || doc["transcript_turns"].is_a?(Array)
         raise Error, "Invalid recording transcript" unless doc["transcript_words"].nil? || doc["transcript_words"].is_a?(Array)
       when "songs"

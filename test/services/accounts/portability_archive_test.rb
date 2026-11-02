@@ -65,8 +65,10 @@ class Accounts::PortabilityArchiveTest < ActiveSupport::TestCase
   end
 
   test "traversal and absolute paths" do
-    refused(zip_of(@members.merge("../escape.txt" => "x")), /Unsafe archive path/)
-    refused(zip_of(@members.merge("field/notes/n1/../../../x" => "x")), /Unsafe archive path/)
+    refused(zip_of(@members.merge("../escape.txt" => "x")), /Unsupported archive member|Unsafe archive path/)
+    refused(zip_of(@members.merge("field/notes/n1/../../../x" => "x")), /Unsupported archive member|Unsafe archive path/)
+    absolute = zip_of(@members.merge("Xetc/passwd" => "x")).string.gsub("Xetc/passwd", "/etc/passwd")
+    refused(StringIO.new(absolute), /Unsupported archive member|Unsafe archive path/)
   end
 
   test "links" do
@@ -74,8 +76,8 @@ class Accounts::PortabilityArchiveTest < ActiveSupport::TestCase
   end
 
   test "members outside the inventory or the allowlist" do
-    refused(zip_of(@members.merge("extra.txt" => "x")), /Invalid archive inventory/)
     refused(zip_of(with_member("bin/run.sh", "#!/bin/sh")), /Unsupported archive member/)
+    refused(zip_of(@members.merge("extra.txt" => "x")), /Unsupported archive member/)
   end
 
   test "a version we don't know" do
@@ -102,7 +104,51 @@ class Accounts::PortabilityArchiveTest < ActiveSupport::TestCase
   end
 
   test "case-colliding duplicates" do
-    refused(zip_of(with_member("README.MD", "x").merge("Readme.md" => "y")), /Duplicate archive entry|inventory/)
+    refused(zip_of(@members.merge("readme.md" => "x")), /Unsupported archive member/)
+    names = @members.keys
+    renamed = @members.merge("conversations/index.json" => "[]")
+    refused(zip_of(renamed), /Conversations present|inventory/)
+  end
+
+
+  # Two central-directory records with one name: rubyzip keeps one, so the
+  # raw directory is what has to refuse it.
+  test "raw duplicate records are refused before rubyzip collapses them" do
+    bytes = zip_of(@members.merge("field/notes/n9/item.json" => "{}", "field/notes/n8/item.json" => "{}")).string
+    bytes = bytes.gsub("field/notes/n9/item.json", "field/notes/n8/item.json")
+    refused(StringIO.new(bytes), /Duplicate archive entry/)
+  end
+
+  test "a path outside the layout creates nothing before it is refused" do
+    deep = ([ "field" ] + Array.new(30) { |i| "d#{i}" } + [ "x" ]).join("/")
+    Dir.mktmpdir do |dir|
+      zip = File.join(dir, "a.zip")
+      File.binwrite(zip, zip_of(@members.merge(deep => "")).string)
+      stage = File.join(dir, "stage")
+      Dir.mkdir(stage)
+      assert_raises(Accounts::Portability::Error) { Accounts::Portability::Archive.extract(zip, stage) }
+      assert_empty Dir.children(stage)
+    end
+  end
+
+  test "trailing bytes after the end record are refused" do
+    refused(StringIO.new(zip_of(@members).string + "hidden"), /Trailing archive data/)
+  end
+
+  # Archives over 4 GiB end in ZIP64 records. Rewrite a small archive's end
+  # into that form: same members, classic end fields saturated.
+  test "ZIP64 end records are read" do
+    bytes = zip_of(@members).string.b
+    at = bytes.rindex("PK\x05\x06".b)
+    _disk, _cd_disk, _on, total, cd_size, cd_offset, _comment = bytes.byteslice(at, 22).unpack("x4vvvvVVv")
+    z64_offset = at
+    z64 = [ 0x06064b50, 44, 45, 45, 0, 0, total, total, cd_size, cd_offset ].pack("VQ<vvVVQ<Q<Q<Q<")
+    locator = [ 0x07064b50, 0, z64_offset, 1 ].pack("VVQ<V")
+    eocd = [ 0x06054b50, 0, 0, 0xFFFF, 0xFFFF, 0xFFFF_FFFF, 0xFFFF_FFFF, 0 ].pack("VvvvvVVv")
+    zip64 = bytes.byteslice(0, at) + z64 + locator + eocd
+    Accounts::Portability::Archive.with_file(StringIO.new(zip64)) do |archive|
+      assert_equal 1, archive.preview[:field]["notes"]
+    end
   end
 
 end

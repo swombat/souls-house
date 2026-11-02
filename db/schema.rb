@@ -1097,6 +1097,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "summary_refresh_digest", limit: 64
     t.string "summary_claim_token"
     t.datetime "summary_refresh_due_at"
+    t.datetime "import_held_at"
     t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_files_on_account_id"
     t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
@@ -1264,6 +1265,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "summary_refresh_digest", limit: 64
     t.string "summary_claim_token"
     t.datetime "summary_refresh_due_at"
+    t.datetime "import_held_at"
     t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
     t.index ["account_id", "import_key"], name: "index_field_recordings_on_account_id_and_import_key", unique: true, where: "(import_key IS NOT NULL)"
     t.index ["account_id"], name: "index_field_recordings_on_account_id"

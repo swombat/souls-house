@@ -136,6 +136,7 @@ module Accounts::Portability
           index[kind] << key
         end
       end
+      index["voices"] = (@voices || {}).values
       add_json("field/index.json", index)
     end
 
@@ -185,6 +186,10 @@ module Accounts::Portability
     def files_doc(file)
       common(file, file.title).merge(
         "author" => author(file.uploaded_by), "note" => file.note, "extracted_text" => file.extracted_text,
+        "text_extracted_at" => file.text_extracted_at&.iso8601,
+        "pdf_status" => file.pdf_status, "pdf_status_reason" => file.pdf_status_reason, "pdf_page_count" => file.pdf_page_count,
+        "pdf_coverage" => file.pdf_coverage,
+        "pages" => file.pages.map { |page| FieldFile::PdfExtraction::PAGE_COLUMNS.to_h { |c| [ c.to_s, page[c] ] } },
         "summary_short" => file.summary_short, "summary_long" => file.summary_long, "summarized_at" => file.summarized_at&.iso8601,
         "summary_input_digest" => file.summary_input_digest
       )
@@ -196,8 +201,25 @@ module Accounts::Portability
     def recordings_doc(recording)
       common(recording, recording.title).merge(recording.attributes.slice(*RECORDING_FIELDS)).merge(
         "author" => author(recording.uploaded_by), "recorded_at" => recording.recorded_at&.iso8601,
-        "ready_at" => recording.ready_at&.iso8601, "summarized_at" => recording.summarized_at&.iso8601
+        "ready_at" => recording.ready_at&.iso8601, "summarized_at" => recording.summarized_at&.iso8601,
+        "speakers" => recording.speakers.includes(:field_voice).map { |speaker| speaker_doc(speaker) }
       )
+    end
+
+    SPEAKER_FIELDS = %w[label position talk_ms clip_start_ms clip_end_ms ignored_as].freeze
+
+    # A speaker's grouping and name, never its embedding, samples or the
+    # people who decided. Voices are archive-local keys: two source voices
+    # with one name stay two, two labels on one voice stay on one.
+    def speaker_doc(speaker)
+      voice = speaker.field_voice&.kept? ? speaker.field_voice : nil
+      speaker.attributes.slice(*SPEAKER_FIELDS).merge("ignored" => speaker.ignored_at.present?, "voice_key" => voice && voice_key(voice))
+    end
+
+    def voice_key(voice)
+      @voices ||= {}
+      @voices[voice.id] ||= { "key" => "v#{@voices.length + 1}", "name" => voice.name.to_s.truncate(FieldVoice::MAX_NAME_LENGTH) }
+      @voices[voice.id]["key"]
     end
 
     SONG_FIELDS = %w[artist album year links lyrics instrumental note duration_ms].freeze

@@ -131,7 +131,9 @@ Rails.application.routes.draw do
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
     # Account export and import (docs/features/account-portability.md).
-    resource :portability, only: :show, module: :accounts, controller: "portability"
+    resource :portability, only: :show, module: :accounts, controller: "portability" do
+      post :release_field
+    end
     resources :exports, only: [ :create ], module: :accounts, controller: "account_exports" do
       get :download, on: :member
     end

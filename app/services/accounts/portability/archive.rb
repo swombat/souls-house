@@ -61,7 +61,7 @@ module Accounts::Portability
         archive.validate!
         yield archive
       end
-    rescue Zip::Error, JSON::ParserError, ArgumentError, TypeError, KeyError, EOFError
+    rescue Zip::Error, JSON::ParserError, ArgumentError, TypeError, KeyError, EOFError, RangeError
       raise Error, "Invalid account archive"
     end
 
@@ -79,19 +79,86 @@ module Accounts::Portability
 
     UNIX_TYPE_MASK = 0o170000
     UNIX_REGULAR = 0o100000
+    # Every member name the format can contain. Checked on the raw central
+    # directory before rubyzip reads it (rubyzip keys entries by name, so
+    # duplicates collapse before any count) and before anything is written,
+    # so an unknown path never creates a directory.
+    LAYOUT = %r{\A(?:manifest\.json|README\.md|setup\.json|field/index\.json|conversations/index\.json|
+      residents/[a-z0-9]{1,40}\.(?:tar\.gz|json)|field/(?:#{FIELD_KINDS.join("|")})/[a-z0-9]{1,40}/(?:item\.json|media)|
+      conversations/[a-z0-9]{1,40}\.json)\z}x
+    EOCD = "PK\x05\x06".b
+    ZIP64_EOCD = "PK\x06\x06".b
+    ZIP64_LOCATOR = "PK\x06\x07".b
+    CENTRAL = "PK\x01\x02".b
+
+    # Reads the raw central directory: the real number of records and their
+    # names, refusing duplicates (case-folded), unknown layout, too many
+    # records and trailing bytes. Handles ZIP64 end records.
+    def self.prescan!(zip_path)
+      File.open(zip_path, "rb") do |io|
+        size = io.size
+        raise Error, "Invalid account archive" if size < 22
+        tail_length = [ size, 22 + 65_535 ].min
+        io.seek(size - tail_length)
+        tail = io.read(tail_length)
+        at = tail.rindex(EOCD) or raise Error, "Invalid account archive"
+        record = tail.byteslice(at, 22)
+        raise Error, "Invalid account archive" unless record&.bytesize == 22
+        disk, cd_disk, on_disk, total, cd_size, cd_offset, comment = record.unpack("x4vvvvVVv")
+        raise Error, "Trailing archive data is forbidden" unless at + 22 + comment == tail_length
+        raise Error, "Multi-part archives are not supported" unless disk.zero? && cd_disk.zero? && on_disk == total
+        if total == 0xFFFF || cd_size == 0xFFFF_FFFF || cd_offset == 0xFFFF_FFFF
+          locator_at = size - tail_length + at - 20
+          raise Error, "Invalid account archive" if locator_at.negative?
+          io.seek(locator_at)
+          locator = io.read(20)
+          raise Error, "Invalid account archive" unless locator&.byteslice(0, 4) == ZIP64_LOCATOR
+          z64_offset = locator.byteslice(8, 8).unpack1("Q<")
+          raise Error, "Invalid account archive" unless z64_offset + 56 <= locator_at
+          io.seek(z64_offset)
+          z64 = io.read(56)
+          raise Error, "Invalid account archive" unless z64&.bytesize == 56 && z64.byteslice(0, 4) == ZIP64_EOCD
+          on_disk, total, cd_size, cd_offset = z64.byteslice(24, 32).unpack("Q<Q<Q<Q<")
+          raise Error, "Multi-part archives are not supported" unless on_disk == total
+        end
+        raise Error, "Too many archive entries" if total > MAX_ENTRIES
+        raise Error, "Invalid account archive" if cd_offset + cd_size > size || cd_size > MAX_ENTRIES * (46 + 65_535 * 3)
+        io.seek(cd_offset)
+        directory = io.read(cd_size).to_s
+        raise Error, "Invalid account archive" unless directory.bytesize == cd_size
+        names = []
+        folded = Set.new
+        position = 0
+        while position < directory.bytesize
+          header = directory.byteslice(position, 46)
+          raise Error, "Invalid account archive" unless header&.bytesize == 46 && header.byteslice(0, 4) == CENTRAL
+          name_length, extra_length, comment_length = header.byteslice(28, 6).unpack("vvv")
+          name = directory.byteslice(position + 46, name_length)
+          raise Error, "Invalid account archive" unless name&.bytesize == name_length
+          name.force_encoding(Encoding::UTF_8)
+          raise Error, "Too many archive entries" if names.length >= MAX_ENTRIES
+          raise Error, "Unsafe archive path" unless name.valid_encoding?
+          raise Error, "Unsupported archive member" unless name.match?(LAYOUT)
+          raise Error, "Duplicate archive entry" unless folded.add?(name.downcase)
+          names << name
+          position += 46 + name_length + extra_length + comment_length
+        end
+        raise Error, "Invalid account archive" unless names.length == total
+        names
+      end
+    end
 
     def self.extract(zip_path, stage)
+      names = prescan!(zip_path)
       entries = {}
-      folded = Set.new
       expanded = 0
       Zip::File.open(zip_path) do |zip|
-        raise Error, "Too many archive entries" if zip.size > MAX_ENTRIES
+        # rubyzip collapses same-name records; the raw count must survive it.
+        raise Error, "Duplicate archive entry" unless zip.size == names.length
         zip.each do |entry|
           name = entry.name.dup.force_encoding(Encoding::UTF_8)
-          next if name.end_with?("/") && entry.size.to_i.zero? && safe_path!(name.delete_suffix("/"))
           safe_path!(name)
-          # Case-folded too: a case-insensitive filesystem would merge them.
-          raise Error, "Duplicate archive entry" unless folded.add?(name.downcase)
+          raise Error, "Unsupported archive member" unless name.match?(LAYOUT) && names.include?(name)
           raise Error, "Encrypted archive entries are not supported" if entry.encrypted?
           unix_type = (entry.external_file_attributes.to_i >> 16) & UNIX_TYPE_MASK
           raise Error, "Links and special archive entries are forbidden" if entry.symlink? || !(unix_type.zero? || unix_type == UNIX_REGULAR)
@@ -196,6 +263,21 @@ module Accounts::Portability
     def field_media(kind, key) = entries.key?("field/#{kind}/#{key}/media") ? path("field/#{kind}/#{key}/media") : nil
     def resident_extra(key) = entries.key?("residents/#{key}.json") ? json("residents/#{key}.json") : {}
 
+    # Each included resident's own archive, checked with the resident
+    # archive's boundary before any preview, so the preview says which
+    # residents will really arrive. key => nil (valid) or the reason.
+    def resident_checks
+      @resident_checks ||= manifest["residents"].select { |r| r["status"] == "included" }.to_h do |resident|
+        reason = begin
+          File.open(path(resident["archive"]), "rb") { |file| Agents::Portability::Archive.with_upload(file) { |_inner| } }
+          nil
+        rescue Agents::Portability::Error, Agents::Resources::OwnershipError => error
+          error.message.presence || "Invalid resident archive"
+        end
+        [ resident["key"], reason ]
+      end
+    end
+
     def preview
       setup_doc = setup
       field_doc = field
@@ -205,7 +287,13 @@ module Accounts::Portability
         account_name: manifest["account_name"],
         partial: manifest["partial"] == true,
         sha256: sha256,
-        residents: manifest["residents"].map { |r| r.slice("key", "name", "status", "reason") },
+        residents: manifest["residents"].map do |r|
+          if r["status"] == "included" && (reason = resident_checks[r["key"]])
+            r.slice("key", "name").merge("status" => "invalid", "reason" => "Its resident archive is not valid: #{reason}")
+          else
+            r.slice("key", "name", "status", "reason")
+          end
+        end,
         field: FIELD_KINDS.index_with { |kind| field_doc[kind].length }.merge("tags" => field_doc["tags"].length),
         rooms: setup_doc["rooms"].map { |room| room["name"] },
         rhythms: setup_doc["rhythms"].length,

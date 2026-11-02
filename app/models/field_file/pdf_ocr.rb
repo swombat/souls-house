@@ -27,6 +27,7 @@ module FieldFile::PdfOcr
     # A file waiting on OCR always gets to an end, even if OCR was turned
     # off meanwhile (its pages then say so); any other file only while on.
     return false unless kept? && pdf_readable? && (pdf_transcription_pending? || FieldOcr.eligible?(self))
+    return false if import_held?
 
     deadline = FieldFile::PdfExtraction::Deadline.new(clock, OCR_TIME_BUDGET)
     todo = pages.reload.select { FieldOcr.candidate?(it) && it.model_status.nil? }

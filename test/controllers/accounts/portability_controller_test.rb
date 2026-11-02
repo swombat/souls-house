@@ -97,4 +97,44 @@ class Accounts::PortabilityControllerTest < ActionDispatch::IntegrationTest
     assert_match(/already has things in its Field/, flash[:alert])
   end
 
+
+  test "competing previews: once one import is confirmed, no other in the account can start" do
+    first = @account.account_imports.create!(user: @user, status: "previewed", archive_sha256: "d" * 64)
+    first.upload.attach(io: StringIO.new("x"), filename: "a.zip", content_type: "application/zip")
+    second = @account.account_imports.create!(user: @user, status: "previewed", archive_sha256: "e" * 64)
+    second.upload.attach(io: StringIO.new("y"), filename: "b.zip", content_type: "application/zip")
+    post confirm_account_import_path(@account, first), params: { sha256: "d" * 64, confirmed: "true" }
+    assert_equal "importing", first.reload.status
+    assert_no_enqueued_jobs(only: AccountPortability::ImportJob) do
+      post confirm_account_import_path(@account, second), params: { sha256: "e" * 64, confirmed: "true" }
+    end
+    assert_equal "previewed", second.reload.status
+    assert_match(/Another import has already run/, flash[:alert])
+    assert_no_difference(-> { AccountImport.count }) do
+      post account_imports_path(@account), params: { archive: fixture_file_upload("test.txt", "application/zip") }
+    end
+  end
+
+  test "an import that finished with recoverable failures can be retried; a clean one cannot" do
+    import = @account.account_imports.create!(user: @user, status: "imported", archive_sha256: "f" * 64,
+      ledger: { "summary" => { "failures" => [ { "kind" => "resident", "title" => "Lume", "reason" => "plan" } ] } })
+    import.upload.attach(io: StringIO.new("x"), filename: "a.zip", content_type: "application/zip")
+    assert_enqueued_with(job: AccountPortability::ImportJob) do
+      post confirm_account_import_path(@account, import), params: { sha256: "f" * 64, confirmed: "true" }
+    end
+    import.update!(status: "imported", ledger: { "summary" => { "failures" => [] } })
+    assert_no_enqueued_jobs(only: AccountPortability::ImportJob) do
+      post confirm_account_import_path(@account, import), params: { sha256: "f" * 64, confirmed: "true" }
+    end
+  end
+
+  test "releasing held Field items is the owner's, audited, and sends them on their usual way" do
+    file = @account.field_files.create!(file: fixture_file_upload("test.txt", "text/plain"), title: "Held", import_held_at: Time.current)
+    assert_enqueued_with(job: FieldFiles::ExtractTextJob) do
+      post release_field_account_portability_path(@account)
+    end
+    refute file.reload.import_held?
+    assert AuditLog.exists?(action: "release_imported_field_items", account: @account)
+  end
+
 end

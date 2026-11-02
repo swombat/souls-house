@@ -18,6 +18,8 @@
     conversations_warning: conversationsWarning = '',
     export_url: exportUrl,
     import_url: importUrl,
+    held_field_items: heldFieldItems = 0,
+    release_field_url: releaseFieldUrl,
   } = $props();
 
   let includeConversations = $state(false);
@@ -78,6 +80,15 @@
       { archive },
       { forceFormData: true, preserveScroll: true, onFinish: () => ((busy = false), (archive = null)) }
     );
+  }
+
+  function releaseField() {
+    busy = true;
+    router.post(releaseFieldUrl, {}, { preserveScroll: true, onFinish: () => (busy = false) });
+  }
+
+  function canRetry(item) {
+    return item.status === 'failed' || (item.status === 'imported' && item.result?.failures?.length > 0);
   }
 
   function confirmImport(item) {
@@ -214,13 +225,25 @@
       </div>
     {/if}
 
+    {#if heldFieldItems > 0}
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm"
+        data-testid="held-field">
+        <span>
+          {heldFieldItems} imported Field {heldFieldItems === 1 ? 'item is' : 'items are'} held: the house won't read, transcribe
+          or summarise them (which sends their contents to a model) until you release them.
+        </span>
+        <Button size="sm" variant="outline" onclick={releaseField} disabled={busy}>Release</Button>
+      </div>
+    {/if}
+
     {#if imports.length > 0}
       <ul class="space-y-3 text-sm">
         {#each imports as item (item.id)}
           <li class="space-y-2 rounded border p-3" data-testid="account-import-row">
             <p>{date(item.created_at)} · {importStatus[item.status]}</p>
             {#if item.error}<p class="text-xs text-destructive">{item.error}</p>{/if}
-            {#if item.preview && ['previewed', 'failed'].includes(item.status)}
+            {#if item.preview && (item.status === 'previewed' || canRetry(item))}
               {@const p = item.preview}
               <div class="space-y-1 text-xs" data-testid="import-preview">
                 <p>
@@ -234,7 +257,7 @@
                     .filter((r) => r.status === 'included')
                     .map((r) => r.name)
                     .join(', ') || 'none'}.
-                  {#each p.residents.filter((r) => r.status === 'skipped') as r (r.key)}
+                  {#each p.residents.filter((r) => r.status !== 'included') as r (r.key)}
                     <span class="block text-amber-700 dark:text-amber-300"
                       >{r.name} is not in the archive: {r.reason}</span>
                   {/each}
@@ -243,6 +266,11 @@
                   Field: {p.field.files} files, {p.field.recordings} recordings, {p.field.songs} songs, {p.field.notes} notes,
                   {p.field.tags} tags. Rooms: {p.rooms.join(', ') || 'none'}. Rhythms: {p.rhythms}. Conversations: {p.conversations}.
                 </p>
+                {#if p.omitted?.length}
+                  <p class="text-amber-700 dark:text-amber-300" data-testid="preview-omitted">
+                    Not in the archive: {p.omitted.map((o) => `${o.kind} "${o.title}" (${o.reason})`).join('; ')}.
+                  </p>
+                {/if}
                 {#if p.services?.length}
                   <p>
                     Reconnect afterwards: {p.services
@@ -258,21 +286,34 @@
                 <span>I understand this makes a copy, and that nothing in it runs until I start it.</span>
               </label>
               <Button size="sm" onclick={() => confirmImport(item)} disabled={busy || !confirmed[item.id]}>
-                {item.status === 'failed' ? 'Retry import' : 'Import'}
+                {item.status === 'previewed' ? 'Import' : 'Retry what did not arrive'}
               </Button>
             {/if}
             {#if item.status === 'imported' && item.result}
-              <p class="text-xs" data-testid="import-result">
-                Created {item.result.residents} residents, {Object.values(item.result.field || {}).reduce(
-                  (a, b) => a + b,
-                  0
-                )}
-                Field items, {item.result.rooms} rooms, {item.result.rhythms} held rhythms and {item.result
-                  .conversations} archived conversations.
-                {#if item.result.services_to_reconnect?.length}
-                  Reconnect: {item.result.services_to_reconnect.map((s) => s.provider).join(', ')}.
+              <div class="space-y-1 text-xs" data-testid="import-result">
+                <p>
+                  {item.result.partial ? 'Imported, with gaps.' : 'Imported.'} Created {item.result.residents} residents,
+                  {Object.values(item.result.field || {}).reduce((a, b) => a + b, 0)} Field items, {item.result.rooms} rooms,
+                  {item.result.rhythms} held rhythms and {item.result.conversations} archived conversations.
+                </p>
+                {#if item.result.failures?.length}
+                  <p class="text-destructive" data-testid="import-failures">
+                    Not created here this time (Retry tries again): {item.result.failures
+                      .map((f) => `${f.kind} "${f.title}" (${f.reason})`)
+                      .join('; ')}.
+                  </p>
                 {/if}
-              </p>
+                {#if item.result.not_in_archive?.length}
+                  <p class="text-amber-700 dark:text-amber-300" data-testid="import-not-in-archive">
+                    Not in the archive: {item.result.not_in_archive
+                      .map((o) => `${o.kind} "${o.title}" (${o.reason})`)
+                      .join('; ')}.
+                  </p>
+                {/if}
+                {#if item.result.services_to_reconnect?.length}
+                  <p>Reconnect: {item.result.services_to_reconnect.map((s) => s.provider).join(', ')}.</p>
+                {/if}
+              </div>
             {/if}
           </li>
         {/each}

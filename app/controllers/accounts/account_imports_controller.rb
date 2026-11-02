@@ -14,10 +14,16 @@ class Accounts::AccountImportsController < ApplicationController
     if (refusal = Accounts::Portability::Import.destination_refusal(current_account))
       return back_with(refusal)
     end
-    if current_account.account_imports.where(status: %w[uploaded validating importing]).exists?
-      return back_with("An import is already in progress here.")
+    import = current_account.with_lock do
+      next nil if current_account.account_imports.where(status: %w[uploaded validating importing imported failed]).exists?
+      # An upload previewed but never confirmed is replaced by a new one.
+      current_account.account_imports.where(status: "previewed").find_each do |old|
+        old.update!(status: "invalid", error: "Replaced by a newer upload")
+        old.upload.purge_later
+      end
+      current_account.account_imports.create!(user: Current.user)
     end
-    import = current_account.account_imports.create!(user: Current.user)
+    return back_with("This account already has an import. Use it, or start from a new, empty account.") unless import
     import.upload.attach(io: upload, filename: "account-import-#{import.to_param}.zip", content_type: "application/zip", identify: false)
     AccountPortability::ValidateJob.perform_later(import.id)
     redirect_to account_portability_path(current_account), status: :see_other, notice: "Uploaded. Checking the archive before anything is created."
@@ -25,8 +31,15 @@ class Accounts::AccountImportsController < ApplicationController
 
   def confirm
     import = current_account.account_imports.find(params[:id])
-    started = import.with_lock do
-      next "This import cannot be started now." unless import.status.in?(%w[previewed failed]) && import.upload.attached?
+    # The account row serialises confirmations, so two previews can't both
+    # pass the empty-destination check.
+    started = current_account.with_lock do
+      import.reload
+      retry_failures = import.status == "imported" && import.ledger.dig("summary", "failures").present?
+      next "This import cannot be started now." unless (import.status.in?(%w[previewed failed]) || retry_failures) && import.upload.attached?
+      if (refusal = Accounts::Portability::Import.other_import_refusal(current_account, import))
+        next refusal
+      end
       next "The archive changed since its preview. Upload it again." unless params[:sha256].to_s == import.archive_sha256.to_s && import.archive_sha256.present?
       next "Confirm that this makes a copy and that nothing runs until you start it." unless params[:confirmed].to_s == "true"
       if (refusal = Accounts::Portability::Import.destination_refusal(current_account, import: import))

@@ -30,6 +30,27 @@ module Accounts::Portability
       new(archive, import).call
     end
 
+    LOCK_CLASS = 0x5348_4150 # one import at a time per account
+
+    # Session-level advisory lock on the account, held for a whole import
+    # run. Yields true when held, false when another run holds it.
+    def self.with_account_lock(account)
+      connection = ActiveRecord::Base.connection
+      held = connection.select_value(ActiveRecord::Base.sanitize_sql([ "SELECT pg_try_advisory_lock(?, ?)", LOCK_CLASS, account.id ]))
+      return yield(false) unless held
+
+      begin
+        yield true
+      ensure
+        connection.select_value(ActiveRecord::Base.sanitize_sql([ "SELECT pg_advisory_unlock(?, ?)", LOCK_CLASS, account.id ]))
+      end
+    end
+
+    def self.other_import_refusal(account, import)
+      others = account.account_imports.where(status: %w[importing imported]).where.not(id: import.id)
+      "Another import has already run in this account. Import into a new, empty account." if others.exists?
+    end
+
     def initialize(archive, import)
       @archive, @import = archive, import
       @account, @user = import.account, import.user
@@ -37,7 +58,7 @@ module Accounts::Portability
 
     def call
       raise Error, "The archive is not the one that was previewed" unless @archive.sha256 == @import.archive_sha256
-      if (refusal = self.class.destination_refusal(@account, import: @import))
+      if (refusal = self.class.other_import_refusal(@account, @import) || self.class.destination_refusal(@account, import: @import))
         raise Error, refusal
       end
       import_residents
@@ -72,8 +93,27 @@ module Accounts::Portability
       end
     end
 
+    # Permanent: the archive itself says this cannot arrive.
     def skip!(section, key, reason)
       note!(section, key, { "skipped" => reason.to_s.truncate(500) })
+    end
+
+    # Recoverable: not created here this time. Kept out of the section's
+    # ledger so Retry tries it again; cleared when it succeeds.
+    def fail!(section, key, title, reason)
+      @import.with_lock do
+        ledger = @import.ledger.deep_dup
+        ((ledger["failures"] ||= {})[section] ||= {})[key] = { "title" => title.to_s.truncate(200), "reason" => reason.to_s.truncate(500) }
+        @import.update_columns(ledger: ledger, updated_at: Time.current)
+      end
+    end
+
+    def clear_failure!(section, key)
+      @import.with_lock do
+        ledger = @import.ledger.deep_dup
+        next unless ledger.dig("failures", section)&.delete(key)
+        @import.update_columns(ledger: ledger, updated_at: Time.current)
+      end
     end
 
     def resident_ids
@@ -95,7 +135,11 @@ module Accounts::Portability
           next
         end
         if (refusal = Billing::BirthGate.import_refusal(@account))
-          skip!("residents", key, refusal)
+          fail!("residents", key, resident["name"], refusal)
+          next
+        end
+        if (reason = @archive.resident_checks[key])
+          skip!("residents", key, "Its resident archive is not valid: #{reason}")
           next
         end
         File.open(@archive.path(resident["archive"]), "rb") do |file|
@@ -111,10 +155,13 @@ module Accounts::Portability
               note!("residents", key, { "agent_id" => agent.id, "export_id" => export_id })
               held_reflexes(agent, key)
             end
+            clear_failure!("residents", key)
           end
         end
       rescue Agents::Portability::Error, Agents::Resources::OwnershipError => error
-        skip!("residents", key, error.message.presence || "Resident import failed")
+        # Its archive was checked before the preview; failing now is about
+        # this house (capacity, runtime), so a retry may succeed.
+        fail!("residents", key, resident["name"], error.message.presence || "Resident import failed")
       end
       @resident_ids = nil
     end
@@ -146,42 +193,47 @@ module Accounts::Portability
             @account.rooms.create!(name: room_doc["name"], description: room_doc["description"])
           note!("rooms", key, room.id)
         end
+        clear_failure!("rooms", key)
       rescue ActiveRecord::RecordInvalid => error
-        skip!("rooms", key, error.record.errors.full_messages.to_sentence)
+        fail!("rooms", key, room_doc["name"], error.record.errors.full_messages.to_sentence)
       end
     end
 
     def room_id(key) = key && ledger("rooms")[key].is_a?(Integer) ? ledger("rooms")[key] : nil
 
     def import_room_model_defaults
-      return if ledger("progress").key?("room_model_defaults")
-      RoomModelDefault.transaction do
-        @archive.setup["room_model_defaults"].each do |doc|
-          agent = agent_for(doc["resident_key"])
-          next unless agent
-          next if doc["room_key"] && !room_id(doc["room_key"])
+      @archive.setup["room_model_defaults"].each_with_index do |doc, index|
+        key = "d#{index + 1}"
+        next if ledger("room_model_defaults").key?(key)
+        agent = agent_for(doc["resident_key"])
+        next unless agent
+        next if doc["room_key"] && !room_id(doc["room_key"])
+        RoomModelDefault.transaction do
           default = RoomModelDefault.find_or_initialize_by(account: @account, agent: agent, room_id: room_id(doc["room_key"]))
           default.model_id = doc["model_id"]
           default.save!
+          note!("room_model_defaults", key, default.id)
         end
-        note!("progress", "room_model_defaults", true)
+        clear_failure!("room_model_defaults", key)
+      rescue ActiveRecord::RecordInvalid => error
+        fail!("room_model_defaults", key, "#{agent&.name}: #{doc["model_id"]}", error.record.errors.full_messages.to_sentence)
       end
-    rescue ActiveRecord::RecordInvalid
-      note!("progress", "room_model_defaults", "skipped")
     end
 
     def import_glossary
-      return if ledger("progress").key?("glossary")
-      TranscriptionGlossaryTerm.transaction do
-        @archive.setup["glossary"].each do |doc|
+      @archive.setup["glossary"].each_with_index do |doc, index|
+        key = "g#{index + 1}"
+        next if ledger("glossary").key?(key)
+        TranscriptionGlossaryTerm.transaction do
           normalized = TranscriptionGlossaryTerm.normalize(doc["term"])
-          next if @account.transcription_glossary_terms.exists?(normalized_term: normalized)
-          @account.transcription_glossary_terms.create!(term: doc["term"], pinned: doc["pinned"], source: "manual", created_by_user_id: @user.id)
+          term = @account.transcription_glossary_terms.find_by(normalized_term: normalized) ||
+            @account.transcription_glossary_terms.create!(term: doc["term"], pinned: doc["pinned"], source: "manual", created_by_user_id: @user.id)
+          note!("glossary", key, term.id)
         end
-        note!("progress", "glossary", true)
+        clear_failure!("glossary", key)
+      rescue ActiveRecord::RecordInvalid => error
+        fail!("glossary", key, doc["term"], error.record.errors.full_messages.to_sentence)
       end
-    rescue ActiveRecord::RecordInvalid
-      note!("progress", "glossary", "skipped")
     end
 
     def import_field
@@ -195,14 +247,17 @@ module Accounts::Portability
             FieldFile.transaction do
               item = send(:"build_#{kind.singularize}", doc, blob)
               item.save!
+              after_field_save(kind, item, doc)
               names = doc.fetch("tags", []).filter_map { |k| tags[k] }
               item.change_tags!(by: @user, set: names) if names.any? && item.respond_to?(:change_tags!)
               field_note!(kind, key, item.id)
             end
+            clear_failure!("field_#{kind}", key)
           rescue StandardError => error
             blob&.purge_later
+            @voices = nil # voices made inside the rolled-back transaction are gone
             raise unless error.is_a?(ActiveRecord::RecordInvalid) || error.is_a?(FieldTag::Invalid)
-            field_note!(kind, key, { "skipped" => error.message.to_s.truncate(500) })
+            fail!("field_#{kind}", key, doc["title"], error.message)
           end
         end
       end
@@ -232,9 +287,14 @@ module Accounts::Portability
 
     def time(value) = value && Time.iso8601(value)
 
+    # Imported Field items arrive held from automatic reading: whatever the
+    # source had already extracted, transcribed or summarised comes with
+    # them, and nothing new is read until a person releases the import.
     def build_file(doc, blob)
       file = @account.field_files.new(title: doc["title"], note: doc["note"], dated_at: time(doc["dated_at"]) || time(doc["created_at"]),
         uploaded_by: attribution(doc["author"]) || @user, extracted_text: doc["extracted_text"],
+        text_extracted_at: time(doc["text_extracted_at"]), pdf_status: doc["pdf_status"], pdf_status_reason: doc["pdf_status_reason"],
+        pdf_page_count: doc["pdf_page_count"], pdf_coverage: doc["pdf_coverage"], import_held_at: Time.current,
         summary_short: doc["summary_short"], summary_long: doc["summary_long"], summarized_at: time(doc["summarized_at"]),
         summary_input_digest: doc["summary_input_digest"])
       file.file.attach(blob) if blob
@@ -246,7 +306,7 @@ module Accounts::Portability
       recording = @account.field_recordings.new(attributes.merge(
         title: doc["title"], uploaded_by: attribution(doc["author"]) || @user,
         recorded_at: time(doc["recorded_at"]) || time(doc["created_at"]), ready_at: time(doc["ready_at"]),
-        summarized_at: time(doc["summarized_at"]), import_key: nil
+        summarized_at: time(doc["summarized_at"]), import_key: nil, import_held_at: Time.current
       ))
       # A recording that had not finished arrives failed with its reason, so
       # a person chooses whether to spend allowance transcribing it again.
@@ -256,6 +316,53 @@ module Accounts::Portability
       end
       recording.audio.attach(blob) if blob
       recording
+    end
+
+    def after_field_save(kind, item, doc)
+      case kind
+      when "files"
+        doc.fetch("pages", []).each do |page|
+          item.pages.create!(page.slice(*FieldFile::PdfExtraction::PAGE_COLUMNS.map(&:to_s)))
+        end
+      when "recordings"
+        doc.fetch("speakers", []).each do |speaker|
+          voice = speaker["voice_key"] && voice_for(speaker["voice_key"])
+          item.speakers.create!(speaker.slice("label", "position", "talk_ms", "clip_start_ms", "clip_end_ms").merge(
+            "field_voice" => voice, "naming_source" => voice ? "unknown" : nil, "sample_excluded" => true,
+            "ignored_at" => speaker["ignored"] ? Time.current : nil, "ignored_as" => speaker["ignored_as"] || "noise"
+          ))
+        end
+      end
+    end
+
+    # One new voice per archive voice key, never a destination voice matched
+    # by name. Voices arrive as names only: no prints, samples or training.
+    def voice_for(key)
+      @voices ||= {}
+      @voices[key] ||= begin
+        existing = ledger("voices")[key]
+        voice = existing && @account.field_voices.find_by(id: existing)
+        voice ||= begin
+          doc = @archive.field["voices"].find { |v| v["key"] == key }
+          created = @account.field_voices.create!(name: unique_voice_name(doc["name"]), created_by: @user)
+          note!("voices", key, created.id)
+          created
+        end
+        voice
+      end
+    end
+
+    # A voice name is unique among an account's kept voices. A clash (a
+    # voice already here, or two archive voices with one name) gets a number,
+    # never the existing voice.
+    def unique_voice_name(name)
+      candidate = name
+      n = 1
+      while @account.field_voices.kept.named_like(candidate).exists?
+        n += 1
+        candidate = "#{name.truncate(FieldVoice::MAX_NAME_LENGTH - 6, omission: "")} (#{n})"
+      end
+      candidate
     end
 
     def build_song(doc, blob)
@@ -276,7 +383,7 @@ module Accounts::Portability
         next if ledger("rhythms").key?(key)
         agents = doc["resident_keys"].filter_map { |k| agent_for(k) }
         if agents.empty?
-          skip!("rhythms", key, "None of its residents arrived")
+          fail!("rhythms", key, doc["title"], "None of its residents arrived")
           next
         end
         Rhythm.transaction do
@@ -287,8 +394,9 @@ module Accounts::Portability
           rhythm.holds.create!(kind: "human", user: @user, reason: "Imported with an account archive; held until a person resumes it.")
           note!("rhythms", key, rhythm.id)
         end
+        clear_failure!("rhythms", key)
       rescue ActiveRecord::RecordInvalid => error
-        skip!("rhythms", key, error.record.errors.full_messages.to_sentence)
+        fail!("rhythms", key, doc["title"], error.record.errors.full_messages.to_sentence)
       end
     end
 
@@ -306,8 +414,9 @@ module Accounts::Portability
           chat.update_columns(last_message_at: rows.last&.dig(:created_at))
           note!("conversations", key, chat.id)
         end
+        clear_failure!("conversations", key)
       rescue ActiveRecord::RecordInvalid => error
-        skip!("conversations", key, error.record.errors.full_messages.to_sentence)
+        fail!("conversations", key, doc["title"], error.record.errors.full_messages.to_sentence)
       end
     end
 
@@ -328,19 +437,30 @@ module Accounts::Portability
 
     def summarise
       led = @import.reload.ledger
-      count = ->(section) { led.fetch(section, {}).values.count { |v| !v.is_a?(Hash) || !v.key?("skipped") } }
-      skipped = ->(section) { led.fetch(section, {}).filter_map { |k, v| { "key" => k, "reason" => v["skipped"] } if v.is_a?(Hash) && v["skipped"] } }
+      created = ->(section) { led.fetch(section, {}).values.count { |v| v.is_a?(Integer) } }
+      names = @archive.manifest["residents"].to_h { |r| [ r["key"], r["name"] ] }
+      not_in_archive = led.fetch("residents", {}).filter_map do |key, v|
+        { "kind" => "resident", "title" => names[key], "reason" => v["skipped"] } if v.is_a?(Hash) && v["skipped"]
+      end
+      not_in_archive += led.fetch("rhythms", {}).filter_map do |key, v|
+        title = @archive.setup["rhythms"].find { |r| r["key"] == key }&.dig("title")
+        { "kind" => "rhythm", "title" => title, "reason" => v["skipped"] } if v.is_a?(Hash) && v["skipped"]
+      end
+      not_in_archive += Array(@archive.manifest["omitted"])
+      failures = led.fetch("failures", {}).flat_map do |section, items|
+        items.map { |_key, v| { "kind" => section.delete_prefix("field_").singularize.tr("_", " "), "title" => v["title"], "reason" => v["reason"] } }
+      end
       field = led.fetch("field", {})
       {
         "residents" => led.fetch("residents", {}).count { |_, v| v.is_a?(Hash) && v["agent_id"] },
-        "residents_skipped" => skipped.call("residents"),
         "field" => Archive::FIELD_KINDS.index_with { |kind| field.fetch(kind, {}).count { |_, v| v.is_a?(Integer) } },
-        "field_skipped" => Archive::FIELD_KINDS.flat_map { |kind| field.fetch(kind, {}).filter_map { |k, v| { "kind" => kind, "key" => k, "reason" => v["skipped"] } if v.is_a?(Hash) } },
-        "rooms" => count.call("rooms"),
-        "rhythms" => count.call("rhythms"), "rhythms_skipped" => skipped.call("rhythms"),
-        "conversations" => count.call("conversations"), "conversations_skipped" => skipped.call("conversations"),
-        "services_to_reconnect" => @archive.setup["services"],
-        "omitted_at_export" => @archive.manifest["omitted"]
+        "rooms" => created.call("rooms"), "rhythms" => created.call("rhythms"), "conversations" => created.call("conversations"),
+        "glossary" => created.call("glossary"), "room_model_defaults" => created.call("room_model_defaults"),
+        "partial" => not_in_archive.any? || failures.any?,
+        "not_in_archive" => not_in_archive,
+        "failures" => failures,
+        "held_field_items" => %w[files recordings].sum { |kind| field.fetch(kind, {}).count { |_, v| v.is_a?(Integer) } },
+        "services_to_reconnect" => @archive.setup["services"]
       }
     end
 

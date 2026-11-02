@@ -66,3 +66,43 @@ test('a previewed import shows its hash, a same-house warning and needs the conf
   expect(shown).toContain('Reconnect afterwards: dropbox (Daniel)');
   expect(screen.getByRole('button', { name: 'Import' }).disabled).toBe(true);
 });
+
+test('a partial import says so and gives every reason, recoverable ones with Retry', () => {
+  const result = {
+    partial: true,
+    residents: 0,
+    field: { files: 1, recordings: 0, songs: 0, notes: 0 },
+    rooms: 1,
+    rhythms: 0,
+    conversations: 0,
+    failures: [
+      { kind: 'resident', title: 'Lume', reason: "This account's plan does not include another resident" },
+      { kind: 'file', title: 'Receipts', reason: 'Title is too long' },
+    ],
+    not_in_archive: [{ kind: 'resident', title: 'Mira', reason: 'Not in the archive: running' }],
+    services_to_reconnect: [],
+  };
+  render(Portability, {
+    ...base,
+    imports: [
+      {
+        id: 'i2',
+        status: 'imported',
+        result,
+        preview: { sha256: 'b'.repeat(64), residents: [], field: {}, rooms: [], rhythms: 0, conversations: 0 },
+        created_at: '2026-11-02T08:00:00Z',
+      },
+    ],
+  });
+  expect(screen.getByTestId('import-result').textContent).toContain('Imported, with gaps.');
+  const failures = screen.getByTestId('import-failures').textContent;
+  expect(failures).toContain('plan does not include');
+  expect(failures).toContain('Receipts');
+  expect(screen.getByTestId('import-not-in-archive').textContent).toContain('Mira');
+  expect(screen.getByRole('button', { name: 'Retry what did not arrive' })).toBeTruthy();
+});
+
+test('held Field items are named with a Release button', () => {
+  render(Portability, { ...base, held_field_items: 3, release_field_url: '/accounts/home/portability/release_field' });
+  expect(screen.getByTestId('held-field').textContent).toContain('3 imported Field items are held');
+});

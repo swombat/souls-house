@@ -54,11 +54,14 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     end
   end
 
-  def with_resident_import_seams(&block)
-    @inner_export_id = SecureRandom.uuid
+  def with_resident_import_seams(refusal: nil, &block)
+    @inner_export_id ||= SecureRandom.uuid
     @resident_imports = 0
     inner = Struct.new(:manifest).new({ "export_id" => @inner_export_id })
-    with_upload = ->(file, &inner_block) { assert_equal "synthetic resident archive", file.read; inner_block.call(inner) }
+    with_upload = lambda do |file, &inner_block|
+      raise Agents::Portability::Error, "Invalid resident archive" unless file.read == "synthetic resident archive"
+      inner_block.call(inner)
+    end
     import = lambda do |_inner, account:, user:, name:|
       @resident_imports += 1
       account.agents.create!(name: name, runtime: "offline", model_id: "openrouter/auto", active: false, paused: true,
@@ -66,7 +69,7 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     end
     Agents::Portability::Archive.stub(:with_upload, with_upload) do
       Agents::Portability::Import.stub(:call, import) do
-        Billing::BirthGate.stub(:import_refusal, nil, &block)
+        Billing::BirthGate.stub(:import_refusal, refusal, &block)
       end
     end
   end
@@ -83,16 +86,20 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     [ bytes, manifest ]
   end
 
-  def previewed_import(bytes)
+  def previewed_import(bytes, valid_residents: true)
     import = @destination.account_imports.create!(user: @user)
     import.upload.attach(io: StringIO.new(bytes), filename: "a.zip", content_type: "application/zip")
-    AccountPortability::ValidateJob.perform_now(import.id)
+    if valid_residents
+      with_resident_import_seams { AccountPortability::ValidateJob.perform_now(import.id) }
+    else
+      AccountPortability::ValidateJob.perform_now(import.id)
+    end
     import.reload
   end
 
-  def run_import(import)
+  def run_import(import, refusal: nil)
     import.update!(status: "importing")
-    with_resident_import_seams { AccountPortability::ImportJob.perform_now(import.id) }
+    with_resident_import_seams(refusal:) { AccountPortability::ImportJob.perform_now(import.id) }
     import.reload
   end
 
@@ -149,7 +156,9 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
 
     summary = import.ledger["summary"]
     assert_equal 1, summary["residents"]
-    assert summary["residents_skipped"].all? { |s| s["reason"].start_with?("Not in the archive") }
+    assert summary["partial"]
+    assert_includes summary["not_in_archive"].map { |n| n["title"] }, @running.name
+    assert_empty summary["failures"]
     assert AuditLog.exists?(action: "import_account_archive", account: @destination)
   end
 
@@ -249,6 +258,133 @@ class Accounts::PortabilityTest < ActiveSupport::TestCase
     assert_equal "failed", copy.status
     assert_equal "Imported before transcription finished", copy.failure_reason
     assert_equal recording.audio.download, copy.audio.download
+  end
+
+
+  test "imported Field items are held: no extraction, OCR or summary is queued, and the sweep skips them, until released" do
+    pdf = @source.field_files.create!(file: fixture_file("test_document.pdf", "application/pdf"), title: "Scan")
+    pdf.update_columns(pdf_status: "extracted", pdf_page_count: 1, pdf_coverage: { "listed" => 1, "text" => 0, "ocr" => "pending" },
+      extracted_text: "")
+    pdf.pages.create!(page_number: 1, native_status: "empty")
+    recording = @source.field_recordings.new(title: "Ready, never summarised", uploaded_by: @user, status: "ready", duration_ms: 1_000,
+      transcript_source: "supplied", transcript_text: "Hello there", transcript_turns: [ { "spk" => "spk0", "t" => "Hello there" } ])
+    recording.audio.attach(fixture_file("test_audio.mp3", "audio/mpeg"))
+    recording.save!(validate: false)
+    bytes, = export_zip
+    import = previewed_import(bytes)
+    clear_enqueued_jobs
+    FieldSummaries.stub(:enabled?, true) do
+      FieldOcr.stub(:eligible?, true) do
+        import = run_import(import)
+        assert_equal "imported", import.status, import.error
+        held = [ FieldItems::SummarizeJob, FieldFiles::ExtractTextJob, FieldFiles::ExtractPdfJob, FieldFiles::OcrPdfJob ]
+        assert enqueued_jobs.none? { |job| held.map(&:name).include?(job["job_class"]) }, "an import queued automatic reading"
+        FieldItems::SummarySweepJob.perform_now
+        imported = (@destination.field_files.to_a + @destination.field_recordings.to_a).map { |item| item.to_global_id.to_s }
+        swept = enqueued_jobs.select { |job| job["job_class"] == "FieldItems::SummarizeJob" }.map { |job| job["arguments"].first["_aj_globalid"] }
+        assert_empty swept & imported, "the summary sweep reached a held item"
+
+        copy = @destination.field_files.find_by!(title: "Scan")
+        assert copy.import_held?
+        assert_equal "extracted", copy.pdf_status
+        assert_equal [ "empty" ], copy.pages.map(&:native_status)
+        refute copy.transcribe_pdf!, "OCR refuses a held item"
+        refute copy.claim_summary!
+        rec = @destination.field_recordings.find_by!(title: "Ready, never summarised")
+        assert rec.import_held?
+        refute_includes FieldRecording.summary_due.to_a, rec
+
+        assert_enqueued_with(job: FieldItems::SummarizeJob) { rec.release_import_hold! }
+        assert_enqueued_with(job: FieldFiles::OcrPdfJob) { copy.release_import_hold! }
+        refute rec.reload.import_held?
+      end
+    end
+  end
+
+  test "speakers round-trip by archive-local voice: shared labels stay shared, a clashing name is never matched" do
+    ana = @source.field_voices.create!(name: "Ana")
+    bea = @source.field_voices.create!(name: "Bea")
+    recording = @source.field_recordings.new(title: "Three voices", uploaded_by: @user, status: "ready", duration_ms: 3_000,
+      transcript_source: "supplied", transcript_text: "a b c",
+      transcript_turns: [ { "spk" => "spk0", "t" => "one" }, { "spk" => "spk1", "t" => "two" }, { "spk" => "spk2", "t" => "three" } ])
+    recording.audio.attach(fixture_file("test_audio.mp3", "audio/mpeg"))
+    recording.save!(validate: false)
+    recording.speakers.create!(label: "spk0", position: 0, field_voice: ana, naming_source: "human")
+    recording.speakers.create!(label: "spk1", position: 1, field_voice: bea, naming_source: "human")
+    recording.speakers.create!(label: "spk2", position: 2, field_voice: ana, naming_source: "human")
+    already = @destination.field_voices.create!(name: "Ana")
+
+    bytes, = export_zip
+    import = run_import(previewed_import(bytes))
+    assert_equal "imported", import.status, import.error
+    copy = @destination.field_recordings.find_by!(title: "Three voices")
+    speakers = copy.speakers.to_a
+    assert_equal %w[spk0 spk1 spk2], speakers.map(&:label)
+    assert_equal speakers[0].field_voice_id, speakers[2].field_voice_id
+    refute_equal speakers[0].field_voice_id, speakers[1].field_voice_id
+    refute_includes speakers.map(&:field_voice_id), already.id
+    assert speakers.all?(&:sample_excluded?)
+    refute speakers.any?(&:training_label?), "imported names give no voice print anything to learn from"
+    assert_equal [ "Ana (2)", "Bea", "Ana (2)" ], copy.transcript_lines.map { |line| line[:speaker] }
+  end
+
+  test "two archive voices with one name stay two voices" do
+    bytes, = export_zip
+    import = previewed_import(bytes)
+    importer = Accounts::Portability::Import.new(nil, import)
+    importer.instance_variable_set(:@archive, Struct.new(:field).new({ "voices" => [ { "key" => "v1", "name" => "Cy" }, { "key" => "v2", "name" => "Cy" } ] }))
+    first = importer.send(:voice_for, "v1")
+    second = importer.send(:voice_for, "v2")
+    refute_equal first, second
+    assert_equal [ "Cy", "Cy (2)" ], [ first.name, second.name ]
+    assert_equal first, importer.send(:voice_for, "v1")
+  end
+
+  test "a resident whose own archive is invalid is shown before confirming and never reaches the resident import" do
+    bytes, = export_zip
+    import = previewed_import(bytes, valid_residents: false)
+    resident = import.preview["residents"].find { |r| r["name"] == @resident.name }
+    assert_equal "invalid", resident["status"]
+    assert_match(/not valid/, resident["reason"])
+    import.update!(status: "importing")
+    Agents::Portability::Import.stub(:call, ->(*, **) { flunk "an invalid resident archive must not be imported" }) do
+      AccountPortability::ImportJob.perform_now(import.id)
+    end
+    assert_equal "imported", import.reload.status, import.error
+    assert_empty @destination.agents
+    assert import.ledger.dig("summary", "not_in_archive").any? { |n| n["title"] == @resident.name }
+  end
+
+  test "a refused resident is a recoverable failure: reported, not ledgered, and created by Retry" do
+    bytes, = export_zip
+    import = run_import(previewed_import(bytes), refusal: "This account's plan does not include another resident")
+    assert_equal "imported", import.status, import.error
+    failure = import.ledger.dig("summary", "failures").find { |f| f["kind"] == "resident" }
+    assert_equal "resident", failure["kind"]
+    assert_match(/plan does not include/, failure["reason"])
+    assert_includes import.ledger.dig("summary", "failures").map { |f| f["reason"] }, "None of its residents arrived"
+    assert_empty @destination.agents
+    import = run_import(import)
+    assert_equal 1, @destination.agents.count
+    assert_empty import.ledger.dig("summary", "failures")
+  end
+
+  test "a second worker for an account already importing waits instead of creating" do
+    bytes, = export_zip
+    import = previewed_import(bytes)
+    import.update!(status: "importing")
+    # Another worker's session, outside the test's own connection.
+    config = ActiveRecord::Base.connection_db_config.configuration_hash
+    other = PG.connect(host: config[:host], port: config[:port], dbname: config[:database], user: config[:username], password: config[:password])
+    other.exec_params("SELECT pg_advisory_lock($1, $2)", [ Accounts::Portability::Import::LOCK_CLASS, @destination.id ])
+    assert_enqueued_with(job: AccountPortability::ImportJob, args: [ import.id ]) do
+      with_resident_import_seams { AccountPortability::ImportJob.perform_now(import.id) }
+    end
+    assert_equal "importing", import.reload.status
+    assert_empty @destination.agents
+    assert_empty @destination.field_files
+  ensure
+    other&.close
   end
 
 end

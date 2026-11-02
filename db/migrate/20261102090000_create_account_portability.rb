@@ -32,6 +32,12 @@ class CreateAccountPortability < ActiveRecord::Migration[8.1]
     # An imported reflex arrives held: never judged or offered until a person
     # releases it (docs/features/account-portability.md).
     add_column :reflexes, :held_at, :datetime
+
+    # Field items from an import are kept out of automatic reading
+    # (extraction, OCR, summaries, the summary sweep) until a person releases
+    # them.
+    add_column :field_files, :import_held_at, :datetime
+    add_column :field_recordings, :import_held_at, :datetime
   end
 
 end
