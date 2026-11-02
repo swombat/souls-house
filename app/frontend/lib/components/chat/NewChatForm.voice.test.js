@@ -15,6 +15,7 @@ vi.mock('@inertiajs/svelte', async (importOriginal) => ({
 
 import { router } from '@inertiajs/svelte';
 import NewChatForm from './NewChatForm.svelte';
+import ChatInputArea from './ChatInputArea.svelte';
 import { disarmVoiceStart, takeVoiceStart } from '$lib/voice-mode-start';
 
 afterEach(() => vi.restoreAllMocks());
@@ -62,6 +63,7 @@ test('the wave creates the conversation with no message and arms voice mode', as
   expect(form.getAll('agent_ids[]')).toEqual(['resident']);
   // A conversation page arriving claims it.
   options.onSuccess({ component: 'chats/show', props: { flash: {} } });
+  options.onFinish();
   expect(takeVoiceStart()).toBe(true);
 });
 
@@ -70,10 +72,36 @@ test('a refused start does not leave voice mode armed for a later conversation',
   await fireEvent.click(screen.getByRole('button', { name: 'Start voice mode' }));
   const [, , options] = post.mock.calls[0];
   options.onSuccess({ component: 'chats/new', props: { flash: {} } });
+  options.onFinish();
   expect(takeVoiceStart()).toBe(false);
 });
 
 test('with no resident selected there is no wave', () => {
   render(NewChatForm, { ...base, agents: [{ id: 'resident', name: 'Resident', paused: true }], voiceMode: available });
   expect(screen.queryByTestId('voice-mode-button')).toBeNull();
+});
+
+// Mira's P1 on 78b02517: a network exception or an HTML error response ends
+// the visit with onFinish only (no onSuccess, no validation onError), and the
+// intent stayed armed for the next conversation opened within 30 s.
+test('a create that fails without a response clears the intent; the next ordinary chat stays closed', async () => {
+  render(NewChatForm, { ...base, voiceMode: available });
+  await fireEvent.click(screen.getByRole('button', { name: 'Start voice mode' }));
+  const [, , options] = post.mock.calls[0];
+  options.onFinish();
+  render(ChatInputArea, {
+    chat: { id: 'other', manual_responses: false, respondable: true },
+    accountId: 'account',
+    voiceMode: available,
+  });
+  expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
+});
+
+test('a validation error clears the intent too', async () => {
+  render(NewChatForm, { ...base, voiceMode: available });
+  await fireEvent.click(screen.getByRole('button', { name: 'Start voice mode' }));
+  const [, , options] = post.mock.calls[0];
+  options.onError({});
+  options.onFinish();
+  expect(takeVoiceStart()).toBe(false);
 });

@@ -109,6 +109,9 @@
     processing = true;
     error = '';
     if (voice) armVoiceStart();
+    // Only a conversation page arriving may claim the intent; every other end
+    // (refusal, validation error, network failure, HTML error, cancel) clears it.
+    let landed = false;
 
     const formData = new FormData();
     formData.append('message', message);
@@ -122,8 +125,7 @@
     router.post(accountChatsPath(account.id), formData, {
       headers: userId ? { 'X-Draft-User': userId } : {},
       onSuccess: (page) => {
-        // Refused (a redirect back to New Chat): no conversation page will claim it.
-        if (page.component !== 'chats/show') disarmVoiceStart();
+        landed = page.component === 'chats/show';
         if (draft.sent(submitted, page.props?.flash?.draft_submission_id)) {
           message = '';
           title = '';
@@ -133,12 +135,13 @@
         }
       },
       onError: () => {
-        disarmVoiceStart();
         error = 'Could not start the conversation. Please try again.';
       },
-      onCancel: () => disarmVoiceStart(),
       // Refused redirects, failures and cancellation never clear the draft.
-      onFinish: () => (processing = false),
+      onFinish: () => {
+        if (voice && !landed) disarmVoiceStart();
+        processing = false;
+      },
     });
   }
 </script>
