@@ -98,7 +98,7 @@ resident's Chaos configuration, for both fresh and existing volumes. This enable
 `defer_once` after a compaction warning and `compact_now`, within Chaos's fixed
 safety ceiling. An explicit resident setting, including `"disabled"`, is preserved.
 
-Two more defaults are written the same way, only when the key is absent, in the
+Three more defaults are written the same way, only when the key is absent, in the
 main home and in `oauth-runtime`:
 
 - `model_auto_compact_token_limit = 400000`. Chaos compacts at the smaller of
@@ -115,9 +115,16 @@ main home and in `oauth-runtime`:
   declares one, otherwise its `soul` and `narrative`. A path that escapes the
   root, or a manifest that cannot be read, leaves the key absent. Files missing
   at session start appear as Chaos warnings and are not protected.
+- `protected_context_max_bytes = 262144` (256 KiB). Chaos's own default is
+  128 KiB, and at the cap it cuts the last listed file with only a warning.
+  One resident's narrative alone was 149 KB when these defaults first reached
+  the fleet. The cap is flat rather than sized to each home: a sized value is
+  written once and goes stale as a narrative grows. Every boot instead prints
+  one stderr line, sizes only, when a home's listed files total more than its
+  cap.
 
-Setting either key yourself, including `protected_context_files = []`, opts
-out; boot never rewrites it. New values apply to sessions started after the
+Setting any of these keys yourself, including `protected_context_files = []`
+or a cap of 0, opts out; boot never rewrites it. New values apply to sessions started after the
 boot that wrote them. A declaration boot refuses (a path outside the root, a
 non-list) leaves the key absent and prints one metadata-only line on stderr.
 
