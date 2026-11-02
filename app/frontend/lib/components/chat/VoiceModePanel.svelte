@@ -6,7 +6,7 @@
   import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
-  import { accountChatMessagesPath, accountChatVoiceModeSessionPath } from '@/routes';
+  import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
   import * as logging from '$lib/logging';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
@@ -52,7 +52,6 @@
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
-  const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
 
   onMount(async () => {
     if (!captureSupported()) {
@@ -124,20 +123,10 @@
 
   // A fresh short-lived secret for each (re)connection.
   async function fetchSession() {
-    let response;
-    try {
-      response = await fetch(accountChatVoiceModeSessionPath(accountId, chatId), {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'X-CSRF-Token': csrf() },
-        credentials: 'same-origin',
-      });
-    } catch {
-      throw new Error('Could not reach the house to start transcription.');
-    }
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    const { ok, status, data } = await requestVoiceSession(accountId, chatId);
+    if (!ok) {
       const message = data?.error || 'Transcription could not start.';
-      if (response.status === 403) {
+      if (status === 403) {
         onerror?.(message);
         end({ drain: false });
       }
@@ -182,33 +171,19 @@
 
   async function send(text) {
     phase = 'sending';
-    const form = new FormData();
-    form.append('message[content]', text);
-    form.append('voice_mode', '1');
-    let response;
-    // A send that hangs must not hold every later turn behind it.
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
-    try {
-      response = await fetch(accountChatMessagesPath(accountId, chatId), {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'X-CSRF-Token': csrf(), 'X-Draft-User': userId },
-        credentials: 'same-origin',
-        body: form,
-        signal: abort.signal,
-      });
-    } catch {
-      response = null;
-    } finally {
-      clearTimeout(timer);
-    }
+    const { ok, status, data } = await postVoiceMessage({
+      accountId,
+      chatId,
+      userId,
+      text,
+      timeoutMs: SEND_TIMEOUT_MS,
+    });
     if (ended) return;
-    const data = response ? await response.json().catch(() => ({})) : {};
-    if (!response?.ok) {
+    if (!ok) {
       const errors = data?.errors;
       note = Array.isArray(errors) ? errors.join(', ') : errors || 'Could not send what you said.';
       // 403: the mode was switched off (or lost its key) under us. Stop listening.
-      if (response?.status === 403) {
+      if (status === 403) {
         onerror?.(note);
         await end({ drain: false });
         return;

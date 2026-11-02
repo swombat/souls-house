@@ -1,12 +1,14 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
-  import { ArrowUp, Spinner, Waveform } from 'phosphor-svelte';
+  import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import { fileDropZone } from '$lib/file-drop-zone';
   import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
   import VoiceModePanel from '$lib/components/chat/VoiceModePanel.svelte';
+  import VoiceModeButton from '$lib/components/chat/VoiceModeButton.svelte';
+  import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { accountChatMessagesPath } from '@/routes';
@@ -43,20 +45,6 @@
   const showWave = $derived(
     Boolean(voiceMode?.offered) && composerEmpty && !submitting && !disabled && !draftState.locked
   );
-
-  const VOICE_REASONS = {
-    no_transcription_key:
-      "Voice mode needs an OpenAI API key for this account. Add one under the account's model provider keys, or let the account use the house keys.",
-  };
-
-  function openVoiceMode() {
-    if (!voiceMode?.available) {
-      voiceNotice = VOICE_REASONS[voiceMode?.reason] || 'Voice mode is not available in this account.';
-      return;
-    }
-    voiceNotice = '';
-    voiceOpen = true;
-  }
 
   // A transcribed voice note's audio is attached only in memory until its message is sent; keep
   // background refreshes (and the reload a deploy turns them into) off until then. Taken before
@@ -279,23 +267,7 @@
           onerror={handleTranscriptionError} />
       </div>
       {#if showWave}
-        <!-- An empty composer offers voice instead of Send. Not a disabled button
-           when the mode cannot start: a tap then explains why (titles don't show on phones). -->
-        <button
-          type="button"
-          onclick={openVoiceMode}
-          aria-label="Start voice mode"
-          aria-disabled={!voiceMode?.available}
-          title={voiceMode?.available
-            ? 'Talk to this conversation'
-            : VOICE_REASONS[voiceMode?.reason] || 'Voice mode is not available'}
-          data-testid="voice-mode-button"
-          class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md
-               {voiceMode?.available
-            ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-            : 'bg-muted text-muted-foreground'}">
-          <Waveform size={18} />
-        </button>
+        <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => (voiceOpen = true)} />
       {:else}
         <button
           onclick={sendMessage}
@@ -317,35 +289,8 @@
       <p class="mt-2 text-sm text-muted-foreground" role="status" data-testid="voice-mode-notice">{voiceNotice}</p>
     {/if}
   {/if}
-  <div
-    role="status"
-    class={draftState.storageError || draftState.locked || draftState.status.startsWith('Not synced')
-      ? 'mt-1 text-xs text-muted-foreground'
-      : 'sr-only'}>
-    {draftState.status}
-    {#if draftState.storageError}
-      <span class="text-destructive"> Local recovery unavailable—keep this page open until saved.</span>
-    {:else if draftState.localSaved && draftState.status.startsWith('Not synced')}
-      <span> Saved on this device.</span>
-    {/if}
-  </div>
-  {#if draftState.conflict}
-    <div class="mt-2 text-sm border border-amber-500 rounded p-2" role="alert">
-      <p>Another client changed this draft. Your text is still in the editor.</p>
-      <pre class="whitespace-pre-wrap max-h-32 overflow-auto my-2">{draftState.conflict.content ||
-          '(Empty draft)'}</pre>
-      <button class="underline mr-3" onclick={() => draft.resolve(true).catch((e) => onerror?.(e.message))}
-        >Keep my text</button>
-      <button class="underline" onclick={() => draft.resolve(false)}>Use other draft</button>
-    </div>
-  {/if}
-  {#each draftState.recoveries as copy (copy.key)}
-    {#if copy.content !== draftState.content}
-      <details class="mt-2 text-sm">
-        <summary>Unsynced local draft available</summary>
-        <pre class="whitespace-pre-wrap max-h-32 overflow-auto">{copy.content || '(Empty draft)'}</pre>
-        <button class="underline" onclick={() => draft.recover(copy)}>Recover this text</button>
-      </details>
-    {/if}
-  {/each}
+  <DraftNotices
+    {draftState}
+    onresolve={(keep) => draft.resolve(keep).catch((e) => onerror?.(e.message))}
+    onrecover={(copy) => draft.recover(copy)} />
 </div>
