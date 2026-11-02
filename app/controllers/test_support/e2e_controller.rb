@@ -329,10 +329,11 @@ module TestSupport
     # What the transcription endpoint returns besides the text: the recording, stored and signed.
     # Browser tests stub transcription itself (no speech-to-text provider in test) but send a
     # real signed id, so the composers keep their audio hold until the send has gone through.
-    # Voice mode on for one account (#748): the account's own switch and a
-    # placeholder transcription key (never called: the e2e mutes the fake
-    # microphone), and a voice on its residents so their replies are speakable.
-    # Speech audio is stubbed in the browser, so ElevenLabs is never reached.
+    # Voice mode on for one account (#748): the account's own switch, a
+    # placeholder transcription key so the mode counts as available, and a
+    # standard voice on its residents so their replies are speakable. The e2e
+    # refuses the voice session request and stubs speech audio in the browser,
+    # so neither OpenAI nor ElevenLabs is reached.
     def voice_mode_fixture
       account = Account.find(params.fetch(:account_id))
       account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")

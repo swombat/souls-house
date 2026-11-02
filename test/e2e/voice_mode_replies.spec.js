@@ -7,8 +7,9 @@ import { expect, test } from '@playwright/test';
 // (Rails broadcast, ActionCable, Inertia partial reload, the mounted panel,
 // the reply picker and the player) rather than the unit tests' mocks.
 // The fake microphone is muted once listening so its test tone never opens
-// a turn; speech audio is stubbed so no voice service is called; the
-// transcription session is refused (no key in test), which only adds a note.
+// a turn. Nothing leaves the machine: the transcription session the panel
+// asks for at mount is refused in the browser (a deterministic 503, which the
+// panel only reports as a note), and speech audio is stubbed.
 
 test.use({
   permissions: ['microphone'],
@@ -80,6 +81,11 @@ test.describe('voice mode replies', () => {
       return route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav() });
     });
 
+    const sessions = [];
+    await page.route('**/voice_mode_session', (route) => {
+      sessions.push(route.request().method());
+      return route.fulfill({ status: 503, json: { error: 'No transcription in this test.' } });
+    });
     // Headless Chromium here never settles audioWorklet.addModule on a blob
     // URL, so capture takes its ScriptProcessor fallback (the same detector).
     await page.addInitScript(() => {
@@ -105,5 +111,7 @@ test.describe('voice mode replies', () => {
     // ...and the picker hands it to the player, which asks the server for its audio.
     await expect.poll(() => speech, { timeout: 10_000 }).toContain(`/messages/${landed.message_id}/speech`);
     expect(speech.filter((path) => path.includes(landed.message_id))).toHaveLength(1);
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.every((method) => method === 'POST')).toBe(true);
   });
 });
