@@ -389,6 +389,15 @@ class GateTest(unittest.TestCase):
         with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
             self.assertEqual("runtime", gate.request("runtime")["operation"])
 
+    def test_a_running_rebuilds_held_queue_cannot_be_acknowledged(self):
+        # The run still writes its own queue; archiving it now would be undone.
+        run = self.job("running", operation="runtime")
+        self.queue(run, held=[9])
+        with patch.object(gate, "active", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "finished deployment"):
+                gate.acknowledge(run)
+        self.assertTrue((self.root / "pending-rolls.json").exists())
+
     def test_failed_run_with_held_queue_releases_both_at_once(self):
         run = self.job("failed", operation="runtime")
         self.queue(run, held=[9])
@@ -609,6 +618,47 @@ class WorkerTest(unittest.TestCase):
              patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
             self.w.execute()
         checkout.assert_called_once()
+        self.assertEqual("success", self.w.data["state"])
+
+    def test_rebuild_admitted_on_busy_only_queue_rechecks_hold_under_the_lock(self):
+        # Gate admits a rebuild while the queue is busy-only; before the
+        # worker gets the deployment lock, a sweep holds a roll. The worker
+        # must not replace that queue.
+        run = "b" * 32
+        (self.root / "runs" / run).mkdir()
+        gate.atomic(self.root / "runs" / run / "status.json",
+                    dict(id=run, operation="runtime", state="partial", step="busy"))
+        queue = {"run": run, "chaos_version": "chaos 1", "held": [],
+                 "residents": [{"id": 9, "image": "stock:deploy-x"}]}
+        gate.atomic(self.root / "pending-rolls.json", queue)
+        (self.root / "roll-resident.rb").write_text("")
+        with patch.object(gate, "ROOT", self.root), patch.object(gate, "active", return_value=False), \
+             patch.object(gate.subprocess, "run"):
+            gate.atomic(self.root / "current.json", json.loads(
+                (self.root / "runs" / run / "status.json").read_text()))
+            admitted = gate.request("runtime", "c" * 40)
+        s = worker.Sweeper()
+        with patch.object(worker, "CODE", self.root), \
+             patch.object(s, "rails", side_effect=RuntimeError("roll broke")):
+            self.assertEqual("0 waiting, 1 held", s.sweep())
+        held = (self.root / "pending-rolls.json").read_text()
+        w = worker.Worker("runtime")
+        self.addCleanup(lambda: w.log.close())
+        self.assertEqual(admitted["id"], w.data["id"])
+        with patch.object(w, "checkout") as checkout, patch.object(w, "rebuild_residents") as rebuild:
+            w.execute()
+        checkout.assert_not_called()
+        rebuild.assert_not_called()
+        self.assertEqual("failed", w.data["state"])
+        self.assertEqual(held, (self.root / "pending-rolls.json").read_text())
+
+    def test_rails_still_deploys_past_a_held_queue(self):
+        gate.atomic(self.root / "pending-rolls.json", {"run": "b" * 32, "held": [9], "residents": []})
+        self.w.data["operation"] = "rails"
+        with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails") as rails, \
+             patch.object(self.w, "check_runtime_change"):
+            self.w.execute()
+        rails.assert_called_once()
         self.assertEqual("success", self.w.data["state"])
 
     def test_success_only_after_both_phases(self):
@@ -1322,6 +1372,33 @@ class SweepTest(unittest.TestCase):
         self.assertTrue((self.root / "pending-rolls.json").exists())
 
     def test_nothing_pending_does_nothing(self):
+        self.assertEqual(("nothing pending", []), self.sweep({}))
+
+    def test_acknowledgement_during_a_pass_is_not_undone(self):
+        # The sweep reads a held queue, the owner's run is acknowledged while
+        # the pass is still rolling, and the pass must not write it back.
+        run = self.root / "runs" / ("a" * 32)
+        run.mkdir(parents=True)
+        gate.atomic(run / "status.json", {"id": "a" * 32, "operation": "runtime",
+                                          "state": "partial", "skipped": [2], "held": [9]})
+        self.pending([2])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state["held"] = [9]
+        gate.atomic(self.root / "pending-rolls.json", state)
+        s = worker.Sweeper()
+
+        def rails(code, env=None):
+            with patch.object(gate, "ROOT", self.root), patch.object(gate, "active", return_value=False):
+                self.assertTrue(gate.acknowledge("a" * 32)["acknowledged"])
+            return {"result": "busy"}
+        with patch.object(s, "rails", side_effect=rails):
+            self.assertEqual("acknowledged during pass", s.sweep())
+        self.assertFalse((self.root / "pending-rolls.json").exists())
+        self.assertTrue((run / "acknowledged-pending-rolls.json").exists())
+        receipt = json.loads((run / "status.json").read_text())
+        self.assertTrue(receipt["acknowledged"])
+        self.assertEqual("partial", receipt["state"])
+        # And nothing is left for the next tick to roll.
         self.assertEqual(("nothing pending", []), self.sweep({}))
 
     def test_a_running_deploy_holds_the_tick(self):

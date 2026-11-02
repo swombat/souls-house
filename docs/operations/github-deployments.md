@@ -45,7 +45,11 @@ A roll the minute sweep attempts after the run has ended can still fail. That
 hold lives in `pending-rolls.json` (`held`, or `births_alias_failed`), so the
 gate refuses rebuilds, Chaos updates and **both** while it is there, however
 many Rails deploys come after. Rails keeps deploying. Acknowledging the run
-that owns the queue (its id is the queue's `run`) releases it.
+that owns the queue (its id is the queue's `run`) releases it, once that run
+has finished. The gate's check is repeated by the worker under the deployment
+lock, because a sweep can hold a roll after the gate admitted a rebuild; the
+sweep writes its queue under the gate lock, and never writes back a queue that
+was acknowledged during its pass.
 
 Only the `swombat` GitHub account may execute deployments. The shared transport
 checks both the original caller (`github.actor`) and the current attempt's

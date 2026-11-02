@@ -122,6 +122,10 @@ def acknowledge(job_id):
     if latch is None and not queue:
         raise RuntimeError("Not the latched deployment")
     result = status(job_id)
+    if queue and result["state"] not in TERMINAL:
+        # The run is still writing its own queue; the sweep's writes are
+        # guarded under this lock (worker.Sweeper.commit), the run's are not.
+        raise RuntimeError("Only a finished deployment's held queue can be acknowledged")
     if latch is not None and queue and result["state"] not in ("failed", "interrupted"):
         # A finished partial run is current.json without latching anything:
         # only its held queue is being released.

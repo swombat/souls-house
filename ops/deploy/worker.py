@@ -23,6 +23,18 @@ def pending_rolls():
     return ROOT / "pending-rolls.json"
 
 
+def queue_held():
+    """The sweep queue holds a failed roll or alias tag (gate.held_queue, read
+    again here under the deployment lock: the gate may have admitted a rebuild
+    while the queue was busy-only, and a sweep can hold a roll before that
+    rebuild gets the lock)."""
+    path = pending_rolls()
+    if not path.exists():
+        return False
+    queue = json.loads(path.read_text())
+    return bool(queue.get("held") or queue.get("births_alias_failed"))
+
+
 # What a merge must change for residents to need a new image: the image's
 # whole build context. Anything else ships with Rails alone.
 RUNTIME_PATHS = ("agent-runtime",)
@@ -593,6 +605,10 @@ class Worker:
             # Same lock for manual runtime operations, as documented.
             with (ROOT / "deployment.lock").open("a") as lock:
                 self.acquire(lock)
+                if self.data["operation"] != "rails" and queue_held():
+                    # Never replace a held queue (and retry its held work)
+                    # without the acknowledgement the gate asks for.
+                    raise RuntimeError("Held resident roll requires operator inspection")
                 self.checkout()
                 if self.data["state"] == "superseded":
                     return
@@ -637,7 +653,7 @@ class Sweeper(Worker):
         if not path.exists():
             return
         data = json.loads(path.read_text())
-        if data.get("state") not in ("partial", "failed"):
+        if data.get("state") not in ("partial", "failed") or data.get("acknowledged"):
             return
         waiting = [r["id"] for r in state["residents"]] + state.get("external_skipped", [])
         data["skipped"] = waiting
@@ -655,6 +671,29 @@ class Sweeper(Worker):
         elif data["state"] == "partial":
             data.update(state="success", step="all residents healthy")
         atomic(path, data)
+
+    def commit(self, state):
+        """Write the pass's result, unless the queue was acknowledged meanwhile.
+
+        acknowledge (gate.py, under gate.lock) archives a held queue; a pass
+        that read it before then must not write it back. So the write happens
+        under gate.lock too, and only if the file is still this run's queue.
+        Lock order is always deployment.lock then gate.lock (the worker drops
+        gate.lock before it takes deployment.lock; the gate never takes
+        deployment.lock), so this cannot deadlock."""
+        with (ROOT / "gate.lock").open("a") as gate_lock:
+            fcntl.flock(gate_lock, fcntl.LOCK_EX)
+            path = pending_rolls()
+            if not path.exists() or json.loads(path.read_text()).get("run") != state["run"]:
+                self.log.write("queue acknowledged during the pass; not written back\n")
+                return False
+            self.receipt(state)
+            if state["residents"] or state["held"] or state.get("births_alias_failed"):
+                atomic(path, state)
+            else:
+                atomic(ROOT / "last-sweep.json", state)
+                path.unlink()
+            return True
 
     def sweep(self):
         try:
@@ -700,12 +739,8 @@ class Sweeper(Worker):
                         state["held"].append(resident["id"])
                 state["residents"] = waiting
                 state["checked_at"] = int(time.time())
-                self.receipt(state)
-                if waiting or state["held"] or state.get("births_alias_failed"):
-                    atomic(pending_rolls(), state)
-                else:
-                    atomic(ROOT / "last-sweep.json", state)
-                    pending_rolls().unlink()
+                if not self.commit(state):
+                    return "acknowledged during pass"
                 return f"{len(waiting)} waiting, {len(state['held'])} held"
         finally:
             self.log.close()
