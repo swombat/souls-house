@@ -2,8 +2,11 @@ name: Deploy Rails on green CI
 # The tested commit is in the run name, so the Deployments page can show it.
 run-name: Deploy Rails ${{ github.event.workflow_run.head_sha }}
 # A merge to master is a decision to put it live. When CI passes for a push to
-# master, deploy Rails. Chaos and resident-runtime rebuilds restart residents,
-# so they stay manual (Deploy both / Update Chaos / Rebuild residents).
+# master, deploy Rails. If the host says that commit changes the resident
+# image (agent-runtime/), rebuild residents next: each is rolled only when
+# idle, so nobody is cut off mid-turn. Chaos updates stay manual (Update
+# Chaos / Deploy both): a new Chaos release is where its migrations are
+# reviewed.
 #
 # Off switch: set the repository variable AUTO_DEPLOY_RAILS to "false".
 #
@@ -38,3 +41,11 @@ jobs:
     with:
       operation: rails
       expected_revision: ${{ github.event.workflow_run.head_sha }}
+
+  rebuild:
+    needs: deploy
+    if: needs.deploy.outputs.runtime_rebuild_needed == 'true'
+    uses: ./.github/workflows/deploy-house.yml
+    secrets: inherit
+    with:
+      operation: runtime

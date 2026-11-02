@@ -23,6 +23,36 @@ def pending_rolls():
     return ROOT / "pending-rolls.json"
 
 
+# What a merge must change for residents to need a new image: the image's
+# whole build context. Anything else ships with Rails alone.
+RUNTIME_PATHS = ("agent-runtime",)
+
+
+def runtime_source():
+    """The souls-house commit the residents' current image was built from.
+
+    Written by every runtime build once the image has passed its checks. For
+    hosts that built before this file existed, the newest runtime-building run
+    that got as far as checking its image (chaos_version on its receipt)."""
+    path = ROOT / "runtime-source.json"
+    if path.exists():
+        revision = json.loads(path.read_text()).get("rails_revision") or ""
+        return revision if SHA.fullmatch(revision) else None
+    newest = None
+    for status in (ROOT / "runs").glob("*/status.json"):
+        try:
+            data = json.loads(status.read_text())
+        except (OSError, ValueError):
+            continue
+        revision = data.get("rails_revision") or ""
+        if (data.get("operation") in ("runtime", "chaos", "both") and data.get("chaos_version")
+                and data.get("state") in ("success", "partial") and SHA.fullmatch(revision)):
+            mtime = status.stat().st_mtime
+            if newest is None or mtime > newest[0]:
+                newest = (mtime, revision)
+    return newest[1] if newest else None
+
+
 def github(path):
     request = urllib.request.Request("https://api.github.com/repos/seuros/chaos/" + path,
                                      headers={"Accept": "application/vnd.github+json",
@@ -175,6 +205,34 @@ class Worker:
         self.rails("RefreshTelegramWebhooksJob.perform_later; puts({ok:true}.to_json)")
         self.report("Rails healthy")
 
+    def check_runtime_change(self):
+        """After a Rails deploy: does this commit change the resident image?
+
+        The answer goes on the receipt (runtime_rebuild_needed) and the
+        automatic deploy workflow runs Rebuild residents when it is true. This
+        never fails the Rails deploy: when the comparison can't be made the
+        answer is true, because an extra rebuild only rolls idle residents and
+        a missed one leaves them on old code with nobody told."""
+        revision = self.data["rails_revision"]
+        source = runtime_source()
+        if source == revision:
+            needed = False
+        elif source is None:
+            needed = True
+        else:
+            try:
+                self.run(["git", "fetch", "--quiet", "--depth", "1", "origin", source],
+                         cwd=self.repo, timeout=300)
+                changed = self.run(["git", "diff", "--name-only", source, "HEAD", "--",
+                                    *RUNTIME_PATHS], cwd=self.repo, capture=True)
+                needed = bool(changed.strip())
+            except Exception as error:
+                self.log.write(f"\nruntime comparison: {type(error).__name__}: {error}\n")
+                self.log.flush()
+                needed = True
+        self.report("resident image " + ("changed; rebuild needed" if needed else "unchanged"),
+                    runtime_rebuild_needed=needed, runtime_source=source)
+
     def container_exists(self, name):
         result = subprocess.run(["docker", "container", "inspect", "--format", "{{.Id}}", name],
                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -310,6 +368,13 @@ class Worker:
                   "-v", f"{self.repo}:/source:ro", "-e", "CHAOS_TEST_BIN=/usr/local/bin/chaos",
                   "--entrypoint", "python3", stock, "-m", "unittest", "discover",
                   "-s", "/source/test", "-p", "runtime_config_test.py"], timeout=300)
+        # From here on, residents move to this source. A later Rails deploy
+        # compares against it to decide whether they need another rebuild. A
+        # roll that fails below is held for the operator; rebuilding the same
+        # source again would only repeat it.
+        if SHA.fullmatch(self.data.get("rails_revision") or ""):
+            atomic(ROOT / "runtime-source.json",
+                   {"rails_revision": self.data["rails_revision"], "run": self.data["id"]})
         if pinned:
             # Same source must give the same binary. Check every resident before
             # touching any, so a mismatch never leaves the fleet half-rolled.
@@ -421,7 +486,10 @@ class Worker:
             pending_rolls().unlink(missing_ok=True)
         if skipped:
             self.report("runtime rollout incomplete", state="partial", skipped=skipped,
-                        births_image_moved=bool(proven))
+                        births_image_moved=bool(proven),
+                        # The host residents the minute sweep will still roll.
+                        # When skipped is exactly these, nothing is stuck.
+                        waiting=[e["id"] for e in pending])
             return
         if not proven:
             # Only custom residents moved: the stock image never ran as one.
@@ -525,6 +593,8 @@ class Worker:
                     return
                 if self.data["operation"] in ("rails", "both"):
                     self.deploy_rails()
+                if self.data["operation"] == "rails":
+                    self.check_runtime_change()
                 if self.data["operation"] in ("chaos", "both"):
                     self.update_chaos()
                 if self.data["operation"] == "runtime":
@@ -566,6 +636,7 @@ class Sweeper(Worker):
             return
         waiting = [r["id"] for r in state["residents"]] + state.get("external_skipped", [])
         data["skipped"] = waiting
+        data["waiting"] = [r["id"] for r in state["residents"]]
         data["held"] = state["held"]
         data["births_image_moved"] = state["births_image_moved"]
         if state.get("births_alias_failed"):

@@ -11,7 +11,13 @@ A Chaos request may name upstream migration changes the owner has reviewed
 running residents have; anything not listed still stops the rollout.
 
 "acknowledge <job>" clears the latch left by that exact failed or interrupted
-job, once its service has exited, so the next request can start."""
+job, once its service has exited, so the next request can start.
+
+A failed or interrupted resident rebuild (runtime) latches rebuilds, Chaos
+updates and "both", but not Rails deploys: Rails doesn't touch residents, and
+rebuilds now start automatically after a Rails deploy, so one broken image
+must not stop the web app shipping. The latch moves to runtime-latch.json
+and stays until that job is acknowledged."""
 import fcntl
 import json
 import os
@@ -25,8 +31,9 @@ ROOT = Path("/var/lib/house-deploy")
 OPERATIONS = ("rails", "chaos", "both", "runtime")
 TERMINAL = ("success", "failed", "partial", "interrupted", "superseded")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
-          "chaos_version", "skipped", "held", "births_alias_failed", "absent", "resident_id", "expected_revision",
-          "accepted_migrations", "migration_changes", "acknowledged")
+          "chaos_version", "skipped", "waiting", "held", "births_alias_failed", "absent", "resident_id",
+          "expected_revision", "accepted_migrations", "migration_changes", "acknowledged",
+          "runtime_rebuild_needed", "runtime_source")
 ACCEPT_ENTRY = re.compile(r"(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}\.sql@[0-9a-f]{40}")
 MAX_ACCEPTED = 20
 
@@ -85,8 +92,10 @@ def status(job_id):
 
 def acknowledge(job_id):
     """Release the latch of this exact failed/interrupted job; nothing else."""
-    current = ROOT / "current.json"
-    if not current.exists() or json.loads(current.read_text())["id"] != job_id:
+    for latch in (ROOT / "current.json", ROOT / "runtime-latch.json"):
+        if latch.exists() and json.loads(latch.read_text())["id"] == job_id:
+            break
+    else:
         raise RuntimeError("Not the latched deployment")
     result = status(job_id)
     if result["state"] not in ("failed", "interrupted") or not exited(result["operation"]):
@@ -95,12 +104,13 @@ def acknowledge(job_id):
     data = json.loads((directory / "status.json").read_text())
     data["acknowledged"] = True
     atomic(directory / "status.json", data)
-    current.replace(directory / "acknowledged-current.json")
+    latch.replace(directory / "acknowledged-current.json")
     return {key: data[key] for key in FIELDS if key in data}
 
 
 def request(operation, expected=None, accepted=None):
     current = ROOT / "current.json"
+    runtime_latch = ROOT / "runtime-latch.json"
     if current.exists():
         previous = json.loads(current.read_text())
         result = status(previous["id"])
@@ -114,7 +124,11 @@ def request(operation, expected=None, accepted=None):
         if active(result["operation"]):
             raise RuntimeError("Previous service is still exiting")
         if result["state"] in ("failed", "interrupted"):
-            raise RuntimeError("Failed or interrupted deployment requires operator inspection")
+            if result["operation"] != "runtime" or operation != "rails":
+                raise RuntimeError("Failed or interrupted deployment requires operator inspection")
+            current.replace(runtime_latch)
+    if operation != "rails" and runtime_latch.exists():
+        raise RuntimeError("Failed resident rebuild requires operator inspection")
     job_id = uuid.uuid4().hex
     directory = ROOT / "runs" / job_id
     directory.mkdir(mode=0o700)
