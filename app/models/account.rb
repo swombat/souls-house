@@ -61,6 +61,8 @@ class Account < ApplicationRecord
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
+  has_many :account_exports, dependent: :destroy
+  has_many :account_imports, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
   has_many :billing_code_redemptions, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
