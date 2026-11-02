@@ -59,6 +59,9 @@ class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
       session_idle_timeout_minutes: 30,
       turn_timeout_minutes: 1440
     )
+    # Scheduled runs are refused before dispatch without a usable credential
+    # (InferenceAvailability); fund the route so the trigger itself is tested.
+    agent.account.update!(openrouter_api_key: "test-router")
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)

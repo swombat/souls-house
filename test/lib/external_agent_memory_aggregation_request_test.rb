@@ -14,6 +14,9 @@ class ExternalAgentMemoryAggregationRequestTest < ActiveSupport::TestCase
       consecutive_health_failures: 0,
       turn_timeout_minutes: 120
     )
+    # Scheduled runs are refused before dispatch without a usable credential
+    # (InferenceAvailability); fund the route so the trigger itself is tested.
+    agent.account.update!(openrouter_api_key: "test-router")
 
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
