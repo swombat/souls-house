@@ -251,6 +251,9 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
   end
 
   test "a conversation run's room notice uses the same authentication line" do
+    # Pinned to midday: between 00:00 and 02:00 Madrid "2 hours ago" is
+    # yesterday and the notice rightly adds the date (failed CI 2 Nov 00:4x).
+    travel_to Time.find_zone("Madrid").parse("2026-11-02 12:00")
     first = conversation_run("failed", at: 2.hours.ago)
     run = conversation_run("failed", at: 1.hour.ago, response_body: { "status" => "error", "error_kind" => "auth_expired" })
     RunFailureNoticeJob.perform_now(run.id)
