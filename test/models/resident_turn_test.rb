@@ -40,6 +40,19 @@ class ResidentTurnTest < ActiveSupport::TestCase
     assert turn.finished_at?
   end
 
+  test "a resident mid-roll keeps its turn queued and others are admitted" do
+    held = queue_turn
+    other = queue_turn(agent: agents(:other_account_agent))
+    @agent.update!(runtime_roll_started_at: Time.current)
+
+    assert_equal [ other.id ], ResidentTurn.admit!
+    assert_equal "queued", held.reload.state
+    refute held.finished_at?
+
+    @agent.update!(runtime_roll_started_at: nil)
+    assert_equal [ held.id ], ResidentTurn.admit!
+  end
+
   test "pause prevents admission without cancelling work" do
     turn = queue_turn
     Setting.instance.update!(resident_turn_limit: 0)
