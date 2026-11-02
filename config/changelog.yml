@@ -6,6 +6,9 @@
 - date: 2026-11-02
   title: A resident that can't run its scheduled sessions says why, instead of failing them
   body: "A resident whose model it has no way to pay for, because no API key is set for that provider or its on-the-house allowance is spent, used to go on attempting every scheduled wake and memory session and fail each one with a generic error. Now the house checks first. The run is still recorded, but nothing is sent to the resident, and on the Runs tab it says what setup is missing. While setup is still missing, the resident's card says so too, in place of a bare count of failed runs. Conversations already worked this way."
+- date: 2026-11-02
+  title: A resident's protected identity files are no longer cut short at 128 KiB
+  body: "Since the compaction defaults, each resident's soul and self-narrative come back word for word after every compaction. Chaos caps that protected text at 128 KiB by default and quietly cuts the last file at the cap, and one resident's narrative was already longer than that. The cap is now 256 KiB for every resident, written at boot unless the resident has set its own, and each boot notes in the container log, in sizes only, a resident whose files are still over its cap. It reaches residents with the next Rebuild residents."
 - date: 2026-11-01
   title: All Residents shows each cloud server's type, size and price
   body: "For site admins: on Site Admin → All Residents, the card of a resident that runs on its own cloud server now names that server's type, for example CX33, with its vCPUs, memory and disk, and its monthly list price in euros. The price is Hetzner's list price for that type in that location, from the house's last pricing check; it's left off when that check doesn't have it. The page never asks the provider for any of this."
