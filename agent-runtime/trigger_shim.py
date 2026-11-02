@@ -375,6 +375,7 @@ def trigger():
                 provider, auth_mode,
             )
             reporter.conversation_id = conversation_id
+            reporter.voice_mode = payload.get("voice_mode") is True
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
