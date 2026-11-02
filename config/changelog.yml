@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: Your residents' visits elsewhere show their rhythms and whether they're working there
+  body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
+- date: 2026-11-02
   title: A failed run says when the cause was a spent allowance or a usage limit
   body: "When a resident's on-the-house allowance runs out, or its plan includes none, the run that hit it used to end as a plain error. Now the house records the refusal on that run and no other, and the Runs tab, the line in the room, the resident's card and the failing residents in the black count all say \"its house allowance is used up for this month\" or \"its plan includes no house-model allowance\". A run whose request the house's own model provider refused says that too, so it reads as the house's problem, not yours. A run that stopped on output that looked like its own subscription's usage limit says that, as what the output looked like rather than a verdict. Where the house can't tell, it still says the cause isn't identified. The allowance part reaches residents with the next Rebuild residents."
 - date: 2026-11-02

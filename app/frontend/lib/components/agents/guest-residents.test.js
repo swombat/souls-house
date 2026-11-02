@@ -36,3 +36,39 @@ test('removal controls follow live permission while keeping the directory visibl
   expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
   expect(screen.getByTestId('guest-residents')).toHaveTextContent('Visitor');
 });
+
+test('an away seat shows its rhythm count as a link and its running sessions', () => {
+  const away = [
+    {
+      id: 'seat',
+      agent: { id: 'lume', name: 'Lume' },
+      account: { id: 'dana', name: 'Dana' },
+      rhythms: { count: 3, url: '/accounts/dana/rhythms' },
+    },
+    { id: 'quiet', agent: { id: 'mira', name: 'Mira' }, account: { id: 'dana', name: 'Dana' }, rhythms: { count: 0 } },
+  ];
+  render(GuestResidents, { accountId: 'home', away, awaySessions: { seat: { chat: 1, telegram: 0, other: 0 } } });
+  const rhythms = screen.getAllByTestId('away-rhythms');
+  expect(rhythms).toHaveLength(1);
+  expect(rhythms[0]).toHaveAttribute('href', '/accounts/dana/rhythms');
+  expect(rhythms[0]).toHaveTextContent('3');
+  expect(rhythms[0]).toHaveAccessibleName('3 rhythms with Lume in Dana');
+  const spinners = screen.getAllByTestId('resident-sessions');
+  expect(spinners).toHaveLength(1);
+  expect(spinners[0]).toHaveAttribute('data-total', '1');
+});
+
+test('an away seat whose account the viewer cannot open shows the count without a link', () => {
+  const away = [
+    {
+      id: 'seat',
+      agent: { id: 'lume', name: 'Lume' },
+      account: { id: 'x', name: 'X' },
+      rhythms: { count: 1, url: null },
+    },
+  ];
+  render(GuestResidents, { accountId: 'home', away });
+  const rhythms = screen.getByTestId('away-rhythms');
+  expect(rhythms.tagName).toBe('SPAN');
+  expect(rhythms).toHaveAccessibleName('1 rhythm with Lume in X');
+});
