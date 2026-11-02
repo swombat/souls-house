@@ -33,7 +33,9 @@
   let sent = $state(0);
   let stale = $state(false);
   let speakingId = $state(null);
-  let interruptedId = null;
+  // What a speech-start cut off (the reply playing and the ones queued behind
+  // it), kept until the burst is committed (dropped) or discarded (restored).
+  let interrupted = [];
   // The reply being read, shown as text too: on a phone the panel is the only
   // evidence that a reply exists while the person is talking.
   const speaking = $derived(speakingId ? messages.find((m) => m.id === speakingId) : null);
@@ -99,27 +101,26 @@
         },
         onspeechstart: (samples) => {
           picker.hold();
-          interruptedId = speakingId;
-          player.interrupt();
+          interrupted = [...interrupted, ...player.interrupt()];
           caption = '';
           transcriber?.begin(samples);
           if (phase === 'listening') phase = 'hearing';
         },
         onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
-          // Not speech: the reply it cut off is read again from the start, and
-          // whatever landed during the burst is read after it.
-          const resume = interruptedId;
-          interruptedId = null;
+          // Not speech: the sequence it cut off is read again (the playing reply
+          // from its start), and whatever landed during the burst after it.
+          const resume = interrupted;
+          interrupted = [];
           picker.discard();
-          if (resume) player.enqueue(resume);
+          resume.forEach((id) => player.enqueue(id));
           picker.take(messages).forEach((id) => player.enqueue(id));
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
         onturn: (durationMs) => {
-          interruptedId = null;
+          interrupted = [];
           picker.commit(messages);
           enqueue(transcriber.commit(), durationMs);
         },

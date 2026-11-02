@@ -51,7 +51,10 @@ vi.mock('$lib/voice-mode-playback', () => ({
       options,
       log: [],
       enqueue: vi.fn((id) => player.log.push(['enqueue', id])),
-      interrupt: vi.fn(() => player.log.push(['interrupt'])),
+      interrupt: vi.fn(() => {
+        player.log.push(['interrupt']);
+        return player.interrupts?.shift() ?? [];
+      }),
       close: vi.fn(() => player.log.push(['close'])),
     };
     return player;
@@ -321,6 +324,7 @@ test('a burst that was not speech consumes no reply: the cut-off reply and what 
   player.options.onchange('first');
   await waitFor(() => expect(screen.getByTestId('voice-mode-reply').textContent).toMatch(/Lume:\s*Spoken back\./));
 
+  player.interrupts = [['first']];
   callbacks.onspeechstart(new Float32Array(10));
   const during = reply('during');
   await rerender({ ...props, messages: [first, during] });
