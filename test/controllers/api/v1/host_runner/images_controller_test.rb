@@ -54,6 +54,26 @@ class Api::V1::HostRunner::ImagesControllerTest < ActionDispatch::IntegrationTes
     assert_empty @served
   end
 
+  test "serves the image a delivered runtime trust check asked for, before any start" do
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "check_runtime_trust", payload: { "image" => IMAGE })
+    fetch(IMAGE)
+    assert_response :not_found
+    command.deliver!(now: Time.current)
+    fetch(IMAGE)
+    assert_response :ok
+    assert_equal [ IMAGE ], @served
+    fetch(OTHER)
+    assert_response :not_found
+  end
+
+  test "other command kinds naming an image do not authorise a fetch" do
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "seed_home", payload: { "image" => IMAGE })
+    command.deliver!(now: Time.current)
+    fetch(IMAGE)
+    assert_response :not_found
+    assert_empty @served
+  end
+
   test "a queued, answered, or stale-generation start does not authorise a fetch" do
     queued = start_command(IMAGE, deliver: false)
     fetch(IMAGE)
