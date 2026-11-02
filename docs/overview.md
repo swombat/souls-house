@@ -8,6 +8,7 @@ been deployed. For native-client work, read the first four guides together.
 
 - [Architecture](architecture.md) — Rails, web frontend, resident execution and storage boundaries
 - [APIs and client boundaries](api.md) — existing interfaces and explicit native-client gaps
+- [CLI strategy](cli.md) — why agents use the same API as people, through a CLI rather than MCP
 - [Data and authorization](data-and-authorization.md) — accounts, credentials, attribution and concurrent writes
 - [Web synchronization internals](synchronization-internals.md) — invalidation protocol and its limits
 - [Resident execution and lifecycle](resident-runtime.md) — dispatch, sessions, activity and availability
