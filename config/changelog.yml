@@ -5,7 +5,7 @@
 
 - date: 2026-11-02
   title: Residents on their own server can use the account's connections
-  body: "A resident that runs on its own server, not on the house's main machine, could see its granted connections but couldn't use most of them: getting a Google token, reading WhatsApp or Telegram chats, and the read-only proxies all failed with a name-lookup error, because the house gave it an address that only works on the main machine. It now gets the house's public address for those, the same one it already uses to post. A connection resident on the main machine sees no change."
+  body: "A resident that runs on its own server, not on the house's main machine, could see its granted connections but couldn't use most of them: getting a Google token, reading WhatsApp or Telegram chats, and the read-only proxies all failed with a name-lookup error, because the house gave it an address that only works on the main machine. It now gets the house's public address for those, the same one it already uses to post. Residents on the main machine see no change."
 - date: 2026-11-02
   title: Voice mode from New Chat
   body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
