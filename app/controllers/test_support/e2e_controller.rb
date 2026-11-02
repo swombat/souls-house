@@ -329,6 +329,17 @@ module TestSupport
     # What the transcription endpoint returns besides the text: the recording, stored and signed.
     # Browser tests stub transcription itself (no speech-to-text provider in test) but send a
     # real signed id, so the composers keep their audio hold until the send has gone through.
+    # Voice mode on for one account (#748): the account's own switch and a
+    # placeholder transcription key (never called: the e2e mutes the fake
+    # microphone), and a voice on its residents so their replies are speakable.
+    # Speech audio is stubbed in the browser, so ElevenLabs is never reached.
+    def voice_mode_fixture
+      account = Account.find(params.fetch(:account_id))
+      account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")
+      account.agents.active.find_each { |agent| agent.update!(voice_id: "TX3LPaxmHKxFdv7VOQHJ") }
+      render json: { voice_mode: VoiceMode.status_for(account).to_h }
+    end
+
     def audio_blob
       blob = ActiveStorage::Blob.create_and_upload!(
         io: Rails.root.join("test/fixtures/files/test_audio.webm").open,
