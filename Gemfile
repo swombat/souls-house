@@ -129,4 +129,4 @@ gem "discard", "~> 2.0"
 gem "paper_trail", "~> 17.0"
 gem "doorkeeper", "5.9.9"
 
-gem "stripe", "~> 20.0"
+gem "stripe", "~> 20.1"

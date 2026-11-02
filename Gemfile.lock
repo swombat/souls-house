@@ -462,7 +462,7 @@ GEM
       mermaid
       state_machines (>= 0.100.4)
       state_machines-diagram (>= 0.1.0)
-    stripe (20.0.0)
+    stripe (20.1.0)
       bigdecimal
       logger
     thor (1.5.0)
@@ -572,7 +572,7 @@ DEPENDENCIES
   state_machines (~> 0.202.0)
   state_machines-activerecord (~> 0.200.0)
   state_machines-mermaid (~> 0.1.0)
-  stripe (~> 20.0)
+  stripe (~> 20.1)
   thruster
   tzinfo-data
   vcr
