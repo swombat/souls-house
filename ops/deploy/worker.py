@@ -214,7 +214,12 @@ class Worker:
         answer is true, because an extra rebuild only rolls idle residents and
         a missed one leaves them on old code with nobody told."""
         revision = self.data["rails_revision"]
-        source = runtime_source()
+        try:
+            source = runtime_source()
+        except Exception as error:
+            self.log.write(f"\nruntime source: {type(error).__name__}: {error}\n")
+            self.log.flush()
+            source = None
         if source == revision:
             needed = False
         elif source is None:

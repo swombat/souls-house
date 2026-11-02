@@ -49,3 +49,6 @@ jobs:
     secrets: inherit
     with:
       operation: runtime
+      # Only the commit CI tested. If master moved on, the host builds
+      # nothing (superseded); the newer commit's own deploy decides again.
+      expected_revision: ${{ github.event.workflow_run.head_sha }}

@@ -63,6 +63,8 @@ class WorkflowAuthorityTest(unittest.TestCase):
         rebuild = caller.split("\n  rebuild:\n", 1)[1]
         self.assertIn("needs: deploy", rebuild)
         self.assertIn("if: needs.deploy.outputs.runtime_rebuild_needed == 'true'", rebuild)
+        # Bound to the commit CI tested, like the Rails job (#719 review).
+        self.assertIn("expected_revision: ${{ github.event.workflow_run.head_sha }}", rebuild)
         self.assertNotIn("operation: chaos", caller)
         self.assertNotIn("operation: both", caller)
         transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
@@ -151,6 +153,18 @@ class WorkflowAuthorityTest(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual(expected, "runtime_rebuild_needed=true" in out.read_text(), needed)
 
+    def test_automatic_rebuild_requests_the_tested_commit(self):
+        receipt = {"id": "b" * 32, "state": "success", "rails_revision": "c" * 40}
+        result, calls = self.run_transport(
+            'echo "${@: -1}" >> "$(dirname "$0")/calls"\n'
+            'case "${@: -1}" in status*) echo \'' + json.dumps(receipt) + '\';; '
+            '*) echo \'{"id":"' + "b" * 32 + '","state":"starting"}\';; esac\n',
+            OPERATION="runtime", EXPECTED_REVISION="c" * 40)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("runtime expect " + "c" * 40, calls.splitlines()[0])
+        result, _calls = self.run_transport("exit 1\n", OPERATION="chaos", EXPECTED_REVISION="c" * 40)
+        self.assertEqual(2, result.returncode)
+
     def test_rebuild_waiting_only_on_busy_residents_is_green(self):
         receipt = {"id": "b" * 32, "state": "partial", "skipped": [7, 3], "waiting": [3, 7],
                    "held": [], "operation": "runtime"}
@@ -215,19 +229,21 @@ class GateTest(unittest.TestCase):
                      ["status", "A" * 32], ["status", "a" * 31], ["status", "a" * 32, "extra"]]:
             self.assertFalse(gate.valid_args(args))
 
-    def test_rails_alone_may_carry_an_exact_expected_revision(self):
+    def test_rails_and_runtime_alone_may_carry_an_exact_expected_revision(self):
         sha = "c" * 40
         self.assertTrue(gate.valid_args(["rails", "expect", sha]))
+        self.assertTrue(gate.valid_args(["runtime", "expect", sha]))
         for args in [["chaos", "expect", sha], ["both", "expect", sha], ["rails", "expect", sha[:39]],
                      ["rails", "expect", "C" * 40], ["rails", "expect", "master"],
                      ["rails", "deploy", sha], ["rails", "expect", sha, "extra"]]:
             self.assertFalse(gate.valid_args(args), args)
 
-    def test_forced_command_accepts_expected_revision_only_for_rails(self):
+    def test_forced_command_accepts_expected_revision_only_for_rails_and_runtime(self):
         import re
         grammar = re.search(r're\.fullmatch\(r"(.+?)", command\)', (OPS / "ssh-command").read_text())[1]
         self.assertTrue(re.fullmatch(grammar, "rails expect " + "c" * 40))
-        for command in ["chaos expect " + "c" * 40, "rails expect " + "c" * 39, "rails expect master"]:
+        self.assertTrue(re.fullmatch(grammar, "runtime expect " + "c" * 40))
+        for command in ["chaos expect " + "c" * 40, "both expect " + "c" * 40, "rails expect " + "c" * 39, "rails expect master"]:
             self.assertFalse(re.fullmatch(grammar, command), command)
 
     def test_forced_command_refuses_before_sudo(self):
@@ -337,6 +353,51 @@ class GateTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     gate.request("rails")
             self.assertFalse((self.root / "runtime-latch.json").exists())
+
+    def queue(self, run, **fields):
+        gate.atomic(self.root / "pending-rolls.json", {"run": run, "residents": [], "held": [], **fields})
+
+    def test_held_sweep_blocks_rebuilds_until_its_run_is_acknowledged(self):
+        # A busy-only rebuild finished partial (green); later its sweep held a roll.
+        run = self.job("partial", operation="runtime")
+        for fields in [{"held": [9]}, {"births_alias_failed": True}]:
+            self.queue(run, **fields)
+            with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+                for operation in ["runtime", "chaos", "both"]:
+                    with self.assertRaisesRegex(RuntimeError, "Held resident roll"):
+                        gate.request(operation)
+                rails = gate.request("rails", "c" * 40)
+                self.assertEqual("rails", rails["operation"])
+                # A newer Rails job doesn't release it either.
+                data = json.loads((self.root / "runs" / rails["id"] / "status.json").read_text())
+                data["state"] = "success"
+                gate.atomic(self.root / "runs" / rails["id"] / "status.json", data)
+                with self.assertRaisesRegex(RuntimeError, "Held resident roll"):
+                    gate.request("runtime", "c" * 40)
+                with self.assertRaises(RuntimeError):
+                    gate.acknowledge(rails["id"])
+                self.assertTrue(gate.acknowledge(run)["acknowledged"])
+                self.assertFalse((self.root / "pending-rolls.json").exists())
+                self.assertEqual("runtime", gate.request("runtime")["operation"])
+            shutil.rmtree(self.root / "runs")
+            (self.root / "runs").mkdir()
+            run = self.job("partial", operation="runtime")
+
+    def test_busy_only_queue_does_not_block_a_rebuild(self):
+        run = self.job("partial", operation="runtime")
+        self.queue(run, held=[])
+        with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+            self.assertEqual("runtime", gate.request("runtime")["operation"])
+
+    def test_failed_run_with_held_queue_releases_both_at_once(self):
+        run = self.job("failed", operation="runtime")
+        self.queue(run, held=[9])
+        with patch.object(gate, "active", return_value=False), \
+             patch.object(gate, "exited", return_value=True), patch.object(gate.subprocess, "run"):
+            gate.acknowledge(run)
+            self.assertFalse((self.root / "pending-rolls.json").exists())
+            self.assertFalse((self.root / "current.json").exists())
+            self.assertEqual("runtime", gate.request("runtime")["operation"])
 
     def test_rebuild_answer_is_a_public_status_field(self):
         for field in ["runtime_rebuild_needed", "runtime_source", "waiting"]:
@@ -674,6 +735,24 @@ class WorkerTest(unittest.TestCase):
         with patch.object(self.w, "run", side_effect=run):
             self.w.check_runtime_change()
         return commands
+
+    def test_automatic_rebuild_superseded_when_master_moved_builds_nothing(self):
+        self.w.data.update(operation="runtime", expected_revision="c" * 40)
+        self.w.settings["repository"] = "https://example.test/public.git"
+        with patch.object(self.w, "run", side_effect=[None, "d" * 40]), \
+             patch.object(self.w, "rebuild_residents") as rebuild:
+            self.w.execute()
+        rebuild.assert_not_called()
+        self.assertEqual("superseded", self.w.data["state"])
+
+    def test_malformed_source_record_rebuilds_without_failing_rails(self):
+        self.w.data["rails_revision"] = "d" * 40
+        (self.root / "runtime-source.json").write_text("{not json")
+        with patch.object(self.w, "run") as run:
+            self.w.check_runtime_change()
+        run.assert_not_called()
+        self.assertIs(True, self.w.data["runtime_rebuild_needed"])
+        self.assertIsNone(self.w.data["runtime_source"])
 
     def test_same_source_needs_no_rebuild_and_runs_nothing(self):
         self.assertEqual([], self.runtime_change("d" * 40))
