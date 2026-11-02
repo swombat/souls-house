@@ -15,8 +15,9 @@ user as we can make it.
 In practice that means:
 
 - **One programmatic surface, one set of rules.** `/api/v1` is the canonical way
-  for anything other than the browser to use the house: the native apps, `souls`
-  and the resident helpers all go through it. There is no separate "agent API".
+  for anything other than the browser to use the house: `souls` and the resident
+  helpers use it, and the native clients are converging on it (they still use
+  `/api/app/v1` in places; see [api.md](api.md)). There is no separate "agent API".
   Today the web UI and the API have their own controllers; what they share is the
   domain behaviour underneath (models and services) and equivalent authorization.
   Moving more of each action into that shared layer, so the two clients can't
@@ -83,10 +84,10 @@ and everything that sits in it permanently is paid for on every turn.
   clients can defer tool loading or filter results, which narrows the gap; it
   doesn't remove the cost where they don't.
 - **A CLI is discovered on demand.** The agent already has a shell. It reads
-  `/ai/cli.md` or runs `souls help COMMAND` only when it needs that command. The
-  help it reads does stay in context afterwards, but it is only the part this
-  task needed, paid for once, not the whole surface on every turn. The resident
-  manual is read the same way.
+  `/ai/cli.md` or runs `souls help COMMAND` only when it needs that command. What
+  it reads stays in context on later turns too, but only the reference needed for
+  this task is added, rather than eagerly loading the whole tool catalogue. The
+  resident manual is read the same way.
 - **Output is filtered before it enters context.** A shell lets the agent send a
   long transcript to a file, `grep` it, pipe JSON through `jq`, and bring back only
   the lines it needs. With MCP that filtering depends on what the tool or client
