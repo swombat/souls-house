@@ -58,3 +58,24 @@ test('nothing is read while the person is speaking; a progress note landing then
   picker.release();
   expect(picker.take([reply('old', 1), reply('during', 2), reply('answer', 3)])).toEqual(['answer']);
 });
+
+test('a run interrupted mid-way stays silent for good: its later final reply is not read, a new run is', () => {
+  const picker = createReplyPicker([]);
+  const progress = reply('progress', 10, { progress_message: true, runtime_interaction_id: 'old-run' });
+  expect(picker.take([progress])).toEqual(['progress']);
+  picker.hold([progress]);
+  picker.release();
+  const oldFinal = reply('old-final', 11, { runtime_interaction_id: 'old-run' });
+  expect(picker.take([progress, oldFinal])).toEqual([]);
+  const answer = reply('answer', 12, { runtime_interaction_id: 'new-run' });
+  expect(picker.take([progress, oldFinal, answer])).toEqual(['answer']);
+});
+
+test('without run provenance only the superseded message itself stays silent', () => {
+  const picker = createReplyPicker([]);
+  const earlier = reply('earlier', 10);
+  picker.take([earlier]);
+  picker.hold([earlier]);
+  picker.release();
+  expect(picker.take([earlier, reply('later', 11)])).toEqual(['later']);
+});

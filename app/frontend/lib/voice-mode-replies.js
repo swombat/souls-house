@@ -8,7 +8,11 @@
 // let through explicitly. Message ids are opaque, so they say nothing about order.
 //
 // When the person starts speaking, everything then on the page is superseded,
-// including replies still arriving: interruption is final for them.
+// including replies still arriving, and so is every resident run that has a
+// message on the page: a later message from that run (its final reply after a
+// progress note) stays silent too. A message with no run provenance is
+// superseded by its own id only; a run that had posted nothing when the person
+// spoke is not known to be superseded and is read.
 export function speakable(message) {
   return (
     message?.role === 'assistant' &&
@@ -20,6 +24,8 @@ export function speakable(message) {
 }
 
 const arriving = (m) => m.role === 'assistant' && (m.streaming || m.completed === false);
+// The runtime run a resident message came from, when the message says.
+const runOf = (m) => m.runtime_interaction_id ?? m.progress_run_id ?? null;
 const time = (m) => {
   const t = Date.parse(m?.created_at);
   return Number.isNaN(t) ? null : t;
@@ -29,9 +35,13 @@ export function createReplyPicker(initial = []) {
   const opened = Math.max(-Infinity, ...initial.map(time).filter((t) => t !== null));
   const allowed = new Set(initial.filter(arriving).map((m) => m.id));
   const seen = new Set();
+  const supersededRuns = new Set();
   let held = false;
   const supersede = (messages) => {
-    for (const message of messages || []) seen.add(message.id);
+    for (const message of messages || []) {
+      seen.add(message.id);
+      if (message.role === 'assistant' && runOf(message) !== null) supersededRuns.add(runOf(message));
+    }
     allowed.clear();
   };
 
@@ -47,6 +57,7 @@ export function createReplyPicker(initial = []) {
       for (const message of messages || []) {
         if (seen.has(message.id) || !speakable(message)) continue;
         seen.add(message.id);
+        if (supersededRuns.has(runOf(message))) continue;
         const t = time(message);
         if (allowed.has(message.id) || (t !== null && t > opened)) ids.push(message.id);
       }

@@ -37,6 +37,11 @@ class ElevenLabsTts
     handle_response(response)
   end
 
+  def self.api_key
+    Rails.application.credentials.dig(:ai, :eleven_labs, :api_token) ||
+      raise(Error, "ElevenLabs API key not configured")
+  end
+
   def self.stream(text, voice_id:, &block)
     new.stream(text, voice_id: voice_id, &block)
   end
@@ -82,8 +87,7 @@ class ElevenLabsTts
   end
 
   def api_key
-    Rails.application.credentials.dig(:ai, :eleven_labs, :api_token) ||
-      raise(Error, "ElevenLabs API key not configured")
+    self.class.api_key
   end
 
   def handle_response(response)

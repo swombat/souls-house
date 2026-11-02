@@ -21,12 +21,17 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
     post login_path, params: { email_address: @user.email_address, password: "password123" }
   end
 
+  # CI has no ElevenLabs key; without one the stream refuses before any request.
+  def speak(message)
+    ElevenLabsTts.stub(:api_key, "test-eleven-labs-key") { get message_speech_path(message) }
+  end
+
   test "a resident reply streams back as audio from ElevenLabs, in the resident's voice, uncached" do
     stub = stub_request(:post, STREAM_URL)
       .with { |request| JSON.parse(request.body).values_at("text", "model_id") == [ "Hello there.", ElevenLabsTts::MODEL_ID ] }
       .to_return(status: 200, body: "ID3fake-mp3-bytes", headers: { "Content-Type" => "audio/mpeg" })
 
-    get message_speech_path(@reply)
+    speak(@reply)
 
     assert_response :success
     assert_requested stub
@@ -39,26 +44,34 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
     stub = stub_request(:post, STREAM_URL)
 
     @account.update!(voice_mode_enabled: false)
-    get message_speech_path(@reply)
+    speak(@reply)
     assert_response :forbidden
 
     @account.update!(voice_mode_enabled: true)
     human = @chat.messages.create!(role: "user", user: @user, content: "Me.", suppress_automatic_dispatch: true)
-    get message_speech_path(human)
+    speak(human)
     assert_response :unprocessable_entity
 
     other = User.create!(email_address: "speech-other@example.com").personal_account
     elsewhere = other.chats.create!(model_id: "openrouter/auto").messages.create!(role: "assistant", content: "Not yours.", suppress_automatic_dispatch: true)
-    get message_speech_path(elsewhere)
+    speak(elsewhere)
     assert_response :not_found
 
     assert_not_requested stub
   end
 
+  test "with no ElevenLabs key configured the speech is a 502, not a crash" do
+    ElevenLabsTts.stub(:api_key, -> { raise ElevenLabsTts::Error, "ElevenLabs API key not configured" }) do
+      get message_speech_path(@reply)
+    end
+
+    assert_response :bad_gateway
+  end
+
   test "an ElevenLabs refusal before any audio is a 502 with no body" do
     stub_request(:post, STREAM_URL).to_return(status: 429, body: "{}")
 
-    get message_speech_path(@reply)
+    speak(@reply)
 
     assert_response :bad_gateway
     assert_empty response.body
@@ -69,7 +82,7 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
       WebMock.reset!
       stub_request(:post, STREAM_URL).to_raise(failure)
 
-      get message_speech_path(@reply)
+      speak(@reply)
 
       assert_response :bad_gateway, "#{failure} should be a 502"
       assert_empty response.body
