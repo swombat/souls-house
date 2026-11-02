@@ -57,6 +57,14 @@
       </div>
     {/if}
 
+    {#if interaction.setup_refusal}
+      <div
+        class="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+        data-testid="setup-refusal">
+        Not sent to the resident: {interaction.setup_refusal}
+      </div>
+    {/if}
+
     {#if interaction.error_message}
       <div class="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
         {interaction.error_class}: {interaction.error_message}

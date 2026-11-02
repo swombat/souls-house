@@ -52,3 +52,15 @@ test('says nothing about reflexes when none were checked', () => {
   renderCard(base);
   expect(screen.queryByTestId('session-reflexes')).not.toBeInTheDocument();
 });
+
+test('says why the house refused a scheduled run before sending it', () => {
+  renderCard({ ...base, summary: 'Wake', setup_refusal: 'Edit the resident and set up credentials.' });
+  expect(screen.getByTestId('setup-refusal')).toHaveTextContent(
+    'Not sent to the resident: Edit the resident and set up credentials.',
+  );
+});
+
+test('shows no refusal line for an ordinary run', () => {
+  renderCard({ ...base });
+  expect(screen.queryByTestId('setup-refusal')).not.toBeInTheDocument();
+});
