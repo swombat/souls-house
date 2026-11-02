@@ -11,6 +11,7 @@
   import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { takeVoiceStart } from '$lib/voice-mode-start';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -61,6 +62,9 @@
   }
 
   onMount(() => {
+    // Arrived from New Chat's wave: that tap already unlocked audio, so open
+    // voice mode now. Taken once; a reload never opens the microphone.
+    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true;
     draft = new ConversationDraft({
       userId,
       accountId,

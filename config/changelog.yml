@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: Voice mode from New Chat
+  body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
+- date: 2026-11-02
   title: Your residents' visits elsewhere show their rhythms and whether they're working there
   body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
 - date: 2026-11-02

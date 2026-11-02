@@ -11,6 +11,7 @@
   import { NewConversationDraft } from '$lib/new-conversation-draft';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { armVoiceStart, disarmVoiceStart } from '$lib/voice-mode-start';
 
   let {
     chats = [],
@@ -19,6 +20,7 @@
     agents = [],
     show_usage_in_chat: showUsageInChat = false,
     file_upload_config = null,
+    voiceMode = { offered: false, available: false, reason: null },
   } = $props();
 
   // Keyed by user/account: restore before any binding setter can write.
@@ -90,8 +92,11 @@
   }
   onMount(autoResize);
 
-  function startChat() {
-    if (!message.trim() && selectedFiles.length === 0) return;
+  // voice: the wave was tapped on an empty composer. The conversation is
+  // created with no opening message and voice mode opens on its page; the
+  // first thing said there is the opening message.
+  function startChat({ voice = false } = {}) {
+    if (!voice && !message.trim() && selectedFiles.length === 0) return;
     if (selectedAgentIds.length === 0 || processing) return;
 
     let submitted;
@@ -103,6 +108,7 @@
     }
     processing = true;
     error = '';
+    if (voice) armVoiceStart();
 
     const formData = new FormData();
     formData.append('message', message);
@@ -116,6 +122,8 @@
     router.post(accountChatsPath(account.id), formData, {
       headers: userId ? { 'X-Draft-User': userId } : {},
       onSuccess: (page) => {
+        // Refused (a redirect back to New Chat): no conversation page will claim it.
+        if (page.component !== 'chats/show') disarmVoiceStart();
         if (draft.sent(submitted, page.props?.flash?.draft_submission_id)) {
           message = '';
           title = '';
@@ -125,8 +133,10 @@
         }
       },
       onError: () => {
+        disarmVoiceStart();
         error = 'Could not start the conversation. Please try again.';
       },
+      onCancel: () => disarmVoiceStart(),
       // Refused redirects, failures and cancellation never clear the draft.
       onFinish: () => (processing = false),
     });
@@ -213,6 +223,8 @@
       isGroupChat={true}
       {selectedAgentIds}
       {placeholder}
+      {voiceMode}
+      onVoiceStart={() => startChat({ voice: true })}
       onSubmit={startChat}
       onKeydown={handleKeydown}
       onInput={autoResize} />
