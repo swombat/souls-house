@@ -954,17 +954,27 @@ def run_chaos(
             try:
                 while True:
                     if cancel.is_set() or time.monotonic() >= expires:
-                        raise subprocess.TimeoutExpired(args, timeout_secs)
+                        break
                     try:
                         stdout, stderr = process.communicate(input=prompt_text if first else None, timeout=.5)
                         return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
                     except subprocess.TimeoutExpired:
                         first = False
-            finally:
+                # Out of time or cancelled. Kill the group, then collect what
+                # Chaos had already written: process.started carries the
+                # session id and turn events carry usage, so a timed-out run
+                # still records which session it was and what it spent (#718).
+                _kill_process_group(process)
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired as drained:
+                    # A detached descendant can hold the pipes past the kill.
+                    # The expired drain still carries what was read; keep it.
+                    stdout = _timeout_stream(drained, "stdout")
+                    stderr = _timeout_stream(drained, "stderr")
+                raise subprocess.TimeoutExpired(args, timeout_secs, output=stdout, stderr=stderr)
+            finally:
+                _kill_process_group(process)
                 process.wait(timeout=5)
     return subprocess.run(
         args,
@@ -974,6 +984,13 @@ def run_chaos(
         timeout=timeout_secs,
         env=env,
     )
+
+
+def _kill_process_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def parse_events(stdout):
