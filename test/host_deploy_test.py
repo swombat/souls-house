@@ -1059,6 +1059,56 @@ class WorkerTest(unittest.TestCase):
         self.w.rebuild_residents()
         self.assertEqual("all residents healthy", self.w.data["step"])
 
+    def test_with_no_host_canary_one_vm_proves_the_image_first(self):
+        # Every resident is on a VM: the first must settle healthy before the
+        # others are started.
+        started = [{"result": "started", "command_id": 70}]
+        healthy = [{"result": "healthy"}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(0, 1, 2), on_vm=(0, 1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started), status=list(healthy))
+                                for i in (0, 1, 2)})
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        calls = [(env["DEPLOY_VM_MODE"], env["DEPLOY_RESIDENT_ID"]) for env in self.vm_calls
+                 if env["DEPLOY_VM_MODE"] != "inspect"]
+        self.assertEqual([("start", "0"), ("status", "0")], calls[:2])
+
+    def test_with_no_host_canary_a_failing_first_vm_touches_no_other(self):
+        started = [{"result": "started", "command_id": 70}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(0, 1, 2), on_vm=(0, 1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started),
+                                        status=[{"result": "failed"}]) for i in (0, 1, 2)})
+        with self.assertRaisesRegex(RuntimeError, "VM resident restart failed"):
+            self.w.rebuild_residents()
+        starts = [env["DEPLOY_RESIDENT_ID"] for env in self.vm_calls if env["DEPLOY_VM_MODE"] == "start"]
+        self.assertEqual(["0"], starts)
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertFalse(pending["births_allowed"])
+
+    def test_an_unreadable_old_version_holds_that_resident_not_the_queue(self):
+        # The probe answers, but not with a version we can parse: that
+        # resident is held (as an unreachable one is), and the queue keeps a
+        # hold, so the sweep can't roll anyone onto the image unseen.
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        run = self.w.run.side_effect
+
+        probes = []
+
+        def unreadable(args, **kwargs):
+            # The first r0 probe is the pinned pre-check; garble the roll's own.
+            if args[:3] == ["docker", "exec", "r0"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return "chaos ???"
+            return run(args, **kwargs)
+        self.w.run.side_effect = unreadable
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], pending["held"])
+        self.assertEqual([1], pending["untouched"])
+        self.assertFalse(pending["canary_proven"])
+
     def test_vm_resident_already_on_the_image_is_current(self):
         self.vm_fixture(start=[{"result": "current"}])
         self.w.rebuild_residents()

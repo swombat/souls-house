@@ -41,7 +41,9 @@ begin
     # Same gate as enqueue!/admit!, held only for the check and the hold.
     Agent.connection.execute("SET LOCAL lock_timeout = '5s'")
     Agent.connection.execute("SELECT pg_advisory_xact_lock(1936680308, 1)")
-    a.lock!
+    # NOWAIT: never sit on the gate behind another writer of this row (a
+    # recreate elsewhere holds it for a whole restart). Answers busy instead.
+    a.lock!("#{Agents::Sandbox::ROW_LOCK} NOWAIT")
     if a.container_image == target
       result = {result: "current", id: a.id}
     elsif a.runtime_roll_started_at?
@@ -61,7 +63,9 @@ begin
       # External Docker/HTTP work is idle-in-transaction from PostgreSQL's view.
       # Bound its hold even if the host loses its docker-exec connection.
       Agent.connection.execute("SET LOCAL idle_in_transaction_session_timeout = '90s'")
-      a.lock!
+      # Not FOR UPDATE: a turn queued for this resident meanwhile must be able
+      # to insert (its foreign key takes KEY SHARE) while holding the gate.
+      a.lock!(Agents::Sandbox::ROW_LOCK)
       before = inspect_mounts.call
       old = a.attributes.slice("active", "paused", "container_image")
       # The host retains this before starting; no private files or memory read.

@@ -477,12 +477,16 @@ class Worker:
         old_versions = {}
         for resident in residents:
             try:
-                old_versions[resident["id"]] = self.run(
+                raw = self.run(
                     ["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+                # Parsed inside the guard: an answer we can't read is an
+                # unknown resident (held, never rolled), not an aborted run
+                # that leaves the whole queue for the sweep with no hold.
+                old = version_tuple(raw)
             except Exception:
-                old_versions[resident["id"]] = None
-            if old_versions[resident["id"]] is not None and \
-                    version_tuple(version) < version_tuple(old_versions[resident["id"]]):
+                raw, old = None, None
+            old_versions[resident["id"]] = raw
+            if old is not None and version_tuple(version) < old:
                 pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
 
@@ -641,11 +645,17 @@ class Worker:
                     raise RuntimeError("VM resident restart did not settle; turns stay held until it does")
                 time.sleep(15)
 
-        # Each VM restarts on its own machine, so they all go at once; the
-        # first failure is raised once every other VM has settled.
+        # If no stock resident has proven this image yet (every host resident
+        # was busy, or there are only VMs), one VM proves it first. A failure
+        # here raises before any other VM is touched; a busy one is skipped.
+        remaining = list(vm_running)
+        while remaining and not proven:
+            roll_one(remaining.pop(0))
+        # Then each VM restarts on its own machine, so the rest go at once;
+        # the first failure is raised once every other VM has settled.
         errors = []
         with ThreadPoolExecutor(max_workers=max(1, self.settings.get("vm_roll_concurrency", 32))) as pool:
-            for future in [pool.submit(roll_one, r) for r in vm_running]:
+            for future in [pool.submit(roll_one, r) for r in remaining]:
                 try:
                     future.result()
                 except Exception as error:
