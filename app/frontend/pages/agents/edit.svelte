@@ -88,7 +88,6 @@
       'interactions_pagination',
       'cost_report',
       'reflexes',
-      'commitments',
       'subagents_available',
       'voice',
     ],
