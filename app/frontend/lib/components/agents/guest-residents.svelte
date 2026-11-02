@@ -135,8 +135,9 @@
                         data-testid="away-rhythms"
                         class="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-muted-foreground"
                         title={label}
-                        aria-label={label}
-                        ><Clock size={16} weight="duotone" aria-hidden="true" />{membership.rhythms.count}</span>
+                        ><Clock size={16} weight="duotone" aria-hidden="true" /><span aria-hidden="true"
+                          >{membership.rhythms.count}</span
+                        ><span class="sr-only">{label}</span></span>
                     {/if}
                   {/if}
                   <ResidentSessionsSpinner sessions={awaySessions?.[membership.id]} /></span>

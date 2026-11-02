@@ -70,5 +70,5 @@ test('an away seat whose account the viewer cannot open shows the count without 
   render(GuestResidents, { accountId: 'home', away });
   const rhythms = screen.getByTestId('away-rhythms');
   expect(rhythms.tagName).toBe('SPAN');
-  expect(rhythms).toHaveAccessibleName('1 rhythm with Lume in X');
+  expect(rhythms).toHaveTextContent('1 rhythm with Lume in X');
 });

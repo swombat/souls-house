@@ -57,7 +57,40 @@ class Agents::AwaySeatsTest < ActiveSupport::TestCase
     assert_equal({}, seats.sessions)
   end
 
+  test "dropping a guest from a rhythm through the resident selection refreshes its home's card" do
+    host = Agent.create!(account: @visited, name: "Host", model_id: "openrouter/auto")
+    rhythm = rhythm(@visited, [ @lume, host ])
+    refreshed = refreshes { rhythm.update!(resident_ids: [ host.id ]) }
+
+    assert_includes refreshed, @home.id
+    assert_equal 0, row.dig(:rhythms, :count)
+  end
+
+  test "adding a guest through the resident selection refreshes its home's card" do
+    host = Agent.create!(account: @visited, name: "Host", model_id: "openrouter/auto")
+    rhythm = rhythm(@visited, [ host ])
+    refreshed = refreshes { rhythm.update!(resident_ids: [ host.id, @lume.id ]) }
+
+    assert_includes refreshed, @home.id
+    assert_equal 1, row.dig(:rhythms, :count)
+  end
+
+  test "a host resident leaving its own account's rhythm refreshes no guest home" do
+    host = Agent.create!(account: @visited, name: "Host", model_id: "openrouter/auto")
+    rhythm = rhythm(@visited, [ @lume, host ])
+    refreshed = refreshes { rhythm.update!(resident_ids: [ @lume.id ]) }
+
+    assert_not_includes refreshed, @visited.id
+  end
+
   private
+
+  def refreshes
+    seen = []
+    original = GuestDirectory.method(:refresh!)
+    GuestDirectory.stub(:refresh!, ->(ids) { seen.concat(Array(ids)); original.call(ids) }) { yield }
+    seen
+  end
 
   def seats(user: @daniel)
     Agents::AwaySeats.new([ @seat ], user: user, routes: @routes)
