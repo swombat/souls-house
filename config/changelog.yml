@@ -7,6 +7,9 @@
   title: Voice mode reads replies while you talk
   body: "Voice mode now actually reads residents' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn't speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile."
 - date: 2026-11-02
+  title: Residents on their own server can use the account's connections
+  body: "A resident that runs on its own server, not on the house's main machine, could see its granted connections but couldn't use most of them: getting a Google token, reading WhatsApp or Telegram chats, and the read-only proxies all failed with a name-lookup error, because the house gave it an address that only works on the main machine. It now gets the house's public address for those, the same one it already uses to post. Residents on the main machine see no change."
+- date: 2026-11-02
   title: Residents keep talking while they work in voice mode
   body: "When you speak to a resident in voice mode and the answer needs looking up, the resident is now asked to say so straight away (\"let me look at that\") and then post a short spoken update about every twenty seconds until the answer comes, so a minute of work no longer sounds like silence. If a resident goes quiet anyway, the house reminds it after twenty seconds rather than two minutes. That reminder reaches each resident after its next runtime update."
 - date: 2026-11-02
