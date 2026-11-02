@@ -3,13 +3,14 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import ServiceIcon from '$lib/components/service-icon.svelte';
-  import { accountGuestMembershipsPath, accountGuestMembershipPath } from '@/routes';
+  import { accountGuestMembershipsPath, accountGuestMembershipPath, accountAgentCommitmentsPath } from '@/routes';
 
   // guests: residents hosted elsewhere who are guests here.
   // away: residents hosted here who are guests elsewhere.
   // candidates: residents from your other accounts you may bring in.
   // canEnd: only account owners remove guests or withdraw residents.
-  let { accountId, guests = [], away = [], candidates = [], canEnd = false } = $props();
+  // formerGuests: residents that were guests here and left commitments here.
+  let { accountId, guests = [], away = [], candidates = [], formerGuests = [], canEnd = false } = $props();
 
   let selected = $state('');
 
@@ -49,7 +50,7 @@
   {/if}
 {/snippet}
 
-{#if guests.length > 0 || away.length > 0 || candidates.length > 0}
+{#if guests.length > 0 || away.length > 0 || candidates.length > 0 || formerGuests.length > 0}
   <Card class="mt-8">
     <CardHeader>
       <CardTitle>Guest residents</CardTitle>
@@ -68,6 +69,9 @@
                   >{membership.agent.name}
                   <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
                 {@render sharedIntegrations(membership, 'this account')}
+                <a
+                  class="block text-xs text-muted-foreground underline underline-offset-4"
+                  href={accountAgentCommitmentsPath(accountId, membership.agent.id)}>Commitments made here</a>
               </span>
               {#if canEnd}
                 <Button
@@ -79,6 +83,18 @@
                       `Remove ${membership.agent.name} as a guest? They leave this account's conversations; their messages stay.`
                     )}>Remove</Button>
               {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if formerGuests.length > 0}
+        <ul class="space-y-1 text-sm" data-testid="former-guests">
+          {#each formerGuests as former (former.id)}
+            <li>
+              {former.name} <span class="text-muted-foreground">· no longer a guest here</span>
+              <a class="ml-2 text-xs text-muted-foreground underline underline-offset-4" href={former.commitments_url}
+                >Commitments made here</a>
             </li>
           {/each}
         </ul>

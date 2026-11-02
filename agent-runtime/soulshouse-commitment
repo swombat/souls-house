@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Make, list, reschedule and cancel your own commitments.
+
+A commitment is a one-shot promise to come back to something at a time:
+"I'll check the rebuild receipt at 03:00." When it is due, the house posts
+"Commitment due" with your text in the conversation you made it in (or in a
+new conversation in a room you chose) and wakes you there. That returns it to
+your attention; what to do then is your call. Delivery is not completion.
+
+Usage:
+  soulshouse-commitment add --in 30m --text 'Check the deploy receipt and tell Daniel'
+  soulshouse-commitment add --at 2026-11-03T03:00:00+01:00 --text-file brief.md
+  soulshouse-commitment add --in 2h --new-conversation --room Ops --text-file -
+  soulshouse-commitment list [--scheduled]
+  soulshouse-commitment reschedule ID (--in 1h | --at ISO8601)
+  soulshouse-commitment cancel ID
+
+--conversation defaults to the conversation you are running in
+(SOULSHOUSE_RUNTIME_CHAT_ID). --source-message names the message you are
+committing under, so the activation can link it. --in takes a number with s,
+m, h or d. --at needs a zone (Z or +01:00). Two scheduled commitments of yours
+cannot have the same text: give each its own. For a new conversation, write
+the text as a brief (what, why, what to check first, who to tell), because
+that conversation starts with nothing but it.
+
+Requires SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN (HELIXKIT_ fallbacks
+accepted). Never prints the token. JSON responses are printed as-is.
+"""
+
+import argparse
+import datetime
+import io
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+TIMEOUT = 60
+UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def due_at(at=None, within=None, now=None):
+    """An ISO 8601 UTC instant from --at (passed through) or --in."""
+    if at:
+        return at
+    match = re.fullmatch(r"\s*(\d+)\s*([smhd])\s*", within or "")
+    if not match:
+        raise ValueError("--in takes a number and a unit: 90s, 30m, 2h, 1d")
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    when = now + datetime.timedelta(seconds=int(match.group(1)) * UNITS[match.group(2)])
+    return when.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def commitment_path(commitment_id=None):
+    if commitment_id is None:
+        return "/api/v1/commitments"
+    return "/api/v1/commitments/" + urllib.parse.quote(commitment_id, safe="")
+
+
+def _read_text(value, file_value):
+    if file_value is not None:
+        if file_value == "-":
+            return sys.stdin.read()
+        with open(file_value, "r", encoding="utf-8") as handle:
+            return handle.read()
+    return value
+
+
+def _request(app_url, token, path, method, payload=None):
+    url = f"{app_url.rstrip('/')}{path}"
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with NO_REDIRECT_OPENER.open(request, timeout=TIMEOUT) as response:
+            body = response.read().decode("utf-8")
+            print(body)
+            return 0 if 200 <= response.status < 300 else 1
+    except urllib.error.HTTPError as error:
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
+        print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house request failed: {error}", file=sys.stderr)
+        return 1
+
+
+def _add_when(parser, required=True):
+    group = parser.add_mutually_exclusive_group(required=required)
+    group.add_argument("--in", dest="within", metavar="DURATION", help="from now: 90s, 30m, 2h, 1d")
+    group.add_argument("--at", metavar="ISO8601", help="an instant with a zone, e.g. 2026-11-03T03:00:00+01:00")
+
+
+def build_add_payload(args, environ):
+    conversation = args.conversation or environ.get("SOULSHOUSE_RUNTIME_CHAT_ID")
+    if not conversation:
+        raise ValueError("--conversation is required outside a conversation run")
+    text = _read_text(args.text, args.text_file)
+    payload = {"conversation_id": conversation, "text": (text or "").strip(),
+               "due_at": due_at(args.at, args.within)}
+    if args.source_message:
+        payload["source_message_id"] = args.source_message
+    if args.new_conversation:
+        payload["destination"] = "new_conversation"
+        if args.room is not None:
+            payload["room"] = args.room
+        if args.room_id is not None:
+            payload["room_id"] = args.room_id
+    elif args.room is not None or args.room_id is not None:
+        raise ValueError("--room and --room-id only go with --new-conversation")
+    return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-commitment",
+        description="Make, list, reschedule and cancel your own one-shot commitments.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    add = subparsers.add_parser("add", help="commit to coming back to something at a time")
+    _add_when(add)
+    text_group = add.add_mutually_exclusive_group(required=True)
+    text_group.add_argument("--text", help="what you are committing to")
+    text_group.add_argument("--text-file", metavar="PATH", help="read the text from PATH, or '-' for stdin")
+    add.add_argument("--conversation", help="conversation id (default: the one you are running in)")
+    add.add_argument("--source-message", help="the message id you are committing under")
+    add.add_argument("--new-conversation", action="store_true", help="deliver into a new conversation")
+    add.add_argument("--room", help="room name for the new conversation ('Main' for Main)")
+    add.add_argument("--room-id", help="room public id for the new conversation")
+
+    listing = subparsers.add_parser("list", help="your commitments, scheduled first")
+    listing.add_argument("--scheduled", action="store_true", help="only those not yet delivered")
+
+    reschedule = subparsers.add_parser("reschedule", help="move a scheduled commitment")
+    reschedule.add_argument("id")
+    _add_when(reschedule)
+
+    cancel = subparsers.add_parser("cancel", help="cancel a scheduled commitment")
+    cancel.add_argument("id")
+
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url:
+        print("SOULSHOUSE_APP_URL is missing", file=sys.stderr)
+        return 65
+    if not token:
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    try:
+        if args.command == "add":
+            return _request(app_url, token, commitment_path(), "POST", build_add_payload(args, os.environ))
+        if args.command == "list":
+            path = commitment_path() + ("?status=scheduled" if args.scheduled else "")
+            return _request(app_url, token, path, "GET")
+        if args.command == "reschedule":
+            return _request(app_url, token, commitment_path(args.id), "PATCH",
+                            {"due_at": due_at(args.at, args.within)})
+        if args.command == "cancel":
+            return _request(app_url, token, commitment_path(args.id), "DELETE")
+    except (ValueError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
