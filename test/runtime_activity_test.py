@@ -318,6 +318,16 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
         self.reporter.finish(({"status": "timeout"}, 504))
         self.assertEqual("timed_out", self.events()[-1]["data"]["outcome"])
 
+    def test_timeout_keeps_process_started_and_stderr(self):
+        # #718: the timeout record must name the session Chaos had started.
+        script = ("import sys,time;print('{\"type\":\"process.started\",\"process_id\":\"proc-718\"}',flush=True);"
+                  "sys.stderr.write('partial stderr');sys.stderr.flush();time.sleep(60)")
+        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+            self.reporter.run([sys.executable, "-c", script], "", {}, .5)
+        self.assertIn("proc-718", raised.exception.stdout)
+        self.assertIn("partial stderr", raised.exception.stderr)
+        self.reporter.finish(({"status": "timeout"}, 504))
+
     def test_fallback_has_distinct_attempt_identity(self):
         self.reporter.begin_attempt()
         first = self.reporter.attempt_id

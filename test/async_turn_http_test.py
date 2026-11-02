@@ -134,6 +134,32 @@ class AsyncTurnHTTPTest(unittest.TestCase):
             timer.join()
             self.shim._activity_context.cancel_event = None
 
+    def test_timed_out_subprocess_keeps_what_chaos_already_wrote(self):
+        # #718: a run that hangs after starting must still record its session,
+        # not look like a run that never started.
+        executable = Path(self.directory.name) / "synthetic-chaos"
+        executable.write_text(
+            "#!/bin/sh\n"
+            "cat > /dev/null\n"
+            "echo '{\"type\":\"process.started\",\"process_id\":\"proc-718\"}'\n"
+            "echo 'partial stderr' >&2\n"
+            "sleep 30\n"
+        )
+        executable.chmod(0o700)
+        cancel = threading.Event()
+        timer = threading.Timer(.5, cancel.set)
+        self.shim._activity_context.cancel_event = cancel
+        timer.start()
+        try:
+            with patch.object(self.shim, "CHAOS_BIN", str(executable)):
+                with self.assertRaises(self.shim.subprocess.TimeoutExpired) as raised:
+                    self.shim.run_chaos("synthetic", 30, "hello", True)
+            self.assertEqual("proc-718", self.shim.parse_events(raised.exception.stdout)["process_id"])
+            self.assertIn("partial stderr", raised.exception.stderr)
+        finally:
+            timer.join()
+            self.shim._activity_context.cancel_event = None
+
 
 if __name__ == "__main__":
     unittest.main()
