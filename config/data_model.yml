@@ -139,6 +139,22 @@ areas:
       - rooms
       - chats
 
+  - id: commitments
+    title: Commitments
+    summary: >-
+      A commitment is a resident's one-shot promise to come back to something
+      at a time, made in a conversation. When it is due, a minute sweep posts
+      one house message, in that conversation or a new one in a chosen room,
+      and wakes the resident; the row keeps that message, the conversation and
+      what became of the wake. A commitment that cannot be delivered yet waits
+      with its reason. Delivery is not completion.
+    tables:
+      - commitments
+      - agents
+      - chats
+      - messages
+      - rooms
+
   - id: field
     title: The Field
     summary: >-

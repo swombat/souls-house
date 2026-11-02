@@ -776,6 +776,55 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.check_constraint "state::text = ANY (ARRAY['planned'::character varying::text, 'create_in_flight'::character varying::text, 'reconciling'::character varying::text, 'provisioned'::character varying::text, 'unknown'::character varying::text, 'refused'::character varying::text, 'needs_review'::character varying::text, 'deleting'::character varying::text, 'deleted'::character varying::text])", name: "cloud_procurement_operations_state"
   end
 
+  create_table "commitments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "source_chat_id", null: false
+    t.bigint "source_message_id"
+    t.text "text", null: false
+    t.string "text_digest", null: false
+    t.datetime "due_at", null: false
+    t.string "destination", default: "same_conversation", null: false
+    t.bigint "room_id"
+    t.string "status", default: "scheduled", null: false
+    t.datetime "last_attempted_at"
+    t.string "waiting_reason"
+    t.datetime "activated_at"
+    t.bigint "activation_chat_id"
+    t.bigint "activation_message_id"
+    t.string "wake_state"
+    t.string "wake_reason"
+    t.bigint "wake_interaction_id"
+    t.bigint "pending_wake_id"
+    t.bigint "pending_wake_source_id"
+    t.integer "wake_runs", default: 0, null: false
+    t.datetime "last_wake_at"
+    t.datetime "delivered_at"
+    t.datetime "cancelled_at"
+    t.bigint "cancelled_by_user_id"
+    t.bigint "cancelled_by_agent_id"
+    t.integer "reschedule_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_commitments_on_account_id"
+    t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
+    t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"
+    t.index ["agent_id", "text_digest"], name: "idx_commitments_one_scheduled_per_text", unique: true, where: "((status)::text = 'scheduled'::text)"
+    t.index ["agent_id"], name: "index_commitments_on_agent_id"
+    t.index ["cancelled_by_agent_id"], name: "index_commitments_on_cancelled_by_agent_id"
+    t.index ["cancelled_by_user_id"], name: "index_commitments_on_cancelled_by_user_id"
+    t.index ["pending_wake_id"], name: "index_commitments_on_pending_wake_id"
+    t.index ["pending_wake_source_id"], name: "index_commitments_on_pending_wake_source_id"
+    t.index ["room_id"], name: "index_commitments_on_room_id"
+    t.index ["source_chat_id"], name: "index_commitments_on_source_chat_id"
+    t.index ["source_message_id"], name: "index_commitments_on_source_message_id"
+    t.index ["status", "due_at"], name: "index_commitments_on_status_and_due_at"
+    t.index ["wake_interaction_id"], name: "index_commitments_on_wake_interaction_id"
+    t.index ["wake_state"], name: "idx_commitments_wake_in_custody", where: "((wake_state)::text = ANY ((ARRAY['woken'::character varying, 'held'::character varying, 'retrying'::character varying])::text[]))"
+    t.check_constraint "destination::text = ANY (ARRAY['same_conversation'::character varying, 'new_conversation'::character varying]::text[])", name: "commitments_destination"
+    t.check_constraint "status::text = ANY (ARRAY['scheduled'::character varying, 'activated'::character varying, 'cancelled'::character varying]::text[])", name: "commitments_status"
+  end
+
   create_table "comms_chats", force: :cascade do |t|
     t.bigint "service_connection_id", null: false
     t.string "provider_chat_id", null: false
@@ -3014,6 +3063,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "cloud_procurement_operations", "agent_placements"
   add_foreign_key "cloud_procurement_operations", "users", column: "requested_by_id"
+  add_foreign_key "commitments", "accounts", on_delete: :cascade
+  add_foreign_key "commitments", "agent_runtime_interactions", column: "wake_interaction_id", on_delete: :nullify
+  add_foreign_key "commitments", "agents", column: "cancelled_by_agent_id", on_delete: :nullify
+  add_foreign_key "commitments", "agents", on_delete: :cascade
+  add_foreign_key "commitments", "chats", column: "activation_chat_id", on_delete: :nullify
+  add_foreign_key "commitments", "chats", column: "source_chat_id", on_delete: :cascade
+  add_foreign_key "commitments", "messages", column: "activation_message_id", on_delete: :nullify
+  add_foreign_key "commitments", "messages", column: "source_message_id", on_delete: :nullify
+  add_foreign_key "commitments", "pending_wake_sources", on_delete: :nullify
+  add_foreign_key "commitments", "pending_wakes", on_delete: :nullify
+  add_foreign_key "commitments", "rooms", on_delete: :nullify
+  add_foreign_key "commitments", "users", column: "cancelled_by_user_id", on_delete: :nullify
   add_foreign_key "comms_chats", "service_connections"
   add_foreign_key "comms_messages", "comms_chats"
   add_foreign_key "comms_messages", "comms_sends"

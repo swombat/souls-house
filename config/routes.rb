@@ -244,6 +244,7 @@ Rails.application.routes.draw do
 
       scope module: :agents do
         resources :reflex_releases, only: :create, path: "reflexes/:reflex_id/release"
+        resources :commitments, only: %i[index update destroy]
         resource :provisioning_retry, only: :create
         resource :orientation_retry, only: :create
         resource :hosting_diagnostics, only: :show do
@@ -494,6 +495,7 @@ Rails.application.routes.draw do
       resources :reflexes, only: %i[index create destroy] do
         resources :judgments, only: :index, module: :reflexes
       end
+      resources :commitments, only: %i[index show create update destroy]
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"

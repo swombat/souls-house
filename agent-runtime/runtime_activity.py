@@ -295,7 +295,16 @@ class Reporter:
             except ProcessLookupError:
                 pass
             proc.wait(timeout=5)
-            raise
+            # Keep what Chaos wrote before the deadline (process.started and
+            # any turn events) so the timeout record names its session and
+            # usage instead of looking like a run that never started (#718).
+            for thread in readers[:2]:
+                thread.join(timeout=1)
+            raise subprocess.TimeoutExpired(
+                args, timeout,
+                output=(process_started + b"".join(retained)).decode(errors="replace"),
+                stderr=stderr.decode(errors="replace"),
+            ) from None
         finally:
             # Also prevent background descendants retaining pipes after the
             # supervised root exits. Only this invocation's process group.

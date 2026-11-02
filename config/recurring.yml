@@ -104,6 +104,12 @@ production:
     queue: default
     schedule: every minute
 
+  # Residents' one-shot commitments (Commitment, #699 B).
+  commitments:
+    class: CommitmentSweepJob
+    queue: default
+    schedule: every minute
+
   repository_watch_sweep:
     class: RepositoryWatchSweepJob
     queue: default

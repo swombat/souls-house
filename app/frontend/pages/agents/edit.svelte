@@ -14,6 +14,7 @@
     CurrencyDollar,
     Graph,
     Lightning,
+    Handshake,
   } from 'phosphor-svelte';
   import {
     accountAgentsPath,
@@ -34,6 +35,7 @@
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
   import AgentReflexesPanel from '$lib/components/agents/AgentReflexesPanel.svelte';
+  import AgentCommitmentsPanel from '$lib/components/agents/AgentCommitmentsPanel.svelte';
   import ResidentPortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
 
   let {
@@ -74,6 +76,7 @@
     subagent_providers = [],
     subagents_available: subagentsAvailable = false,
     reflexes = {},
+    commitments = {},
     account,
   } = $props();
 
@@ -128,6 +131,7 @@
       activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'reflexes' &&
+      activeTab !== 'commitments' &&
       activeTab !== 'integrations' &&
       (!runtimeManaged ||
         activeTab === 'appearance' ||
@@ -151,6 +155,7 @@
     ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
+    { id: 'commitments', label: 'Commitments', icon: Handshake },
     { id: 'memory', label: 'Memory', icon: Graph },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
     ...(portability?.can_manage ? [{ id: 'portability', label: 'Export / Import', icon: CloudArrowUp }] : []),
@@ -309,6 +314,8 @@
             {runtimeObservabilityUrl} />
         {:else if activeTab === 'reflexes'}
           <AgentReflexesPanel {reflexes} agentName={agent.name} />
+        {:else if activeTab === 'commitments'}
+          <AgentCommitmentsPanel {commitments} agentName={agent.name} />
         {:else if activeTab === 'costs'}
           <AgentCostsPanel report={costReport} />
         {:else if activeTab === 'portability'}
