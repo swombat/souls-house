@@ -247,4 +247,63 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     assert_not result.message.audio_source?
   end
 
+  def enable_voice_mode
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: "sk-account")
+  end
+
+  def speak(content)
+    Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: content, voice_mode: true).call
+  end
+
+  test "a spoken turn that opens with a resident's name wakes that resident, with no tag" do
+    enable_voice_mode
+    result = nil
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
+      result = speak("Hey Grok, what do you think?")
+    end
+    assert_equal [ @agent.id ], result.message.message_dispatch.target_agent_ids
+  end
+
+  test "an untagged spoken turn naming nobody goes to the resident who spoke last; typed, it wakes no one" do
+    enable_voice_mode
+    @group_chat.messages.create!(role: "assistant", agent: @bystander, content: "Here is my view.", suppress_automatic_dispatch: true)
+
+    result = speak("And what about the cost?")
+    assert_equal [ @bystander.id ], result.message.message_dispatch.target_agent_ids
+
+    assert_no_enqueued_jobs(only: MessageDispatchJob) do
+      assert post("And what about the timing?").created?
+    end
+  end
+
+  test "a spoken turn for a busy resident queues its wake; a name two residents share wakes no one" do
+    enable_voice_mode
+    AgentRuntimeInteraction.reserve!(agent: @agent, chat: @group_chat)
+    assert_no_difference "MessageDispatch.count" do
+      assert_difference "PendingWake.count", 1 do
+        assert speak("Grok, are you still there?").created?
+      end
+    end
+    assert_equal @agent, PendingWake.open.find_by!(chat: @group_chat).agent
+
+    @group_chat.agents << @account.agents.create!(name: "bystander", system_prompt: "Test", runtime: "external")
+    assert_no_difference [ "MessageDispatch.count", "PendingWake.count" ] do
+      assert speak("Bystander, your turn.").created?
+    end
+  end
+
+  test "a spoken turn tagging a busy resident waits for that resident and never falls back to the last speaker" do
+    enable_voice_mode
+    @group_chat.messages.create!(role: "assistant", agent: @bystander, content: "Here is my view.", suppress_automatic_dispatch: true)
+    AgentRuntimeInteraction.reserve!(agent: @agent, chat: @group_chat)
+
+    assert_no_difference "MessageDispatch.count" do
+      assert_difference "PendingWake.count", 1 do
+        assert speak("@Grok, what about the cost?").created?
+      end
+    end
+    assert_equal [ @agent ], PendingWake.open.where(chat: @group_chat).map(&:agent)
+  end
+
 end

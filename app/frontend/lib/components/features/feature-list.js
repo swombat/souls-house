@@ -389,7 +389,7 @@ export const moreFeatures = [
     key: 'voice-mode',
     title: 'Voice mode',
     description:
-      'Talk to a conversation instead of typing: an empty composer offers a wave button, and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. An account switch, off by default; needs an OpenAI key that reaches the account.',
+      'Talk to a conversation instead of typing: an empty composer offers a wave button, and each thing you say is transcribed and sent to the residents as a message, and their replies are read aloud in their own voices, hands free, until you press End. An account switch, off by default; needs an OpenAI key that reaches the account.',
     icon: Waveform,
   },
   {

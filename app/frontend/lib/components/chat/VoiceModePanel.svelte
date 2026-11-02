@@ -7,15 +7,18 @@
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
+  import { createPlayer } from '$lib/voice-mode-playback';
+  import { createReplyPicker } from '$lib/voice-mode-replies';
+  import { messageSpeechPath } from '@/routes';
   import * as logging from '$lib/logging';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
   // once. While the person speaks, the audio streams to OpenAI's realtime
   // transcriber and the words appear as a caption; when the detector closes
   // the turn it is committed, and the final text is sent as an ordinary human
-  // message flagged voice_mode. No recording is kept. The person never presses
-  // anything until End.
-  let { accountId, chatId, userId, onsent, onerror, onend } = $props();
+  // message flagged voice_mode. No recording is kept. Resident replies that
+  // arrive meanwhile are read aloud in their voices; speaking interrupts them.
+  let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
 
   // starting | listening | hearing | transcribing | sending | failed. Mute is
   // separate: it stops what the microphone sends, whatever the earlier turns
@@ -29,6 +32,12 @@
   let note = $state('');
   let sent = $state(0);
   let stale = $state(false);
+  let speakingId = $state(null);
+
+  const picker = createReplyPicker(messages);
+  const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange: (id) => (speakingId = id) });
+  // The player is terminal once End begins, so nothing lands during its drain.
+  $effect(() => picker.take(messages).forEach((id) => player.enqueue(id)));
 
   let capture = null;
   let transcriber = null;
@@ -47,6 +56,7 @@
     if (phase === 'sending') return `Sending…${hush}`;
     if (muted) return 'Muted. Nothing you say is sent.';
     if (phase === 'hearing') return 'Hearing you…';
+    if (speakingId) return 'Speaking. Talk to interrupt.';
     return 'Listening. Speak, and pause when you are done.';
   });
 
@@ -79,17 +89,23 @@
           stale = false;
         },
         onspeechstart: (samples) => {
+          picker.hold(messages);
+          player.interrupt();
           caption = '';
           transcriber?.begin(samples);
           if (phase === 'listening') phase = 'hearing';
         },
         onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
+          picker.release();
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
-        onturn: (durationMs) => enqueue(transcriber.commit(), durationMs),
+        onturn: (durationMs) => {
+          picker.release();
+          enqueue(transcriber.commit(), durationMs);
+        },
       });
       if (ended) {
         await capture.stop();
@@ -115,6 +131,7 @@
 
   onDestroy(() => {
     ended = true;
+    player.close();
     clearInterval(watchdog);
     capture?.stop();
     transcriber?.close();
@@ -212,6 +229,7 @@
   async function end({ drain = true } = {}) {
     if (ended || ending) return;
     ending = true;
+    player.close();
     clearInterval(watchdog);
     const open = capture;
     capture = null;

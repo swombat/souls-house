@@ -3121,6 +3121,15 @@ export const messageSafeguardResetPath = /*#__PURE__*/ __route({"message_id":{"r
 
 /**
  * Generates rails route to
+ * /messages/:message_id/speech(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechPath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"speech"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+
+/**
+ * Generates rails route to
  * /messages/:message_id/voice(.:format)
  * @param {any} messageId
  * @param {object | undefined} options

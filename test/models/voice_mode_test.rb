@@ -60,4 +60,24 @@ class VoiceModeTest < ActiveSupport::TestCase
     VoiceMode.status_for(@account.reload).to_a
   end
 
+  test "speech text passes a short reply through and cuts a long one at a sentence end, saying so" do
+    short = Message.new(role: "assistant", content: "Two **short** sentences. With [a link](https://example.com).")
+    assert_equal "Two short sentences. With a link.", VoiceMode.speech_text(short)
+
+    sentence = "This sentence is about forty-five characters. "
+    long = Message.new(role: "assistant", content: sentence * 40)
+    spoken = VoiceMode.speech_text(long)
+    assert_operator spoken.length, :<=, VoiceMode::SPEECH_CAP + VoiceMode::SPEECH_TRUNCATION_NOTE.length + 1
+    assert spoken.end_with?("characters. #{VoiceMode::SPEECH_TRUNCATION_NOTE}"), spoken.last(80)
+
+    unbroken = Message.new(role: "assistant", content: "word " * 400)
+    assert unbroken.content_for_speech.length > VoiceMode::SPEECH_CAP
+    assert VoiceMode.speech_text(unbroken).end_with?("word… #{VoiceMode::SPEECH_TRUNCATION_NOTE}")
+  end
+
+  test "a spoken turn has no addressee in a room where every message wakes its resident" do
+    chat = @account.chats.create!(model_id: "openrouter/auto", manual_responses: false)
+    assert_nil VoiceMode.addressee(chat, "Anyone, hello")
+  end
+
 end

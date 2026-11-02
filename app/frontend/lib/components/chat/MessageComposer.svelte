@@ -25,6 +25,7 @@
     // place of Send while the composer is empty), available (it can be
     // pressed), and the reason when it cannot.
     voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onsent,
     onwaiting,
     onerror,
@@ -228,6 +229,7 @@
       {accountId}
       {chatId}
       {userId}
+      {messages}
       onsent={(data) => onsent?.(data)}
       onerror={(message) => onerror?.(message)}
       onend={() => (voiceOpen = false)} />
