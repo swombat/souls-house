@@ -1,14 +1,15 @@
 // The microphone side of voice mode: opens the mic, runs the turn detector on
-// its samples, and hands each finished utterance over as a 16 kHz WAV blob.
+// its samples, and streams each utterance out as it is spoken, resampled for
+// the realtime transcriber: its opening (pre-roll), its frames, its end.
 // Pure decisions (when a turn ends, how a WAV is written) live in
 // voice-mode.js; this file is only the browser plumbing around them.
 //
 // Samples reach us through an AudioWorklet when the browser has one (every
 // current browser, including iOS Safari) and a ScriptProcessorNode otherwise.
 // The worklet module is tiny and built from a string, so no extra asset.
-import { createTurnDetector, downsample, encodeWav } from '$lib/voice-mode';
+import { createTurnDetector, resample } from '$lib/voice-mode';
 
-const TARGET_RATE = 16_000;
+const DEFAULT_OUTPUT_RATE = 24_000;
 
 const WORKLET_SOURCE = `
 class VoiceModeTap extends AudioWorkletProcessor {
@@ -27,13 +28,23 @@ export function captureSupported(win = globalThis) {
 
 // Starts listening. Resolves to a handle once the microphone is open.
 //   onlevel(rms, threshold)       a few times a second, for the meter
-//   onspeechstart()               the detector heard the start of an utterance
-//   onturn(blob, durationMs)      an utterance ended; blob is a 16 kHz mono WAV
-//   ondiscard(durationMs)         a burst too short to be speech
+//   onspeechstart(samples)        an utterance began; samples are its pre-roll
+//   onaudio(samples)              a frame of the open utterance
+//   onturn(durationMs)            the utterance ended
+//   ondiscard(durationMs)         the burst was too short to be speech
+// All samples are mono Float32 at `outputRate`.
 // The handle: mute(on) keeps the mic open but feeds silence to the detector
 // (nothing is sent while muted); flush() ends the current utterance now;
-// stop() closes everything and returns the final flushed utterance, if any.
-export async function startCapture({ onlevel, onspeechstart, onturn, ondiscard, detectorOptions = {} } = {}) {
+// stop() ends any open utterance and closes everything.
+export async function startCapture({
+  onlevel,
+  onspeechstart,
+  onaudio,
+  onturn,
+  ondiscard,
+  outputRate = DEFAULT_OUTPUT_RATE,
+  detectorOptions = {},
+} = {}) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
   });
@@ -43,19 +54,18 @@ export async function startCapture({ onlevel, onspeechstart, onturn, ondiscard, 
   // that opened voice mode counts, but only if we ask.
   if (context.state === 'suspended') await context.resume().catch(() => {});
 
-  const detector = createTurnDetector({ sampleRate: context.sampleRate, ...detectorOptions });
+  const detector = createTurnDetector({ sampleRate: context.sampleRate, ...detectorOptions, streamFrames: true });
+  const out = (samples) => resample(samples, context.sampleRate, outputRate);
   let muted = false;
   let stopped = false;
   let lastLevelAt = 0;
 
   function emit(events) {
     for (const event of events) {
-      if (event.type === 'start') onspeechstart?.();
+      if (event.type === 'start') onspeechstart?.(out(event.samples));
+      else if (event.type === 'audio') onaudio?.(out(event.samples));
       else if (event.type === 'discard') ondiscard?.(event.durationMs);
-      else if (event.type === 'end') {
-        const samples = downsample(event.samples, context.sampleRate, TARGET_RATE);
-        onturn?.(encodeWav(samples, TARGET_RATE), event.durationMs);
-      }
+      else if (event.type === 'end') onturn?.(event.durationMs);
     }
   }
 

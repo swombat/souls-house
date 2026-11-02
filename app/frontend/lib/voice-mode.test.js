@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { createTurnDetector, downsample, encodeWav, encodeWavBytes, stripReleasePhrase } from './voice-mode';
+import {
+  createTurnDetector,
+  downsample,
+  encodeWav,
+  encodeWavBytes,
+  pcm16Base64,
+  resample,
+  stripReleasePhrase,
+} from './voice-mode';
 
 const RATE = 16_000;
 const FRAME = RATE / 50; // 20 ms
@@ -110,5 +118,44 @@ describe('stripReleasePhrase', () => {
     });
     expect(stripReleasePhrase('  plain  ')).toEqual({ text: 'plain', release: false });
     expect(stripReleasePhrase(null)).toEqual({ text: '', release: false });
+  });
+});
+
+describe('streaming frames for the realtime transcriber', () => {
+  test('start carries the pre-roll and each later frame of the turn arrives as audio', () => {
+    const detector = createTurnDetector({ sampleRate: RATE, silenceMs: 200, preRollMs: 100, streamFrames: true });
+    const events = feedAll(detector, [frames(10, 0.002), frames(20, 0.2), frames(10, 0.002)]);
+    const [start, ...rest] = events;
+    expect(start.type).toBe('start');
+    // 100 ms of pre-roll is 5 frames, ending with the 3 attack frames.
+    expect(start.samples.length).toBe(5 * FRAME);
+    const audio = rest.filter((e) => e.type === 'audio');
+    // 17 more frames of speech, then 10 of silence (the turn ends on the 10th).
+    expect(audio).toHaveLength(17 + 10);
+    expect(audio.every((e) => e.samples.length === FRAME)).toBe(true);
+    expect(rest.at(-1).type).toBe('end');
+  });
+
+  test('without streamFrames the events are as before', () => {
+    const detector = createTurnDetector({ sampleRate: RATE, silenceMs: 200 });
+    const events = feedAll(detector, [frames(10, 0.002), frames(20, 0.2), frames(10, 0.002)]);
+    expect(events.map((e) => e.type)).toEqual(['start', 'end']);
+    expect(events[0]).toEqual({ type: 'start' });
+  });
+});
+
+describe('resample', () => {
+  test('halves 48 kHz to 24 kHz and doubles 12 kHz to 24 kHz', () => {
+    expect(resample(new Float32Array(960), 48_000, 24_000)).toHaveLength(480);
+    expect(resample(new Float32Array(240), 12_000, 24_000)).toHaveLength(480);
+    expect(resample(new Float32Array([0.5]), 24_000, 24_000)).toEqual(new Float32Array([0.5]));
+  });
+});
+
+describe('pcm16Base64', () => {
+  test('little-endian 16-bit samples, clamped', () => {
+    const bytes = Uint8Array.from(atob(pcm16Base64(new Float32Array([0, 1, -1, 2]))), (c) => c.charCodeAt(0));
+    const view = new DataView(bytes.buffer);
+    expect([0, 1, 2, 3].map((i) => view.getInt16(i * 2, true))).toEqual([0, 32767, -32768, 32767]);
   });
 });

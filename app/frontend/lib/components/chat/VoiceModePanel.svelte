@@ -3,17 +3,18 @@
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
   import { stripReleasePhrase } from '$lib/voice-mode';
+  import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
-  import { readTranscription, transcriptionRequest } from '$lib/voice-note-recovery';
-  import { accountChatMessagesPath } from '@/routes';
+  import { accountChatMessagesPath, accountChatVoiceModeSessionPath } from '@/routes';
   import * as logging from '$lib/logging';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
-  // once; each utterance the detector closes is transcribed through the same
-  // path a voice note takes, then sent as an ordinary human message flagged
-  // voice_mode, with the recording attached as voice notes are. The person
-  // never presses anything until End.
+  // once. While the person speaks, the audio streams to OpenAI's realtime
+  // transcriber and the words appear as a caption; when the detector closes
+  // the turn it is committed, and the final text is sent as an ordinary human
+  // message flagged voice_mode. No recording is kept. The person never presses
+  // anything until End.
   let { accountId, chatId, userId, onsent, onerror, onend } = $props();
 
   // starting | listening | hearing | transcribing | sending | muted | failed
@@ -21,11 +22,13 @@
   let level = $state(0);
   let threshold = $state(0.012);
   let heard = $state('');
+  let caption = $state('');
   let note = $state('');
   let sent = $state(0);
   let stale = $state(false);
 
   let capture = null;
+  let transcriber = null;
   let releaseHold = null;
   let queue = Promise.resolve();
   let ended = false;
@@ -43,6 +46,7 @@
     return 'Listening. Speak, and pause when you are done.';
   });
 
+  const END_DRAIN_MS = 6000;
   const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
 
   onMount(async () => {
@@ -54,6 +58,14 @@
     // Held for the whole conversation: a deploy mid-walk must not reload the
     // page and close the microphone; leaving the page asks first.
     releaseHold = holdForRecording();
+    transcriber = createTranscriber({
+      fetchSession,
+      onDelta: (text) => (caption = text),
+      onError: (message) => logging.error('voice transcriber error', message),
+    });
+    // Connect now so the first turn doesn't wait for the handshake; a failure
+    // here is reported by the first turn that needs the connection.
+    transcriber.connect().catch((error) => (note = error.message));
     try {
       capture = await startCapture({
         onlevel: (rms, limit) => {
@@ -62,13 +74,18 @@
           lastSampleAt = performance.now();
           stale = false;
         },
-        onspeechstart: () => {
+        onspeechstart: (samples) => {
+          caption = '';
+          transcriber?.begin(samples);
           if (phase === 'listening') phase = 'hearing';
         },
+        onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
+          transcriber?.discard();
+          caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
-        onturn: (blob, durationMs) => enqueue(blob, durationMs),
+        onturn: (durationMs) => enqueue(transcriber.commit(), durationMs),
       });
       if (ended) {
         await capture.stop();
@@ -86,6 +103,7 @@
       phase = 'failed';
       note = micErrorMessage(error);
       onerror?.(note);
+      transcriber?.close();
       releaseHold?.();
       releaseHold = null;
     }
@@ -95,42 +113,73 @@
     ended = true;
     clearInterval(watchdog);
     capture?.stop();
+    transcriber?.close();
     releaseHold?.();
   });
 
-  // Turns are handled one at a time, in the order they were spoken.
-  function enqueue(blob, durationMs) {
-    queue = queue.then(() => handleTurn(blob, durationMs)).catch((error) => logging.error('voice turn failed', error));
+  // A fresh short-lived secret for each (re)connection.
+  async function fetchSession() {
+    let response;
+    try {
+      response = await fetch(accountChatVoiceModeSessionPath(accountId, chatId), {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'X-CSRF-Token': csrf() },
+        credentials: 'same-origin',
+      });
+    } catch {
+      throw new Error('Could not reach the house to start transcription.');
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data?.error || 'Transcription could not start.';
+      if (response.status === 403) {
+        onerror?.(message);
+        end({ drain: false });
+      }
+      throw new Error(message);
+    }
+    return data;
   }
 
-  async function handleTurn(blob, durationMs) {
+  // Turns are sent one at a time, in the order they were spoken; each
+  // transcript is already on its way when the next turn starts.
+  function enqueue(transcript, durationMs) {
+    if (phase === 'hearing') phase = 'transcribing';
+    queue = queue
+      .then(() => handleTurn(transcript, durationMs))
+      .catch((error) => logging.error('voice turn failed', error));
+  }
+
+  async function handleTurn(transcript, durationMs) {
     if (ended) return;
     phase = 'transcribing';
     note = '';
-    const form = new FormData();
-    form.append('audio', blob, 'turn.wav');
-    const result = await readTranscription(await transcriptionRequest({ accountId, chatId }, 'POST', form));
-    if (ended) return;
-    if (!result.ok) {
-      note = result.error || 'Transcription failed.';
+    let raw;
+    try {
+      raw = await transcript;
+    } catch (error) {
+      if (ended) return;
+      note = error?.message || 'Transcription failed.';
+      caption = '';
       phase = capture?.muted ? 'muted' : 'listening';
       return;
     }
-    const { text } = stripReleasePhrase(result.text);
+    if (ended) return;
+    caption = '';
+    const { text } = stripReleasePhrase(raw);
     if (!text) {
       note = `Heard ${Math.round(durationMs / 1000)}s of sound but no words.`;
       phase = capture?.muted ? 'muted' : 'listening';
       return;
     }
-    await send(text, result.signedId);
+    await send(text);
   }
 
-  async function send(text, signedId) {
+  async function send(text) {
     phase = 'sending';
     const form = new FormData();
     form.append('message[content]', text);
     form.append('voice_mode', '1');
-    if (signedId) form.append('audio_signed_id', signedId);
     let response;
     try {
       response = await fetch(accountChatMessagesPath(accountId, chatId), {
@@ -150,7 +199,7 @@
       // 403: the mode was switched off (or lost its key) under us. Stop listening.
       if (response?.status === 403) {
         onerror?.(note);
-        await end();
+        await end({ drain: false });
         return;
       }
       phase = capture?.muted ? 'muted' : 'listening';
@@ -169,13 +218,19 @@
     phase = on ? 'muted' : 'listening';
   }
 
-  async function end() {
-    if (ended) return;
-    ended = true;
+  // End sends what was being said when it was pressed (stopping the capture
+  // closes the open turn), waiting a few seconds for its transcript at most.
+  let ending = false;
+  async function end({ drain = true } = {}) {
+    if (ended || ending) return;
+    ending = true;
     clearInterval(watchdog);
     const open = capture;
     capture = null;
     await open?.stop();
+    if (drain) await Promise.race([queue, new Promise((resolve) => setTimeout(resolve, END_DRAIN_MS))]);
+    ended = true;
+    transcriber?.close();
     releaseHold?.();
     releaseHold = null;
     onend?.({ sent });
@@ -229,6 +284,9 @@
   {/if}
   {#if note}
     <p class="text-xs text-muted-foreground" data-testid="voice-mode-note">{note}</p>
+  {/if}
+  {#if caption}
+    <p class="text-sm" data-testid="voice-mode-caption">{caption}</p>
   {/if}
   {#if heard}
     <p class="text-xs text-muted-foreground truncate" data-testid="voice-mode-heard">Sent: “{heard}”</p>

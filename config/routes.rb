@@ -215,6 +215,7 @@ Rails.application.routes.draw do
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]
+        resource :voice_mode_session, only: :create
       end
       resources :messages, only: [ :index, :create ]
     end

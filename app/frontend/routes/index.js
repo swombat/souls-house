@@ -932,6 +932,16 @@ export const accountChatTranscriptionPath = /*#__PURE__*/ __route({"account_id":
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/chats/:chat_id/voice_mode_session(.:format)
+ * @param {any} accountId
+ * @param {any} chatId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountChatVoiceModeSessionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"voice_mode_session"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/chats/:chat_id/visual_tag(.:format)
  * @param {any} accountId
  * @param {any} chatId

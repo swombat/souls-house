@@ -38,7 +38,9 @@
     <Card.Description>
       Talk to a conversation instead of typing. With this on, an empty composer offers a wave button; press it and each
       thing you say is transcribed and sent to the residents as a message, hands free, until you end the conversation.
-      Transcription uses this account's OpenAI key, or the house's when the account uses house keys.
+      Transcription uses this account's OpenAI key, or the house's when the account uses house keys. While you speak,
+      the audio goes from your browser straight to OpenAI's live transcription; the house keeps the text and no
+      recording.
     </Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">

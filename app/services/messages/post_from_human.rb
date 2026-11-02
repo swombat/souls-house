@@ -70,6 +70,9 @@ class Messages::PostFromHuman
         return Result.new(status: :voice_mode_unavailable, message: message, sole_resident: @chat.sole_resident.present?)
       end
       message.voice_mode = true
+      # Spoken, though no recording is kept: voice mode streams to the
+      # transcriber and sends text only.
+      message.audio_source = true
     end
     if @client_message_id
       message.client_message_id = @client_message_id

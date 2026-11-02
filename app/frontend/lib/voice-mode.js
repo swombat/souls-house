@@ -11,6 +11,9 @@
 //   { type: 'end', samples, durationMs }   speech ended: the utterance with `preRollMs`
 //                                          of audio before its first frame
 //   { type: 'discard', durationMs }        a burst shorter than `minSpeechMs` (a cough, a door)
+// With `streamFrames`, for a transcriber that listens while the person speaks:
+//   'start' also carries `samples`, the pre-roll and attack frames, and every
+//   later frame of the turn arrives at once as { type: 'audio', samples }.
 // Silence is `silenceMs` of frames below the threshold. The threshold is the
 // larger of an absolute floor and a multiple of the running noise level, which
 // is learnt from the quiet frames, so a noisy street raises it and a quiet room
@@ -26,6 +29,7 @@ export function createTurnDetector({
   floor = 0.012,
   noiseRatio = 3,
   maxTurnMs = 90_000,
+  streamFrames = false,
 } = {}) {
   if (!sampleRate) throw new Error('createTurnDetector needs a sampleRate');
   const frameSamples = Math.max(1, Math.round((sampleRate * frameMs) / 1000));
@@ -89,12 +93,13 @@ export function createTurnDetector({
         turn = preRoll.slice();
         preRoll = [];
         turnFrames = 0;
-        events.push({ type: 'start' });
+        events.push(streamFrames ? { type: 'start', samples: concat(turn) } : { type: 'start' });
       }
       return;
     }
 
     turn.push(frame);
+    if (streamFrames) events.push({ type: 'audio', samples: frame.slice() });
     if (loud) {
       turnFrames += 1;
       quietRun = 0;
@@ -185,6 +190,37 @@ export function encodeWavBytes(samples, sampleRate) {
 
 export function encodeWav(samples, sampleRate) {
   return new Blob([encodeWavBytes(samples, sampleRate)], { type: 'audio/wav' });
+}
+
+// Linear-interpolation resample in either direction. The realtime transcriber
+// takes 24 kHz; a phone's context is usually 48 kHz, occasionally 16 kHz.
+export function resample(samples, fromRate, toRate) {
+  if (fromRate === toRate) return samples;
+  const ratio = fromRate / toRate;
+  const length = Math.floor(samples.length / ratio);
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    const position = i * ratio;
+    const index = Math.floor(position);
+    const next = Math.min(index + 1, samples.length - 1);
+    const fraction = position - index;
+    out[i] = samples[index] * (1 - fraction) + samples[next] * fraction;
+  }
+  return out;
+}
+
+// Little-endian 16-bit PCM as base64, the realtime API's audio encoding.
+export function pcm16Base64(samples) {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < samples.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(i * 2, Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff), true);
+  }
+  let binary = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) binary += String.fromCharCode(...bytes.subarray(i, i + step));
+  return btoa(binary);
 }
 
 // "Over to you" at the end of an utterance is the explicit hand-over. It is
