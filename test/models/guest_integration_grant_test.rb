@@ -285,6 +285,20 @@ class GuestIntegrationGrantTest < ActiveSupport::TestCase
     end
   end
 
+  test "a waiting request removed with the guest's seat or its connection clears the home owners' notice live" do
+    stream = "Account:#{@home.obfuscated_id}"
+    marker = { action: "refresh", prop: "expired_subscriptions" }
+    @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+    other = google_connection(owner: @anna, scopes: [ DRIVE_READ ], subject: "google-two")
+    @lume.set_service_access!(other, enabled: true, actor: @anna)
+
+    assert_broadcast_on(stream, marker) { other.destroy! }
+    assert_equal 1, ExpiredProviderSubscriptions.summary_for(@daniel)[:awaiting].size
+
+    assert_broadcast_on(stream, marker) { @seat.destroy! }
+    assert_empty ExpiredProviderSubscriptions.summary_for(@daniel)[:awaiting]
+  end
+
   test "a hosted grant sends no approval notice" do
     assert_no_broadcasts("Account:#{@sharing.obfuscated_id}") do
       @local.set_service_access!(@connection, enabled: true, actor: @anna)

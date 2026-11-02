@@ -105,6 +105,10 @@ class AgentServiceAccess < ApplicationRecord
   # decided, reaches an owner who is already looking at the house without a
   # page load (Daniel, 2026-11-02, JVvkmJ: "I had to look around to find this").
   after_commit :broadcast_home_approval_notice, on: [ :create, :update ], if: :saved_change_to_home_approval?
+  # A waiting request also leaves the count when its row goes: the guest
+  # leaves the sharing house, or the shared connection is deleted (Mira,
+  # #732 review). Distinct name: commit callbacks are deduplicated by filter.
+  after_destroy_commit :broadcast_home_approval_notice_after_destroy, if: -> { home_approval == "pending" }
 
   INTEGRATION_STATUS_COLUMNS = %w[
     agent_id service_connection_id enabled follows_default
@@ -414,8 +418,22 @@ class AgentServiceAccess < ApplicationRecord
   def broadcast_home_approval_notice
     return unless foreign?
 
+    broadcast_home_notice_to(agent.account_id)
+  end
+
+  # The row is gone, so don't reload what it points at: a guest row is the
+  # only kind that is ever pending, and its agent (in memory when the agent
+  # itself is being destroyed) names the home account.
+  def broadcast_home_approval_notice_after_destroy
+    broadcast_home_notice_to(agent&.account_id)
+  end
+
+  def broadcast_home_notice_to(account_id)
+    account = account_id && Account.find_by(id: account_id)
+    return unless account
+
     ActionCable.server.broadcast(
-      "Account:#{agent.account.obfuscated_id}",
+      "Account:#{account.obfuscated_id}",
       { action: "refresh", prop: "expired_subscriptions" }
     )
   end
