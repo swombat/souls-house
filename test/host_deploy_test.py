@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import call, patch
 
@@ -1041,6 +1042,23 @@ class WorkerTest(unittest.TestCase):
         # Host residents first, then the VM; the alias moves only after both.
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
+    def test_vm_residents_restart_at_the_same_time(self):
+        started = [{"result": "started", "command_id": 70}]
+        healthy = [{"result": "healthy"}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(1, 2), on_vm=(1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started), status=list(healthy))
+                                for i in (1, 2)})
+        barrier = threading.Barrier(2, timeout=5)
+        rails = self.w.rails.side_effect
+
+        def together(code, env=None):
+            if env and env.get("DEPLOY_VM_MODE") == "status":
+                barrier.wait()
+            return rails(code, env)
+        self.w.rails.side_effect = together
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+
     def test_vm_resident_already_on_the_image_is_current(self):
         self.vm_fixture(start=[{"result": "current"}])
         self.w.rebuild_residents()
@@ -1113,22 +1131,88 @@ class WorkerTest(unittest.TestCase):
             self.w.rebuild_residents()
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
-    def test_busy_then_failing_resident_keeps_the_busy_one_pending(self):
-        commands = self.pinned_fixture(["c" * 40, "c" * 40, "c" * 40])
+    def outcomes(self, outcomes):
         rails = self.w.rails.side_effect
-        outcomes = {"0": "busy", "1": "broken"}
         self.w.rails.side_effect = lambda code, env=None: (
             rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] not in outcomes
             else {"result": outcomes[env["DEPLOY_RESIDENT_ID"]]})
+
+    def rolled(self):
+        return [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list
+                if c.args[1:] and "DEPLOY_VM_MODE" not in c.args[1]]
+
+    def test_failed_canary_leaves_everyone_else_untouched(self):
+        # 0 is busy, so 1 is the canary; it fails, and 2 is never rolled.
+        commands = self.pinned_fixture(["c" * 40, "c" * 40, "c" * 40])
+        self.outcomes({"0": "busy", "1": "broken"})
         with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
             self.w.rebuild_residents()
+        self.assertEqual(["0", "1"], self.rolled())
         pending = json.loads((self.root / "pending-rolls.json").read_text())
+        # The busy one is still owed a roll, but the sweep won't give it one
+        # until an operator has looked (no canary proved the image).
         self.assertEqual([0], [r["id"] for r in pending["residents"]])
         self.assertEqual([1], pending["held"])
+        self.assertEqual([2], pending["untouched"])
+        self.assertFalse(pending["canary_proven"])
         self.assertFalse(pending["births_allowed"])
-        # Resident 2 still had its turn after 1 failed.
-        self.assertTrue((self.w.directory / "resident-2.json").exists())
+        self.assertFalse((self.w.directory / "resident-2.json").exists())
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_failure_after_the_canary_does_not_stop_the_others(self):
+        commands = self.pinned_fixture(["c" * 40] * 4)
+        self.outcomes({"0": "busy", "2": "broken"})
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        self.assertEqual(["0", "1"], self.rolled()[:2])
+        self.assertEqual({"2", "3"}, set(self.rolled()[2:]))
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], [r["id"] for r in pending["residents"]])
+        self.assertEqual([2], pending["held"])
+        self.assertTrue(pending["canary_proven"])
+        self.assertTrue((self.w.directory / "resident-3.json").exists())
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_after_the_canary_residents_roll_at_the_same_time(self):
+        # Four residents after the canary, four workers: each roll waits until
+        # all four are in flight, which only happens if they run at once.
+        self.pinned_fixture(["c" * 40] * 5)
+        self.w.settings["roll_concurrency"] = 4
+        barrier = threading.Barrier(4, timeout=5)
+        rails = self.w.rails.side_effect
+
+        def together(code, env=None):
+            if env and env.get("DEPLOY_RESIDENT_ID") not in (None, "0") and "DEPLOY_VM_MODE" not in env:
+                barrier.wait()
+            return rails(code, env)
+        self.w.rails.side_effect = together
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertEqual("0", self.rolled()[0])
+
+    def test_custom_resident_is_never_the_canary_when_a_stock_one_can_be(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        self.w.settings["custom_residents"] = {"0": "development"}
+        self.w.rebuild_residents()
+        self.assertEqual(["1", "0"], self.rolled())
+
+    def test_downgrade_is_refused_before_anyone_rolls(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        # The pinned pre-check reads 47.11 everywhere; then resident 1's own
+        # probe reports a newer binary than the one built.
+        run = self.w.run.side_effect
+        probes = []
+
+        def probe(args, **kw):
+            if args[:3] == ["docker", "exec", "r1"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return "chaos 47.12.0.1"
+            return run(args, **kw)
+        self.w.run.side_effect = probe
+        with self.assertRaisesRegex(RuntimeError, "downgrade"):
+            self.w.rebuild_residents()
+        self.assertEqual([], self.rolled())
 
     def assert_queue_survives(self, fail):
         self.pinned_fixture(["c" * 40, "c" * 40])
@@ -1303,13 +1387,32 @@ class SweepTest(unittest.TestCase):
     def test_idle_rolls_busy_waits_failure_is_held_not_dropped(self):
         self.pending([1, 2, 3])
         message, calls = self.sweep({1: "healthy", 2: "busy", 3: RuntimeError("transport")})
-        self.assertEqual([1, 2, 3], calls)
+        # 1 is the canary; 2 and 3 roll together after it.
+        self.assertEqual(1, calls[0])
+        self.assertEqual([1, 2, 3], sorted(calls))
         self.assertEqual("1 waiting, 1 held", message)
         state = json.loads((self.root / "pending-rolls.json").read_text())
         self.assertEqual([2], [r["id"] for r in state["residents"]])
         self.assertEqual([3], state["held"])
         # Held is never retried automatically.
         self.assertEqual([2], self.sweep({2: "busy"})[1])
+
+    def test_held_queue_without_a_proven_canary_rolls_nobody(self):
+        self.pending([2, 3])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state.update(held=[1], canary_proven=False)
+        gate.atomic(self.root / "pending-rolls.json", state)
+        message, calls = self.sweep({2: "healthy", 3: "healthy"})
+        self.assertEqual([], calls)
+        self.assertEqual("2 waiting, 1 held", message)
+
+    def test_sweep_proves_a_canary_before_rolling_the_rest(self):
+        self.pending([2, 3, 4])
+        message, calls = self.sweep({2: "broken", 3: "healthy", 4: "healthy"})
+        self.assertEqual([2], calls)
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([3, 4], [r["id"] for r in state["residents"]])
+        self.assertEqual([2], state["held"])
 
     def test_last_resident_rolled_clears_the_list_and_completes_the_receipt(self):
         run = self.root / "runs" / ("a" * 32)
@@ -1384,6 +1487,8 @@ class SweepTest(unittest.TestCase):
         self.pending([2])
         state = json.loads((self.root / "pending-rolls.json").read_text())
         state["held"] = [9]
+        # Held after the canary proved the image, so the tick still rolls.
+        state["canary_proven"] = True
         gate.atomic(self.root / "pending-rolls.json", state)
         s = worker.Sweeper()
 
