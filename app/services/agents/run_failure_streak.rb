@@ -46,12 +46,18 @@ module Agents
         !truncated && count.positive? && categories.all?("model_unavailable")
       end
 
+      # Every failure was the house refusing the run before dispatch: the
+      # resident has no usable credential or allowance for its model.
+      def needs_setup?
+        !truncated && count.positive? && categories.all?("needs_setup")
+      end
+
       def as_card_json
         return if count < 2
 
         {
           count: count, since: (since&.iso8601 unless truncated), runtime_unavailable: runtime_unavailable?,
-          model_unavailable: model_unavailable?, capped: truncated
+          model_unavailable: model_unavailable?, needs_setup: needs_setup?, capped: truncated
         }
       end
     end

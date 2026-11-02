@@ -75,4 +75,30 @@ class ExternalAgentMemoryAggregationRequestTest < ActiveSupport::TestCase
     assert_includes request.send(:request_text), "Aggregation notice"
   end
 
+  test "an aggregation the resident can't fund is refused before dispatch and says why" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      runtime: "external",
+      uuid: SecureRandom.uuid_v7,
+      endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "tr_valid",
+      health_state: "healthy",
+      consecutive_health_failures: 0,
+      model_id: "deepseek/deepseek-v4.1-flash",
+      provider_auth_modes: {},
+      provider_connections: {}
+    )
+    agent.account.update_columns(use_system_ai_credentials: false)
+    Account::AI_PROVIDERS.each_key { |provider| agent.account.update!("#{provider}_api_key" => nil) }
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+
+    ExternalAgentMemoryAggregationRequest.new(agent: agent, period: "daily", target: "2026-11-01", requested_by: "test").call
+
+    assert_not_requested stub
+    run = AgentRuntimeInteraction.last
+    assert_equal "memory_aggregation_daily", run.trigger_kind
+    assert_equal "needs_setup", run.failure_category
+    assert run.finished_at
+  end
+
 end

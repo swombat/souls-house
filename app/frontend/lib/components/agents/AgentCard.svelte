@@ -156,6 +156,10 @@
         </p>
         {#if failedRuns.runtime_unavailable}
           <p class="mt-0.5">{agent.name}'s runtime isn't starting, so a new message won't get a reply.</p>
+        {:else if failedRuns.needs_setup}
+          <p class="mt-0.5" data-testid="failed-runs-needs-setup">
+            {agent.inference_setup_message || `${agent.name} has no usable credential or allowance for its model.`}
+          </p>
         {:else if failedRuns.model_unavailable}
           <p class="mt-0.5">
             {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until another

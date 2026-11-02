@@ -116,7 +116,7 @@ class Agents::RunFailureStreakTest < ActiveSupport::TestCase
     assert_equal 2, streak.count
     assert_nil streak.since
     assert_not streak.runtime_unavailable?
-    assert_equal({ count: 2, since: nil, runtime_unavailable: false, model_unavailable: false, capped: true }, streak.as_card_json)
+    assert_equal({ count: 2, since: nil, runtime_unavailable: false, model_unavailable: false, needs_setup: false, capped: true }, streak.as_card_json)
   end
 
   test "reaching the start of history is complete, not truncated" do

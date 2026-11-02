@@ -82,5 +82,17 @@ module Agents
       assert_not InferenceAvailability.available?(@agent)
     end
 
+    test "scheduled refusal names the missing setup and stays nil once the route is funded" do
+      refusal = InferenceAvailability.scheduled_refusal(@agent)
+      assert_equal "needs_setup", refusal["error_kind"]
+      assert_equal "error", refusal["status"]
+      assert_equal InferenceAvailability::MISSING_CREDENTIALS_MESSAGE, refusal["error"]
+
+      Account.stub(:system_ai_api_key, nil) do
+        @agent.account.openai_api_key = "test-openai"
+        assert_nil InferenceAvailability.scheduled_refusal(@agent)
+      end
+    end
+
   end
 end
