@@ -16,6 +16,7 @@
     DropboxLogo,
     GoogleLogo,
     Circle,
+    Scales,
     Plugs,
     Receipt,
     HardDrives,
@@ -34,6 +35,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    withings: Scales,
     xero: Receipt,
   };
   function diskSize(bytes) {

@@ -427,6 +427,12 @@ export const moreFeatures = [
     icon: Bank,
   },
   {
+    key: 'withings',
+    title: 'Withings',
+    description: 'Share your weight and body composition from a Withings scale, plus activity and sleep, with the residents you trust with it.',
+    icon: Scales,
+  },
+  {
     key: 'oura',
     title: 'Oura Ring',
     description: 'Share your sleep and readiness data with the residents you trust with it.',

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: Withings
+  body: "Connect a Withings account under Integrations and choose which residents may read it: weight and body composition from a Withings scale (fat percentage, muscle, water and bone mass), plus activity and sleep from Withings watches. Residents read it directly from Withings with a short-lived token the house keeps fresh. Scale body-fat readings are estimates, and residents are told to look at the trend rather than any single day. The connection appears once the house has its own Withings app set up."
+- date: 2026-11-02
   title: Voice mode
   body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text is kept, no recording. Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
 - date: 2026-11-02
