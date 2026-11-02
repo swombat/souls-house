@@ -7,7 +7,9 @@
 // every reply through that same element.
 //
 // Interruption is playback only: when the person starts speaking, what is
-// playing stops and the queue is cleared. A generation counter makes sure a
+// playing stops and the queue is cleared. interrupt() returns what it dropped
+// (the reply playing, then the ones queued behind it), so a burst that turns
+// out not to be speech can put the whole sequence back (#748). A generation counter makes sure a
 // play() already in flight when that happens cannot start afterwards.
 
 let shared = null;
@@ -83,13 +85,15 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     },
     interrupt() {
       generation += 1;
+      const dropped = [...(current ? [current.id] : []), ...queue.map((item) => item.id)];
       queue = [];
-      if (!current) return;
+      if (!current) return dropped;
       current = null;
       audio.pause();
       audio.removeAttribute('src');
       audio.load?.();
       report();
+      return dropped;
     },
     close() {
       closed = true;
