@@ -26,6 +26,11 @@
     onregisterWebhook,
   } = $props();
   let selectedIntegration = $state(null);
+  // Requests waiting for this house's decision go above everything else;
+  // decided ones (approved, declined, revoked…) stay at the bottom.
+  const isWaiting = (connection) => connection.home_approval === 'pending' && connection.enabled !== false;
+  const waitingConnections = $derived(sharedConnections.filter(isWaiting));
+  const decidedConnections = $derived(sharedConnections.filter((connection) => !isWaiting(connection)));
   const telegramAgent = $derived(
     telegramConfiguration
       ? {
@@ -72,6 +77,8 @@
       </div>
       <Button href={`/accounts/${account.id}/integrations#connect-new`}>Add integration</Button>
     </div>
+
+    <SharedConnectionsPanel {agent} sharedConnections={waitingConnections} {canDecideGuestAccess} waiting />
 
     <div class="divide-y rounded-lg border">
       {#each serviceConnections as connection}
@@ -156,6 +163,6 @@
         </button>
       </div>
     </div>
-    <SharedConnectionsPanel {agent} {sharedConnections} {canDecideGuestAccess} />
+    <SharedConnectionsPanel {agent} sharedConnections={decidedConnections} {canDecideGuestAccess} />
   </div>
 {/if}

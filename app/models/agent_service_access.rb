@@ -99,6 +99,13 @@ class AgentServiceAccess < ApplicationRecord
   after_save :refresh_integration_status, if: :integration_status_changed?
   after_destroy :refresh_integration_status
 
+  # The home's owners see waiting requests as a black notice beside the
+  # account menu (ExpiredProviderSubscriptions#awaiting). The navbar reloads
+  # that summary on its Account stream, so a request arriving, or being
+  # decided, reaches an owner who is already looking at the house without a
+  # page load (Daniel, 2026-11-02, JVvkmJ: "I had to look around to find this").
+  after_commit :broadcast_home_approval_notice, on: [ :create, :update ], if: :saved_change_to_home_approval?
+
   INTEGRATION_STATUS_COLUMNS = %w[
     agent_id service_connection_id enabled follows_default
     provisioning_status provisioning_error_code home_approval
@@ -401,6 +408,15 @@ class AgentServiceAccess < ApplicationRecord
     IntegrationStatus.refresh!(
       Agent.where(id: agent_ids).pluck(:account_id) +
         ServiceConnection.where(id: connection_ids).pluck(:account_id)
+    )
+  end
+
+  def broadcast_home_approval_notice
+    return unless foreign?
+
+    ActionCable.server.broadcast(
+      "Account:#{agent.account.obfuscated_id}",
+      { action: "refresh", prop: "expired_subscriptions" }
     )
   end
 

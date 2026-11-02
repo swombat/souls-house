@@ -6,6 +6,7 @@ require "test_helper"
 class GuestIntegrationGrantTest < ActiveSupport::TestCase
 
   include ActiveJob::TestHelper
+  include ActionCable::TestHelper
 
   DRIVE_READ = "https://www.googleapis.com/auth/drive.readonly".freeze
   DRIVE_WRITE = "https://www.googleapis.com/auth/drive".freeze
@@ -267,6 +268,27 @@ class GuestIntegrationGrantTest < ActiveSupport::TestCase
     assert_equal 1, summary[:total]
 
     assert_empty ExpiredProviderSubscriptions.summary_for(@anna)[:awaiting]
+  end
+
+  test "a request arriving or being decided refreshes the home owners' notice live" do
+    stream = "Account:#{@home.obfuscated_id}"
+    marker = { action: "refresh", prop: "expired_subscriptions" }
+
+    access = nil
+    assert_broadcast_on(stream, marker) do
+      access = @lume.set_service_access!(@connection, enabled: true, actor: @anna)
+    end
+    assert_equal "pending", access.home_approval
+
+    assert_broadcast_on(stream, marker) do
+      access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    end
+  end
+
+  test "a hosted grant sends no approval notice" do
+    assert_no_broadcasts("Account:#{@sharing.obfuscated_id}") do
+      @local.set_service_access!(@connection, enabled: true, actor: @anna)
+    end
   end
 
   private
