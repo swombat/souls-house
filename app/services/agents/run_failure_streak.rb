@@ -53,12 +53,21 @@ module Agents
           categories.all? { |category| category.in?(AgentRuntimeInteraction::FailureReport::SETUP_CATEGORIES) }
       end
 
+      # The one cause every failure in a complete streak shares, in the
+      # house's safe words; nil when they differ, when it isn't known, or
+      # when the scan stopped short of the streak's start.
+      def cause
+        return if truncated || count.zero? || categories.uniq.size != 1 || categories.first.in?(%w[unknown runtime_error])
+
+        RunFailureNotice::NO_REPLY_CAUSES[categories.first]
+      end
+
       def as_card_json
         return if count < 2
 
         {
           count: count, since: (since&.iso8601 unless truncated), runtime_unavailable: runtime_unavailable?,
-          model_unavailable: model_unavailable?, needs_setup: needs_setup?, capped: truncated
+          model_unavailable: model_unavailable?, needs_setup: needs_setup?, cause: cause, capped: truncated
         }
       end
     end

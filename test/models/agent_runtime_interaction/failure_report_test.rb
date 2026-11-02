@@ -102,6 +102,18 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_not Agents::RunFailureStreak.call(@agent).as_card_json[:needs_setup]
   end
 
+  test "the card names the cause only when every failure in a complete streak shares an informative one" do
+    2.times { live_run("failed", inference_refusal: "house_provider_refused") }
+    assert_equal "the house's model provider refused a request it made", Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
+    live_run("failed", response_body: { "status" => "error", "error_kind" => "subscription_limit" })
+    assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause], "mixed causes name none"
+  end
+
+  test "a streak of plain runtime errors gets no cause line on the card" do
+    2.times { live_run("failed", runtime_status: "error", runtime_returncode: 1) }
+    assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
+  end
+
   test "every category has a cause line" do
     assert_equal AgentRuntimeInteraction::FailureReport::FAILURE_CATEGORIES.sort, RunFailureNotice::NO_REPLY_CAUSES.keys.sort
   end

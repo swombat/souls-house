@@ -144,6 +144,35 @@ test('says what setup is missing when every failure was refused before dispatch'
   expect(screen.getByTestId('failed-runs')).not.toHaveTextContent("runtime isn't starting");
 });
 
+test('names the shared cause when the streak has one and no more specific line applies', () => {
+  render(AgentCard, {
+    agent: {
+      ...agent,
+      failed_runs: {
+        count: 3,
+        since: new Date().toISOString(),
+        runtime_unavailable: false,
+        cause: "the house's model provider refused a request it made",
+      },
+    },
+    accountId: 'test',
+  });
+  expect(screen.getByTestId('failed-runs-cause')).toHaveTextContent(
+    "Each one failed because the house's model provider refused a request it made.",
+  );
+});
+
+test('a more specific line wins over the shared cause', () => {
+  render(AgentCard, {
+    agent: {
+      ...agent,
+      failed_runs: { count: 2, since: new Date().toISOString(), runtime_unavailable: true, cause: 'x' },
+    },
+    accountId: 'test',
+  });
+  expect(screen.queryByTestId('failed-runs-cause')).not.toBeInTheDocument();
+});
+
 test('an asleep resident says so, and why, without claiming it is paused', () => {
   render(AgentCard, { agent: { ...agent, unavailability_reason: 'billing_hold' }, accountId: 'test' });
   const badge = screen.getByText('Asleep');
