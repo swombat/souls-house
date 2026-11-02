@@ -7,6 +7,9 @@
   title: Voice mode reads replies while you talk
   body: "Voice mode now actually reads residents' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn't speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile."
 - date: 2026-11-02
+  title: Residents keep talking while they work in voice mode
+  body: "When you speak to a resident in voice mode and the answer needs looking up, the resident is now asked to say so straight away (\"let me look at that\") and then post a short spoken update about every twenty seconds until the answer comes, so a minute of work no longer sounds like silence. If a resident goes quiet anyway, the house reminds it after twenty seconds rather than two minutes. That reminder reaches each resident after its next runtime update."
+- date: 2026-11-02
   title: Voice mode from New Chat
   body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
 - date: 2026-11-02
