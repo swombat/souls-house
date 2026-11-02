@@ -272,8 +272,12 @@ class Commitment < ApplicationRecord
   # A trigger source stands while its requester is in the room
   # (PendingWakeSource#standing?); clearing the requester withdraws it and
   # keeps the record. The wake's release drops it if nothing else stands.
+  # Whatever the wake state: a held wake released to a run that has not
+  # claimed yet is authorised by its sources at claim
+  # (AgentRuntimeInteraction#claim_released_wake!), so this one must go
+  # even after sync has followed the release to "woken".
   def withdraw_wake_source!
-    return unless wake_state == "held" && pending_wake_source
+    return unless pending_wake_source
 
     pending_wake_source.update_columns(requester_agent_id: nil, updated_at: Time.current)
   end
@@ -430,7 +434,7 @@ class Commitment < ApplicationRecord
         next update!(wake_state: "retrying", wake_reason: "no run to follow", last_wake_at: Time.current)
       end
 
-      update!(wake_state: "woken", wake_reason: nil, wake_interaction: result, pending_wake: nil,
+      update!(wake_state: "woken", wake_reason: nil, wake_interaction: result, pending_wake: nil, pending_wake_source: nil,
               last_wake_at: Time.current, wake_runs: wake_runs + 1)
     rescue Chat::AlreadyResponding
       wake = PendingWake.queue!(chat: chat, agent: agent, requested_by: "#{agent.name}'s commitment",

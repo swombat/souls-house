@@ -337,6 +337,26 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_nil ExternalAgentResponseRequest.new(agent: @lume, chat: @chat, interaction: released).send(:commitment_cue_text)
   end
 
+  test "stopping after a held wake was released and followed refuses the released run at claim" do
+    commitment = commit("Released then stopped", at: @now + 1.minute)
+    busy = AgentRuntimeInteraction.reserve!(agent: @lume, chat: @chat)
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    assert_equal "held", commitment.reload.wake_state
+    busy.update_columns(finished_at: Time.current)
+    released = live do
+      PendingWake.release!(chat: @chat, agent: @lume)
+      commitment.pending_wake.reload.released_interaction
+    end
+    assert released.present?
+    commitment.sync_wake!
+    assert_equal [ "woken", released ], [ commitment.reload.wake_state, commitment.wake_interaction ]
+
+    assert_equal :cancelled, commitment.cancel!(by: @user).status
+    live { assert_not released.reload.claim_dispatch! }
+    assert_equal "cancelled", released.reload.execution_state
+    assert_equal "withdrawn", commitment.reload.wake_state
+  end
+
   test "stopping a woken commitment refuses its run at claim" do
     commitment = commit("Stop me", at: @now + 1.minute)
     travel_to(@now + 2.minutes) { live { commitment.activate! } }
