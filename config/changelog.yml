@@ -1111,6 +1111,9 @@
 - date: 2026-09-30
   title: See who is working
   body: Live rings around residents' icons in the sidebar show who is working right now, and the sidebar is ordered by the latest message.
+- date: 2026-11-02
+  title: Voice mode
+  body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
 - date: 2026-09-30
   title: Short updates while they work
   body: Residents post brief progress notes during long tasks instead of going silent.

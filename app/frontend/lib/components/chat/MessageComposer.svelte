@@ -1,11 +1,12 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
-  import { ArrowUp, Spinner } from 'phosphor-svelte';
+  import { ArrowUp, Spinner, Waveform } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import { fileDropZone } from '$lib/file-drop-zone';
   import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
+  import VoiceModePanel from '$lib/components/chat/VoiceModePanel.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { accountChatMessagesPath } from '@/routes';
@@ -18,6 +19,10 @@
     disabled = false,
     manualResponses = false,
     fileUploadConfig = {},
+    // VoiceMode.status_for the account: offered (the wave button is shown in
+    // place of Send while the composer is empty), available (it can be
+    // pressed), and the reason when it cannot.
+    voiceMode = { offered: false, available: false, reason: null },
     onsent,
     onwaiting,
     onerror,
@@ -31,6 +36,27 @@
   let textareaRef = $state(null);
   let draft;
   let draftState = $state({ content: '', status: 'Loading draft…', recoveries: [] });
+  let voiceOpen = $state(false);
+  let voiceNotice = $state('');
+
+  const composerEmpty = $derived(!draftState.content.trim() && selectedFiles.length === 0);
+  const showWave = $derived(
+    Boolean(voiceMode?.offered) && composerEmpty && !submitting && !disabled && !draftState.locked
+  );
+
+  const VOICE_REASONS = {
+    no_transcription_key:
+      "Voice mode needs an OpenAI API key for this account. Add one under the account's model provider keys, or let the account use the house keys.",
+  };
+
+  function openVoiceMode() {
+    if (!voiceMode?.available) {
+      voiceNotice = VOICE_REASONS[voiceMode?.reason] || 'Voice mode is not available in this account.';
+      return;
+    }
+    voiceNotice = '';
+    voiceOpen = true;
+  }
 
   // A transcribed voice note's audio is attached only in memory until its message is sent; keep
   // background refreshes (and the reload a deploy turns them into) off until then. Taken before
@@ -209,55 +235,88 @@
   class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
   data-testid="message-composer"
   use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: submitting || disabled }}>
-  <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
-    <FileUploadInput
-      bind:this={uploader}
-      bind:files={selectedFiles}
-      disabled={submitting || disabled}
-      maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
+  {#if voiceOpen}
+    <VoiceModePanel
+      {accountId}
+      {chatId}
+      {userId}
+      onsent={(data) => onsent?.(data)}
+      onerror={(message) => onerror?.(message)}
+      onend={() => (voiceOpen = false)} />
+  {:else}
+    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
+      <FileUploadInput
+        bind:this={uploader}
+        bind:files={selectedFiles}
+        disabled={submitting || disabled}
+        maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
 
-    <div class="min-w-0 col-start-2 row-start-1">
-      <textarea
-        bind:this={textareaRef}
-        value={draftState.content}
-        onpaste={handlePaste}
-        onkeydown={handleKeydown}
-        oninput={(event) => {
-          draft?.edit(event.currentTarget.value);
-          autoResize();
-        }}
-        {placeholder}
-        disabled={disabled || draftState.locked}
-        class="w-full resize-none border border-input rounded-md px-3 py-2 text-sm bg-background
+      <div class="min-w-0 col-start-2 row-start-1">
+        <textarea
+          bind:this={textareaRef}
+          value={draftState.content}
+          onpaste={handlePaste}
+          onkeydown={handleKeydown}
+          oninput={(event) => {
+            draft?.edit(event.currentTarget.value);
+            autoResize();
+          }}
+          {placeholder}
+          disabled={disabled || draftState.locked}
+          class="w-full resize-none border border-input rounded-md px-3 py-2 text-sm bg-background
                focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent
                min-h-[40px] max-h-[min(240px,35dvh)] overflow-y-auto disabled:opacity-50 disabled:cursor-not-allowed"
-        style:max-height="min(240px, calc(var(--chat-viewport-height, 100dvh) * 0.35))"
-        rows="1"></textarea>
-    </div>
-    <div class="col-start-3 row-start-1">
-      <MicButton
-        disabled={submitting || disabled}
-        {accountId}
-        {chatId}
-        {userId}
-        onsuccess={handleTranscription}
-        onerror={handleTranscriptionError} />
-    </div>
-    <button
-      onclick={sendMessage}
-      disabled={(!draftState.content.trim() && selectedFiles.length === 0) ||
-        submitting ||
-        disabled ||
-        !!draftState.conflict}
-      aria-label="Send message"
-      class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
-      {#if submitting}
-        <Spinner size={16} class="animate-spin" />
+          style:max-height="min(240px, calc(var(--chat-viewport-height, 100dvh) * 0.35))"
+          rows="1"></textarea>
+      </div>
+      <div class="col-start-3 row-start-1">
+        <MicButton
+          disabled={submitting || disabled}
+          {accountId}
+          {chatId}
+          {userId}
+          onsuccess={handleTranscription}
+          onerror={handleTranscriptionError} />
+      </div>
+      {#if showWave}
+        <!-- An empty composer offers voice instead of Send. Not a disabled button
+           when the mode cannot start: a tap then explains why (titles don't show on phones). -->
+        <button
+          type="button"
+          onclick={openVoiceMode}
+          aria-label="Start voice mode"
+          aria-disabled={!voiceMode?.available}
+          title={voiceMode?.available
+            ? 'Talk to this conversation'
+            : VOICE_REASONS[voiceMode?.reason] || 'Voice mode is not available'}
+          data-testid="voice-mode-button"
+          class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md
+               {voiceMode?.available
+            ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+            : 'bg-muted text-muted-foreground'}">
+          <Waveform size={18} />
+        </button>
       {:else}
-        <ArrowUp size={16} />
+        <button
+          onclick={sendMessage}
+          disabled={(!draftState.content.trim() && selectedFiles.length === 0) ||
+            submitting ||
+            disabled ||
+            !!draftState.conflict}
+          aria-label="Send message"
+          class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+          {#if submitting}
+            <Spinner size={16} class="animate-spin" />
+          {:else}
+            <ArrowUp size={16} />
+          {/if}
+        </button>
       {/if}
-    </button>
-  </div>
+    </div>
+    {#if voiceNotice}
+      <p class="mt-2 text-sm text-muted-foreground" role="status" data-testid="voice-mode-notice">{voiceNotice}</p>
+    {/if}
+  {/if}
   <div
     role="status"
     class={draftState.storageError || draftState.locked || draftState.status.startsWith('Not synced')

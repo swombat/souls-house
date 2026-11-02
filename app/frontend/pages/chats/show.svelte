@@ -33,6 +33,7 @@
     addable_agents = [],
     show_usage_in_chat: showUsageInChat = false,
     file_upload_config = {},
+    voice_mode: voiceMode = { offered: false, available: false, reason: null },
     telegram_deep_link: telegramDeepLink = null,
   } = $props();
   let showAllMessages = $state(false);
@@ -176,6 +177,7 @@
       runtimeInteractions={activity.rows}
       {latestReplies}
       fileUploadConfig={file_upload_config}
+      {voiceMode}
       onAgentTrigger={response.refreshMessages}
       onSent={sent}
       onWaiting={response.wait}

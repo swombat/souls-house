@@ -697,6 +697,50 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert message.audio_source
   end
 
+  # Voice mode (VoiceMode): a spoken turn is flagged only when the account
+  # may use the mode, and refused (nothing written) when it may not.
+
+  test "a voice mode send flags the message when the mode is available" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, openai_api_key: "sk-account")
+    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("fake audio data"), filename: "turn.wav", content_type: "audio/wav")
+
+    post account_chat_messages_path(@account, @chat), params: {
+      message: { content: "What is on today?" }, audio_signed_id: blob.signed_id, voice_mode: "true"
+    }, as: :json
+    assert_response :created
+
+    message = Message.last
+    assert message.voice_mode?
+    assert message.audio_source?
+    assert_equal true, JSON.parse(@response.body).fetch("voice_mode")
+  end
+
+  test "a voice mode send is refused when the account may not use the mode, and the refusal says why" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: false, openai_api_key: "sk-account")
+
+    assert_no_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: { message: { content: "Hello" }, voice_mode: "1" }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal "account_disabled", JSON.parse(@response.body).dig("voice_mode", "reason")
+
+    @account.update!(voice_mode_enabled: true, openai_api_key: nil, use_system_ai_credentials: false)
+    assert_no_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: { message: { content: "Hello" }, voice_mode: "1" }, as: :json
+    end
+    assert_response :forbidden
+    assert_equal "no_transcription_key", JSON.parse(@response.body).dig("voice_mode", "reason")
+  end
+
+  test "an ordinary send is not a voice mode turn, whatever the account's switch" do
+    Setting.instance.update!(voice_mode_scope: "enabled")
+    post account_chat_messages_path(@account, @chat), params: { message: { content: "Typed." } }, as: :json
+    assert_response :created
+    assert_not Message.last.voice_mode?
+  end
+
   test "creates normal message without audio when no audio_signed_id" do
     post account_chat_messages_path(@account, @chat), params: {
       message: { content: "Regular message" }

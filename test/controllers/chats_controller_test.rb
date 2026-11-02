@@ -23,6 +23,25 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "the chat pages carry the account's voice mode status" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: nil)
+
+    get account_chat_path(@account, @chat)
+    assert_equal({ "offered" => true, "available" => false, "reason" => "no_transcription_key" },
+      inertia_props.dig("props", "voice_mode"))
+
+    @account.update!(openai_api_key: "sk-account")
+    @inertia_props = nil
+    get account_chats_path(@account)
+    assert_equal({ "offered" => true, "available" => true, "reason" => nil }, inertia_props.dig("props", "voice_mode"))
+
+    Setting.instance.update!(voice_mode_scope: "disabled")
+    @inertia_props = nil
+    get new_account_chat_path(@account)
+    assert_equal "site_disabled", inertia_props.dig("props", "voice_mode", "reason")
+  end
+
   test "sidebar leaves out quiet rhythm runs and brings them back once a person replies" do
     resident = agents(:research_assistant)
     rhythm = Rhythm.create!(account: @account, creator_agent: resident, title: "House watch", opening: "Look round.",

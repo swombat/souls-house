@@ -10,6 +10,7 @@ class Messages::PostFromHuman
     def invalid? = status == :invalid
     def dispatch_unavailable? = status == :dispatch_unavailable
     def attachment_claimed? = status == :attachment_claimed
+    def voice_mode_unavailable? = status == :voice_mode_unavailable
   end
 
   # What a retry is compared against (ADR 0004): written at create and never
@@ -30,7 +31,11 @@ class Messages::PostFromHuman
 
   # draft: the author's ConversationDraft and the revision the client sent.
   # The web and general API can send one; a native send never clears a web draft.
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [])
+  # voice_mode: the text was spoken in the conversation's voice mode and the
+  # reply will be read aloud. Refused before anything is written when the mode
+  # is not available to the account (VoiceMode), so the switch is enforced here
+  # and not only by the composer hiding its button.
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [], voice_mode: false)
     @chat = chat
     @draft = draft
     @draft_revision = draft_revision
@@ -40,6 +45,7 @@ class Messages::PostFromHuman
     @audio_signed_id = audio_signed_id
     @client_message_id = client_message_id
     @stone_revisions = stone_revisions
+    @voice_mode = voice_mode
   end
 
   # Acceptance is one primary transaction: the message, the caller's audit
@@ -59,6 +65,12 @@ class Messages::PostFromHuman
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     message.stone_revisions = @stone_revisions
+    if @voice_mode
+      unless VoiceMode.available_for?(@chat.account)
+        return Result.new(status: :voice_mode_unavailable, message: message, sole_resident: @chat.sole_resident.present?)
+      end
+      message.voice_mode = true
+    end
     if @client_message_id
       message.client_message_id = @client_message_id
       message.submission_digest = self.class.submission_digest(content: @content, blobs: app_blobs)

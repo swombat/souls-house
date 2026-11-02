@@ -11,6 +11,7 @@
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
+  import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
@@ -25,6 +26,9 @@
     resident_handoff_cap = 6,
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
+    voice_mode_enabled = false,
+    voice_mode_site_scope = 'account_choice',
+    voice_mode_transcription_key = false,
   } = $props();
 
   const updateSync = createDynamicSync();
@@ -38,6 +42,7 @@
         'can_invite_owner',
         'resident_handoff_cap',
         'reflexes_enabled',
+        'voice_mode_enabled',
       ],
     });
   });
@@ -140,6 +145,13 @@
     enabled={reflexes_enabled}
     canManage={can_manage}
     siteScope={reflexes_site_scope} />
+
+  <VoiceModeCard
+    accountId={account.id}
+    enabled={voice_mode_enabled}
+    canManage={can_manage}
+    siteScope={voice_mode_site_scope}
+    transcriptionKey={voice_mode_transcription_key} />
 
   <AccountTypeCard
     {account}

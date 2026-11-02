@@ -1,4 +1,27 @@
 require "test_helper"
+
+class ExternalAgentResponseRequestVoiceModeTest < ActiveSupport::TestCase
+
+  # The trigger text says when the latest human turn was spoken in voice mode,
+  # so the resident knows its reply will be heard, not read.
+  test "the trigger text carries the voice mode note only while the latest human turn was spoken" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(title: "Spoken", manual_responses: true, agents: [ agent ])
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Typed.", suppress_automatic_dispatch: true)
+    assert_not_includes request.send(:trigger_intro_text), "voice mode"
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Spoken.", voice_mode: true, suppress_automatic_dispatch: true)
+    text = request.send(:trigger_intro_text)
+    assert_includes text, "explicit human request"
+    assert_includes text, ExternalAgentResponseRequest::VOICE_MODE_NOTE
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Back to typing.", suppress_automatic_dispatch: true)
+    assert_not_includes request.send(:trigger_intro_text), "voice mode"
+  end
+
+end
 require "webmock/minitest"
 
 # The conversation's model selection reaches Chaos, the prompt and the record
