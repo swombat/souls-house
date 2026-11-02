@@ -23,6 +23,7 @@ class AgentsController < ApplicationController
       can_manage_provider_subscription: current_account.owned_by?(Current.user),
       # Each seat carries what the account it sits in has shared with it.
       guest_memberships: Agents::GuestSharedIntegrations.new(current_account.guest_memberships.includes(:account, agent: :account).order(:created_at)).as_json,
+      former_guests_with_commitments: -> { CommitmentPresentation.former_guests(account: current_account, routes: helpers) },
       away_memberships: Agents::GuestSharedIntegrations.new(GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at)).as_json,
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
         .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
@@ -86,6 +87,7 @@ class AgentsController < ApplicationController
       subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
       subagents_available: -> { @agent.subagents_available? },
       reflexes: -> { reflexes_props },
+      commitments: -> { commitments_props },
       # Count/provider partials must not mint another registration token.
       telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
       telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username, reads_all_group_messages: @agent.telegram_reads_all_group_messages } },
@@ -192,6 +194,12 @@ class AgentsController < ApplicationController
         )
       end
     }
+  end
+
+  # The resident's commitments (Commitment): made and managed by the
+  # resident; a person who may manage one can reschedule or cancel it here.
+  def commitments_props
+    CommitmentPresentation.new(agent: @agent, account: current_account, viewer: Current.user, routes: helpers).as_props
   end
 
   # Asleep because its plan lapsed; the Billing tab is where it is paid

@@ -213,6 +213,7 @@ class ExternalAgentResponseRequest
       safeguard_notice_text,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
@@ -227,6 +228,19 @@ class ExternalAgentResponseRequest
     ]
     parts << "Initiation reason: #{initiation_reason}" if initiation_reason.present?
     parts.compact_blank.join("\n\n")
+  end
+
+  # A due commitment this run was woken for (Commitment#wake!, directly or
+  # through a held wake), carried in the request itself so it reaches the
+  # resident whatever the transcript window keeps.
+  def commitment_cue_text
+    return unless @interaction&.persisted?
+
+    commitments = Commitment.where(wake_interaction_id: @interaction.id)
+    if (wake = @interaction.released_pending_wake)
+      commitments = commitments.or(Commitment.where(pending_wake_id: wake.id))
+    end
+    commitments.where(status: "activated").includes(:activation_message, :account).order(:id).map(&:cue_text).join("\n\n").presence
   end
 
   # The run a follow-through nudge continues, when this run is one.
@@ -588,6 +602,7 @@ class ExternalAgentResponseRequest
       selection.prompt_section,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,

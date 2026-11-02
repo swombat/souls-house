@@ -18,6 +18,7 @@
     github_resident_import_url: githubResidentImportUrl = null,
     guest_memberships: guestMemberships = [],
     away_memberships: awayMemberships = [],
+    former_guests_with_commitments: formerGuests = [],
     guest_candidates: guestCandidates = [],
     can_end_guest_memberships: canEndGuestMemberships = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
@@ -125,6 +126,7 @@
       guests={guestMemberships}
       away={awayMemberships}
       candidates={guestCandidates}
+      {formerGuests}
       canEnd={canEndGuestMemberships} />
   {/key}
 </div>
