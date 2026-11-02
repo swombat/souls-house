@@ -59,6 +59,65 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_not card[:runtime_unavailable]
   end
 
+  test "a house allowance refusal recorded on the run is the run's category, even if the runtime then hung" do
+    spent = live_run("failed", runtime_status: "error", runtime_returncode: 1, inference_refusal: "house_allowance_exhausted")
+    assert_equal "house_allowance_exhausted", spent.failure_category
+    assert_equal "its house allowance is used up for this month", spent.failure_reason
+    assert_equal "house_allowance_none", live_run("timed_out", inference_refusal: "house_allowance_none").failure_category
+    # A refusal on a run that went on to complete is not a failure.
+    assert_nil live_run("completed", inference_refusal: "house_allowance_exhausted").failure_category
+    # Absent evidence stays what the other fields say.
+    assert_equal "runtime_error", live_run("failed", runtime_status: "error", runtime_returncode: 1).failure_category
+    assert_equal "unknown", live_run("failed", inference_refusal: "something_else").failure_category
+  end
+
+  test "the house's provider refusing a call is the house's category, not a setup one" do
+    refused = live_run("failed", runtime_status: "error", runtime_returncode: 1, inference_refusal: "house_provider_refused")
+    assert_equal "house_provider_refused", refused.failure_category
+    assert_equal "the house's model provider refused a request it made", refused.failure_reason
+    2.times { live_run("failed", inference_refusal: "house_provider_refused") }
+    assert_not Agents::RunFailureStreak.call(@agent).as_card_json[:needs_setup]
+  end
+
+  test "a scheduled run refused before dispatch for its house allowance says which allowance" do
+    refusal = { "status" => "error", "error_kind" => "needs_setup", "error" => "The $10 house allowance is used up." }
+    assert_equal "house_allowance_exhausted",
+      live_run("failed", response_body: refusal.merge("refusal_code" => "house_allowance_exhausted")).failure_category
+    assert_equal "needs_setup", live_run("failed", response_body: refusal).failure_category
+    assert_equal "needs_setup", live_run("failed", response_body: refusal.merge("refusal_code" => "house_inference_busy")).failure_category
+  end
+
+  test "the runtime's subscription-limit kind is its own category" do
+    limited = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "subscription_limit" })
+    assert_equal "subscription_limit", limited.failure_category
+    assert_equal "the run's output looked like its subscription's usage limit", limited.failure_reason
+    assert_nil live_run("completed").failure_reason
+  end
+
+  test "allowance refusals count as setup on the card; a mixed streak does not" do
+    2.times { live_run("failed", inference_refusal: "house_allowance_exhausted") }
+    assert Agents::RunFailureStreak.call(@agent).as_card_json[:needs_setup]
+    live_run("failed", runtime_status: "error", runtime_returncode: 1)
+    assert_not Agents::RunFailureStreak.call(@agent).as_card_json[:needs_setup]
+  end
+
+  test "the card names the cause only when every failure in a complete streak shares an informative one" do
+    2.times { live_run("failed", inference_refusal: "house_provider_refused") }
+    assert_equal "the house's model provider refused a request it made", Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
+    live_run("failed", response_body: { "status" => "error", "error_kind" => "subscription_limit" })
+    assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause], "mixed causes name none"
+  end
+
+  test "a streak of plain runtime errors gets no cause line on the card" do
+    2.times { live_run("failed", runtime_status: "error", runtime_returncode: 1) }
+    assert_nil Agents::RunFailureStreak.call(@agent).as_card_json[:cause]
+  end
+
+  test "every category has a cause line" do
+    assert_equal AgentRuntimeInteraction::FailureReport::FAILURE_CATEGORIES.sort, RunFailureNotice::NO_REPLY_CAUSES.keys.sort
+  end
+
   private
 
   def live_run(state, **attrs)

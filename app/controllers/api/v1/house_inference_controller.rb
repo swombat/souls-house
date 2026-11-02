@@ -34,6 +34,7 @@ module Api
       rescue JSON::ParserError
         render json: { error: { message: 'Invalid JSON.' } }, status: :bad_request
       rescue HouseInference::Error => e
+        record_refusal(e)
         payload = { error: { message: e.message, code: e.code } }
         if response.committed?
           response.stream.write("data: #{JSON.generate(payload)}\n\n")
@@ -52,6 +53,28 @@ module Api
         end
       ensure
         response.stream.close
+      end
+
+      private
+
+      # A refused call says why on the run that made it (#678), so the owner
+      # reads "allowance used up" instead of a generic runtime error. Only
+      # the run named in X-Soulshouse-Run, only if it is this resident's and
+      # still running: concurrent runs of one resident never borrow each
+      # other's refusal, and a header naming another resident's run, a
+      # finished run or nothing at all records nothing.
+      def record_refusal(error)
+        return unless error.code.in?(AgentRuntimeInteraction::FailureReport::INFERENCE_REFUSALS)
+
+        run_id = request.headers['X-Soulshouse-Run'].to_s
+        return unless run_id.match?(/\A\d{1,18}\z/)
+
+        # The first refusal is the one the run failed on; a later call's
+        # refusal doesn't overwrite it.
+        current_api_agent.agent_runtime_interactions.where(id: run_id, finished_at: nil, inference_refusal: nil)
+          .update_all(inference_refusal: error.code)
+      rescue StandardError => e
+        Rails.logger.warn("House inference refusal not recorded (#{e.class.name})")
       end
 
     end

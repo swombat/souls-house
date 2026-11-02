@@ -163,6 +163,8 @@
             {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until another
             model is chosen.
           </p>
+        {:else if failedRuns.cause}
+          <p class="mt-0.5" data-testid="failed-runs-cause">Each one failed because {failedRuns.cause}.</p>
         {/if}
         {#if showActions && !admin}
           <a

@@ -161,6 +161,19 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     assert_empty ExpiredProviderSubscriptions.summary_for(@user)[:failing]
   end
 
+  test "the black count says the cause of the newest failed scheduled run, not the one the streak opened with" do
+    agent = agents(:code_reviewer)
+    fail_streak!(agent, "runtime_error")
+    agent.agent_runtime_interactions.create!(trigger_kind: "wake", requested_by: "house", started_at: 3.minutes.ago,
+      finished_at: 2.minutes.ago, runtime_status: "error", runtime_returncode: 1, inference_refusal: "house_provider_refused")
+    assert_equal "the house's model provider refused a request it made", ExpiredProviderSubscriptions.summary_for(@user)[:failing].sole[:cause]
+
+    # A newer completed run is not a cause; the stored one stands until the recovery row closes the streak.
+    agent.agent_runtime_interactions.create!(trigger_kind: "wake", requested_by: "house", started_at: 1.minute.ago,
+      finished_at: Time.current, runtime_status: "ok", runtime_returncode: 0)
+    assert_equal "the run ended in an error", ExpiredProviderSubscriptions.summary_for(@user)[:failing].sole[:cause]
+  end
+
   private
 
   def expire!(agent, provider)
