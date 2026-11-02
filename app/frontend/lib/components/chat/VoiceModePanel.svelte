@@ -2,14 +2,12 @@
   import { onDestroy, onMount } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
-  import { stripReleasePhrase } from '$lib/voice-mode';
+  import { stripReleasePhrase, voiceModeStatus } from '$lib/voice-mode';
   import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
-  import { createPlayer } from '$lib/voice-mode-playback';
-  import { createReplyPicker } from '$lib/voice-mode-replies';
-  import { messageSpeechPath } from '@/routes';
+  import { createReplyReader } from '$lib/voice-mode-reader';
   import * as logging from '$lib/logging';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
@@ -20,9 +18,7 @@
   // arrive meanwhile are read aloud in their voices; speaking interrupts them.
   let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
 
-  // starting | listening | hearing | transcribing | sending | failed. Mute is
-  // separate: it stops what the microphone sends, whatever the earlier turns
-  // are still doing.
+  // starting | listening | hearing | transcribing | sending | failed; mute is separate.
   let phase = $state('starting');
   let muted = $state(false);
   let level = $state(0);
@@ -33,17 +29,12 @@
   let sent = $state(0);
   let stale = $state(false);
   let speakingId = $state(null);
-  // What a speech-start cut off (the reply playing and the ones queued behind
-  // it), kept until the burst is committed (dropped) or discarded (restored).
-  let interrupted = [];
   // The reply being read, shown as text too: on a phone the panel is the only
   // evidence that a reply exists while the person is talking.
   const speaking = $derived(speakingId ? messages.find((m) => m.id === speakingId) : null);
 
-  const picker = createReplyPicker(messages);
-  const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange: (id) => (speakingId = id) });
-  // The player is terminal once End begins, so nothing lands during its drain.
-  $effect(() => picker.take(messages).forEach((id) => player.enqueue(id)));
+  const reader = createReplyReader({ messages, onchange: (id) => (speakingId = id) });
+  $effect(() => reader.take(messages));
 
   let capture = null;
   let transcriber = null;
@@ -54,17 +45,7 @@
   let watchdog = null;
 
   const busy = $derived(phase === 'transcribing' || phase === 'sending');
-  const status = $derived.by(() => {
-    if (phase === 'starting') return 'Opening the microphone…';
-    if (phase === 'failed') return note || 'Voice mode could not start.';
-    const hush = muted ? ' Muted: nothing new is sent.' : '';
-    if (phase === 'transcribing') return `Transcribing…${hush}`;
-    if (phase === 'sending') return `Sending…${hush}`;
-    if (muted) return 'Muted. Nothing you say is sent.';
-    if (phase === 'hearing') return 'Hearing you…';
-    if (speakingId) return 'Speaking. Talk to interrupt.';
-    return 'Listening. Speak, and pause when you are done.';
-  });
+  const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId }));
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
@@ -100,28 +81,20 @@
           stale = false;
         },
         onspeechstart: (samples) => {
-          picker.hold();
-          interrupted = [...interrupted, ...player.interrupt()];
+          reader.speechStarted();
           caption = '';
           transcriber?.begin(samples);
           if (phase === 'listening') phase = 'hearing';
         },
         onaudio: (samples) => transcriber?.append(samples),
         ondiscard: () => {
-          // Not speech: the sequence it cut off is read again (the playing reply
-          // from its start), and whatever landed during the burst after it.
-          const resume = interrupted;
-          interrupted = [];
-          picker.discard();
-          resume.forEach((id) => player.enqueue(id));
-          picker.take(messages).forEach((id) => player.enqueue(id));
+          reader.discarded(messages);
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
         onturn: (durationMs) => {
-          interrupted = [];
-          picker.commit(messages);
+          reader.committed(messages);
           enqueue(transcriber.commit(), durationMs);
         },
       });
@@ -149,7 +122,7 @@
 
   onDestroy(() => {
     ended = true;
-    player.close();
+    reader.close();
     clearInterval(watchdog);
     capture?.stop();
     transcriber?.close();
@@ -247,7 +220,7 @@
   async function end({ drain = true } = {}) {
     if (ended || ending) return;
     ending = true;
-    player.close();
+    reader.close();
     clearInterval(watchdog);
     const open = capture;
     capture = null;
