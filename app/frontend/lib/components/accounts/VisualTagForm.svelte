@@ -64,9 +64,9 @@
 
 <form
   onsubmit={submit}
-  class="flex min-h-0 flex-1 flex-col gap-4"
+  class="flex flex-col gap-4 sm:min-h-0 sm:flex-1"
   aria-label={tag ? `Edit ${tag.label}` : 'Add visual tag'}>
-  <div class="grid min-h-0 flex-1 grid-rows-[auto_minmax(160px,1fr)] gap-5 sm:grid-cols-[220px_1fr] sm:grid-rows-1">
+  <div class="flex flex-col gap-5 sm:grid sm:min-h-0 sm:flex-1 sm:grid-cols-[220px_1fr] sm:grid-rows-1">
     <div class="space-y-4">
       <div class="hidden rounded-xl border bg-muted/20 p-3 sm:block" aria-label="Tag preview">
         <p class="mb-3 text-xs text-muted-foreground">In the discussion list</p>
@@ -118,7 +118,8 @@
     <p role="alert" class="text-sm text-destructive">{Object.values(errors).flat().join('. ')}</p>
   {/if}
   {#if canManage}
-    <div class="flex shrink-0 items-center justify-between gap-2 border-t pt-4">
+    <div
+      class="sticky bottom-0 z-10 -mx-4 flex shrink-0 items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:static sm:mx-0 sm:px-0 sm:pb-0 sm:pt-4">
       <div>
         {#if tag && !tag.pinned}<Button
             type="button"
