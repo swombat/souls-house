@@ -15,6 +15,7 @@
     runtimeInteractions = [],
     latestReplies = {},
     fileUploadConfig = {},
+    voiceMode = { offered: false, available: false, reason: null },
     onAgentTrigger = () => {},
     onSent = () => {},
     onWaiting = () => {},
@@ -55,6 +56,7 @@
     disabled={!chat?.respondable}
     manualResponses={chat?.manual_responses}
     {fileUploadConfig}
+    {voiceMode}
     onsent={onSent}
     onwaiting={onWaiting}
     onerror={onError}

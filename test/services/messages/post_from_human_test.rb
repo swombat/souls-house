@@ -223,4 +223,28 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: content).call
   end
 
+  test "a voice mode turn is flagged when the account may use the mode and refused when it may not" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: "sk-account")
+
+    result = Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Spoken.", voice_mode: true).call
+    assert result.created?
+    assert result.message.voice_mode?
+    assert result.message.audio_source?, "spoken, though no recording is kept"
+    assert_not result.message.audio_recording.attached?
+
+    @account.update!(voice_mode_enabled: false)
+    @group_chat.reload # the controller hands the service a freshly loaded chat; this test's copy cached the account
+    assert_no_difference "Message.count" do
+      result = Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Spoken again.", voice_mode: true).call
+    end
+    assert result.voice_mode_unavailable?
+    assert_not result.created?
+
+    result = Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Typed.", voice_mode: false).call
+    assert result.created?
+    assert_not result.message.voice_mode?
+    assert_not result.message.audio_source?
+  end
+
 end

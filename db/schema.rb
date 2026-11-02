@@ -87,6 +87,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.boolean "auto_name_voices", default: true, null: false
     t.boolean "x_posting_house_app", default: false, null: false
     t.boolean "billing_required", default: false, null: false
+    t.boolean "voice_mode_enabled", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -1888,6 +1889,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.boolean "reply_attention_pending", default: false, null: false
     t.bigint "safeguard_detection_id"
     t.jsonb "notice_link"
+    t.boolean "voice_mode", default: false, null: false
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
@@ -2675,6 +2677,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
+    t.string "voice_mode_scope", default: "account_choice", null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

@@ -562,6 +562,20 @@ export const accountChatTranscriptionPath: ((
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/chats/:chat_id/voice_mode_session(.:format)
+ * @param {any} accountId
+ * @param {any} chatId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountChatVoiceModeSessionPath: ((
+  accountId: RequiredRouteParameter,
+  chatId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/chats/:chat_id/visual_tag(.:format)
  * @param {any} accountId
  * @param {any} chatId

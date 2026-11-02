@@ -114,6 +114,31 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_not @team_account.reload.reflexes_enabled?
   end
 
+  test "the voice mode switch saves under any site scope and the page carries the scope and the key check" do
+    @team_account.update!(use_system_ai_credentials: false, openai_api_key: nil)
+    %w[disabled enabled account_choice].each do |scope|
+      Setting.instance.update!(voice_mode_scope: scope)
+      get account_path(@team_account)
+      @inertia_props = nil
+      assert_equal scope, inertia_props.dig("props", "voice_mode_site_scope")
+      assert_equal false, inertia_props.dig("props", "voice_mode_transcription_key")
+    end
+
+    @team_account.update!(openai_api_key: "sk-account")
+    get account_path(@team_account)
+    @inertia_props = nil
+    assert_equal true, inertia_props.dig("props", "voice_mode_transcription_key")
+
+    Setting.instance.update!(voice_mode_scope: "disabled")
+    patch account_path(@team_account), params: { account: { voice_mode_enabled: true } }
+    assert_redirected_to @team_account
+    assert @team_account.reload.voice_mode_enabled?
+
+    Setting.instance.update!(voice_mode_scope: "enabled")
+    patch account_path(@team_account), params: { account: { voice_mode_enabled: false } }
+    assert_not @team_account.reload.voice_mode_enabled?
+  end
+
   test "account owners cannot change shared AI credential fallback" do
     @team_account.update!(use_system_ai_credentials: true)
 
