@@ -39,4 +39,40 @@ module VoiceMode
     ResolvesProvider.api_key_available?(TRANSCRIPTION_PROVIDER, account:)
   end
 
+  # What is read aloud for a resident message in voice mode. A long reply is
+  # cut at the last sentence end before the cap and says so, so the person on
+  # a walk knows there is more on screen rather than hearing it stop.
+  SPEECH_CAP = 900
+  SPEECH_TRUNCATION_NOTE = "The rest is on screen."
+
+  # Who a spoken turn is for, in a room where an untagged message wakes nobody
+  # (manual responses). Nobody says "@Mira" aloud: a turn that opens with a
+  # resident's name is for that resident ("Mira, what do you think"), and one
+  # that names nobody continues with whoever spoke last here. A name two
+  # residents share picks nobody, as a shared tag does. nil when no one fits.
+  LEADING_FILLER = /\A[\s"“'‘(]*(?:(?:hey|hi|ok|okay|so|and|right)[\s,]+)?/i
+
+  def self.addressee(chat, content)
+    return nil unless chat.manual_responses?
+
+    eligible = chat.agents.select(&:eligible_for_conversation?)
+    opening = content.to_s.sub(LEADING_FILLER, "")
+    named = eligible.select { |agent| opening.match?(/\A#{Regexp.escape(agent.name)}\b/i) }
+    return named.first if named.size == 1
+    return nil if named.any?
+
+    last_id = chat.messages.kept.where(role: "assistant").where.not(agent_id: nil).reorder(id: :desc).pick(:agent_id)
+    eligible.find { |agent| agent.id == last_id }
+  end
+
+  def self.speech_text(message)
+    text = message.content_for_speech
+    return text if text.length <= SPEECH_CAP
+
+    head = text[0, SPEECH_CAP]
+    cut = head.rindex(/[.!?](\s|\z)/)
+    head = cut && cut > SPEECH_CAP / 3 ? head[0..cut] : "#{head[/\A.*\s/m]&.rstrip || head}…"
+    "#{head} #{SPEECH_TRUNCATION_NOTE}"
+  end
+
 end

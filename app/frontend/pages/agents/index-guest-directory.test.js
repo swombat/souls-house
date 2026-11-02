@@ -43,7 +43,7 @@ test('candidate discovery uses only the current human and survives account switc
       ['Account', 'GuestDirectory', 'GuestDiscovery', 'ResidentSessions'].includes(model)
     )
   ).toBe(true);
-  expect(subscribeToModel).toHaveBeenCalledWith('ResidentSessions', 'next', ['active_sessions']);
+  expect(subscribeToModel).toHaveBeenCalledWith('ResidentSessions', 'next', ['active_sessions', 'away_sessions']);
   page.set({ props: { user: { id: 'new-self' } } });
   await waitFor(() =>
     expect(subscribeToModel).toHaveBeenCalledWith('GuestDiscovery', 'new-self', ['guest_candidates'])

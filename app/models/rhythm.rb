@@ -18,7 +18,10 @@ class Rhythm < ApplicationRecord
   belongs_to :creator, class_name: "User", optional: true
   belongs_to :creator_agent, class_name: "Agent", optional: true
   has_many :rhythm_agents, dependent: :destroy
-  has_many :agents, through: :rhythm_agents
+  # Selecting residents through agent_ids= deletes the join rows directly,
+  # without RhythmAgent's destroy callbacks, so a guest dropped that way
+  # refreshes its home's Guest residents card from here (#733).
+  has_many :agents, through: :rhythm_agents, after_remove: :refresh_removed_guest_home
   has_many :holds, class_name: "RhythmHold", dependent: :destroy
   has_many :open_holds, -> { open }, class_name: "RhythmHold"
   has_many :occurrences, class_name: "RhythmOccurrence", dependent: :nullify
@@ -321,6 +324,10 @@ class Rhythm < ApplicationRecord
   end
 
   private
+
+  def refresh_removed_guest_home(agent)
+    GuestDirectory.refresh!([ agent.account_id ]) if agent.account_id != account_id
+  end
 
   def broadcast_rhythm_activity
     RhythmActivity.broadcast_for(account)

@@ -44,6 +44,20 @@ vi.mock('$lib/voice-mode-realtime', () => ({
   }),
 }));
 
+let player;
+vi.mock('$lib/voice-mode-playback', () => ({
+  createPlayer: vi.fn((options) => {
+    player = {
+      options,
+      log: [],
+      enqueue: vi.fn((id) => player.log.push(['enqueue', id])),
+      interrupt: vi.fn(() => player.log.push(['interrupt'])),
+      close: vi.fn(() => player.log.push(['close'])),
+    };
+    return player;
+  }),
+}));
+
 import VoiceModePanel from './VoiceModePanel.svelte';
 
 let posts;
@@ -249,4 +263,52 @@ test('Mute works while a message is still being sent', async () => {
   await waitFor(() =>
     expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted. Nothing you say is sent.')
   );
+});
+
+let clock = 0;
+const reply = (id, extra = {}) => ({
+  id,
+  role: 'assistant',
+  voice_available: true,
+  completed: true,
+  streaming: false,
+  content: 'Spoken back.',
+  created_at: new Date(Date.UTC(2026, 10, 2, 9, 0, clock++)).toISOString(),
+  ...extra,
+});
+
+test('replies that arrive after voice mode opens are read aloud, the backlog is not, and speaking interrupts them', async () => {
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [reply('old')] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  expect(player.options.urlFor('r1')).toBe('/messages/r1/speech');
+
+  await rerender({ ...props, messages: [reply('old'), reply('r1', { streaming: true, completed: false })] });
+  await rerender({ ...props, messages: [reply('old'), reply('r1'), reply('p1', { progress_message: true })] });
+  expect(player.log).toEqual([
+    ['enqueue', 'r1'],
+    ['enqueue', 'p1'],
+  ]);
+
+  player.options.onchange('r1');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status').textContent).toMatch(/Speaking/));
+  callbacks.onspeechstart(new Float32Array(10));
+  expect(player.log.at(-1)).toEqual(['interrupt']);
+
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(player.log.at(-1)).toEqual(['close']));
+});
+
+test('older history loaded while in voice mode is not read, and a reply interrupted mid-arrival stays unread', async () => {
+  const earlier = reply('earlier');
+  const old = reply('old');
+  const pending = reply('pending', { streaming: true, completed: false });
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [old, pending] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+
+  await rerender({ ...props, messages: [earlier, old, pending] });
+  callbacks.onspeechstart(new Float32Array(10));
+  await rerender({ ...props, messages: [earlier, old, { ...pending, streaming: false, completed: true }] });
+  const during = reply('during', { progress_message: true });
+  await rerender({ ...props, messages: [earlier, old, { ...pending, completed: true, streaming: false }, during] });
+  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([]);
 });

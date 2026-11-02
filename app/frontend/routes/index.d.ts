@@ -3458,6 +3458,18 @@ export const messageSafeguardResetPath: ((
 
 /**
  * Generates rails route to
+ * /messages/:message_id/speech(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechPath: ((
+  messageId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /messages/:message_id/voice(.:format)
  * @param {any} messageId
  * @param {object | undefined} options
