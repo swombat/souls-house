@@ -1332,6 +1332,34 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_not_includes args, "--dangerously-bypass-approvals-and-sandbox"
   end
 
+  test "Kimi exact IDs keep thinking enabled and set Responses capability only for Kimi" do
+    out = run_shim_python(<<~PY)
+      captured = []
+      def fake_run(args, **kwargs):
+          captured.append(args)
+          return mod.subprocess.CompletedProcess(args, 0, "", "")
+      mod.subprocess.run = fake_run
+      mod.run_chaos("k3-256k", 30, "REQUEST", True, provider="kimi")
+      mod.run_chaos("gpt-5.2", 30, "REQUEST", True, provider="openai")
+      rejected = []
+      for model, effort in [("wrong-id", "high"), ("k3", "none"), ("kimi-for-coding-highspeed", "low")]:
+          try:
+              mod.kimi_reasoning_effort(model, effort)
+          except ValueError:
+              rejected.append(True)
+      print(json.dumps({"calls": captured, "rejected": rejected,
+                       "preview": mod.kimi_reasoning_effort("kimi-for-coding", None)}))
+    PY
+    result = JSON.parse(out)
+    kimi, other = result.fetch("calls")
+    assert_includes kimi, "model_supports_reasoning_summaries=true"
+    assert_includes kimi, "model_context_window=262144"
+    assert_includes kimi, 'model_reasoning_effort="high"'
+    assert_not_includes other, "model_supports_reasoning_summaries=true"
+    assert_equal [ true, true, true ], result["rejected"]
+    assert_equal "max", result["preview"]
+  end
+
   test "the tool shell keeps OPENROUTER_API_KEY and drops every other key" do
     out = run_shim_python(<<~PY)
       env = {

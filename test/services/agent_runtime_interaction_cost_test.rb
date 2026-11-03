@@ -2,6 +2,19 @@ require "test_helper"
 
 class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
 
+  test "Kimi Code key turns do not inherit API prices or count as metered billing" do
+    %w[k3.1-pro kimi-for-coding kimi-code/k3.1-pro].each do |model|
+      interaction = build_interaction(provider: "kimi", model: model,
+        uncached_input_tokens: 1_000_000, output_tokens: 1_000_000)
+      assert interaction.subscription_based?
+      cost = interaction.estimated_cost
+      assert_equal "0.0", cost[:amount_usd]
+      assert_equal "subscription", cost[:pricing_source]
+      assert_not cost[:applies_to_billing]
+      assert_nil cost[:components_usd]
+    end
+  end
+
   test "estimates direct Anthropic cost with one hour cache pricing" do
     interaction = build_interaction(
       provider: "anthropic",

@@ -24,6 +24,18 @@ module Agents
       assert_equal "API key", option[:source]
     end
 
+    test "Kimi Code uses exact direct IDs and is never offered through OpenRouter" do
+      @agent.account.openrouter_api_key = "test-router"
+      @agent.account.moonshot_api_key = "test-code-key"
+      catalog = SubagentCatalog.new(@agent)
+      assert catalog.resolve("kimi:k3.1-pro")
+      assert_nil catalog.resolve("kimi:not-a-model")
+      assert_nil catalog.resolve("openrouter:kimi-code/k3.1-pro")
+      assert_equal 6, catalog.options.count { |option| option[:provider] == "kimi" }
+      assert_not catalog.options.any? { |option| option[:key].start_with?("openrouter:kimi-code/") }
+      assert_equal "moonshot", ModelCatalogue.key_provider("kimi-code/k3.1-pro")
+    end
+
     test "an OpenAI key gives openai options keyed by provider_model_id only for models that have one" do
       @agent.account.openai_api_key = "sk-test-openai"
 

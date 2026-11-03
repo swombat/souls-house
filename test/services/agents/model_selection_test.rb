@@ -19,6 +19,16 @@ class Agents::ModelSelectionTest < ActiveSupport::TestCase
 
   def seat(chat) = ChatAgent.find_by!(chat: chat, agent: @agent)
 
+  test "Kimi Code defaults are explicit and disabled thinking is refused" do
+    @agent.assign_attributes(model_id: "kimi-code/kimi-for-coding", reasoning_effort: "default")
+    selection = Agents::ModelSelection.for(@agent)
+    assert_equal "kimi", selection.provider
+    assert_equal "kimi-for-coding", selection.model
+    assert_equal "max", selection.reasoning_effort
+    @agent.reasoning_effort = "none"
+    assert_raises(ArgumentError) { Agents::ModelSelection.for(@agent) }
+  end
+
   test "no selection runs the default with the resident's own effort" do
     selection = Agents::ModelSelection.for(@agent, chat: @room_a)
 
