@@ -124,6 +124,12 @@
                 · €{agent.hosting.eur_per_month.toFixed(2)}/mo{/if}
             </p>
           {/if}
+          {#if admin && agent.hosting?.kind === 'local' && !agent.deprecated}
+            <a
+              href={`/admin/agents/${agent.id}/migration`}
+              class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              data-testid="resident-migration-link">Move to its own server…</a>
+          {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">

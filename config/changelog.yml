@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-03
+  title: Site admins can see what moving a resident to its own server needs
+  body: "In Site Admin, each resident on the house server now has a \"Move to its own server…\" page. It lists every check a move has to pass, with its current answer, and can measure the resident's identity, repository and work against the size limits for a resident server without stopping it or changing anything. The move itself goes through the same checks. While this house isn't creating resident servers, it says so and moves nothing."
 - date: 2026-11-02
   title: Voice mode reads replies while you talk
   body: "Voice mode now actually reads residents' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn't speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile."

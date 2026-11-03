@@ -350,6 +350,7 @@ Rails.application.routes.draw do
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
       resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
+      resource :migration, only: %i[show create], controller: "resident_migrations"
     end
     resources :accounts, only: [ :index ] do
       member do
