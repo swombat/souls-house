@@ -95,12 +95,21 @@
         <p class="text-sm" data-testid="migration-whole" data-fits={report.whole.fits}>
           <span class="font-medium">The whole archive:</span>
           {report.whole.entries.toLocaleString()} of {report.limits.archive_entries.toLocaleString()} entries,
-          {mb(report.whole.expanded_bytes)} of {mb(report.limits.archive_expanded_bytes)} expanded, at most
-          {mb(report.whole.compressed_bytes)} of {mb(report.limits.archive_compressed_bytes)} compressed, with
-          {report.whole.legacy_rows} diary rows.
+          {mb(report.whole.expanded_bytes)} of {mb(report.limits.archive_expanded_bytes)} expanded,
+          {report.whole.legacy_rows} diary rows ({mb(report.whole.legacy_bytes)} of {mb(report.limits.legacy_bytes)}).
           <span class={report.whole.fits ? 'text-green-600' : 'text-red-600'}
-            >{report.whole.fits ? 'Fits.' : report.whole.refusal}</span>
+            >{report.whole.fits ? 'No refusal found.' : report.whole.refusal}</span>
+          <span class="block text-muted-foreground" data-testid="migration-estimate">
+            Compressed, estimated (not a bound): about {mb(report.whole.estimated_compressed_bytes)} of
+            {mb(report.limits.archive_compressed_bytes)}.
+          </span>
         </p>
+        <div class="text-xs text-muted-foreground" data-testid="migration-unchecked">
+          <p class="font-medium">Not checked by this dry run; the real copy decides:</p>
+          <ul class="list-disc pl-5">
+            {#each report.unchecked as item}<li>{item}</li>{/each}
+          </ul>
+        </div>
       {/if}
     {:else if !report.measure_error}
       <p class="text-sm text-muted-foreground">Not measured yet.</p>

@@ -1531,7 +1531,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal 2, identity.entries
       assert identity.compressed_bytes.positive?
       assert report.roles.all?(&:fits?)
-      assert_not report.ready?, "a running resident can be measured but not moved"
+      assert_not report.no_refusal_found?, "a running resident can be measured but not moved"
       assert_equal Agents::VmMigration::Plan::FACTS, report.facts
       assert_equal Agents::Portability::Stage.max_role_bytes, report.to_h[:limits][:compressed_bytes]
 
@@ -1545,7 +1545,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal %w[identity repo work], audit.data["roles"].map { |role| role["role"] }
 
       agent.update_columns(active: false, paused: true)
-      assert plan(agent.reload).call(measure: true, requested_by: @user).ready?
+      assert plan(agent.reload).call(measure: true, requested_by: @user).no_refusal_found?
     end
   end
 
@@ -1558,7 +1558,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       identity, repo = report.roles
       assert_match(/more files than a resident server can be seeded with \(1\)/, identity.refusal)
       assert_match(/repo home is larger .* \(0 MB compressed\)/, repo.refusal)
-      assert_not report.ready?
+      assert_not report.no_refusal_found?
 
       audits = AuditLog.where(action: "vm_migration_dry_run").count
       gates_only = plan(agent).call(measure: false)
@@ -1575,7 +1575,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       report = plan(agent, transport: broken).call(measure: true)
       assert_equal "A required resident volume is missing", report.measure_error
       assert_empty report.roles
-      assert_not report.ready?
+      assert_not report.no_refusal_found?
     end
   end
 
@@ -1627,27 +1627,47 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     silence_warnings { archive.const_set(name, original) }
   end
 
-  test "the dry run checks the whole archive as Export does, so it is never ready when the copy would refuse" do
+  test "the dry run checks the whole archive as Export does, so it finds the refusals the copy would make" do
     with_house do
       agent = house_resident!
       fits = plan(agent).call(measure: true)
       assert fits.whole.fits?
       assert_equal 3 + 4, fits.whole.entries, "three role directories and four files, as Export counts them"
-      assert fits.ready?
+      assert fits.no_refusal_found?
 
       with_archive_limit(:MAX_ENTRIES, 10) do
         report = plan(agent).call(measure: true)
         assert report.roles.all?(&:fits?), "each role alone is under the limit"
         assert_equal "Resident files exceed v1 limits", report.whole.refusal
-        assert_not report.ready?
+        assert_not report.no_refusal_found?
         error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
         assert_equal "Resident files exceed v1 limits", error.message, "the same words as the copy"
       end
 
       with_archive_limit(:MAX_COMPRESSED, 1000) do
         report = plan(agent).call(measure: true)
-        assert_match(/may be larger than an archive can carry/, report.whole.refusal)
-        assert_not report.ready?
+        assert report.whole.fits?, "the compressed size is an estimate, never a refusal"
+        assert report.whole.estimated_compressed_bytes.positive?
+        assert_match(/estimate, not a bound/, report.to_h[:unchecked].first)
+        assert_not report.to_h.key?(:ready), "no overall readiness claim"
+      end
+    end
+  end
+
+  test "the dry run refuses the legacy diary's JSON size exactly as the copy does" do
+    with_house do
+      agent = house_resident!
+      agent.memories.create!(content: "a" * 2000, memory_type: "journal")
+      assert plan(agent).call(measure: true).whole.fits?
+
+      with_archive_limit(:MAX_JSON, 1000) do
+        report = plan(agent).call(measure: true)
+        assert report.roles.all?(&:fits?)
+        assert_operator report.whole.legacy_bytes, :>, 1000
+        assert_equal "Resident metadata exceeds v1 limit", report.whole.refusal
+        assert_not report.no_refusal_found?
+        error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
+        assert_equal "Resident metadata exceeds v1 limit", error.message, "the same words as the copy"
       end
     end
   end
@@ -1659,7 +1679,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       report = Agents::VmMigration::Plan.new(migration(agent.reload)).call(measure: true, requested_by: @user)
       assert report.measure_error.present?
       assert_empty report.roles
-      assert_not report.ready?
+      assert_not report.no_refusal_found?
       audit = AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last
       assert_equal report.measure_error, audit.data["measure_error"]
       assert_equal "staged", agent.placement.reload.state, "the ownership check refused before any Docker access"

@@ -153,10 +153,13 @@ the same code: `Transport.capture` with the volume mounted read-only,
 `Archive.unpack`, `Stage.check_unpacked!`, and a gzip of the role tar. The work
 happens in a private temporary directory, which is removed afterwards. It also checks the whole archive the
 way Export does: the entry count and the expanded budget across all three roles, counted exactly as
-`Export.call` counts them, the legacy diary cap and the graph cap. It compares the compressed archive
-against its 100 MiB limit using an upper bound: the roles' gzip sizes plus a margin, with the memory
-documents added uncompressed. The dry run says "ready" only when every gate passes and both the roles
-and the whole archive fit. Measuring is a POST (`/admin/agents/:id/migration/measure`). A GET of the
+`Export.call` counts them, the legacy diary's row cap, and the JSON byte caps of the legacy diary and the
+memory graph, serialised the way `Export.add_json` serialises them. Each of these refusals uses the copy's
+own words. Two things are not checked: the compressed size of the whole archive (100 MiB) and the size of
+its manifest. The page shows a compressed estimate (the roles' gzip sizes plus the documents) and labels
+it as an estimate, not a bound, and it lists both under "Not checked". The overall answer is "no refusal
+found", not "ready": every gate passes and nothing measured would be refused, but only the real copy
+decides those two. Measuring is a POST (`/admin/agents/:id/migration/measure`). A GET of the
 page never reads a volume. If the house can't reach the resident's volumes, for example because it is
 already staged elsewhere, the dry run reports and audits the ownership refusal. It does not fail. A running
 resident can be measured. Its numbers come from a home that is still changing,
