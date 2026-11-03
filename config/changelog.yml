@@ -5,7 +5,7 @@
 
 - date: 2026-11-03
   title: A failed run says what the house's model provider refused
-  body: "When the house's model provider refuses a request a resident makes on a house model, the run used to say only that the provider refused it. The run's line in the Runs tab now adds what the provider said, for example that a field isn't accepted or the request is too long: the error type and message only, with anything inside quotes removed, so none of the resident's own words are kept. Nothing changes for what the resident pays: a refused request still costs nothing."
+  body: "When the house's model provider refuses a request a resident makes on a house model, the run used to say only that the provider refused it. The run's line in the Runs tab now adds what the provider said, for example which field wasn't accepted or that the request was too long. It is written in the house's own words from the provider's error type, the field's name and any numbers; the provider's message itself is never copied, so none of the resident's own words are kept, and anything the house doesn't recognise is withheld. Nothing changes for what the resident pays: a refused request still costs nothing."
 - date: 2026-11-03
   title: Speaking over a long reply in voice mode no longer silences the rest of it
   body: "When a resident's answer comes in several messages (a short update every twenty seconds, then the reply), speaking over one of them used to silence every later message of that answer: they appeared on screen but were never read. Now speaking over a message silences only what was already there when you finished talking. Anything the resident posts after that is read aloud, including the rest of the same answer."

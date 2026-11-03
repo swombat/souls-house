@@ -42,7 +42,7 @@ module HouseInference
           # for it, whatever the status (Daniel, JwMQEe, 2026-10-31). If the
           # provider billed the house anyway, that is the house's cost. The
           # status is kept, and why (#725), sanitised: never the body itself.
-          reason = HouseInference::RefusalReason.call(self.class.bounded_body(response))
+          reason = HouseInference::RefusalReason.call(self.class.bounded_body(response, deadline: deadline))
           call.release!(http_status: response.code.to_i, refusal_reason: reason)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
             code: 'house_provider_refused', status: 502, reason: reason)
@@ -104,13 +104,18 @@ module HouseInference
       end
     end
 
-    # The first RefusalReason::MAX_BYTES of a refusal's body; the rest is
-    # read and dropped. A read failure keeps no reason, never the refusal.
-    def self.bounded_body(response)
+    # At most the first RefusalReason::MAX_BYTES of a refusal's body. Reading
+    # stops at the cap or the call's deadline (the rest is never drained;
+    # the caller raises, so the connection is closed). A read failure keeps
+    # what arrived, never the refusal itself.
+    def self.bounded_body(response, deadline:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       body = +''
-      response.read_body do |chunk|
-        room = RefusalReason::MAX_BYTES - body.bytesize
-        body << chunk.byteslice(0, room) if room.positive?
+      catch(:refusal_body_done) do
+        throw :refusal_body_done if clock.call > deadline
+        response.read_body do |chunk|
+          body << chunk.byteslice(0, RefusalReason::MAX_BYTES - body.bytesize)
+          throw :refusal_body_done if body.bytesize >= RefusalReason::MAX_BYTES || clock.call > deadline
+        end
       end
       body
     rescue IOError, SystemCallError, Timeout::Error
