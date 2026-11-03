@@ -65,7 +65,11 @@ module VoiceMode
     eligible.find { |agent| agent.id == last_id }
   end
 
-  def self.speech_text(message)
+  def self.speech_text(message, from_seconds: nil)
+    resume_from(capped_speech_text(message), from_seconds)
+  end
+
+  def self.capped_speech_text(message)
     text = message.content_for_speech
     return text if text.length <= SPEECH_CAP
 
@@ -73,6 +77,22 @@ module VoiceMode
     cut = head.rindex(/[.!?](\s|\z)/)
     head = cut && cut > SPEECH_CAP / 3 ? head[0..cut] : "#{head[/\A.*\s/m]&.rstrip || head}…"
     "#{head} #{SPEECH_TRUNCATION_NOTE}"
+  end
+
+  # A reply spoken over comes back after the person's turn from about where it
+  # stopped (#758). The speech is made live and not kept, so the audio cannot
+  # be seeked: the browser says how many seconds it had played, this estimates
+  # how far into the text that is, and speaking starts again at the beginning of
+  # that sentence. Backing up to the sentence start absorbs the estimate's error
+  # and is how a person picks up after an interruption anyway.
+  SPOKEN_CHARS_PER_SECOND = 15
+
+  def self.resume_from(text, seconds)
+    return text unless seconds.is_a?(Numeric) && seconds.positive?
+
+    at = [(seconds * SPOKEN_CHARS_PER_SECOND).floor, text.length - 1].min
+    starts = [0] + text.enum_for(:scan, /[.!?]["'”’)\]]*\s+/).map { Regexp.last_match.end(0) }
+    text[starts.select { |start| start <= at }.max..].to_s
   end
 
 end

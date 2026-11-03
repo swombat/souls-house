@@ -8,9 +8,12 @@
 //
 // Interruption is playback only: when the person starts speaking, what is
 // playing stops and the queue is cleared. interrupt() returns what it dropped
-// (the reply playing, then the ones queued behind it), so a burst that turns
-// out not to be speech can put the whole sequence back (#748). A generation counter makes sure a
-// play() already in flight when that happens cannot start afterwards.
+// as { id, at } entries (the reply playing, with how many seconds into the
+// reply it had got, then the ones queued behind it at 0), so the reader can
+// put the whole sequence back afterwards (#748, #758). A reply can be enqueued
+// from a point in it (urlFor(id, from)); its position then counts from there.
+// A generation counter makes sure a play() already in flight when that
+// happens cannot start afterwards.
 
 let shared = null;
 
@@ -68,7 +71,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     if (!item) return report();
     current = item;
     report();
-    audio.src = urlFor(item.id);
+    audio.src = item.from > 0 ? urlFor(item.id, item.from) : urlFor(item.id);
     const started = audio.play();
     started?.catch?.(() => item.generation === generation && finish(item));
   }
@@ -78,14 +81,18 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
   audio.addEventListener('error', onended);
 
   return {
-    enqueue(id) {
+    enqueue(id, from = 0) {
       if (closed) return;
-      queue.push({ id, generation });
+      queue.push({ id, from: from > 0 ? from : 0, generation });
       if (!current) next();
     },
     interrupt() {
       generation += 1;
-      const dropped = [...(current ? [current.id] : []), ...queue.map((item) => item.id)];
+      const played = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const dropped = [
+        ...(current ? [{ id: current.id, at: current.from + played }] : []),
+        ...queue.map((item) => ({ id: item.id, at: item.from })),
+      ];
       queue = [];
       if (!current) return dropped;
       current = null;

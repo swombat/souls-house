@@ -50,7 +50,7 @@ vi.mock('$lib/voice-mode-playback', () => ({
     player = {
       options,
       log: [],
-      enqueue: vi.fn((id) => player.log.push(['enqueue', id])),
+      enqueue: vi.fn((id, from) => player.log.push(from ? ['enqueue', id, from] : ['enqueue', id])),
       interrupt: vi.fn(() => {
         player.log.push(['interrupt']);
         return player.interrupts?.shift() ?? [];
@@ -301,7 +301,7 @@ test('replies that arrive after voice mode opens are read aloud, the backlog is 
   await waitFor(() => expect(player.log.at(-1)).toEqual(['close']));
 });
 
-test('older history loaded while in voice mode is not read, and a reply interrupted mid-arrival stays unread', async () => {
+test('older history loaded while in voice mode is not read, and nothing is read while the person speaks', async () => {
   const earlier = reply('earlier');
   const old = reply('old');
   const pending = reply('pending', { streaming: true, completed: false });
@@ -324,7 +324,7 @@ test('a burst that was not speech consumes no reply: the cut-off reply and what 
   player.options.onchange('first');
   await waitFor(() => expect(screen.getByTestId('voice-mode-reply').textContent).toMatch(/Lume:\s*Spoken back\./));
 
-  player.interrupts = [['first']];
+  player.interrupts = [[{ id: 'first', at: 2 }]];
   callbacks.onspeechstart(new Float32Array(10));
   const during = reply('during');
   await rerender({ ...props, messages: [first, during] });
@@ -337,7 +337,7 @@ test('a burst that was not speech consumes no reply: the cut-off reply and what 
   ]);
 });
 
-test('a sent turn supersedes what landed while the person spoke; the next reply is read', async () => {
+test('a sent turn loses nothing: what landed while the person spoke is read, then the answer (#758)', async () => {
   const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
   await waitFor(() => expect(callbacks).toBeTruthy());
   transcriber.results.push('Next question.');
@@ -345,6 +345,35 @@ test('a sent turn supersedes what landed while the person spoke; the next reply 
   const during = reply('during');
   await rerender({ ...props, messages: [during] });
   callbacks.onturn(1500);
+  await waitFor(() => expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([['enqueue', 'during']]));
   await rerender({ ...props, messages: [during, reply('answer')] });
-  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([['enqueue', 'answer']]);
+  expect(player.log.filter(([kind]) => kind === 'enqueue')).toEqual([
+    ['enqueue', 'during'],
+    ['enqueue', 'answer'],
+  ]);
+});
+
+test('a reply spoken over comes back after the sent turn: from the top under 5 s, from where it stopped after (#758)', async () => {
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  const long = reply('long');
+  const short = reply('short');
+  await rerender({ ...props, messages: [long, short] });
+
+  transcriber.results.push('Wait.');
+  player.interrupts = [[{ id: 'long', at: 12.4 }, { id: 'short', at: 0 }]];
+  callbacks.onspeechstart(new Float32Array(10));
+  callbacks.onturn(1500);
+  await waitFor(() =>
+    expect(player.log.slice(-2)).toEqual([
+      ['enqueue', 'long', 12.4],
+      ['enqueue', 'short'],
+    ]),
+  );
+
+  transcriber.results.push('Again.');
+  player.interrupts = [[{ id: 'short', at: 3.9 }]];
+  callbacks.onspeechstart(new Float32Array(10));
+  callbacks.onturn(1500);
+  await waitFor(() => expect(player.log.at(-1)).toEqual(['enqueue', 'short']));
 });

@@ -40,6 +40,22 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "ID3fake-mp3-bytes", response.body
   end
 
+  test "a resumed reply is synthesised from the sentence it had reached; a bad from is ignored (#758)" do
+    @reply.update!(content: "First one here. Second sentence is this one.")
+    asked = []
+    stub_request(:post, STREAM_URL).to_return do |request|
+      asked << JSON.parse(request.body)["text"]
+      { status: 200, body: "ID3", headers: { "Content-Type" => "audio/mpeg" } }
+    end
+
+    ElevenLabsTts.stub(:api_key, "test-eleven-labs-key") do
+      get message_speech_path(@reply, from: 2)
+      get message_speech_path(@reply, from: "soon")
+    end
+
+    assert_equal [ "Second sentence is this one.", "First one here. Second sentence is this one." ], asked
+  end
+
   test "nothing is synthesised when voice mode is off, for a human message, or for another account's chat" do
     stub = stub_request(:post, STREAM_URL)
 

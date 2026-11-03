@@ -19,7 +19,7 @@ function fakeAudio() {
   audio.end = () => audio.dispatchEvent(new Event('ended'));
   return audio;
 }
-const urlFor = (id) => `/messages/${id}/speech`;
+const urlFor = (id, from) => `/messages/${id}/speech${from ? `?from=${from}` : ''}`;
 
 test('the silent unlock clip is a well-formed 8-bit mono WAV of silence', () => {
   const uri = silentWav(10);
@@ -121,6 +121,22 @@ test('interrupting returns what it dropped: the playing reply, then the queue', 
   player.enqueue('a');
   player.enqueue('b');
   player.enqueue('c');
-  expect(player.interrupt()).toEqual(['a', 'b', 'c']);
+  audio.currentTime = 7.5;
+  expect(player.interrupt()).toEqual([
+    { id: 'a', at: 7.5 },
+    { id: 'b', at: 0 },
+    { id: 'c', at: 0 },
+  ]);
   expect(player.interrupt()).toEqual([]);
+});
+
+test('a reply enqueued from a point is asked for from there, and its position counts from there (#758)', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a', 12);
+  expect(audio.log).toEqual([['play', '/messages/a/speech?from=12']]);
+  audio.currentTime = 3;
+  expect(player.interrupt()).toEqual([{ id: 'a', at: 15 }]);
+  player.enqueue('b', 0);
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/b/speech']);
 });

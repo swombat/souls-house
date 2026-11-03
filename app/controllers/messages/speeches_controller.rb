@@ -9,7 +9,7 @@ class Messages::SpeechesController < Messages::BaseController
     return head(:forbidden) unless VoiceMode.status_for(@chat.account).offered
     return head(:unprocessable_entity) unless @message.voice_available
 
-    text = VoiceMode.speech_text(@message)
+    text = VoiceMode.speech_text(@message, from_seconds: resume_seconds)
     return head(:no_content) if text.blank?
 
     response.headers["Content-Type"] = "audio/mpeg"
@@ -28,6 +28,14 @@ class Messages::SpeechesController < Messages::BaseController
     # The person interrupted or ended voice mode; stop asking ElevenLabs.
   ensure
     response.stream.close
+  end
+
+  private
+
+  # ?from=<seconds> when a reply comes back after being spoken over (#758).
+  def resume_seconds
+    seconds = Float(params[:from], exception: false)
+    seconds.clamp(0, 3600) if seconds&.finite?
   end
 
 end
