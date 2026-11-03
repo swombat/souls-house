@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -380,6 +380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.text "quiet_reason"
     t.datetime "quiet_reason_at"
     t.datetime "telegram_completion_notice_at"
+    t.string "inference_refusal"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -487,6 +488,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_090000) do
     t.string "runtime", default: "deprecated", null: false
     t.datetime "runtime_ready_at"
     t.integer "runtime_restart_count"
+    t.datetime "runtime_roll_started_at"
     t.string "sandbox_host"
     t.text "sandbox_last_error"
     t.datetime "sandbox_last_error_at"

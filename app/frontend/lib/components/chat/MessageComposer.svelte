@@ -11,6 +11,7 @@
   import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { takeVoiceStart } from '$lib/voice-mode-start';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -25,6 +26,7 @@
     // place of Send while the composer is empty), available (it can be
     // pressed), and the reason when it cannot.
     voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onsent,
     onwaiting,
     onerror,
@@ -60,6 +62,7 @@
   }
 
   onMount(() => {
+    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true; // New Chat's wave, taken once
     draft = new ConversationDraft({
       userId,
       accountId,
@@ -228,6 +231,7 @@
       {accountId}
       {chatId}
       {userId}
+      {messages}
       onsent={(data) => onsent?.(data)}
       onerror={(message) => onerror?.(message)}
       onend={() => (voiceOpen = false)} />

@@ -16,6 +16,7 @@
     latestReplies = {},
     fileUploadConfig = {},
     voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onAgentTrigger = () => {},
     onSent = () => {},
     onWaiting = () => {},
@@ -57,6 +58,7 @@
     manualResponses={chat?.manual_responses}
     {fileUploadConfig}
     {voiceMode}
+    {messages}
     onsent={onSent}
     onwaiting={onWaiting}
     onerror={onError}

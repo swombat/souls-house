@@ -43,7 +43,8 @@ module HouseInference
           # provider billed the house anyway, that is the house's cost. The
           # status is kept (never the body) so refusals can be told apart.
           call.release!(http_status: response.code.to_i)
-          raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
+          raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
+            code: 'house_provider_refused', status: 502)
         end
         response.read_body do |chunk|
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline

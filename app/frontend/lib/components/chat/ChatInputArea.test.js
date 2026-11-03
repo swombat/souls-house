@@ -63,3 +63,30 @@ test('offered without a key, the wave button explains itself when tapped instead
   expect(screen.getByTestId('voice-mode-notice')).toHaveTextContent('OpenAI API key');
   expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
 });
+
+// Arriving from New Chat's wave (voice-mode-start): voice mode opens once, on
+// the conversation page that loads next, and never on a plain visit.
+import { armVoiceStart, takeVoiceStart } from '$lib/voice-mode-start';
+
+test('a conversation reached from the New Chat wave opens voice mode', () => {
+  armVoiceStart();
+  render(ChatInputArea, { chat, accountId: 'account', voiceMode: { offered: true, available: true, reason: null } });
+  expect(screen.getByTestId('voice-mode-panel')).toBeInTheDocument();
+  expect(takeVoiceStart()).toBe(false);
+});
+
+test('a plain visit does not open voice mode', () => {
+  render(ChatInputArea, { chat, accountId: 'account', voiceMode: { offered: true, available: true, reason: null } });
+  expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
+});
+
+test('the wave intent is spent even when the mode cannot start here', () => {
+  armVoiceStart();
+  render(ChatInputArea, {
+    chat,
+    accountId: 'account',
+    voiceMode: { offered: true, available: false, reason: 'no_transcription_key' },
+  });
+  expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
+  expect(takeVoiceStart()).toBe(false);
+});

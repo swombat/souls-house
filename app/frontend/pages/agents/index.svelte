@@ -23,6 +23,7 @@
     can_end_guest_memberships: canEndGuestMemberships = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
     active_sessions: activeSessions = {},
+    away_sessions: awaySessions = {},
   } = $props();
 
   // Subscribe to both:
@@ -33,7 +34,7 @@
     updateSync({
       [`Account:${account.id}:agents`]: 'agents',
       [`Account:${account.id}`]: 'agents',
-      [`ResidentSessions:${account.id}`]: 'active_sessions',
+      [`ResidentSessions:${account.id}`]: ['active_sessions', 'away_sessions'],
       [`GuestDirectory:${account.id}`]: [
         'guest_memberships',
         'away_memberships',
@@ -43,7 +44,7 @@
     });
   });
   // A run that ages out of the working window ends without a broadcast.
-  $effect(() => visibleRefresh(['active_sessions']));
+  $effect(() => visibleRefresh(['active_sessions', 'away_sessions']));
   // Discovery belongs to this human, not whichever account is being viewed.
   const updateDiscoverySync = createDynamicSync();
   $effect(() => {
@@ -125,6 +126,7 @@
       accountId={account.id}
       guests={guestMemberships}
       away={awayMemberships}
+      {awaySessions}
       candidates={guestCandidates}
       {formerGuests}
       canEnd={canEndGuestMemberships} />

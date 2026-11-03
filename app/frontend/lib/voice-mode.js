@@ -239,3 +239,17 @@ export function stripReleasePhrase(text) {
   }
   return { text: trimmed, release: false };
 }
+
+// The voice-mode panel's one-line status. Mute is separate from the phase: it
+// stops what the microphone sends, whatever the earlier turns are still doing.
+export function voiceModeStatus({ phase, muted, note, speaking }) {
+  if (phase === 'starting') return 'Opening the microphone…';
+  if (phase === 'failed') return note || 'Voice mode could not start.';
+  const hush = muted ? ' Muted: nothing new is sent.' : '';
+  if (phase === 'transcribing') return `Transcribing…${hush}`;
+  if (phase === 'sending') return `Sending…${hush}`;
+  if (muted) return 'Muted. Nothing you say is sent.';
+  if (phase === 'hearing') return 'Hearing you…';
+  if (speaking) return 'Speaking. Talk to interrupt.';
+  return 'Listening. Speak, and pause when you are done.';
+}

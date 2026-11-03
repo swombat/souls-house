@@ -32,6 +32,7 @@ Rails.application.routes.draw do
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
+        post :voice_mode_fixture, to: "/test_support/e2e#voice_mode_fixture"
       end
     end
   end
@@ -330,6 +331,7 @@ Rails.application.routes.draw do
     scope module: :messages do
       resource :retry, only: :create
       resource :voice, only: :create
+      resource :speech, only: :show
       resource :safeguard_reset, only: :create
     end
   end

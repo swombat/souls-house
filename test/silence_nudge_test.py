@@ -53,6 +53,33 @@ class SilenceClockTest(unittest.TestCase):
         self.assertIn("5m 00s", self.clock.tick(1300))
         self.assertEqual(2, self.clock.notices)
 
+    def test_a_spoken_turn_is_nudged_after_twenty_seconds_then_every_twenty(self):
+        clock = silence_nudge.SilenceClock(
+            "run-v", "wYGwgY", 1000.0, directory=self.dir.name,
+            first_after=silence_nudge.VOICE_FIRST_AFTER_SECS, repeat=silence_nudge.VOICE_REPEAT_SECS,
+            ttl=silence_nudge.VOICE_NOTICE_TTL_SECS, voice=True)
+        self.assertIsNone(clock.tick(1019))
+        text = clock.tick(1020)
+        self.assertIn("20s", text)
+        self.assertIn("may be listening", text)
+        self.assertIn("one spoken sentence", text)
+        self.assertIn("not a message from a person", text)
+        self.assertNotIn("is listening", text)
+        self.assertEqual(1040, json.loads(clock.path.read_text())["expires_at"])
+        self.assertIsNone(clock.tick(1039))
+        self.assertIn("40s", clock.tick(1040))
+        # A post restarts the clock: the next nudge is twenty seconds after it.
+        clock.observe_post(1045)
+        self.assertFalse(clock.path.exists())
+        self.assertIsNone(clock.tick(1064))
+        self.assertIn("20s", clock.tick(1065))
+        self.assertEqual(3, clock.notices)
+
+    def test_a_typed_turn_keeps_the_two_minute_wording(self):
+        text = silence_nudge.notice_text(120, "wYGwgY")
+        self.assertNotIn("Voice mode", text)
+        self.assertIn("2m 00s", text)
+
     def test_a_visible_post_withdraws_the_pending_notice_and_restarts_the_clock(self):
         self.clock.tick(1130)
         self.assertTrue(self.clock.path.exists())
@@ -391,6 +418,24 @@ class ReporterSilenceTest(unittest.TestCase):
         seen = self.run_fake(self.fake_chaos("--steer-file <FILE>"))
         self.assertEqual(["exec", "--json", "-"], seen["argv"])
         self.assertIsNone(self.reporter.silence)
+
+    def test_a_spoken_turn_arms_the_voice_clock(self):
+        self.reporter.conversation_id = "wYGwgY"
+        self.reporter.voice_mode = True
+        saved = (self.module.VOICE_FIRST_AFTER_SECS, self.module.VOICE_REPEAT_SECS)
+        self.module.VOICE_FIRST_AFTER_SECS, self.module.VOICE_REPEAT_SECS = 0.3, 60
+        try:
+            seen = self.run_fake(self.fake_chaos("--steer-file <FILE>"))
+        finally:
+            self.module.VOICE_FIRST_AFTER_SECS, self.module.VOICE_REPEAT_SECS = saved
+        self.assertTrue(self.reporter.silence.voice)
+        self.assertTrue(any("Voice mode" in text for text in seen["notices"]), seen["notices"])
+
+    def test_a_typed_turn_arms_the_ordinary_clock(self):
+        self.reporter.conversation_id = "wYGwgY"
+        self.run_fake(self.fake_chaos("no such flag here"))
+        self.assertFalse(self.reporter.silence.voice)
+        self.assertEqual(self.module.FIRST_AFTER_SECS, self.reporter.silence.first_after)
 
     def test_the_activity_ack_is_the_authority_for_the_last_post(self):
         self.reporter.conversation_id = "wYGwgY"
