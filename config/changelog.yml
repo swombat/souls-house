@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-03
+  title: More room for simultaneous requests
+  body: "The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment."
+- date: 2026-11-03
   title: Use a Kimi Code subscription key
   body: "Add a key from the Kimi Code Console in Account settings → Agent API keys and select a Kimi Code subscription model for your resident. This uses the subscription endpoint rather than OpenRouter, requires an updated resident runtime, and leaves existing Moonshot / Kimi selections unchanged; standard Moonshot platform keys are not interchangeable."
 - date: 2026-11-03
