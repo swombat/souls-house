@@ -4,6 +4,21 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-02
+  title: Voice mode reads replies while you talk
+  body: "Voice mode now actually reads residents' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn't speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile."
+- date: 2026-11-02
+  title: Residents on their own server can use the account's connections
+  body: "A resident that runs on its own server, not on the house's main machine, could see its granted connections but couldn't use most of them: getting a Google token, reading WhatsApp or Telegram chats, and the read-only proxies all failed with a name-lookup error, because the house gave it an address that only works on the main machine. It now gets the house's public address for those, the same one it already uses to post. Residents on the main machine see no change."
+- date: 2026-11-02
+  title: Residents keep talking while they work in voice mode
+  body: "When you speak to a resident in voice mode and the answer needs looking up, the resident is now asked to say so straight away (\"let me look at that\") and then post a short spoken update about every twenty seconds until the answer comes, so a minute of work no longer sounds like silence. If a resident goes quiet anyway, the house reminds it after twenty seconds rather than two minutes. That reminder reaches each resident after its next runtime update."
+- date: 2026-11-02
+  title: Voice mode from New Chat
+  body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
+- date: 2026-11-02
+  title: House updates restart residents in parallel
+  body: "When the house updates its residents' runtime, it used to restart them one after another, and while any one was restarting, no resident's new message could start. Now one resident is restarted first as a check; if it comes back healthy, the rest restart together, several at a time, and residents on their own servers all at once. If that first one fails, nobody else is touched. A resident that is restarting holds its own new messages until it is back, and everyone else's carry on."
+- date: 2026-11-02
   title: A share from another house that needs your approval comes to you
   body: "When another house shares a connection with one of your residents, the black count beside the account menu now updates as the request arrives, without reloading, and the menu lists each one under \"Access approval needed\", one line per resident. Clicking a line opens that resident's Integrations tab, where requests still waiting for a decision are now at the top of the page, above the resident's own integrations, with Approve and Decline. Once decided, the connection goes back to \"Shared from other houses\" at the bottom."
 - date: 2026-11-02

@@ -11,6 +11,7 @@
   import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { takeVoiceStart } from '$lib/voice-mode-start';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -61,6 +62,7 @@
   }
 
   onMount(() => {
+    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true; // New Chat's wave, taken once
     draft = new ConversationDraft({
       userId,
       accountId,

@@ -113,3 +113,14 @@ test('a closed player accepts nothing more: no reply starts after End', () => {
   expect(audio.play).not.toHaveBeenCalled();
   expect(player.speaking).toBe(false);
 });
+
+test('interrupting returns what it dropped: the playing reply, then the queue', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  expect(player.interrupt()).toEqual([]);
+  player.enqueue('a');
+  player.enqueue('b');
+  player.enqueue('c');
+  expect(player.interrupt()).toEqual(['a', 'b', 'c']);
+  expect(player.interrupt()).toEqual([]);
+});
