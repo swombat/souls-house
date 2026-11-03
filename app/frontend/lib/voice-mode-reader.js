@@ -11,26 +11,21 @@ import { messageSpeechPath } from '@/routes';
 //   sequence comes back in order, then whatever landed meanwhile. Speaking over
 //   a reply never loses it (Daniel, #758: "I do want to hear whatever you have
 //   got to say, even if I interrupt it"). The reply that was playing restarts if
-//   it had played under RESTART_UNDER seconds, and otherwise resumes from about
-//   where it stopped;
+//   it had played under RESTART_UNDER seconds, and otherwise plays on from where
+//   it paused (the player keeps that audio);
 // - End (close) is the only thing that drops it.
 export const RESTART_UNDER = 5;
 
-export const resumeFrom = (at) => (at >= RESTART_UNDER ? at : 0);
-
 export function createReplyReader({ messages = [], onchange }) {
   const picker = createReplyPicker(messages);
-  const player = createPlayer({
-    urlFor: (id, from) => (from > 0 ? messageSpeechPath(id, { from: Math.floor(from) }) : messageSpeechPath(id)),
-    onchange,
-  });
+  const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange });
   let interrupted = [];
   const read = (ids) => ids.forEach((id) => player.enqueue(id));
   const resume = (current) => {
     const back = interrupted;
     interrupted = [];
     picker.release();
-    back.forEach(({ id, at }) => player.enqueue(id, resumeFrom(at)));
+    back.forEach(({ id, at, playing }) => player.enqueue(id, { resume: playing && at >= RESTART_UNDER }));
     read(picker.take(current));
   };
 

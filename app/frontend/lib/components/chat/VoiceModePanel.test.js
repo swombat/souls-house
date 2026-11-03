@@ -50,7 +50,7 @@ vi.mock('$lib/voice-mode-playback', () => ({
     player = {
       options,
       log: [],
-      enqueue: vi.fn((id, from) => player.log.push(from ? ['enqueue', id, from] : ['enqueue', id])),
+      enqueue: vi.fn((id, options) => player.log.push(options?.resume ? ['enqueue', id, 'resume'] : ['enqueue', id])),
       interrupt: vi.fn(() => {
         player.log.push(['interrupt']);
         return player.interrupts?.shift() ?? [];
@@ -324,7 +324,7 @@ test('a burst that was not speech consumes no reply: the cut-off reply and what 
   player.options.onchange('first');
   await waitFor(() => expect(screen.getByTestId('voice-mode-reply').textContent).toMatch(/Lume:\s*Spoken back\./));
 
-  player.interrupts = [[{ id: 'first', at: 2 }]];
+  player.interrupts = [[{ id: 'first', at: 2, playing: true }]];
   callbacks.onspeechstart(new Float32Array(10));
   const during = reply('during');
   await rerender({ ...props, messages: [first, during] });
@@ -353,7 +353,7 @@ test('a sent turn loses nothing: what landed while the person spoke is read, the
   ]);
 });
 
-test('a reply spoken over comes back after the sent turn: from the top under 5 s, from where it stopped after (#758)', async () => {
+test('a reply spoken over comes back after the sent turn: from the top under 5 s, played on from where it paused after (#758)', async () => {
   const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
   await waitFor(() => expect(callbacks).toBeTruthy());
   const long = reply('long');
@@ -361,18 +361,18 @@ test('a reply spoken over comes back after the sent turn: from the top under 5 s
   await rerender({ ...props, messages: [long, short] });
 
   transcriber.results.push('Wait.');
-  player.interrupts = [[{ id: 'long', at: 12.4 }, { id: 'short', at: 0 }]];
+  player.interrupts = [[{ id: 'long', at: 12.4, playing: true }, { id: 'short', at: 0, playing: false }]];
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
   await waitFor(() =>
     expect(player.log.slice(-2)).toEqual([
-      ['enqueue', 'long', 12.4],
+      ['enqueue', 'long', 'resume'],
       ['enqueue', 'short'],
     ]),
   );
 
   transcriber.results.push('Again.');
-  player.interrupts = [[{ id: 'short', at: 3.9 }]];
+  player.interrupts = [[{ id: 'short', at: 3.9, playing: true }]];
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
   await waitFor(() => expect(player.log.at(-1)).toEqual(['enqueue', 'short']));

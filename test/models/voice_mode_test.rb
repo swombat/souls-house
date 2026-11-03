@@ -75,20 +75,6 @@ class VoiceModeTest < ActiveSupport::TestCase
     assert VoiceMode.speech_text(unbroken).end_with?("word… #{VoiceMode::SPEECH_TRUNCATION_NOTE}")
   end
 
-  test "a reply resumed after a barge-in starts at the sentence it had reached (#758)" do
-    message = Message.new(role: "assistant", content: "First one here. Second sentence is this one. Third and last.")
-    assert_equal message.content_for_speech, VoiceMode.speech_text(message, from_seconds: nil)
-    assert_equal message.content_for_speech, VoiceMode.speech_text(message, from_seconds: 0)
-    # 15 chars a second: 1 s is still inside the first sentence, 2 s inside the second.
-    assert_equal message.content_for_speech, VoiceMode.speech_text(message, from_seconds: 1)
-    assert_equal "Second sentence is this one. Third and last.", VoiceMode.speech_text(message, from_seconds: 2)
-    assert_equal "Third and last.", VoiceMode.speech_text(message, from_seconds: 3.5)
-    # An overshoot still says the last sentence rather than nothing.
-    assert_equal "Third and last.", VoiceMode.speech_text(message, from_seconds: 600)
-    unbroken = Message.new(role: "assistant", content: "no sentence end at all here")
-    assert_equal "no sentence end at all here", VoiceMode.speech_text(unbroken, from_seconds: 30)
-  end
-
   test "a spoken turn has no addressee in a room where every message wakes its resident" do
     chat = @account.chats.create!(model_id: "openrouter/auto", manual_responses: false)
     assert_nil VoiceMode.addressee(chat, "Anyone, hello")
