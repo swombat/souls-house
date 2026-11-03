@@ -1617,6 +1617,55 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  # Swaps a limit constant for one test, as Export reads it.
+  def with_archive_limit(name, value)
+    archive = Agents::Portability::Archive
+    original = archive.const_get(name)
+    silence_warnings { archive.const_set(name, value) }
+    yield
+  ensure
+    silence_warnings { archive.const_set(name, original) }
+  end
+
+  test "the dry run checks the whole archive as Export does, so it is never ready when the copy would refuse" do
+    with_house do
+      agent = house_resident!
+      fits = plan(agent).call(measure: true)
+      assert fits.whole.fits?
+      assert_equal 3 + 4, fits.whole.entries, "three role directories and four files, as Export counts them"
+      assert fits.ready?
+
+      with_archive_limit(:MAX_ENTRIES, 10) do
+        report = plan(agent).call(measure: true)
+        assert report.roles.all?(&:fits?), "each role alone is under the limit"
+        assert_equal "Resident files exceed v1 limits", report.whole.refusal
+        assert_not report.ready?
+        error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
+        assert_equal "Resident files exceed v1 limits", error.message, "the same words as the copy"
+      end
+
+      with_archive_limit(:MAX_COMPRESSED, 1000) do
+        report = plan(agent).call(measure: true)
+        assert_match(/may be larger than an archive can carry/, report.whole.refusal)
+        assert_not report.ready?
+      end
+    end
+  end
+
+  test "measuring a resident the house does not run is reported and audited, not raised" do
+    with_house do
+      agent = house_resident!
+      stage_move!(agent)
+      report = Agents::VmMigration::Plan.new(migration(agent.reload)).call(measure: true, requested_by: @user)
+      assert report.measure_error.present?
+      assert_empty report.roles
+      assert_not report.ready?
+      audit = AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last
+      assert_equal report.measure_error, audit.data["measure_error"]
+      assert_equal "staged", agent.placement.reload.state, "the ownership check refused before any Docker access"
+    end
+  end
+
   def move!(agent, policy: Agents::VmBirthPolicy.current)
     Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
       Agents::VmMigration.new(agent, policy:).move!(requested_by: @user, transport: HouseTransport.new)

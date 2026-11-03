@@ -41,13 +41,20 @@ class Admin::ResidentMigrationsControllerTest < ActionDispatch::IntegrationTest
   test "measuring reads the volumes through the transport and records who asked" do
     sign_in users(:site_admin_user)
     Agents::Portability::Transport.stub(:new, HouseTransport.new) do
-      get admin_agent_migration_path(@agent, measure: 1)
+      post measure_admin_agent_migration_path(@agent)
     end
     report = inertia_props["props"]["report"]
     assert_equal %w[identity repo work], report["roles"].map { |role| role["role"] }
     assert(report["roles"].all? { |role| role["fits"] })
     assert AuditLog.exists?(action: "vm_migration_dry_run", auditable: @agent, user: users(:site_admin_user))
     assert_empty @agent.reload.import_stages
+  end
+
+  test "a GET never measures, even with the old parameter" do
+    sign_in users(:site_admin_user)
+    get admin_agent_migration_path(@agent, measure: 1)
+    assert_empty inertia_props["props"]["report"]["roles"]
+    assert_not AuditLog.exists?(action: "vm_migration_dry_run", auditable: @agent)
   end
 
   test "the real run goes through the same refusals: switched off, it is not moved" do
@@ -64,6 +71,8 @@ class Admin::ResidentMigrationsControllerTest < ActionDispatch::IntegrationTest
     get admin_agent_migration_path(@agent)
     assert_redirected_to root_path
     post admin_agent_migration_path(@agent)
+    assert_redirected_to root_path
+    post measure_admin_agent_migration_path(@agent)
     assert_redirected_to root_path
     assert_nil @agent.reload.placement
   end

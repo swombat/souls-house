@@ -12,7 +12,15 @@ const report = (overrides = {}) => ({
     },
     { name: 'Stopped and can be copied', ok: true, refusal: null },
   ],
-  limits: { compressed_bytes: 67108864, unpacked_bytes: 268435456, entries: 20000 },
+  limits: {
+    compressed_bytes: 67108864,
+    unpacked_bytes: 268435456,
+    entries: 20000,
+    archive_entries: 19996,
+    archive_expanded_bytes: 412000000,
+    archive_compressed_bytes: 104857600,
+  },
+  whole: null,
   roles: [],
   measure_error: null,
   facts: ['No live move until rollback after cutover is built (#426 slice 3C).'],
@@ -28,7 +36,7 @@ test('shows every gate, says it will refuse, and measures only when asked', asyn
   expect(screen.getByText(/It will refuse now: This house isn't creating/)).toBeVisible();
   expect(screen.getByText('Not measured yet.')).toBeVisible();
   await fireEvent.click(screen.getByRole('button', { name: 'Measure sizes' }));
-  expect(router.get).toHaveBeenCalledWith('/admin/agents/7/migration', { measure: '1' }, { preserveScroll: true });
+  expect(router.post).toHaveBeenCalledWith('/admin/agents/7/migration/measure', {}, { preserveScroll: true });
 });
 
 test('shows a role that would be refused, and moves only after confirming', async () => {
@@ -43,8 +51,17 @@ test('shows a role that would be refused, and moves only after confirming', asyn
       refusal: 'The work home is larger than a resident server can be seeded with (256 MB unpacked)',
     },
   ];
-  render(ResidentMigration, { resident, report: report({ roles }), measured: true });
+  const whole = {
+    entries: 30000,
+    expanded_bytes: 1,
+    compressed_bytes: 1,
+    legacy_rows: 0,
+    fits: false,
+    refusal: 'Resident files exceed v1 limits',
+  };
+  render(ResidentMigration, { resident, report: report({ roles, whole }), measured: true });
   expect(screen.getByText(/The work home is larger/)).toBeVisible();
+  expect(screen.getByTestId('migration-whole')).toHaveTextContent('Resident files exceed v1 limits');
   await fireEvent.click(screen.getByTestId('migration-move'));
   expect(router.post).not.toHaveBeenCalled();
   await fireEvent.click(screen.getByTestId('migration-confirm'));

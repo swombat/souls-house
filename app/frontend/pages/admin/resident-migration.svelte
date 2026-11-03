@@ -11,7 +11,7 @@
   const blocked = $derived(report.gates.filter((gate) => !gate.ok));
 
   function measure() {
-    router.get(path, { measure: '1' }, { preserveScroll: true });
+    router.post(`${path}/measure`, {}, { preserveScroll: true });
   }
 
   function move() {
@@ -91,6 +91,17 @@
           {/each}
         </tbody>
       </table>
+      {#if report.whole}
+        <p class="text-sm" data-testid="migration-whole" data-fits={report.whole.fits}>
+          <span class="font-medium">The whole archive:</span>
+          {report.whole.entries.toLocaleString()} of {report.limits.archive_entries.toLocaleString()} entries,
+          {mb(report.whole.expanded_bytes)} of {mb(report.limits.archive_expanded_bytes)} expanded, at most
+          {mb(report.whole.compressed_bytes)} of {mb(report.limits.archive_compressed_bytes)} compressed, with
+          {report.whole.legacy_rows} diary rows.
+          <span class={report.whole.fits ? 'text-green-600' : 'text-red-600'}
+            >{report.whole.fits ? 'Fits.' : report.whole.refusal}</span>
+        </p>
+      {/if}
     {:else if !report.measure_error}
       <p class="text-sm text-muted-foreground">Not measured yet.</p>
     {/if}

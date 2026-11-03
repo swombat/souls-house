@@ -151,7 +151,14 @@ runner's seed limits: 64 MB compressed (`Agents::VmSeed::MAX_BYTES`), 256 MB
 unpacked and 20,000 entries (`Agents::Portability::Stage`). The real copy uses
 the same code: `Transport.capture` with the volume mounted read-only,
 `Archive.unpack`, `Stage.check_unpacked!`, and a gzip of the role tar. The work
-happens in a private temporary directory, which is removed afterwards. A running
+happens in a private temporary directory, which is removed afterwards. It also checks the whole archive the
+way Export does: the entry count and the expanded budget across all three roles, counted exactly as
+`Export.call` counts them, the legacy diary cap and the graph cap. It compares the compressed archive
+against its 100 MiB limit using an upper bound: the roles' gzip sizes plus a margin, with the memory
+documents added uncompressed. The dry run says "ready" only when every gate passes and both the roles
+and the whole archive fit. Measuring is a POST (`/admin/agents/:id/migration/measure`). A GET of the
+page never reads a volume. If the house can't reach the resident's volumes, for example because it is
+already staged elsewhere, the dry run reports and audits the ownership refusal. It does not fail. A running
 resident can be measured. Its numbers come from a home that is still changing,
 so the copy, which is taken with the resident stopped, can differ. Every measurement is
 audited (`vm_migration_dry_run`, with the sizes and who asked).
