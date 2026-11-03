@@ -25,6 +25,11 @@ import time
 import uuid
 
 CONFIG_KEYS = ('auto_commit_paths', 'append_only_paths', 'allow_destructive_paths')
+# Root-anchored names the host runner writes while seeding a home volume
+# (host-runner SEED_MARKER and friends; app/services/agents/vm_seed.rb
+# RESERVED_TOP_LEVEL). Packages may not contain them.
+HOUSE_EXCLUDES = tuple('--exclude=/' + name for name in
+                       ('.souls-house-seed', '.souls-house-seed.tmp', '.souls-house-seed-staging'))
 REASONS = {
     'not_recorded', 'runtime_unavailable', 'synced', 'lock_busy', 'staged_changes',
     'dirty_worktree', 'operation_in_progress', 'wrong_branch', 'invalid_configuration',
@@ -108,6 +113,11 @@ class Sync:
     def paths(self, *args):
         return [os.fsdecode(p) for p in self.git(*args)[0].split(b'\0') if p]
 
+    def untracked(self):
+        # The house's own seed markers sit at the home root, untracked and
+        # never the resident's dirt. Every other untracked file still counts.
+        return self.paths('ls-files', '--others', '--exclude-standard', *HOUSE_EXCLUDES, '-z')
+
     def matches(self, key, path):
         return any(contains(scope, path) for scope in self.config[key])
 
@@ -150,7 +160,7 @@ class Sync:
     def save_allowed_edits(self):
         self.clean_preflight()
         dirty = sorted(set(self.paths('diff', '--name-only', '--no-renames', '-z') +
-                           self.paths('ls-files', '--others', '--exclude-standard', '-z')))
+                           self.untracked()))
         if any(not self.matches('auto_commit_paths', path) for path in dirty):
             raise Refused('dirty_worktree')
         for path in dirty:
@@ -166,7 +176,7 @@ class Sync:
             self.git('commit', '--only', '-m', 'Save approved home changes', '--', *dirty,
                      reason='commit_failed')
         self.clean_preflight()
-        if self.paths('diff', '--name-only', '-z') or self.paths('ls-files', '--others', '--exclude-standard', '-z'):
+        if self.paths('diff', '--name-only', '-z') or self.untracked():
             raise Refused('dirty_worktree')
 
     def append_merges(self, base, local, remote):
@@ -206,7 +216,8 @@ class Sync:
         try:
             # --no-overwrite-ignore is insufficient on some non-fast-forward
             # merge paths. Refuse collisions explicitly before any checkout.
-            ignored = self.paths('ls-files', '--others', '--ignored', '--exclude-standard', '-z')
+            ignored = self.paths('ls-files', '--others', '--ignored', '--exclude-standard',
+                                 *HOUSE_EXCLUDES, '-z')
             incoming = sorted(self.paths('ls-tree', '-r', '--name-only', '-z', remote))
             tracked_paths = set(incoming)
             for private in ignored:
