@@ -10,7 +10,7 @@ import { messageSpeechPath } from '@/routes';
 // - the burst is discarded (not speech): that cut-off sequence is read again,
 //   the playing reply from its start, then whatever landed during the burst;
 // - the turn is committed: the cut-off sequence is dropped and everything on
-//   the page then is superseded.
+//   the page then is superseded, by id: what arrives after is read (#755).
 export function createReplyReader({ messages = [], onchange }) {
   const picker = createReplyPicker(messages);
   const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange });

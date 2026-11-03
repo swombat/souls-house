@@ -10,11 +10,11 @@
 // While the person is speaking nothing is read, and nothing is decided either.
 // What happens to the replies on the page depends on how the burst ends (#748):
 // - a committed turn supersedes everything then on the page, including replies
-//   that landed while they spoke and replies still arriving, and every resident
-//   run that has a message on the page: a later message from that run (its
-//   final reply after a progress note) stays silent too. A message with no run
-//   provenance is superseded by its own id only; a run that had posted nothing
-//   when the turn was sent is not known to be superseded and is read.
+//   that landed while they spoke and replies still arriving, by id. A message
+//   created after the commit is read, whatever run it belongs to (#755): a
+//   resident turn that posts a progress note every ~20 s is one run, and
+//   silencing the run silenced every later message of a long reply after one
+//   barge-in.
 // - a discarded burst (a cough, the dog, a door: sound the detector dropped as
 //   not speech) supersedes nothing: what landed during it is read afterwards.
 // Superseding at speech-start instead meant every noise in the room silently
@@ -30,8 +30,6 @@ export function speakable(message) {
 }
 
 const arriving = (m) => m.role === 'assistant' && (m.streaming || m.completed === false);
-// The runtime run a resident message came from, when the message says.
-const runOf = (m) => m.runtime_interaction_id ?? m.progress_run_id ?? null;
 const time = (m) => {
   const t = Date.parse(m?.created_at);
   return Number.isNaN(t) ? null : t;
@@ -41,13 +39,9 @@ export function createReplyPicker(initial = []) {
   const opened = Math.max(-Infinity, ...initial.map(time).filter((t) => t !== null));
   const allowed = new Set(initial.filter(arriving).map((m) => m.id));
   const seen = new Set();
-  const supersededRuns = new Set();
   let held = false;
   const supersede = (messages) => {
-    for (const message of messages || []) {
-      seen.add(message.id);
-      if (message.role === 'assistant' && runOf(message) !== null) supersededRuns.add(runOf(message));
-    }
+    for (const message of messages || []) seen.add(message.id);
     allowed.clear();
   };
 
@@ -60,7 +54,6 @@ export function createReplyPicker(initial = []) {
       for (const message of messages || []) {
         if (seen.has(message.id) || !speakable(message)) continue;
         seen.add(message.id);
-        if (supersededRuns.has(runOf(message))) continue;
         const t = time(message);
         if (allowed.has(message.id) || (t !== null && t > opened)) ids.push(message.id);
       }
