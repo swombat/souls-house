@@ -496,7 +496,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
     agent.account.update!(moonshot_api_key: "dummy-code-key")
     agent.update!(
-      model_id: "kimi-code/k3.1-pro", runtime: "external",
+      model_id: "kimi-code/k3.1-pro", reasoning_effort: "default", runtime: "external",
       uuid: SecureRandom.uuid_v7, endpoint_url: "https://agent.example.com",
       trigger_bearer_token: "tr_valid", health_state: "healthy"
     )
@@ -509,7 +509,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     )
 
     assert_difference "chat.messages.count", 1 do
-      ExternalAgentResponseRequest.new(agent: agent, chat: chat).call
+      result = ExternalAgentResponseRequest.new(agent: agent, chat: chat).call
+      assert_equal 500, result[:status], result.inspect
     end
 
     message = chat.messages.order(:created_at).last
