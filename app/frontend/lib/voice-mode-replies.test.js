@@ -80,16 +80,29 @@ test('a reply still arriving when noise starts is read once it completes, if the
   expect(picker.take([reply('arriving', 3)])).toEqual(['arriving']);
 });
 
-test('a run interrupted by a sent turn stays silent for good: its later final reply is not read, a new run is', () => {
+test('speaking over one message of a run silences only that message: the run is read on afterwards (#755)', () => {
   const picker = createReplyPicker([]);
   const progress = reply('progress', 10, { progress_message: true, runtime_interaction_id: 'old-run' });
   expect(picker.take([progress])).toEqual(['progress']);
   picker.hold();
   picker.commit([progress]);
-  const oldFinal = reply('old-final', 11, { runtime_interaction_id: 'old-run' });
-  expect(picker.take([progress, oldFinal])).toEqual([]);
-  const answer = reply('answer', 12, { runtime_interaction_id: 'new-run' });
-  expect(picker.take([progress, oldFinal, answer])).toEqual(['answer']);
+  const next = reply('next', 11, { progress_message: true, runtime_interaction_id: 'old-run' });
+  expect(picker.take([progress, next])).toEqual(['next']);
+  const oldFinal = reply('old-final', 12, { runtime_interaction_id: 'old-run' });
+  expect(picker.take([progress, next, oldFinal])).toEqual(['old-final']);
+});
+
+test('a run message on the page or still arriving at the commit stays silent; the same run after it is read', () => {
+  const picker = createReplyPicker([]);
+  const playing = reply('playing', 10, { runtime_interaction_id: 'run' });
+  expect(picker.take([playing])).toEqual(['playing']);
+  picker.hold();
+  const during = reply('during', 11, { progress_message: true, runtime_interaction_id: 'run' });
+  const arriving = reply('arriving', 11, { streaming: true, completed: false, runtime_interaction_id: 'run' });
+  picker.commit([playing, during, arriving]);
+  const done = reply('arriving', 11, { runtime_interaction_id: 'run' });
+  const after = reply('after', 12, { runtime_interaction_id: 'run' });
+  expect(picker.take([playing, during, done, after])).toEqual(['after']);
 });
 
 test('without run provenance only the superseded message itself stays silent', () => {
