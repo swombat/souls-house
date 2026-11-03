@@ -571,7 +571,15 @@ class AgentRuntimeInteraction < ApplicationRecord
   # the Runs tab says why without opening the output. Nil unless it failed.
   def failure_reason
     category = failure_category
-    RunFailureNotice::NO_REPLY_CAUSES[category] if category
+    return unless category
+
+    cause = RunFailureNotice::NO_REPLY_CAUSES[category]
+    # What the provider said, sanitised at the gateway (#725). Only for the
+    # provider's refusal; the room notice keeps the category alone.
+    if category == "house_provider_refused" && inference_refusal_reason.present?
+      cause = "#{cause} (the provider said: #{inference_refusal_reason})"
+    end
+    cause
   end
 
   def setup_refusal

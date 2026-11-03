@@ -4,18 +4,30 @@ import { messageSpeechPath } from '@/routes';
 
 // The reply side of voice mode (VoiceModePanel): which replies are read
 // (the picker) and the one audio element that reads them (the player), tied
-// to the speech detector's three moments (#748).
+// to the speech detector's three moments (#748, #758).
 // - speech starts: nothing new is read, and the reply playing and the ones
 //   queued behind it are cut off and kept;
-// - the burst is discarded (not speech): that cut-off sequence is read again,
-//   the playing reply from its start, then whatever landed during the burst;
-// - the turn is committed: the cut-off sequence is dropped and everything on
-//   the page then is superseded, by id: what arrives after is read (#755).
+// - the burst ends, sent as a turn or discarded as not speech: the cut-off
+//   sequence comes back in order, then whatever landed meanwhile. Speaking over
+//   a reply never loses it (Daniel, #758: "I do want to hear whatever you have
+//   got to say, even if I interrupt it"). The reply that was playing restarts if
+//   it had played under RESTART_UNDER seconds, and otherwise plays on from where
+//   it paused (the player keeps that audio);
+// - End (close) is the only thing that drops it.
+export const RESTART_UNDER = 5;
+
 export function createReplyReader({ messages = [], onchange }) {
   const picker = createReplyPicker(messages);
   const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange });
   let interrupted = [];
   const read = (ids) => ids.forEach((id) => player.enqueue(id));
+  const resume = (current) => {
+    const back = interrupted;
+    interrupted = [];
+    picker.release();
+    back.forEach(({ id, at, playing }) => player.enqueue(id, { resume: playing && at >= RESTART_UNDER }));
+    read(picker.take(current));
+  };
 
   return {
     take(current) {
@@ -26,18 +38,14 @@ export function createReplyReader({ messages = [], onchange }) {
       interrupted = [...interrupted, ...player.interrupt()];
     },
     discarded(current) {
-      const resume = interrupted;
-      interrupted = [];
-      picker.discard();
-      read(resume);
-      read(picker.take(current));
+      resume(current);
     },
     committed(current) {
-      interrupted = [];
-      picker.commit(current);
+      resume(current);
     },
     // Terminal: once End begins nothing is read during its drain.
     close() {
+      interrupted = [];
       player.close();
     },
   };

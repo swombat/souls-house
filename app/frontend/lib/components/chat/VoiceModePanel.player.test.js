@@ -81,7 +81,7 @@ async function openWithTwoReplies() {
   return { ...view, a, b };
 }
 
-test('noise that is not speech loses nothing: A playing and B queued are both read again, A from the start', async () => {
+test('noise that is not speech loses nothing: A playing and B queued are both read again, A from the start (under 5 s in)', async () => {
   const { a, b } = await openWithTwoReplies();
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.ondiscard(120);
@@ -103,11 +103,35 @@ test('a reply landing during the noise is read after the restored sequence', asy
   expect(heard()).toEqual(['A', 'A', 'B', 'C']);
 });
 
-test('a sent turn drops what it interrupted; the next reply is read', async () => {
+test('a sent turn loses nothing (#758): A cut off early starts again, B follows, then the next reply', async () => {
   const { rerender, a, b } = await openWithTwoReplies();
   transcriber.results.push('Something else.');
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
+  await waitFor(() => expect(heard()).toEqual(['A', 'A']));
   await rerender({ ...props, messages: [a, b, reply('D')] });
-  expect(heard()).toEqual(['A', 'D']);
+  audio.end();
+  expect(heard()).toEqual(['A', 'A', 'B']);
+  audio.end();
+  expect(heard()).toEqual(['A', 'A', 'B', 'D']);
+});
+
+test('a reply spoken over after five seconds plays on from where it paused, on the same audio (#758)', async () => {
+  const { b } = await openWithTwoReplies();
+  audio.currentTime = 20;
+  let sources = 0;
+  const src = audio.src;
+  Object.defineProperty(audio, 'src', {
+    configurable: true,
+    get: () => src,
+    set: () => (sources += 1),
+  });
+  transcriber.results.push('Hang on.');
+  callbacks.onspeechstart(new Float32Array(10));
+  callbacks.onturn(1500);
+  await waitFor(() => expect(audio.play).toHaveBeenCalledTimes(2));
+  expect(audio.pause).toHaveBeenCalled();
+  expect(sources).toBe(0);
+  expect(audio.currentTime).toBe(20);
+  expect(b.id).toBe('B');
 });
