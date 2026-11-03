@@ -41,10 +41,11 @@ module HouseInference
           # A refused request delivered nothing, so the resident pays nothing
           # for it, whatever the status (Daniel, JwMQEe, 2026-10-31). If the
           # provider billed the house anyway, that is the house's cost. The
-          # status is kept (never the body) so refusals can be told apart.
-          call.release!(http_status: response.code.to_i)
+          # status is kept, and why (#725), sanitised: never the body itself.
+          reason = HouseInference::RefusalReason.call(self.class.bounded_body(response, deadline: deadline))
+          call.release!(http_status: response.code.to_i, refusal_reason: reason)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
-            code: 'house_provider_refused', status: 502)
+            code: 'house_provider_refused', status: 502, reason: reason)
         end
         response.read_body do |chunk|
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
@@ -101,6 +102,24 @@ module HouseInference
       else
         call&.release!(upstream_id: upstream_id)
       end
+    end
+
+    # At most the first RefusalReason::MAX_BYTES of a refusal's body. Reading
+    # stops at the cap or the call's deadline (the rest is never drained;
+    # the caller raises, so the connection is closed). A read failure keeps
+    # what arrived, never the refusal itself.
+    def self.bounded_body(response, deadline:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+      body = +''
+      catch(:refusal_body_done) do
+        throw :refusal_body_done if clock.call > deadline
+        response.read_body do |chunk|
+          body << chunk.byteslice(0, RefusalReason::MAX_BYTES - body.bytesize)
+          throw :refusal_body_done if body.bytesize >= RefusalReason::MAX_BYTES || clock.call > deadline
+        end
+      end
+      body
+    rescue IOError, SystemCallError, Timeout::Error
+      body
     end
 
     # Whether a stream event or completion carries model output.
