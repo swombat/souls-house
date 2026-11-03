@@ -195,3 +195,27 @@ test('End drops a parked reply: nothing resumes after close', () => {
   player.enqueue('a', { resume: true });
   expect(audio.log.filter(([kind]) => kind === 'play')).toHaveLength(1);
 });
+
+test('an error while the reply is parked forgets it: the resume is a fresh request (Mira, round 2)', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 30;
+  player.interrupt();
+  audio.src = 'stale';
+  audio.dispatchEvent(new Event('error'));
+  player.enqueue('a', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+});
+
+test('a parked element already in error is not resumed, even if its error event was missed', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 30;
+  player.interrupt();
+  audio.src = 'stale';
+  audio.error = { code: 2 };
+  player.enqueue('a', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+});

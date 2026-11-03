@@ -90,7 +90,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     current = item;
     report();
     let started;
-    if (item.resume && parked?.id === item.id) {
+    if (item.resume && parked?.id === item.id && !audio.error) {
       item.resumed = true;
       parked = null;
       started = audio.play();
@@ -103,7 +103,12 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
   }
 
   const onended = () => current && finish(current);
-  const onerror = () => current && failed(current);
+  // An error while a reply is parked means that source is dead: forget it, so
+  // its resume is a fresh request rather than a play() on a broken element.
+  const onerror = () => {
+    if (current) return failed(current);
+    parked = null;
+  };
   audio.addEventListener('ended', onended);
   audio.addEventListener('error', onerror);
 
