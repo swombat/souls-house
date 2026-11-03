@@ -36,7 +36,9 @@ vi.mock('$lib/voice-mode-realtime', () => ({
       commit: vi.fn(() => {
         transcriber.log.push(['commit']);
         const next = transcriber.results.shift();
-        return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+        transcriber.lastCommit = next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+        transcriber.lastCommit.catch(() => {});
+        return transcriber.lastCommit;
       }),
       close: vi.fn(() => transcriber.log.push(['close'])),
     };
@@ -61,6 +63,28 @@ vi.mock('$lib/voice-mode-playback', () => ({
   }),
 }));
 
+// The voice-note upload (#756). By default ElevenLabs hears what the live
+// transcriber heard and the house keeps the recording as sig-1; a test can
+// queue its own results in scribe.results.
+let scribe;
+vi.mock('$lib/voice-mode-turn-audio', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    transcribeTurn: vi.fn((args) => {
+      scribe.calls.push({ length: args.samples.length, sampleRate: args.sampleRate });
+      if (scribe.results.length) return Promise.resolve(scribe.results.shift());
+      // The live commit happens in the same callback, just after this call.
+      return Promise.resolve().then(() =>
+        transcriber.lastCommit.then(
+          (text) => ({ text: typeof text === 'string' ? text : '', signedId: 'sig-1', error: null }),
+          () => ({ text: '', signedId: null, error: 'upload failed' }),
+        ),
+      );
+    }),
+  };
+});
+
 import VoiceModePanel from './VoiceModePanel.svelte';
 
 let posts;
@@ -69,6 +93,7 @@ beforeEach(() => {
   stopped = false;
   transcriber = null;
   posts = [];
+  scribe = { calls: [], results: [] };
   globalThis.fetch = vi.fn(async (url, options) => {
     const form = options.body;
     posts.push({
@@ -92,7 +117,7 @@ function speak(result, ms = 1500) {
   callbacks.onturn(ms);
 }
 
-test('an utterance streams to the transcriber and its text, cleaned of the hand-over phrase, is sent with no recording', async () => {
+test('an utterance streams to the transcriber and its text, cleaned of the hand-over phrase, is sent with its recording (#756)', async () => {
   const onsent = vi.fn();
   render(VoiceModePanel, { ...props, onsent });
   await waitFor(() => expect(callbacks).not.toBeNull());
@@ -106,8 +131,9 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
     url: '/accounts/acc/chats/chat/messages',
     content: 'What is on today?',
     voiceMode: '1',
-    audio: null,
+    audio: 'sig-1',
   });
+  expect(scribe.calls).toEqual([{ length: 7680, sampleRate: 24000 }]);
   await waitFor(() => expect(screen.getByTestId('voice-mode-heard')).toHaveTextContent('What is on today?'));
   expect(onsent).toHaveBeenCalledWith({ id: 'm1' });
   expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
@@ -376,4 +402,48 @@ test('a reply spoken over comes back after the sent turn: from the top under 5 s
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
   await waitFor(() => expect(player.log.at(-1)).toEqual(['enqueue', 'short']));
+});
+
+test('the message carries the ElevenLabs text; the live text shows grey and pulsing until it lands (#756)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const clean = deferred();
+  scribe.results.push(clean.promise);
+  speak('Hey Seuros, what is the time?');
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-provisional')).toHaveTextContent('Hey Seuros, what is the time? (in progress)'),
+  );
+  expect(screen.getByTestId('voice-mode-provisional').className).toContain('animate-pulse');
+  expect(posts).toHaveLength(0);
+  clean.resolve({ text: 'Hey, so what is the time?', signedId: 'sig-9', error: null });
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Hey, so what is the time?', audio: 'sig-9' });
+  expect(screen.queryByTestId('voice-mode-provisional')).toBeNull();
+});
+
+test('when ElevenLabs fails the live text is sent marked rough, with the recording if the house kept it (#756)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  scribe.results.push({ text: '', signedId: 'sig-2', error: 'Transcription failed' });
+  speak('Walking the dog now.');
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: '(rough live transcript) Walking the dog now.', audio: 'sig-2' });
+});
+
+test('ElevenLabs hearing words the live transcriber missed still sends them (#756)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  scribe.results.push({ text: 'Quietly said.', signedId: 'sig-3', error: null });
+  speak('');
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Quietly said.', audio: 'sig-3' });
+});
+
+test('a burst that was not speech uploads nothing (#756)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  callbacks.onspeechstart(new Float32Array(10));
+  callbacks.onaudio(new Float32Array(10));
+  callbacks.ondiscard(120);
+  expect(scribe.calls).toEqual([]);
 });
