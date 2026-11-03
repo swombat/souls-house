@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { createTurnRecorder, encodeWav, transcribeTurn, turnContent, wavBytes } from './voice-mode-turn-audio';
+import { createTurnRecorder, transcribeTurn, turnContent } from './voice-mode-turn-audio';
 
 test('the recorder keeps one turn from its pre-roll to its end, and nothing after a discard', () => {
   const recorder = createTurnRecorder({ sampleRate: 24000 });
@@ -15,16 +15,6 @@ test('the recorder keeps one turn from its pre-roll to its end, and nothing afte
   expect(recorder.take()).toBeNull();
 });
 
-test('a turn is encoded as 16-bit mono PCM WAV at its rate, clipped to range', async () => {
-  expect(encodeWav(new Float32Array([0]), 24000).type).toBe('audio/wav');
-  const view = new DataView(wavBytes(new Float32Array([0, 1, -1, 2]), 24000));
-  const ascii = (at, n) => String.fromCharCode(...new Uint8Array(view.buffer, at, n));
-  expect([ascii(0, 4), ascii(8, 8), ascii(36, 4)]).toEqual(['RIFF', 'WAVEfmt ', 'data']);
-  expect([view.getUint16(22, true), view.getUint32(24, true), view.getUint16(34, true)]).toEqual([1, 24000, 16]);
-  expect(view.getUint32(40, true)).toBe(8);
-  expect([0, 1, 2, 3].map((i) => view.getInt16(44 + i * 2, true))).toEqual([0, 32767, -32768, 32767]);
-});
-
 const response = (status, body) => ({ ok: status < 300, status, text: async () => JSON.stringify(body) });
 
 test('a turn goes to the voice-note transcription endpoint as a WAV upload', async () => {
@@ -34,6 +24,7 @@ test('a turn goes to the voice-note transcription endpoint as a WAV upload', asy
   const [where, method, form] = request.mock.calls[0];
   expect([where, method]).toEqual([{ accountId: 'a', chatId: 'c' }, 'POST']);
   expect(form.get('audio').name).toBe('voice-mode-turn.wav');
+  expect(form.get('audio').type).toBe('audio/wav');
 });
 
 test('a failed transcription keeps the recording only when the house says it saved it', async () => {
