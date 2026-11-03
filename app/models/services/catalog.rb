@@ -295,6 +295,33 @@ module Services
     )
 
     Services::Definition.register(
+      key: "withings",
+      name: "Withings",
+      management_scopes: %w[personal],
+      credential_strategy: "refresh_broker",
+      api_origins: %w[https://wbsapi.withings.net],
+      documentation: [ "https://developer.withings.com/api-reference" ],
+      access_profiles: {
+        health_read: %w[user.info user.metrics user.activity]
+      },
+      default_access_profile: "health_read",
+      runtime_notes: [
+        "Every call is a form POST with Authorization: Bearer <token> and an action parameter, and always answers " \
+        "HTTP 200 with {\"status\": 0, \"body\": {...}}; a non-zero status is the error.",
+        "Body measurements (scales): POST https://wbsapi.withings.net/measure with action=getmeas, category=1, " \
+        "meastypes=1,5,6,8,76,77,88 and either startdate/enddate or lastupdate (Unix seconds). Each measure is " \
+        "{value, type, unit} and the real number is value * 10^unit. Types: 1 weight kg, 5 fat-free mass kg, " \
+        "6 fat ratio %, 8 fat mass kg, 76 muscle mass kg, 77 hydration kg, 88 bone mass kg.",
+        "Activity: POST https://wbsapi.withings.net/v2/measure with action=getactivity and startdateymd/enddateymd. " \
+        "Sleep: POST https://wbsapi.withings.net/v2/sleep with action=getsummary.",
+        "Scale body-fat figures are bioimpedance estimates: trends over weeks mean more than any one reading. " \
+        "This is the person's private health data: share it only with them."
+      ],
+      adapter_class: "Services::WithingsAdapter",
+      requires_credentials: [ %i[withings client_id], %i[withings client_secret] ]
+    )
+
+    Services::Definition.register(
       key: "github",
       name: "GitHub repository",
       management_scopes: %w[personal],
