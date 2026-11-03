@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import IntegrationConnection from './integration-connection.svelte';
 
@@ -238,5 +238,18 @@ describe('sending as the owner (comms)', () => {
     unmount();
     mount({ ...comms, can_grant_send: false });
     expect(screen.queryByRole('link', { name: /What residents sent as you/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('Disconnect warnings', () => {
+  it('tells a Withings owner that issued tokens outlive the disconnect and how to revoke them', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mount({ provider: 'withings', label: 'Withings', management_scope: 'personal', can_manage: true });
+    await fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    const warning = confirm.mock.calls[0][0];
+    expect(warning).toContain('until it expires (up to three hours)');
+    expect(warning).toContain('remove the app from your Withings account');
+    confirm.mockRestore();
   });
 });

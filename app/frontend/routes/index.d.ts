@@ -186,6 +186,20 @@ export const accountAgentMemoryProtectionPath: ((
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/residents/:agent_id/commitments(.:format)
+ * @param {any} accountId
+ * @param {any} agentId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountAgentCommitmentsPath: ((
+  accountId: RequiredRouteParameter,
+  agentId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/residents/:agent_id/orientation_retry(.:format)
  * @param {any} accountId
  * @param {any} agentId
@@ -541,6 +555,20 @@ export const accountChatReplyDismissalPath: ((
  * @returns {string} route path
  */
 export const accountChatTranscriptionPath: ((
+  accountId: RequiredRouteParameter,
+  chatId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/chats/:chat_id/voice_mode_session(.:format)
+ * @param {any} accountId
+ * @param {any} chatId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountChatVoiceModeSessionPath: ((
   accountId: RequiredRouteParameter,
   chatId: RequiredRouteParameter,
   options?: {format?: OptionalRouteParameter} & RouteOptions
@@ -3424,6 +3452,18 @@ export const messageRetryPath: ((
  * @returns {string} route path
  */
 export const messageSafeguardResetPath: ((
+  messageId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
+ * /messages/:message_id/speech(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechPath: ((
   messageId: RequiredRouteParameter,
   options?: {format?: OptionalRouteParameter} & RouteOptions
 ) => string) & RouteHelperExtras;

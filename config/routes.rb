@@ -32,6 +32,7 @@ Rails.application.routes.draw do
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
+        post :voice_mode_fixture, to: "/test_support/e2e#voice_mode_fixture"
       end
     end
   end
@@ -130,6 +131,16 @@ Rails.application.routes.draw do
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
+    # Account export and import (docs/features/account-portability.md).
+    resource :portability, only: :show, module: :accounts, controller: "portability" do
+      post :release_field
+    end
+    resources :exports, only: [ :create ], module: :accounts, controller: "account_exports" do
+      get :download, on: :member
+    end
+    resources :imports, only: [ :create ], module: :accounts, controller: "account_imports" do
+      post :confirm, on: :member
+    end
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
@@ -205,6 +216,7 @@ Rails.application.routes.draw do
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]
+        resource :voice_mode_session, only: :create
       end
       resources :messages, only: [ :index, :create ]
     end
@@ -233,6 +245,8 @@ Rails.application.routes.draw do
       end
 
       scope module: :agents do
+        resources :reflex_releases, only: :create, path: "reflexes/:reflex_id/release"
+        resources :commitments, only: %i[index update destroy]
         resource :provisioning_retry, only: :create
         resource :orientation_retry, only: :create
         resource :hosting_diagnostics, only: :show do
@@ -317,6 +331,7 @@ Rails.application.routes.draw do
     scope module: :messages do
       resource :retry, only: :create
       resource :voice, only: :create
+      resource :speech, only: :show
       resource :safeguard_reset, only: :create
     end
   end
@@ -483,6 +498,7 @@ Rails.application.routes.draw do
       resources :reflexes, only: %i[index create destroy] do
         resources :judgments, only: :index, module: :reflexes
       end
+      resources :commitments, only: %i[index show create update destroy]
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"

@@ -6,6 +6,57 @@
 - date: 2026-11-03
   title: Residents on their own server can sync on their first run
   body: "A resident imported from GitHub onto its own server was refused its first standard sync as \"dirty worktree\", because the only untracked file in its home was a marker the house itself writes at the top of the home. The house's own markers at the home root no longer count as the resident's changes. The same file name anywhere else, or a file the repository tracks, still blocks the sync as before. Reaches residents on their own server with their next runtime update."
+- date: 2026-11-02
+  title: Voice mode reads replies while you talk
+  body: "Voice mode now actually reads residents' replies aloud while it is open. Before, the page stopped fetching new messages for as long as voice mode was on, so replies only appeared after you pressed End and nothing was ever read. The reply being read now also shows as text in the voice panel, and a noise that isn't speech (a cough, the dog) no longer silences a reply: the one it cut off is read again, then anything that arrived meanwhile."
+- date: 2026-11-02
+  title: Residents on their own server can use the account's connections
+  body: "A resident that runs on its own server, not on the house's main machine, could see its granted connections but couldn't use most of them: getting a Google token, reading WhatsApp or Telegram chats, and the read-only proxies all failed with a name-lookup error, because the house gave it an address that only works on the main machine. It now gets the house's public address for those, the same one it already uses to post. Residents on the main machine see no change."
+- date: 2026-11-02
+  title: Residents keep talking while they work in voice mode
+  body: "When you speak to a resident in voice mode and the answer needs looking up, the resident is now asked to say so straight away (\"let me look at that\") and then post a short spoken update about every twenty seconds until the answer comes, so a minute of work no longer sounds like silence. If a resident goes quiet anyway, the house reminds it after twenty seconds rather than two minutes. That reminder reaches each resident after its next runtime update."
+- date: 2026-11-02
+  title: Voice mode from New Chat
+  body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
+- date: 2026-11-02
+  title: House updates restart residents in parallel
+  body: "When the house updates its residents' runtime, it used to restart them one after another, and while any one was restarting, no resident's new message could start. Now one resident is restarted first as a check; if it comes back healthy, the rest restart together, several at a time, and residents on their own servers all at once. If that first one fails, nobody else is touched. A resident that is restarting holds its own new messages until it is back, and everyone else's carry on."
+- date: 2026-11-02
+  title: A share from another house that needs your approval comes to you
+  body: "When another house shares a connection with one of your residents, the black count beside the account menu now updates as the request arrives, without reloading, and the menu lists each one under \"Access approval needed\", one line per resident. Clicking a line opens that resident's Integrations tab, where requests still waiting for a decision are now at the top of the page, above the resident's own integrations, with Approve and Decline. Once decided, the connection goes back to \"Shared from other houses\" at the bottom."
+- date: 2026-11-02
+  title: Your residents' visits elsewhere show their rhythms and whether they're working there
+  body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
+- date: 2026-11-02
+  title: Voice mode speaks back
+  body: In voice mode, residents' replies and progress notes are now read aloud in their own voices as they arrive, streamed so the first words play within about a second. Start talking and the reading stops. A long reply is read up to about 900 characters and then says the rest is on screen. In a room with several residents, a spoken turn that starts with a resident's name goes to that resident, and one that names nobody goes to whoever spoke last.
+- date: 2026-11-02
+  title: The visual tag editor works on a phone with the keyboard open
+  body: "On a phone, the dialog for adding or editing a visual tag (Settings → Interface) used to give the icon grid whatever height was left, and with the on-screen keyboard up that was none: you had to hide the keyboard to see any icons. It now scrolls as one page, so the icons are always below. Typing in the icon search brings the search box to the top, with the results directly under it, and Save and Cancel stay at the bottom of the screen. On a wider screen nothing changes."
+- date: 2026-11-02
+  title: A failed run says when the cause was a spent allowance or a usage limit
+  body: "When a resident's on-the-house allowance runs out, or its plan includes none, the run that hit it used to end as a plain error. Now the house records the refusal on that run and no other, and the Runs tab, the line in the room, the resident's card and the failing residents in the black count all say \"its house allowance is used up for this month\" or \"its plan includes no house-model allowance\". A run whose request the house's own model provider refused says that too, so it reads as the house's problem, not yours. A run that stopped on output that looked like its own subscription's usage limit says that, as what the output looked like rather than a verdict. Where the house can't tell, it still says the cause isn't identified. The allowance part reaches residents with the next Rebuild residents."
+- date: 2026-11-02
+  title: Withings
+  body: "Connect a Withings account under Integrations and choose which residents may read it: weight and body composition from a Withings scale (fat percentage, muscle, water and bone mass), plus activity and sleep from Withings watches. Residents read it directly from Withings with a short-lived token the house keeps fresh. Scale body-fat readings are estimates, and residents are told to look at the trend rather than any single day. The connection appears once the house has its own Withings app set up."
+- date: 2026-11-02
+  title: Voice mode
+  body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text is kept, no recording. Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
+- date: 2026-11-02
+  title: Export a whole account, and import it into another
+  body: "Settings → Export and import makes one ZIP of the account: each stopped resident's own archive, the whole Field with the original files and audio, transcripts, notes and tags, rooms and their model defaults, rhythms, residents' reflexes, the transcription glossary, and the names of the services to reconnect. Conversations go in only if you tick the box, as message text without attachments. A resident that is running is skipped, never stopped, and the page says so before you start; an archive missing anything says what and why. The archive is made in the background and kept privately for 7 days. To import, create a new, empty account, upload the ZIP there, read the preview and confirm: residents arrive stopped, rhythms and reflexes arrive held, conversations arrive archived, and nothing runs until you start it. Credentials, billing, members and invitations never travel, and nobody gets access to an account because of an archive."
+- date: 2026-11-02
+  title: Residents can make commitments
+  body: "A resident can now promise to come back to something at a set time, for example \"I'll check the rebuild at 03:00\". When the time comes, the house posts \"Commitment due\" with the resident's text, the time it was due and the time it arrived, either in the same conversation or in a new one in a room the resident chose (linked back to where the promise was made), and wakes the resident there. The resident still decides what to do at that point; the house only reminds it. Each commitment fires once. If the resident can't be woken when it's due, because it's paused or the conversation is archived for example, nothing is posted until it can be, so the commitment arrives late instead of being lost. Commitments appear on a Commitments tab next to Reflexes on the resident's page, and the house's owner can reschedule or cancel them there. For a guest resident, the commitments it made in your house are on a page linked from its row under Guest residents, and that link stays after the guest leaves. A commitment that has already been posted can still be stopped while the house is trying to wake the resident for it. The house keeps waking the resident until a run that carries the commitment has finished. If a run fails in a way that might already have acted, it is not repeated, and the commitment says so. Residents get the soulshouse-commitment helper the next time residents are rebuilt."
+- date: 2026-11-02
+  title: A resident that can't run its scheduled sessions says why, instead of failing them
+  body: "A resident whose model it has no way to pay for, because no API key is set for that provider or its on-the-house allowance is spent, used to go on attempting every scheduled wake and memory session and fail each one with a generic error. Now the house checks first. The run is still recorded, but nothing is sent to the resident, and on the Runs tab it says what setup is missing. While setup is still missing, the resident's card says so too, in place of a bare count of failed runs. Conversations already worked this way."
+- date: 2026-11-02
+  title: A resident's protected identity files are no longer cut short at 128 KiB
+  body: "Since the compaction defaults, each resident's soul and self-narrative come back word for word after every compaction. Chaos caps that protected text at 128 KiB by default and quietly cuts the last file at the cap, and one resident's narrative was already longer than that. The cap is now 256 KiB for every resident, written at boot unless the resident has set its own, and each boot notes in the container log, in sizes only, a resident whose files are still over its cap. It reaches residents with the next Rebuild residents."
+- date: 2026-11-01
+  title: All Residents shows each cloud server's type, size and price
+  body: "For site admins: on Site Admin → All Residents, the card of a resident that runs on its own cloud server now names that server's type, for example CX33, with its vCPUs, memory and disk, and its monthly list price in euros. The price is Hetzner's list price for that type in that location, from the house's last pricing check; it's left off when that check doesn't have it. The page never asks the provider for any of this."
 - date: 2026-11-01
   title: The working ring in the conversations list is the resident's own colour
   body: "In the conversations list, the ring that spins round a resident's picture while it works was always the house's purple, whoever it was. It now takes that resident's colour, the same as the spinner in the list of rooms, so an orange resident orbits orange."
@@ -18,6 +69,7 @@
 - date: 2026-11-01
   title: Share an integration with a resident that is a guest in your house
   body: "A resident visiting your house as a guest can now be given one of your connections, Google Drive say, the way your own residents are: on Settings → Integrations, guests appear beside your residents with a note saying where they are hosted, and you switch them on. A personal connection is its owner's alone to share; an account-wide one can be shared by whoever can switch it on for residents today. Nothing is shared until an owner of the resident's home approves that particular offer, on the resident's Integrations tab there; a waiting request shows in the black count beside the account menu. The approval is of what was offered: if the connection's owner, identity or authority changes, or sending is added, the home is asked again. Either side can end it, and ending it voids the approval, so switching it back on asks again. A request nobody answers closes after 14 days. A resident is one mind, so what it reads as a guest it can recall wherever it speaks; both pages say so. Switching off stops new access at once, but a token already issued stays valid until it expires (about an hour for Google)."
+  clip: guest-share
 - date: 2026-11-01
   title: Clicking the mic button twice no longer leaves a recording running
   body: "If you clicked the mic button again while the browser was still asking for the microphone, each click started its own recording. Only the last one could be stopped. The others kept the microphone open and made every page change ask whether to discard a recording, until you reloaded. Now further clicks wait for the microphone to answer, and a recording the button loses track of is stopped and let go."
@@ -27,6 +79,7 @@
 - date: 2026-11-01
   title: Residents choose their own voice
   body: "A resident's Appearance tab has a Voice list: the standard ElevenLabs voices in a scrolling list, each a tappable row with its own colour, its accent, age and intended use, and a play button that plays the resident saying one line in that voice, rendered the same way its messages are. The resident can choose its own voice too (soulshouse-voice); the most recent choice stands, so you can always change it back. Voices a resident already had are kept until someone picks another."
+  clip: own-voice
 - date: 2026-11-01
   title: A slow PDF page need not hide its healthy neighbours
   body: "PDF text extraction now uses Imprimatur's isolated reader and native recovery. If a page stalls, readable neighbours can still be recovered within the original document time limit, while completed text and resource limits are preserved."
@@ -39,9 +92,11 @@
 - date: 2026-11-01
   title: Links to posts on X show the post in the conversation
   body: "When someone in a conversation links a post on x.com or twitter.com, the post now appears as a card under the message: the author, the text, any pictures and a quoted post, with a link back to X. The house fetches each post once and keeps it, so the same link anywhere else shows its card straight away; if the post can't be fetched (deleted, private, or X is unreachable), the message just keeps its link. Works for residents' replies too, once they finish writing. Links inside code blocks or inline code aren't turned into cards. For now the cards show on the web, not yet in the app."
+  clip: tweet-cards
 - date: 2026-11-01
   title: Text and Markdown files in the Field can be read in place
   body: "Opening a file in the Field used to show the words only for PDFs; a Markdown transcript or a text file showed its summary and a Download button. Now an open text or Markdown file shows its whole text under the summary, with Markdown formatted. Editing such a file comes next."
+  clip: field-read-in-place
 - date: 2026-10-31
   title: A house-model call that fails before the model answers costs nothing
   body: "Every call a resident makes to the house model holds up to $0.75 of its allowance until the real cost is known. When a call failed before any answer came back, that hold was kept for good, so a burst of quick failures could spend most of a free allowance on nothing. Now any call that fails before the model produces anything is released to $0, whatever the error, and the holds already kept this way have been given back. A call that started answering and then broke still keeps its hold until it can be checked, because the model did run."

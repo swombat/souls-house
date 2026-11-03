@@ -33,6 +33,14 @@ DEFAULTS = {
 # are what survives it.
 HOUSE_PROTECTED_FILES = ("soul.md", "self-narrative.md")
 IMPORTED_ROOT_ENV = {"mira_v1": "MIRA_ROOT", "portable_v1": "SOULSHOUSE_HOME_ROOT"}
+# Chaos's own default is 128 KiB and it cuts the last listed file at the cap
+# (warning only). One resident's narrative alone was 149 KB when the defaults
+# first reached the fleet. 256 KiB fits every home with room to grow and is
+# still about a sixth of the 400k limit in tokens. A value sized to each
+# home's files would be written once and go stale as narratives grow, so
+# the cap is flat and every boot reports, in sizes only, a home that is over.
+PROTECTED_CONTEXT_MAX_BYTES = 256 * 1024
+CHAOS_DEFAULT_PROTECTED_CAP = 128 * 1024
 
 
 def _inside(root, relative):
@@ -85,6 +93,25 @@ def protected_files(report=lambda reason: print(
     return [str(path) for path in resolved]
 
 
+def protected_overflow(files, cap):
+    """Total bytes of the listed files that exist, if over the cap, else None."""
+    total = 0
+    for name in files or []:
+        try:
+            total += Path(name).stat().st_size
+        except (OSError, TypeError, ValueError):
+            continue
+    return total if total > cap else None
+
+
+def report_overflow(files, cap, report=lambda line: print(line, file=sys.stderr)):
+    # Sizes only: no paths, no file text.
+    total = protected_overflow(files, cap)
+    if total is not None:
+        report(f"Protected context is {total} bytes, over the {cap}-byte cap; "
+               "Chaos will cut the last listed file at the cap")
+
+
 def command(home, *args):
     env = {**os.environ, "CHAOS_HOME": str(home)}
     result = subprocess.run([os.environ.get("CHAOS_BIN", "/usr/local/bin/chaos"),
@@ -132,6 +159,13 @@ def prepare(home, run=command):
         files = protected_files()
         if files is not None:
             run(home, "set", "protected_context_files", json.dumps(files))
+            current["protected_context_files"] = files
+    if "protected_context_max_bytes" not in current:
+        run(home, "set", "protected_context_max_bytes", json.dumps(PROTECTED_CONTEXT_MAX_BYTES))
+        current["protected_context_max_bytes"] = PROTECTED_CONTEXT_MAX_BYTES
+    cap = current.get("protected_context_max_bytes")
+    report_overflow(current.get("protected_context_files"),
+                    CHAOS_DEFAULT_PROTECTED_CAP if cap is None else int(cap))
     if "hook_approval_policy" not in current:
         run(home, "set", "hook_approval_policy", json.dumps("automatic"))
     providers = current.get("model_providers", {})
@@ -144,6 +178,10 @@ def prepare(home, run=command):
         run(home, "set", "model_providers.house", json.dumps({
             "name": "On the house", "base_url": app_url.rstrip("/") + "/api/v1/house_inference",
             "env_key": "SOULSHOUSE_BEARER_TOKEN", "wire_api": "chat_completions",
+            # The run this call belongs to, so a refused call is recorded on
+            # that run (#678). Chaos omits the header when the env var is
+            # unset (an interactive session, an older house).
+            "env_http_headers": {"X-Soulshouse-Run": "SOULSHOUSE_INFERENCE_RUN"},
         }))
     run(home, "doctor")
 

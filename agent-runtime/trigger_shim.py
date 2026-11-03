@@ -217,6 +217,9 @@ app = Flask(__name__) if Flask else None
 _session_locks = {}
 _running_sessions = set()
 _activity_context = threading.local()
+# The env var the house provider's X-Soulshouse-Run header is read from
+# (runtime_settings.py). Set per invocation, never in the process env.
+INFERENCE_RUN_ENV = "SOULSHOUSE_INFERENCE_RUN"
 _session_locks_guard = threading.Lock()
 _auth_lock = threading.Lock()
 _auth_process = None
@@ -372,6 +375,7 @@ def trigger():
                 provider, auth_mode,
             )
             reporter.conversation_id = conversation_id
+            reporter.voice_mode = payload.get("voice_mode") is True
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
@@ -379,6 +383,10 @@ def trigger():
         (payload.get("runtime_run_id"), conversation_id)
         if payload.get("trigger_kind") == "telegram" else None
     )
+    # Sent back on house inference calls (X-Soulshouse-Run, from the house
+    # provider's env_http_headers) so a refusal lands on this run only.
+    inference_run = str(payload.get("inference_run") or "")
+    _activity_context.inference_run = inference_run if inference_run.isdigit() else None
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
@@ -418,6 +426,7 @@ def trigger():
             reporter.disabled = True
         _activity_context.reporter = None
         _activity_context.telegram_run = None
+        _activity_context.inference_run = None
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         _unregister_running_session(session_id)
@@ -873,8 +882,12 @@ def run_chaos(
     # reporter (Telegram). Never mutate the process-wide environment.
     for key in ("SOULSHOUSE_RUNTIME_RUN_ID", "SOULSHOUSE_RUNTIME_CHAT_ID",
                 "SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID", "HELIXKIT_RUNTIME_RUN_ID",
-                "HELIXKIT_RUNTIME_CHAT_ID", "HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID"):
+                "HELIXKIT_RUNTIME_CHAT_ID", "HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID",
+                INFERENCE_RUN_ENV):
         env.pop(key, None)
+    inference_run = getattr(_activity_context, "inference_run", None)
+    if inference_run:
+        env[INFERENCE_RUN_ENV] = inference_run
     telegram_run = getattr(_activity_context, "telegram_run", None)
     if telegram_run and telegram_run[0]:
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])
@@ -954,17 +967,27 @@ def run_chaos(
             try:
                 while True:
                     if cancel.is_set() or time.monotonic() >= expires:
-                        raise subprocess.TimeoutExpired(args, timeout_secs)
+                        break
                     try:
                         stdout, stderr = process.communicate(input=prompt_text if first else None, timeout=.5)
                         return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
                     except subprocess.TimeoutExpired:
                         first = False
-            finally:
+                # Out of time or cancelled. Kill the group, then collect what
+                # Chaos had already written: process.started carries the
+                # session id and turn events carry usage, so a timed-out run
+                # still records which session it was and what it spent (#718).
+                _kill_process_group(process)
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired as drained:
+                    # A detached descendant can hold the pipes past the kill.
+                    # The expired drain still carries what was read; keep it.
+                    stdout = _timeout_stream(drained, "stdout")
+                    stderr = _timeout_stream(drained, "stderr")
+                raise subprocess.TimeoutExpired(args, timeout_secs, output=stdout, stderr=stderr)
+            finally:
+                _kill_process_group(process)
                 process.wait(timeout=5)
     return subprocess.run(
         args,
@@ -974,6 +997,13 @@ def run_chaos(
         timeout=timeout_secs,
         env=env,
     )
+
+
+def _kill_process_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def parse_events(stdout):

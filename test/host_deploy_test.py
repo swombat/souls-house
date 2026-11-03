@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import call, patch
 
@@ -57,7 +58,19 @@ class WorkflowAuthorityTest(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
         self.assertNotIn("runs-on:", caller)
         operations = [line.strip() for line in caller.splitlines() if line.strip().startswith("operation:")]
-        self.assertEqual(["operation: rails"], operations)
+        self.assertEqual(["operation: rails", "operation: runtime"], operations)
+        # The rebuild runs only after the Rails job, and only when the host
+        # found the resident image changed. Never Chaos.
+        rebuild = caller.split("\n  rebuild:\n", 1)[1]
+        self.assertIn("needs: deploy", rebuild)
+        self.assertIn("if: needs.deploy.outputs.runtime_rebuild_needed == 'true'", rebuild)
+        # Bound to the commit CI tested, like the Rails job (#719 review).
+        self.assertIn("expected_revision: ${{ github.event.workflow_run.head_sha }}", rebuild)
+        self.assertNotIn("operation: chaos", caller)
+        self.assertNotIn("operation: both", caller)
+        transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
+        self.assertIn("value: ${{ jobs.deploy.outputs.runtime_rebuild_needed }}", transport)
+        self.assertIn("runtime_rebuild_needed: ${{ steps.request.outputs.runtime_rebuild_needed }}", transport)
         # The tested commit travels to the host; nothing else chooses it.
         self.assertIn("expected_revision: ${{ github.event.workflow_run.head_sha }}", caller)
         self.assertIn("cancel-in-progress: false", caller)
@@ -118,10 +131,68 @@ class WorkflowAuthorityTest(unittest.TestCase):
         self.assertEqual(["acknowledge " + "a" * 32, "chaos accept " + entry, "status " + "b" * 32],
                          calls.splitlines())
 
+    def receipt_transport(self, receipt, operation="runtime"):
+        job = "b" * 32
+        return self.run_transport(
+            'echo "${@: -1}" >> "$(dirname "$0")/calls"\n'
+            'case "${@: -1}" in status*) echo \'' + json.dumps(receipt) + '\';; '
+            '*) echo \'{"id":"' + job + '","state":"starting"}\';; esac\n',
+            OPERATION=operation)
+
+    def test_successful_rails_deploy_passes_on_the_rebuild_answer(self):
+        base = {"id": "b" * 32, "state": "success", "rails_revision": "c" * 40}
+        for needed, expected in [(True, True), (False, False), (None, False)]:
+            receipt = dict(base)
+            if needed is not None:
+                receipt["runtime_rebuild_needed"] = needed
+            with tempfile.TemporaryDirectory() as directory:
+                out = Path(directory) / "out"
+                result, _calls = self.run_transport(
+                    'case "${@: -1}" in status*) echo \'' + json.dumps(receipt) + '\';; '
+                    '*) echo \'{"id":"' + "b" * 32 + '","state":"starting"}\';; esac\n',
+                    OPERATION="rails", EXPECTED_REVISION="c" * 40, GITHUB_OUTPUT=str(out))
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected, "runtime_rebuild_needed=true" in out.read_text(), needed)
+
+    def test_automatic_rebuild_requests_the_tested_commit(self):
+        receipt = {"id": "b" * 32, "state": "success", "rails_revision": "c" * 40}
+        result, calls = self.run_transport(
+            'echo "${@: -1}" >> "$(dirname "$0")/calls"\n'
+            'case "${@: -1}" in status*) echo \'' + json.dumps(receipt) + '\';; '
+            '*) echo \'{"id":"' + "b" * 32 + '","state":"starting"}\';; esac\n',
+            OPERATION="runtime", EXPECTED_REVISION="c" * 40)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("runtime expect " + "c" * 40, calls.splitlines()[0])
+        result, _calls = self.run_transport("exit 1\n", OPERATION="chaos", EXPECTED_REVISION="c" * 40)
+        self.assertEqual(2, result.returncode)
+
+    def test_rebuild_waiting_only_on_busy_residents_is_green(self):
+        receipt = {"id": "b" * 32, "state": "partial", "skipped": [7, 3], "waiting": [3, 7],
+                   "held": [], "operation": "runtime"}
+        result, _calls = self.receipt_transport(receipt)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_rebuild_with_anything_stuck_stays_red(self):
+        stuck = [
+            {"skipped": [3], "waiting": [3], "held": [9]},
+            {"skipped": [3], "waiting": [3], "held": [], "births_alias_failed": True},
+            # An unreachable VM is skipped but not something the sweep rolls.
+            {"skipped": [3, 44], "waiting": [3], "held": []},
+            # An older receipt that says nothing about who is waiting.
+            {"skipped": [3], "held": []},
+        ]
+        for fields in stuck:
+            receipt = dict(id="b" * 32, state="partial", operation="runtime", **fields)
+            result, _calls = self.receipt_transport(receipt)
+            self.assertNotEqual(0, result.returncode, fields)
+        for state in ["failed", "interrupted"]:
+            result, _calls = self.receipt_transport({"id": "b" * 32, "state": state})
+            self.assertNotEqual(0, result.returncode, state)
+
     def test_superseded_is_a_failed_github_job_not_a_green_nothing(self):
         # #313: host superseded with GitHub success looks like a deploy.
         transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
-        superseded = transport.split("superseded)")[1].split("failed|partial|interrupted)")[0]
+        superseded = transport.split("superseded)")[1].split("\n              partial)")[0]
         self.assertIn("outcome=superseded", superseded)
         self.assertIn("exit 1", superseded)
         self.assertNotIn("exit 0", superseded)
@@ -159,19 +230,21 @@ class GateTest(unittest.TestCase):
                      ["status", "A" * 32], ["status", "a" * 31], ["status", "a" * 32, "extra"]]:
             self.assertFalse(gate.valid_args(args))
 
-    def test_rails_alone_may_carry_an_exact_expected_revision(self):
+    def test_rails_and_runtime_alone_may_carry_an_exact_expected_revision(self):
         sha = "c" * 40
         self.assertTrue(gate.valid_args(["rails", "expect", sha]))
+        self.assertTrue(gate.valid_args(["runtime", "expect", sha]))
         for args in [["chaos", "expect", sha], ["both", "expect", sha], ["rails", "expect", sha[:39]],
                      ["rails", "expect", "C" * 40], ["rails", "expect", "master"],
                      ["rails", "deploy", sha], ["rails", "expect", sha, "extra"]]:
             self.assertFalse(gate.valid_args(args), args)
 
-    def test_forced_command_accepts_expected_revision_only_for_rails(self):
+    def test_forced_command_accepts_expected_revision_only_for_rails_and_runtime(self):
         import re
         grammar = re.search(r're\.fullmatch\(r"(.+?)", command\)', (OPS / "ssh-command").read_text())[1]
         self.assertTrue(re.fullmatch(grammar, "rails expect " + "c" * 40))
-        for command in ["chaos expect " + "c" * 40, "rails expect " + "c" * 39, "rails expect master"]:
+        self.assertTrue(re.fullmatch(grammar, "runtime expect " + "c" * 40))
+        for command in ["chaos expect " + "c" * 40, "both expect " + "c" * 40, "rails expect " + "c" * 39, "rails expect master"]:
             self.assertFalse(re.fullmatch(grammar, command), command)
 
     def test_forced_command_refuses_before_sudo(self):
@@ -242,6 +315,103 @@ class GateTest(unittest.TestCase):
         with patch.object(gate, "active", return_value=False):
             with self.assertRaises(RuntimeError):
                 gate.request("rails")
+
+    def test_failed_rebuild_latches_rebuilds_but_not_rails(self):
+        failed = self.job("failed", operation="runtime")
+        with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+            started = gate.request("rails", "c" * 40)
+            self.assertEqual("rails", started["operation"])
+            self.assertEqual(failed, json.loads((self.root / "runtime-latch.json").read_text())["id"])
+            # The Rails job finished; rebuilds, Chaos and both stay latched.
+            data = json.loads((self.root / "runs" / started["id"] / "status.json").read_text())
+            data["state"] = "success"
+            gate.atomic(self.root / "runs" / started["id"] / "status.json", data)
+            for operation in ["runtime", "chaos", "both"]:
+                with self.assertRaisesRegex(RuntimeError, "resident rebuild"):
+                    gate.request(operation)
+            self.assertEqual("rails", gate.request("rails")["operation"])
+
+    def test_acknowledging_the_rebuild_latch_releases_rebuilds(self):
+        failed = self.job("failed", operation="runtime")
+        with patch.object(gate, "active", return_value=False), \
+             patch.object(gate, "exited", return_value=True), patch.object(gate.subprocess, "run"):
+            started = gate.request("rails")
+            data = json.loads((self.root / "runs" / started["id"] / "status.json").read_text())
+            data["state"] = "success"
+            gate.atomic(self.root / "runs" / started["id"] / "status.json", data)
+            with self.assertRaises(RuntimeError):
+                gate.acknowledge(started["id"])  # not a latch
+            self.assertTrue(gate.acknowledge(failed)["acknowledged"])
+            self.assertFalse((self.root / "runtime-latch.json").exists())
+            self.assertEqual("runtime", gate.request("runtime")["operation"])
+
+    def test_failed_rails_or_chaos_still_latches_everything(self):
+        for operation in ["rails", "chaos", "both"]:
+            shutil.rmtree(self.root / "runs")
+            (self.root / "runs").mkdir()
+            self.job("failed", operation=operation)
+            with patch.object(gate, "active", return_value=False):
+                with self.assertRaises(RuntimeError):
+                    gate.request("rails")
+            self.assertFalse((self.root / "runtime-latch.json").exists())
+
+    def queue(self, run, **fields):
+        gate.atomic(self.root / "pending-rolls.json", {"run": run, "residents": [], "held": [], **fields})
+
+    def test_held_sweep_blocks_rebuilds_until_its_run_is_acknowledged(self):
+        # A busy-only rebuild finished partial (green); later its sweep held a roll.
+        run = self.job("partial", operation="runtime")
+        for fields in [{"held": [9]}, {"births_alias_failed": True}]:
+            self.queue(run, **fields)
+            with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+                for operation in ["runtime", "chaos", "both"]:
+                    with self.assertRaisesRegex(RuntimeError, "Held resident roll"):
+                        gate.request(operation)
+                rails = gate.request("rails", "c" * 40)
+                self.assertEqual("rails", rails["operation"])
+                # A newer Rails job doesn't release it either.
+                data = json.loads((self.root / "runs" / rails["id"] / "status.json").read_text())
+                data["state"] = "success"
+                gate.atomic(self.root / "runs" / rails["id"] / "status.json", data)
+                with self.assertRaisesRegex(RuntimeError, "Held resident roll"):
+                    gate.request("runtime", "c" * 40)
+                with self.assertRaises(RuntimeError):
+                    gate.acknowledge(rails["id"])
+                self.assertTrue(gate.acknowledge(run)["acknowledged"])
+                self.assertFalse((self.root / "pending-rolls.json").exists())
+                self.assertEqual("runtime", gate.request("runtime")["operation"])
+            shutil.rmtree(self.root / "runs")
+            (self.root / "runs").mkdir()
+            run = self.job("partial", operation="runtime")
+
+    def test_busy_only_queue_does_not_block_a_rebuild(self):
+        run = self.job("partial", operation="runtime")
+        self.queue(run, held=[])
+        with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+            self.assertEqual("runtime", gate.request("runtime")["operation"])
+
+    def test_a_running_rebuilds_held_queue_cannot_be_acknowledged(self):
+        # The run still writes its own queue; archiving it now would be undone.
+        run = self.job("running", operation="runtime")
+        self.queue(run, held=[9])
+        with patch.object(gate, "active", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "finished deployment"):
+                gate.acknowledge(run)
+        self.assertTrue((self.root / "pending-rolls.json").exists())
+
+    def test_failed_run_with_held_queue_releases_both_at_once(self):
+        run = self.job("failed", operation="runtime")
+        self.queue(run, held=[9])
+        with patch.object(gate, "active", return_value=False), \
+             patch.object(gate, "exited", return_value=True), patch.object(gate.subprocess, "run"):
+            gate.acknowledge(run)
+            self.assertFalse((self.root / "pending-rolls.json").exists())
+            self.assertFalse((self.root / "current.json").exists())
+            self.assertEqual("runtime", gate.request("runtime")["operation"])
+
+    def test_rebuild_answer_is_a_public_status_field(self):
+        for field in ["runtime_rebuild_needed", "runtime_source", "waiting"]:
+            self.assertIn(field, gate.FIELDS)
 
     def test_chaos_may_carry_reviewed_migration_changes(self):
         entry = "srv/daemon/migrations/001_init.sql@" + "1" * 40
@@ -451,6 +621,47 @@ class WorkerTest(unittest.TestCase):
         checkout.assert_called_once()
         self.assertEqual("success", self.w.data["state"])
 
+    def test_rebuild_admitted_on_busy_only_queue_rechecks_hold_under_the_lock(self):
+        # Gate admits a rebuild while the queue is busy-only; before the
+        # worker gets the deployment lock, a sweep holds a roll. The worker
+        # must not replace that queue.
+        run = "b" * 32
+        (self.root / "runs" / run).mkdir()
+        gate.atomic(self.root / "runs" / run / "status.json",
+                    dict(id=run, operation="runtime", state="partial", step="busy"))
+        queue = {"run": run, "chaos_version": "chaos 1", "held": [],
+                 "residents": [{"id": 9, "image": "stock:deploy-x"}]}
+        gate.atomic(self.root / "pending-rolls.json", queue)
+        (self.root / "roll-resident.rb").write_text("")
+        with patch.object(gate, "ROOT", self.root), patch.object(gate, "active", return_value=False), \
+             patch.object(gate.subprocess, "run"):
+            gate.atomic(self.root / "current.json", json.loads(
+                (self.root / "runs" / run / "status.json").read_text()))
+            admitted = gate.request("runtime", "c" * 40)
+        s = worker.Sweeper()
+        with patch.object(worker, "CODE", self.root), \
+             patch.object(s, "rails", side_effect=RuntimeError("roll broke")):
+            self.assertEqual("0 waiting, 1 held", s.sweep())
+        held = (self.root / "pending-rolls.json").read_text()
+        w = worker.Worker("runtime")
+        self.addCleanup(lambda: w.log.close())
+        self.assertEqual(admitted["id"], w.data["id"])
+        with patch.object(w, "checkout") as checkout, patch.object(w, "rebuild_residents") as rebuild:
+            w.execute()
+        checkout.assert_not_called()
+        rebuild.assert_not_called()
+        self.assertEqual("failed", w.data["state"])
+        self.assertEqual(held, (self.root / "pending-rolls.json").read_text())
+
+    def test_rails_still_deploys_past_a_held_queue(self):
+        gate.atomic(self.root / "pending-rolls.json", {"run": "b" * 32, "held": [9], "residents": []})
+        self.w.data["operation"] = "rails"
+        with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails") as rails, \
+             patch.object(self.w, "check_runtime_change"):
+            self.w.execute()
+        rails.assert_called_once()
+        self.assertEqual("success", self.w.data["state"])
+
     def test_success_only_after_both_phases(self):
         calls = []
         with patch.object(self.w, "checkout", side_effect=lambda: calls.append("checkout")), \
@@ -539,6 +750,100 @@ class WorkerTest(unittest.TestCase):
             grammar = re.search(r're\.fullmatch\(r"(.+?)", command\)',
                                 (OPS / "ssh-command").read_text())[1]
             self.assertTrue(re.fullmatch(grammar, operation), operation)
+
+    def test_rails_deploy_answers_whether_residents_need_a_rebuild(self):
+        self.w.data["operation"] = "rails"
+        calls = []
+        with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails"), \
+             patch.object(self.w, "check_runtime_change", side_effect=lambda: calls.append("check")), \
+             patch.object(self.w, "rebuild_residents") as rebuild:
+            self.w.execute()
+        self.assertEqual(["check"], calls)
+        rebuild.assert_not_called()  # the workflow runs it as its own job
+        self.assertEqual("success", self.w.data["state"])
+
+    def test_only_rails_asks_the_rebuild_question(self):
+        for operation in ["both", "chaos", "runtime"]:
+            self.w.data.update(operation=operation, state="starting")
+            with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails"), \
+                 patch.object(self.w, "update_chaos"), patch.object(self.w, "rebuild_residents"), \
+                 patch.object(self.w, "check_runtime_change") as check:
+                self.w.execute()
+                self.w.log = (self.w.directory / "private.log").open("a")
+            check.assert_not_called()
+
+    def runtime_change(self, source, diff="", fail=False):
+        self.w.data["rails_revision"] = "d" * 40
+        if source:
+            gate.atomic(self.root / "runtime-source.json", {"rails_revision": source})
+        commands = []
+
+        def run(args, **kwargs):
+            commands.append(args)
+            if fail and args[:2] == ["git", "fetch"]:
+                raise RuntimeError("Subprocess failed; private diagnostics retained")
+            return diff if kwargs.get("capture") else None
+        with patch.object(self.w, "run", side_effect=run):
+            self.w.check_runtime_change()
+        return commands
+
+    def test_automatic_rebuild_superseded_when_master_moved_builds_nothing(self):
+        self.w.data.update(operation="runtime", expected_revision="c" * 40)
+        self.w.settings["repository"] = "https://example.test/public.git"
+        with patch.object(self.w, "run", side_effect=[None, "d" * 40]), \
+             patch.object(self.w, "rebuild_residents") as rebuild:
+            self.w.execute()
+        rebuild.assert_not_called()
+        self.assertEqual("superseded", self.w.data["state"])
+
+    def test_malformed_source_record_rebuilds_without_failing_rails(self):
+        self.w.data["rails_revision"] = "d" * 40
+        (self.root / "runtime-source.json").write_text("{not json")
+        with patch.object(self.w, "run") as run:
+            self.w.check_runtime_change()
+        run.assert_not_called()
+        self.assertIs(True, self.w.data["runtime_rebuild_needed"])
+        self.assertIsNone(self.w.data["runtime_source"])
+
+    def test_same_source_needs_no_rebuild_and_runs_nothing(self):
+        self.assertEqual([], self.runtime_change("d" * 40))
+        self.assertIs(False, self.w.data["runtime_rebuild_needed"])
+
+    def test_change_under_agent_runtime_needs_a_rebuild(self):
+        commands = self.runtime_change("c" * 40, diff="agent-runtime/runtime_hooks.py")
+        self.assertIn(["git", "fetch", "--quiet", "--depth", "1", "origin", "c" * 40], commands)
+        self.assertEqual(["git", "diff", "--name-only", "c" * 40, "HEAD", "--", "agent-runtime"],
+                         commands[-1])
+        self.assertIs(True, self.w.data["runtime_rebuild_needed"])
+        self.assertEqual("c" * 40, self.w.data["runtime_source"])
+
+    def test_rails_only_change_needs_no_rebuild(self):
+        self.runtime_change("c" * 40, diff="")
+        self.assertIs(False, self.w.data["runtime_rebuild_needed"])
+
+    def test_unknown_source_or_failed_comparison_rebuilds_without_failing_rails(self):
+        self.runtime_change(None)
+        self.assertIs(True, self.w.data["runtime_rebuild_needed"])
+        self.runtime_change("c" * 40, fail=True)
+        self.assertIs(True, self.w.data["runtime_rebuild_needed"])
+        self.assertNotIn("Subprocess", json.dumps(self.w.data))
+
+    def test_source_falls_back_to_the_newest_run_that_built_an_image(self):
+        def run(name, mtime, **data):
+            path = self.root / "runs" / name
+            path.mkdir()
+            gate.atomic(path / "status.json", data)
+            os.utime(path / "status.json", (mtime, mtime))
+        run("old", 100, operation="runtime", state="success", rails_revision="1" * 40,
+            chaos_version="chaos 1")
+        run("new", 200, operation="runtime", state="partial", rails_revision="2" * 40,
+            chaos_version="chaos 1")
+        run("rails", 300, operation="rails", state="success", rails_revision="3" * 40)
+        run("unbuilt", 400, operation="runtime", state="failed", rails_revision="4" * 40)
+        run("nobuild", 500, operation="runtime", state="success", rails_revision="5" * 40)
+        self.assertEqual("2" * 40, worker.runtime_source())
+        gate.atomic(self.root / "runtime-source.json", {"rails_revision": "9" * 40})
+        self.assertEqual("9" * 40, worker.runtime_source())
 
     def test_runtime_operation_only_rebuilds_residents(self):
         self.w.data["operation"] = "runtime"
@@ -662,6 +967,19 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("c" * 40, self.w.data["chaos_revision"])
         self.assertEqual("all residents healthy", self.w.data["step"])
 
+    def test_rebuild_records_the_source_it_built_from(self):
+        self.pinned_fixture(["c" * 40])
+        self.w.data["rails_revision"] = "f" * 40
+        self.w.rebuild_residents()
+        self.assertEqual("f" * 40, worker.runtime_source())
+
+    def test_rebuild_refused_before_building_records_no_source(self):
+        self.pinned_fixture(["c" * 40, "d" * 40])
+        self.w.data["rails_revision"] = "f" * 40
+        with self.assertRaises(RuntimeError):
+            self.w.rebuild_residents()
+        self.assertFalse((self.root / "runtime-source.json").exists())
+
     def test_rebuild_refuses_mixed_revisions(self):
         commands = self.pinned_fixture(["c" * 40, "d" * 40])
         with self.assertRaisesRegex(RuntimeError, "different Chaos revisions"):
@@ -723,6 +1041,73 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("77", self.vm_calls[2]["DEPLOY_VM_COMMAND_ID"])
         # Host residents first, then the VM; the alias moves only after both.
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
+
+    def test_vm_residents_restart_at_the_same_time(self):
+        started = [{"result": "started", "command_id": 70}]
+        healthy = [{"result": "healthy"}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(1, 2), on_vm=(1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started), status=list(healthy))
+                                for i in (1, 2)})
+        barrier = threading.Barrier(2, timeout=5)
+        rails = self.w.rails.side_effect
+
+        def together(code, env=None):
+            if env and env.get("DEPLOY_VM_MODE") == "status":
+                barrier.wait()
+            return rails(code, env)
+        self.w.rails.side_effect = together
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+
+    def test_with_no_host_canary_one_vm_proves_the_image_first(self):
+        # Every resident is on a VM: the first must settle healthy before the
+        # others are started.
+        started = [{"result": "started", "command_id": 70}]
+        healthy = [{"result": "healthy"}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(0, 1, 2), on_vm=(0, 1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started), status=list(healthy))
+                                for i in (0, 1, 2)})
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        calls = [(env["DEPLOY_VM_MODE"], env["DEPLOY_RESIDENT_ID"]) for env in self.vm_calls
+                 if env["DEPLOY_VM_MODE"] != "inspect"]
+        self.assertEqual([("start", "0"), ("status", "0")], calls[:2])
+
+    def test_with_no_host_canary_a_failing_first_vm_touches_no_other(self):
+        started = [{"result": "started", "command_id": 70}]
+        self.pinned_fixture(["c" * 40] * 3, missing=(0, 1, 2), on_vm=(0, 1, 2),
+                            vm={i: dict(image=self.RUNNING, start=list(started),
+                                        status=[{"result": "failed"}]) for i in (0, 1, 2)})
+        with self.assertRaisesRegex(RuntimeError, "VM resident restart failed"):
+            self.w.rebuild_residents()
+        starts = [env["DEPLOY_RESIDENT_ID"] for env in self.vm_calls if env["DEPLOY_VM_MODE"] == "start"]
+        self.assertEqual(["0"], starts)
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertFalse(pending["births_allowed"])
+
+    def test_an_unreadable_old_version_holds_that_resident_not_the_queue(self):
+        # The probe answers, but not with a version we can parse: that
+        # resident is held (as an unreachable one is), and the queue keeps a
+        # hold, so the sweep can't roll anyone onto the image unseen.
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        run = self.w.run.side_effect
+
+        probes = []
+
+        def unreadable(args, **kwargs):
+            # The first r0 probe is the pinned pre-check; garble the roll's own.
+            if args[:3] == ["docker", "exec", "r0"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return "chaos ???"
+            return run(args, **kwargs)
+        self.w.run.side_effect = unreadable
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], pending["held"])
+        self.assertEqual([1], pending["untouched"])
+        self.assertFalse(pending["canary_proven"])
 
     def test_vm_resident_already_on_the_image_is_current(self):
         self.vm_fixture(start=[{"result": "current"}])
@@ -796,22 +1181,88 @@ class WorkerTest(unittest.TestCase):
             self.w.rebuild_residents()
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
-    def test_busy_then_failing_resident_keeps_the_busy_one_pending(self):
-        commands = self.pinned_fixture(["c" * 40, "c" * 40, "c" * 40])
+    def outcomes(self, outcomes):
         rails = self.w.rails.side_effect
-        outcomes = {"0": "busy", "1": "broken"}
         self.w.rails.side_effect = lambda code, env=None: (
             rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] not in outcomes
             else {"result": outcomes[env["DEPLOY_RESIDENT_ID"]]})
+
+    def rolled(self):
+        return [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list
+                if c.args[1:] and "DEPLOY_VM_MODE" not in c.args[1]]
+
+    def test_failed_canary_leaves_everyone_else_untouched(self):
+        # 0 is busy, so 1 is the canary; it fails, and 2 is never rolled.
+        commands = self.pinned_fixture(["c" * 40, "c" * 40, "c" * 40])
+        self.outcomes({"0": "busy", "1": "broken"})
         with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
             self.w.rebuild_residents()
+        self.assertEqual(["0", "1"], self.rolled())
         pending = json.loads((self.root / "pending-rolls.json").read_text())
+        # The busy one is still owed a roll, but the sweep won't give it one
+        # until an operator has looked (no canary proved the image).
         self.assertEqual([0], [r["id"] for r in pending["residents"]])
         self.assertEqual([1], pending["held"])
+        self.assertEqual([2], pending["untouched"])
+        self.assertFalse(pending["canary_proven"])
         self.assertFalse(pending["births_allowed"])
-        # Resident 2 still had its turn after 1 failed.
-        self.assertTrue((self.w.directory / "resident-2.json").exists())
+        self.assertFalse((self.w.directory / "resident-2.json").exists())
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_failure_after_the_canary_does_not_stop_the_others(self):
+        commands = self.pinned_fixture(["c" * 40] * 4)
+        self.outcomes({"0": "busy", "2": "broken"})
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        self.assertEqual(["0", "1"], self.rolled()[:2])
+        self.assertEqual({"2", "3"}, set(self.rolled()[2:]))
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([0], [r["id"] for r in pending["residents"]])
+        self.assertEqual([2], pending["held"])
+        self.assertTrue(pending["canary_proven"])
+        self.assertTrue((self.w.directory / "resident-3.json").exists())
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_after_the_canary_residents_roll_at_the_same_time(self):
+        # Four residents after the canary, four workers: each roll waits until
+        # all four are in flight, which only happens if they run at once.
+        self.pinned_fixture(["c" * 40] * 5)
+        self.w.settings["roll_concurrency"] = 4
+        barrier = threading.Barrier(4, timeout=5)
+        rails = self.w.rails.side_effect
+
+        def together(code, env=None):
+            if env and env.get("DEPLOY_RESIDENT_ID") not in (None, "0") and "DEPLOY_VM_MODE" not in env:
+                barrier.wait()
+            return rails(code, env)
+        self.w.rails.side_effect = together
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertEqual("0", self.rolled()[0])
+
+    def test_custom_resident_is_never_the_canary_when_a_stock_one_can_be(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        self.w.settings["custom_residents"] = {"0": "development"}
+        self.w.rebuild_residents()
+        self.assertEqual(["1", "0"], self.rolled())
+
+    def test_downgrade_is_refused_before_anyone_rolls(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        # The pinned pre-check reads 47.11 everywhere; then resident 1's own
+        # probe reports a newer binary than the one built.
+        run = self.w.run.side_effect
+        probes = []
+
+        def probe(args, **kw):
+            if args[:3] == ["docker", "exec", "r1"]:
+                probes.append(1)
+                if len(probes) > 1:
+                    return "chaos 47.12.0.1"
+            return run(args, **kw)
+        self.w.run.side_effect = probe
+        with self.assertRaisesRegex(RuntimeError, "downgrade"):
+            self.w.rebuild_residents()
+        self.assertEqual([], self.rolled())
 
     def assert_queue_survives(self, fail):
         self.pinned_fixture(["c" * 40, "c" * 40])
@@ -986,13 +1437,32 @@ class SweepTest(unittest.TestCase):
     def test_idle_rolls_busy_waits_failure_is_held_not_dropped(self):
         self.pending([1, 2, 3])
         message, calls = self.sweep({1: "healthy", 2: "busy", 3: RuntimeError("transport")})
-        self.assertEqual([1, 2, 3], calls)
+        # 1 is the canary; 2 and 3 roll together after it.
+        self.assertEqual(1, calls[0])
+        self.assertEqual([1, 2, 3], sorted(calls))
         self.assertEqual("1 waiting, 1 held", message)
         state = json.loads((self.root / "pending-rolls.json").read_text())
         self.assertEqual([2], [r["id"] for r in state["residents"]])
         self.assertEqual([3], state["held"])
         # Held is never retried automatically.
         self.assertEqual([2], self.sweep({2: "busy"})[1])
+
+    def test_held_queue_without_a_proven_canary_rolls_nobody(self):
+        self.pending([2, 3])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state.update(held=[1], canary_proven=False)
+        gate.atomic(self.root / "pending-rolls.json", state)
+        message, calls = self.sweep({2: "healthy", 3: "healthy"})
+        self.assertEqual([], calls)
+        self.assertEqual("2 waiting, 1 held", message)
+
+    def test_sweep_proves_a_canary_before_rolling_the_rest(self):
+        self.pending([2, 3, 4])
+        message, calls = self.sweep({2: "broken", 3: "healthy", 4: "healthy"})
+        self.assertEqual([2], calls)
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([3, 4], [r["id"] for r in state["residents"]])
+        self.assertEqual([2], state["held"])
 
     def test_last_resident_rolled_clears_the_list_and_completes_the_receipt(self):
         run = self.root / "runs" / ("a" * 32)
@@ -1055,6 +1525,35 @@ class SweepTest(unittest.TestCase):
         self.assertTrue((self.root / "pending-rolls.json").exists())
 
     def test_nothing_pending_does_nothing(self):
+        self.assertEqual(("nothing pending", []), self.sweep({}))
+
+    def test_acknowledgement_during_a_pass_is_not_undone(self):
+        # The sweep reads a held queue, the owner's run is acknowledged while
+        # the pass is still rolling, and the pass must not write it back.
+        run = self.root / "runs" / ("a" * 32)
+        run.mkdir(parents=True)
+        gate.atomic(run / "status.json", {"id": "a" * 32, "operation": "runtime",
+                                          "state": "partial", "skipped": [2], "held": [9]})
+        self.pending([2])
+        state = json.loads((self.root / "pending-rolls.json").read_text())
+        state["held"] = [9]
+        # Held after the canary proved the image, so the tick still rolls.
+        state["canary_proven"] = True
+        gate.atomic(self.root / "pending-rolls.json", state)
+        s = worker.Sweeper()
+
+        def rails(code, env=None):
+            with patch.object(gate, "ROOT", self.root), patch.object(gate, "active", return_value=False):
+                self.assertTrue(gate.acknowledge("a" * 32)["acknowledged"])
+            return {"result": "busy"}
+        with patch.object(s, "rails", side_effect=rails):
+            self.assertEqual("acknowledged during pass", s.sweep())
+        self.assertFalse((self.root / "pending-rolls.json").exists())
+        self.assertTrue((run / "acknowledged-pending-rolls.json").exists())
+        receipt = json.loads((run / "status.json").read_text())
+        self.assertTrue(receipt["acknowledged"])
+        self.assertEqual("partial", receipt["state"])
+        # And nothing is left for the next tick to roll.
         self.assertEqual(("nothing pending", []), self.sweep({}))
 
     def test_a_running_deploy_holds_the_tick(self):

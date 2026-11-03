@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 """Small privileged entry point. No shell, caller paths, or caller revisions.
 
-A Rails request may carry an expected revision ("rails expect <sha>"). That
+A Rails request, or the automatic rebuild that follows it, may carry an
+expected revision ("rails expect <sha>", "runtime expect <sha>"). That
 can only make the deploy conditional: the worker still deploys master as it
 clones it, and stops without deploying if master is no longer that commit.
 A caller can never choose what ships.
@@ -11,7 +12,13 @@ A Chaos request may name upstream migration changes the owner has reviewed
 running residents have; anything not listed still stops the rollout.
 
 "acknowledge <job>" clears the latch left by that exact failed or interrupted
-job, once its service has exited, so the next request can start."""
+job, once its service has exited, so the next request can start.
+
+A failed or interrupted resident rebuild (runtime) latches rebuilds, Chaos
+updates and "both", but not Rails deploys: Rails doesn't touch residents, and
+rebuilds now start automatically after a Rails deploy, so one broken image
+must not stop the web app shipping. The latch moves to runtime-latch.json
+and stays until that job is acknowledged."""
 import fcntl
 import json
 import os
@@ -25,8 +32,9 @@ ROOT = Path("/var/lib/house-deploy")
 OPERATIONS = ("rails", "chaos", "both", "runtime")
 TERMINAL = ("success", "failed", "partial", "interrupted", "superseded")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
-          "chaos_version", "skipped", "held", "births_alias_failed", "absent", "resident_id", "expected_revision",
-          "accepted_migrations", "migration_changes", "acknowledged")
+          "chaos_version", "skipped", "waiting", "held", "births_alias_failed", "absent", "resident_id",
+          "expected_revision", "accepted_migrations", "migration_changes", "acknowledged",
+          "runtime_rebuild_needed", "runtime_source")
 ACCEPT_ENTRY = re.compile(r"(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}\.sql@[0-9a-f]{40}")
 MAX_ACCEPTED = 20
 
@@ -46,11 +54,28 @@ def atomic(path, data):
     temp.replace(path)
 
 
+def held_queue():
+    """The minute sweep's queue, when it holds a failed roll or alias tag.
+
+    A rebuild can go green while busy residents wait, and a roll the sweep
+    attempts later can still fail. That hold lives in pending-rolls.json, not
+    in a failed job, so it is checked here: no rebuild, Chaos update or "both"
+    may replace the queue (and retry the held work) until the run that owns it
+    is acknowledged."""
+    path = ROOT / "pending-rolls.json"
+    if not path.exists():
+        return None
+    queue = json.loads(path.read_text())
+    if queue.get("held") or queue.get("births_alias_failed"):
+        return queue
+    return None
+
+
 def valid_args(args):
     return (len(args) == 1 and args[0] in OPERATIONS or
             len(args) == 2 and args[0] == "status" and
             re.fullmatch("[0-9a-f]{32}", args[1]) is not None or
-            len(args) == 3 and args[:2] == ["rails", "expect"] and
+            len(args) == 3 and args[0] in ("rails", "runtime") and args[1] == "expect" and
             re.fullmatch("[0-9a-f]{40}", args[2]) is not None or
             len(args) == 3 and args[0] in ("chaos", "both") and args[1] == "accept" and
             accepted_entries(args[2]) is not None or
@@ -84,23 +109,44 @@ def status(job_id):
 
 
 def acknowledge(job_id):
-    """Release the latch of this exact failed/interrupted job; nothing else."""
-    current = ROOT / "current.json"
-    if not current.exists() or json.loads(current.read_text())["id"] != job_id:
+    """Release what this exact job holds; nothing else. That is its latch
+    (current.json, or runtime-latch.json for a failed rebuild) once it has
+    failed or been interrupted and its service has exited, and/or the sweep
+    queue it owns when that queue holds a failed roll or alias tag. Releasing
+    the queue drops it (busy residents included); the next rebuild writes a
+    new one covering every resident."""
+    held = held_queue()
+    queue = held is not None and held.get("run") == job_id
+    latch = next((path for path in (ROOT / "current.json", ROOT / "runtime-latch.json")
+                  if path.exists() and json.loads(path.read_text())["id"] == job_id), None)
+    if latch is None and not queue:
         raise RuntimeError("Not the latched deployment")
     result = status(job_id)
-    if result["state"] not in ("failed", "interrupted") or not exited(result["operation"]):
+    if queue and result["state"] not in TERMINAL:
+        # The run is still writing its own queue; the sweep's writes are
+        # guarded under this lock (worker.Sweeper.commit), the run's are not.
+        raise RuntimeError("Only a finished deployment's held queue can be acknowledged")
+    if latch is not None and queue and result["state"] not in ("failed", "interrupted"):
+        # A finished partial run is current.json without latching anything:
+        # only its held queue is being released.
+        latch = None
+    if latch is not None and (result["state"] not in ("failed", "interrupted")
+                              or not exited(result["operation"])):
         raise RuntimeError("Only an exited failed or interrupted deployment can be acknowledged")
     directory = ROOT / "runs" / job_id
     data = json.loads((directory / "status.json").read_text())
     data["acknowledged"] = True
     atomic(directory / "status.json", data)
-    current.replace(directory / "acknowledged-current.json")
+    if queue:
+        (ROOT / "pending-rolls.json").replace(directory / "acknowledged-pending-rolls.json")
+    if latch is not None:
+        latch.replace(directory / "acknowledged-current.json")
     return {key: data[key] for key in FIELDS if key in data}
 
 
 def request(operation, expected=None, accepted=None):
     current = ROOT / "current.json"
+    runtime_latch = ROOT / "runtime-latch.json"
     if current.exists():
         previous = json.loads(current.read_text())
         result = status(previous["id"])
@@ -114,7 +160,13 @@ def request(operation, expected=None, accepted=None):
         if active(result["operation"]):
             raise RuntimeError("Previous service is still exiting")
         if result["state"] in ("failed", "interrupted"):
-            raise RuntimeError("Failed or interrupted deployment requires operator inspection")
+            if result["operation"] != "runtime" or operation != "rails":
+                raise RuntimeError("Failed or interrupted deployment requires operator inspection")
+            current.replace(runtime_latch)
+    if operation != "rails" and runtime_latch.exists():
+        raise RuntimeError("Failed resident rebuild requires operator inspection")
+    if operation != "rails" and held_queue():
+        raise RuntimeError("Held resident roll requires operator inspection")
     job_id = uuid.uuid4().hex
     directory = ROOT / "runs" / job_id
     directory.mkdir(mode=0o700)

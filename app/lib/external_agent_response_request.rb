@@ -126,6 +126,9 @@ class ExternalAgentResponseRequest
   def trigger_payload
     payload = memory_trigger_payload
     payload = payload.merge(roll_session: true) if @safeguard_roll
+    # The runtime's silence clock speeds up for a spoken turn (every ~20 s
+    # rather than at two minutes); it can't see the transcript, so say so.
+    payload = payload.merge(voice_mode: true) if voice_mode_wake?
     payload
   end
 
@@ -213,6 +216,7 @@ class ExternalAgentResponseRequest
       safeguard_notice_text,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
@@ -227,6 +231,19 @@ class ExternalAgentResponseRequest
     ]
     parts << "Initiation reason: #{initiation_reason}" if initiation_reason.present?
     parts.compact_blank.join("\n\n")
+  end
+
+  # A due commitment this run was woken for (Commitment#wake!, directly or
+  # through a held wake), carried in the request itself so it reaches the
+  # resident whatever the transcript window keeps.
+  def commitment_cue_text
+    return unless @interaction&.persisted?
+
+    commitments = Commitment.where(wake_interaction_id: @interaction.id)
+    if (wake = @interaction.released_pending_wake)
+      commitments = commitments.or(Commitment.where(pending_wake_id: wake.id))
+    end
+    commitments.where(status: "activated").includes(:activation_message, :account).order(:id).map(&:cue_text).join("\n\n").presence
   end
 
   # The run a follow-through nudge continues, when this run is one.
@@ -276,7 +293,27 @@ class ExternalAgentResponseRequest
     if wake_source_kinds.include?("unknown") && wake_source_kinds.any? { |kind| kind.in?(%w[human peer scheduled]) }
       parts << "At least one coalesced request has no recorded source."
     end
+    parts << VOICE_MODE_NOTE if voice_mode_wake?
     parts.join(" ")
+  end
+
+  def voice_mode_wake?
+    human_wake? && latest_human_turn_spoken?
+  end
+
+  # The latest human turn was spoken in the conversation's voice mode
+  # (messages.voice_mode). Only for a wake a human caused: a later peer or
+  # scheduled wake can't tell whether the person is still there, so it gets
+  # nothing. It states the historical fact and a likelihood, never that the
+  # reply will be played: playback is not something this text can promise.
+  # On a phone, silence reads as nothing happening, so the note also asks for
+  # an acknowledgement and spoken-size progress lines while the work runs.
+  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading, and your reply may be read aloud in your voice (about the first 900 characters). Answer briefly in plain spoken sentences, without lists, links or code; if something longer belongs in the conversation, post it and say so in a sentence. If answering will take more than a few seconds of looking things up or thinking, first post a one-sentence acknowledgement such as \"Let me look at that\", before or alongside your first tool call. While you work, post a one- or two-sentence update about every twenty seconds, about twenty seconds to say aloud: what you are doing or have found, in spoken words, no lists. Then post the answer as its own short message."
+
+  def latest_human_turn_spoken?
+    # reorder: the messages association carries its own ascending order, and an
+    # appended order(id: :desc) would be ignored behind it.
+    chat.messages.kept.where(role: "user").reorder(id: :desc).pick(:voice_mode) == true
   end
 
   def ordinary_trigger_intro_text
@@ -588,6 +625,7 @@ class ExternalAgentResponseRequest
       selection.prompt_section,
       trigger_intro_text,
       queued_wake_text,
+      commitment_cue_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,

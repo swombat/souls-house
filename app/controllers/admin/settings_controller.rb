@@ -72,6 +72,7 @@ class Admin::SettingsController < ApplicationController
       :safeguard_conversations_enabled,
       :follow_through_scope,
       :reflexes_scope,
+      :voice_mode_scope,
       :stalled_sweep_minutes,
       :stalled_sweep_wake,
       :new_residents_on_vm,

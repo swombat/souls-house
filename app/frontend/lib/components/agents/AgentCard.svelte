@@ -16,6 +16,7 @@
     DropboxLogo,
     GoogleLogo,
     Circle,
+    Scales,
     Plugs,
     Receipt,
     HardDrives,
@@ -34,6 +35,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    withings: Scales,
     xero: Receipt,
   };
   function diskSize(bytes) {
@@ -156,11 +158,15 @@
         </p>
         {#if failedRuns.runtime_unavailable}
           <p class="mt-0.5">{agent.name}'s runtime isn't starting, so a new message won't get a reply.</p>
+        {:else if failedRuns.needs_setup && agent.inference_setup_message}
+          <p class="mt-0.5" data-testid="failed-runs-needs-setup">{agent.inference_setup_message}</p>
         {:else if failedRuns.model_unavailable}
           <p class="mt-0.5">
             {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until another
             model is chosen.
           </p>
+        {:else if failedRuns.cause}
+          <p class="mt-0.5" data-testid="failed-runs-cause">Each one failed because {failedRuns.cause}.</p>
         {/if}
         {#if showActions && !admin}
           <a

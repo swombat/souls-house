@@ -127,6 +127,38 @@ describe('recording guard', () => {
   });
 });
 
+describe('a live hold (voice mode, #748)', () => {
+  test('lets background reloads through, so replies keep arriving, but still guards the page', () => {
+    const router = fakeRouter();
+    const win = fakeWindow(false);
+    const guard = createRecordingGuard({ router, win });
+
+    const release = guard.hold({ refreshes: false });
+    expect(router.visit(reload(['messages']))).toBe(true);
+    expect(router.visit(reload(['chat', 'messages', 'runtime_interactions']))).toBe(true);
+    expect(router.visit({ method: 'get', async: false })).toBe(false);
+    expect(win.unload()).toBe(true);
+
+    release();
+    expect(router.reload).not.toHaveBeenCalled();
+    expect(win.unload()).toBe(false);
+  });
+
+  test('an ordinary hold alongside it still holds refreshes', () => {
+    const router = fakeRouter();
+    const guard = createRecordingGuard({ router, win: fakeWindow() });
+
+    const live = guard.hold({ refreshes: false });
+    const note = guard.hold({ warn: false });
+    expect(router.visit(reload(['messages']))).toBe(false);
+    note();
+    expect(router.reload).not.toHaveBeenCalled();
+    expect(router.visit(reload(['messages']))).toBe(true);
+    live();
+    expect(router.reload).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('responses already in flight', () => {
   function fakeHttp() {
     let onRejected;
@@ -203,5 +235,22 @@ describe('responses already in flight', () => {
     expect(router.visit({ method: 'get', async: false })).toBe(false);
     const background = await http.fail(conflict('messages')).catch((rejection) => rejection);
     expect(axios.isCancel(background)).toBe(true);
+  });
+
+  test('under a live hold a version conflict is cancelled, reported, and replayed at release', async () => {
+    const router = fakeRouter();
+    const http = fakeHttp();
+    const guard = createRecordingGuard({ router, http, win: fakeWindow() });
+    const onconflict = vi.fn();
+
+    const release = guard.hold({ refreshes: false, onconflict });
+    const error = await http.fail(conflict('messages')).catch((rejection) => rejection);
+    expect(axios.isCancel(error)).toBe(true);
+    expect(onconflict).toHaveBeenCalledTimes(1);
+
+    release();
+    expect(router.reload.mock.calls[0][0].only).toEqual(['messages']);
+    await http.fail(conflict('messages')).catch(() => {});
+    expect(onconflict).toHaveBeenCalledTimes(1);
   });
 });

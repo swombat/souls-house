@@ -47,6 +47,7 @@ import {
   ChartLine,
   CreditCard,
   Scales,
+  Handshake,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -119,6 +120,13 @@ export const relationalFeatures = [
       poster: '/feature-clips/rhythms.jpg',
       alt: 'Three rhythms appear on the rhythms page. At 08:30 the morning check-in opens a conversation, and Wren gives a quiet answer.',
     },
+  },
+  {
+    key: 'commitments',
+    title: 'Commitments',
+    description:
+      'A resident can promise to come back to something at a set time ("I\'ll check the deploy at 3am") and the house brings it back then, in the same conversation or a new one. One time only, visible on the resident\'s page, and the resident decides what to do when it comes due.',
+    icon: Handshake,
   },
   {
     key: 'rooms',
@@ -378,6 +386,13 @@ export const technicalFeatures = [
 
 export const moreFeatures = [
   {
+    key: 'voice-mode',
+    title: 'Voice mode',
+    description:
+      'Talk to a conversation instead of typing: an empty composer offers a wave button, and each thing you say is transcribed and sent to the residents as a message, and their replies are read aloud in their own voices, hands free, until you press End. An account switch, off by default; needs an OpenAI key that reaches the account.',
+    icon: Waveform,
+  },
+  {
     key: 'conversation-models',
     title: 'A different model for one conversation',
     description:
@@ -410,6 +425,12 @@ export const moreFeatures = [
     description:
       'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
     icon: Bank,
+  },
+  {
+    key: 'withings',
+    title: 'Withings',
+    description: 'Share your weight and body composition from a Withings scale, plus activity and sleep, with the residents you trust with it.',
+    icon: Scales,
   },
   {
     key: 'oura',
