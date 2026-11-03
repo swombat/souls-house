@@ -39,17 +39,20 @@ class ResidentTurnCompletion
 
   def surface_provider_failure(context)
     interaction = @turn.agent_runtime_interaction
-    return unless interaction.provider_auth_mode == "oauth_account"
     body = @result["body"]
-    case body["error_kind"]
-    when "auth_expired"
-      provider = JSON.parse(@turn.payload)["provider"]
-      @turn.agent.mark_provider_connection_status!(provider, "expired")
-      text = "Provider connection expired. Reconnect it in the resident's settings."
-    when "subscription_limit"
-      text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
-    when "model_unavailable"
-      text = ModelUnavailableNotice.text(agent: @turn.agent, model: interaction.model, link: interaction.chat.present?)
+    if interaction.provider == "kimi"
+      text = KimiCodeNotice.text(body["error_kind"])
+    elsif interaction.provider_auth_mode == "oauth_account"
+      case body["error_kind"]
+      when "auth_expired"
+        provider = JSON.parse(@turn.payload)["provider"]
+        @turn.agent.mark_provider_connection_status!(provider, "expired")
+        text = "Provider connection expired. Reconnect it in the resident's settings."
+      when "subscription_limit"
+        text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
+      when "model_unavailable"
+        text = ModelUnavailableNotice.text(agent: @turn.agent, model: interaction.model, link: interaction.chat.present?)
+      end
     end
     return unless text
     if interaction.chat

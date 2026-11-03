@@ -167,6 +167,17 @@ class AgentRuntimeInteractionCost
   end
 
   def call
+    # Code Console keys draw on a prepaid allowance. API list prices do not
+    # describe either its marginal charge or the amount of quota consumed.
+    if interaction.provider == "kimi"
+      return {
+        status: "estimated", amount_usd: "0.0", currency: "USD",
+        pricing_source: "subscription", pricing_model: interaction.model,
+        pricing_as_of: nil, components_usd: nil,
+        note: "Kimi Code subscription allowance; no metered API charge. This is not a quota or subscription-price estimate."
+      }
+    end
+
     return unavailable("usage telemetry is not trigger-local") unless interaction.local_usage?
 
     price = price_for(interaction.model)

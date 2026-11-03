@@ -394,7 +394,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def subscription_based?
-    provider_auth_mode == "oauth_account"
+    provider_auth_mode == "oauth_account" || provider == "kimi"
   end
 
   def as_debug_json

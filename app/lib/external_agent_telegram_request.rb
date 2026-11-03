@@ -57,7 +57,7 @@ class ExternalAgentTelegramRequest
       )
     end
     acknowledge_safeguard_roll!(result)
-    surface_runtime_failure!(result) if auth_mode == "oauth_account"
+    surface_runtime_failure!(result) if auth_mode == "oauth_account" || provider == "kimi"
     result
   rescue Agent::RuntimeAvailability::Unavailable => e
     { status: 409, error: e.code, skipped: true }
@@ -87,6 +87,11 @@ class ExternalAgentTelegramRequest
 
   def surface_runtime_failure!(result)
     return if subscription.group?
+    if provider == "kimi"
+      text = KimiCodeNotice.text(result.dig(:body, "error_kind"))
+      send_notice(text) if text
+      return
+    end
 
     case result.dig(:body, "error_kind")
     when "auth_expired"

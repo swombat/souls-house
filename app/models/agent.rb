@@ -127,6 +127,7 @@ class Agent < ApplicationRecord
              numericality: { greater_than_or_equal_to: 1000, less_than_or_equal_to: 50000 },
              allow_nil: true
   validates :reasoning_effort, inclusion: { in: REASONING_EFFORTS }
+  validate :kimi_code_reasoning_effort_is_supported
   validates :refinement_threshold,
              numericality: { greater_than: 0, less_than_or_equal_to: 1 },
              allow_nil: true
@@ -484,6 +485,16 @@ class Agent < ApplicationRecord
   end
 
   private
+
+  def kimi_code_reasoning_effort_is_supported
+    return unless model_id.to_s.start_with?("kimi-code/")
+
+    profile = Chat.reasoning_effort_config(model_id)
+    allowed = [ "default", *profile&.dig(:options)&.pluck(:value) ]
+    unless profile && allowed.include?(reasoning_effort)
+      errors.add(:reasoning_effort, "must be a supported Kimi Code effort: #{allowed.join(', ')}")
+    end
+  end
 
   # Retired records remain editable before the explicit data transition, but
   # neither new records nor runtime changes may introduce a legacy value.

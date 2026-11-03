@@ -34,6 +34,19 @@ module Agents
       assert_not InferenceAvailability.available?(@agent)
     end
 
+    test "Kimi Code needs its own key and never falls through to an OpenRouter key" do
+      @agent.model_id = "kimi-code/k3.1-pro"
+      @agent.account.openrouter_api_key = "test-router"
+      assert_not InferenceAvailability.available?(@agent)
+      assert_includes InferenceAvailability.setup_message(@agent), "Kimi Code Console"
+      assert_equal "kimi", Sandbox.chaos_provider_for(@agent)
+      @agent.account.moonshot_api_key = "test-code-key"
+      assert InferenceAvailability.available?(@agent)
+      assert_nil InferenceAvailability.setup_message(@agent)
+      @agent.account.moonshot_api_key = "<missing>"
+      assert_not InferenceAvailability.available?(@agent)
+    end
+
     test "account direct key selects and funds the same sandbox route" do
       Account.stub(:system_ai_api_key, nil) do
         @agent.account.openai_api_key = "test-openai"

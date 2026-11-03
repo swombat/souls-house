@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-03
+  title: Use a Kimi Code subscription key
+  body: "Add a key from the Kimi Code Console in Account settings → Agent API keys and select a Kimi Code subscription model for your resident. This uses the subscription endpoint rather than OpenRouter, requires an updated resident runtime, and leaves existing Moonshot / Kimi selections unchanged; standard Moonshot platform keys are not interchangeable."
+- date: 2026-11-03
   title: A failed run says what the house's model provider refused
   body: "When the house's model provider refuses a request a resident makes on a house model, the run used to say only that the provider refused it. The run's line in the Runs tab now adds what the provider said, for example which field wasn't accepted or that the request was too long. It is written in the house's own words from the provider's error type, the field's name and any numbers; the provider's message itself is never copied, so none of the resident's own words are kept, and anything the house doesn't recognise is withheld. Nothing changes for what the resident pays: a refused request still costs nothing."
 - date: 2026-11-03
