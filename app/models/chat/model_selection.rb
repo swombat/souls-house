@@ -523,6 +523,7 @@ module Chat::ModelSelection
     # Z.ai
     { model_id: "z-ai/glm-5.3-prime", label: "GLM 5.3 Prime", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flashx-legal", label: "GLM 5.3 FlashX Legal", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3-flashx", label: "GLM 5.3 FlashX", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Z.ai", thinking: { supported: true } },

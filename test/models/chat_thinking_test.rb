@@ -309,7 +309,8 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "qwen/qwen3.7-plus",
       "x-ai/grok-4.6",
       "z-ai/glm-5.3",
-      "z-ai/glm-5.3-prime"
+      "z-ai/glm-5.3-prime",
+      "z-ai/glm-5.3-flashx-legal"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end
