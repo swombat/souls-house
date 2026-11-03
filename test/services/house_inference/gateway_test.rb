@@ -81,7 +81,7 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal [ nil, 503, nil ], @grant.house_inference_calls.order(:id).pluck(:http_status)
   end
 
-  test 'every refused status releases and records the status, never the body' do
+  test 'every refused status releases and records the status and a sanitised reason, never the body' do
     refusal = JSON.generate({ 'error' => { 'code' => 404, 'message' => 'No endpoints found that can handle the requested parameters.' } })
     [ [ '404', refusal ], [ '408', '' ], [ '400', refusal ], [ '404', 'not json' ], [ '402', '' ],
       [ '429', refusal ], [ '502', refusal ] ].each do |status, body|
@@ -90,8 +90,51 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
       end
       call = @grant.house_inference_calls.order(:id).last
       assert_equal [ 'released', BigDecimal('0'), status.to_i ], [ call.status, call.charge_usd, call.http_status ], status
+      expected = { refusal => 'code 404: No endpoints found that can handle the requested parameters.',
+        '' => nil, 'not json' => 'unreadable body (8 bytes)' }.fetch(body)
+      expected.nil? ? assert_nil(call.refusal_reason, status) : assert_equal(expected, call.refusal_reason, status)
     end
     assert_equal BigDecimal('0'), @grant.spent
+  end
+
+  test 'a provider 400 keeps its type and field path, and nothing the resident wrote' do
+    secret = 'Dear diary, the password is hunter2'
+    raw = JSON.generate({ 'type' => 'error', 'error' => { 'type' => 'invalid_request_error',
+      'message' => "messages.3.content.0.text: Input should be a valid string, got \"#{secret}\" and '#{secret}' and `#{secret}`" } })
+    body = JSON.generate({ 'error' => { 'code' => 400, 'message' => 'Provider returned error',
+      'metadata' => { 'provider_name' => 'Anthropic', 'raw' => raw } } })
+    error = nil
+    upstream([ body ], status: '400') do
+      error = assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    call = @grant.house_inference_calls.order(:id).last
+    assert_equal 'Anthropic code 400 invalid_request_error: messages.3.content.0.text: Input should be a valid string, got […] and […] and […]',
+      call.refusal_reason
+    assert_equal call.refusal_reason, error.reason
+    refute_match(/diary|hunter2/, call.refusal_reason)
+    refute_includes error.message, 'messages.3'
+  end
+
+  test 'refusal reasons are capped, keep apostrophes, and drop unterminated quotes and control characters' do
+    reason = HouseInference::RefusalReason.call(JSON.generate({ 'error' => { 'code' => 400,
+      'message' => "the model's prompt is too long: 250000 tokens > 200000 maximum\n\tsee \"#{'x' * 50}" } }))
+    assert_equal "code 400: the model's prompt is too long: 250000 tokens > 200000 maximum see […]", reason
+    long = HouseInference::RefusalReason.call(JSON.generate({ 'error' => { 'message' => 'word ' * 200 } }))
+    assert_equal 300, long.length
+    assert_nil HouseInference::RefusalReason.call('   ')
+    assert_equal 'no error field', HouseInference::RefusalReason.call('{"ok":true}')
+    # A provider name or type that is not a plain identifier is dropped, not echoed.
+    odd = HouseInference::RefusalReason.call(JSON.generate({ 'error' => { 'code' => 400, 'message' => 'bad',
+      'metadata' => { 'provider_name' => "Anthropic\" <script>", 'raw' => 'plain text with "quoted resident words"' } } }))
+    assert_equal 'code 400: plain text with […]', odd
+  end
+
+  test 'only the first 64 KiB of a refusal body is read into the reason' do
+    body = JSON.generate({ 'error' => { 'code' => 400, 'message' => 'm' * 80_000 } })
+    upstream([ body[0, 40_000], body[40_000..] ], status: '400') do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    assert_equal 'unreadable body (65536 bytes)', @grant.house_inference_calls.order(:id).last.refusal_reason
   end
 
   def broken_stream(*frames, &block)

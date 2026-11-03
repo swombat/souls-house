@@ -41,10 +41,11 @@ module HouseInference
           # A refused request delivered nothing, so the resident pays nothing
           # for it, whatever the status (Daniel, JwMQEe, 2026-10-31). If the
           # provider billed the house anyway, that is the house's cost. The
-          # status is kept (never the body) so refusals can be told apart.
-          call.release!(http_status: response.code.to_i)
+          # status is kept, and why (#725), sanitised: never the body itself.
+          reason = HouseInference::RefusalReason.call(self.class.bounded_body(response))
+          call.release!(http_status: response.code.to_i, refusal_reason: reason)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
-            code: 'house_provider_refused', status: 502)
+            code: 'house_provider_refused', status: 502, reason: reason)
         end
         response.read_body do |chunk|
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
@@ -101,6 +102,19 @@ module HouseInference
       else
         call&.release!(upstream_id: upstream_id)
       end
+    end
+
+    # The first RefusalReason::MAX_BYTES of a refusal's body; the rest is
+    # read and dropped. A read failure keeps no reason, never the refusal.
+    def self.bounded_body(response)
+      body = +''
+      response.read_body do |chunk|
+        room = RefusalReason::MAX_BYTES - body.bytesize
+        body << chunk.byteslice(0, room) if room.positive?
+      end
+      body
+    rescue IOError, SystemCallError, Timeout::Error
+      body
     end
 
     # Whether a stream event or completion carries model output.
