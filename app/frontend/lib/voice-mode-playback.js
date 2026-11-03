@@ -7,10 +7,19 @@
 // every reply through that same element.
 //
 // Interruption is playback only: when the person starts speaking, what is
-// playing stops and the queue is cleared. interrupt() returns what it dropped
-// (the reply playing, then the ones queued behind it), so a burst that turns
-// out not to be speech can put the whole sequence back (#748). A generation counter makes sure a
-// play() already in flight when that happens cannot start afterwards.
+// playing pauses and the queue is cleared. interrupt() returns what it stopped
+// as { id, at, playing } entries (the reply playing, with its real position in
+// seconds, then the ones queued behind it), so the reader can put the whole
+// sequence back afterwards (#748, #758).
+//
+// The reply that was playing is parked, not torn down: the element keeps its
+// source and what it has already received. The speech is made live and never
+// stored, so this element is the only copy of that audio; enqueue(id, { resume:
+// true }) plays on from where it paused, as many times as it is interrupted.
+// A restart, or a resume whose parked stream has died, is a fresh request from
+// the top: a reply can be heard twice, never skipped.
+// A generation counter makes sure a play() already in flight when that
+// happens cannot start afterwards.
 
 let shared = null;
 
@@ -52,6 +61,7 @@ export function unlockAudio(audio = sharedAudio()) {
 export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
   let queue = [];
   let current = null;
+  let parked = null;
   let generation = 0;
   let closed = false;
 
@@ -63,43 +73,77 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     next();
   }
 
+  // A resumed reply that cannot play on is asked for again from the top.
+  function failed(item) {
+    if (item !== current) return;
+    if (item.resumed) {
+      current = null;
+      queue.unshift({ id: item.id, generation });
+      return next();
+    }
+    finish(item);
+  }
+
   function next() {
     const item = queue.shift();
     if (!item) return report();
     current = item;
     report();
-    audio.src = urlFor(item.id);
-    const started = audio.play();
-    started?.catch?.(() => item.generation === generation && finish(item));
+    let started;
+    if (item.resume && parked?.id === item.id && !audio.error) {
+      item.resumed = true;
+      parked = null;
+      started = audio.play();
+    } else {
+      parked = null;
+      audio.src = urlFor(item.id);
+      started = audio.play();
+    }
+    started?.catch?.(() => item.generation === generation && failed(item));
   }
 
   const onended = () => current && finish(current);
+  // An error while a reply is parked means that source is dead: forget it, so
+  // its resume is a fresh request rather than a play() on a broken element.
+  const onerror = () => {
+    if (current) return failed(current);
+    parked = null;
+  };
   audio.addEventListener('ended', onended);
-  audio.addEventListener('error', onended);
+  audio.addEventListener('error', onerror);
 
-  return {
-    enqueue(id) {
-      if (closed) return;
-      queue.push({ id, generation });
-      if (!current) next();
-    },
-    interrupt() {
-      generation += 1;
-      const dropped = [...(current ? [current.id] : []), ...queue.map((item) => item.id)];
-      queue = [];
-      if (!current) return dropped;
+  function stop() {
+    generation += 1;
+    const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const dropped = [
+      ...(current ? [{ id: current.id, at: position, playing: true }] : []),
+      ...queue.map((item) => ({ id: item.id, at: 0, playing: false })),
+    ];
+    queue = [];
+    if (current) {
+      parked = { id: current.id };
       current = null;
       audio.pause();
-      audio.removeAttribute('src');
-      audio.load?.();
       report();
-      return dropped;
+    }
+    return dropped;
+  }
+
+  return {
+    enqueue(id, { resume = false } = {}) {
+      if (closed) return;
+      queue.push({ id, resume, generation });
+      if (!current) next();
     },
+    interrupt: stop,
     close() {
       closed = true;
-      this.interrupt();
+      stop();
+      parked = null;
+      audio.removeAttribute('src');
+      audio.load?.();
       audio.removeEventListener('ended', onended);
-      audio.removeEventListener('error', onended);
+      audio.removeEventListener('error', onerror);
     },
     get speaking() {
       return current !== null;
