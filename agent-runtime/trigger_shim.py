@@ -970,6 +970,9 @@ def run_chaos(
         # Unknown-model Responses otherwise silently drops the requested effort.
         # Kimi supports Responses reasoning; scope this capability to this route.
         args += ["-c", "model_supports_reasoning_summaries=true"]
+        # Official models table, "Context window" row (checked 2026-11-03):
+        # https://www.kimi.com/code/docs/en/kimi-code/models.html
+        # K3.1 Pro/Highspeed, K3 and K2.8 Preview: 1M; the other two: 256K.
         context_window = 262144 if model in ("k3-256k", "kimi-for-coding-highspeed") else 1048576
         args += ["-c", f"model_context_window={context_window}"]
     if reasoning_effort:

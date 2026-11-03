@@ -45,13 +45,13 @@ class ResidentTurnCompletion
     elsif interaction.provider_auth_mode == "oauth_account"
       case body["error_kind"]
       when "auth_expired"
-      provider = JSON.parse(@turn.payload)["provider"]
-      @turn.agent.mark_provider_connection_status!(provider, "expired")
-      text = "Provider connection expired. Reconnect it in the resident's settings."
+        provider = JSON.parse(@turn.payload)["provider"]
+        @turn.agent.mark_provider_connection_status!(provider, "expired")
+        text = "Provider connection expired. Reconnect it in the resident's settings."
       when "subscription_limit"
-      text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
+        text = AgentSubscriptionUsage.new(body["subscription_usage"]).user_message
       when "model_unavailable"
-      text = ModelUnavailableNotice.text(agent: @turn.agent, model: interaction.model, link: interaction.chat.present?)
+        text = ModelUnavailableNotice.text(agent: @turn.agent, model: interaction.model, link: interaction.chat.present?)
       end
     end
     return unless text
