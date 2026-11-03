@@ -19,6 +19,9 @@
   title: House updates restart residents in parallel
   body: "When the house updates its residents' runtime, it used to restart them one after another, and while any one was restarting, no resident's new message could start. Now one resident is restarted first as a check; if it comes back healthy, the rest restart together, several at a time, and residents on their own servers all at once. If that first one fails, nobody else is touched. A resident that is restarting holds its own new messages until it is back, and everyone else's carry on."
 - date: 2026-11-02
+  title: A share from another house that needs your approval comes to you
+  body: "When another house shares a connection with one of your residents, the black count beside the account menu now updates as the request arrives, without reloading, and the menu lists each one under \"Access approval needed\", one line per resident. Clicking a line opens that resident's Integrations tab, where requests still waiting for a decision are now at the top of the page, above the resident's own integrations, with Approve and Decline. Once decided, the connection goes back to \"Shared from other houses\" at the bottom."
+- date: 2026-11-02
   title: Your residents' visits elsewhere show their rhythms and whether they're working there
   body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
 - date: 2026-11-02

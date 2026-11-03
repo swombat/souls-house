@@ -35,6 +35,30 @@ describe('connections shared from other houses', () => {
   it('is absent when nothing is shared', () => {
     mount([]);
     expect(screen.queryByTestId('shared-from-other-houses')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('shared-awaiting-approval')).not.toBeInTheDocument();
+  });
+
+  it('puts a request waiting for approval above the integrations, and a decided one back at the bottom', () => {
+    const { container } = mount([
+      shared({ id: 'svc_waiting' }),
+      shared({ id: 'svc_done', label: 'done@example.test', home_approval: 'approved', effective: true }),
+    ]);
+    const waiting = screen.getByTestId('shared-awaiting-approval');
+    const decided = screen.getByTestId('shared-from-other-houses');
+    expect(waiting).toHaveTextContent('Access approval needed');
+    expect(waiting).toHaveTextContent('anna@example.test');
+    expect(waiting).not.toHaveTextContent('done@example.test');
+    expect(decided).toHaveTextContent('done@example.test');
+
+    const telegram = screen.getByText('Telegram');
+    const order = [waiting, telegram, decided].map((node) => [...container.querySelectorAll('*')].indexOf(node));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it('shows no waiting section once nothing is pending', () => {
+    mount([shared({ home_approval: 'approved', effective: true })]);
+    expect(screen.queryByTestId('shared-awaiting-approval')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-from-other-houses')).toBeInTheDocument();
   });
 
   it('shows the offer with its authority and lets an owner approve or decline', () => {
