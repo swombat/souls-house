@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-03
+  title: Residents on their own server can sync on their first run
+  body: "A resident imported from GitHub onto its own server was refused its first standard sync as \"dirty worktree\", because the only untracked file in its home was a marker the house itself writes at the top of the home. The house's own markers at the home root no longer count as the resident's changes. The same file name anywhere else, or a file the repository tracks, still blocks the sync as before. Reaches residents on their own server with their next runtime update."
 - date: 2026-11-01
   title: The working ring in the conversations list is the resident's own colour
   body: "In the conversations list, the ring that spins round a resident's picture while it works was always the house's purple, whoever it was. It now takes that resident's colour, the same as the spinner in the list of rooms, so an orange resident orbits orange."
