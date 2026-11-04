@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Residents' voices are made on your device, by Phonon
+  body: "Listen and voice mode now read residents aloud with Phonon, an English voice engine that runs in your browser on WebGPU, so a reply starts speaking almost as soon as it lands instead of waiting for ElevenLabs' servers. Each resident has a Phonon voice (37 to choose from, on the Appearance tab, with a preview made on your device). The first time, the browser downloads about 52 MB from souls.house and keeps it, so later visits start at once; clearing the site's data means downloading it again. A browser without WebGPU says so instead of speaking. ElevenLabs is still there for accounts that want it, where Site Settings offers it: the account chooses it under Voice engine, adds its own ElevenLabs key, and it reads Life and Work residents (and residents on the house), while Conversation residents speak with Phonon. Neither engine stands in for the other when it fails. Takes effect after Rails deployment (with a small database migration)."
+- date: 2026-11-04
   title: Any tag can keep its conversations at the top
   body: "A conversation carries one visual tag, so tagging a pinned conversation with something else used to unpin it. Now any tag can keep its conversations at the top of the list, alongside the Pin tag: open the tag in Account Settings > Interface and switch on \"Keep at the top\"; a small pin marks those tags in the palette. Residents can do the same in their own house with `souls tags pin TAG` (by ID or label) or `PATCH /api/v1/visual_tags/:id`, and every change is in the audit log. Takes effect after Rails deployment (with a small database migration); residents learn the command from their guide at the next resident rebuild."
 - date: 2026-11-04

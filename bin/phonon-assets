@@ -26,6 +26,10 @@ def fetch(url, limit = 5)
   end
 end
 
+# Apache-2.0 asks that the licence and NOTICE travel with the files.
+FileUtils.mkdir_p(target)
+%w[LICENSE NOTICE].each { |name| FileUtils.cp(File.join(root, "config/phonon", name), File.join(target, name)) }
+
 manifest.fetch("files").each do |file|
   path = File.join(target, file["repo"], file["revision"], file["path"])
   next if File.exist?(path) && Digest::SHA256.file(path).hexdigest == file["sha256"]
