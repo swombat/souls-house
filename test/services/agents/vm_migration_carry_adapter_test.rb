@@ -70,6 +70,8 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
     socket.write(text)
     socket.close_write
     socket.read
+  rescue Errno::ECONNRESET, Errno::EPIPE
+    "" # refused and closed before the client read the answer
   ensure
     socket&.close
   end
@@ -181,6 +183,8 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
       assert_match %r{\AHTTP/1.1 400}, raw(adapter, "GET /config HTTP/1.1\r\nX: #{'y' * 9.kilobytes}\r\n\r\n")
       assert_match %r{\AHTTP/1.1 400}, raw(adapter, "GET /config HTTP/1.1\r\n#{(1..40).map { |n| "X#{n}: y\r\n" }.join}\r\n")
       assert_match %r{\AHTTP/1.1 400}, raw(adapter, "GET /config HTTP/1.1\r\n#{auth}#{auth}\r\n")
+      # Physical lines count, not distinct names (Kevin's 5,000 "X: y" lines).
+      assert_match %r{\AHTTP/1.1 400}, raw(adapter, "GET /config HTTP/1.1\r\n#{"X: y\r\n" * 40}\r\n")
     end
     assert_empty @objects
   end
@@ -212,6 +216,57 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
       refute_includes response.to_hash.to_s, secret
       assert_equal [ "ArgumentError" ], adapter.failures
     end
+  end
+
+  def adapter_threads(adapter)
+    adapter.instance_variable_get(:@handlers).select(&:alive?)
+  end
+
+  def trickle(adapter, count)
+    Array.new(count) { TCPSocket.new("127.0.0.1", adapter.port) }.tap do |sockets|
+      sockets.each { |socket| socket.write("G") }
+    end
+  end
+
+  test "busy connections are refused without a thread each, and stop closes connections still sending" do
+    baseline = Thread.list.count(&:alive?)
+    open_adapter do |adapter|
+      held = trickle(adapter, Agents::VmMigration::CarryAdapter::MAX_CONNECTIONS)
+      wait_until { adapter_threads(adapter).size == Agents::VmMigration::CarryAdapter::MAX_CONNECTIONS }
+      extra = trickle(adapter, 12)
+      sleep 0.3
+      extra.each { |socket| socket.write("E") rescue nil }
+      sleep 0.2
+      # Two handlers and the acceptor, never one thread per refused client.
+      assert_operator Thread.list.count(&:alive?), :<=, baseline + 3
+      held.each { |socket| socket.write("E") }
+      started = Agents::BoundedCommand.now
+      adapter.stop
+      assert_operator Agents::BoundedCommand.now - started, :<, 2, "stop waits for no client that is still sending"
+      assert_empty adapter_threads(adapter)
+      (held + extra).each { |socket| socket.close rescue nil }
+    end
+    assert_operator Thread.list.count(&:alive?), :<=, baseline
+  end
+
+  test "a client that stops reading a large answer can't hold the writer past the deadline" do
+    key = "#{@prefix}data/aa/#{A}"
+    @objects[key] = "z".b * 32.megabytes
+    open_adapter(deadline: Agents::BoundedCommand.now + 2) do |adapter|
+      user, password = credential(adapter)
+      socket = TCPSocket.new("127.0.0.1", adapter.port)
+      socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF, 4096)
+      socket.write("GET /data/#{A} HTTP/1.1\r\nAuthorization: Basic #{Base64.strict_encode64("#{user}:#{password}")}\r\n\r\n")
+      assert_equal "HTTP/1.1 200", socket.read(12), "the large answer is being written"
+      wait_until(timeout: 10) { adapter_threads(adapter).empty? }
+      assert_empty adapter_threads(adapter), "the writer gave up at the deadline"
+      socket.close
+    end
+  end
+
+  def wait_until(timeout: 5)
+    ends = Agents::BoundedCommand.now + timeout
+    sleep 0.05 until yield || Agents::BoundedCommand.now > ends
   end
 
   test "stop closes the port" do

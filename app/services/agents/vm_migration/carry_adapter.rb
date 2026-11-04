@@ -36,6 +36,8 @@ module Agents
       MAX_CONNECTIONS = 2
       IDLE_SECONDS = 30
       STOP_GRACE = 5
+      REFUSE_DRAIN_SECONDS = 1
+      WAIT_SLICE = 0.25
       PROBE = %r{\A/\.carry-probe/([0-9a-f]{32})\z}
 
       class Refused < StandardError; end
@@ -58,6 +60,7 @@ module Agents
         @requests = 0
         @mutex = Mutex.new
         @handlers = []
+        @sockets = []
       end
 
       # The URL restic is given, credential included. Callers pass it to the
@@ -80,13 +83,14 @@ module Agents
 
       # Always called (ensure): closes the port and every connection, and
       # waits a short grace for handlers before killing them.
+      # Every accepted socket is tracked, so stop closes connections that are
+      # still sending, not only the listener.
       def stop
         @stopping = true
-        @server&.close
+        @server&.close rescue nil
         @acceptor&.join(STOP_GRACE) || @acceptor&.kill
+        @mutex.synchronize { @sockets.dup }.each { |socket| socket.close rescue nil }
         @mutex.synchronize { @handlers.dup }.each { |thread| thread.join(STOP_GRACE) || thread.kill }
-        nil
-      rescue IOError
         nil
       end
 
@@ -105,12 +109,19 @@ module Agents
         until @stopping
           socket = @server.accept
           if remaining <= 0 || @mutex.synchronize { @handlers.count(&:alive?) >= MAX_CONNECTIONS }
-            Thread.new(socket) { |client| refuse_and_close(client, Response.new(503, {}, "carry_busy")) }
+            # Refused on the acceptor itself, with no thread and no drain:
+            # the short answer fits the socket buffer and the socket closes
+            # at once, so busy clients can't pile up workers.
+            refuse_now(socket)
             next
           end
-          thread = Thread.new(socket) { |client| serve_connection(client) }
-          thread.report_on_exception = false
-          @mutex.synchronize { @handlers.reject! { |handler| !handler.alive? }; @handlers << thread }
+          @mutex.synchronize do
+            @handlers.reject! { |handler| !handler.alive? }
+            @sockets << socket
+            thread = Thread.new(socket) { |client| serve_connection(client) }
+            thread.report_on_exception = false
+            @handlers << thread
+          end
         end
       rescue IOError, Errno::EBADF
         nil
@@ -132,16 +143,28 @@ module Agents
         nil
       ensure
         socket.close rescue nil
+        @mutex.synchronize { @sockets.delete(socket) }
+      end
+
+      def refuse_now(socket)
+        socket.write_nonblock(head_for(Response.new(503, {}, "carry_busy"), close: true) + "carry_busy", exception: false)
+      rescue IOError, SystemCallError
+        nil
+      ensure
+        socket.close rescue nil
       end
 
       # Answers, then reads (and drops) a bounded amount of what the client
       # had already sent, so closing does not reset the connection before the
-      # client has read the answer.
+      # client has read the answer. The drain has an absolute limit and
+      # stops when the adapter does.
       def refuse_and_close(socket, response)
         write(socket, response, close: true)
         socket.shutdown(Socket::SHUT_WR)
         drained = 0
-        while drained < 1.megabyte && IO.select([ socket ], nil, nil, 0.5)
+        ends = Agents::BoundedCommand.now + [ REFUSE_DRAIN_SECONDS, remaining ].min
+        while !@stopping && drained < 1.megabyte && (left = ends - Agents::BoundedCommand.now).positive? &&
+              IO.select([ socket ], nil, nil, [ left, 0.5 ].min)
           chunk = socket.read_nonblock(64.kilobytes, exception: false)
           break if chunk.nil?
           next if chunk == :wait_readable
@@ -163,10 +186,14 @@ module Agents
         raise Refused unless method&.match?(/\A[A-Z]{3,7}\z/) && target&.start_with?("/") && version&.start_with?("HTTP/1.")
 
         headers = {}
+        lines = 0
         loop do
           header = read_line(socket) || raise(Refused)
           break if header.empty?
-          raise Refused if headers.size >= MAX_HEADERS
+
+          # Physical lines, not distinct names: repeats count too.
+          lines += 1
+          raise Refused if lines > MAX_HEADERS
 
           name, value = header.split(":", 2)
           raise Refused unless value && name.match?(/\A[A-Za-z0-9-]+\z/)
@@ -218,9 +245,20 @@ module Agents
         body
       end
 
-      def wait_readable(socket)
-        limit = [ remaining, IDLE_SECONDS ].min
-        limit.positive? && IO.select([ socket ], nil, nil, limit)
+      # Waits in short slices so stop is noticed: closing a socket does not
+      # wake a thread already inside IO.select on it.
+      def wait_readable(socket) = wait_for(socket, readable: true)
+
+      def wait_for(socket, readable:)
+        ends = Agents::BoundedCommand.now + [ remaining, IDLE_SECONDS ].min
+        until @stopping
+          left = ends - Agents::BoundedCommand.now
+          return false unless left.positive?
+
+          ready = readable ? IO.select([ socket ], nil, nil, [ left, WAIT_SLICE ].min) : IO.select(nil, [ socket ], nil, [ left, WAIT_SLICE ].min)
+          return true if ready
+        end
+        false
       end
 
       def respond(request)
@@ -301,14 +339,30 @@ module Agents
                   507 => "Insufficient Storage" }.freeze
 
       # A HEAD answer carries the object's Content-Length and no body.
-      def write(socket, response, close: false)
+      def head_for(response, close: false)
         body = response.body.to_s.b
         headers = { "Cache-Control" => "no-store" }.merge(response.headers)
         headers["Content-Length"] ||= body.bytesize.to_s
         headers["Connection"] = "close" if close
         head = +"HTTP/1.1 #{response.status} #{REASONS.fetch(response.status, 'Error')}\r\n"
         headers.each { |name, value| head << "#{name}: #{value}\r\n" }
-        socket.write(head << "\r\n", response.body.nil? ? "" : body)
+        head << "\r\n"
+      end
+
+      # Written without blocking: a client that stops reading can hold the
+      # writer only until the idle limit or the adapter's deadline.
+      def write(socket, response, close: false)
+        data = head_for(response, close:).b + (response.body.nil? ? "" : response.body.to_s.b)
+        offset = 0
+        while offset < data.bytesize
+          written = socket.write_nonblock(data.byteslice(offset, 1.megabyte), exception: false)
+          if written == :wait_writable
+            raise IOError, "carry client stopped reading" unless wait_for(socket, readable: false)
+
+            next
+          end
+          offset += written
+        end
       end
 
     end
