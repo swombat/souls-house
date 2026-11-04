@@ -412,7 +412,7 @@ class CommitmentTest < ActiveSupport::TestCase
     commitment = commit("Late one", at: @now + 1.minute)
     travel_to(@now + 45.minutes) { live { commitment.activate! } }
     content = commitment.reload.activation_message.content
-    assert_match(/Due .*, delivered .* \(late\)/, content)
+    assert_match(/due .*, delivered .* \(late\)/, content)
   end
 
   test "an undeliverable commitment posts nothing, records why, and fires once it can" do
