@@ -18,12 +18,15 @@
 // larger of an absolute floor and a multiple of the running noise level, which
 // is learnt from the quiet frames, so a noisy street raises it and a quiet room
 // lowers it. Conservative on purpose: a pause mid-thought longer than
-// `silenceMs` ends the turn, and the person can finish in the next one.
+// `silenceMs` ends the turn, and the person can finish in the next one. 1.8 s,
+// not 1.2 s (#756): walking outdoors, 1.2 s split sentences into separate
+// messages, and each turn is now a voice note of its own; Daniel finds 2–3 s
+// before the transcript acceptable.
 export function createTurnDetector({
   sampleRate,
   frameMs = 20,
   attackMs = 60,
-  silenceMs = 1200,
+  silenceMs = 1800,
   minSpeechMs = 300,
   preRollMs = 300,
   floor = 0.012,

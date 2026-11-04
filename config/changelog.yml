@@ -7,6 +7,9 @@
   title: Done checklist items are struck through
   body: "In messages, a checklist item written as ticked now shows struck through and greyed, so what is done reads as done at a glance instead of only by its checkbox."
 - date: 2026-11-03
+  title: Voice mode transcribes with ElevenLabs, like a voice note, and keeps the recording
+  body: "Voice mode used OpenAI's live transcription for the words it sent, and on a walk that was much worse than the voice-note path. Now each thing you say in voice mode is recorded and transcribed exactly the way a voice note is (ElevenLabs, with the account's glossary), and the message carries that transcript with the recording attached. The live transcription still decides when you've finished and shows what it heard straight away, in grey and pulsing, so you know you were picked up; the clean text replaces it about two seconds later. If ElevenLabs fails, the live text is sent marked as a rough transcript rather than nothing. Voice mode also waits a little longer (1.8 seconds of quiet instead of 1.2) before deciding you've finished, so a pause on a walk splits fewer sentences."
+- date: 2026-11-03
   title: More room for simultaneous requests
   body: "The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment."
 - date: 2026-11-03

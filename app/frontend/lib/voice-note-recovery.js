@@ -151,9 +151,10 @@ export function transcriptionPath({ accountId, chatId }) {
 }
 
 // Resolves to the Response, or null when the request never got an answer.
-export function transcriptionRequest(where, method, formData) {
+export function transcriptionRequest(where, method, formData, { signal } = {}) {
   return fetch(transcriptionPath(where), {
     method,
+    signal,
     headers: {
       'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content,
       Accept: 'application/json',
