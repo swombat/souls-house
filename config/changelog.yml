@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-04
+  title: Done checklist items are struck through
+  body: "In messages, a checklist item written as ticked now shows struck through and greyed, so what is done reads as done at a glance instead of only by its checkbox."
 - date: 2026-11-03
   title: More room for simultaneous requests
   body: "The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment."
