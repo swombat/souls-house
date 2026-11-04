@@ -35,14 +35,15 @@ module Agents::Portability
       true
     end
 
-    # timeout bounds this one copy (a caller with its own deadline passes
-    # what is left of it).
+    # timeout bounds this whole copy: the ownership and volume inspects and
+    # the stream share it (a caller with its own deadline passes what is
+    # left of it).
     def capture(root, output, timeout: 60)
-      resources.verify_existing!
-      volume = resources.volumes.fetch(root.to_sym)
-      _, _, status = Open3.capture3("docker", "volume", "inspect", volume)
-      raise Error, "A required resident volume is missing" unless status.success?
-      stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly", IMAGE, "tar", "cf", "-", "-C", "/data", "." ], output: output, timeout:)
+      within(timeout) do |deadline|
+        volume = inspected_volume(root.to_sym, deadline)
+        stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly", IMAGE, "tar", "cf", "-", "-C", "/data", "." ],
+          output: output, timeout: left(deadline))
+      end
     end
 
     # The runtime volumes a move must carry (#426 slice 3C), measured without
@@ -70,20 +71,19 @@ module Agents::Portability
     SH
     INVENTORY_SECONDS = 300
 
+    # timeout bounds the whole inventory, inspects included, as for capture.
     def inventory(root, timeout: INVENTORY_SECONDS)
       root = root.to_sym
       raise Error, "Unsupported runtime volume" unless INVENTORY_ROOTS.include?(root)
 
-      resources.verify_existing!
-      volume = resources.volumes.fetch(root)
-      _, _, status = Open3.capture3("docker", "volume", "inspect", volume)
-      raise Error, "A required resident volume is missing" unless status.success?
-
-      probes = INVENTORY_PROBES.fetch(root)
-      output = StringIO.new
-      stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly",
-               IMAGE, "sh", "-c", INVENTORY_SCRIPT, "sh", *probes ], output:, timeout:)
-      self.class.parse_inventory(output.string, probes)
+      within(timeout) do |deadline|
+        volume = inspected_volume(root, deadline)
+        probes = INVENTORY_PROBES.fetch(root)
+        output = StringIO.new
+        stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly",
+                 IMAGE, "sh", "-c", INVENTORY_SCRIPT, "sh", *probes ], output:, timeout: left(deadline))
+        self.class.parse_inventory(output.string, probes)
+      end
     end
 
     # Strict: anything but the lines the script prints is a refusal, never a
@@ -137,6 +137,33 @@ module Agents::Portability
     private
 
     def resources = @resources ||= Agents::Resources.new(@agent)
+
+    TIMED_OUT = "Reading the resident's volumes ran out of time".freeze
+
+    # One deadline for everything the block runs; an inspect still running
+    # when it passes is killed (BoundedCommand), and the stream gets only
+    # what is left.
+    def within(timeout)
+      yield Agents::BoundedCommand.now + timeout
+    rescue Agents::BoundedCommand::TimedOut
+      raise Error, TIMED_OUT
+    end
+
+    def left(deadline)
+      remaining = deadline - Agents::BoundedCommand.now
+      raise Agents::BoundedCommand::TimedOut if remaining <= 0
+
+      remaining
+    end
+
+    def inspected_volume(root, deadline)
+      resources.verify_existing!(deadline:)
+      volume = resources.volumes.fetch(root)
+      _, _, status = Agents::BoundedCommand.capture3("docker", "volume", "inspect", volume, deadline:)
+      raise Error, "A required resident volume is missing" unless status.success?
+
+      volume
+    end
 
     def command!(*args)
       _, _, status = Open3.capture3(*args)

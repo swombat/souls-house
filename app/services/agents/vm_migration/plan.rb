@@ -149,6 +149,7 @@ module Agents
           begin
             roles, whole = measure_home
             runtime, carry = measure_runtime
+            check_time!
           rescue Portability::Error, Resources::OwnershipError => failure
             roles = []
             whole = nil
@@ -176,6 +177,7 @@ module Agents
           Runtime.new(volume: volume.to_s, files: found[:files], bytes: found[:bytes], present: found[:present].sort,
             sessions: found[:sessions])
         end
+        check_time!
         source = runtime.sum(&:bytes)
         budget = Plan.carry_budget_bytes
         chaos = runtime.find { |volume| volume.volume == "chaos" }
@@ -201,12 +203,18 @@ module Agents
 
       def out_of_time? = @deadline && @clock.call >= @deadline
 
+      # Between local steps and once at the end: a measurement that finished
+      # after the deadline is reported out of time, never as a result.
+      def check_time!
+        raise Portability::Error, OUT_OF_TIME if out_of_time?
+      end
+
       def human(bytes) = ActiveSupport::NumberHelper.number_to_human_size(bytes)
 
       def measure_home
         Dir.mktmpdir("resident-migration-plan-") do |dir|
           File.chmod(0700, dir)
-          measured = Portability::Archive::ROOTS.map { |role| measure_role(dir, role) }
+          measured = Portability::Archive::ROOTS.map { |role| measure_role(dir, role).tap { check_time! } }
           [ measured.map(&:first), whole(measured) ]
         end
       end
@@ -254,6 +262,7 @@ module Agents
         entries = { root => { "type" => "directory", "mode" => 0700, "size" => 0, "sha256" => nil } }
         entries.merge!(Portability::Archive.unpack(raw, stage, prefix: root))
         File.delete(raw)
+        check_time!
 
         archive = Portability::Archive.new(stage, entries)
         members = entries.select { |path, _| path.start_with?("#{root}/") }

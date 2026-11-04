@@ -1627,6 +1627,27 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  test "a measurement that finishes after its deadline is out of time, never a result" do
+    with_house do
+      agent = house_resident!
+      now = 0.0
+      late = HouseTransport.new
+      # Mira's case: the last read (the state volume) succeeds, but only
+      # after the deadline has passed.
+      late.define_singleton_method(:inventory) do |root, timeout: nil|
+        now += 100 if root.to_sym == :state
+        super(root)
+      end
+      report = Agents::VmMigration::Plan.new(migration(agent), transport: late, deadline_seconds: 90, clock: -> { now })
+                                         .call(measure: true, requested_by: @user)
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME, report.measure_error
+      assert_not report.no_refusal_found?
+      assert_empty report.runtime
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME,
+        AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last.data["measure_error"]
+    end
+  end
+
   test "a runtime inventory that can't be read is reported, not guessed" do
     with_house do
       agent = house_resident!

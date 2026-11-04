@@ -32,6 +32,38 @@ class Agents::PortabilityTransportInventoryTest < ActiveSupport::TestCase
     assert_not_includes script, "-type f | wc -l"
   end
 
+  test "a bounded command past its deadline is killed, not waited for" do
+    Dir.mktmpdir do |dir|
+      pidfile = File.join(dir, "pid")
+      started = Agents::BoundedCommand.now
+      assert_raises(Agents::BoundedCommand::TimedOut) do
+        Agents::BoundedCommand.capture3("sh", "-c", "echo $$ > #{pidfile}; exec sleep 30", deadline: started + 0.3)
+      end
+      assert_operator Agents::BoundedCommand.now - started, :<, 5
+      pid = Integer(File.read(pidfile).strip, 10)
+      assert_raises(Errno::ESRCH, "the command's process group was killed") { Process.kill(0, pid) }
+    end
+    stdout, _, status = Agents::BoundedCommand.capture3("echo", "fine", deadline: Agents::BoundedCommand.now + 5)
+    assert status.success?
+    assert_equal "fine\n", stdout
+  end
+
+  test "the ownership and volume inspects count against an inventory's timeout" do
+    resources = Struct.new(:volumes) { def verify_existing!(deadline:) = (@deadline = deadline) }.new({ state: "synthetic-state" })
+    transport = Transport.new(Agent.new)
+    transport.instance_variable_set(:@resources, resources)
+    transport.define_singleton_method(:stream) { |*, **| flunk "no time was left to read the volume" }
+    real = Agents::BoundedCommand.method(:capture3)
+    slow_inspect = ->(*args, deadline: nil) { real.call("sleep", "30", deadline:) }
+    started = Agents::BoundedCommand.now
+    error = Agents::BoundedCommand.stub(:capture3, slow_inspect) do
+      assert_raises(Error) { transport.inventory(:state, timeout: 0.3) }
+    end
+    assert_equal "Reading the resident's volumes ran out of time", error.message
+    assert_operator Agents::BoundedCommand.now - started, :<, 5
+    assert_in_delta started + 0.3, resources.instance_variable_get(:@deadline), 0.2, "verify_existing! gets the same deadline"
+  end
+
   test "only the Chaos and state volumes can be inventoried" do
     error = assert_raises(Error) { Transport.new(Agent.new).inventory(:identity) }
     assert_equal "Unsupported runtime volume", error.message

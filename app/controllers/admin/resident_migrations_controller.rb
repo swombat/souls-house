@@ -12,7 +12,8 @@ class Admin::ResidentMigrationsController < ApplicationController
   before_action :set_agent
 
   # The whole measurement must answer inside the proxy's response timeout
-  # (config/deploy.yml, 120 s), with room for rendering.
+  # (config/deploy.yml, 120 s), with room for the audit, rendering and a
+  # timed-out read's carrier cleanup (Transport#remove_carrier!, up to 15 s).
   MEASURE_DEADLINE_SECONDS = 90
 
   # The gates only: reads no volume, so it is safe to reload or prefetch.
