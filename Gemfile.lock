@@ -455,13 +455,13 @@ GEM
     state_machines-activerecord (0.200.0)
       activerecord (>= 7.2)
       state_machines-activemodel (>= 0.200.0)
-    state_machines-diagram (0.1.0)
+    state_machines-diagram (0.2.0)
       diagram (~> 0.3.4)
       state_machines (~> 0.100, >= 0.100.4)
-    state_machines-mermaid (0.1.0)
+    state_machines-mermaid (0.2.0)
       mermaid
       state_machines (>= 0.100.4)
-      state_machines-diagram (>= 0.1.0)
+      state_machines-diagram (>= 0.2.0)
     stripe (20.0.0)
       bigdecimal
       logger
@@ -571,7 +571,7 @@ DEPENDENCIES
   solid_queue (~> 1.7.0)
   state_machines (~> 0.202.0)
   state_machines-activerecord (~> 0.200.0)
-  state_machines-mermaid (~> 0.1.0)
+  state_machines-mermaid (~> 0.2.0)
   stripe (~> 20.0)
   thruster
   tzinfo-data
