@@ -76,3 +76,12 @@ Rails.application.config.filter_parameters += [ /\A(?:words|text)\z/ ]
 # which for WhatsApp is a phone number; so is the stored provider_chat_id,
 # masked here in SQL binds too.
 Rails.application.config.filter_parameters += [ /\Achat\z/, /\Aprovider_chat_id\z/ ]
+
+# Rails copies filter_parameters into ActiveRecord::Base.filter_attributes when
+# ActiveRecord loads. BreakerMachines defines a state machine on require, which
+# loads ActiveRecord during Bundler.require, before any initializer here has
+# run, so SQL binds and model inspection would otherwise filter nothing. Apply
+# the finished list now; on_load runs immediately once ActiveRecord is loaded.
+ActiveSupport.on_load(:active_record) do
+  self.filter_attributes |= Rails.application.config.filter_parameters
+end
