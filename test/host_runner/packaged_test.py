@@ -28,13 +28,16 @@ class PackagedRunnerTest(unittest.TestCase):
             staging = Path(staging)
             target = staging / "host-runner"
             target.mkdir()
-            for name in ("souls_house_runner.py", "backup_proxy.py"):
+            # The full package (#426 3C): the birth pair plus the carry
+            # modules, compacted the same way.
+            for name in ("souls_house_runner.py", "backup_proxy.py", "carry_restore.py"):
                 # As RunnerUserData.compact_source: docstrings removed (#593).
                 original = strip_docstrings(ast.parse((root / "host-runner" / name).read_text()))
                 compact = ast.unparse(original) + "\n"
                 self.assertEqual(ast.dump(original, include_attributes=False),
                                  ast.dump(ast.parse(compact), include_attributes=False))
                 (target / name).write_text(compact)
+            shutil.copy2(root / "host-runner" / "carry_shape.sh", target)
             tests = staging / "test" / "host_runner"
             shutil.copytree(Path(__file__).parent, tests, ignore=shutil.ignore_patterns("__pycache__"))
             (tests / Path(__file__).name).unlink()  # Do not recursively run this packaging check.

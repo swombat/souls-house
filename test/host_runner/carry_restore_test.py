@@ -1,0 +1,448 @@
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "host-runner"))
+
+import carry_restore as cr  # noqa: E402
+import souls_house_runner as runner  # noqa: E402
+from backup_proxy import CLEANUP_SECONDS, MAX_DEADLINE_SECONDS  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Shared payload/shape builders
+# ---------------------------------------------------------------------------
+
+def valid_shapes():
+    return {
+        "chaos": {"entries": 2, "shape": "1" * 64},
+        "state": {"entries": 5, "shape": "2" * 64},
+    }
+
+
+def valid_payload(container_name="agent-carry", snapshot_id=None, shapes=None, deadline_seconds=300):
+    return {
+        "container_name": container_name,
+        "agent_uuid": "12345678-1234-1234-1234-123456789012",
+        "restic_password": "s3cr3t",
+        "snapshot_id": snapshot_id or ("f" * 64),
+        "deadline_seconds": deadline_seconds,
+        "shapes": shapes if shapes is not None else valid_shapes(),
+    }
+
+
+def shape_output(shape):
+    """Exactly what carry_shape.sh prints for a given {"entries", "shape"}."""
+    return f"entries {shape['entries']}\nshape {shape['shape']}\n"
+
+
+# ---------------------------------------------------------------------------
+# Fakes: no real docker, network, or restic ever runs.
+# ---------------------------------------------------------------------------
+
+class FakeHost:
+    """Stands in for the runner's ResidentHost: state_dir, backup_request,
+    current_command_id, _write_private, docker (volume ops only) and
+    _volume_mountpoint, each backed by a real temp directory so markers and
+    volume emptiness are genuinely exercised, never mocked away."""
+
+    def __init__(self, root):
+        self.state_dir = os.path.join(root, "state")
+        os.makedirs(self.state_dir, exist_ok=True)
+        self.volumes_root = os.path.join(root, "volumes")
+        os.makedirs(self.volumes_root, exist_ok=True)
+        self.backup_request = "fake-signed-request"
+        self.current_command_id = "a" * 32
+        self.docker_calls = []
+        self.existing = set()
+        self.removed = []
+
+    def _write_private(self, path, text):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+
+    def _volume_mountpoint(self, volume):
+        path = os.path.join(self.volumes_root, volume)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def seed_volume(self, volume, files=()):
+        """Test helper: register a volume as already created (as a seed step
+        would, before any carry restore runs), optionally with leftover
+        content so a non-empty or partially-restored volume can be tested."""
+        path = self._volume_mountpoint(volume)
+        self.existing.add(volume)
+        for name in files:
+            with open(os.path.join(path, name), "w", encoding="utf-8") as handle:
+                handle.write("leftover")
+
+    def docker(self, argv):
+        self.docker_calls.append(list(argv))
+        if argv[:3] == ["docker", "volume", "inspect"]:
+            name = argv[3]
+            return (name in self.existing), ("" if name in self.existing else "no such volume")
+        if argv[:3] == ["docker", "volume", "rm"]:
+            name = argv[3]
+            if name in self.existing:
+                self.existing.discard(name)
+                self.removed.append(name)
+                path = self._volume_mountpoint(name)
+                for entry in os.listdir(path):
+                    full = os.path.join(path, entry)
+                    if os.path.isdir(full):
+                        shutil.rmtree(full)
+                    else:
+                        os.unlink(full)
+            return True, ""
+        raise AssertionError(f"unexpected host.docker call: {argv}")
+
+
+class FakeDocker:
+    """Stands in for run_restore_carry's injected docker(argv, timeout=...).
+    Recognises exactly the calls carry_restore.py makes and nothing else, so
+    an unexpected call (a real docker invocation sneaking in) fails loudly."""
+
+    def __init__(self):
+        self.calls = []
+        self.container_exists = False
+        self.image_present = True
+        self.restore_ok = True
+        self.rm_ok = True
+        self.ps_tools = ()
+        self.shape_outputs = {}
+
+    def __call__(self, argv, timeout=None):
+        self.calls.append(list(argv))
+        if argv[:3] == ["docker", "container", "inspect"]:
+            return self.container_exists, ""
+        if argv[:3] == ["docker", "image", "inspect"]:
+            return self.image_present, ""
+        if argv[:2] == ["docker", "pull"]:
+            return True, ""
+        if argv[0] == "docker" and argv[1] == "run":
+            mode = argv[argv.index("--network") + 1]
+            if mode == "host":
+                return self.restore_ok, ""
+            role = self._role_of(argv)
+            return True, self.shape_outputs.get(role, "")
+        if argv[:3] == ["docker", "rm", "-f"]:
+            return self.rm_ok, ""
+        if argv[:2] == ["docker", "ps"]:
+            return True, "\n".join(self.ps_tools)
+        raise AssertionError(f"unexpected docker call: {argv}")
+
+    @staticmethod
+    def _role_of(argv):
+        for part in argv:
+            if part.startswith("type=volume,src="):
+                src = part.split("src=", 1)[1].split(",", 1)[0]
+                for role in cr.CARRY_ROLES:
+                    if src.endswith("-" + role):
+                        return role
+        return None
+
+
+class FakeProxy:
+    """Stands in for BackupProxy: no loopback HTTP server, no thread."""
+
+    def __init__(self, signed_request, deadline):
+        self.signed_request = signed_request
+        self.deadline = deadline
+        self.repository = "rest:http://fake-proxy.invalid/"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# run_restore_carry
+# ---------------------------------------------------------------------------
+
+class CarryRestoreTestCase(unittest.TestCase):
+    """Base fixture: a resident whose two carry volumes already exist (as a
+    prior seed step would have made them) and are empty."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.host = FakeHost(self.tmp.name)
+        self.docker = FakeDocker()
+        self.name = "agent-carry"
+        self.chaos_volume = f"{self.name}-chaos"
+        self.state_volume = f"{self.name}-state"
+        self.host.seed_volume(self.chaos_volume)
+        self.host.seed_volume(self.state_volume)
+
+    def payload(self, **overrides):
+        base = valid_payload(self.name)
+        base.update(overrides)
+        return base
+
+    def run_restore(self, payload=None, **kwargs):
+        payload = self.payload() if payload is None else payload
+        kwargs.setdefault("docker", self.docker)
+        kwargs.setdefault("proxy_factory", FakeProxy)
+        kwargs.setdefault("script", "# fake carry_shape.sh, never executed\n")
+        kwargs.setdefault("clock", lambda: 1_000.0)
+        return cr.run_restore_carry(payload, self.host, **kwargs)
+
+
+class RunRestoreCarrySuccessTest(CarryRestoreTestCase):
+    def test_valid_payload_with_matching_shapes_succeeds_and_marks_verified(self):
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        result = self.run_restore(self.payload(shapes=shapes))
+        self.assertFalse(result["already"])
+        self.assertTrue(result["tools_stopped"])
+        self.assertEqual(shapes, result["shapes"])
+        marker = cr.read_marker(self.host, self.name)
+        self.assertEqual("verified", marker["state"])
+        self.assertEqual(shapes, marker["shapes"])
+        self.assertEqual(("f" * 64), marker["snapshot_id"])
+
+
+class RunRestoreCarryRetryAndMarkerTest(CarryRestoreTestCase):
+    def test_retry_with_a_verified_marker_for_the_same_snapshot_is_already_done(self):
+        shapes = valid_shapes()
+        snapshot_id = "f" * 64
+        cr.write_marker(self.host, self.name, {"state": "verified", "snapshot_id": snapshot_id, "shapes": shapes})
+        result = self.run_restore(self.payload(snapshot_id=snapshot_id, shapes=shapes))
+        self.assertTrue(result["already"])
+        self.assertEqual(shapes, result["shapes"])
+        self.assertEqual([], self.docker.calls, "an already-verified retry must never touch docker")
+        self.assertEqual([], self.host.docker_calls, "an already-verified retry must never touch a volume")
+
+    def test_claimed_marker_for_the_same_carry_clears_volumes_and_restores_again(self):
+        shapes = valid_shapes()
+        snapshot_id = "f" * 64
+        cr.write_marker(self.host, self.name, {"state": "claimed", "snapshot_id": snapshot_id, "shapes": shapes})
+        # The leftover bytes of an interrupted previous attempt.
+        for volume in (self.chaos_volume, self.state_volume):
+            with open(os.path.join(self.host._volume_mountpoint(volume), "partial"), "w") as handle:
+                handle.write("partial restore")
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        result = self.run_restore(self.payload(snapshot_id=snapshot_id, shapes=shapes))
+        self.assertFalse(result["already"])
+        self.assertEqual({self.chaos_volume, self.state_volume}, set(self.host.removed))
+        marker = cr.read_marker(self.host, self.name)
+        self.assertEqual("verified", marker["state"])
+
+    def test_a_marker_for_a_different_snapshot_is_refused_and_left_untouched(self):
+        other_snapshot = "0" * 64
+        cr.write_marker(self.host, self.name,
+                         {"state": "claimed", "snapshot_id": other_snapshot, "shapes": valid_shapes()})
+        with self.assertRaises(runner.BadCommand):
+            self.run_restore()
+        self.assertEqual([], self.docker.calls)
+        self.assertEqual([], self.host.removed)
+        marker = cr.read_marker(self.host, self.name)
+        self.assertEqual(other_snapshot, marker["snapshot_id"])
+
+
+class RunRestoreCarryVolumeSafetyTest(CarryRestoreTestCase):
+    def test_a_nonempty_target_volume_is_refused_and_never_removed(self):
+        self.host.seed_volume(self.state_volume, files=["leftover.txt"])
+        with self.assertRaises(runner.BadCommand):
+            self.run_restore()
+        self.assertIn(self.state_volume, self.host.existing)
+        self.assertEqual([], self.host.removed)
+        self.assertEqual(["leftover.txt"], os.listdir(self.host._volume_mountpoint(self.state_volume)))
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+        # Refused before any restic restore was ever attempted.
+        self.assertEqual([["docker", "container", "inspect", self.name]], self.docker.calls)
+
+    def test_a_shape_mismatch_fails_removes_the_claimed_volumes_and_clears_the_marker(self):
+        shapes = valid_shapes()
+        outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        # The restored "state" home measures differently from what the house recorded.
+        outputs["state"] = shape_output({"entries": shapes["state"]["entries"], "shape": "9" * 64})
+        self.docker.shape_outputs = outputs
+        with self.assertRaises(cr.CarryFailed) as caught:
+            self.run_restore(self.payload(shapes=shapes))
+        self.assertIn("state", str(caught.exception))
+        failed_result = caught.exception.result
+        self.assertTrue(failed_result["tools_stopped"])
+        self.assertEqual(shapes["chaos"], failed_result["shapes"]["chaos"])
+        self.assertEqual({self.chaos_volume, self.state_volume}, set(self.host.removed))
+        self.assertNotIn(self.chaos_volume, self.host.existing)
+        self.assertNotIn(self.state_volume, self.host.existing)
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+
+
+class RunRestoreCarryTransportTest(CarryRestoreTestCase):
+    def test_missing_backup_request_is_refused_before_any_docker_call(self):
+        self.host.backup_request = None
+        with self.assertRaises(runner.BadCommand) as caught:
+            self.run_restore()
+        self.assertEqual("backup transport unavailable", str(caught.exception))
+        self.assertEqual([], self.docker.calls)
+        self.assertEqual([], self.host.docker_calls)
+
+    def test_a_bad_current_command_id_is_refused(self):
+        for bad in ("not-hex", "a" * 31, "A" * 32, "", None):
+            with self.subTest(bad=bad):
+                self.host.current_command_id = bad
+                with self.assertRaises(runner.BadCommand):
+                    self.run_restore()
+
+
+# ---------------------------------------------------------------------------
+# validate_carry
+# ---------------------------------------------------------------------------
+
+class ValidateCarryTest(unittest.TestCase):
+    def payload(self, **overrides):
+        base = valid_payload()
+        base.update(overrides)
+        return base
+
+    def test_accepts_a_well_formed_payload(self):
+        payload = self.payload()
+        validated = cr.validate_carry(payload)
+        self.assertEqual(payload, validated)
+        self.assertIsNot(payload, validated)
+
+    def test_rejects_a_missing_key(self):
+        payload = self.payload()
+        del payload["deadline_seconds"]
+        with self.assertRaises(runner.BadCommand):
+            cr.validate_carry(payload)
+
+    def test_rejects_an_extra_key(self):
+        with self.assertRaises(runner.BadCommand):
+            cr.validate_carry(self.payload(unexpected="nope"))
+
+    def test_rejects_a_bad_snapshot_id(self):
+        for bad in ("F" * 64, "g" * 64, "a" * 63, "a" * 65, 12345, None, ""):
+            with self.subTest(bad=bad):
+                with self.assertRaises(runner.BadCommand):
+                    cr.validate_carry(self.payload(snapshot_id=bad))
+
+    def test_rejects_a_bad_shape_digest(self):
+        bad_shapes = [
+            {"entries": 1, "shape": "A" * 64},      # uppercase hex
+            {"entries": 1, "shape": "a" * 63},       # too short
+            {"entries": -1, "shape": "a" * 64},      # negative entries
+            {"entries": 1.0, "shape": "a" * 64},     # not an int
+            {"entries": True, "shape": "a" * 64},    # bool is not int
+            {"shape": "a" * 64},                     # missing entries
+        ]
+        for bad_shape in bad_shapes:
+            with self.subTest(bad_shape=bad_shape):
+                shapes = valid_shapes()
+                shapes["chaos"] = bad_shape
+                with self.assertRaises(runner.BadCommand):
+                    cr.validate_carry(self.payload(shapes=shapes))
+
+    def test_rejects_a_non_int_deadline(self):
+        for bad in (300.0, "300", True, None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(runner.BadCommand):
+                    cr.validate_carry(self.payload(deadline_seconds=bad))
+
+    def test_rejects_a_deadline_outside_the_allowed_window(self):
+        for bad in (CLEANUP_SECONDS, MAX_DEADLINE_SECONDS + 1, 0, -5):
+            with self.subTest(bad=bad):
+                with self.assertRaises(runner.BadCommand):
+                    cr.validate_carry(self.payload(deadline_seconds=bad))
+
+
+# ---------------------------------------------------------------------------
+# parse_shape
+# ---------------------------------------------------------------------------
+
+class ParseShapeTest(unittest.TestCase):
+    def test_accepts_the_two_expected_lines(self):
+        parsed = cr.parse_shape("entries 3\nshape " + "a" * 64 + "\n")
+        self.assertEqual({"entries": 3, "shape": "a" * 64}, parsed)
+
+    def test_accepts_zero_entries(self):
+        parsed = cr.parse_shape("entries 0\nshape " + "b" * 64 + "\n")
+        self.assertEqual(0, parsed["entries"])
+
+    def test_rejects_an_extra_line(self):
+        with self.assertRaises(runner.CommandFailed):
+            cr.parse_shape("entries 3\nshape " + "a" * 64 + "\nextra\n")
+
+    def test_rejects_uppercase_hex(self):
+        with self.assertRaises(runner.CommandFailed):
+            cr.parse_shape("entries 3\nshape " + "A" * 64 + "\n")
+
+    def test_rejects_a_missing_entries_line(self):
+        with self.assertRaises(runner.CommandFailed):
+            cr.parse_shape("shape " + "a" * 64 + "\n")
+
+    def test_rejects_a_leading_zero_entry_count(self):
+        with self.assertRaises(runner.CommandFailed):
+            cr.parse_shape("entries 01\nshape " + "a" * 64 + "\n")
+
+    def test_rejects_empty_output(self):
+        with self.assertRaises(runner.CommandFailed):
+            cr.parse_shape("")
+
+
+# ---------------------------------------------------------------------------
+# read_marker / write_marker / clear_marker / volume_exists / volume_is_empty
+# / remove_volume, exercised directly against the fake host.
+# ---------------------------------------------------------------------------
+
+class MarkerAndVolumeHelperTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.host = FakeHost(self.tmp.name)
+        self.name = "agent-carry"
+
+    def test_read_marker_missing_is_none(self):
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+
+    def test_write_then_read_marker_roundtrips(self):
+        data = {"state": "claimed", "snapshot_id": "a" * 64, "shapes": valid_shapes()}
+        cr.write_marker(self.host, self.name, data)
+        self.assertEqual(data, cr.read_marker(self.host, self.name))
+
+    def test_clear_marker_on_a_missing_marker_is_a_no_op(self):
+        cr.clear_marker(self.host, self.name)  # must not raise
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+
+    def test_clear_marker_removes_an_existing_marker(self):
+        cr.write_marker(self.host, self.name, {"state": "claimed"})
+        cr.clear_marker(self.host, self.name)
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+
+    def test_volume_exists_reflects_host_docker_volume_inspect(self):
+        volume = f"{self.name}-chaos"
+        self.assertFalse(cr.volume_exists(self.host, volume))
+        self.host.seed_volume(volume)
+        self.assertTrue(cr.volume_exists(self.host, volume))
+
+    def test_volume_is_empty_checks_the_mountpoint_listing(self):
+        volume = f"{self.name}-state"
+        self.host.seed_volume(volume)
+        self.assertTrue(cr.volume_is_empty(self.host, volume))
+        with open(os.path.join(self.host._volume_mountpoint(volume), "x"), "w") as handle:
+            handle.write("x")
+        self.assertFalse(cr.volume_is_empty(self.host, volume))
+
+    def test_remove_volume_is_a_noop_when_the_volume_does_not_exist(self):
+        volume = f"{self.name}-chaos"
+        self.assertTrue(cr.remove_volume(self.host, volume))
+        self.assertEqual([["docker", "volume", "inspect", volume]], self.host.docker_calls)
+
+    def test_remove_volume_removes_an_existing_volume(self):
+        volume = f"{self.name}-state"
+        self.host.seed_volume(volume)
+        self.assertTrue(cr.remove_volume(self.host, volume))
+        self.assertNotIn(volume, self.host.existing)
+        self.assertIn(volume, self.host.removed)
+
+
+if __name__ == "__main__":
+    unittest.main()
