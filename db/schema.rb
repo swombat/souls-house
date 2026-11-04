@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2491,6 +2491,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_220000) do
     t.index ["id", "account_id"], name: "index_rooms_on_id_and_account_id", unique: true
   end
 
+  create_table "runner_birth_bundles", force: :cascade do |t|
+    t.string "sha256", null: false
+    t.binary "bytes", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["sha256"], name: "index_runner_birth_bundles_on_sha256", unique: true
+  end
+
   create_table "runner_commands", force: :cascade do |t|
     t.string "public_id", null: false
     t.bigint "runner_enrollment_id", null: false
@@ -2529,6 +2537,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_220000) do
     t.datetime "revoked_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "birth_bundle_sha256"
+    t.integer "birth_bundle_fetches", default: 0, null: false
     t.index ["agent_placement_id"], name: "index_runner_enrollments_on_agent_placement_id"
     t.index ["procurement_operation_id"], name: "index_runner_enrollments_on_procurement_operation_id", unique: true, where: "(procurement_operation_id IS NOT NULL)"
     t.index ["public_id"], name: "index_runner_enrollments_on_public_id", unique: true

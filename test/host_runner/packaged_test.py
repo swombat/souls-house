@@ -28,7 +28,7 @@ class PackagedRunnerTest(unittest.TestCase):
             staging = Path(staging)
             target = staging / "host-runner"
             target.mkdir()
-            for name in ("souls_house_runner.py", "backup_proxy.py"):
+            for name in ("souls_house_runner.py", "backup_proxy.py", "birth_fetch.py"):
                 # As RunnerUserData.compact_source: docstrings removed (#593).
                 original = strip_docstrings(ast.parse((root / "host-runner" / name).read_text()))
                 compact = ast.unparse(original) + "\n"
