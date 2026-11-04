@@ -23,6 +23,7 @@ class Setting < ApplicationRecord
   before_save { self.billing_enabled_at = Time.current if billing_enabled_changed?(to: true) }
   after_save :refresh_tweet_streams, if: :tweet_stream_changed?
   after_save :refresh_glossaries, if: :saved_change_to_site_name?
+  after_save :invalidate_voice_mode, if: :voice_scope_changed?
 
   validates :max_accounts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :voice_embedding_profile, inclusion: { in: FieldVoiceprints::Profiles::RECIPES.keys }
@@ -122,6 +123,14 @@ class Setting < ApplicationRecord
 
   def refresh_tweet_streams
     self.class.current_transaction.after_commit { FieldTweets::RefreshSettingsJob.perform_later }
+  end
+
+  def voice_scope_changed?
+    saved_change_to_speech_engine_scope? || saved_change_to_voice_mode_scope?
+  end
+
+  def invalidate_voice_mode
+    self.class.current_transaction.after_commit { VoiceModeInvalidationJob.perform_later }
   end
 
 end
