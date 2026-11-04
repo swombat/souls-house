@@ -23,8 +23,8 @@ module Agents
       FACTS = [
         "No live move until rollback after cutover is built (#426 slice 3C). Until then a move can only be " \
         "undone before its server takes over.",
-        "The Chaos and state volumes are not carried. Identity, repository and work move; runtime sessions and " \
-        "provider sign-ins start fresh on the server."
+        "The Chaos and state volumes are not carried yet (#426 slice 3C). Until they are, identity, repository and " \
+        "work move, and runtime sessions and provider sign-ins would start fresh on the server."
       ].freeze
 
       Role = Data.define(:role, :compressed_bytes, :unpacked_bytes, :entries, :refusal) do
@@ -46,28 +46,63 @@ module Agents
                      fits: fits?, refusal: }
       end
 
+      # One runtime volume a move has to carry (slice 3C): its size, and
+      # which of the paths continuity depends on are there. Names only; no
+      # file is opened. sessions is the number of entries in the shim's
+      # session map (nil when it has none).
+      Runtime = Data.define(:volume, :files, :bytes, :present, :sessions) do
+        def to_h = { volume:, files:, bytes:, present:, sessions: }
+      end
+
+      # The runtime carry as a whole. The size gate is conservative and about
+      # the source: the volumes' logical bytes against the repository's
+      # budget, before compression or deduplication and without what the
+      # repository already holds. It never claims the carry fits.
+      Carry = Data.define(:source_bytes, :budget_bytes, :refusal) do
+        def ok? = refusal.nil?
+
+        def to_h = { source_bytes:, budget_bytes:, gate: "source bytes against the repository budget", ok: ok?, refusal: }
+      end
+
+      NO_SESSIONS = "Its Chaos home has no session database (neither chaos.sqlite nor oauth-runtime/chaos.sqlite), " \
+                    "so there are no sessions a move could carry. A move would start it fresh, and moves don't do " \
+                    "that.".freeze
+      # Either home's database: the shim runs account sign-ins in the second
+      # home (agent-runtime/trigger_shim.py, OAUTH_CHAOS_HOME). Presence only;
+      # this checkpoint does not prove the databases are whole.
+      SESSION_DATABASES = %w[chaos.sqlite oauth-runtime/chaos.sqlite].freeze
+
       # What the dry run does not check, so "no refusal found" is never read
       # as "the copy will succeed".
       UNCHECKED = [
         "The compressed size of the whole archive (#{Portability::Archive::MAX_COMPRESSED / 1.megabyte} MiB limit): " \
           "the figure shown is an estimate, not a bound. Only the real copy measures it.",
-        "The size of the archive's manifest, which lists every file: checked only by the real copy."
+        "The size of the archive's manifest, which lists every file: checked only by the real copy.",
+        "Whether the runtime carry fits its repository: the gate compares the Chaos and state volumes' source bytes " \
+          "with the repository budget. What the repository already holds, compression and deduplication are not " \
+          "counted."
       ].freeze
 
-      Report = Data.define(:agent_id, :name, :gates, :roles, :whole, :measure_error, :facts) do
-        def measured? = roles.any? && !whole.nil?
+      Report = Data.define(:agent_id, :name, :gates, :roles, :whole, :runtime, :carry, :measure_error, :facts) do
+        def measured? = roles.any? && !whole.nil? && runtime.any? && !carry.nil?
 
         # Every gate passes and nothing measured would be refused. Not a
         # promise that the copy succeeds: see UNCHECKED.
-        def no_refusal_found? = gates.all?(&:ok?) && measured? && measure_error.nil? && roles.all?(&:fits?) && whole.fits?
+        def no_refusal_found?
+          gates.all?(&:ok?) && measured? && measure_error.nil? && roles.all?(&:fits?) && whole.fits? && carry.ok?
+        end
 
         def to_h
           { agent_id:, name:, no_refusal_found: no_refusal_found?,
             gates: gates.map { |gate| { name: gate.name, ok: gate.ok?, refusal: gate.refusal } },
-            limits: Plan.limits, roles: roles.map(&:to_h), whole: whole&.to_h, measure_error:, facts:,
-            unchecked: UNCHECKED }
+            limits: Plan.limits, roles: roles.map(&:to_h), whole: whole&.to_h, runtime: runtime.map(&:to_h),
+            carry: carry&.to_h, measure_error:, facts:, unchecked: UNCHECKED }
         end
       end
+
+      # The budget of the resident's VM backup repository, where the carry
+      # would go (Backup::VmRepository's own default).
+      def self.carry_budget_bytes = Integer(ENV.fetch("VM_BACKUP_BUDGET_BYTES", 20.gigabytes.to_s), 10)
 
       def self.limits
         { compressed_bytes: Portability::Stage.max_role_bytes, unpacked_bytes: Portability::Stage.max_role_unpacked,
@@ -86,10 +121,18 @@ module Agents
       # Per-member tar overhead Export counts.
       MEMBER_OVERHEAD = 1024
 
+      OUT_OF_TIME = "Measuring took longer than this page can wait. Measure it from a shell instead: " \
+                    "bin/rails \"vm:migrate[<agent id>]\" (a dry run by default).".freeze
+
       # The transport is built only when a measurement reads the volumes.
-      def initialize(migration, transport: nil)
+      # deadline_seconds bounds the whole measurement (the page passes one
+      # under its proxy's response timeout); each capture and inventory gets
+      # only what is left of it. nil (the rake task) keeps their own limits.
+      def initialize(migration, transport: nil, deadline_seconds: nil, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
         @migration = migration
         @transport = transport
+        @deadline_seconds = deadline_seconds
+        @clock = clock
       end
 
       # measure: false answers the gates only (no Docker). requested_by is
@@ -98,31 +141,80 @@ module Agents
         agent = @migration.agent
         roles = []
         whole = nil
+        runtime = []
+        carry = nil
         error = nil
         if measure
+          @deadline = @clock.call + @deadline_seconds if @deadline_seconds
           begin
             roles, whole = measure_home
+            runtime, carry = measure_runtime
+            check_time!
           rescue Portability::Error, Resources::OwnershipError => failure
             roles = []
             whole = nil
-            error = failure.message
+            runtime = []
+            carry = nil
+            error = out_of_time? ? OUT_OF_TIME : failure.message
           end
           AuditLog.create!(action: "vm_migration_dry_run", user: requested_by, account: agent.account, auditable: agent,
             data: { "roles" => roles.map { |role| role.to_h.stringify_keys }, "whole" => whole&.to_h&.stringify_keys,
+                    "runtime" => runtime.map { |volume| volume.to_h.stringify_keys },
+                    "carry" => carry&.to_h&.stringify_keys,
                     "measure_error" => error })
         end
-        Report.new(agent_id: agent.id, name: agent.name, gates: @migration.gates, roles:, whole:, measure_error: error,
-          facts: FACTS)
+        Report.new(agent_id: agent.id, name: agent.name, gates: @migration.gates, roles:, whole:, runtime:, carry:,
+          measure_error: error, facts: FACTS)
       end
 
       private
 
       def transport = @transport ||= Portability::Transport.new(@migration.agent)
 
+      def measure_runtime
+        runtime = Portability::Transport::INVENTORY_ROOTS.map do |volume|
+          found = transport.inventory(volume, **time_left(Portability::Transport::INVENTORY_SECONDS))
+          Runtime.new(volume: volume.to_s, files: found[:files], bytes: found[:bytes], present: found[:present].sort,
+            sessions: found[:sessions])
+        end
+        check_time!
+        source = runtime.sum(&:bytes)
+        budget = Plan.carry_budget_bytes
+        chaos = runtime.find { |volume| volume.volume == "chaos" }
+        refusal =
+          if (chaos.present & SESSION_DATABASES).empty? then NO_SESSIONS
+          elsif source > budget
+            "Its Chaos and state volumes hold #{human(source)}, more than the #{human(budget)} " \
+              "repository budget a move carries them through"
+          end
+        [ runtime, Carry.new(source_bytes: source, budget_bytes: budget, refusal:) ]
+      end
+
+      # The timeout for the next read: its own limit, or what is left of the
+      # deadline if that is less. Out of time already: refuse before reading.
+      def time_left(limit)
+        return { timeout: limit } unless @deadline
+
+        left = @deadline - @clock.call
+        raise Portability::Error, OUT_OF_TIME if left <= 0
+
+        { timeout: [ limit, left ].min }
+      end
+
+      def out_of_time? = @deadline && @clock.call >= @deadline
+
+      # Between local steps and once at the end: a measurement that finished
+      # after the deadline is reported out of time, never as a result.
+      def check_time!
+        raise Portability::Error, OUT_OF_TIME if out_of_time?
+      end
+
+      def human(bytes) = ActiveSupport::NumberHelper.number_to_human_size(bytes)
+
       def measure_home
         Dir.mktmpdir("resident-migration-plan-") do |dir|
           File.chmod(0700, dir)
-          measured = Portability::Archive::ROOTS.map { |role| measure_role(dir, role) }
+          measured = Portability::Archive::ROOTS.map { |role| measure_role(dir, role).tap { check_time! } }
           [ measured.map(&:first), whole(measured) ]
         end
       end
@@ -165,11 +257,12 @@ module Agents
         stage = File.join(dir, role)
         Dir.mkdir(stage, 0700)
         raw = File.join(dir, "#{role}.tar")
-        File.open(raw, "wb", 0600) { |out| transport.capture(role, out) }
+        File.open(raw, "wb", 0600) { |out| transport.capture(role, out, **time_left(60)) }
         root = "resident/#{role}"
         entries = { root => { "type" => "directory", "mode" => 0700, "size" => 0, "sha256" => nil } }
         entries.merge!(Portability::Archive.unpack(raw, stage, prefix: root))
         File.delete(raw)
+        check_time!
 
         archive = Portability::Archive.new(stage, entries)
         members = entries.select { |path, _| path.start_with?("#{root}/") }

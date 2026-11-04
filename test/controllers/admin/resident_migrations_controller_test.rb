@@ -7,7 +7,12 @@ class Admin::ResidentMigrationsControllerTest < ActionDispatch::IntegrationTest
 
     def stopped! = true
 
-    def capture(root, output)
+    def inventory(root, timeout: nil)
+      { chaos: { files: 3, bytes: 3072, present: %w[chaos.sqlite helixkit-sessions], sessions: 1 },
+        state: { files: 1, bytes: 1024, present: %w[claude], sessions: nil } }.fetch(root.to_sym)
+    end
+
+    def capture(root, output, timeout: nil)
       Gem::Package::TarWriter.new(output) do |tar|
         tar.mkdir(".", 0755)
         body = "#{root} as lived on the house"
@@ -46,6 +51,8 @@ class Admin::ResidentMigrationsControllerTest < ActionDispatch::IntegrationTest
     report = inertia_props["props"]["report"]
     assert_equal %w[identity repo work], report["roles"].map { |role| role["role"] }
     assert(report["roles"].all? { |role| role["fits"] })
+    assert_equal %w[chaos state], report["runtime"].map { |volume| volume["volume"] }
+    assert report["carry"]["ok"]
     assert AuditLog.exists?(action: "vm_migration_dry_run", auditable: @agent, user: users(:site_admin_user))
     assert_empty @agent.reload.import_stages
   end

@@ -166,12 +166,50 @@ resident can be measured. Its numbers come from a home that is still changing,
 so the copy, which is taken with the resident stopped, can differ. Every measurement is
 audited (`vm_migration_dry_run`, with the sizes and who asked).
 
+**Sessions and sign-ins (slice 3C, first checkpoint).** A move has to carry the
+Chaos volume and the state volume too, or the resident wakes on its server with
+no sessions and signed out. The Chaos volume holds `chaos.sqlite`, the shim's
+session map (`helixkit-sessions/`, keyed by the resident's uuid and the chat id,
+which the house already keeps), the second home `oauth-runtime/`, and
+`auth.json`. The state volume holds the subscription CLIs' sign-ins
+(`state/claude`, `state/antigravity`). The dry run now inventories both without
+opening a file: `Transport#inventory` runs a read-only, network-less busybox
+that prints the file count, the logical bytes, which of a fixed list of paths
+exist, and how many entries the session map has. It runs under `set -eo
+pipefail`, so a find or stat that fails (a file that vanished, a directory it
+can't read) fails the inventory, not a smaller count. Each file contributes only
+its size or a literal `x`, never its name. Anything else it prints, or any line
+printed twice, is a refusal ("Resident runtime state cannot be measured"), not a
+guess. It refuses a resident with no session database in either home
+(`chaos.sqlite` or `oauth-runtime/chaos.sqlite`, where the shim runs account
+sign-ins), since a move would start it fresh. That is presence only: this
+checkpoint does not prove the databases are whole. It also refuses one whose two volumes' source bytes exceed the VM backup
+repository's budget (`VM_BACKUP_BUDGET_BYTES`, 20 GiB by default), which is how
+the carry will travel. That size gate is conservative and is about the source.
+It counts logical bytes before compression or deduplication, and it does not
+count what the repository already holds, so the page calls it a gate, not proof
+that the carry fits, and lists repository fit under "Not checked". The carry
+itself (a restic snapshot bound to resident, generation and image, restored and
+verified on the server) and rollback over all five volumes are the next
+checkpoints. Until they land, the move still carries only the three role homes.
+
 Two facts are stated on the page and are not switches:
 
 - No live move happens until rollback after cutover is built (slice 3C). Until
   then, a move can only be undone before its server takes over.
-- The Chaos and state volumes do not move. Runtime sessions and provider sign-ins
-  start fresh on the server.
+- The Chaos and state volumes do not move yet. Until the carry lands, runtime
+  sessions and provider sign-ins would start fresh on the server.
+
+The page's measurement has one deadline, 90 seconds, under the proxy's
+120-second response timeout. Each capture and inventory gets only what is left
+of it, and that covers the whole read: the ownership and volume inspects as well
+as the copy. A docker command still running when its time is up is killed with
+its process group. The page also checks the clock after each local step and at
+the end, so a measurement that finishes late is never reported as a result.
+Running out reports "Measuring took longer than this page can wait" with the
+rake command, which keeps each read's own limit. The 30 seconds left under the
+proxy's timeout cover the audit row, rendering, and removing a timed-out read's
+container (up to 15 seconds).
 
 **The real run** ("Move it now", or `MODE=apply` on the rake task) is
 `VmMigration#move!`. It calls `stage!`, then `activate!`, with their refusals

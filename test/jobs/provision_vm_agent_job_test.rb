@@ -1325,9 +1325,22 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
   # captures them.
   class HouseTransport
 
+    # Its Chaos and state volumes, as Transport#inventory reports them:
+    # sizes and names only.
+    RUNTIME = {
+      chaos: { files: 12, bytes: 4_000_000, present: %w[chaos.sqlite helixkit-sessions oauth-runtime auth.json], sessions: 3 },
+      state: { files: 5, bytes: 1_000_000, present: %w[claude], sessions: nil }
+    }.freeze
+
+    def initialize(runtime: RUNTIME)
+      @runtime = runtime
+    end
+
     def stopped! = true
 
-    def capture(root, output)
+    def inventory(root, timeout: nil) = @runtime.fetch(root.to_sym).deep_dup
+
+    def capture(root, output, timeout: nil)
       Gem::Package::TarWriter.new(output) do |tar|
         tar.mkdir(".", 0755)
         files = { "#{root}.md" => "#{root} as lived on the house" }
@@ -1534,6 +1547,13 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_not report.no_refusal_found?, "a running resident can be measured but not moved"
       assert_equal Agents::VmMigration::Plan::FACTS, report.facts
       assert_equal Agents::Portability::Stage.max_role_bytes, report.to_h[:limits][:compressed_bytes]
+      chaos, state = report.runtime
+      assert_equal [ "chaos", 4_000_000, 3 ], [ chaos.volume, chaos.bytes, chaos.sessions ]
+      assert_equal %w[auth.json chaos.sqlite helixkit-sessions oauth-runtime], chaos.present
+      assert_equal [ "state", %w[claude] ], [ state.volume, state.present ]
+      assert report.carry.ok?
+      assert_equal 5_000_000, report.carry.source_bytes
+      assert_equal "source bytes against the repository budget", report.to_h[:carry][:gate]
 
       agent.reload
       assert_nil agent.placement
@@ -1543,9 +1563,105 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       audit = AuditLog.find_by!(action: "vm_migration_dry_run", auditable: agent)
       assert_equal @user, audit.user
       assert_equal %w[identity repo work], audit.data["roles"].map { |role| role["role"] }
+      assert_equal %w[chaos state], audit.data["runtime"].map { |volume| volume["volume"] }
+      assert_equal 5_000_000, audit.data["carry"]["source_bytes"]
 
       agent.update_columns(active: false, paused: true)
       assert plan(agent.reload).call(measure: true, requested_by: @user).no_refusal_found?
+    end
+  end
+
+  test "the dry run refuses a carry with no session database, or one past the repository budget" do
+    with_house do
+      agent = house_resident!
+      runtime = HouseTransport::RUNTIME.deep_dup
+      runtime[:chaos][:present] = %w[helixkit-sessions oauth-runtime]
+      report = plan(agent, transport: HouseTransport.new(runtime:)).call(measure: true)
+      assert_equal Agents::VmMigration::Plan::NO_SESSIONS, report.carry.refusal
+      assert report.roles.all?(&:fits?)
+      assert_not report.no_refusal_found?, "a resident that would start fresh is not a resident a move can carry"
+
+      runtime[:chaos][:present] = %w[helixkit-sessions oauth-runtime oauth-runtime/chaos.sqlite]
+      report = plan(agent, transport: HouseTransport.new(runtime:)).call(measure: true)
+      assert report.carry.ok?, "a resident whose sessions live only in the second (account sign-in) home has sessions"
+
+      report = Agents::VmMigration::Plan.stub(:carry_budget_bytes, 1_000_000) { plan(agent).call(measure: true) }
+      assert_match(/hold 4\.77 MB, more than the 977 KB repository budget/, report.carry.refusal)
+      assert_not report.no_refusal_found?
+
+      report = Agents::VmMigration::Plan.stub(:carry_budget_bytes, 5_000_000) { plan(agent).call(measure: true) }
+      assert report.carry.ok?, "the gate is source bytes at most the budget"
+      assert report.no_refusal_found?
+    end
+  end
+
+  test "a measurement with a deadline gives each read only what is left, and says so when it runs out" do
+    with_house do
+      agent = house_resident!
+      now = 0.0
+      timeouts = []
+      slow = HouseTransport.new
+      slow.define_singleton_method(:capture) do |root, output, timeout: nil|
+        timeouts << [ root, timeout ]
+        now += 40
+        HouseTransport.new.capture(root, output)
+      end
+      slow.define_singleton_method(:inventory) { |root, timeout: nil| flunk "no time was left for #{root}" }
+      report = Agents::VmMigration::Plan.new(migration(agent), transport: slow, deadline_seconds: 90, clock: -> { now })
+                                         .call(measure: true, requested_by: @user)
+      assert_equal [ [ "identity", 60 ], [ "repo", 50.0 ], [ "work", 10.0 ] ], timeouts
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME, report.measure_error
+      assert_empty report.roles
+      assert_nil report.carry
+      assert_not report.no_refusal_found?
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME,
+        AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last.data["measure_error"]
+
+      recorded = []
+      plain = HouseTransport.new
+      plain.define_singleton_method(:inventory) { |root, timeout: nil| recorded << timeout; super(root) }
+      plan(agent, transport: plain).call(measure: true)
+      assert_equal [ Agents::Portability::Transport::INVENTORY_SECONDS ] * 2, recorded, "no deadline: each read keeps its own limit"
+      assert_operator Admin::ResidentMigrationsController::MEASURE_DEADLINE_SECONDS, :<, 120,
+        "the page's deadline stays under the proxy's 120-second response timeout"
+    end
+  end
+
+  test "a measurement that finishes after its deadline is out of time, never a result" do
+    with_house do
+      agent = house_resident!
+      now = 0.0
+      late = HouseTransport.new
+      # Mira's case: the last read (the state volume) succeeds, but only
+      # after the deadline has passed.
+      late.define_singleton_method(:inventory) do |root, timeout: nil|
+        now += 100 if root.to_sym == :state
+        super(root)
+      end
+      report = Agents::VmMigration::Plan.new(migration(agent), transport: late, deadline_seconds: 90, clock: -> { now })
+                                         .call(measure: true, requested_by: @user)
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME, report.measure_error
+      assert_not report.no_refusal_found?
+      assert_empty report.runtime
+      assert_equal Agents::VmMigration::Plan::OUT_OF_TIME,
+        AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last.data["measure_error"]
+    end
+  end
+
+  test "a runtime inventory that can't be read is reported, not guessed" do
+    with_house do
+      agent = house_resident!
+      broken = HouseTransport.new
+      broken.define_singleton_method(:inventory) { |*| raise Agents::Portability::Error, "Resident runtime state cannot be measured" }
+      report = plan(agent, transport: broken).call(measure: true)
+      assert_equal "Resident runtime state cannot be measured", report.measure_error
+      assert_empty report.runtime
+      audit = AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last
+      assert_equal "Resident runtime state cannot be measured", audit.data["measure_error"]
+      assert_empty audit.data["runtime"]
+      assert_nil audit.data["carry"]
+      assert_nil report.carry
+      assert_not report.no_refusal_found?
     end
   end
 

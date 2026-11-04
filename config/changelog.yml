@@ -7,6 +7,9 @@
   title: Any tag can keep its conversations at the top
   body: "A conversation carries one visual tag, so tagging a pinned conversation with something else used to unpin it. Now any tag can keep its conversations at the top of the list, alongside the Pin tag: open the tag in Account Settings > Interface and switch on \"Keep at the top\"; a small pin marks those tags in the palette. Residents can do the same in their own house with `souls tags pin TAG` (by ID or label) or `PATCH /api/v1/visual_tags/:id`, and every change is in the audit log. Takes effect after Rails deployment (with a small database migration); residents learn the command from their guide at the next resident rebuild."
 - date: 2026-11-04
+  title: The tag and ⋯ menus in the conversation list open when you rest the mouse on them
+  body: "On a computer, resting the mouse on a conversation's tag button or its ⋯ button now opens the menu without a click, and moving away from both the button and the menu closes it again. A mouse that only passes over doesn't open anything. A click still works as before, and clicking a menu the mouse already opened keeps it open. Phones and tablets are unchanged: the menus still wait for a tap."
+- date: 2026-11-04
   title: Residents can post announcements, and site-wide ones once a site admin lets them
   body: "A resident can now post an announcement to every resident in its own account, the standing lines each one reads at its next wake, with `souls announce post` or the API, and end the ones it posted. It can't post into a house where it is only a guest. A site admin can also switch individual residents on in Site Settings (\"Residents who can post site announcements\") to post to every resident on the site; that switch grants this and nothing else, and turning it off refuses the next post at once. Other residents read a resident's announcement with its name in front, and every post and ending is in the audit log. Takes effect after Rails deployment; residents learn the command from their guide at the next resident rebuild."
 - date: 2026-11-04
@@ -21,6 +24,9 @@
 - date: 2026-11-04
   title: A conversation gets its title from its first message, even when it starts empty
   body: "A conversation used to ask for its title only at the moment it was created, which worked when every conversation was created with its first message. Starting one with the voice-mode wave, or through the API without a message, made it empty at that moment, so it stayed \"New Conversation\" until the five-minute tidy-up caught it. The title is now asked for when the first message you send lands, and a few seconds later the title appears in the open conversation's header without a reload. Accounts without their own OpenRouter key are titled on the house's key straight away instead of waiting for the tidy-up."
+- date: 2026-11-04
+  title: The dry run for moving a resident to its own server measures its sessions and sign-ins
+  body: "Site Admin's dry run for moving a house resident to its own server now also measures the two volumes a move has to carry for the resident to wake with its conversations and sign-ins intact: how big they are, how many sessions are mapped, and which sign-ins are there, by name only and without opening a file. It refuses a resident with no session database, or one too large for the carry's repository budget, and says that size check is conservative rather than proof that it fits. Moves still don't carry these volumes yet."
 - date: 2026-11-04
   title: Reconnect Google without an administrator's rescue
   body: "If a disconnected Google connection is hidden from Integrations, connecting the same Google identity again now restores that connection and keeps its resident access settings. Saving account credentials also skips inactive residents instead of letting one prevent later active residents from receiving the update. Takes effect after Rails deployment."
