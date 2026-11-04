@@ -124,7 +124,7 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
         post @path, params: input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
       end
     end
-    assert_response :unprocessable_entity
+    assert_response :bad_request
     assert_equal 'house_provider_refused', response.parsed_body.dig('error', 'code')
     refute_includes response.body, 'prefill', 'the reason is for the run record, not the resident'
     assert_equal 'house_provider_refused', run.reload.inference_refusal

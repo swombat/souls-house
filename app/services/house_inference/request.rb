@@ -32,9 +32,11 @@ module HouseInference
       # Refused here, before anything is reserved, rather than sent to be
       # refused upstream every time the runtime retries it (#725). Only for
       # routes known to refuse it, and never "fixed" by inventing a user turn.
+      # 400, not 422: Chaos treats only a 400 as an invalid request and stops;
+      # any other status is retried (kern api_bridge.rs, ChaosErr::is_retryable).
       if offering[:assistant_last] == false && assistant_prefill?(messages.last)
         raise Error.new('This house model needs the conversation to end with a user or tool message, not an assistant message.',
-          code: 'house_provider_refused', status: 422, reason: PREFILL_REASON)
+          code: 'house_provider_refused', status: 400, reason: PREFILL_REASON)
       end
       tools = input['tools']
       if tools && (!tools.is_a?(Array) || tools.any? { |tool| !tool.is_a?(Hash) || tool['type'] != 'function' })

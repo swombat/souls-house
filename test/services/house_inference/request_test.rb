@@ -77,7 +77,7 @@ class HouseInference::RequestTest < ActiveSupport::TestCase
       error = assert_raises(HouseInference::Error) do
         HouseInference::Request.build(haiku.merge('messages' => @input['messages'] + [ { 'role' => 'assistant', 'content' => content } ]), offering)
       end
-      assert_equal 422, error.status
+      assert_equal 400, error.status, 'only a 400 stops Chaos retrying'
       assert_equal 'house_provider_refused', error.code
       assert_equal HouseInference::Request::PREFILL_REASON, error.reason
       refute_includes error.reason, 'partial reply'
