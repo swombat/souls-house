@@ -35,9 +35,10 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
 
   def reboots = @enrollment.commands.where(kind: "reboot_host")
 
-  def pending_turn(state: "queued")
+  def pending_turn(state: "queued", interaction_finished: false)
     interaction = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake", session_id: "s",
-      started_at: Time.current, endpoint_url: "runner://#{@enrollment.public_id}")
+      started_at: Time.current, endpoint_url: "runner://#{@enrollment.public_id}",
+      finished_at: (Time.current if interaction_finished))
     ResidentTurn.create!(agent: @agent, agent_runtime_interaction: interaction, dispatch_id: SecureRandom.uuid,
       session_id: "s", payload: "{}", state:)
   end
@@ -58,8 +59,9 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
     assert_equal 1, reboots.count, "an open reboot is not queued twice"
   end
 
-  test "busy with a pending turn: no reboot" do
-    pending_turn
+  test "busy with a queued turn: no reboot" do
+    # The turn alone, not its interaction, keeps the resident busy.
+    pending_turn(interaction_finished: true)
     beat(required)
     assert_equal 0, reboots.count
   end
