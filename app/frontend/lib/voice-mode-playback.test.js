@@ -315,3 +315,21 @@ test('closing while a reply is being made means it never plays', async () => {
   expect(audio.play).not.toHaveBeenCalled();
   expect(player.speaking).toBe(false);
 });
+
+// Mira's review of #790 (Bob's Sol pass): the unlock clip, or the reply before,
+// ending while the next reply is still being made by Phonon must not skip it.
+test('an ended event while the next reply is still being made does not skip it', async () => {
+  const audio = fakeAudio();
+  let resolveA;
+  const player = createPlayer({ audio, urlFor: () => new Promise((resolve) => (resolveA = resolve)) });
+  unlockAudio(audio);
+  player.enqueue('A');
+  audio.end(); // the unlock clip finishing
+  expect(player.speaking).toBe(true);
+  resolveA('blob:A');
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(audio.log.at(-1)).toEqual(['play', 'blob:A']);
+  audio.end();
+  expect(player.speaking).toBe(false);
+});

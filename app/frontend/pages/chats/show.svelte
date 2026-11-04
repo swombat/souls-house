@@ -16,6 +16,8 @@
   import ChatInputArea from '$lib/components/chat/ChatInputArea.svelte';
   import TelegramBanner from '$lib/components/chat/TelegramBanner.svelte';
   import ChatDebug from '$lib/components/chat/chat-debug.svelte';
+  import { accountSpeechEngine } from '$lib/speech-source';
+  import { resetListen } from '$lib/listen';
   import ChatOverlays from '$lib/components/chat/ChatOverlays.svelte';
   import ConversationCostDrawer from '$lib/components/chat/ConversationCostDrawer.svelte';
 
@@ -86,6 +88,15 @@
       previousChatId = chat.id;
       showMessageTelemetry = false;
     }
+  });
+  // The account's voice engine (SpeechEngine) for the voice panel; a change,
+  // or another conversation, stops and forgets what Listen made.
+  let listenKey = null;
+  $effect(() => {
+    const engine = voiceMode?.speech_engine ?? 'phonon';
+    accountSpeechEngine.set(engine);
+    if (listenKey !== null && listenKey !== `${engine}|${chat.id}`) resetListen();
+    listenKey = `${engine}|${chat.id}`;
   });
 
   function sent(message) {

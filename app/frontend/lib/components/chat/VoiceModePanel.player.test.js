@@ -10,7 +10,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 // heard can be asserted step by step as before the source existed. Phonon's
 // own path is covered in speech-source.test.js and voice-mode-phonon.test.js.
 const syncThen = (value) => ({ then: (ok) => syncThen(ok ? ok(value) : value) });
-vi.mock('$lib/speech-source', () => ({
+vi.mock('$lib/speech-source', async () => ({
+  accountSpeechEngine: (await import('svelte/store')).writable('elevenlabs'),
   createSpeechSource: () => ({
     resolve: (id) => syncThen({ url: `/messages/${id}/speech`, engine: 'elevenlabs' }),
     close: () => {},

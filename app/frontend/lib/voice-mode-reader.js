@@ -1,6 +1,7 @@
 import { createPlayer } from '$lib/voice-mode-playback';
 import { createReplyPicker } from '$lib/voice-mode-replies';
-import { createSpeechSource } from '$lib/speech-source';
+import { accountSpeechEngine, createSpeechSource } from '$lib/speech-source';
+import { loadPhonon } from '$lib/phonon-engine';
 
 // The reply side of voice mode (VoiceModePanel): which replies are read
 // (the picker) and the one audio element that reads them (the player), tied
@@ -62,6 +63,44 @@ export function createReplyReader({
       interrupted = [];
       player.close();
       source.close();
+    },
+  };
+}
+
+// The panel's reader, bound to the account's engine (SpeechEngine), which it
+// follows from the store the chat page keeps. When the engine changes while
+// the panel is open, what the old one was reading stops (closing drops its
+// queue and audio) and only what arrives from then on is read, with the new
+// one. Under Phonon the model starts loading at once, so the first reply isn't
+// also its start-up; a failure shows in PhononStatus. A reply that can't be
+// read says why through onnote, and turn-taking goes on.
+export function createEngineReader(
+  messages,
+  { onchange, onnote },
+  { create = createReplyReader, preload = loadPhonon, engine = accountSpeechEngine } = {}
+) {
+  let current = null;
+  let reader = null;
+  const options = () => ({
+    messages: messages(),
+    onchange,
+    onerror: (_id, error) => onnote?.(error?.message || 'This reply could not be read aloud.'),
+  });
+  const unsubscribe = engine.subscribe((next) => {
+    if (!next || next === current) return;
+    current = next;
+    reader?.close();
+    reader = create(options());
+    if (next === 'phonon') preload().catch(() => {});
+  });
+  return {
+    take: (list) => reader.take(list),
+    speechStarted: () => reader.speechStarted(),
+    discarded: (list) => reader.discarded(list),
+    committed: (list) => reader.committed(list),
+    close() {
+      unsubscribe();
+      reader.close();
     },
   };
 }

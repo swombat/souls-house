@@ -132,7 +132,9 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
     }
   }
 
-  const onended = () => current && finish(current);
+  // Only a reply whose audio was set ends: the unlock clip (or the previous
+  // reply) finishing while the next one is still being made must not skip it.
+  const onended = () => current?.started && finish(current);
   // An error while a reply is parked means that source is dead: forget it, so
   // its resume is a fresh request rather than a play() on a broken element.
   const onerrorEvent = () => {

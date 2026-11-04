@@ -1,3 +1,4 @@
+import { writable } from 'svelte/store';
 import { messageSpeechPath, messageSpeechTextPath } from '@/routes';
 import { synthesize as phononSynthesize } from '$lib/phonon-engine';
 
@@ -19,7 +20,11 @@ export class SpeechError extends Error {
   }
 }
 
-const KEEP = 24;
+// The open conversation's account engine ('phonon' | 'elevenlabs'), set by
+// the chat page from its voice_mode prop, which follows the Account channel.
+// The voice panel and Listen stop what the old engine was reading when it
+// changes.
+export const accountSpeechEngine = writable('phonon');
 
 export async function fetchSpeechText(id, { mode = 'voice_mode', signal, request = fetch } = {}) {
   const response = await request(`${messageSpeechTextPath(id)}?for=${encodeURIComponent(mode)}`, {
@@ -31,8 +36,12 @@ export async function fetchSpeechText(id, { mode = 'voice_mode', signal, request
   return response.json();
 }
 
+// keep: how many made replies stay playable. Voice mode keeps the last 24;
+// Listen keeps every one it made until the page resets it (lib/listen.js),
+// because a player on the page may still be holding any of them.
 export function createSpeechSource({
   mode = 'voice_mode',
+  keep: limit = 24,
   fetchText = fetchSpeechText,
   synthesize = phononSynthesize,
   streamUrl = (id) => messageSpeechPath(id),
@@ -50,7 +59,7 @@ export function createSpeechSource({
       return made.get(id);
     }
     made.set(id, url);
-    while (made.size > KEEP) {
+    while (made.size > limit) {
       const [oldest, oldUrl] = made.entries().next().value;
       made.delete(oldest);
       revokeUrl(oldUrl);

@@ -2,8 +2,21 @@
   // The lines under the voice-mode controls: what the page is not hearing, the
   // last note, the reply being read, the live caption, the provisional text
   // waiting for its clean transcript, and the last sent turn.
-  let { stale = false, note = '', speaking = null, caption = '', provisional = '', heard = '' } = $props();
+  import PhononStatus from './PhononStatus.svelte';
+
+  // phonon: the account reads with Phonon, so its download/start-up/error shows here.
+  let {
+    stale = false,
+    note = '',
+    speaking = null,
+    caption = '',
+    provisional = '',
+    heard = '',
+    phonon = false,
+  } = $props();
 </script>
+
+{#if phonon}<PhononStatus testid="voice-mode-phonon-status" />{/if}
 
 {#if stale}
   <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="voice-mode-stale">

@@ -9,6 +9,7 @@
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
   import PhononStatus from '$lib/components/chat/PhononStatus.svelte';
+  import { listenState } from '$lib/listen';
   import MessageTelemetry from '$lib/components/chat/MessageTelemetry.svelte';
   import HandoffReceipts from '$lib/components/chat/HandoffReceipts.svelte';
   import SongReferenceParagraph from './SongReferenceParagraph.svelte';
@@ -159,20 +160,21 @@
 </div>
 <HandoffReceipts receipts={message.handoff_receipts || []} />
 {#if message.voice_available && !message.streaming}
+  {@const heard = $listenState[message.id]}
   <div class="mt-1">
-    {#if message._speech_url}
-      <AudioPlayer src={message._speech_url} autoplay />
+    {#if heard?.url}
+      <AudioPlayer src={heard.url} autoplay />
     {:else if message.voice_audio_url}
       <AudioPlayer src={message.voice_audio_url} />
-    {:else if message._voice_loading}
+    {:else if heard?.status === 'loading' || heard?.status === 'pending' || message._voice_loading}
       <div class="inline-flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="listen-loading">
         <Spinner size={14} class="animate-spin" />
         <span>Generating voice...</span>
       </div>
       <PhononStatus testid="listen-phonon-status" />
     {:else}
-      {#if message._voice_error}
-        <p class="text-xs text-destructive" data-testid="listen-error">{message._voice_error}</p>
+      {#if heard?.error}
+        <p class="text-xs text-destructive" data-testid="listen-error">{heard.error}</p>
       {/if}
       <button
         onclick={() => onvoice(message.id)}

@@ -17,7 +17,7 @@ kokoro-js by Joshua Lochner, running Kokoro 82M by hexgrad (Apache-2.0). They ar
 dependencies only.
 
 ---
-souls.house serves, unmodified, from /phonon-assets/<repo>/<revision>/<path>:
+This house serves, unmodified, from /phonon-assets/<repo>/<revision>/<path>:
 - blixt/phonon-31m-en-webgpu@f4635a6d phonon-31m-en.int8.bin (Gradium's phonon-31m-en,
   converted by blixt), Apache-2.0;
 - gradium/phonon-31m-en@92741c5b tokenizer.5.0.0.json, Apache-2.0;

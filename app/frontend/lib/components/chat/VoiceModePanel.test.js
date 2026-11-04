@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -10,7 +11,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 // heard can be asserted step by step as before the source existed. Phonon's
 // own path is covered in speech-source.test.js and voice-mode-phonon.test.js.
 const syncThen = (value) => ({ then: (ok) => syncThen(ok ? ok(value) : value) });
-vi.mock('$lib/speech-source', () => ({
+vi.mock('$lib/speech-source', async () => ({
+  accountSpeechEngine: (await import('svelte/store')).writable('elevenlabs'),
   createSpeechSource: () => ({
     resolve: (id) => syncThen({ url: `/messages/${id}/speech`, engine: 'elevenlabs' }),
     close: () => {},
@@ -528,19 +530,24 @@ test('a stalled upload does not hold later turns: it falls back to rough, and it
 
 test('changing the voice engine while open stops the old reader and reads on with a new one; the same engine changes nothing', async () => {
   const { createPlayer } = await import('$lib/voice-mode-playback');
+  const { accountSpeechEngine } = await import('$lib/speech-source');
+  accountSpeechEngine.set('elevenlabs');
   createPlayer.mockClear();
-  const { rerender } = render(VoiceModePanel, { ...props, speechEngine: 'phonon' });
+  render(VoiceModePanel, { ...props });
   await waitFor(() => expect(callbacks).toBeTruthy());
   const first = player;
   expect(createPlayer).toHaveBeenCalledTimes(1);
 
-  await rerender({ ...props, speechEngine: 'phonon' });
+  accountSpeechEngine.set('elevenlabs');
+  await tick();
   expect(first.log).not.toContainEqual(['close']);
   expect(createPlayer).toHaveBeenCalledTimes(1);
 
-  await rerender({ ...props, speechEngine: 'elevenlabs' });
+  accountSpeechEngine.set('phonon');
+  await tick();
   expect(first.log).toContainEqual(['close']);
   expect(createPlayer).toHaveBeenCalledTimes(2);
   expect(player).not.toBe(first);
   expect(player.log).not.toContainEqual(['close']);
+  accountSpeechEngine.set('elevenlabs');
 });

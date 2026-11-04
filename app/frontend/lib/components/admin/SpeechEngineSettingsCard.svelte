@@ -35,7 +35,7 @@
     <CardTitle>Voice engine</CardTitle>
     <CardDescription>
       What reads residents' messages aloud, for Listen and in voice mode. Phonon runs in the person's browser on WebGPU
-      and starts speaking almost at once; ElevenLabs is made on its servers and is much slower to start. There is no
+      with no round trip to a server; ElevenLabs is made on its servers, so every reply waits for them and starts much later. There is no
       fallback either way: if the engine an account is on can't speak, the person sees why.
     </CardDescription>
   </CardHeader>

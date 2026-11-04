@@ -1,7 +1,7 @@
 import { onDestroy } from 'svelte';
 import { router } from '@inertiajs/svelte';
 import { accountChatAgentAssignmentPath, accountChatParticipantPath, messagePath } from '@/routes';
-import { createSpeechSource } from '$lib/speech-source';
+import { listen, resetListen } from '$lib/listen';
 
 export function createChatActions(context, history) {
   const ui = $state({
@@ -19,10 +19,9 @@ export function createChatActions(context, history) {
     successMessage: null,
   });
   const timers = {};
-  const listenSource = createSpeechSource({ mode: 'listen' });
   onDestroy(() => {
     Object.values(timers).forEach(clearTimeout);
-    listenSource.close();
+    resetListen();
   });
   function notify(message, kind = 'errorMessage') {
     clearTimeout(timers[kind]);
@@ -78,40 +77,21 @@ export function createChatActions(context, history) {
       if (context().chat.id === chatId) notify('Failed to delete message');
     }
   }
-  // Listen (SpeechEngine, jEDyze): the server says which engine reads this
-  // resident. Phonon makes the audio here and the message gets a blob URL to
-  // play; ElevenLabs keeps its stored-audio path (POST /voice). A reason it
-  // can't be read is shown on the message, never the other engine.
-  async function requestVoice(messageId) {
-    const chatId = context().chat.id;
-    history.update(messageId, { _voice_loading: true, _voice_error: null });
-    try {
-      const answer = await listenSource.resolve(messageId);
-      if (context().chat.id !== chatId) return;
-      if (answer.engine === 'phonon') {
-        history.update(messageId, { _speech_url: answer.url, _voice_loading: false });
-        return;
-      }
-      const response = await fetch(`/messages/${messageId}/voice`, {
-        method: 'POST',
-        headers: { 'X-CSRF-Token': csrfToken(), Accept: 'application/json' },
-      });
-      if (context().chat.id !== chatId) return;
-      if (response.status === 200) {
-        const { voice_audio_url } = await response.json();
-        if (context().chat.id === chatId) history.update(messageId, { voice_audio_url, _voice_loading: false });
-      } else if (response.status !== 202) {
-        const body = await response.json().catch(() => ({}));
-        history.update(messageId, { _voice_loading: false, _voice_error: body.error || body.message || null });
-      }
-      // 202 is cleared by the next server-provided message window.
-    } catch (error) {
-      if (context().chat.id === chatId)
-        history.update(messageId, {
-          _voice_loading: false,
-          _voice_error: error?.message || 'This message could not be read aloud.',
-        });
-    }
+  // Listen (SpeechEngine, jEDyze): lib/listen.js owns the state and the
+  // audio; this supplies the ElevenLabs request for its stored audio.
+  async function postVoice(messageId, { signal } = {}) {
+    const response = await fetch(`/messages/${messageId}/voice`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken(), Accept: 'application/json' },
+      signal,
+    });
+    if (response.status === 200) return { url: (await response.json()).voice_audio_url };
+    if (response.status === 202) return { pending: true };
+    const body = await response.json().catch(() => ({}));
+    return { error: body.error || body.message || 'This message could not be read aloud.' };
+  }
+  function requestVoice(messageId) {
+    return listen(messageId, { postVoice });
   }
   return {
     ui,

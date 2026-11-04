@@ -56,7 +56,7 @@
     <Card.Title>Voice engine</Card.Title>
     <Card.Description>
       What reads residents' messages aloud, for Listen and in voice mode. Phonon runs on this device, in the browser,
-      and starts almost at once; the first time it downloads about 52 MB, which the browser then keeps (clearing the
+      with no round trip to a server; the first time it downloads about 52 MB, which the browser then keeps (clearing the
       site's data means downloading it again). It needs a browser with WebGPU. ElevenLabs makes the audio on its
       servers, with this account's own ElevenLabs key. If the engine the account is on can't speak, you see why; it
       never switches to the other one.
@@ -74,7 +74,7 @@
             checked={engine === 'phonon'}
             disabled={saving}
             onchange={() => choose('phonon')} />
-          <span><span class="font-medium">Phonon, on this device</span> (default): fast, English only.</span>
+          <span><span class="font-medium">Phonon, on this device</span> (default): no voice server in the way, English only.</span>
         </label>
         <label class="flex items-start gap-3 text-sm">
           <input

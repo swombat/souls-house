@@ -232,7 +232,6 @@
       {chatId}
       {userId}
       {messages}
-      speechEngine={voiceMode?.speech_engine ?? 'phonon'}
       onsent={(data) => onsent?.(data)}
       onerror={(message) => onerror?.(message)}
       onend={() => (voiceOpen = false)} />

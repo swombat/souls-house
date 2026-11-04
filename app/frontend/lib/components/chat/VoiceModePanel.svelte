@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
   import { voiceModeStatus } from '$lib/voice-mode';
@@ -7,13 +7,11 @@
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
-  import { createReplyReader } from '$lib/voice-mode-reader';
+  import { createEngineReader } from '$lib/voice-mode-reader';
   import { createTurnRecorder } from '$lib/voice-mode-turn-audio';
   import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
   import * as logging from '$lib/logging';
   import VoiceModeReadout from './VoiceModeReadout.svelte';
-  import PhononStatus from './PhononStatus.svelte';
-  import { loadPhonon } from '$lib/phonon-engine';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
   // once. While the person speaks, the audio streams to OpenAI's realtime
@@ -24,7 +22,7 @@
   // sent with ElevenLabs' text and the recording attached. If that fails, the
   // live text is sent, marked rough. Resident replies that arrive meanwhile are
   // read aloud in their voices; speaking interrupts them.
-  let { accountId, chatId, userId, messages = [], speechEngine = 'phonon', onsent, onerror, onend } = $props();
+  let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
 
   // starting | listening | hearing | transcribing | sending | failed; mute is separate.
   let phase = $state('starting');
@@ -43,26 +41,11 @@
   // evidence that a reply exists while the person is talking.
   const speaking = $derived(speakingId ? messages.find((m) => m.id === speakingId) : null);
 
-  // A reply that can't be read (Phonon unavailable here, no ElevenLabs key)
-  // says why in the panel; the turn-taking goes on.
-  const readerOptions = () => ({
-    messages,
+  const reader = createEngineReader(() => messages, {
     onchange: (id) => (speakingId = id),
-    onerror: (_id, error) => (note = error?.message || 'This reply could not be read aloud.'),
+    onnote: (text) => (note = text),
   });
-  let reader = createReplyReader(readerOptions());
   $effect(() => reader.take(messages));
-
-  // The account's engine changed while the panel is open: stop what the old
-  // one is reading (closing drops its queue and audio) and read only what
-  // arrives from now on with the new one.
-  let engineInUse = untrack(() => speechEngine);
-  $effect(() => {
-    if (speechEngine === engineInUse) return;
-    engineInUse = speechEngine;
-    reader.close();
-    reader = createReplyReader(readerOptions());
-  });
 
   let capture = null;
   let transcriber = null;
@@ -81,9 +64,6 @@
   const SEND_TIMEOUT_MS = 20_000;
 
   onMount(async () => {
-    // Load the voice engine while the person speaks, so the first reply isn't
-    // also its start-up. A failure shows in PhononStatus; nothing else waits.
-    if (speechEngine === 'phonon') loadPhonon().catch(() => {});
     if (!captureSupported()) {
       phase = 'failed';
       note = 'This browser cannot capture audio for voice mode.';
@@ -315,6 +295,5 @@
       <Stop size={16} weight="fill" /> End
     </button>
   </div>
-  {#if speechEngine === 'phonon'}<PhononStatus testid="voice-mode-phonon-status" />{/if}
   <VoiceModeReadout {stale} {note} {speaking} {caption} {provisional} {heard} />
 </div>
