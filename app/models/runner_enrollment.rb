@@ -239,14 +239,14 @@ class RunnerEnrollment < ApplicationRecord
     end
   end
 
-  # The current runner bundle (#593), served only to this enrollment's runner
-  # while a delivered update_runner of the current generation names exactly
-  # this digest.
+  # One of this release's runner packages (#593; birth or full, #426 3C),
+  # served only to this enrollment's runner while a delivered update_runner
+  # of the current generation names exactly this digest.
   def authorize_runner_bundle!(sha256:, nonce:, now: Time.current)
     with_lock do
       placement = require_live!
-      bundle = RunnerBundle.current
-      raise Refused.new(:runner_bundle_not_requested, 404) unless sha256.to_s == bundle.sha256
+      bundle = RunnerBundle.find(sha256)
+      raise Refused.new(:runner_bundle_not_requested, 404) unless bundle
 
       wanted = commands.where(kind: "update_runner", state: "delivered", generation: placement.generation).any? do |command|
         JSON.parse(command.payload_json.to_s)["sha256"] == sha256
