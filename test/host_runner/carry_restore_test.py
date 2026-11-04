@@ -86,6 +86,12 @@ class FakeHost:
     def docker(self, argv, timeout=None):
         self.docker_calls.append(list(argv))
         self.docker_timeouts.append(timeout)
+        if argv[:3] == ["docker", "volume", "create"]:
+            self.existing.add(argv[3])
+            self._volume_mountpoint(argv[3])
+            return True, ""
+        if argv[:5] == ["docker", "volume", "inspect", "--format", "{{.Mountpoint}}"]:
+            return True, self._volume_mountpoint(argv[5])
         if argv[:3] == ["docker", "volume", "inspect"]:
             name = argv[3]
             return (name in self.existing), ("" if name in self.existing else "no such volume")
@@ -616,6 +622,22 @@ class RunRestoreCarrySessionTest(CarryRestoreTestCase):
             self.run_restore(self.payload(shapes=shapes))  # the failure path removes the claimed volumes
         self.assertTrue(self.host.docker_timeouts)
         self.assertNotIn(None, self.host.docker_timeouts)
+
+
+    def test_mountpoint_calls_are_bounded_by_the_restore_clock(self):
+        # Mira #788 round 2: the mountpoint lookup's two docker calls must not
+        # fall back to the runner's 120 s default.
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        try:
+            self.run_restore(self.payload(shapes=shapes, deadline_seconds=cr.CLEANUP_SECONDS + 7))  # 7 s of work
+        except cr.CarryFailed:
+            pass
+        lookups = [timeout for argv, timeout in zip(self.host.docker_calls, self.host.docker_timeouts)
+                   if argv[:3] == ["docker", "volume", "create"] or argv[3:5] == ["--format", "{{.Mountpoint}}"]]
+        self.assertGreaterEqual(len(lookups), 6)  # create + inspect for both roles, then chaos for the session check
+        self.assertNotIn(None, lookups)
+        self.assertTrue(all(timeout <= 7 for timeout in lookups), lookups)
 
 
 class CheckSessionsDeadlineTest(unittest.TestCase):

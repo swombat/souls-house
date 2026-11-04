@@ -96,8 +96,20 @@ def volume_exists(host, volume, timeout=VOLUME_CALL_SECONDS):
     return ok
 
 
-def volume_is_empty(host, volume):
-    return not os.listdir(host._volume_mountpoint(volume))
+def volume_mountpoint(host, volume, timeout=VOLUME_CALL_SECONDS):
+    """The runner's _volume_mountpoint, but each docker call is bounded by
+    the restore's own clock rather than the runner's 120 s default."""
+    ok, error = host.docker(["docker", "volume", "create", volume], timeout=timeout)
+    if not ok:
+        raise CommandFailed(f"could not create volume {volume}: {error}")
+    ok, mountpoint = host.docker(["docker", "volume", "inspect", "--format", "{{.Mountpoint}}", volume], timeout=timeout)
+    if not ok or not mountpoint.startswith("/") or not os.path.isdir(mountpoint):
+        raise CommandFailed(f"volume {volume} has no local mountpoint")
+    return mountpoint
+
+
+def volume_is_empty(host, volume, timeout=VOLUME_CALL_SECONDS):
+    return not os.listdir(volume_mountpoint(host, volume, timeout=timeout))
 
 
 def remove_volume(host, volume, timeout=VOLUME_CALL_SECONDS):
@@ -272,7 +284,7 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
                       clock=time.monotonic, script=None):
     """host is the runner's ResidentHost: its backup_request transport, the
     current command id, state_dir (the marker lives there, never inside a
-    resident's volume), docker and _volume_mountpoint."""
+    resident's volume) and docker; mountpoints are resolved here, under the deadline."""
     signed_request = signed_request or host.backup_request
     if signed_request is None:
         raise BadCommand("backup transport unavailable")
@@ -316,7 +328,7 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
             if not remove_volume(host, volume, timeout=min(VOLUME_CALL_SECONDS, remaining())):
                 raise CommandFailed("could not clear an interrupted restore")
     for role, volume in zip(CARRY_ROLES, claimed):
-        _require(volume_is_empty(host, volume), f"{role} volume is not empty; restore_carry never overwrites a home")
+        _require(volume_is_empty(host, volume, timeout=min(VOLUME_CALL_SECONDS, remaining())), f"{role} volume is not empty; restore_carry never overwrites a home")
         remaining()
     # The claim is written before anything is restored, so a retry can tell
     # its own partial restore from a home it must never touch.
@@ -356,7 +368,7 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
             want, got = spec["shapes"][role], result["shapes"][role]
             if got["entries"] != want["entries"] or not hmac.compare_digest(got["shape"], want["shape"]):
                 raise CommandFailed(f"the restored {role} home does not match the house's")
-        chaos_root = host._volume_mountpoint(volume_name(name, "chaos"))
+        chaos_root = volume_mountpoint(host, volume_name(name, "chaos"), timeout=min(VOLUME_CALL_SECONDS, remaining()))
         remaining()
         result["sessions"] = check_sessions(chaos_root, deadline=work_ends, clock=clock)
         remaining()  # a check that finished late is not a result
