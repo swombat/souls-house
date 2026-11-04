@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
+  import { ConversationDraft, watchDraftPage } from '$lib/conversation-draft';
   import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import { fileDropZone } from '$lib/file-drop-zone';
@@ -79,33 +79,15 @@
     });
     draftState = draft.snapshot();
     draft.refresh();
-    const refresh = () => {
-      if (document.visibilityState === 'visible') draft.refresh();
-    };
-    const logout = (event) => {
-      if (event.key !== `${DRAFT_LOGOUT}${userId}`) return;
-      draft.suppressPersistence = true;
-      draft.dispose();
-      draftState = {
-        ...draftState,
-        content: '',
-        status: 'Signed out—reload before editing',
-        recoveries: [],
-        conflict: null,
-        locked: true,
-      };
-    };
-    window.addEventListener('storage', logout);
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    const poll = setInterval(refresh, 15_000);
+    const unwatch = watchDraftPage(draft, {
+      userId,
+      onlogout: () => {
+        const signedOut = { content: '', status: 'Signed out—reload before editing', recoveries: [], conflict: null };
+        draftState = { ...draftState, ...signedOut, locked: true };
+      },
+    });
     return () => {
-      clearInterval(poll);
-      window.removeEventListener('storage', logout);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      unwatch();
       draft.dispose();
       setPendingAudio(null);
     };
