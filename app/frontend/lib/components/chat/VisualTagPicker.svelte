@@ -91,6 +91,7 @@
 <DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
   <DropdownMenu.Trigger
     onpointerenter={menu.enter}
+    onpointermove={menu.move}
     onpointerleave={menu.leave}
     onpointerdown={menu.pointerdown}
     class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2 {current
@@ -111,7 +112,8 @@
     onpointerenter={menu.enter}
     onpointerleave={menu.leave}
     onOpenAutoFocus={menu.openAutoFocus}
-    onCloseAutoFocus={menu.closeAutoFocus}>
+    onCloseAutoFocus={menu.closeAutoFocus}
+    preventScroll={menu.lockScroll}>
     <DropdownMenu.Label>Visual tag</DropdownMenu.Label>
     <DropdownMenu.Item onclick={() => selectTag(null)}>
       <Tag size={16} class="mr-2 text-muted-foreground" />
