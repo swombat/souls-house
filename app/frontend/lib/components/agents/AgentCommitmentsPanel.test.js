@@ -15,6 +15,7 @@ const commitments = {
     {
       id: 'a',
       text: 'Check the rebuild receipt and tell Daniel',
+      summary: 'Rebuild receipt',
       status: 'scheduled',
       due_at: '2026-11-03T02:00:00Z',
       timezone: 'Europe/Madrid',
@@ -64,6 +65,7 @@ const commitments = {
 test('shows scheduled, waiting and delivered commitments with their state', () => {
   render(AgentCommitmentsPanel, { commitments, agentName: 'Lume' });
   expect(screen.getByText('Check the rebuild receipt and tell Daniel')).toBeInTheDocument();
+  expect(screen.getAllByTestId('commitment-summary').map((node) => node.textContent)).toEqual(['Rebuild receipt']);
   expect(screen.getByText(/Due 3 Nov 2026, 03:00/)).toBeInTheDocument();
   expect(screen.getByText(/Due and waiting: the resident is paused/)).toBeInTheDocument();
   expect(screen.getByText('New conversation in Ops')).toBeInTheDocument();
