@@ -17,6 +17,7 @@ require "open3"
 module RunnerUserData
 
   RUNNER_SOURCE_PATH = Rails.root.join("host-runner/souls_house_runner.py")
+  CARRY_SHAPE_PATH = Rails.root.join("host-runner/carry_shape.sh")
   HETZNER_USER_DATA_LIMIT = 32 * 1024
 
   # Declare, delete, define: loading this file twice leaves one copy.
@@ -149,7 +150,9 @@ module RunnerUserData
   def source_bundle
     io = StringIO.new("".b)
     { "souls_house_runner.py" => [ compact_source(runner_source), 0755 ],
-      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ] }.each do |name, (source, mode)|
+      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ],
+      "carry_restore.py" => [ compact_source(File.read(Rails.root.join("host-runner/carry_restore.py"))), 0644 ],
+      "carry_shape.sh" => [ File.read(CARRY_SHAPE_PATH), 0644 ] }.each do |name, (source, mode)|
       # Explicit mtime: TarWriter otherwise embeds the process's epoch.
       io.write(Gem::Package::TarHeader.new(name:, prefix: "", mode:, size: source.bytesize, mtime: 1).to_s)
       io.write(source)

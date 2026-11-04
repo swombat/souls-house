@@ -20,7 +20,8 @@ module RunnerBundle
   module_function
 
   def current
-    source = File.read(RunnerUserData::RUNNER_SOURCE_PATH) + File.read(Rails.root.join("host-runner/backup_proxy.py"))
+    source = [ RunnerUserData::RUNNER_SOURCE_PATH, *%w[backup_proxy.py carry_restore.py carry_shape.sh].map { |name| Rails.root.join("host-runner", name) } ]
+      .map { |path| File.read(path) }.join
     key = Digest::SHA256.hexdigest(source)
     @current = nil unless @current_key == key
     @current_key = key

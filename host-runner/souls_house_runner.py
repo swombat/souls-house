@@ -66,7 +66,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
-                           "update_runner", "reboot_host"})
+                           "update_runner", "reboot_host", "restore_carry"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -1178,6 +1178,52 @@ class ResidentHost:
         finally:
             if isinstance(result, dict) and result.get("unpaused") is True and result.get("tools_stopped") is True and os.path.exists(self._backup_marker()):
                 os.unlink(self._backup_marker())
+
+    # restore_carry (#426 slice 3C): a moving resident's Chaos and state homes,
+    # restored from the house's carry snapshot before its first start. The
+    # work and its refusals are in carry_restore.py.
+    def restore_carry(self, payload):
+        from carry_restore import run_restore_carry
+        if self.backup_request is None:
+            raise BadCommand("backup transport unavailable")
+        _require(isinstance(self.current_command_id, str) and
+                 COMMAND_ID_RE.fullmatch(self.current_command_id), "restore command id is missing")
+        return run_restore_carry(payload, self, signed_request=self.backup_request)
+
+    def _carry_marker_path(self, name):
+        _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
+        return os.path.join(self.state_dir, "carry", f"{name}.json")
+
+    def read_carry_marker(self, name):
+        path = self._carry_marker_path(name)
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            raise CommandFailed("unreadable carry marker")
+        return data
+
+    def write_carry_marker(self, name, data):
+        self._write_private(self._carry_marker_path(name), json.dumps(data, sort_keys=True))
+
+    def clear_carry_marker(self, name):
+        path = self._carry_marker_path(name)
+        if os.path.exists(path):
+            os.unlink(path)
+
+    def volume_exists(self, volume):
+        ok, _ = self.docker(["docker", "volume", "inspect", volume])
+        return ok
+
+    def volume_is_empty(self, volume):
+        return not os.listdir(self._volume_mountpoint(volume))
+
+    def remove_volume(self, volume):
+        if not self.volume_exists(volume):
+            return True
+        ok, _ = self.docker(["docker", "volume", "rm", volume])
+        return ok
 
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
