@@ -108,7 +108,7 @@ module Agents
       def accept_loop
         until @stopping
           socket = @server.accept
-          if remaining <= 0 || @mutex.synchronize { @handlers.count(&:alive?) >= MAX_CONNECTIONS }
+          if remaining <= 0 || @mutex.synchronize { @handlers.size >= MAX_CONNECTIONS }
             # Refused on the acceptor itself, with no thread and no drain:
             # the short answer fits the socket buffer and the socket closes
             # at once, so busy clients can't pile up workers.
@@ -116,7 +116,6 @@ module Agents
             next
           end
           @mutex.synchronize do
-            @handlers.reject! { |handler| !handler.alive? }
             @sockets << socket
             thread = Thread.new(socket) { |client| serve_connection(client) }
             thread.report_on_exception = false
@@ -143,7 +142,9 @@ module Agents
         nil
       ensure
         socket.close rescue nil
-        @mutex.synchronize { @sockets.delete(socket) }
+        # Leaves the count as it finishes, so a client arriving just after
+        # is not refused busy by a handler that is only exiting.
+        @mutex.synchronize { @sockets.delete(socket); @handlers.delete(Thread.current) }
       end
 
       def refuse_now(socket)
