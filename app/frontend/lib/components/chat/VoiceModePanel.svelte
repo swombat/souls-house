@@ -2,14 +2,16 @@
   import { onDestroy, onMount } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
-  import { stripReleasePhrase, voiceModeStatus } from '$lib/voice-mode';
+  import { voiceModeStatus } from '$lib/voice-mode';
   import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
   import { createReplyReader } from '$lib/voice-mode-reader';
-  import { createTurnRecorder, transcribeTurn, turnContent } from '$lib/voice-mode-turn-audio';
+  import { createTurnRecorder } from '$lib/voice-mode-turn-audio';
+  import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
   import * as logging from '$lib/logging';
+  import VoiceModeReadout from './VoiceModeReadout.svelte';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
   // once. While the person speaks, the audio streams to OpenAI's realtime
@@ -57,8 +59,6 @@
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
-  // Above transcribeTurn's own 30 s bound; only reached by an unbounded promise.
-  const CLEAN_BACKSTOP_MS = 35_000;
 
   onMount(async () => {
     if (!captureSupported()) {
@@ -111,15 +111,8 @@
         },
         onturn: (durationMs) => {
           reader.committed(messages);
-          const samples = recorder.take();
           // Both start now, so a slow turn doesn't delay the next one's upload.
-          const clean = samples?.length
-            ? transcribeTurn({ accountId, chatId, samples, sampleRate: TURN_RATE }).catch((error) => ({
-                text: '',
-                signedId: null,
-                error: error?.message,
-              }))
-            : Promise.resolve({ text: '', signedId: null, error: null });
+          const clean = startCleanTurn({ accountId, chatId, samples: recorder.take(), sampleRate: TURN_RATE });
           enqueue(transcriber.commit(), durationMs, clean);
         },
       });
@@ -177,54 +170,30 @@
       .catch((error) => logging.error('voice turn failed', error));
   }
 
-  // The recording's ElevenLabs text decides the turn. It is not held for the
-  // live caption: a clean result sends at once, while the caption is still
-  // only provisional (Mira, #761 review). Only when the clean text is missing
-  // does the turn wait for the live caption, to send it marked as rough.
-  // transcribeTurn bounds the clean request itself; this backstop keeps the
-  // queue moving if a caller hands in an unbounded promise.
+  // The clean (recording) text decides the turn; the live caption is shown as
+  // provisional meanwhile and sent marked rough only if the clean text is missing
+  // (see voice-mode-turn-flow.js).
   async function handleTurn(transcript, durationMs, clean) {
     if (ended) return;
     phase = 'transcribing';
     note = '';
-    let current = true;
-    const live = Promise.resolve(transcript).then(
-      (value) => ({ text: stripReleasePhrase(value).text, error: null }),
-      (error) => ({ text: '', error })
-    );
-    live.then(({ text }) => {
-      if (current && !ended) {
-        caption = '';
-        provisional = text;
-      }
+    const turn = await resolveTurn({
+      transcript,
+      clean,
+      durationMs,
+      onProvisional: (text) => {
+        if (!ended) [caption, provisional] = ['', text];
+      },
     });
-    const recording = await settleWithin(clean, CLEAN_BACKSTOP_MS, { text: '', signedId: null, error: 'timeout' });
-    if (ended) return;
-    const cleanText = stripReleasePhrase(recording?.text || '').text;
-    let liveText = '';
-    let liveError = null;
-    if (!cleanText.trim()) ({ text: liveText, error: liveError } = await live);
-    current = false;
     caption = '';
     provisional = '';
     if (ended) return;
-    const { text } = turnContent({ clean: cleanText, live: liveText });
-    if (!text) {
-      note = liveError && !recording?.signedId
-        ? liveError?.message || 'Transcription failed.'
-        : `Heard ${Math.round(durationMs / 1000)}s of sound but no words.`;
+    if (!turn.text) {
+      note = turn.note;
       phase = 'listening';
       return;
     }
-    await send(text, recording?.signedId || null);
-  }
-
-  function settleWithin(promise, ms, fallback) {
-    let timer;
-    return Promise.race([
-      Promise.resolve(promise).catch(() => fallback),
-      new Promise((resolve) => (timer = setTimeout(() => resolve(fallback), ms))),
-    ]).finally(() => clearTimeout(timer));
+    await send(turn.text, turn.signedId);
   }
 
   async function send(text, audioSignedId) {
@@ -323,30 +292,5 @@
       <Stop size={16} weight="fill" /> End
     </button>
   </div>
-  {#if stale}
-    <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="voice-mode-stale">
-      No sound is reaching the page. If the screen locked or the tab went to the background, the browser may have paused
-      the microphone; bring the page back to the front.
-    </p>
-  {/if}
-  {#if note}
-    <p class="text-xs text-muted-foreground" data-testid="voice-mode-note">{note}</p>
-  {/if}
-  {#if speaking}
-    <p class="text-sm line-clamp-4" data-testid="voice-mode-reply">
-      <span class="font-medium">{speaking.author_name || 'Reply'}:</span>
-      {speaking.content}
-    </p>
-  {/if}
-  {#if caption}
-    <p class="text-sm" data-testid="voice-mode-caption">{caption}</p>
-  {/if}
-  {#if provisional}
-    <p class="text-sm text-muted-foreground animate-pulse" data-testid="voice-mode-provisional">
-      {provisional} <span class="text-xs">(in progress)</span>
-    </p>
-  {/if}
-  {#if heard}
-    <p class="text-xs text-muted-foreground truncate" data-testid="voice-mode-heard">Sent: “{heard}”</p>
-  {/if}
+  <VoiceModeReadout {stale} {note} {speaking} {caption} {provisional} {heard} />
 </div>
