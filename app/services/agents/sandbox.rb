@@ -17,7 +17,7 @@ module Agents
     STATE_PATH = "/home/agent/state"
     IDENTITY_PATH = "/home/agent/identity"
     CHAOS_BUILT_IN_PROVIDER_IDS = %w[anthropic openai xai].freeze
-    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter house].freeze
+    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter house kimi].freeze
     SUPPORTED_CHAOS_PROVIDER_IDS = (
       CHAOS_BUILT_IN_PROVIDER_IDS + CHAOS_RUNTIME_PROVIDER_IDS
     ).freeze
@@ -26,7 +26,8 @@ module Agents
       openai: "openai",
       gemini: "gemini",
       xai: "xai",
-      openrouter: "openrouter"
+      openrouter: "openrouter",
+      kimi: "kimi"
     }.freeze
 
     attr_reader :agent

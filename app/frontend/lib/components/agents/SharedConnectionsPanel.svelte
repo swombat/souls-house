@@ -9,7 +9,11 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { authorityDescription } from '$lib/connection-authority';
 
-  let { agent, sharedConnections = [], canDecideGuestAccess = false } = $props();
+  // `waiting` renders the requests still needing a decision, which
+  // AgentIntegrationsPanel puts above the resident's own integrations so they
+  // are the first thing an owner sees (Daniel, 2026-11-02, JVvkmJ); once
+  // decided, a connection drops back to the list at the bottom.
+  let { agent, sharedConnections = [], canDecideGuestAccess = false, waiting = false } = $props();
   let deciding = $state({});
 
   // The home's answer to another house's offer (JWblqj). Approve and decline
@@ -63,16 +67,25 @@
 </script>
 
 {#if sharedConnections.length > 0}
-  <div class="space-y-3" data-testid="shared-from-other-houses">
+  <div class="space-y-3" data-testid={waiting ? 'shared-awaiting-approval' : 'shared-from-other-houses'}>
     <div>
-      <h3 class="text-lg font-semibold">Shared from other houses</h3>
-      <p class="text-sm text-muted-foreground">
-        Connections offered to {agent.name} where it is a guest. Nothing is shared until an owner here approves it.
-        {agent.name} is one mind: what it reads there it can recall anywhere it speaks, including here. Ending it stops new
-        access at once; a token already issued stays valid until it expires (about an hour for Google).
-      </p>
+      {#if waiting}
+        <h3 class="text-lg font-semibold">Access approval needed</h3>
+        <p class="text-sm text-muted-foreground">
+          Another house wants to share {sharedConnections.length === 1 ? 'a connection' : 'connections'} with {agent.name},
+          where it is a guest. Nothing is shared until an owner here approves. {agent.name} is one mind: what it reads there
+          it can recall anywhere it speaks, including here.
+        </p>
+      {:else}
+        <h3 class="text-lg font-semibold">Shared from other houses</h3>
+        <p class="text-sm text-muted-foreground">
+          Connections offered to {agent.name} where it is a guest. Nothing is shared until an owner here approves it.
+          {agent.name} is one mind: what it reads there it can recall anywhere it speaks, including here. Ending it stops
+          new access at once; a token already issued stays valid until it expires (about an hour for Google).
+        </p>
+      {/if}
     </div>
-    <div class="divide-y rounded-lg border">
+    <div class={`divide-y rounded-lg border ${waiting ? 'border-amber-500/40' : ''}`}>
       {#each sharedConnections as connection (connection.id)}
         <div class="space-y-3 p-5" data-testid="shared-connection" data-home-approval={connection.home_approval}>
           <div class="flex items-center gap-4">

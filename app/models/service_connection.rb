@@ -237,21 +237,22 @@ class ServiceConnection < ApplicationRecord
   end
 
   def runtime_credentials(agent:)
+    base = broker_origin_for(agent)
     case credential_strategy
     when "refresh_broker"
       {
-        "access_token_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
+        "access_token_endpoint" => "#{base}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
       }
     when "connector"
       # The payload holds the connector's callback secret. Residents get the
       # read endpoints only, never the payload.
       routes = Rails.application.routes.url_helpers
       endpoints = {
-        "chats_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
-        "messages_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
+        "chats_endpoint" => "#{base}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
+        "messages_endpoint" => "#{base}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
       }
       if provider == "telegram"
-        endpoints["search_endpoint"] = "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_search_path(public_id)}"
+        endpoints["search_endpoint"] = "#{base}#{routes.api_v1_service_connection_comms_search_path(public_id)}"
       end
       # POST to it to send as the owner: only for a resident the owner has
       # let send, on a provider sending is switched on for.
@@ -261,11 +262,21 @@ class ServiceConnection < ApplicationRecord
       # The payload holds a token that can write. Residents get the house's
       # read-only proxy, never the payload.
       {
-        "api_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_read_proxy_root_path(public_id)}"
+        "api_endpoint" => "#{base}#{Rails.application.routes.url_helpers.api_v1_service_connection_read_proxy_root_path(public_id)}"
       }
     else
       credential_payload_hash
     end
+  end
+
+  # Where the resident reaches the house's broker endpoints. A local resident
+  # uses the internal Docker name; a resident on its own VM can't resolve that
+  # name, so it gets the public origin, the same one RemoteRuntime gives it as
+  # SOULSHOUSE_APP_URL (Alanis, 2 Nov: every broker call failed DNS).
+  def broker_origin_for(agent)
+    return Agents::RemoteRuntime.public_origin if agent && Agents::RemoteRuntime.remote?(agent)
+
+    Agents::Config.internal_url
   end
 
   # Whether this resident may send through this connection right now (the

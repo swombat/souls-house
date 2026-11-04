@@ -156,7 +156,7 @@
         {#if expiredSubscriptions.awaiting?.length}
           <DropdownMenu.Separator />
           <DropdownMenu.GroupHeading>
-            <div class="text-xs font-normal text-muted-foreground">Awaiting your approval</div>
+            <div class="text-xs font-normal text-muted-foreground">Access approval needed</div>
           </DropdownMenu.GroupHeading>
           {#each expiredSubscriptions.awaiting as item (item.key)}
             <DropdownMenu.Item data-testid="awaiting-guest-access" onclick={() => router.visit(item.url)}>

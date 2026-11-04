@@ -394,7 +394,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def subscription_based?
-    provider_auth_mode == "oauth_account"
+    provider_auth_mode == "oauth_account" || provider == "kimi"
   end
 
   def as_debug_json
@@ -571,7 +571,16 @@ class AgentRuntimeInteraction < ApplicationRecord
   # the Runs tab says why without opening the output. Nil unless it failed.
   def failure_reason
     category = failure_category
-    RunFailureNotice::NO_REPLY_CAUSES[category] if category
+    return unless category
+
+    cause = RunFailureNotice::NO_REPLY_CAUSES[category]
+    # Why, sanitised at the gateway (#725): the provider's refusal, or the
+    # house's own check that refused it first. Only for this category; the
+    # room notice keeps the category alone.
+    if category == "house_provider_refused" && inference_refusal_reason.present?
+      cause = "#{cause} (reason: #{inference_refusal_reason})"
+    end
+    cause
   end
 
   def setup_refusal

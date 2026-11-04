@@ -43,6 +43,11 @@ module Agents
     STILL_RUNNING = "Its move can only be undone once nothing of it can be running on a server. Wait for its server " \
                     "to be released.".freeze
 
+    # One check a move must pass, and its current answer: nil when it passes.
+    Gate = Data.define(:name, :refusal) do
+      def ok? = refusal.nil?
+    end
+
     def initialize(agent, policy: VmBirthPolicy.current)
       @agent = agent
       @policy = policy
@@ -51,18 +56,19 @@ module Agents
     attr_reader :agent
 
     # nil means it may be staged now. Checked in the order a person can act
-    # on: the house first, then the resident.
+    # on: the house first, then the resident. Stops at the first refusal.
     def refusal
-      return SWITCHED_OFF unless @policy.enabled?
-      return NO_BACKUPS unless @policy.vm_backups_available?
-      return NOT_CONFIGURED unless @policy.procurement_configured?
-      return AT_LIMIT if @policy.remaining <= 0
+      gate_checks.each_value do |check|
+        reason = check.call
+        return reason if reason
+      end
+      nil
+    end
 
-      placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
-      return ALREADY_PLACED unless placement.nil? || (placement.backend == "local" && placement.state == "ready")
-      return NEVER_LIVED if agent.runtime_ready_at.nil?
-
-      Portability::Export.unavailable_reason(agent)
+    # Every gate with its current answer, in the same order, for a dry run
+    # (slice 3B). Reads only.
+    def gates
+      gate_checks.map { |name, check| Gate.new(name:, refusal: check.call) }
     end
 
     # Copies the stopped resident's home into stages and marks it as moving.
@@ -119,6 +125,20 @@ module Agents
       placement
     end
 
+    # The operator's one call (slice 3B, rake and Site Admin): stage, then
+    # admit. If admission refuses right after a fresh stage, the stage is
+    # returned to the house at once, so a refused move leaves the resident as
+    # it was (local, its runtime_ready_at back, no stages), still paused.
+    def move!(requested_by:, transport: Portability::Transport.new(agent))
+      stage!(requested_by:, transport:)
+      begin
+        activate!(requested_by:)
+      rescue Refused
+        return_to_house!(requested_by:)
+        raise
+      end
+    end
+
     # Puts a move that never finished back as it was: local placement (at the
     # next generation, which fences anything the server was sent), the
     # resident's runtime_ready_at, and no stages. It stays inactive and
@@ -146,6 +166,21 @@ module Agents
     end
 
     private
+
+    def gate_checks
+      {
+        "Resident servers switched on" => -> { SWITCHED_OFF unless @policy.enabled? },
+        "VM backups available" => -> { NO_BACKUPS unless @policy.vm_backups_available? },
+        "Server ordering configured" => -> { NOT_CONFIGURED unless @policy.procurement_configured? },
+        "Below the resident server limit" => -> { AT_LIMIT if @policy.remaining <= 0 },
+        "Runs on the house today" => lambda do
+          placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
+          ALREADY_PLACED unless placement.nil? || (placement.backend == "local" && placement.state == "ready")
+        end,
+        "Has lived on the house" => -> { NEVER_LIVED if agent.runtime_ready_at.nil? },
+        "Stopped and can be copied" => -> { Portability::Export.unavailable_reason(agent) }
+      }
+    end
 
     def migration_placement!
       placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }

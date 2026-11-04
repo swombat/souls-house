@@ -95,7 +95,7 @@
 
   const updateIntegrationSync = createDynamicSync();
   $effect(() => {
-    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
+    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections', 'shared_connections'] });
   });
   const updateProviderSync = createDynamicSync();
   $effect(() => {

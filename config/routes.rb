@@ -32,6 +32,7 @@ Rails.application.routes.draw do
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
+        post :voice_mode_fixture, to: "/test_support/e2e#voice_mode_fixture"
       end
     end
   end
@@ -349,6 +350,10 @@ Rails.application.routes.draw do
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
       resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
+      resource :migration, only: %i[show create], controller: "resident_migrations" do
+        post :measure
+        get :measure, action: :show
+      end
     end
     resources :accounts, only: [ :index ] do
       member do
