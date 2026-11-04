@@ -202,8 +202,14 @@ Two facts are stated on the page and are not switches:
 
 The page's measurement has one deadline, 90 seconds, under the proxy's
 120-second response timeout. Each capture and inventory gets only what is left
-of it, and running out reports "Measuring took longer than this page can wait"
-with the rake command, which keeps each read's own limit.
+of it, and that covers the whole read: the ownership and volume inspects as well
+as the copy. A docker command still running when its time is up is killed with
+its process group. The page also checks the clock after each local step and at
+the end, so a measurement that finishes late is never reported as a result.
+Running out reports "Measuring took longer than this page can wait" with the
+rake command, which keeps each read's own limit. The 30 seconds left under the
+proxy's timeout cover the audit row, rendering, and removing a timed-out read's
+container (up to 15 seconds).
 
 **The real run** ("Move it now", or `MODE=apply` on the rake task) is
 `VmMigration#move!`. It calls `stage!`, then `activate!`, with their refusals
