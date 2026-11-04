@@ -83,13 +83,15 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   test "the document with the real runner fits Hetzner's limit with margin" do
     # The backup module is embedded too. The reserve was 2 KiB; master sat
     # about 50 bytes inside it on 4 Nov, and the kernel-reboot runner
-    # (KernelReboot) needs ~770 more. Production config adds ~25 bytes over
-    # this render (commands_enabled; no runtime_image), so 1 KiB still leaves
-    # room for it and a little growth. The lasting fix is not embedding the
-    # runner at all (fetch by pinned digest at birth); until then, this line
-    # is where every runner change is weighed.
-    assert_operator render.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 1.kilobyte
-    assert_equal render, render
+    # (KernelReboot) needs ~770 more, so the reserve is 1 KiB. Weighed as
+    # production renders it: the house's own origin and the command channel
+    # on (no runtime_image). The lasting fix is not embedding the runner at
+    # all (fetch by pinned digest at birth, #779); until then, this line is
+    # where every runner change is weighed.
+    production = render(rails_url: "https://souls.house", commands_enabled: true)
+    assert_operator production.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 1.kilobyte
+    assert_operator render.bytesize, :<=, production.bytesize
+    assert_equal production, render(rails_url: "https://souls.house", commands_enabled: true)
   end
 
   test "drops inbound traffic except SSH and starts only the firewall, Docker and the runner" do

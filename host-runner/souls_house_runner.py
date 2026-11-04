@@ -772,7 +772,7 @@ class ResidentHost:
         # reboot_host: answered first; main() reboots once the answer is sent.
         self.reboot_required_path = reboot_required_path
         self.chaos_running = chaos_running
-        self.kernel = kernel or (lambda: {"kernel_running": os.uname().release, "kernel_installed": kernel_installed()})
+        self.kernel = kernel or (lambda: {"kernel_running": os.uname().release})
         self.reboot_requested = False
         # fetch_runner_bundle(sha256, write) streams a runner bundle from the
         # house; self_check(directory) runs the staged runner's --self-check.
@@ -1148,10 +1148,8 @@ class ResidentHost:
         before the reboot; a redelivery after it finds the remembered answer
         and never reboots twice."""
         _require(payload == {}, "reboot_host takes no arguments")
-        if not os.path.exists(self.reboot_required_path):
-            raise BadCommand("no reboot required")
-        if self.chaos_running():
-            raise BadCommand("busy: a chaos exec is running")
+        _require(os.path.exists(self.reboot_required_path), "no reboot required")
+        _require(not self.chaos_running(), "busy: a chaos exec is running")
         return {"state": "rebooting", **self.kernel()}
 
     def arm_reboot(self, command, result):
@@ -1159,7 +1157,7 @@ class ResidentHost:
         a first answer or a redelivered remembered one alike. Rechecked here:
         Debian still asks and no chaos exec has started since."""
         self.reboot_requested = (
-            command.get("kind") == "reboot_host" and result.get("outcome") == "done"
+            command.get("kind") == "reboot_host"
             and (result.get("result") or {}).get("state") == "rebooting"
             and os.path.exists(self.reboot_required_path) and not self.chaos_running())
 
@@ -1913,7 +1911,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
                 if (reboot or reboot_now)():
                     sleep(REBOOT_GRACE_SECONDS)
                 else:
-                    print("reboot failed; the house will try again", file=sys.stderr)
+                    print("reboot failed", file=sys.stderr)
                 continue
             if not handled:
                 sleep(COMMAND_IDLE_SECONDS)
@@ -1926,11 +1924,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 
 
 def reboot_now():
-    try:
-        subprocess.run(["systemctl", "reboot"], capture_output=True, timeout=60, check=True)
-        return True
-    except (OSError, subprocess.SubprocessError):
-        return False
+    return _run(["systemctl", "reboot"]) is not None
 
 
 if __name__ == "__main__":
