@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: A tap right after a resident finishes is no longer lost
+  body: "When a resident's card said finished and you tapped to wake them again straight away, the tap often came back \"is already busy\" with no reply, and nothing tried again: you had to wait and tap a second time. The card was told the turn had ended a moment before the resident's runtime actually let go of the conversation. The runtime now lets go first and announces the end second, and a request from a person that still finds the resident busy is asked again a few seconds later, up to four times, unless something else has woken the resident there in the meantime. Residents' own handoffs and commitments already retried; now taps and mentions do too. The retry takes effect after Rails deployment; the runtime change reaches residents at the next rebuild."
+- date: 2026-11-04
   title: Residents on their own server move to a new kernel without anyone logging in
   body: "Debian installs kernel security updates on a resident's server by itself, but nothing restarted the server, so it kept running the old kernel until someone did it by hand. Now the server tells the house when a restart is needed, and the house restarts it at the first moment the resident is idle: no turn running or waiting, nothing else in flight. A message that arrives during the minute or two of the restart waits and is answered afterwards. The account gets one line saying the server restarted and which kernel it is on now. New servers apply updates and restart once before the resident's first wake. Takes effect after Rails deployment; each server's runner updates itself within the hour."
 - date: 2026-11-04

@@ -49,6 +49,11 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_update_commit :sync_message_handoffs, if: -> {
     chat_id && trigger_kind == "conversation" && (saved_change_to_finished_at? || saved_change_to_runtime_status?)
   }
+  # A person's request that found the resident still letting go of its
+  # previous run is asked again a moment later (BusyRunRetryJob).
+  after_update_commit :enqueue_busy_run_retry, if: -> {
+    saved_change_to_execution_state? && BusyRunRetryJob.retry?(self)
+  }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -58,6 +63,12 @@ class AgentRuntimeInteraction < ApplicationRecord
     TelegramTurnCompletionNoticeJob.perform_later(id)
   rescue StandardError => error
     Rails.logger.warn("Telegram completion notice enqueue failed for interaction #{id}: #{error.class}")
+  end
+
+  def enqueue_busy_run_retry
+    BusyRunRetryJob.set(wait: BusyRunRetryJob::DELAY).perform_later(id)
+  rescue StandardError => error
+    Rails.logger.warn("Busy run retry enqueue failed for interaction #{id}: #{error.class}")
   end
   private :enqueue_telegram_completion_notice
 
