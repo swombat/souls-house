@@ -161,6 +161,23 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
     assert_includes line.content, "back on Linux #{NEW}"
   end
 
+  test "overlapping observers record the reboot once" do
+    beat(required)
+    answer(reboots.last)
+    command = reboots.last
+    fresh = required(kernel_running: NEW, reboot_required: false, uptime_seconds: 30)
+    travel 2.minutes do
+      @enrollment.update!(last_facts: fresh.deep_stringify_keys)
+      # Both heartbeat handlers passed the unlocked check before either wrote.
+      KernelReboot.stub(:latest_unrecorded, command) do
+        assert_difference -> { AuditLog.where(action: KernelReboot::RECORDED).count } => 1,
+                          -> { @agent.account.chats.count } => 1 do
+          2.times { KernelReboot.observe!(@enrollment) }
+        end
+      end
+    end
+  end
+
   test "a reboot that never came back is tried again after the grace" do
     beat(required)
     answer(reboots.last)

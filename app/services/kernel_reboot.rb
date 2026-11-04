@@ -98,8 +98,8 @@ module KernelReboot
   # issued, is a completed reboot. Recorded once, the owner told once, and the
   # turns that waited are dispatched.
   def observe!(enrollment, now: Time.current)
-    command = enrollment.commands.where(kind: KIND, state: "done").order(:id).last
-    return unless command && !recorded?(command)
+    command = latest_unrecorded(enrollment)
+    return unless command
 
     facts = facts_of(enrollment)
     uptime = facts["uptime_seconds"]
@@ -109,13 +109,27 @@ module KernelReboot
     return unless booted_at >= command.created_at
 
     agent = enrollment.agent_placement.agent
-    before = command.result&.dig("result", "kernel_running")
-    after = facts["kernel_running"]
-    record!(agent, command, before:, after:, booted_at:)
-    ResidentTurnDispatchJob.perform_later
+    recorded = false
+    # Heartbeats can overlap: the check above is only a cheap filter. The
+    # command's row lock serialises observers, and the recheck under it makes
+    # the record (audit row and chat line) happen once.
+    command.with_lock do
+      next if recorded?(command)
+
+      record!(agent, command, before: command.result&.dig("result", "kernel_running"),
+        after: facts["kernel_running"], booted_at:)
+      recorded = true
+    end
+    ResidentTurnDispatchJob.perform_later if recorded
   rescue StandardError => e
     Rails.logger.warn("[kernel_reboot] observe failed for #{enrollment.public_id}: #{e.class}: #{e.message}")
     nil
+  end
+
+  # The newest reboot_host answered done and not yet recorded, unlocked.
+  def latest_unrecorded(enrollment)
+    command = enrollment.commands.where(kind: KIND, state: "done").order(:id).last
+    command unless command.nil? || recorded?(command)
   end
 
   def recorded?(command)

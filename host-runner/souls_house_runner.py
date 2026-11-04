@@ -1152,8 +1152,16 @@ class ResidentHost:
             raise BadCommand("no reboot required")
         if self.chaos_running():
             raise BadCommand("busy: a chaos exec is running")
-        self.reboot_requested = True
         return {"state": "rebooting", **self.kernel()}
+
+    def arm_reboot(self, command, result):
+        """Called only once the house has accepted the answer (HTTP 200), for
+        a first answer or a redelivered remembered one alike. Rechecked here:
+        Debian still asks and no chaos exec has started since."""
+        self.reboot_requested = (
+            command.get("kind") == "reboot_host" and result.get("outcome") == "done"
+            and (result.get("result") or {}).get("state") == "rebooting"
+            and os.path.exists(self.reboot_required_path) and not self.chaos_running())
 
     def backup_resident(self, payload):
         from backup_proxy import run_backup
@@ -1794,7 +1802,11 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     result, cuts = fit_result(result)
     if cuts:
         print(f"command {command_id} result trimmed: {', '.join(cuts)}", file=sys.stderr)
-    post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
+    status, _ = post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"],
+                     opener=opener)
+    if status == 200 and hasattr(host, "arm_reboot"):
+        # A reboot only follows an answer the house has accepted.
+        host.arm_reboot(body["command"], result)
     return True
 
 
