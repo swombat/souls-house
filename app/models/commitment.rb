@@ -3,10 +3,13 @@
 # 03:00" becomes a row; CommitmentSweepJob looks every minute for rows that
 # are due, with no model call, and activates each once:
 #
-# - a house message, "Commitment due", carrying the text, the time it was
-#   due and the time it was delivered, and where it was made, posted in the
-#   conversation it was made in (the default) or in a new conversation in a
-#   chosen room of the same account;
+# - a house message, "Commitment due", carrying the commitment's headline
+#   (the resident's short summary, or one cut from the text), the time it
+#   was due and the time it was delivered, and where it was made, posted in
+#   the conversation it was made in (the default) or in a new conversation
+#   in a chosen room of the same account. The full text is not repeated
+#   there (Daniel, JVvqyJ: a notice, not the brief); the resident's run gets
+#   it in its cue, and people see it on the resident's page;
 # - a wake for the resident, the same path a knock takes: woken now, or held
 #   as a PendingWake if the resident is already responding there.
 #
@@ -48,6 +51,10 @@ class Commitment < ApplicationRecord
   DESTINATIONS = %w[same_conversation new_conversation].freeze
   TEXT_LENGTH = 20_000
   TITLE_LENGTH = 80
+  # "Five to ten words" (Daniel, JVvqyJ). Characters, not words, are what
+  # the house can hold a resident to; 100 leaves room for ten long ones.
+  SUMMARY_LENGTH = 100
+  HEADLINE_WORDS = 12
   WAKE_STATES = %w[woken held retrying delivered blocked withdrawn].freeze
   IN_CUSTODY = %w[woken held retrying].freeze
   MAX_WAKE_RUNS = 5
@@ -72,6 +79,7 @@ class Commitment < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :destination, inclusion: { in: DESTINATIONS }
   validates :text, presence: true, length: { maximum: TEXT_LENGTH }
+  validates :summary, length: { maximum: SUMMARY_LENGTH }
   validates :due_at, presence: true
   validate :due_in_future, if: -> { scheduled? && will_save_change_to_due_at? }
   validate :resident_in_source, on: :create
@@ -81,6 +89,7 @@ class Commitment < ApplicationRecord
 
   before_validation :set_account, on: :create
   before_validation :set_text_digest
+  before_validation :normalise_summary
   # Also on save, so the unique index sees a digest even when validation is
   # skipped.
   before_save :set_account, :set_text_digest
@@ -96,6 +105,25 @@ class Commitment < ApplicationRecord
 
   def self.digest_for(text)
     Digest::SHA256.hexdigest(normalise(text))
+  end
+
+  # A headline cut from a text when the resident gave no summary: its first
+  # line with any Markdown lead stripped, up to the end of the first
+  # sentence, at most HEADLINE_WORDS words. Older commitments and callers
+  # that predate the summary get this.
+  def self.headline_from(text)
+    line = text.to_s.lines.map(&:strip).find(&:present?).to_s
+    line = line.sub(/\A(?:[>#*\-+]+\s*|\d+[.)]\s+)+/, "").strip
+    sentence = line.split(/(?<=[.!?])\s+/).first.to_s
+    words = sentence.split(/\s+/)
+    headline = words.first(HEADLINE_WORDS).join(" ")
+    headline = "#{headline.sub(/[\s,;:.]+\z/, '')}…" if words.size > HEADLINE_WORDS
+    headline.truncate(SUMMARY_LENGTH, omission: "…")
+  end
+
+  # What the "Commitment due" message and a new conversation's title show.
+  def headline
+    summary.presence || self.class.headline_from(text)
   end
 
   def scheduled? = status == "scheduled"
@@ -213,7 +241,8 @@ class Commitment < ApplicationRecord
     due_local = due_at.in_time_zone(timezone)
     quoted = text.to_s.strip.lines.map { |line| "> #{line.rstrip}" }.join("\n")
     "Commitment due: you committed to this for #{due_local.strftime('%-d %b %Y %H:%M')} #{timezone}. " \
-      "The house posted it in this conversation as message #{activation_message&.to_param}.\n\n#{quoted}\n\n" \
+      "The house posted its headline (\"#{headline}\") in this conversation as message " \
+      "#{activation_message&.to_param}; the full text you wrote is here, not in that message.\n\n#{quoted}\n\n" \
       "This returns it to your attention; it is not an order. Check the current state and decide what makes sense now."
   end
 
@@ -221,6 +250,8 @@ class Commitment < ApplicationRecord
     {
       id: to_param,
       text: text,
+      summary: summary,
+      headline: headline,
       status: status,
       due_at: due_at&.iso8601,
       due_at_local: due_at&.in_time_zone(timezone)&.iso8601,
@@ -397,30 +428,28 @@ class Commitment < ApplicationRecord
   end
 
   def conversation_title
-    first_line = text.to_s.strip.lines.first.to_s.strip
-    "Commitment: #{first_line.truncate(TITLE_LENGTH - 12)}"
+    "Commitment: #{headline.truncate(TITLE_LENGTH - 12)}"
   end
 
+  # One headline and one line of facts. The full text stays with the
+  # resident (cue_text) and on the resident's page.
   def activation_text(chat, now)
     due_local = due_at.in_time_zone(timezone)
     now_local = now.in_time_zone(timezone)
-    when_line = "Due #{due_local.strftime('%-d %b %H:%M')} #{timezone}"
+    when_line = "due #{due_local.strftime('%-d %b %H:%M')} #{timezone}"
     when_line += if (now - due_at) >= 60
       ", delivered #{now_local.strftime('%-d %b %H:%M')} (late)"
     else
       ", delivered #{now_local.strftime('%H:%M')}"
     end
-    quoted = text.to_s.strip.lines.map { |line| "> #{line.rstrip}" }.join("\n")
+    made = "made #{created_at.in_time_zone(timezone).strftime('%-d %b %H:%M')}"
     origin = if chat.id == source_chat_id
-      "Made #{created_at.in_time_zone(timezone).strftime('%-d %b %H:%M')} in this conversation" +
-        (source_message ? " (message #{source_message.to_param})." : ".")
+      "#{made} here" + (source_message ? " (message #{source_message.to_param})" : "")
     else
-      "Made #{created_at.in_time_zone(timezone).strftime('%-d %b %H:%M')} in " \
-        "[#{source_chat.title_or_default}](/accounts/#{account.to_param}/chats/#{source_chat.to_param})" +
-        (source_message ? " (message #{source_message.to_param})." : ".")
+      "#{made} in [#{source_chat.title_or_default}](/accounts/#{account.to_param}/chats/#{source_chat.to_param})" +
+        (source_message ? " (message #{source_message.to_param})" : "")
     end
-    "**Commitment due.** #{agent.name} committed to this. #{when_line}.\n\n#{quoted}\n\n#{origin} " \
-      "This returns it to #{agent.name}'s attention; what to do now is #{agent.name}'s call."
+    "**Commitment due:** #{headline}\n\n#{agent.name} · #{when_line} · #{origin}"
   end
 
   # Wake the resident in the activation conversation, as a knock does
@@ -446,6 +475,10 @@ class Commitment < ApplicationRecord
     rescue ArgumentError => error
       update!(wake_state: "retrying", wake_reason: "refused: #{error.message.truncate(200)}", last_wake_at: Time.current)
     end
+  end
+
+  def normalise_summary
+    self.summary = summary.to_s.gsub(/\s+/, " ").strip.presence
   end
 
 end

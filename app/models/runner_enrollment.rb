@@ -12,6 +12,10 @@ class RunnerEnrollment < ApplicationRecord
   NONCE_RETENTION = (RunnerSignature::MAX_SKEW * 2 + 60).seconds
   HEALTHY_WITHIN = 3.minutes
   PUBLIC_KEY_BYTES = 32
+  # Birth fetches per enrollment (#779). The fetch script retries every 30 s
+  # for at most 40 minutes (~80 attempts); past this the token's one read is
+  # refused, durably, whatever the cache does.
+  MAX_BIRTH_FETCHES = 120
 
   class Refused < StandardError
 
@@ -264,6 +268,30 @@ class RunnerEnrollment < ApplicationRecord
       consume_nonce!(nonce, now)
       bundle.bytes
     end
+  end
+
+  # The bytes this enrollment's user_data pins (#779), for the VM's birth
+  # fetch. The token authorises the read and is not spent: enroll! spends it.
+  # Only before enrollment, inside the token's lifetime, for exactly the
+  # pinned digest, and never once the placement is retired.
+  def authorize_birth_bundle!(token:, sha256:, now: Time.current)
+    raise Refused.new(:revoked, 403) if revoked_at
+    authenticate_token!(token)
+    raise Refused.new(:expired, 410) if now >= expires_at
+    raise Refused.new(:already_enrolled, 409) if enrolled_at
+
+    placement = AgentPlacement.uncached { AgentPlacement.find(agent_placement_id) }
+    raise Refused.new(:placement_retired, 410) if placement.state == "retired"
+    unless birth_bundle_sha256.present? && ActiveSupport::SecurityUtils.secure_compare(sha256.to_s, birth_bundle_sha256)
+      raise Refused.new(:birth_bundle_not_pinned, 404)
+    end
+
+    bundle = RunnerBirthBundle.find_by(sha256: birth_bundle_sha256) || raise(Refused.new(:birth_bundle_not_pinned, 404))
+    counted = self.class.where(id:).where(birth_bundle_fetches: ...MAX_BIRTH_FETCHES)
+      .update_all("birth_bundle_fetches = birth_bundle_fetches + 1")
+    raise Refused.new(:too_many_birth_fetches, 429) if counted.zero?
+
+    bundle.bytes
   end
 
   def revoke!(now: Time.current)

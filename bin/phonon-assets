@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# Fetches the Phonon voice engine's files (weights, tokenizer, voice catalogue
+# and the English voices) into public/phonon-assets, each checked against the
+# sha256 pinned in config/phonon_assets.json. The browser library is patched to
+# ask /phonon-assets/<repo>/<revision>/<path> instead of huggingface.co, so a
+# person's first voice session depends on the house only. Files already present
+# with the right hash are kept. Run at image build (Dockerfile) and in dev.
+require "json"
+require "digest"
+require "fileutils"
+require "net/http"
+require "uri"
+
+root = File.expand_path("..", __dir__)
+manifest = JSON.parse(File.read(File.join(root, "config/phonon_assets.json")))
+target = File.join(root, "public/phonon-assets")
+
+def fetch(url, limit = 5)
+  raise "too many redirects for #{url}" if limit.zero?
+
+  response = Net::HTTP.get_response(URI(url))
+  case response
+  when Net::HTTPSuccess then response.body
+  when Net::HTTPRedirection then fetch(URI.join(url, response["location"]).to_s, limit - 1)
+  else raise "#{url}: HTTP #{response.code}"
+  end
+end
+
+# Apache-2.0 asks that the licence and NOTICE travel with the files.
+FileUtils.mkdir_p(target)
+%w[LICENSE NOTICE].each { |name| FileUtils.cp(File.join(root, "config/phonon", name), File.join(target, name)) }
+
+manifest.fetch("files").each do |file|
+  path = File.join(target, file["repo"], file["revision"], file["path"])
+  next if File.exist?(path) && Digest::SHA256.file(path).hexdigest == file["sha256"]
+
+  url = "https://huggingface.co/#{file["repo"]}/resolve/#{file["revision"]}/#{file["path"]}"
+  body = fetch(url)
+  digest = Digest::SHA256.hexdigest(body)
+  abort "phonon-assets: #{file["path"]} sha256 #{digest} != pinned #{file["sha256"]}" unless digest == file["sha256"]
+
+  FileUtils.mkdir_p(File.dirname(path))
+  File.binwrite(path, body)
+  puts "phonon-assets: #{file["repo"]}@#{file["revision"][0, 8]}/#{file["path"]} (#{body.bytesize} bytes)"
+end

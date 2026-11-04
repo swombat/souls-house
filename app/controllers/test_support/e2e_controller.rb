@@ -334,9 +334,16 @@ module TestSupport
     # standard voice on its residents so their replies are speakable. The e2e
     # refuses the voice session request and stubs speech audio in the browser,
     # so neither OpenAI nor ElevenLabs is reached.
+    # speech_engine: "elevenlabs" puts the account on ElevenLabs (the site
+    # offering the choice, a placeholder account key) so the stream path is
+    # exercised; otherwise the account stays on Phonon, the default.
     def voice_mode_fixture
       account = Account.find(params.fetch(:account_id))
       account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")
+      if params[:speech_engine] == "elevenlabs"
+        Setting.instance.update!(speech_engine_scope: "account_choice")
+        account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "xi-e2e-placeholder")
+      end
       # update_column: the voice_id validation asks ElevenLabs for its voice list
       # over the network, which CI has no key for and a test must not depend on.
       account.agents.active.find_each { |agent| agent.update_column(:voice_id, "TX3LPaxmHKxFdv7VOQHJ") }

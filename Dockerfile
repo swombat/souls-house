@@ -90,9 +90,14 @@ COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
 COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
 COPY host-runner/carry_restore.py host-runner/carry_restore.py
 COPY host-runner/carry_shape.sh host-runner/carry_shape.sh
+COPY host-runner/birth_fetch.py host-runner/birth_fetch.py
 COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .
+
+# Phonon's voice engine files (about 52 MB), served from /phonon-assets with
+# the year-long public cache; each is checked against its pinned sha256.
+RUN ruby bin/phonon-assets
 
 RUN mkdir -p log tmp && : > log/solid_services_production.log
 

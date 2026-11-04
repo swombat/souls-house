@@ -68,10 +68,6 @@ module Message::Streamable
     update!(tool_status: status)
   end
 
-  def used_tools?
-    tools_used.present? && tools_used.any?
-  end
-
   private
 
   def format_tool_status(tool_name, tool_args)

@@ -17,6 +17,17 @@ module Api
         @due = 2.hours.from_now.change(usec: 0)
       end
 
+      test "a resident gives a summary with its commitment" do
+        post api_v1_commitments_url, params: attrs(summary: "Rebuild receipt check"), headers: @headers, as: :json
+        assert_response :created
+        assert_equal [ "Rebuild receipt check", "Rebuild receipt check" ],
+          response.parsed_body["commitment"].values_at("summary", "headline")
+
+        post api_v1_commitments_url, params: attrs(text: "Another", summary: "x" * 101), headers: @headers, as: :json
+        assert_response :unprocessable_entity
+        assert_match(/Summary is too long/, response.parsed_body["errors"].join)
+      end
+
       test "a resident commits, lists, reschedules and cancels its own commitment" do
         post api_v1_commitments_url, params: attrs, headers: @headers, as: :json
         assert_response :created

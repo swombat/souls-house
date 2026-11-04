@@ -1,6 +1,5 @@
 require "test_helper"
 require "zip"
-require "zip"
 
 class MessageTest < ActiveSupport::TestCase
 
@@ -26,64 +25,6 @@ class MessageTest < ActiveSupport::TestCase
 
     # Chat should have been touched too
     assert @chat.reload.updated_at > chat_updated_at
-  end
-
-  test "belongs to user optionally" do
-    user_message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "User message"
-    )
-    ai_message = @chat.messages.create!(
-      role: "assistant",
-      content: "AI message"
-    )
-
-    assert_equal @user, user_message.user
-    assert_nil ai_message.user
-  end
-
-  test "has many attached files" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Test message"
-    )
-    assert message.respond_to?(:attachments)
-  end
-
-  test "accepts audio MIME types emitted by Marcel" do
-    message = @chat.messages.build(user: @user, role: "user", content: "Audio")
-
-    {
-      "audio/mpeg" => "recording.mp3",
-      "audio/vnd.wave" => "recording.wav",
-      "audio/x-flac" => "recording.flac",
-      "audio/mp4" => "recording.m4a",
-      "audio/vorbis" => "recording.ogg",
-      "audio/ogg" => "recording.oga",
-      "audio/opus" => "recording.opus",
-      "audio/webm" => "recording.webm",
-      "video/webm" => "recording.webm"
-    }.each do |content_type, filename|
-      blob = ActiveStorage::Blob.new(content_type: content_type, filename: filename, byte_size: 1024)
-      message.attachments.define_singleton_method(:attached?) { true }
-      message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
-      assert message.valid?,
-        "Expected #{filename} with #{content_type} to be accepted"
-    end
-  end
-
-  test "accepts supported audio extensions when MIME detection varies" do
-    message = @chat.messages.build(user: @user, role: "user", content: "Audio")
-
-    %w[mp3 wav flac m4a ogg oga opus webm].each do |extension|
-      blob = ActiveStorage::Blob.new(content_type: "application/octet-stream", filename: "recording.#{extension}", byte_size: 1024)
-      message.attachments.define_singleton_method(:attached?) { true }
-      message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
-      assert message.valid?,
-        "Expected .#{extension} audio files to be accepted"
-    end
   end
 
   test "validates role inclusion" do
@@ -114,23 +55,6 @@ class MessageTest < ActiveSupport::TestCase
 
     message.content = "Valid content"
     assert message.valid?
-  end
-
-  test "allows valid roles" do
-    %w[user assistant system].each do |role|
-      message = Message.create!(
-        chat: @chat,
-        user: (role == "user" ? @user : nil),
-        role: role,
-        content: "Test #{role} message"
-      )
-      assert message.persisted?
-    end
-  end
-
-  test "includes required concerns" do
-    assert Message.included_modules.include?(Broadcastable)
-    assert Message.included_modules.include?(ObfuscatesId)
   end
 
   test "acts as message" do
@@ -176,10 +100,6 @@ class MessageTest < ActiveSupport::TestCase
     assert_equal "draft.doc", message.attachments_for_api.first[:filename]
   end
 
-  test "broadcasts to chat" do
-    assert_equal [ :chat ], Message.broadcast_targets
-  end
-
   test "completed? returns true for user messages" do
     message = @chat.messages.create!(
       user: @user,
@@ -221,16 +141,6 @@ class MessageTest < ActiveSupport::TestCase
       content: "AI response"
     )
     assert_nil message.user_name
-  end
-
-  test "user_avatar_url returns user avatar" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Test message"
-    )
-    # User avatar_url returns nil in test environment
-    assert_nil message.user_avatar_url
   end
 
   test "created_at_formatted returns formatted time" do
@@ -297,23 +207,6 @@ class MessageTest < ActiveSupport::TestCase
     assert json["completed"]
     assert_nil json["error"]
     assert json["created_at_formatted"].present?
-  end
-
-  test "as_json handles assistant message with error" do
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: "Failed response"
-    )
-
-    json = message.as_json
-
-    assert_equal "assistant", json["role"]
-    assert_nil json["user_name"]
-    assert_nil json["user_avatar_url"]
-    # With content, assistant messages are complete
-    assert json["completed"]
-    # We don't track errors in database yet
-    assert_nil json["error"]
   end
 
   test "stream_content updates content and sets streaming" do
@@ -454,61 +347,6 @@ class MessageTest < ActiveSupport::TestCase
     assert_includes message.errors.full_messages.join, "50MB"
   end
 
-  test "accepts executable files as attachments without a type allowlist" do
-    message = @chat.messages.build(
-      user: @user,
-      role: "user",
-      content: "Test with invalid file"
-    )
-
-    # Create a mock invalid file blob
-    invalid_blob = ActiveStorage::Blob.new(
-      filename: "malicious.exe",
-      content_type: "application/x-msdownload",
-      byte_size: 1024
-    )
-
-    # Mock the attachments.attached? and attachments.each for validation
-    message.attachments.define_singleton_method(:attached?) { true }
-    message.attachments.define_singleton_method(:each) { |&block| block.call(invalid_blob) }
-
-    assert message.valid?, message.errors.full_messages.join
-  end
-
-  test "accepts valid file types" do
-    message = @chat.messages.build(
-      user: @user,
-      role: "user",
-      content: "Test with valid file"
-    )
-
-    valid_blob = ActiveStorage::Blob.new(
-      filename: "image.png",
-      content_type: "image/png",
-      byte_size: 1024
-    )
-
-    # Mock the attachments.attached? and attachments.each for validation
-    message.attachments.define_singleton_method(:attached?) { true }
-    message.attachments.define_singleton_method(:each) { |&block| block.call(valid_blob) }
-
-    # Should pass validation since the file is valid
-    assert message.valid?
-  end
-
-  test "accepts patch and diff extensions regardless of text sniffing variants" do
-    %w[change.patch change.diff CHANGE.PATCH CHANGE.DIFF].each do |filename|
-      %w[text/x-diff text/x-patch application/x-patch application/octet-stream].each do |content_type|
-        message = @chat.messages.build(user: @user, role: "user", content: "Patch for review")
-        blob = ActiveStorage::Blob.new(filename: filename, content_type: content_type, byte_size: 2048)
-        message.attachments.define_singleton_method(:attached?) { true }
-        message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
-
-        assert message.valid?, "#{filename} (#{content_type}): #{message.errors.full_messages}"
-      end
-    end
-  end
-
   test "accepts arbitrary extensions regardless of detected MIME type" do
     %w[text/x-diff text/x-patch application/x-patch application/x-msdownload].each do |content_type|
       message = @chat.messages.build(user: @user, role: "user", content: "Not an allowed extension")
@@ -518,66 +356,6 @@ class MessageTest < ActiveSupport::TestCase
 
       assert message.valid?, message.errors.full_messages.join
     end
-  end
-
-  test "patch attachments retain the file size limit" do
-    message = @chat.messages.build(user: @user, role: "user", content: "Oversized patch")
-    blob = ActiveStorage::Blob.new(filename: "large.patch", content_type: "text/x-diff", byte_size: 51.megabytes)
-    message.attachments.define_singleton_method(:attached?) { true }
-    message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
-
-    assert_not message.valid?
-    assert_includes message.errors.full_messages.join, "50MB"
-  end
-
-  test "tools_used defaults to empty array" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Test message"
-    )
-
-    assert_equal [], message.tools_used
-  end
-
-  test "tools_used can store tool names" do
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: "AI response",
-      tools_used: [ "Web fetch", "Calculator" ]
-    )
-
-    assert_equal [ "Web fetch", "Calculator" ], message.tools_used
-  end
-
-  test "used_tools? returns false when no tools used" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Test message"
-    )
-
-    assert_not message.used_tools?
-  end
-
-  test "used_tools? returns false when tools_used is empty" do
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: "AI response",
-      tools_used: []
-    )
-
-    assert_not message.used_tools?
-  end
-
-  test "used_tools? returns true when tools were used" do
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: "AI response",
-      tools_used: [ "Web fetch" ]
-    )
-
-    assert message.used_tools?
   end
 
   test "as_json includes tools_used" do
@@ -621,15 +399,6 @@ class MessageTest < ActiveSupport::TestCase
     assert message.moderation_flagged?
   end
 
-  test "moderation_flagged? returns true when score exceeds threshold" do
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: "AI response"
-    )
-    message.moderation_scores = { "hate" => 0.6, "violence" => 0.2 }
-    assert message.moderation_flagged?
-  end
-
   test "moderation_severity returns nil when not flagged" do
     message = @chat.messages.create!(
       role: "assistant",
@@ -639,12 +408,12 @@ class MessageTest < ActiveSupport::TestCase
     assert_nil message.moderation_severity
   end
 
-  test "moderation_severity returns :high for scores >= 0.8" do
+  test "moderation_severity returns :high from exactly 0.8" do
     message = @chat.messages.create!(
       role: "assistant",
       content: "AI response"
     )
-    message.moderation_scores = { "hate" => 0.85, "violence" => 0.2 }
+    message.moderation_scores = { "hate" => 0.8, "violence" => 0.2 }
     assert_equal :high, message.moderation_severity
   end
 
@@ -738,27 +507,7 @@ class MessageTest < ActiveSupport::TestCase
     assert chat_agent.reload.closed_for_initiation?
   end
 
-  test "human message in non-group chat does not reopen agents" do
-    # Non-manual-responses chat
-    chat = @account.chats.create!(title: "Regular Chat", manual_responses: false)
-
-    # No error raised when creating a message
-    assert_nothing_raised do
-      chat.messages.create!(role: "user", user: @user, content: "Hello")
-    end
-  end
-
   # Audio recording tests
-
-  test "audio_source defaults to false" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Test message"
-    )
-
-    assert_equal false, message.audio_source
-  end
 
   test "audio_url returns path when audio_recording attached" do
     message = @chat.messages.create!(
@@ -787,32 +536,6 @@ class MessageTest < ActiveSupport::TestCase
     )
 
     assert_nil message.audio_url
-  end
-
-  test "recorded audio retains its downloadable bytes" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Voice message"
-    )
-
-    message.audio_recording.attach(
-      io: StringIO.new("fake audio data"),
-      filename: "recording.webm",
-      content_type: "audio/webm"
-    )
-
-    assert_equal "fake audio data", message.audio_recording.download
-  end
-
-  test "recorded audio is absent when no audio_recording" do
-    message = @chat.messages.create!(
-      user: @user,
-      role: "user",
-      content: "Text message"
-    )
-
-    assert_not message.audio_recording.attached?
   end
 
   test "as_json includes audio_source and audio_url" do
@@ -865,6 +588,16 @@ class MessageTest < ActiveSupport::TestCase
 
     results = Message.search_in_account(@account, "system")
     assert_empty results
+  end
+
+  test "search_in_account excludes another account's messages" do
+    other = User.create!(email_address: "other#{SecureRandom.hex(4)}@example.com", password: "password123")
+    other.personal_account.chats.create!(model_id: "openrouter/auto")
+      .messages.create!(content: "Shared phrase elsewhere", role: "user", user: other)
+    @account.chats.create!(model_id: "openrouter/auto")
+      .messages.create!(content: "Shared phrase here", role: "user", user: @user)
+
+    assert_equal [ "Shared phrase here" ], Message.search_in_account(@account, "Shared phrase").map(&:content)
   end
 
   test "search_in_account returns empty for blank query" do

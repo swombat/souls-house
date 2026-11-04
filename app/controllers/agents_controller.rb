@@ -222,6 +222,12 @@ class AgentsController < ApplicationController
   def voice_props
     {
       current_voice_id: @agent.voice_id,
+      current_phonon_voice: @agent.phonon_voice,
+      default_phonon_voice: PhononVoices.default.id,
+      # The engine this resident speaks with now (SpeechEngine), and whether
+      # the account is on ElevenLabs at all: the ElevenLabs list is shown then.
+      speech_engine: SpeechEngine.for(current_account, @agent).engine,
+      account_speech_engine: SpeechEngine.account_engine(current_account),
       voices_path: voices_account_agent_path(current_account, @agent),
       update_path: voice_account_agent_path(current_account, @agent),
       preview_path_template: voice_preview_account_agent_path(current_account, @agent, voice_id: "VOICE_ID")

@@ -28,13 +28,13 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: nil)
 
     get account_chat_path(@account, @chat)
-    assert_equal({ "offered" => true, "available" => false, "reason" => "no_transcription_key" },
+    assert_equal({ "offered" => true, "available" => false, "reason" => "no_transcription_key", "speech_engine" => "phonon" },
       inertia_props.dig("props", "voice_mode"))
 
     @account.update!(openai_api_key: "sk-account")
     @inertia_props = nil
     get account_chats_path(@account)
-    assert_equal({ "offered" => true, "available" => true, "reason" => nil }, inertia_props.dig("props", "voice_mode"))
+    assert_equal({ "offered" => true, "available" => true, "reason" => nil, "speech_engine" => "phonon" }, inertia_props.dig("props", "voice_mode"))
 
     Setting.instance.update!(voice_mode_scope: "disabled")
     @inertia_props = nil

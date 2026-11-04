@@ -3,8 +3,9 @@
 # Procurement (#191) calls this with its planned operation's enrollment and
 # the one-time token, then sends the result in its single create request. The
 # token is the only secret in the document: no provider token, no resident
-# key, no Rails secret. The runner source is embedded, so the document itself
-# pins which runner the VM will run.
+# key, no Rails secret. The runner is not embedded (#779): the document pins
+# its digest, and a small fetch script installs exactly those bytes from the
+# house (RunnerBirthBundle) before the runner first starts.
 #
 # The VM opens no inbound runner port. Host input is dropped except loopback,
 # established traffic, ICMP and SSH; SSH is for Daniel's offline break-glass
@@ -18,6 +19,11 @@ module RunnerUserData
 
   RUNNER_SOURCE_PATH = Rails.root.join("host-runner/souls_house_runner.py")
   CARRY_SHAPE_PATH = Rails.root.join("host-runner/carry_shape.sh")
+  FETCH_SOURCE_PATH = Rails.root.join("host-runner/birth_fetch.py")
+  FETCH_SCRIPT = "/usr/local/lib/souls-house-runner/birth_fetch.py".freeze
+  # Must stay under Agents::VmBirthPolicy::BIRTH_DEADLINE: the house fails a
+  # placement that never enrolls; the script only stops retrying.
+  FETCH_GIVE_UP_AFTER = 40.minutes
   HETZNER_USER_DATA_LIMIT = 32 * 1024
 
   # Declare, delete, define: loading this file twice leaves one copy.
@@ -59,11 +65,35 @@ module RunnerUserData
     WantedBy=multi-user.target
   UNIT
 
+  # Retries every 30 s until the pinned runner is installed; the script exits
+  # 3 once FETCH_GIVE_UP_AFTER has passed since its first attempt, across
+  # reboots. On success it starts the runner itself.
+  FETCH_UNIT = <<~UNIT.freeze
+    [Unit]
+    Description=House host runner fetch (the bundle this VM's user_data pins)
+    After=network-online.target
+    Wants=network-online.target
+    StartLimitIntervalSec=0
+
+    [Service]
+    Type=oneshot
+    ExecStart=/usr/bin/python3 #{FETCH_SCRIPT}
+    TimeoutStartSec=300
+    Restart=on-failure
+    RestartSec=30
+    RestartPreventExitStatus=3
+
+    [Install]
+    WantedBy=multi-user.target
+  UNIT
+
   SYSTEMD_UNIT = <<~UNIT.freeze
     [Unit]
     Description=House host runner (enrollment, telemetry and, when enabled, resident commands)
     After=network-online.target docker.service
     Wants=network-online.target
+    # Skipped, not failed, until the fetch has installed a verified runner.
+    ConditionPathExists=/opt/souls-house-runner/current/bundle.sha256
 
     [Service]
     ExecStart=/usr/bin/python3 /opt/souls-house-runner/souls_house_runner.py
@@ -84,11 +114,13 @@ module RunnerUserData
 
   def render(enrollment:, token:, rails_url:, runtime_image: nil, commands_enabled: false)
     validate_origin!(rails_url)
+    birth_bundle_sha256 = RunnerBirthBundle.pin!(enrollment)
 
     config = {
       "rails_url" => rails_url,
       "runner_id" => enrollment.public_id,
       "enrollment_token" => token,
+      "birth_bundle_sha256" => birth_bundle_sha256,
       "runtime_image" => runtime_image,
       # Only a literal true enables the command channel (#238).
       "commands_enabled" => (true if commands_enabled == true)
@@ -102,14 +134,13 @@ module RunnerUserData
       # first starts, and the resident first wakes, on the new kernel.
       "package_upgrade" => true,
       "package_reboot_if_required" => true,
-      "packages" => %w[docker.io docker-cli python3-cryptography nftables xz-utils],
+      "packages" => %w[docker.io docker-cli python3-cryptography nftables],
       "write_files" => [
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),
         file("/etc/systemd/system/souls-house-runner.service", SYSTEMD_UNIT, "0644"),
-        # AST-checked comment/format compaction plus XZ keeps the complete
-        # runner inside Hetzner's cap without dropping executable behavior.
-        file("/opt/souls-house-runner/source.tar.xz", compressed_source_bundle, "0600", encode: true),
+        file("/etc/systemd/system/souls-house-runner-fetch.service", FETCH_UNIT, "0644"),
+        file(FETCH_SCRIPT, compact_source(File.read(FETCH_SOURCE_PATH)), "0700", encode: :gzip),
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
       "runcmd" => [
@@ -118,11 +149,12 @@ module RunnerUserData
         # wipe the house rules.
         %w[systemctl mask nftables.service],
         %w[systemctl daemon-reload],
-        %w[tar -xJf /opt/souls-house-runner/source.tar.xz -C /opt/souls-house-runner],
-        %w[rm /opt/souls-house-runner/source.tar.xz],
         %w[systemctl enable --now souls-house-firewall],
         %w[systemctl enable --now docker],
-        %w[systemctl enable --now souls-house-runner]
+        # Enabled for later boots; its condition skips it until installed.
+        %w[systemctl enable souls-house-runner],
+        # --no-block: the fetch may retry for minutes; runcmd must not wait.
+        %w[systemctl enable --now --no-block souls-house-runner-fetch]
       ]
     }
 
@@ -148,7 +180,7 @@ module RunnerUserData
   end
 
   # Two packages from one tree (#426 3C). `birth` (the runner and the backup
-  # proxy) is what cloud-init embeds, and what every runner, old or new, can
+  # proxy) is what a new VM fetches at birth (#779), and what every runner, old or new, can
   # unpack. `full` adds the carry modules a migration's restore needs; only a
   # runner already on a birth package of this release accepts it.
   BIRTH_FILES = %w[souls_house_runner.py backup_proxy.py].freeze
@@ -214,9 +246,7 @@ module RunnerUserData
     output
   end
 
-  # The runner is embedded gzipped: Hetzner caps user_data at 32 KiB, and the
-  # runner alone is near that once base64'd. A fixed gzip mtime keeps the
-  # document identical for identical source.
+  # A fixed gzip mtime keeps the document identical for identical source.
   def file(path, content, permissions, encode: false)
     entry = { "path" => path, "permissions" => permissions, "owner" => "root:root" }
     case encode

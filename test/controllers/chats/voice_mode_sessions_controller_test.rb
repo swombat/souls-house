@@ -34,7 +34,8 @@ class Chats::VoiceModeSessionsControllerTest < ActionDispatch::IntegrationTest
     post account_chat_voice_mode_session_path(@account, @chat), as: :json
 
     assert_response :forbidden
-    assert_equal({ "offered" => false, "available" => false, "reason" => "account_disabled" }, response.parsed_body["voice_mode"])
+    assert_equal({ "offered" => false, "available" => false, "reason" => "account_disabled" },
+      response.parsed_body["voice_mode"].slice("offered", "available", "reason"))
   end
 
   test "refused when there is no OpenAI key to use" do

@@ -30,7 +30,7 @@ class PackagedRunnerTest(unittest.TestCase):
             target.mkdir()
             # The full package (#426 3C): the birth pair plus the carry
             # modules, compacted the same way.
-            for name in ("souls_house_runner.py", "backup_proxy.py", "carry_restore.py"):
+            for name in ("souls_house_runner.py", "backup_proxy.py", "carry_restore.py", "birth_fetch.py"):
                 # As RunnerUserData.compact_source: docstrings removed (#593).
                 original = strip_docstrings(ast.parse((root / "host-runner" / name).read_text()))
                 compact = ast.unparse(original) + "\n"

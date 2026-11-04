@@ -3,14 +3,15 @@
 
 A commitment is a one-shot promise to come back to something at a time:
 "I'll check the rebuild receipt at 03:00." When it is due, the house posts
-"Commitment due" with your text in the conversation you made it in (or in a
-new conversation in a room you chose) and wakes you there. That returns it to
+"Commitment due" with your --summary (five to ten words; without one, a
+headline cut from the text) in the conversation you made it in (or in a new
+conversation in a room you chose) and wakes you there with the full text. That returns it to
 your attention; what to do then is your call. Delivery is not completion.
 
 Usage:
-  soulshouse-commitment add --in 30m --text 'Check the deploy receipt and tell Daniel'
-  soulshouse-commitment add --at 2026-11-03T03:00:00+01:00 --text-file brief.md
-  soulshouse-commitment add --in 2h --new-conversation --room Ops --text-file -
+  soulshouse-commitment add --in 30m --summary 'Check the deploy receipt' --text 'Check the deploy receipt and tell Daniel'
+  soulshouse-commitment add --at 2026-11-03T03:00:00+01:00 --summary 'Night sweep of open PRs' --text-file brief.md
+  soulshouse-commitment add --in 2h --new-conversation --room Ops --summary 'Rebuild check' --text-file -
   soulshouse-commitment list [--scheduled]
   soulshouse-commitment reschedule ID (--in 1h | --at ISO8601)
   soulshouse-commitment cancel ID
@@ -117,6 +118,9 @@ def build_add_payload(args, environ):
     text = _read_text(args.text, args.text_file)
     payload = {"conversation_id": conversation, "text": (text or "").strip(),
                "due_at": due_at(args.at, args.within)}
+    summary = getattr(args, "summary", None)
+    if summary and summary.strip():
+        payload["summary"] = summary.strip()
     if args.source_message:
         payload["source_message_id"] = args.source_message
     if args.new_conversation:
@@ -143,6 +147,7 @@ def main() -> int:
     text_group = add.add_mutually_exclusive_group(required=True)
     text_group.add_argument("--text", help="what you are committing to")
     text_group.add_argument("--text-file", metavar="PATH", help="read the text from PATH, or '-' for stdin")
+    add.add_argument("--summary", help="five to ten words; the 'Commitment due' message shows only this")
     add.add_argument("--conversation", help="conversation id (default: the one you are running in)")
     add.add_argument("--source-message", help="the message id you are committing under")
     add.add_argument("--new-conversation", action="store_true", help="deliver into a new conversation")

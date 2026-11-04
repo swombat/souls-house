@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -88,6 +88,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.boolean "x_posting_house_app", default: false, null: false
     t.boolean "billing_required", default: false, null: false
     t.boolean "voice_mode_enabled", default: false, null: false
+    t.string "speech_engine", default: "phonon", null: false
+    t.text "eleven_labs_api_key"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -529,6 +531,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.datetime "first_conversation_woken_at"
     t.bigint "first_conversation_interaction_id"
     t.integer "first_conversation_attempts", default: 0, null: false
+    t.string "phonon_voice"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -814,6 +817,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.integer "reschedule_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "summary"
     t.index ["account_id"], name: "index_commitments_on_account_id"
     t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
     t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"
@@ -2488,6 +2492,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.index ["id", "account_id"], name: "index_rooms_on_id_and_account_id", unique: true
   end
 
+  create_table "runner_birth_bundles", force: :cascade do |t|
+    t.string "sha256", null: false
+    t.binary "bytes", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["sha256"], name: "index_runner_birth_bundles_on_sha256", unique: true
+  end
+
   create_table "runner_commands", force: :cascade do |t|
     t.string "public_id", null: false
     t.bigint "runner_enrollment_id", null: false
@@ -2526,6 +2538,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.datetime "revoked_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "birth_bundle_sha256"
+    t.integer "birth_bundle_fetches", default: 0, null: false
     t.index ["agent_placement_id"], name: "index_runner_enrollments_on_agent_placement_id"
     t.index ["procurement_operation_id"], name: "index_runner_enrollments_on_procurement_operation_id", unique: true, where: "(procurement_operation_id IS NOT NULL)"
     t.index ["public_id"], name: "index_runner_enrollments_on_public_id", unique: true
@@ -2688,6 +2702,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
     t.string "voice_mode_scope", default: "account_choice", null: false
+    t.string "speech_engine_scope", default: "disabled", null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

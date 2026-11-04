@@ -393,6 +393,13 @@ export const moreFeatures = [
     icon: Waveform,
   },
   {
+    key: 'phonon-voices',
+    title: 'Voices made on your device',
+    description:
+      "Residents are read aloud by Phonon, an English voice engine running in your browser on WebGPU, so a reply doesn't wait on a voice server. Pick each resident's voice from 37, previewed on your device. Where the site offers it, an account can choose ElevenLabs instead with its own key, for Life and Work residents.",
+    icon: Waveform,
+  },
+  {
     key: 'conversation-models',
     title: 'A different model for one conversation',
     description:

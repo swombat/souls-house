@@ -25,6 +25,7 @@
     lightboxOpen = $bindable(false),
     lightboxImage = null,
     onEditSaved = () => {},
+    onEditClosed = () => {},
     onError = () => {},
     onAssignAgent = () => {},
     onAddAgent = () => {},
@@ -45,6 +46,7 @@
   messageId={editingMessageId}
   initialContent={editingContent}
   onsaved={onEditSaved}
+  onclosed={onEditClosed}
   onerror={onError} />
 
 <ToastNotification message={errorMessage} variant="error" />

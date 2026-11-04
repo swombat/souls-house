@@ -7,7 +7,7 @@
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
-  import { createReplyReader } from '$lib/voice-mode-reader';
+  import { createEngineReader } from '$lib/voice-mode-reader';
   import { createTurnRecorder } from '$lib/voice-mode-turn-audio';
   import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
   import * as logging from '$lib/logging';
@@ -41,7 +41,10 @@
   // evidence that a reply exists while the person is talking.
   const speaking = $derived(speakingId ? messages.find((m) => m.id === speakingId) : null);
 
-  const reader = createReplyReader({ messages, onchange: (id) => (speakingId = id) });
+  const reader = createEngineReader(() => messages, {
+    onchange: (id) => (speakingId = id),
+    onnote: (text) => (note = text),
+  });
   $effect(() => reader.take(messages));
 
   let capture = null;
