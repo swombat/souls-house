@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accessSummary, attentionLabel, connectionTitle, startsOpen } from './connection-summary';
+import { accessSummary, attentionLabel, connectionTitle, serviceLine, startsOpen } from './connection-summary';
 
 const resident = (name, enabled) => ({ id: name, name, enabled });
 
@@ -46,5 +46,47 @@ describe('connectionTitle', () => {
   it('uses the Google identity, and the label otherwise', () => {
     expect(connectionTitle({ provider: 'google_workspace', identity: 'a@b.c', label: 'Google' })).toBe('a@b.c');
     expect(connectionTitle({ provider: 'porkbun', label: 'Porkbun (swombat)' })).toBe('Porkbun (swombat)');
+  });
+
+  it('names the account when the label is only the service', () => {
+    const telegram = {
+      provider: 'telegram',
+      provider_name: 'Telegram',
+      label: 'Telegram',
+      identity: 'Daniel Tenner @danieltenner',
+    };
+    expect(connectionTitle(telegram)).toBe('@danieltenner');
+    expect(connectionTitle({ ...telegram, identity: 'Daniel Tenner' })).toBe('Daniel Tenner');
+    expect(
+      connectionTitle({ provider: 'whatsapp', provider_name: 'WhatsApp', label: 'WhatsApp', identity: 'Daniel Tenner' })
+    ).toBe('Daniel Tenner');
+    expect(connectionTitle({ provider: 'whatsapp', provider_name: 'WhatsApp', label: 'WhatsApp' })).toBe('WhatsApp');
+  });
+});
+
+describe('serviceLine', () => {
+  it('says which service a row is, under the account', () => {
+    expect(
+      serviceLine({
+        provider: 'ghost',
+        provider_name: 'Ghost',
+        label: 'danieltenner.com',
+        identity: 'https://danieltenner.com',
+      })
+    ).toBe('Ghost');
+    expect(
+      serviceLine({
+        provider: 'telegram',
+        provider_name: 'Telegram',
+        label: 'Telegram',
+        identity: 'Daniel Tenner @danieltenner',
+      })
+    ).toBe('Telegram');
+    expect(serviceLine({ provider: 'xero', provider_name: 'Xero', label: 'daniel@granttree.co.uk' })).toBe('Xero');
+  });
+
+  it('stays out of the way when the title already is the service name', () => {
+    expect(serviceLine({ provider: 'whatsapp', provider_name: 'WhatsApp', label: 'WhatsApp' })).toBeNull();
+    expect(serviceLine({ provider: 'x', label: 'Something' })).toBeNull();
   });
 });

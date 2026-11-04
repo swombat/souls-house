@@ -4,8 +4,37 @@
 
 const MAX_NAMES = 3;
 
+// The row's title names the account, not the service: an icon alone does not
+// say which service it is, so the service name goes underneath (serviceLine).
+// When the label is only the service's own name (Telegram, WhatsApp), the
+// identity the service reported is the account. A Telegram identity reads
+// "Name @handle"; the handle is the account.
 export function connectionTitle(connection) {
-  return connection.provider === 'google_workspace' ? connection.identity : connection.label;
+  const identity = (connection.identity || '').trim();
+  if (connection.provider === 'google_workspace' && identity) return identity;
+
+  const label = (connection.label || '').trim();
+  const labelIsService = !label || sameName(label, connection.provider_name);
+  if (labelIsService && identity) {
+    if (connection.provider === 'telegram') {
+      const handle = identity.match(/(^|\s)(@\w+)\s*$/);
+      if (handle) return handle[2];
+    }
+    return identity;
+  }
+  return label || connection.provider_name || connection.provider;
+}
+
+// The service in small letters under the title, or null when the title
+// already is exactly the service's name.
+export function serviceLine(connection) {
+  const name = (connection.provider_name || '').trim();
+  if (!name || sameName(name, connectionTitle(connection))) return null;
+  return name;
+}
+
+function sameName(a, b) {
+  return Boolean(a && b) && a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 // A guest's row counts once its home has approved it (effective); a request
