@@ -53,6 +53,7 @@
 <DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
   <DropdownMenu.Trigger
     onpointerenter={menu.enter}
+    onpointermove={menu.move}
     onpointerleave={menu.leave}
     onpointerdown={menu.pointerdown}
     class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2"
@@ -67,7 +68,8 @@
     onpointerenter={menu.enter}
     onpointerleave={menu.leave}
     onOpenAutoFocus={menu.openAutoFocus}
-    onCloseAutoFocus={menu.closeAutoFocus}>
+    onCloseAutoFocus={menu.closeAutoFocus}
+    preventScroll={!menu.viaHover}>
     <DropdownMenu.Item onclick={toggleArchive}>
       <Archive size={14} class="mr-2 shrink-0" weight="duotone" />
       {chat.archived ? 'Unarchive' : 'Archive'}

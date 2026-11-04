@@ -1,4 +1,4 @@
-// Opens a dropdown menu when a mouse rests on its trigger, and closes it again
+// Opens a dropdown menu when a mouse moves onto its trigger and rests there, and closes it again
 // when the mouse leaves both the trigger and the menu. Desktop only: a pointer
 // that can hover (a mouse or trackpad) and a mouse event. Touch and pen never
 // open on hover, so a phone keeps tap-to-open.
@@ -7,6 +7,11 @@
 // clicked menu: Escape, a choice or a click outside close it). Keyboard focus
 // stays where it was on a hover open and a hover close, so moving the mouse
 // over the list doesn't pull focus into menus.
+//
+// A hover-opened menu must not lock the page: bits-ui's scroll lock sets
+// pointer-events: none on <body>, so the trigger stops being under the mouse,
+// the next small move reads as leaving, and the menu flickers shut and open.
+// Pass `preventScroll={!menu.viaHover}` to the menu content.
 export const HOVER_QUERY = '(hover: hover) and (pointer: fine)';
 
 function canHover(event) {
@@ -17,7 +22,8 @@ function canHover(event) {
 
 export class HoverMenu {
   open = $state(false);
-  viaHover = false;
+  // Reactive: the menu content reads it to skip the page-wide scroll lock.
+  viaHover = $state(false);
   #closingViaHover = false;
   #openTimer = null;
   #closeTimer = null;
@@ -36,9 +42,20 @@ export class HoverMenu {
     this.#closeTimer = null;
   }
 
-  // On the trigger and on the menu content.
+  // On the trigger and on the menu content: the mouse is back, so a pending
+  // hover close is cancelled. Arriving alone never opens a menu: a drawer or
+  // list can slide a trigger under a mouse that hasn't moved, and that must
+  // not pop a menu over whatever the person was about to click.
   enter = (event) => {
     if (!canHover(event)) return;
+    clearTimeout(this.#closeTimer);
+    this.#closeTimer = null;
+  };
+
+  // On the trigger: a real movement of the mouse over it starts the open timer.
+  move = (event) => {
+    if (!canHover(event)) return;
+    if (!event.movementX && !event.movementY) return; // synthetic, layout-driven
     clearTimeout(this.#closeTimer);
     this.#closeTimer = null;
     if (this.open || this.#openTimer) return;

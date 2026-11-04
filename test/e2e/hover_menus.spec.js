@@ -27,6 +27,16 @@ test('chat list menus open on hover on desktop', async ({ page, request }, testI
     await tagButtons.first().hover();
     const pin = page.getByRole('menuitem', { name: 'Pin', exact: true });
     await expect(pin).toBeVisible();
+    // A real hand keeps moving a little. The open menu must not lock the page's
+    // pointer events, or the button reads those moves as leaving and the menu flickers.
+    const box = await tagButtons.first().boundingBox();
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.move(box.x + box.width / 2 + (i % 2 ? 2 : -2), box.y + box.height / 2);
+      await page.waitForTimeout(120);
+    }
+    await page.waitForTimeout(400);
+    await expect(pin).toBeVisible();
+    expect(await page.evaluate(() => getComputedStyle(document.body).pointerEvents)).not.toBe('none');
     await page.screenshot({ path: testInfo.outputPath('tag-hover.png') });
     await pin.hover();
     await page.waitForTimeout(400); // past the close delay: the menu must hold
@@ -38,6 +48,13 @@ test('chat list menus open on hover on desktop', async ({ page, request }, testI
     // ⋯ menu: hover opens it; moving away closes it; the next row's opens too.
     const actions = nav.getByRole('button', { name: /^Actions for / });
     await actions.first().hover();
+    await expect(page.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
+    const dots = await actions.first().boundingBox();
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.move(dots.x + dots.width / 2 + (i % 2 ? 1 : -1), dots.y + dots.height / 2);
+      await page.waitForTimeout(120);
+    }
+    await page.waitForTimeout(400);
     await expect(page.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('actions-hover.png') });
     await page.mouse.move(900, 600);

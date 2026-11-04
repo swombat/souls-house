@@ -16,6 +16,8 @@ class TestPointerEvent extends MouseEvent {
   constructor(type, init = {}) {
     super(type, init);
     this.pointerType = init.pointerType || '';
+    Object.defineProperty(this, 'movementX', { value: init.movementX || 0 });
+    Object.defineProperty(this, 'movementY', { value: init.movementY || 0 });
   }
 }
 const realPointerEvent = window.PointerEvent;
@@ -30,7 +32,11 @@ afterEach(() => {
   delete window.matchMedia;
 });
 
-const enter = (el, pointerType = 'mouse') => fireEvent.pointerEnter(el, { pointerType });
+// A mouse arriving: enter, then a real move over the button.
+const enter = async (el, pointerType = 'mouse') => {
+  await fireEvent.pointerEnter(el, { pointerType });
+  await fireEvent.pointerMove(el, { pointerType, movementX: 3, movementY: 1 });
+};
 const leave = (el, pointerType = 'mouse') => fireEvent.pointerLeave(el, { pointerType });
 
 async function settle(ms) {
@@ -104,3 +110,18 @@ for (const [name, Component, props, trigger, item] of [
     expect(button).toHaveAttribute('aria-expanded', 'false');
   });
 }
+
+test('a button that slides under a still mouse does not open its menu', async () => {
+  pointer(true);
+  render(VisualTagPicker, { chat, accountId: 'house', tags });
+  const button = screen.getByRole('button', { name: /^Change visual tag/ });
+  // Layout moves fire enter and a synthetic move with no movement.
+  await fireEvent.pointerEnter(button, { pointerType: 'mouse' });
+  await fireEvent.pointerMove(button, { pointerType: 'mouse' });
+  await settle(400);
+  expect(button).toHaveAttribute('aria-expanded', 'false');
+  // The person then moves the mouse: now it opens.
+  await fireEvent.pointerMove(button, { pointerType: 'mouse', movementX: 2 });
+  await settle(200);
+  expect(button).toHaveAttribute('aria-expanded', 'true');
+});
