@@ -7,12 +7,12 @@ class VmMigrateRakeTest < ActiveSupport::TestCase
   # Stands in for the read-only Docker capture of the resident's volumes.
   class HouseTransport
 
-    def inventory(root)
+    def inventory(root, timeout: nil)
       { chaos: { files: 3, bytes: 3072, present: %w[chaos.sqlite helixkit-sessions], sessions: 1 },
         state: { files: 1, bytes: 1024, present: %w[claude], sessions: nil } }.fetch(root.to_sym)
     end
 
-    def capture(root, output)
+    def capture(root, output, timeout: nil)
       Gem::Package::TarWriter.new(output) do |tar|
         tar.mkdir(".", 0755)
         body = "#{root} as lived on the house"

@@ -35,12 +35,14 @@ module Agents::Portability
       true
     end
 
-    def capture(root, output)
+    # timeout bounds this one copy (a caller with its own deadline passes
+    # what is left of it).
+    def capture(root, output, timeout: 60)
       resources.verify_existing!
       volume = resources.volumes.fetch(root.to_sym)
       _, _, status = Open3.capture3("docker", "volume", "inspect", volume)
       raise Error, "A required resident volume is missing" unless status.success?
-      stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly", IMAGE, "tar", "cf", "-", "-C", "/data", "." ], output: output)
+      stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly", IMAGE, "tar", "cf", "-", "-C", "/data", "." ], output: output, timeout:)
     end
 
     # The runtime volumes a move must carry (#426 slice 3C), measured without
@@ -52,15 +54,23 @@ module Agents::Portability
       chaos: %w[chaos.sqlite helixkit-sessions oauth-runtime oauth-runtime/chaos.sqlite auth.json config.toml],
       state: %w[claude antigravity tailscale]
     }.freeze
+    # set -e with pipefail: a failed find or stat (a file vanishing, a
+    # directory it can't read) fails the whole inventory instead of being
+    # counted as a smaller home. Each file prints only its size (%s) or a
+    # literal x, never its name, so no filename reaches the output.
     INVENTORY_SCRIPT = <<~'SH'.freeze
-      cd /data || exit 3
+      set -eo pipefail
+      cd /data
       find . -type f -exec stat -c %s {} + | awk 'BEGIN { n = 0; s = 0 } { n++; s += $1 } END { printf "files %d\nbytes %.0f\n", n, s }'
       for p in "$@"; do if [ -e "./$p" ]; then echo "has $p"; fi; done
-      if [ -d ./helixkit-sessions ]; then echo "sessions $(find ./helixkit-sessions -type f | wc -l)"; fi
+      if [ -d ./helixkit-sessions ]; then
+        count=$(find ./helixkit-sessions -type f -exec stat -c x {} + | wc -l)
+        echo "sessions $count"
+      fi
     SH
     INVENTORY_SECONDS = 300
 
-    def inventory(root)
+    def inventory(root, timeout: INVENTORY_SECONDS)
       root = root.to_sym
       raise Error, "Unsupported runtime volume" unless INVENTORY_ROOTS.include?(root)
 
@@ -72,27 +82,29 @@ module Agents::Portability
       probes = INVENTORY_PROBES.fetch(root)
       output = StringIO.new
       stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly",
-               IMAGE, "sh", "-c", INVENTORY_SCRIPT, "sh", *probes ], output:, timeout: INVENTORY_SECONDS)
+               IMAGE, "sh", "-c", INVENTORY_SCRIPT, "sh", *probes ], output:, timeout:)
       self.class.parse_inventory(output.string, probes)
     end
 
     # Strict: anything but the lines the script prints is a refusal, never a
     # guess.
     def self.parse_inventory(text, probes)
+      refuse = -> { raise Error, "Resident runtime state cannot be measured" }
       result = { files: nil, bytes: nil, present: [], sessions: nil }
       text.each_line(chomp: true) do |line|
         case line
-        when /\Afiles (\d+)\z/ then result[:files] = Integer(Regexp.last_match(1), 10)
-        when /\Abytes (\d+)\z/ then result[:bytes] = Integer(Regexp.last_match(1), 10)
-        when /\Asessions\s+(\d+)\z/ then result[:sessions] = Integer(Regexp.last_match(1), 10)
+        when /\A(files|bytes|sessions)\s+(\d+)\z/
+          key = Regexp.last_match(1).to_sym
+          refuse.call unless result[key].nil?
+          result[key] = Integer(Regexp.last_match(2), 10)
         when /\Ahas (\S+)\z/
-          raise Error, "Resident runtime state cannot be measured" unless probes.include?(Regexp.last_match(1))
-
-          result[:present] << Regexp.last_match(1)
-        else raise Error, "Resident runtime state cannot be measured"
+          probe = Regexp.last_match(1)
+          refuse.call unless probes.include?(probe) && result[:present].exclude?(probe)
+          result[:present] << probe
+        else refuse.call
         end
       end
-      raise Error, "Resident runtime state cannot be measured" if result[:files].nil? || result[:bytes].nil?
+      refuse.call if result[:files].nil? || result[:bytes].nil?
 
       result
     end

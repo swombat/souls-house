@@ -64,8 +64,13 @@ module Agents
         def to_h = { source_bytes:, budget_bytes:, gate: "source bytes against the repository budget", ok: ok?, refusal: }
       end
 
-      NO_SESSIONS = "Its Chaos home has no session database, so there are no sessions a move could carry. " \
-                    "A move would start it fresh, and moves don't do that.".freeze
+      NO_SESSIONS = "Its Chaos home has no session database (neither chaos.sqlite nor oauth-runtime/chaos.sqlite), " \
+                    "so there are no sessions a move could carry. A move would start it fresh, and moves don't do " \
+                    "that.".freeze
+      # Either home's database: the shim runs account sign-ins in the second
+      # home (agent-runtime/trigger_shim.py, OAUTH_CHAOS_HOME). Presence only;
+      # this checkpoint does not prove the databases are whole.
+      SESSION_DATABASES = %w[chaos.sqlite oauth-runtime/chaos.sqlite].freeze
 
       # What the dry run does not check, so "no refusal found" is never read
       # as "the copy will succeed".
@@ -116,10 +121,18 @@ module Agents
       # Per-member tar overhead Export counts.
       MEMBER_OVERHEAD = 1024
 
+      OUT_OF_TIME = "Measuring took longer than this page can wait. Measure it from a shell instead: " \
+                    "bin/rails \"vm:migrate[<agent id>]\" (a dry run by default).".freeze
+
       # The transport is built only when a measurement reads the volumes.
-      def initialize(migration, transport: nil)
+      # deadline_seconds bounds the whole measurement (the page passes one
+      # under its proxy's response timeout); each capture and inventory gets
+      # only what is left of it. nil (the rake task) keeps their own limits.
+      def initialize(migration, transport: nil, deadline_seconds: nil, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
         @migration = migration
         @transport = transport
+        @deadline_seconds = deadline_seconds
+        @clock = clock
       end
 
       # measure: false answers the gates only (no Docker). requested_by is
@@ -132,6 +145,7 @@ module Agents
         carry = nil
         error = nil
         if measure
+          @deadline = @clock.call + @deadline_seconds if @deadline_seconds
           begin
             roles, whole = measure_home
             runtime, carry = measure_runtime
@@ -140,7 +154,7 @@ module Agents
             whole = nil
             runtime = []
             carry = nil
-            error = failure.message
+            error = out_of_time? ? OUT_OF_TIME : failure.message
           end
           AuditLog.create!(action: "vm_migration_dry_run", user: requested_by, account: agent.account, auditable: agent,
             data: { "roles" => roles.map { |role| role.to_h.stringify_keys }, "whole" => whole&.to_h&.stringify_keys,
@@ -158,7 +172,7 @@ module Agents
 
       def measure_runtime
         runtime = Portability::Transport::INVENTORY_ROOTS.map do |volume|
-          found = transport.inventory(volume)
+          found = transport.inventory(volume, **time_left(Portability::Transport::INVENTORY_SECONDS))
           Runtime.new(volume: volume.to_s, files: found[:files], bytes: found[:bytes], present: found[:present].sort,
             sessions: found[:sessions])
         end
@@ -166,13 +180,26 @@ module Agents
         budget = Plan.carry_budget_bytes
         chaos = runtime.find { |volume| volume.volume == "chaos" }
         refusal =
-          if chaos.present.exclude?("chaos.sqlite") then NO_SESSIONS
+          if (chaos.present & SESSION_DATABASES).empty? then NO_SESSIONS
           elsif source > budget
             "Its Chaos and state volumes hold #{human(source)}, more than the #{human(budget)} " \
               "repository budget a move carries them through"
           end
         [ runtime, Carry.new(source_bytes: source, budget_bytes: budget, refusal:) ]
       end
+
+      # The timeout for the next read: its own limit, or what is left of the
+      # deadline if that is less. Out of time already: refuse before reading.
+      def time_left(limit)
+        return { timeout: limit } unless @deadline
+
+        left = @deadline - @clock.call
+        raise Portability::Error, OUT_OF_TIME if left <= 0
+
+        { timeout: [ limit, left ].min }
+      end
+
+      def out_of_time? = @deadline && @clock.call >= @deadline
 
       def human(bytes) = ActiveSupport::NumberHelper.number_to_human_size(bytes)
 
@@ -222,7 +249,7 @@ module Agents
         stage = File.join(dir, role)
         Dir.mkdir(stage, 0700)
         raw = File.join(dir, "#{role}.tar")
-        File.open(raw, "wb", 0600) { |out| transport.capture(role, out) }
+        File.open(raw, "wb", 0600) { |out| transport.capture(role, out, **time_left(60)) }
         root = "resident/#{role}"
         entries = { root => { "type" => "directory", "mode" => 0700, "size" => 0, "sha256" => nil } }
         entries.merge!(Portability::Archive.unpack(raw, stage, prefix: root))
