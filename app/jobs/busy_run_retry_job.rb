@@ -5,12 +5,25 @@
 # and tap a second time (YDbggj, 4 Nov 2026).
 #
 # A resident's handoff and a commitment retry their own busy runs
-# (MessageHandoff#retry_after_busy!, Commitment#follow_run!). This does the
-# same for a run a person asked for: a few seconds later it wakes the
-# resident again, once, as an ordinary run that reads everything posted since
-# its last one. It stands down if any later run of the resident here exists
-# (that run reads the same transcript, and a later busy one carries its own
-# retry), and gives up after MAX_ATTEMPTS busy answers in a row.
+# (MessageHandoff#retry_after_busy!, Commitment#follow_run!). This hands a
+# busy run a person asked for back to the queue it would have joined had the
+# house known the resident was busy: a PendingWake, carrying the run's
+# original sources, not just its provenance label (Mira, #781):
+#
+# - a run released from a wake: that wake's sources;
+# - a run reserved for a message (MessageDispatch): the message;
+# - a run a person reserved by tapping: that person (requested_by_user).
+#
+# The wake then decides as every held request does. Its sources must still
+# stand at release and at claim (a discarded message, a removed member, a
+# paused resident or a closed room stops it, before or after a run is
+# reserved), and it is dropped as nothing_new only when a run that reached
+# the runtime has read past everything posted, not because some later row
+# exists. Requests coalesce into one open wake, so a handoff's own retry and
+# this one never wake the resident twice for the same messages.
+#
+# Re-queued a few seconds later, so the run still letting go has gone; gives
+# up after MAX_ATTEMPTS busy answers in a row inside WINDOW.
 class BusyRunRetryJob < ApplicationJob
 
   DELAY = 5.seconds
@@ -29,43 +42,50 @@ class BusyRunRetryJob < ApplicationJob
   def perform(interaction_id)
     busy = AgentRuntimeInteraction.find_by(id: interaction_id)
     return unless busy && self.class.retry?(busy)
+    return if consecutive_busy(busy) > MAX_ATTEMPTS
 
     chat = busy.chat
     agent = busy.agent
-    chat.with_lock do
-      return if superseded?(busy)
-      return if consecutive_busy(busy) > MAX_ATTEMPTS
-      return unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
-      return if agent.reload.paused?
+    requests = sources_of(busy)
+    return if requests.empty?
 
-      begin
-        chat.trigger_agent_response!(agent, wake_source_kinds: busy.wake_source_kinds)
-      rescue Chat::AlreadyResponding
-        # The run still letting go is now visible as active again, or another
-        # run has started; either way its end releases what is waiting, and a
-        # run started now reads the person's message.
-        nil
-      rescue Agent::RuntimeAvailability::Unavailable, ArgumentError
-        nil
+    chat.with_lock do
+      requests.each do |request|
+        PendingWake.queue!(chat: chat, agent: agent, requested_by: request.delete(:requested_by), **request)
       end
     end
   end
 
   private
 
-  # A later run of this resident in this room reads everything the busy one
-  # would have; a later busy run has a retry of its own.
-  def superseded?(busy)
-    AgentRuntimeInteraction.where(chat_id: busy.chat_id, agent_id: busy.agent_id, trigger_kind: "conversation")
-      .where("id > ?", busy.id).exists?
+  # What gave the busy run its authority, as PendingWake.queue! arguments.
+  # Standing is not judged here: the wake judges it, at release and at claim.
+  def sources_of(busy)
+    if (wake = busy.released_pending_wake)
+      wake.sources.includes(:message, :user, :requester_agent).filter_map do |source|
+        request = { requested_by: wake.requested_by, wake_source_kinds: source.wake_source_kinds.presence }
+        if source.kind == "message"
+          request.merge(message: source.message) if source.message
+        elsif source.requester_agent || source.user
+          request.merge(user: source.user, requester_agent: source.requester_agent)
+        end
+      end
+    elsif (message = busy.message_dispatch&.message)
+      [ { requested_by: "a message from #{message.user ? ResidentFacingName.for(message.user) : message.author_name}",
+          message: message, wake_source_kinds: busy.wake_source_kinds.presence } ]
+    elsif (user = busy.requested_by_user)
+      [ { requested_by: ResidentFacingName.for(user), user: user, wake_source_kinds: busy.wake_source_kinds.presence } ]
+    else
+      []
+    end
   end
 
   # How many busy answers in a row this resident has given here, ending with
   # this one, within the window.
   def consecutive_busy(busy)
-    recent = AgentRuntimeInteraction.where(chat_id: busy.chat_id, agent_id: busy.agent_id, trigger_kind: "conversation")
+    AgentRuntimeInteraction.where(chat_id: busy.chat_id, agent_id: busy.agent_id, trigger_kind: "conversation")
       .where("id <= ? AND created_at > ?", busy.id, WINDOW.ago).order(id: :desc).pluck(:execution_state)
-    recent.take_while { |state| state == "busy" }.size
+      .take_while { |state| state == "busy" }.size
   end
 
 end
