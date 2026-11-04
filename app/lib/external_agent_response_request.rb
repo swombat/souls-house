@@ -110,7 +110,11 @@ class ExternalAgentResponseRequest
     end
     # A queued resident turn (202) is acknowledged by ResidentTurnCompletion.
     SafeguardRoll.acknowledge_conversation!(@safeguard_roll.completion_context, result) if @safeguard_roll
-    if auth_mode == "oauth_account"
+    if provider == "kimi"
+      if (text = KimiCodeNotice.text(result.dig(:body, "error_kind")))
+        chat.messages.create!(role: "assistant", agent: agent, content: "_#{text}_")
+      end
+    elsif auth_mode == "oauth_account"
       case result.dig(:body, "error_kind")
       when "auth_expired"
         surface_subscription_auth_failure!
@@ -126,6 +130,9 @@ class ExternalAgentResponseRequest
   def trigger_payload
     payload = memory_trigger_payload
     payload = payload.merge(roll_session: true) if @safeguard_roll
+    # The runtime's silence clock speeds up for a spoken turn (every ~20 s
+    # rather than at two minutes); it can't see the transcript, so say so.
+    payload = payload.merge(voice_mode: true) if voice_mode_wake?
     payload
   end
 
@@ -290,8 +297,12 @@ class ExternalAgentResponseRequest
     if wake_source_kinds.include?("unknown") && wake_source_kinds.any? { |kind| kind.in?(%w[human peer scheduled]) }
       parts << "At least one coalesced request has no recorded source."
     end
-    parts << VOICE_MODE_NOTE if human_wake? && latest_human_turn_spoken?
+    parts << VOICE_MODE_NOTE if voice_mode_wake?
     parts.join(" ")
+  end
+
+  def voice_mode_wake?
+    human_wake? && latest_human_turn_spoken?
   end
 
   # The latest human turn was spoken in the conversation's voice mode
@@ -299,7 +310,9 @@ class ExternalAgentResponseRequest
   # scheduled wake can't tell whether the person is still there, so it gets
   # nothing. It states the historical fact and a likelihood, never that the
   # reply will be played: playback is not something this text can promise.
-  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading, and your reply may be read aloud in your voice (about the first 900 characters). Answer briefly in plain spoken sentences, without lists, links or code; if something longer belongs in the conversation, post it and say so in a sentence."
+  # On a phone, silence reads as nothing happening, so the note also asks for
+  # an acknowledgement and spoken-size progress lines while the work runs.
+  VOICE_MODE_NOTE = "The latest human message was spoken in voice mode, so the person may be listening rather than reading, and your reply may be read aloud in your voice (about the first 900 characters). Answer briefly in plain spoken sentences, without lists, links or code; if something longer belongs in the conversation, post it and say so in a sentence. If answering will take more than a few seconds of looking things up or thinking, first post a one-sentence acknowledgement such as \"Let me look at that\", before or alongside your first tool call. While you work, post a one- or two-sentence update about every twenty seconds, about twenty seconds to say aloud: what you are doing or have found, in spoken words, no lists. Then post the answer as its own short message."
 
   def latest_human_turn_spoken?
     # reorder: the messages association carries its own ascending order, and an

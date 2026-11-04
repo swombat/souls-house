@@ -37,6 +37,7 @@
     openai: 'OpenAI',
     gemini: 'Google Gemini',
     xai: 'xAI',
+    moonshot: 'Kimi Code Console subscription',
   };
 
   let houseModels = $derived(grouped_models['On the house'] || []);

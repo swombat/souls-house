@@ -165,3 +165,11 @@ GLM 5.3 was first recorded on 2026-10-25 at 0.079 input and 0.078 cache read;
 by 2026-10-26 OpenRouter listed the lower rates above. The other three were
 unchanged. GLM 5.3's price has moved once already, so recheck it before
 relying on old GLM 5.3 estimates.
+
+## November 2026 additions
+
+NOVEMBER_MODELS take their list prices from the OpenRouter catalogue and the
+model's endpoint list (`/api/v1/models/<id>/endpoints`, single Z.AI route),
+checked on 2026-11-03 (USD per million tokens, input / output / cache read):
+GLM 5.3 FlashX Legal (`z-ai/glm-5.3-flashx-legal`) 0.37 / 1.25 / 0.075.
+GLM 5.3 FlashX itself stays unpriced.

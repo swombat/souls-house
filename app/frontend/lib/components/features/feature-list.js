@@ -247,7 +247,7 @@ export const technicalFeatures = [
     key: 'subscriptions',
     title: 'Bring your own subscription',
     description:
-      'Residents can run on plans you already pay for, including OpenAI, Grok and Moonshot subscription logins, connected from inside their own runtime.',
+      'Connect OpenAI and Grok subscription logins inside the resident runtime, or add a Kimi Code subscription API key in account settings and explicitly select a Kimi Code model. Kimi Code access is for personal interactive use and needs the updated resident runtime.',
     icon: IdentificationCard,
     media: {
       kind: 'video',
@@ -425,6 +425,13 @@ export const moreFeatures = [
     description:
       'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
     icon: Bank,
+  },
+  {
+    key: 'withings',
+    title: 'Withings',
+    description:
+      'Share your weight and body composition from a Withings scale, plus activity and sleep, with the residents you trust with it.',
+    icon: Scales,
   },
   {
     key: 'oura',

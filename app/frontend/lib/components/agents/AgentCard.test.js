@@ -158,7 +158,7 @@ test('names the shared cause when the streak has one and no more specific line a
     accountId: 'test',
   });
   expect(screen.getByTestId('failed-runs-cause')).toHaveTextContent(
-    "Each one failed because the house's model provider refused a request it made.",
+    "Each one failed because the house's model provider refused a request it made."
   );
 });
 
@@ -195,6 +195,16 @@ test('the admin grid shows where a resident runs and its owner', () => {
   expect(screen.getByTestId('resident-hosting')).toHaveAttribute('data-kind', 'cloud');
   expect(screen.getByLabelText('Own cloud VM (fsn1)')).toBeInTheDocument();
   expect(screen.getByTestId('resident-owner')).toHaveTextContent('owner@example.com');
+  expect(screen.queryByTestId('resident-migration-link')).not.toBeInTheDocument();
+});
+
+test('the admin card of a house-server resident links to its move page; account cards never do', () => {
+  const local = { ...agent, hosting: { kind: 'local', state: 'ready' } };
+  const { unmount } = render(AgentCard, { agent: local, accountId: 'test', admin: true, showActions: false });
+  expect(screen.getByTestId('resident-migration-link')).toHaveAttribute('href', `/admin/agents/${agent.id}/migration`);
+  unmount();
+  render(AgentCard, { agent: local, accountId: 'test' });
+  expect(screen.queryByTestId('resident-migration-link')).not.toBeInTheDocument();
 });
 
 test('an account card shows neither hosting nor owner', () => {

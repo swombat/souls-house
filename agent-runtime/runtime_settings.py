@@ -25,6 +25,8 @@ DEFAULTS = {
                    "env_key": "GEMINI_API_KEY", "wire_api": "chat_completions"},
         "openrouter": {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
                        "env_key": "OPENROUTER_API_KEY", "wire_api": "chat_completions"},
+        "kimi": {"name": "Kimi Code", "base_url": "https://api.kimi.ai/coding/v1",
+                 "env_key": "MOONSHOT_API_KEY", "wire_api": "responses"},
     },
 }
 

@@ -31,7 +31,8 @@
     <CardTitle>Voice mode</CardTitle>
     <CardDescription>
       Spoken conversations: an empty composer offers a wave button, and what the person says is transcribed and sent to
-      the residents as messages. Transcription needs an OpenAI key that reaches the account (its own, or the house's).
+      the residents as messages, each with its recording attached. Turn detection needs an OpenAI key that reaches the
+      account (its own, or the house's); the transcript itself comes from ElevenLabs, as for voice notes.
       An account's own choice is kept while the site overrides it.
     </CardDescription>
   </CardHeader>
