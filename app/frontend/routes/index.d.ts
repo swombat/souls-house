@@ -3470,6 +3470,18 @@ export const messageSpeechPath: ((
 
 /**
  * Generates rails route to
+ * /messages/:message_id/speech_text(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechTextPath: ((
+  messageId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /messages/:message_id/voice(.:format)
  * @param {any} messageId
  * @param {object | undefined} options

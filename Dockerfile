@@ -92,6 +92,10 @@ COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .
 
+# Phonon's voice engine files (about 52 MB), served from /phonon-assets with
+# the year-long public cache; each is checked against its pinned sha256.
+RUN ruby bin/phonon-assets
+
 RUN mkdir -p log tmp && : > log/solid_services_production.log
 
 # 4) Compile assets (this handles both Rails assets and Vite build)

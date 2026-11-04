@@ -1,6 +1,7 @@
 import { onDestroy } from 'svelte';
 import { router } from '@inertiajs/svelte';
 import { accountChatAgentAssignmentPath, accountChatParticipantPath, messagePath } from '@/routes';
+import { createSpeechSource } from '$lib/speech-source';
 
 export function createChatActions(context, history) {
   const ui = $state({
@@ -18,7 +19,11 @@ export function createChatActions(context, history) {
     successMessage: null,
   });
   const timers = {};
-  onDestroy(() => Object.values(timers).forEach(clearTimeout));
+  const listenSource = createSpeechSource({ mode: 'listen' });
+  onDestroy(() => {
+    Object.values(timers).forEach(clearTimeout);
+    listenSource.close();
+  });
   function notify(message, kind = 'errorMessage') {
     clearTimeout(timers[kind]);
     ui[kind] = message;
@@ -73,10 +78,20 @@ export function createChatActions(context, history) {
       if (context().chat.id === chatId) notify('Failed to delete message');
     }
   }
+  // Listen (SpeechEngine, jEDyze): the server says which engine reads this
+  // resident. Phonon makes the audio here and the message gets a blob URL to
+  // play; ElevenLabs keeps its stored-audio path (POST /voice). A reason it
+  // can't be read is shown on the message, never the other engine.
   async function requestVoice(messageId) {
     const chatId = context().chat.id;
-    history.update(messageId, { _voice_loading: true });
+    history.update(messageId, { _voice_loading: true, _voice_error: null });
     try {
+      const answer = await listenSource.resolve(messageId);
+      if (context().chat.id !== chatId) return;
+      if (answer.engine === 'phonon') {
+        history.update(messageId, { _speech_url: answer.url, _voice_loading: false });
+        return;
+      }
       const response = await fetch(`/messages/${messageId}/voice`, {
         method: 'POST',
         headers: { 'X-CSRF-Token': csrfToken(), Accept: 'application/json' },
@@ -85,10 +100,14 @@ export function createChatActions(context, history) {
       if (response.status === 200) {
         const { voice_audio_url } = await response.json();
         if (context().chat.id === chatId) history.update(messageId, { voice_audio_url, _voice_loading: false });
-      } else if (response.status !== 202) history.update(messageId, { _voice_loading: false });
+      } else if (response.status !== 202) {
+        const body = await response.json().catch(() => ({}));
+        history.update(messageId, { _voice_loading: false, _voice_error: body.error || body.message || null });
+      }
       // 202 is cleared by the next server-provided message window.
-    } catch {
-      if (context().chat.id === chatId) history.update(messageId, { _voice_loading: false });
+    } catch (error) {
+      if (context().chat.id === chatId)
+        history.update(messageId, { _voice_loading: false, _voice_error: error?.message || 'This message could not be read aloud.' });
     }
   }
   return {

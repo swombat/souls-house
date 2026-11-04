@@ -1,6 +1,6 @@
 import { createPlayer } from '$lib/voice-mode-playback';
 import { createReplyPicker } from '$lib/voice-mode-replies';
-import { messageSpeechPath } from '@/routes';
+import { createSpeechSource } from '$lib/speech-source';
 
 // The reply side of voice mode (VoiceModePanel): which replies are read
 // (the picker) and the one audio element that reads them (the player), tied
@@ -16,9 +16,17 @@ import { messageSpeechPath } from '@/routes';
 // - End (close) is the only thing that drops it.
 export const RESTART_UNDER = 5;
 
-export function createReplyReader({ messages = [], onchange }) {
+// The audio for each reply comes from the speech source (SpeechEngine): made
+// here by Phonon, or ElevenLabs' stream, as the server says for that resident.
+// A reply that can't be read is reported through onerror and skipped.
+export function createReplyReader({ messages = [], onchange, onerror, source = createSpeechSource({ mode: 'voice_mode' }), audio }) {
   const picker = createReplyPicker(messages);
-  const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange });
+  const player = createPlayer({
+    ...(audio ? { audio } : {}),
+    urlFor: (id, { signal } = {}) => source.resolve(id, { signal }).then((answer) => answer.url),
+    onchange,
+    onerror,
+  });
   let interrupted = [];
   const read = (ids) => ids.forEach((id) => player.enqueue(id));
   const resume = (current) => {
@@ -47,6 +55,7 @@ export function createReplyReader({ messages = [], onchange }) {
     close() {
       interrupted = [];
       player.close();
+      source.close();
     },
   };
 }

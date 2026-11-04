@@ -4,6 +4,19 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 // The microphone is replaced by a fake whose callbacks the test drives, and
 // the realtime transcriber by one whose transcripts the test settles. A "turn"
 // is the detector saying an utterance began, streamed, and ended.
+
+// The ElevenLabs answer from the speech source (SpeechEngine), given at once:
+// a thenable that runs its callback synchronously, so the order of what is
+// heard can be asserted step by step as before the source existed. Phonon's
+// own path is covered in speech-source.test.js and voice-mode-phonon.test.js.
+const syncThen = (value) => ({ then: (ok) => syncThen(ok ? ok(value) : value) });
+vi.mock('$lib/speech-source', () => ({
+  createSpeechSource: () => ({
+    resolve: (id) => syncThen({ url: `/messages/${id}/speech`, engine: 'elevenlabs' }),
+    close: () => {},
+  }),
+}));
+
 let callbacks;
 let stopped;
 vi.mock('$lib/voice-mode-capture', () => ({
@@ -309,7 +322,9 @@ const reply = (id, extra = {}) => ({
 test('replies that arrive after voice mode opens are read aloud, the backlog is not, and speaking interrupts them', async () => {
   const { rerender } = render(VoiceModePanel, { ...props, messages: [reply('old')] });
   await waitFor(() => expect(callbacks).toBeTruthy());
-  expect(player.options.urlFor('r1')).toBe('/messages/r1/speech');
+  let url;
+  player.options.urlFor('r1').then((value) => (url = value));
+  expect(url).toBe('/messages/r1/speech');
 
   await rerender({ ...props, messages: [reply('old'), reply('r1', { streaming: true, completed: false })] });
   await rerender({ ...props, messages: [reply('old'), reply('r1'), reply('p1', { progress_message: true })] });

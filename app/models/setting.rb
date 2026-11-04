@@ -6,6 +6,7 @@ class Setting < ApplicationRecord
   FOLLOW_THROUGH_SCOPES = %w[off selected all].freeze
   REFLEXES_SCOPES = %w[disabled account_choice enabled].freeze
   VOICE_MODE_SCOPES = %w[disabled account_choice enabled].freeze
+  SPEECH_ENGINE_SCOPES = %w[disabled account_choice enabled].freeze
   TWEET_STREAM_COLUMNS = %w[
     field_tweets_enabled field_tweets_daily_import_cap
     field_tweets_account_monthly_usd_ceiling field_tweets_poll_minutes
@@ -35,6 +36,7 @@ class Setting < ApplicationRecord
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
   validates :reflexes_scope, inclusion: { in: REFLEXES_SCOPES }
   validates :voice_mode_scope, inclusion: { in: VOICE_MODE_SCOPES }
+  validates :speech_engine_scope, inclusion: { in: SPEECH_ENGINE_SCOPES }
   validates :stalled_sweep_minutes, inclusion: { in: StalledThreadSweeper::INTERVALS }
   validates :site_name, presence: true, length: { maximum: 100 }
   validates :safeguard_owner_notice_threshold,
@@ -84,6 +86,19 @@ class Setting < ApplicationRecord
     when "enabled" then true
     when "account_choice" then account.voice_mode_enabled? || false
     else false
+    end
+  end
+
+  # The ElevenLabs option for resident speech (SpeechEngine), in the same three
+  # states: disabled (the default) is Phonon for every account, enabled is
+  # ElevenLabs for every account, and under account_choice the account's own
+  # choice (accounts.speech_engine) decides. Returns the engine the site asks
+  # for; SpeechEngine then checks the key and the resident's plan.
+  def speech_engine_for(account)
+    case speech_engine_scope
+    when "enabled" then "elevenlabs"
+    when "account_choice" then account&.speech_engine.presence || "phonon"
+    else "phonon"
     end
   end
 

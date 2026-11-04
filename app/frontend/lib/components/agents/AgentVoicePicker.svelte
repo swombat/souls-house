@@ -122,10 +122,11 @@
 
 {#if voice}
   <div class="space-y-2" data-testid="agent-voice-picker">
-    <Label id="agent-voice-label">Voice</Label>
+    <Label id="agent-voice-label">ElevenLabs voice</Label>
     <p class="text-xs text-muted-foreground">
-      What people hear when they press play on this resident's messages. The resident can choose its own voice too; the
-      most recent choice stands, and you can change it back here.
+      The voice ElevenLabs uses for this resident while the account speaks with ElevenLabs, which is much slower to start
+      than Phonon on the device. The resident can choose its own voice too; the most recent choice stands, and you can
+      change it back here.
     </p>
 
     {#if loading}
@@ -182,7 +183,7 @@
         {/snippet}
         {#snippet mute()}<SpeakerSlash size={18} weight="bold" />{/snippet}
 
-        {@render row('', 'No voice', 'Messages have no play button', 'hsl(0 0% 60%)', mute)}
+        {@render row('', 'No voice', 'Not read aloud while the account is on ElevenLabs', 'hsl(0 0% 60%)', mute)}
         {#if current && !currentIsStandard}
           {@render row(current, 'Current voice', 'Not a standard voice', 'hsl(0 0% 40%)', null)}
         {/if}
