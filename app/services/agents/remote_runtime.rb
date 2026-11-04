@@ -240,8 +240,10 @@ module Agents
       return :failed unless command.state == "done"
 
       result = command.result.to_h["result"].to_h
+      sessions = result["sessions"]
       matches = result["snapshot_id"] == carry["snapshot_id"] && result["tools_stopped"] == true &&
-                carry["shapes"].all? { |role, shape| result.dig("shapes", role) == shape }
+                carry["shapes"].all? { |role, shape| result.dig("shapes", role) == shape } &&
+                sessions.is_a?(Hash) && sessions["mapped"].is_a?(Integer) && sessions["mapped"] == sessions["resolved"]
       matches ? :restored : :mismatch
     end
 

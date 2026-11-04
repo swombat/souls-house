@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import sys
@@ -10,6 +11,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "host-runner"))
 import carry_restore as cr  # noqa: E402
 import souls_house_runner as runner  # noqa: E402
 from backup_proxy import CLEANUP_SECONDS, MAX_DEADLINE_SECONDS  # noqa: E402
+from souls_house_runner import CommandFailed  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +116,7 @@ class FakeDocker:
         self.rm_ok = True
         self.ps_tools = ()
         self.shape_outputs = {}
+        self.on_restore = None
 
     def __call__(self, argv, timeout=None):
         self.calls.append(list(argv))
@@ -126,6 +129,8 @@ class FakeDocker:
         if argv[0] == "docker" and argv[1] == "run":
             mode = argv[argv.index("--network") + 1]
             if mode == "host":
+                if self.on_restore:
+                    self.on_restore()
                 return self.restore_ok, ""
             role = self._role_of(argv)
             return True, self.shape_outputs.get(role, "")
@@ -446,3 +451,118 @@ class MarkerAndVolumeHelperTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# check_sessions: real files and a real sqlite database, nothing faked.
+# ---------------------------------------------------------------------------
+
+class CheckSessionsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = self.tmp.name
+
+    def home(self, *processes, sub="", wal=False):
+        base = os.path.join(self.root, sub) if sub else self.root
+        os.makedirs(base, exist_ok=True)
+        import sqlite3 as sql
+        connection = sql.connect(os.path.join(base, "chaos.sqlite"))
+        if wal:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.execute("CREATE TABLE IF NOT EXISTS processes (id TEXT PRIMARY KEY NOT NULL)")
+        connection.executemany("INSERT INTO processes (id) VALUES (?)", [(p,) for p in processes])
+        connection.commit()
+        return base, connection
+
+    def map(self, base, **records):
+        sessions = os.path.join(base, "helixkit-sessions")
+        os.makedirs(sessions, exist_ok=True)
+        for name, process_id in records.items():
+            with open(os.path.join(sessions, f"{name}.json"), "w", encoding="utf-8") as handle:
+                json.dump({"chaos_process_id": process_id, "session_id": name}, handle)
+
+    def test_no_map_is_nothing_to_resolve(self):
+        self.assertEqual({"mapped": 0, "resolved": 0}, cr.check_sessions(self.root))
+
+    def test_every_mapped_session_resolves_in_both_homes(self):
+        base, connection = self.home("p1", "p2")
+        connection.close()
+        self.map(base, a="p1", b="p2", fresh=None)
+        oauth, connection = self.home("q1", sub="oauth-runtime")
+        connection.close()
+        self.map(oauth, c="q1")
+        self.assertEqual({"mapped": 3, "resolved": 3}, cr.check_sessions(self.root))
+
+    def test_an_unresolved_session_fails(self):
+        base, connection = self.home("p1")
+        connection.close()
+        self.map(base, a="p1", b="gone")
+        with self.assertRaisesRegex(CommandFailed, "does not resolve"):
+            cr.check_sessions(self.root)
+
+    def test_a_process_only_in_the_wal_resolves_and_the_volume_is_untouched(self):
+        base, connection = self.home("p1", wal=True)  # left open: p1 lives only in the -wal
+        self.addCleanup(connection.close)
+        self.assertTrue(os.path.exists(os.path.join(base, "chaos.sqlite-wal")))
+        self.map(base, a="p1")
+        before = sorted(os.listdir(base))
+        self.assertEqual({"mapped": 1, "resolved": 1}, cr.check_sessions(self.root))
+        self.assertEqual(before, sorted(os.listdir(base)), "the check reads a copy and adds nothing to the volume")
+
+    def test_a_map_without_a_database_fails(self):
+        self.map(self.root, a="p1")
+        with self.assertRaisesRegex(CommandFailed, "no Chaos database"):
+            cr.check_sessions(self.root)
+
+    def test_unreadable_or_odd_entries_fail(self):
+        base, connection = self.home("p1")
+        connection.close()
+        self.map(base, a="p1")
+        sessions = os.path.join(base, "helixkit-sessions")
+        with open(os.path.join(sessions, "bad.json"), "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        with self.assertRaisesRegex(CommandFailed, "can't be read"):
+            cr.check_sessions(self.root)
+        os.unlink(os.path.join(sessions, "bad.json"))
+        os.symlink("/etc/passwd", os.path.join(sessions, "link.json"))
+        with self.assertRaisesRegex(CommandFailed, "can't be read"):
+            cr.check_sessions(self.root)
+
+    def test_a_symlinked_map_directory_fails(self):
+        target = os.path.join(self.root, "elsewhere")
+        os.makedirs(target)
+        os.symlink(target, os.path.join(self.root, "helixkit-sessions"))
+        with self.assertRaisesRegex(CommandFailed, "not a directory"):
+            cr.check_sessions(self.root)
+
+
+class RunRestoreCarrySessionTest(CarryRestoreTestCase):
+    def test_an_unresolved_session_after_restore_fails_and_clears_the_claimed_volumes(self):
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        chaos = self.host._volume_mountpoint(self.chaos_volume)
+
+        def restored():  # what the restic restore would have written
+            os.makedirs(os.path.join(chaos, "helixkit-sessions"))
+            with open(os.path.join(chaos, "helixkit-sessions", "a.json"), "w", encoding="utf-8") as handle:
+                json.dump({"chaos_process_id": "missing"}, handle)
+            import sqlite3 as sql
+            connection = sql.connect(os.path.join(chaos, "chaos.sqlite"))
+            connection.execute("CREATE TABLE processes (id TEXT PRIMARY KEY NOT NULL)")
+            connection.commit()
+            connection.close()
+        self.docker.on_restore = restored
+        with self.assertRaises(cr.CarryFailed) as caught:
+            self.run_restore(self.payload(shapes=shapes))
+        self.assertIn("does not resolve", str(caught.exception))
+        self.assertIsNone(cr.read_marker(self.host, self.name))
+        self.assertIn(self.chaos_volume, self.host.removed)
+
+    def test_a_verified_restore_reports_its_session_counts(self):
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        result = self.run_restore(self.payload(shapes=shapes))
+        self.assertEqual({"mapped": 0, "resolved": 0}, result["sessions"])
+        self.assertEqual(result["sessions"], cr.read_marker(self.host, self.name)["sessions"])

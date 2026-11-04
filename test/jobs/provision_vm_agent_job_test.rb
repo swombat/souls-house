@@ -1514,10 +1514,12 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     enrollment.update!(last_facts: enrollment.last_facts.to_h.merge("runner_bundle_sha256" => RunnerBundle.full.sha256))
   end
 
-  def answer_carry!(placement, outcome: "done", shapes: CARRY_SHAPES, snapshot_id: "9" * 64, error: nil)
+  def answer_carry!(placement, outcome: "done", shapes: CARRY_SHAPES, snapshot_id: "9" * 64, error: nil,
+                    sessions: { "mapped" => 2, "resolved" => 2 })
     command = carry_commands(placement).last
     command.deliver!(now: Time.current) unless command.delivered?
-    result = { "outcome" => outcome, "result" => { "snapshot_id" => snapshot_id, "shapes" => shapes, "tools_stopped" => true } }
+    result = { "outcome" => outcome, "result" => { "snapshot_id" => snapshot_id, "shapes" => shapes, "tools_stopped" => true,
+                                                  "sessions" => sessions } }
     result["error"] = error if error
     command.record_result!(result, now: Time.current)
   end
@@ -1546,6 +1548,19 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
       assert agent.reload.paused?
       assert_nil agent.runtime_ready_at
+    end
+  end
+
+  [ [ "without its session check", nil ], [ "with an unresolved session", { "mapped" => 2, "resolved" => 1 } ] ].each do |label, sessions|
+    test "a carry answered #{label} fails the move" do
+      with_house do
+        agent = house_resident!
+        placement = moved_to_carry!(agent)
+        answer_carry!(placement, sessions:)
+        run_job(agent)
+        assert_equal "failed", placement.reload.state
+        assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+      end
     end
   end
 

@@ -14,6 +14,8 @@ carry_shape.sh in the stopped window. This command:
   `--verify`, so restic re-reads every restored file against its hashes;
 - runs the same carry_shape.sh over each restored volume and compares the
   result with the house's digest and entry count;
+- checks that every session the shim would resume names a process that
+  exists in the restored chaos.sqlite (check_sessions; counts only);
 - on any failure, removes the two volumes it proved empty, so a retry starts
   from empty again. It never touches a volume that had anything in it.
 
@@ -25,6 +27,9 @@ import json
 import os
 import re
 import secrets
+import shutil
+import sqlite3
+import stat
 import tempfile
 import time
 
@@ -37,6 +42,11 @@ CARRY_TOOL_PREFIX = "souls-house-carry-"
 CARRY_TOOL_FILTER = "name=^/souls-house-carry-[0-9a-f]{24}$"
 SHAPE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "carry_shape.sh")
 SHAPE_RE = re.compile(r"entries (0|[1-9][0-9]{0,9})\nshape ([0-9a-f]{64})\n?\Z")
+# The Chaos homes in a chaos volume whose session map the shim resumes from:
+# the volume root, and the subscription runtime's own home.
+SESSION_HOMES = ("", "oauth-runtime")
+MAX_SESSION_RECORDS = 100_000
+MAX_SESSION_RECORD_BYTES = 1 << 20
 
 
 class CarryFailed(CommandFailed):
@@ -126,6 +136,74 @@ def parse_shape(output):
     return {"entries": int(match.group(1)), "shape": match.group(2)}
 
 
+def _regular(path):
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except FileNotFoundError:
+        return False
+
+
+def check_sessions(root):
+    """Every session the shim would resume in the restored chaos volume names
+    a process that exists in that home's chaos.sqlite. Reads a copy of the
+    database (and its WAL), so the restored volume is not touched; returns
+    only counts. A map that can't be read, or a mapped session that does not
+    resolve, fails the carry."""
+    mapped = resolved = 0
+    for home in SESSION_HOMES:
+        base = os.path.join(root, home) if home else root
+        sessions = os.path.join(base, "helixkit-sessions")
+        if not os.path.lexists(sessions):
+            continue
+        if os.path.islink(sessions) or not os.path.isdir(sessions):
+            raise CommandFailed("the restored session map is not a directory")
+        ids = []
+        entries = sorted(os.listdir(sessions))
+        if len(entries) > MAX_SESSION_RECORDS:
+            raise CommandFailed("the restored session map is too large to check")
+        for entry in entries:
+            path = os.path.join(sessions, entry)
+            if not _regular(path) or os.path.getsize(path) > MAX_SESSION_RECORD_BYTES:
+                raise CommandFailed("the restored session map has an entry that can't be read")
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    record = json.load(handle)
+            except (OSError, ValueError):
+                raise CommandFailed("the restored session map has an entry that can't be read") from None
+            if not isinstance(record, dict):
+                raise CommandFailed("the restored session map has an entry that can't be read")
+            process_id = record.get("chaos_process_id")
+            if process_id is None:
+                continue
+            if not isinstance(process_id, str) or not process_id or len(process_id) > 256:
+                raise CommandFailed("the restored session map has an entry that can't be read")
+            ids.append(process_id)
+        if not ids:
+            continue
+        database = os.path.join(base, "chaos.sqlite")
+        if not _regular(database):
+            raise CommandFailed("a restored session map has no Chaos database beside it")
+        with tempfile.TemporaryDirectory(prefix="souls-house-carry-sessions-") as temp:
+            os.chmod(temp, 0o700)
+            copy = os.path.join(temp, "chaos.sqlite")
+            shutil.copyfile(database, copy)
+            if _regular(database + "-wal"):
+                shutil.copyfile(database + "-wal", copy + "-wal")
+            connection = sqlite3.connect(copy)
+            try:
+                for process_id in ids:
+                    found = connection.execute("SELECT 1 FROM processes WHERE id = ? LIMIT 1", (process_id,)).fetchone()
+                    resolved += 1 if found else 0
+            except sqlite3.Error:
+                raise CommandFailed("the restored Chaos database can't be read") from None
+            finally:
+                connection.close()
+        mapped += len(ids)
+    if resolved != mapped:
+        raise CommandFailed("a mapped session does not resolve in the restored home")
+    return {"mapped": mapped, "resolved": resolved}
+
+
 def restore_argv(name, env_file, tool, snapshot_id):
     """Writable mounts of exactly the two carried volumes; root inside the tool
     only so modes and owners come back as they were."""
@@ -175,14 +253,14 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
     ends = started + spec["deadline_seconds"]
     work_ends = ends - CLEANUP_SECONDS
     result = {"container_name": name, "snapshot_id": spec["snapshot_id"], "shapes": {}, "tools_stopped": False,
-              "duration_ms": 0, "already": False}
+              "duration_ms": 0, "already": False, "sessions": None}
     remembered = read_marker(host, name)
     if remembered is not None:
         _require(remembered.get("snapshot_id") == spec["snapshot_id"] and remembered.get("shapes") == spec["shapes"],
                  "this resident's homes were claimed for a different carry")
         if remembered.get("state") == "verified":
             # A lost acknowledgement: the restored copy stands, untouched.
-            result.update(shapes=remembered["shapes"], tools_stopped=True, already=True)
+            result.update(shapes=remembered["shapes"], sessions=remembered.get("sessions"), tools_stopped=True, already=True)
             return result
 
     def remaining():
@@ -242,6 +320,7 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
             want, got = spec["shapes"][role], result["shapes"][role]
             if got["entries"] != want["entries"] or not hmac.compare_digest(got["shape"], want["shape"]):
                 raise CommandFailed(f"the restored {role} home does not match the house's")
+        result["sessions"] = check_sessions(host._volume_mountpoint(volume_name(name, "chaos")))
         verified = True
     except BadCommand:
         raise
@@ -282,5 +361,6 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
         result["duration_ms"] = round((clock() - started) * 1000)
     if error:
         raise CarryFailed(error, result)
-    write_marker(host, name, {"state": "verified", "snapshot_id": spec["snapshot_id"], "shapes": result["shapes"]})
+    write_marker(host, name, {"state": "verified", "snapshot_id": spec["snapshot_id"], "shapes": result["shapes"],
+                              "sessions": result["sessions"]})
     return result
