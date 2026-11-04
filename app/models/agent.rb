@@ -44,6 +44,9 @@ class Agent < ApplicationRecord
   has_many :agent_backup_snapshots, dependent: :destroy
   has_many :agent_runtime_interactions, dependent: :destroy
   has_many :reflexes, dependent: :destroy
+  # Announcements this resident posted. They outlive it, unsigned.
+  has_many :posted_notices, class_name: "Notice", foreign_key: :created_by_agent_id,
+    inverse_of: :created_by_agent, dependent: :nullify
   has_many :commitments, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :safeguard_detections, dependent: :destroy
