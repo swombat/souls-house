@@ -47,3 +47,23 @@ test('the clean transcript wins; the live text is the fallback, marked rough; ne
   expect(turnContent({ clean: '', live: 'Live.' })).toEqual({ text: '(rough live transcript) Live.', rough: true });
   expect(turnContent({ clean: '', live: ' ' })).toEqual({ text: '', rough: false });
 });
+
+test('a transcription that never settles is aborted and resolves as a failure; a late answer changes nothing (#761)', async () => {
+  let signal;
+  let answer;
+  const request = vi.fn((where, method, form, options) => {
+    signal = options.signal;
+    return new Promise((resolve) => (answer = resolve));
+  });
+  const result = await transcribeTurn({
+    accountId: 'a',
+    chatId: 'c',
+    samples: new Float32Array(2),
+    sampleRate: 24000,
+    request,
+    timeoutMs: 20,
+  });
+  expect(result).toEqual({ text: '', signedId: null, error: 'The transcription took too long.' });
+  expect(signal.aborted).toBe(true);
+  answer(response(200, { text: 'Too late.', audio_signed_id: 'late' }));
+});

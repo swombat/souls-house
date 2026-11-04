@@ -447,3 +447,59 @@ test('a burst that was not speech uploads nothing (#756)', async () => {
   callbacks.ondiscard(120);
   expect(scribe.calls).toEqual([]);
 });
+
+test('ready ElevenLabs text is sent without waiting for the live caption (#761)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const live = deferred();
+  scribe.results.push({ text: 'Clean and ready.', signedId: 'sig-5', error: null });
+  speak(live.promise);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Clean and ready.', audio: 'sig-5' });
+  live.resolve('Clean and ready');
+  await Promise.resolve();
+  expect(posts).toHaveLength(1);
+  expect(screen.queryByTestId('voice-mode-provisional')).toBeNull();
+});
+
+test('End sends a turn whose ElevenLabs text is ready while the live caption is still pending (#761)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const live = deferred();
+  scribe.results.push({ text: 'Said just before End.', signedId: 'sig-6', error: null });
+  callbacks.onspeechstart(new Float32Array(10));
+  transcriber.results.push(live.promise);
+  const { startCapture } = await import('$lib/voice-mode-capture');
+  const handle = await startCapture.mock.results.at(-1).value;
+  handle.stop.mockImplementation(async () => {
+    stopped = true;
+    callbacks.onturn(800);
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalledWith({ sent: 1 }));
+  expect(posts.map((p) => p.content)).toEqual(['Said just before End.']);
+});
+
+test('a stalled upload does not hold later turns: it falls back to rough, and its late result sends nothing (#761)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    render(VoiceModePanel, props);
+    await waitFor(() => expect(callbacks).not.toBeNull());
+    const stalled = deferred();
+    scribe.results.push(stalled.promise);
+    scribe.results.push({ text: 'Second turn.', signedId: 'sig-8', error: null });
+    speak('First turn');
+    speak('Second turn');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(posts).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts.map((p) => p.content)).toEqual(['(rough live transcript) First turn', 'Second turn.']);
+    stalled.resolve({ text: 'First turn, late.', signedId: 'sig-7', error: null });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(posts).toHaveLength(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});

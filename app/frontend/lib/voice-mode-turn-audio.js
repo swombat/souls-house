@@ -40,12 +40,38 @@ export function createTurnRecorder({ sampleRate }) {
 // Uploads one turn's recording and resolves to
 // { text, signedId, error }: text is ElevenLabs' transcript ('' when it heard
 // no words or failed), signedId the stored recording when the house kept it.
-export async function transcribeTurn({ accountId, chatId, samples, sampleRate, request = transcriptionRequest }) {
-  const form = new FormData();
-  form.append('audio', encodeWav(samples, sampleRate), 'voice-mode-turn.wav');
-  const result = await readTranscription(await request({ accountId, chatId }, 'POST', form));
-  if (result.ok) return { text: result.text, signedId: result.signedId, error: null };
-  return { text: '', signedId: result.saved === 'saved' ? result.signedId || null : null, error: result.error };
+// Bounded: a request (or its body) that has not settled within timeoutMs is
+// aborted and resolves as a failure, so a stalled upload falls back to the
+// rough caption instead of holding every later turn (Mira, #761 review). A
+// result arriving after that is ignored: the promise has already settled.
+export const TURN_TRANSCRIPTION_TIMEOUT_MS = 30_000;
+
+export function transcribeTurn({
+  accountId,
+  chatId,
+  samples,
+  sampleRate,
+  request = transcriptionRequest,
+  timeoutMs = TURN_TRANSCRIPTION_TIMEOUT_MS,
+}) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve({ text: '', signedId: null, error: 'The transcription took too long.' });
+    }, timeoutMs);
+  });
+  const attempt = (async () => {
+    const form = new FormData();
+    form.append('audio', encodeWav(samples, sampleRate), 'voice-mode-turn.wav');
+    const result = await readTranscription(
+      await request({ accountId, chatId }, 'POST', form, { signal: controller?.signal })
+    );
+    if (result.ok) return { text: result.text, signedId: result.signedId, error: null };
+    return { text: '', signedId: result.saved === 'saved' ? result.signedId || null : null, error: result.error };
+  })().catch((error) => ({ text: '', signedId: null, error: error?.message || 'Transcription failed.' }));
+  return Promise.race([attempt, timedOut]).finally(() => clearTimeout(timer));
 }
 
 // What a turn is sent as. ElevenLabs' text when it has words; otherwise the

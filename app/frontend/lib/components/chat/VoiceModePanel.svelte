@@ -57,6 +57,8 @@
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
+  // Above transcribeTurn's own 30 s bound; only reached by an unbounded promise.
+  const CLEAN_BACKSTOP_MS = 35_000;
 
   onMount(async () => {
     if (!captureSupported()) {
@@ -175,32 +177,54 @@
       .catch((error) => logging.error('voice turn failed', error));
   }
 
+  // The recording's ElevenLabs text decides the turn. It is not held for the
+  // live caption: a clean result sends at once, while the caption is still
+  // only provisional (Mira, #761 review). Only when the clean text is missing
+  // does the turn wait for the live caption, to send it marked as rough.
+  // transcribeTurn bounds the clean request itself; this backstop keeps the
+  // queue moving if a caller hands in an unbounded promise.
   async function handleTurn(transcript, durationMs, clean) {
     if (ended) return;
     phase = 'transcribing';
     note = '';
-    let live = '';
-    let liveError = null;
-    try {
-      live = stripReleasePhrase(await transcript).text;
-    } catch (error) {
-      liveError = error;
-    }
+    let current = true;
+    const live = Promise.resolve(transcript).then(
+      (value) => ({ text: stripReleasePhrase(value).text, error: null }),
+      (error) => ({ text: '', error })
+    );
+    live.then(({ text }) => {
+      if (current && !ended) {
+        caption = '';
+        provisional = text;
+      }
+    });
+    const recording = await settleWithin(clean, CLEAN_BACKSTOP_MS, { text: '', signedId: null, error: 'timeout' });
     if (ended) return;
+    const cleanText = stripReleasePhrase(recording?.text || '').text;
+    let liveText = '';
+    let liveError = null;
+    if (!cleanText.trim()) ({ text: liveText, error: liveError } = await live);
+    current = false;
     caption = '';
-    provisional = live;
-    const recording = await clean;
     provisional = '';
     if (ended) return;
-    const { text } = turnContent({ clean: stripReleasePhrase(recording.text || '').text, live });
+    const { text } = turnContent({ clean: cleanText, live: liveText });
     if (!text) {
-      note = liveError && !recording.signedId
+      note = liveError && !recording?.signedId
         ? liveError?.message || 'Transcription failed.'
         : `Heard ${Math.round(durationMs / 1000)}s of sound but no words.`;
       phase = 'listening';
       return;
     }
-    await send(text, recording.signedId);
+    await send(text, recording?.signedId || null);
+  }
+
+  function settleWithin(promise, ms, fallback) {
+    let timer;
+    return Promise.race([
+      Promise.resolve(promise).catch(() => fallback),
+      new Promise((resolve) => (timer = setTimeout(() => resolve(fallback), ms))),
+    ]).finally(() => clearTimeout(timer));
   }
 
   async function send(text, audioSignedId) {
