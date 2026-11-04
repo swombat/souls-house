@@ -4,6 +4,8 @@
   import { Archive, Check, DotsThree } from 'phosphor-svelte';
   import { accountChatArchivePath } from '@/routes';
   import { destinations, MAIN } from '$lib/rooms';
+  import { onDestroy } from 'svelte';
+  import { HoverMenu } from '$lib/hover-menu.svelte.js';
 
   // The chat list's hover menu for a conversation (desktop only; on a phone
   // the conversation menu does this). Archive is always there; "Move to room"
@@ -43,17 +45,29 @@
     if (chat.archived) router.delete(path, options(failure));
     else router.post(path, {}, options(failure));
   }
+  // Desktop: resting the mouse on the button opens the menu (see hover-menu).
+  const menu = new HoverMenu();
+  onDestroy(() => menu.destroy());
 </script>
 
-<DropdownMenu.Root>
+<DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
   <DropdownMenu.Trigger
+    onpointerenter={menu.enter}
+    onpointerleave={menu.leave}
+    onpointerdown={menu.pointerdown}
     class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2"
     aria-label={label}
     title={label}
     disabled={saving}>
     <DotsThree size={16} weight="bold" />
   </DropdownMenu.Trigger>
-  <DropdownMenu.Content align="end" class="w-44 max-h-80 overflow-y-auto">
+  <DropdownMenu.Content
+    align="end"
+    class="w-44 max-h-80 overflow-y-auto"
+    onpointerenter={menu.enter}
+    onpointerleave={menu.leave}
+    onOpenAutoFocus={menu.openAutoFocus}
+    onCloseAutoFocus={menu.closeAutoFocus}>
     <DropdownMenu.Item onclick={toggleArchive}>
       <Archive size={14} class="mr-2 shrink-0" weight="duotone" />
       {chat.archived ? 'Unarchive' : 'Archive'}
