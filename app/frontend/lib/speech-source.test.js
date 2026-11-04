@@ -46,7 +46,7 @@ test('an ElevenLabs answer for Listen leaves the URL to that surface', async () 
   expect(synthesize).not.toHaveBeenCalled();
 });
 
-test('an unavailable answer fails with the server\'s reason and never falls back to the other engine', async () => {
+test("an unavailable answer fails with the server's reason and never falls back to the other engine", async () => {
   const { source, synthesize } = harness({
     answer: () => ({ available: false, reason: 'no_key', message: 'Add an ElevenLabs key to hear this resident.' }),
   });

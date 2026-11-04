@@ -121,4 +121,16 @@ class Messages::SpeechTextsControllerTest < ActionDispatch::IntegrationTest
     assert_not @reply.reload.voice_audio.attached?
   end
 
+
+  test "a message in another of the person's accounts is found, not only in their default account" do
+    team = accounts(:team_account)
+    assert team.users.include?(@user), "fixture: user_1 is a member of the team account"
+    agent = team.agents.create!(name: "Team speaker", system_prompt: "Test", runtime: "external")
+    chat = team.chats.create!(model_id: "openrouter/auto", title: "Team voice")
+    chat.agents << agent
+    reply = chat.messages.create!(role: "assistant", agent:, content: "From the team.", suppress_automatic_dispatch: true)
+
+    assert_equal "From the team.", text_for(reply)["text"]
+  end
+
 end

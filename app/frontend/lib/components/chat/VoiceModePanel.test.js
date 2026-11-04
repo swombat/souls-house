@@ -91,8 +91,8 @@ vi.mock('$lib/voice-mode-turn-audio', async (importOriginal) => {
       return Promise.resolve().then(() =>
         transcriber.lastCommit.then(
           (text) => ({ text: typeof text === 'string' ? text : '', signedId: 'sig-1', error: null }),
-          () => ({ text: '', signedId: null, error: 'upload failed' }),
-        ),
+          () => ({ text: '', signedId: null, error: 'upload failed' })
+        )
       );
     }),
   };
@@ -402,14 +402,19 @@ test('a reply spoken over comes back after the sent turn: from the top under 5 s
   await rerender({ ...props, messages: [long, short] });
 
   transcriber.results.push('Wait.');
-  player.interrupts = [[{ id: 'long', at: 12.4, playing: true }, { id: 'short', at: 0, playing: false }]];
+  player.interrupts = [
+    [
+      { id: 'long', at: 12.4, playing: true },
+      { id: 'short', at: 0, playing: false },
+    ],
+  ];
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
   await waitFor(() =>
     expect(player.log.slice(-2)).toEqual([
       ['enqueue', 'long', 'resume'],
       ['enqueue', 'short'],
-    ]),
+    ])
   );
 
   transcriber.results.push('Again.');
@@ -426,7 +431,9 @@ test('the message carries the ElevenLabs text; the live text shows grey and puls
   scribe.results.push(clean.promise);
   speak('Hey Seuros, what is the time?');
   await waitFor(() =>
-    expect(screen.getByTestId('voice-mode-provisional')).toHaveTextContent('Hey Seuros, what is the time? (in progress)'),
+    expect(screen.getByTestId('voice-mode-provisional')).toHaveTextContent(
+      'Hey Seuros, what is the time? (in progress)'
+    )
   );
   expect(screen.getByTestId('voice-mode-provisional').className).toContain('animate-pulse');
   expect(posts).toHaveLength(0);

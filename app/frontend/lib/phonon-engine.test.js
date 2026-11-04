@@ -102,7 +102,10 @@ test('a failed download says so, and the next request tries again', async () => 
   expect(failure).toBeInstanceOf(PhononError);
   expect(failure.kind).toBe('download');
   expect(failure.cause.message).toMatch(/404/);
-  expect(get(phononState)).toMatchObject({ status: 'error', error: expect.stringMatching(/didn't download \(HTTP 404\)/) });
+  expect(get(phononState)).toMatchObject({
+    status: 'error',
+    error: expect.stringMatching(/didn't download \(HTTP 404\)/),
+  });
 
   Phonon.load.mockImplementation(async () => model);
   expect(await loadPhonon({ importer, gpu })).toBe(model);
@@ -158,7 +161,7 @@ test('speaking uses the chosen voice, passes the abort signal on, and returns a 
   expect(result.duration).toBe(2);
 });
 
-test('an unknown voice is spoken in Delia\'s voice', async () => {
+test("an unknown voice is spoken in Delia's voice", async () => {
   const model = fakeModel();
   await synthesize('Hi.', { voice: 'no-such-voice', load: async () => model });
   expect(model.speak.mock.calls[0][1].voice).toBe(DELIA);

@@ -64,8 +64,12 @@ export function createSpeechSource({
       if (closed) throw new SpeechError('Stopped.');
       if (made.has(id)) return { url: made.get(id), engine: 'phonon' };
       const answer = await fetchText(id, { mode, signal });
-      if (!answer.available) throw new SpeechError(answer.message || "This resident can't be read aloud just now.", { reason: answer.reason });
-      if (answer.engine === 'elevenlabs') return { url: mode === 'voice_mode' ? streamUrl(id) : null, engine: 'elevenlabs' };
+      if (!answer.available)
+        throw new SpeechError(answer.message || "This resident can't be read aloud just now.", {
+          reason: answer.reason,
+        });
+      if (answer.engine === 'elevenlabs')
+        return { url: mode === 'voice_mode' ? streamUrl(id) : null, engine: 'elevenlabs' };
       if (!answer.text) throw new SpeechError('There is nothing in this message to read aloud.', { reason: 'empty' });
       const { blob } = await synthesize(answer.text, { voice: answer.voice, signal });
       if (closed) throw new SpeechError('Stopped.');

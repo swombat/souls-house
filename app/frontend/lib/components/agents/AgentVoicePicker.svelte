@@ -124,9 +124,9 @@
   <div class="space-y-2" data-testid="agent-voice-picker">
     <Label id="agent-voice-label">ElevenLabs voice</Label>
     <p class="text-xs text-muted-foreground">
-      The voice ElevenLabs uses for this resident while the account speaks with ElevenLabs, which is much slower to start
-      than Phonon on the device. The resident can choose its own voice too; the most recent choice stands, and you can
-      change it back here.
+      The voice ElevenLabs uses for this resident while the account speaks with ElevenLabs, which is much slower to
+      start than Phonon on the device. The resident can choose its own voice too; the most recent choice stands, and you
+      can change it back here.
     </p>
 
     {#if loading}

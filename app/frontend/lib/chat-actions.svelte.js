@@ -107,7 +107,10 @@ export function createChatActions(context, history) {
       // 202 is cleared by the next server-provided message window.
     } catch (error) {
       if (context().chat.id === chatId)
-        history.update(messageId, { _voice_loading: false, _voice_error: error?.message || 'This message could not be read aloud.' });
+        history.update(messageId, {
+          _voice_loading: false,
+          _voice_error: error?.message || 'This message could not be read aloud.',
+        });
     }
   }
   return {

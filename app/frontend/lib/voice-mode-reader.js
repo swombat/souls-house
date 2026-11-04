@@ -19,7 +19,13 @@ export const RESTART_UNDER = 5;
 // The audio for each reply comes from the speech source (SpeechEngine): made
 // here by Phonon, or ElevenLabs' stream, as the server says for that resident.
 // A reply that can't be read is reported through onerror and skipped.
-export function createReplyReader({ messages = [], onchange, onerror, source = createSpeechSource({ mode: 'voice_mode' }), audio }) {
+export function createReplyReader({
+  messages = [],
+  onchange,
+  onerror,
+  source = createSpeechSource({ mode: 'voice_mode' }),
+  audio,
+}) {
   const picker = createReplyPicker(messages);
   const player = createPlayer({
     ...(audio ? { audio } : {}),

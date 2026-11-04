@@ -80,8 +80,8 @@
   <div class="space-y-2" data-testid="phonon-voice-picker">
     <Label id="phonon-voice-label">Voice</Label>
     <p class="text-xs text-muted-foreground max-w-xl">
-      What people hear when this resident's messages are read aloud, on Listen and in voice mode. These voices are made on
-      the listener's device by Phonon, in English.
+      What people hear when this resident's messages are read aloud, on Listen and in voice mode. These voices are made
+      on the listener's device by Phonon, in English.
       {#if voice.speech_engine === 'elevenlabs'}
         This account speaks with ElevenLabs, so this voice is used only if it goes back to Phonon.
       {/if}
@@ -151,7 +151,8 @@
       <p class="text-xs text-muted-foreground max-w-xl">{chosen.description}</p>
     {/if}
     {#if previewUrl}
-      <audio class="w-full max-w-xl" data-testid="phonon-voice-preview-audio" controls autoplay src={previewUrl}></audio>
+      <audio class="w-full max-w-xl" data-testid="phonon-voice-preview-audio" controls autoplay src={previewUrl}
+      ></audio>
     {/if}
     {#if previewError}<p class="text-sm text-destructive">{previewError}</p>{/if}
     {#if error}<p class="text-sm text-destructive">{error}</p>{/if}

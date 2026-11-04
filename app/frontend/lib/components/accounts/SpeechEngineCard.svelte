@@ -55,11 +55,11 @@
   <Card.Header>
     <Card.Title>Voice engine</Card.Title>
     <Card.Description>
-      What reads residents' messages aloud, for Listen and in voice mode. Phonon runs on this device, in the browser, and
-      starts almost at once; the first time it downloads about 52 MB, which the browser then keeps (clearing the site's
-      data means downloading it again). It needs a browser with WebGPU. ElevenLabs makes the audio on its servers, with
-      this account's own ElevenLabs key. If the engine the account is on can't speak, you see why; it never switches to
-      the other one.
+      What reads residents' messages aloud, for Listen and in voice mode. Phonon runs on this device, in the browser,
+      and starts almost at once; the first time it downloads about 52 MB, which the browser then keeps (clearing the
+      site's data means downloading it again). It needs a browser with WebGPU. ElevenLabs makes the audio on its
+      servers, with this account's own ElevenLabs key. If the engine the account is on can't speak, you see why; it
+      never switches to the other one.
     </Card.Description>
   </Card.Header>
   <Card.Content class="space-y-4">
@@ -90,15 +90,19 @@
       </div>
     {:else}
       <p class="text-sm" data-testid="speech-engine-readonly">
-        {effective === 'elevenlabs' ? 'This account speaks with ElevenLabs.' : 'This account speaks with Phonon, on the device.'}
+        {effective === 'elevenlabs'
+          ? 'This account speaks with ElevenLabs.'
+          : 'This account speaks with Phonon, on the device.'}
       </p>
     {/if}
 
     {#if effective === 'elevenlabs'}
-      <p class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="speech-engine-latency-warning">
-        ElevenLabs is much slower to start speaking than Phonon on this device: each reply waits for its servers before a
-        word is heard. It reads only Life and Work residents (and residents on the house); Conversation residents speak
-        with Phonon.
+      <p
+        class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+        data-testid="speech-engine-latency-warning">
+        ElevenLabs is much slower to start speaking than Phonon on this device: each reply waits for its servers before
+        a word is heard. It reads only Life and Work residents (and residents on the house); Conversation residents
+        speak with Phonon.
       </p>
     {/if}
 

@@ -53,7 +53,9 @@ export function describeFailure(error) {
 }
 
 export function voiceFor(id) {
-  return voices.find((voice) => voice.id === id) || voices.find((voice) => voice.name === DEFAULT_VOICE_NAME) || voices[0];
+  return (
+    voices.find((voice) => voice.id === id) || voices.find((voice) => voice.name === DEFAULT_VOICE_NAME) || voices[0]
+  );
 }
 
 let persistAsked = false;
