@@ -404,9 +404,9 @@ class Chat < ApplicationRecord
         PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent)
       end
       if free.any?
-        AllAgentsResponseJob.perform_later(self, free.map(&:id),
-          wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent),
-          requested_by_user: requester_agent ? nil : user)
+        options = { wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent) }
+        options[:requested_by_user] = user if user && !requester_agent
+        AllAgentsResponseJob.perform_later(self, free.map(&:id), **options)
       end
       { triggered: free, queued: busy }
     end
