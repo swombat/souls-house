@@ -2,20 +2,26 @@
   import { onDestroy, onMount } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
-  import { stripReleasePhrase, voiceModeStatus } from '$lib/voice-mode';
+  import { voiceModeStatus } from '$lib/voice-mode';
   import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
   import { createReplyReader } from '$lib/voice-mode-reader';
+  import { createTurnRecorder } from '$lib/voice-mode-turn-audio';
+  import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
   import * as logging from '$lib/logging';
+  import VoiceModeReadout from './VoiceModeReadout.svelte';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
   // once. While the person speaks, the audio streams to OpenAI's realtime
-  // transcriber and the words appear as a caption; when the detector closes
-  // the turn it is committed, and the final text is sent as an ordinary human
-  // message flagged voice_mode. No recording is kept. Resident replies that
-  // arrive meanwhile are read aloud in their voices; speaking interrupts them.
+  // transcriber and the words appear as a caption, and the turn's audio is kept.
+  // When the detector closes the turn, the recording is transcribed the way a
+  // voice note is (ElevenLabs with the glossary, #756) while the live caption
+  // stays up, grey and pulsing, as a sign something was heard; the message is
+  // sent with ElevenLabs' text and the recording attached. If that fails, the
+  // live text is sent, marked rough. Resident replies that arrive meanwhile are
+  // read aloud in their voices; speaking interrupts them.
   let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
 
   // starting | listening | hearing | transcribing | sending | failed; mute is separate.
@@ -25,6 +31,8 @@
   let threshold = $state(0.012);
   let heard = $state('');
   let caption = $state('');
+  // The live text of a finished turn while its clean transcript is on its way.
+  let provisional = $state('');
   let note = $state('');
   let sent = $state(0);
   let stale = $state(false);
@@ -38,6 +46,8 @@
 
   let capture = null;
   let transcriber = null;
+  const TURN_RATE = 24_000;
+  const recorder = createTurnRecorder({ sampleRate: TURN_RATE });
   let releaseHold = null;
   let queue = Promise.resolve();
   let ended = false;
@@ -74,6 +84,7 @@
     transcriber.connect().catch((error) => (note = error.message));
     try {
       capture = await startCapture({
+        outputRate: TURN_RATE,
         onlevel: (rms, limit) => {
           level = rms;
           threshold = limit;
@@ -83,19 +94,26 @@
         onspeechstart: (samples) => {
           reader.speechStarted();
           caption = '';
+          recorder.begin(samples);
           transcriber?.begin(samples);
           if (phase === 'listening') phase = 'hearing';
         },
-        onaudio: (samples) => transcriber?.append(samples),
+        onaudio: (samples) => {
+          recorder.append(samples);
+          transcriber?.append(samples);
+        },
         ondiscard: () => {
           reader.discarded(messages);
+          recorder.discard();
           transcriber?.discard();
           caption = '';
           if (phase === 'hearing') phase = 'listening';
         },
         onturn: (durationMs) => {
           reader.committed(messages);
-          enqueue(transcriber.commit(), durationMs);
+          // Both start now, so a slow turn doesn't delay the next one's upload.
+          const clean = startCleanTurn({ accountId, chatId, samples: recorder.take(), sampleRate: TURN_RATE });
+          enqueue(transcriber.commit(), durationMs, clean);
         },
       });
       if (ended) {
@@ -145,45 +163,47 @@
 
   // Turns are sent one at a time, in the order they were spoken; each
   // transcript is already on its way when the next turn starts.
-  function enqueue(transcript, durationMs) {
+  function enqueue(transcript, durationMs, clean) {
     if (phase === 'hearing') phase = 'transcribing';
     queue = queue
-      .then(() => handleTurn(transcript, durationMs))
+      .then(() => handleTurn(transcript, durationMs, clean))
       .catch((error) => logging.error('voice turn failed', error));
   }
 
-  async function handleTurn(transcript, durationMs) {
+  // The clean (recording) text decides the turn; the live caption is shown as
+  // provisional meanwhile and sent marked rough only if the clean text is missing
+  // (see voice-mode-turn-flow.js).
+  async function handleTurn(transcript, durationMs, clean) {
     if (ended) return;
     phase = 'transcribing';
     note = '';
-    let raw;
-    try {
-      raw = await transcript;
-    } catch (error) {
-      if (ended) return;
-      note = error?.message || 'Transcription failed.';
-      caption = '';
-      phase = 'listening';
-      return;
-    }
-    if (ended) return;
+    const turn = await resolveTurn({
+      transcript,
+      clean,
+      durationMs,
+      onProvisional: (text) => {
+        if (!ended) [caption, provisional] = ['', text];
+      },
+    });
     caption = '';
-    const { text } = stripReleasePhrase(raw);
-    if (!text) {
-      note = `Heard ${Math.round(durationMs / 1000)}s of sound but no words.`;
+    provisional = '';
+    if (ended) return;
+    if (!turn.text) {
+      note = turn.note;
       phase = 'listening';
       return;
     }
-    await send(text);
+    await send(turn.text, turn.signedId);
   }
 
-  async function send(text) {
+  async function send(text, audioSignedId) {
     phase = 'sending';
     const { ok, status, data } = await postVoiceMessage({
       accountId,
       chatId,
       userId,
       text,
+      audioSignedId,
       timeoutMs: SEND_TIMEOUT_MS,
     });
     if (ended) return;
@@ -272,25 +292,5 @@
       <Stop size={16} weight="fill" /> End
     </button>
   </div>
-  {#if stale}
-    <p class="text-xs text-amber-700 dark:text-amber-400" data-testid="voice-mode-stale">
-      No sound is reaching the page. If the screen locked or the tab went to the background, the browser may have paused
-      the microphone; bring the page back to the front.
-    </p>
-  {/if}
-  {#if note}
-    <p class="text-xs text-muted-foreground" data-testid="voice-mode-note">{note}</p>
-  {/if}
-  {#if speaking}
-    <p class="text-sm line-clamp-4" data-testid="voice-mode-reply">
-      <span class="font-medium">{speaking.author_name || 'Reply'}:</span>
-      {speaking.content}
-    </p>
-  {/if}
-  {#if caption}
-    <p class="text-sm" data-testid="voice-mode-caption">{caption}</p>
-  {/if}
-  {#if heard}
-    <p class="text-xs text-muted-foreground truncate" data-testid="voice-mode-heard">Sent: “{heard}”</p>
-  {/if}
+  <VoiceModeReadout {stale} {note} {speaking} {caption} {provisional} {heard} />
 </div>

@@ -137,6 +137,9 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal 'code 400: input 190000 + max_tokens 64000 exceeds the context limit 200000',
       reason.('input length and `max_tokens` exceed context limit: 190000 + 64000 > 200000, decrease input length')
     assert_equal 'code 400: thinking: field not accepted', reason.('thinking: Extra inputs are not permitted')
+    # Soul Horse's refusal (#725), Anthropic's wording, reproduced 2026-11-04.
+    assert_equal 'code 400: the request ends with an assistant message, which this model refuses (no prefill)',
+      reason.('This model does not support assistant message prefill. The conversation must end with a user message.')
     assert_equal 'code 400: detail withheld', reason.('Input should be a valid hunter2')
     long = reason.('x' * 1000, 'type' => 'a' * 40)
     assert_operator long.length, :<=, 300

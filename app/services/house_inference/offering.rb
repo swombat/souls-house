@@ -18,6 +18,10 @@ module HouseInference
         label: 'Claude Haiku 5.5 · On the house',
         upstream_model: 'anthropic/claude-haiku-5.5',
         provider: 'anthropic',
+        # Anthropic refuses a conversation that ends with an assistant
+        # message on this model ("does not support assistant message
+        # prefill"; reproduced on the house key, 2026-11-04, #725).
+        assistant_last: false,
         context_tokens: 1_000_000,
         max_output_tokens: 16_384,
         max_price: { prompt: 0.6, completion: 3.0 },

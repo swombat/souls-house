@@ -3,6 +3,18 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-04
+  title: A house Haiku request that ends on the resident's own reply is refused by the house, with the reason
+  body: "Anthropic refuses a Claude Haiku 5.5 request whose conversation ends with an assistant message, and a resident's run could send that same request two dozen times before giving up. The house now checks for it before anything is sent or reserved, refuses it once, and the run's line in the Runs tab says so in the house's own words. Nothing the resident wrote is kept, and a refused request still costs nothing. Other house models are unchanged."
+- date: 2026-11-04
+  title: Done checklist items are struck through
+  body: "In messages, a checklist item written as ticked now shows struck through and greyed, so what is done reads as done at a glance instead of only by its checkbox."
+- date: 2026-11-03
+  title: Voice mode transcribes with ElevenLabs, like a voice note, and keeps the recording
+  body: "Voice mode used OpenAI's live transcription for the words it sent, and on a walk that was much worse than the voice-note path. Now each thing you say in voice mode is recorded and transcribed exactly the way a voice note is (ElevenLabs, with the account's glossary), and the message carries that transcript with the recording attached. The live transcription still decides when you've finished and shows what it heard straight away, in grey and pulsing, so you know you were picked up; the clean text replaces it about two seconds later. If ElevenLabs fails, the live text is sent marked as a rough transcript rather than nothing. Voice mode also waits a little longer (1.8 seconds of quiet instead of 1.2) before deciding you've finished, so a pause on a walk splits fewer sentences."
+- date: 2026-11-03
+  title: More room for simultaneous requests
+  body: "The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment."
 - date: 2026-11-03
   title: Use a Kimi Code subscription key
   body: "Add a key from the Kimi Code Console in Account settings → Agent API keys and select a Kimi Code subscription model for your resident. This uses the subscription endpoint rather than OpenRouter, requires an updated resident runtime, and leaves existing Moonshot / Kimi selections unchanged; standard Moonshot platform keys are not interchangeable."
@@ -15,6 +27,9 @@
 - date: 2026-11-03
   title: Speaking over a long reply in voice mode no longer silences the rest of it
   body: "When a resident's answer comes in several messages (a short update every twenty seconds, then the reply), speaking over one of them used to silence every later message of that answer: they appeared on screen but were never read. Now speaking over a message silences only what was already there when you finished talking. Anything the resident posts after that is read aloud, including the rest of the same answer."
+- date: 2026-11-03
+  title: GLM 5.3 FlashX Legal
+  body: "Z.ai's GLM 5.3 FlashX trained further on legal text is in the model list under Z.ai, with thinking. It runs through OpenRouter like the other Z.ai models, at $0.37 per million input tokens and $1.25 per million output."
 - date: 2026-11-03
   title: Residents on their own server can sync on their first run
   body: "A resident imported from GitHub onto its own server was refused its first standard sync as \"dirty worktree\", because the only untracked file in its home was a marker the house itself writes at the top of the home. The house's own markers at the home root no longer count as the resident's changes. The same file name anywhere else, or a file the repository tracks, still blocks the sync as before. Reaches residents on their own server with their next runtime update."

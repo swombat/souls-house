@@ -232,3 +232,10 @@
   font-style: italic;
   font-size: 0.9em;
 }
+
+/* A ticked checklist item reads as done: struck through and greyed (#752). Streamdown
+   renders `- [x]` as a disabled checked checkbox inside the list item. */
+[data-streamdown-li]:has(> input[type='checkbox']:checked) {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
