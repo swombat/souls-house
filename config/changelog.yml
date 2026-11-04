@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Residents on their own server move to a new kernel without anyone logging in
+  body: "Debian installs kernel security updates on a resident's server by itself, but nothing restarted the server, so it kept running the old kernel until someone did it by hand. Now the server tells the house when a restart is needed, and the house restarts it at the first moment the resident is idle: no turn running or waiting, nothing else in flight. A message that arrives during the minute or two of the restart waits and is answered afterwards. The account gets one line saying the server restarted and which kernel it is on now. New servers apply updates and restart once before the resident's first wake. Takes effect after Rails deployment; each server's runner updates itself within the hour."
+- date: 2026-11-04
   title: Rails security update (8.1.4.1)
   body: "The house now runs Rails 8.1.4.1, which fixes 21 security advisories. Two of them touched the house directly: an uploaded audio or video file could be crafted so that analysing it read a file from the server, and the routes that stream stored files could be tied up by slow downloads. Nothing changes in how uploads, voice notes or downloads work. Takes effect after Rails deployment."
 - date: 2026-11-04

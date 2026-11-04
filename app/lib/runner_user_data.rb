@@ -95,6 +95,12 @@ module RunnerUserData
 
     document = {
       "package_update" => true,
+      # A new VM starts on the current kernel (KernelReboot): upgrade at
+      # birth and, when that leaves /var/run/reboot-required, reboot once
+      # before runcmd. cloud-init runs runcmd on the next boot, so the runner
+      # first starts, and the resident first wakes, on the new kernel.
+      "package_upgrade" => true,
+      "package_reboot_if_required" => true,
       "packages" => %w[docker.io docker-cli python3-cryptography nftables xz-utils],
       "write_files" => [
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),

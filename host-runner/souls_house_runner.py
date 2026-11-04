@@ -66,7 +66,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
-                           "update_runner"})
+                           "update_runner", "reboot_host"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -185,7 +185,58 @@ def uptime_seconds(path="/proc/uptime"):
         return None
 
 
-def collect_facts(runtime_image=None, server_id_reader=provider_server_id, command_runner=_run):
+# --- kernel ------------------------------------------------------------------
+#
+# unattended-upgrades installs new kernels on a resident's VM but never
+# reboots it (4 Nov: Janis's VM ran 6.12.107 two days after 6.12.115 was
+# installed). The runner reports what runs, what is installed and whether
+# Debian asks for a reboot; the house decides when, from its view of the
+# resident's turns, and sends reboot_host. The runner answers first and
+# reboots after the answer is sent. Kept small: the runner rides in
+# user_data, which Hetzner caps at 32 KiB.
+REBOOT_VERSION = 1
+REBOOT_REQUIRED_PATH = "/var/run/reboot-required"
+REBOOT_GRACE_SECONDS = 300
+
+
+def kernel_key(release):
+    return [(0, int(part)) if part.isdigit() else (1, part) for part in re.findall(r"\d+|\D+", release)]
+
+
+def kernel_installed(modules_dir="/lib/modules"):
+    """The newest kernel with modules on disk: what the next boot runs."""
+    try:
+        return max((name for name in os.listdir(modules_dir) if os.path.isdir(os.path.join(modules_dir, name, "kernel"))),
+                   key=kernel_key, default=None)
+    except OSError:
+        return None
+
+
+def reboot_facts(required_path=REBOOT_REQUIRED_PATH, modules_dir="/lib/modules", release=None):
+    facts = {"kernel_running": release or os.uname().release, "kernel_installed": kernel_installed(modules_dir),
+             "reboot_required": os.path.exists(required_path), "reboot_host": REBOOT_VERSION}
+    try:
+        facts["reboot_required_since"] = int(os.stat(required_path).st_mtime)
+    except OSError:
+        pass
+    return facts
+
+
+def chaos_exec_running(proc="/proc"):
+    """Whether any process on the host, residents' containers included, is a
+    `chaos exec`: a turn the house may not know is still running."""
+    for pid in os.listdir(proc):
+        try:
+            with open(os.path.join(proc, pid, "cmdline"), "rb") as handle:
+                argv = handle.read().split(b"\0")
+        except OSError:
+            continue
+        if len(argv) > 1 and argv[0].rsplit(b"/", 1)[-1] == b"chaos" and argv[1] == b"exec":
+            return True
+    return False
+
+
+def collect_facts(runtime_image=None, server_id_reader=provider_server_id, command_runner=_run, reboot_reader=None):
     require_allowed("report_facts")
     disk = shutil.disk_usage("/")
     image_digest = None
@@ -214,6 +265,7 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         # on disk: the house queues update_runner when it differs from the
         # bundle Rails currently ships. None for the birth files.
         "runner_bundle_sha256": running_runner_bundle(),
+        **(reboot_reader or reboot_facts)(),
     }
 
 
@@ -714,8 +766,14 @@ class ResidentHost:
 
     def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None,
                  backup_request=None, docker_exit=_docker_exit, fetch_runner_bundle=None, runner_dir=None,
-                 self_check=None, running_dir=None):
+                 self_check=None, running_dir=None, reboot_required_path=REBOOT_REQUIRED_PATH,
+                 chaos_running=chaos_exec_running, kernel=None):
         self.state_dir = state_dir
+        # reboot_host: answered first; main() reboots once the answer is sent.
+        self.reboot_required_path = reboot_required_path
+        self.chaos_running = chaos_running
+        self.kernel = kernel or (lambda: {"kernel_running": os.uname().release})
+        self.reboot_requested = False
         # fetch_runner_bundle(sha256, write) streams a runner bundle from the
         # house; self_check(directory) runs the staged runner's --self-check.
         self.fetch_runner_bundle = fetch_runner_bundle
@@ -1081,6 +1139,27 @@ class ResidentHost:
         # By bundle digest, not directory: the birth pair moved behind
         # `current` is the same runner (both None) and needs no restart.
         return installed_runner_bundle(self.runner_dir) != running_runner_bundle(self.running_dir)
+
+    def reboot_host(self, payload):
+        """Reboot the VM onto its installed kernel. The house sends this only
+        when it sees the resident idle; the runner checks again what it can see
+        itself (Debian still asks for a reboot, no `chaos exec` on the host)
+        and refuses otherwise, so the house tries later. The answer is sent
+        before the reboot; a redelivery after it finds the remembered answer
+        and never reboots twice."""
+        _require(payload == {}, "reboot_host takes no arguments")
+        _require(os.path.exists(self.reboot_required_path), "no reboot required")
+        _require(not self.chaos_running(), "busy: a chaos exec is running")
+        return {"state": "rebooting", **self.kernel()}
+
+    def arm_reboot(self, command, result):
+        """Called only once the house has accepted the answer (HTTP 200), for
+        a first answer or a redelivered remembered one alike. Rechecked here:
+        Debian still asks and no chaos exec has started since."""
+        self.reboot_requested = (
+            command.get("kind") == "reboot_host"
+            and (result.get("result") or {}).get("state") == "rebooting"
+            and os.path.exists(self.reboot_required_path) and not self.chaos_running())
 
     def backup_resident(self, payload):
         from backup_proxy import run_backup
@@ -1721,7 +1800,11 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     result, cuts = fit_result(result)
     if cuts:
         print(f"command {command_id} result trimmed: {', '.join(cuts)}", file=sys.stderr)
-    post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
+    status, _ = post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"],
+                     opener=opener)
+    if status == 200 and hasattr(host, "arm_reboot"):
+        # A reboot only follows an answer the house has accepted.
+        host.arm_reboot(body["command"], result)
     return True
 
 
@@ -1750,7 +1833,8 @@ def poll_with_heartbeats(poll, config, key, state, host, heartbeat, facts, inter
 
 
 def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=enroll_once, heartbeat=heartbeat_once,
-         facts=collect_facts, max_heartbeats=None, poll=poll_command_once, clock=time.monotonic):
+         facts=collect_facts, max_heartbeats=None, poll=poll_command_once, clock=time.monotonic, host_factory=None,
+         reboot=None):
     with open(config_path) as handle:
         config = json.load(handle)
     try:
@@ -1792,11 +1876,14 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         # Heartbeats keep their cadence; between them the runner polls for
         # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
-        from backup_proxy import make_signed_request
-        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
-                            fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
-                            backup_request=make_signed_request(config, key, signed_headers),
-                            fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
+        if host_factory is None:
+            from backup_proxy import make_signed_request
+            host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
+                                fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
+                                backup_request=make_signed_request(config, key, signed_headers),
+                                fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
+        else:
+            host = host_factory(config, key)
         host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
@@ -1813,6 +1900,19 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
                 # A new runner is installed and its answer is sent: exit so
                 # systemd starts it (Restart=on-failure).
                 return RUNNER_RESTART_EXIT
+            if getattr(host, "reboot_requested", False):
+                # reboot_host's answer is sent: reboot onto the new kernel.
+                # The runner starts again at boot and heartbeats the kernel.
+                # No command is taken while shutdown runs (a turn started now
+                # would be cut off); if the machine is somehow still up after
+                # the grace, the runner goes on as before and the house sees
+                # the old kernel and tries again.
+                host.reboot_requested = False
+                if (reboot or reboot_now)():
+                    sleep(REBOOT_GRACE_SECONDS)
+                else:
+                    print("reboot failed", file=sys.stderr)
+                continue
             if not handled:
                 sleep(COMMAND_IDLE_SECONDS)
         return 0
@@ -1821,6 +1921,10 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         sent += 1
         sleep(HEARTBEAT_SECONDS)
     return 0
+
+
+def reboot_now():
+    return _run(["systemctl", "reboot"]) is not None
 
 
 if __name__ == "__main__":

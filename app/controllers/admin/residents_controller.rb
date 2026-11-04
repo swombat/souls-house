@@ -21,6 +21,7 @@ class Admin::ResidentsController < ApplicationController
     accounts = Account.where(id: Agent.select(:account_id)).includes(:owner).order(:name)
     placements = AgentPlacement.where(agent_id: Agent.select(:id)).index_by(&:agent_id)
     @operations = current_operations(placements.values)
+    @kernels = kernels(placements.values)
     @prices = HouseSample.of_kind("pricing").order(sampled_at: :desc).first&.metrics&.dig("hetzner_eur_per_month")
     accounts.flat_map do |account|
       owner = { account_name: account.name, owner_email: account.owner&.email_address }
@@ -34,7 +35,25 @@ class Admin::ResidentsController < ApplicationController
   def hosting(placement)
     return { kind: "local", state: placement&.state || "ready" } if placement.nil? || placement.backend == "local"
 
-    { kind: "cloud", state: placement.state, location: placement.location }.merge(machine(placement))
+    kernel = @kernels[placement.id]
+    { kind: "cloud", state: placement.state, location: placement.location }
+      .merge(kernel ? { kernel: } : {}).merge(machine(placement))
+  end
+
+  # Running vs installed kernel, from the live runner's last heartbeat
+  # (KernelReboot). nil for a runner that doesn't report it.
+  def kernels(placements)
+    cloud = placements.reject { |placement| placement.backend == "local" }.map(&:id)
+    RunnerEnrollment.where(agent_placement_id: cloud, revoked_at: nil).where.not(enrolled_at: nil)
+      .order(:enrolled_at).each_with_object({}) do |enrollment, kernels|
+        facts = KernelReboot.facts_of(enrollment)
+        next unless facts["kernel_running"]
+
+        kernels[enrollment.agent_placement_id] = {
+          running: facts["kernel_running"], installed: facts["kernel_installed"],
+          reboot_required: facts["reboot_required"] == true
+        }
+      end
   end
 
   # The VM's type, size and monthly list price (Daniel, JOyQre 2026-11-01).

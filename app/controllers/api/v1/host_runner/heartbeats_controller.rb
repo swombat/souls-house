@@ -12,6 +12,8 @@ module Api
           enrollment.heartbeat!(reported_server_id:, facts:, nonce:)
           Backup::VmResident.release_after_recovery!(enrollment:)
           RunnerBundle.offer!(enrollment)
+          KernelReboot.observe!(enrollment)
+          KernelReboot.offer!(enrollment)
           render json: { status: "ok" }
         end
 

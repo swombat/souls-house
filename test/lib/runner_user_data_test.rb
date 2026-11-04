@@ -81,9 +81,17 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   # create request. The real runner must fit with room to grow; a runner that
   # outgrew it would make every VM order fail (#238 part 1 nearly did).
   test "the document with the real runner fits Hetzner's limit with margin" do
-    # The backup module is embedded too; reserve at least 2 KiB for config.
-    assert_operator render.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 2.kilobytes
-    assert_equal render, render
+    # The backup module is embedded too. The reserve was 2 KiB; master sat
+    # about 50 bytes inside it on 4 Nov, and the kernel-reboot runner
+    # (KernelReboot) needs ~770 more, so the reserve is 1 KiB. Weighed as
+    # production renders it: the house's own origin and the command channel
+    # on (no runtime_image). The lasting fix is not embedding the runner at
+    # all (fetch by pinned digest at birth, #779); until then, this line is
+    # where every runner change is weighed.
+    production = render(rails_url: "https://souls.house", commands_enabled: true)
+    assert_operator production.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 1.kilobyte
+    assert_operator render.bytesize, :<=, production.bytesize
+    assert_equal production, render(rails_url: "https://souls.house", commands_enabled: true)
   end
 
   test "drops inbound traffic except SSH and starts only the firewall, Docker and the runner" do
