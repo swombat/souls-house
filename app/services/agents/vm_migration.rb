@@ -25,6 +25,11 @@ module Agents
   #   because, before cutover, the house home is the only home it has lived
   #   in. After cutover the move is undone by a later slice (copy-back).
   #
+  # - stage! also takes the carry (slice 3C): one restic snapshot of the
+  #   stopped house chaos and state homes into the resident's own repository,
+  #   with a shape digest per volume (CarrySnapshot). A carry that fails
+  #   refuses the stage; nothing is staged without one.
+  #
   # This class never starts a resident anywhere and never deletes a house
   # volume.
   class VmMigration
@@ -48,9 +53,14 @@ module Agents
       def ok? = refusal.nil?
     end
 
-    def initialize(agent, policy: VmBirthPolicy.current)
+    # carry: (agent, generation) -> CarrySnapshot::Result. The house half of
+    # the carry (checkpoint 2), taken inside stage!'s stopped window.
+    CARRY = ->(agent, generation) { CarrySnapshot.new(agent, generation:).call }
+
+    def initialize(agent, policy: VmBirthPolicy.current, carry: CARRY)
       @agent = agent
       @policy = policy
+      @carry = carry
     end
 
     attr_reader :agent
@@ -93,13 +103,23 @@ module Agents
           end
         end
         placement = AgentPlacement.find_or_initialize_by(agent:)
+        generation = placement.persisted? ? placement.generation + 1 : 1
+        # Still stopped and still under the row lock: the chaos and state
+        # homes go into its own repository, bound to this generation.
+        carry = begin
+          @carry.call(agent, generation)
+        rescue CarrySnapshot::Failed => error
+          raise Refused, error.message
+        end
         house_ready_at = agent.runtime_ready_at
-        placement.update!(backend: "hetzner_cloud", kind: "migration", state: "staged",
-          generation: placement.persisted? ? placement.generation + 1 : 1, house_runtime_ready_at: house_ready_at)
+        placement.update!(backend: "hetzner_cloud", kind: "migration", state: "staged", generation:,
+          house_runtime_ready_at: house_ready_at,
+          carry: { "snapshot_id" => carry.snapshot_id, "generation" => generation, "tags" => carry.tags, "shapes" => carry.shapes })
         agent.update_columns(runtime_ready_at: nil, runtime: "offline", updated_at: Time.current)
         AuditLog.create!(action: "vm_migration_staged", user: requested_by, account: agent.account, auditable: agent,
           data: { "placement_id" => placement.id, "generation" => placement.generation,
-                  "roles" => agent.import_stages.order(:role).map { |stage| { stage.role => stage.sha256 } } })
+                  "roles" => agent.import_stages.order(:role).map { |stage| { stage.role => stage.sha256 } },
+                  "carry_snapshot_id" => carry.snapshot_id })
       end
       placement
     rescue Portability::Error => error
@@ -155,7 +175,7 @@ module Agents
         placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
           house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
           cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
-          location: nil, runtime_endpoint: nil, seeded_at: nil)
+          location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
         agent.import_stages.delete_all
         agent.update_columns(runtime_ready_at: house_ready_at, active: false, paused: true, runtime: "offline",
           health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil, updated_at: Time.current)

@@ -66,7 +66,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
-                           "update_runner", "reboot_host"})
+                           "update_runner", "reboot_host", "restore_carry"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -1109,7 +1109,7 @@ class ResidentHost:
         try:
             os.chmod(staging, 0o755)
             for name, source in files.items():
-                _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
+                _write_synced(os.path.join(staging, name), source, RUNNER_PACKAGE_FILES[name])
             if not self.self_check(staging):
                 raise CommandFailed("the new runner failed its self-check; the old one stays")
             _write_synced(os.path.join(staging, RUNNER_BUNDLE_MARKER), (digest + "\n").encode(), 0o644)
@@ -1178,6 +1178,16 @@ class ResidentHost:
         finally:
             if isinstance(result, dict) and result.get("unpaused") is True and result.get("tools_stopped") is True and os.path.exists(self._backup_marker()):
                 os.unlink(self._backup_marker())
+
+    # restore_carry (#426 slice 3C): a moving resident's Chaos and state homes,
+    # restored from the house's carry snapshot before its first start. The
+    # work and its refusals are in carry_restore.py.
+    def restore_carry(self, payload):
+        try:
+            from carry_restore import run_restore_carry
+        except ImportError:
+            raise BadCommand("restore_carry needs the full runner package")
+        return run_restore_carry(payload, self)
 
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
@@ -1368,6 +1378,10 @@ RUNNER_BUNDLE_MAX_BYTES = 256 * 1024
 RUNNER_SOURCE_MAX_BYTES = 256 * 1024
 RUNNER_BUNDLE_DEADLINE = 2 * 60
 RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
+# The full package (#426 3C) adds these beside the pair, for a migration's
+# restore; the pair alone is the birth package. Nothing else is accepted.
+RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644}
+RUNNER_PACKAGE_FILES = {**RUNNER_BUNDLE_FILES, **RUNNER_CARRY_FILES}
 RUNNER_BUNDLE_MARKER = "bundle.sha256"
 RUNNER_VERSIONS = "versions"
 RUNNER_CURRENT = "current"
@@ -1501,14 +1515,15 @@ def prune_runner_versions(runner_dir=RUNNER_DIR):
 
 
 def unpack_runner_bundle(data):
-    """The bundle's files as {name: bytes}: exactly RUNNER_BUNDLE_FILES, each a
-    regular file of at most RUNNER_SOURCE_MAX_BYTES whose source compiles.
-    Anything else is refused whole; nothing is ever cut to a prefix."""
+    """The bundle's files as {name: bytes}: exactly the birth pair, or the pair
+    and RUNNER_CARRY_FILES; each a regular file of at most
+    RUNNER_SOURCE_MAX_BYTES, each Python one compiling. Anything else is
+    refused whole; nothing is ever cut to a prefix."""
     files = {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as archive:
             for member in archive.getmembers():
-                if member.name not in RUNNER_BUNDLE_FILES or not member.isreg() or member.name in files:
+                if member.name not in RUNNER_PACKAGE_FILES or not member.isreg() or member.name in files:
                     raise BadCommand(f"unexpected entry in runner bundle: {member.name!r}")
                 if member.size > RUNNER_SOURCE_MAX_BYTES:
                     raise BadCommand(f"runner bundle {member.name} is larger than {RUNNER_SOURCE_MAX_BYTES} bytes")
@@ -1519,9 +1534,11 @@ def unpack_runner_bundle(data):
                 files[member.name] = source
     except (tarfile.TarError, EOFError, OSError) as error:
         raise BadCommand(f"runner bundle is not a valid archive: {error}")
-    if set(files) != set(RUNNER_BUNDLE_FILES):
+    if set(files) not in (set(RUNNER_BUNDLE_FILES), set(RUNNER_PACKAGE_FILES)):
         raise BadCommand("runner bundle is missing a file")
     for name, source in files.items():
+        if not name.endswith(".py"):
+            continue
         try:
             compile(source, name, "exec")
         except (SyntaxError, ValueError) as error:

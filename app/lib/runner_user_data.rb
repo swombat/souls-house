@@ -18,6 +18,7 @@ require "open3"
 module RunnerUserData
 
   RUNNER_SOURCE_PATH = Rails.root.join("host-runner/souls_house_runner.py")
+  CARRY_SHAPE_PATH = Rails.root.join("host-runner/carry_shape.sh")
   FETCH_SOURCE_PATH = Rails.root.join("host-runner/birth_fetch.py")
   FETCH_SCRIPT = "/usr/local/lib/souls-house-runner/birth_fetch.py".freeze
   # Must stay under Agents::VmBirthPolicy::BIRTH_DEADLINE: the house fails a
@@ -178,10 +179,22 @@ module RunnerUserData
     File.read(RUNNER_SOURCE_PATH)
   end
 
-  def source_bundle
+  # Two packages from one tree (#426 3C). `birth` (the runner and the backup
+  # proxy) is what a new VM fetches at birth (#779), and what every runner, old or new, can
+  # unpack. `full` adds the carry modules a migration's restore needs; only a
+  # runner already on a birth package of this release accepts it.
+  BIRTH_FILES = %w[souls_house_runner.py backup_proxy.py].freeze
+  CARRY_FILES = %w[carry_restore.py carry_shape.sh].freeze
+
+  def source_bundle(full: false)
     io = StringIO.new("".b)
-    { "souls_house_runner.py" => [ compact_source(runner_source), 0755 ],
-      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ] }.each do |name, (source, mode)|
+    members = { "souls_house_runner.py" => [ compact_source(runner_source), 0755 ],
+      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ] }
+    if full
+      members["carry_restore.py"] = [ compact_source(File.read(Rails.root.join("host-runner/carry_restore.py"))), 0644 ]
+      members["carry_shape.sh"] = [ File.read(CARRY_SHAPE_PATH), 0644 ]
+    end
+    members.each do |name, (source, mode)|
       # Explicit mtime: TarWriter otherwise embeds the process's epoch.
       io.write(Gem::Package::TarHeader.new(name:, prefix: "", mode:, size: source.bytesize, mtime: 1).to_s)
       io.write(source)
@@ -225,9 +238,9 @@ module RunnerUserData
     output
   end
 
-  def compressed_source_bundle
+  def compressed_source_bundle(full: false)
     output, _error, status = Open3.capture3("timeout", "10", "xz", "-6", "--stdout",
-      stdin_data: source_bundle, binmode: true)
+      stdin_data: source_bundle(full:), binmode: true)
     raise PackagingFailed, "Cannot package runner source with xz" unless status.success?
 
     output

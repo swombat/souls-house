@@ -12,7 +12,7 @@ class RunnerCommand < ApplicationRecord
 
   KINDS = %w[start_resident stop_resident submit_turn turn_status cancel_turn seed_home backup_resident provider_auth
              check_runtime_trust tailnet home_stats
-             update_runner reboot_host].freeze
+             update_runner reboot_host restore_carry].freeze
   STATES = %w[queued delivered done failed refused unknown].freeze
   TERMINAL = %w[done failed refused unknown].freeze
   OUTCOMES = %w[done failed refused unknown].freeze

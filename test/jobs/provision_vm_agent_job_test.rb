@@ -1360,7 +1360,20 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     agent.reload
   end
 
-  def migration(agent) = Agents::VmMigration.new(agent)
+  CARRY_SHAPES = { "chaos" => { "entries" => 7, "shape" => "1" * 64 }, "state" => { "entries" => 4, "shape" => "2" * 64 } }.freeze
+
+  # The house carry snapshot without docker: records each call, returns a
+  # result bound to the generation it was given.
+  def fake_carry
+    @carries = []
+    lambda do |agent, generation|
+      @carries << [ agent.id, generation ]
+      Agents::VmMigration::CarrySnapshot::Result.new(snapshot_id: "9" * 64, shapes: CARRY_SHAPES,
+        tags: [ "agent=#{agent.uuid}", "carry=v1", "generation=#{generation}", "runtime=#{agent.container_image}" ])
+    end
+  end
+
+  def migration(agent) = Agents::VmMigration.new(agent, carry: fake_carry)
 
   def stage_move!(agent)
     Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
@@ -1412,10 +1425,33 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_not Agents::RuntimeLocation.dispatchable?(agent)
       assert_equal 0, Agents::VmBirthPolicy.current.vm_count, "staging buys nothing and takes no slot"
       assert AuditLog.exists?(action: "vm_migration_staged", auditable: agent)
+      assert_equal [ [ agent.id, placement.generation ] ], @carries, "one carry, bound to the staged generation"
+      assert_equal({ "snapshot_id" => "9" * 64, "generation" => placement.generation, "shapes" => CARRY_SHAPES,
+                     "tags" => [ "agent=#{agent.uuid}", "carry=v1", "generation=#{placement.generation}", "runtime=#{agent.container_image}" ] },
+                   placement.carry)
 
       assert_equal Agents::VmMigration::ALREADY_PLACED, migration(agent).refusal
       run_job(agent)
       assert_empty @client.creates
+    end
+  end
+
+  test "a carry that fails refuses the stage and leaves the resident exactly as it was" do
+    with_house do
+      agent = house_resident!
+      lived_since = agent.runtime_ready_at
+      failing = ->(*) { raise Agents::VmMigration::CarrySnapshot::Failed, "restic backup of the resident's home failed" }
+      error = Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
+        assert_raises(Agents::VmMigration::Refused) do
+          Agents::VmMigration.new(agent, carry: failing).stage!(requested_by: @user, transport: HouseTransport.new)
+        end
+      end
+      assert_equal "restic backup of the resident's home failed", error.message
+      agent.reload
+      assert_nil agent.placement
+      assert_empty agent.import_stages
+      assert_equal lived_since, agent.runtime_ready_at
+      assert_not AuditLog.exists?(action: "vm_migration_staged", auditable: agent)
     end
   end
 
@@ -1432,6 +1468,21 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       roles_enrolled!(agent)
       run_job(agent)
       seed_all!(placement)
+      run_job(agent)
+      assert_empty carry_commands(placement), "no restore_carry until the runner reports the full package"
+      assert_equal "pending", placement.reload.state
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+
+      full_package_running!(agent)
+      run_job(agent)
+      restore = carry_commands(placement).sole
+      payload = JSON.parse(restore.payload_json)
+      assert_equal({ "container_name" => agent.container_name, "agent_uuid" => agent.uuid, "restic_password" => agent.restic_password,
+                     "snapshot_id" => "9" * 64, "deadline_seconds" => Agents::RemoteRuntime::CARRY_DEADLINE_SECONDS,
+                     "shapes" => CARRY_SHAPES }, payload)
+      run_job(agent)
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident"), "never started before its home is back"
+      answer_carry!(placement)
       run_job(agent)
       assert_equal "ready", placement.reload.state
       answer_latest(placement, "start_resident")
@@ -1451,6 +1502,112 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert AuditLog.exists?(action: "vm_migration_ready", auditable: agent)
       error = assert_raises(Agents::VmMigration::Refused) { migration(agent).return_to_house!(requested_by: @user) }
       assert_equal Agents::VmMigration::CUT_OVER, error.message
+    end
+  end
+
+  def carry_commands(placement)
+    RunnerCommand.where(agent_placement_id: placement.id, kind: "restore_carry", generation: placement.reload.generation).order(:id)
+  end
+
+  def full_package_running!(agent)
+    enrollment = operation(agent).runner_enrollment
+    enrollment.update!(last_facts: enrollment.last_facts.to_h.merge("runner_bundle_sha256" => RunnerBundle.full.sha256))
+  end
+
+  def answer_carry!(placement, outcome: "done", shapes: CARRY_SHAPES, snapshot_id: "9" * 64, error: nil,
+                    sessions: { "mapped" => 2, "resolved" => 2 })
+    command = carry_commands(placement).last
+    command.deliver!(now: Time.current) unless command.delivered?
+    result = { "outcome" => outcome, "result" => { "snapshot_id" => snapshot_id, "shapes" => shapes, "tools_stopped" => true,
+                                                  "sessions" => sessions } }
+    result["error"] = error if error
+    command.record_result!(result, now: Time.current)
+  end
+
+  # Staged, admitted, server up, enrolled, seeded, on the full package.
+  def moved_to_carry!(agent)
+    placement = stage_move!(agent)
+    migration(agent.reload).activate!(requested_by: @user)
+    run_job(agent)
+    boot_and_enroll!(agent)
+    roles_enrolled!(agent)
+    run_job(agent)
+    seed_all!(placement)
+    full_package_running!(agent)
+    run_job(agent)
+    placement.reload
+  end
+
+  test "a carry that comes back with other digests fails the move before any start" do
+    with_house do
+      agent = house_resident!
+      placement = moved_to_carry!(agent)
+      answer_carry!(placement, shapes: CARRY_SHAPES.merge("state" => { "entries" => 4, "shape" => "3" * 64 }))
+      run_job(agent)
+      assert_equal "failed", placement.reload.state
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+      assert agent.reload.paused?
+      assert_nil agent.runtime_ready_at
+    end
+  end
+
+  [ [ "without its session check", nil ], [ "with an unresolved session", { "mapped" => 2, "resolved" => 1 } ] ].each do |label, sessions|
+    test "a carry answered #{label} fails the move" do
+      with_house do
+        agent = house_resident!
+        placement = moved_to_carry!(agent)
+        answer_carry!(placement, sessions:)
+        run_job(agent)
+        assert_equal "failed", placement.reload.state
+        assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+      end
+    end
+  end
+
+  test "a carry answered for another snapshot fails the move" do
+    with_house do
+      agent = house_resident!
+      placement = moved_to_carry!(agent)
+      answer_carry!(placement, snapshot_id: "8" * 64)
+      run_job(agent)
+      assert_equal "failed", placement.reload.state
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+    end
+  end
+
+  test "a failed restore is tried again, up to its limit, and then fails the move unstarted" do
+    with_house do
+      agent = house_resident!
+      placement = moved_to_carry!(agent)
+      (ProvisionVmAgentJob::CARRY_ATTEMPTS - 1).times do
+        answer_carry!(placement, outcome: "failed", error: "restic restore failed")
+        run_job(agent)
+        assert_equal "pending", placement.reload.state
+      end
+      assert_equal ProvisionVmAgentJob::CARRY_ATTEMPTS, carry_commands(placement).count
+      answer_carry!(placement, outcome: "failed", error: "restic restore failed")
+      run_job(agent)
+      assert_equal "failed", placement.reload.state
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
+    end
+  end
+
+  test "a move with no carry recorded is failed, never started with an empty home" do
+    with_house do
+      agent = house_resident!
+      placement = stage_move!(agent)
+      placement.update_columns(carry: nil)
+      migration(agent.reload).activate!(requested_by: @user)
+      run_job(agent)
+      boot_and_enroll!(agent)
+      roles_enrolled!(agent)
+      run_job(agent)
+      seed_all!(placement)
+      full_package_running!(agent)
+      run_job(agent)
+      assert_equal "failed", placement.reload.state
+      assert_empty carry_commands(placement)
+      assert_not RunnerCommand.exists?(agent_placement_id: placement.id, kind: "start_resident")
     end
   end
 
@@ -1480,6 +1637,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal [ "local", nil, "ready" ], [ placement.backend, placement.kind, placement.state ]
       assert_equal generation + 1, placement.generation
       assert_nil placement.house_runtime_ready_at
+      assert_nil placement.carry, "a return forgets the carry; a later move takes a fresh one"
       assert_equal lived_since, agent.runtime_ready_at
       assert_empty agent.import_stages
       assert agent.paused?
@@ -1804,7 +1962,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
 
   def move!(agent, policy: Agents::VmBirthPolicy.current)
     Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
-      Agents::VmMigration.new(agent, policy:).move!(requested_by: @user, transport: HouseTransport.new)
+      Agents::VmMigration.new(agent, policy:, carry: fake_carry).move!(requested_by: @user, transport: HouseTransport.new)
     end
   end
 
