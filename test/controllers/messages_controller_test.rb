@@ -700,7 +700,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   # Voice mode (VoiceMode): a spoken turn is flagged only when the account
   # may use the mode, and refused (nothing written) when it may not.
 
-  test "a voice mode send flags the message when the mode is available, with no recording" do
+  test "a voice mode send without a recording (the rough fallback) is still flagged and spoken" do
     Setting.instance.update!(voice_mode_scope: "account_choice")
     @account.update!(voice_mode_enabled: true, openai_api_key: "sk-account")
 
@@ -716,18 +716,27 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, JSON.parse(@response.body).fetch("voice_mode")
   end
 
-  test "a voice mode send that carries a recording is refused and nothing is kept" do
+  # #770: since #761 the panel sends every clean turn with its recording, the
+  # way a voice note goes; refusing it lost every clean turn.
+  test "a voice mode send that carries its recording is created with the recording attached" do
     Setting.instance.update!(voice_mode_scope: "account_choice")
     @account.update!(voice_mode_enabled: true, openai_api_key: "sk-account")
     blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("fake audio data"), filename: "turn.wav", content_type: "audio/wav")
 
-    assert_no_difference [ "Message.count", "ActiveStorage::Attachment.count" ] do
+    assert_difference [ "Message.count", "ActiveStorage::Attachment.count" ], 1 do
       post account_chat_messages_path(@account, @chat), params: {
         message: { content: "What is on today?" }, audio_signed_id: blob.signed_id, voice_mode: "true"
       }, as: :json
     end
-    assert_response :unprocessable_entity
-    assert_match "keeps no recording", JSON.parse(@response.body).fetch("errors").join
+    assert_response :created
+
+    message = Message.last
+    assert_equal "What is on today?", message.content
+    assert message.voice_mode?
+    assert message.audio_source?
+    assert message.audio_recording.attached?
+    assert_equal blob.id, message.audio_recording.blob.id
+    assert_equal true, JSON.parse(@response.body).fetch("voice_mode")
   end
 
   test "a voice mode send is refused when the account may not use the mode, and the refusal says why" do

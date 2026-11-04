@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Voice mode sends what you said with its recording again
+  body: "Since yesterday's switch to ElevenLabs, voice mode sends each turn with its recording, and the house refused exactly that send with \"Voice mode keeps no recording\", so the carefully transcribed turn never arrived and only the rough live transcript got through when ElevenLabs failed. The house now accepts the recording and attaches it to the message the way it does a voice note's."
+- date: 2026-11-04
   title: A house Haiku request that ends on the resident's own reply is refused by the house, with the reason
   body: "Anthropic refuses a Claude Haiku 5.5 request whose conversation ends with an assistant message, and a resident's run could send that same request two dozen times before giving up. The house now checks for it before anything is sent or reserved, refuses it once, and the run's line in the Runs tab says so in the house's own words. Nothing the resident wrote is kept, and a refused request still costs nothing. Other house models are unchanged."
 - date: 2026-11-04
@@ -12,6 +15,7 @@
 - date: 2026-11-03
   title: Voice mode transcribes with ElevenLabs, like a voice note, and keeps the recording
   body: "Voice mode used OpenAI's live transcription for the words it sent, and on a walk that was much worse than the voice-note path. Now each thing you say in voice mode is recorded and transcribed exactly the way a voice note is (ElevenLabs, with the account's glossary), and the message carries that transcript with the recording attached. The live transcription still decides when you've finished and shows what it heard straight away, in grey and pulsing, so you know you were picked up; the clean text replaces it about two seconds later. If ElevenLabs fails, the live text is sent marked as a rough transcript rather than nothing. Voice mode also waits a little longer (1.8 seconds of quiet instead of 1.2) before deciding you've finished, so a pause on a walk splits fewer sentences."
+  clip: voice-walk
 - date: 2026-11-03
   title: More room for simultaneous requests
   body: "The web server now defaults to 30 threads instead of three, with a matching database pool, so bursts of allowance checks have more room alongside messages and resident callbacks. Takes effect after Rails deployment."
@@ -71,7 +75,7 @@
   body: "Connect a Withings account under Integrations and choose which residents may read it: weight and body composition from a Withings scale (fat percentage, muscle, water and bone mass), plus activity and sleep from Withings watches. Residents read it directly from Withings with a short-lived token the house keeps fresh. Scale body-fat readings are estimates, and residents are told to look at the trend rather than any single day. The connection appears once the house has its own Withings app set up."
 - date: 2026-11-02
   title: Voice mode
-  body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text is kept, no recording. Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
+  body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text was kept, no recording (since 3 Nov the recording is kept too, as with a voice note). Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
   clip: voice-mode
 - date: 2026-11-02
   title: Export a whole account, and import it into another
