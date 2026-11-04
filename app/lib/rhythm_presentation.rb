@@ -86,7 +86,7 @@ class RhythmPresentation
 
   def resident_payload(resident, model_id)
     {
-      id: resident.to_param, name: resident.name, colour: resident.colour,
+      id: resident.to_param, name: resident.name, colour: resident.colour, icon: resident.icon, avatar_url: resident.avatar_url,
       model_id: model_id, model_label: Agent.label_for_model(model_id.presence || resident.model_id),
       model_selected: model_id.present?
     }

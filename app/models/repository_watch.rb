@@ -12,7 +12,6 @@
 class RepositoryWatch < ApplicationRecord
 
   EVENT_KINDS = %w[workflow_run deployment_status].freeze
-  STATES = %w[armed fulfilled expired undeliverable cancelled].freeze
   RECONCILE_STATUSES = %w[pending done error].freeze
   TERMINAL_DEPLOYMENT_STATES = %w[success failure error].freeze
   WORKFLOW_CONCLUSIONS = %w[success failure neutral cancelled skipped timed_out action_required stale startup_failure].freeze
@@ -29,8 +28,27 @@ class RepositoryWatch < ApplicationRecord
   belongs_to :created_by_user, class_name: "User", optional: true
   has_many :repository_watch_deliveries, dependent: :delete_all
 
+  state_machine :state, initial: :armed, action: nil do
+    state :armed, :fulfilled, :expired, :undeliverable, :cancelled
+
+    event :fulfil_watch do
+      transition armed: :fulfilled
+    end
+
+    event :expire_watch do
+      transition armed: :expired
+    end
+
+    event :cancel_watch do
+      transition armed: :cancelled
+    end
+
+    event :fail_delivery do
+      transition fulfilled: :undeliverable
+    end
+  end
+
   validates :event_kind, inclusion: { in: EVENT_KINDS }
-  validates :state, inclusion: { in: STATES }
   validates :reconcile_status, inclusion: { in: RECONCILE_STATUSES }
   validates :expires_at, presence: true
   validate :one_creator, on: :create
@@ -148,10 +166,6 @@ class RepositoryWatch < ApplicationRecord
     head_sha&.first(7)
   end
 
-  def armed?
-    state == "armed"
-  end
-
   def wake_agents
     Agent.where(id: wake_agent_ids).order(:id)
   end
@@ -221,7 +235,8 @@ class RepositoryWatch < ApplicationRecord
     fulfilled = with_lock do
       next false unless armed?
 
-      update!(state: "fulfilled", fulfilled_at: Time.current, fulfilment: fulfilment,
+      fulfil_watch!
+      update!(fulfilled_at: Time.current, fulfilment: fulfilment,
               reconcile_status: reconcile_status == "pending" ? "done" : reconcile_status)
       repository_watch_deliveries.find_or_create_by!(fulfilment_key: fulfilment_key)
       true
@@ -238,7 +253,8 @@ class RepositoryWatch < ApplicationRecord
     expired = with_lock do
       next false unless armed? && expires_at <= now
 
-      update!(state: "expired")
+      expire_watch!
+      save!
       repository_watch_deliveries.find_or_create_by!(fulfilment_key: fulfilment_key)
       true
     end
@@ -253,13 +269,17 @@ class RepositoryWatch < ApplicationRecord
     with_lock do
       next false unless armed?
 
-      update!(state: "cancelled", cancelled_at: Time.current, cancel_reason: reason)
+      cancel_watch!
+      update!(cancelled_at: Time.current, cancel_reason: reason)
     end
   end
 
   def mark_undeliverable!(reason)
     with_lock do
-      update!(state: "undeliverable", undeliverable_reason: reason.to_s.truncate(200)) if state == "fulfilled"
+      if fulfilled?
+        fail_delivery!
+        update!(undeliverable_reason: reason.to_s.truncate(200))
+      end
     end
   end
 
@@ -343,6 +363,9 @@ class RepositoryWatch < ApplicationRecord
   end
 
   private
+
+  private :fulfil_watch, :fulfil_watch!, :expire_watch, :expire_watch!,
+    :cancel_watch, :cancel_watch!, :fail_delivery, :fail_delivery!
 
   def safe_url(value)
     uri = URI.parse(value.to_s)

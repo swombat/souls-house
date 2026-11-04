@@ -30,6 +30,9 @@ async function startGroupChat(page, accountId, firstMessage) {
   await expect(page.getByRole('heading', { name: 'New Chat' })).toBeVisible();
 
   const chatForm = page.locator('main');
+  // All available residents are selected by default, summarised on one line until Change.
+  await expect(chatForm.getByTestId('participant-summary')).toHaveText(/^All \d+ residents$/);
+  await chatForm.getByRole('button', { name: 'Change' }).click();
   await expect(chatForm.getByRole('button', { name: /E2E Researcher/i })).toBeVisible();
   await expect(chatForm.getByRole('button', { name: /E2E Critic/i })).toBeVisible();
   await expect(chatForm.getByRole('button', { name: /E2E Paused Fork/i })).toBeVisible();
@@ -419,6 +422,7 @@ test.describe('browser contracts', () => {
     const chatForm = page.locator('main');
     await expect(chatForm.getByRole('button', { name: /^Model$/i })).toBeHidden();
     await expect(page.getByLabel(/allow web access/i)).toBeHidden();
+    await chatForm.getByRole('button', { name: 'Change' }).click();
     await expect(chatForm.getByRole('button', { name: /E2E Researcher/i })).toBeVisible();
     await expect(chatForm.getByRole('button', { name: /E2E Critic/i })).toBeVisible();
     await expect(chatForm.getByRole('button', { name: /E2E Paused Fork/i })).toBeVisible();
@@ -443,9 +447,9 @@ test.describe('browser contracts', () => {
 
     await expect(page.getByText(/Settings updated successfully/)).toBeVisible();
 
-    await page.getByRole('button', { name: /update profile picture/i }).click();
-    await page.locator('#avatar-upload').setInputFiles('test/fixtures/files/test_avatar.png');
-    await expect(page.getByRole('dialog')).not.toBeVisible();
+    // The picker sits inline in Settings: choosing a file saves it at once.
+    await page.locator('[data-avatar-file]').setInputFiles('test/fixtures/files/test_avatar.png');
+    await expect(page.locator('[data-avatar-dropzone] img')).toBeVisible();
 
     const stateResponse = await request.post('/test/e2e/state', {
       data: { run_id: setup.run_id, account_id: setup.account_id },

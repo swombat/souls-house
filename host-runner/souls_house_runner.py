@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, update_runner) and anything
+submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -26,6 +26,7 @@ used only for Ed25519. No cryptography is implemented here.
 """
 
 import base64
+import copy
 import hashlib
 import http.client
 import io
@@ -64,7 +65,8 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
-                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "update_runner"})
+                           "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
+                           "update_runner"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -205,6 +207,9 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
         # The house sends a GitHub import's runtime trust check only to a
         # runner that carries it; an older one would refuse the kind anyway.
         "runtime_trust_check": RUNTIME_TRUST_CHECK_VERSION,
+        # The house asks for a resident's card numbers only from a runner
+        # that can measure them; an older one would refuse the kind.
+        "home_stats": HOME_STATS_VERSION,
         # Which packaged runner this process is running (#593), not what is
         # on disk: the house queues update_runner when it differs from the
         # bundle Rails currently ships. None for the birth files.
@@ -216,6 +221,91 @@ def collect_facts(runtime_image=None, server_id_reader=provider_server_id, comma
 
 def encode_body(payload):
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+# The house reads a signed command result only up to RunnerSignature::MAX_BODY_BYTES
+# (64 KiB). A larger result is refused before the house can record anything,
+# post() never reads the refusal, and the command is handed out again for ever
+# while the turn it belongs to keeps its session busy (#673: a VM resident's
+# finished turn carrying a 61 KB prompt in full_invocation_text jammed its
+# Telegram group four times in thirty hours). So a result is fitted to the
+# transport before it is signed.
+#
+# There are two size checks, and the result must pass both: the signed body as
+# sent (measured exactly), and RunnerCommand#record_result!, which re-encodes
+# the outcome/error/result slice with Rails to_json and records "unknown" above
+# RESULT_BYTES. Rails escapes <, > and & as \u003c (six bytes for one) and
+# U+2028/U+2029 likewise, so 12 KB of "<" on the wire is 72 KB there.
+RESULT_MAX_BYTES = 64 * 1024
+# Headroom on the Rails estimate for what it does not model exactly (Ruby
+# prints some floats longer than Python, e.g. 1.0e-05 for 1e-05).
+RESULT_HOUSE_MARGIN_BYTES = 1024
+# What is kept of a cut string: its last characters, after "...".
+RESULT_TAIL_BYTES = 1000
+
+
+def house_json_bytes(result):
+    """Bytes RunnerCommand#record_result! measures for this result (Rails to_json)."""
+    sliced = {k: result[k] for k in ("outcome", "error", "result") if k in result} if isinstance(result, dict) else {}
+    text = json.dumps(sliced, separators=(",", ":"), ensure_ascii=False)
+    escaped = sum(5 * text.count(c) for c in "<>&") + sum(3 * text.count(c) for c in "\u2028\u2029")
+    return len(text.encode("utf-8", "surrogatepass")) + escaped
+
+
+def result_fits(result, limit=RESULT_MAX_BYTES):
+    return len(encode_body(result)) <= limit and house_json_bytes(result) + RESULT_HOUSE_MARGIN_BYTES <= limit
+
+
+def fit_result(result, limit=RESULT_MAX_BYTES):
+    """The result as it will be posted, and the list of cuts made to fit it.
+
+    Cuts, in order, each only if the previous was not enough: the
+    full_invocation_text copy of the prompt (the house stores it for the
+    interaction record and never relays it anywhere), the stdout/stderr tails,
+    then every other long string, to its tail. Structure is never cut, so what
+    the house reads to close a turn (id/ledger_id/state, status, returncode,
+    session ids, versioned telemetry with its usage and session freshness,
+    session_roll_reason, error_kind, subscription_usage) survives whole. The
+    cuts are named in the command's own error, which the house keeps with the
+    command and does not read as the turn's outcome. A result that still does
+    not fit is reported unknown, which the house records, rather than refused,
+    which it cannot."""
+    if result_fits(result, limit):
+        return result, []
+    result = copy.deepcopy(result)
+    cuts = []
+    for cut in ("full_invocation_text", "stdout/stderr", "long strings"):
+        if cut == "full_invocation_text":
+            _drop_key(result, cut)
+        else:
+            _shorten_keys(result, cut == "stdout/stderr" and ("stdout", "stderr"), RESULT_TAIL_BYTES)
+        cuts.append(cut)
+        noted = dict(result)
+        noted.setdefault("error", "trimmed to fit the house transport: " + ", ".join(cuts))
+        if result_fits(noted, limit):
+            return noted, cuts
+    cuts.append("result")
+    return {"outcome": "unknown", "error": "result too large"}, cuts
+
+
+def _drop_key(value, key):
+    if isinstance(value, dict):
+        value.pop(key, None)
+        for child in value.values():
+            _drop_key(child, key)
+    elif isinstance(value, list):
+        for child in value:
+            _drop_key(child, key)
+
+
+def _shorten_keys(value, keys, keep):
+    """Cut strings under the named keys (every string when keys is falsy) to their tail."""
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for name, child in list(items):
+        if isinstance(child, str) and len(child) > keep and (not keys or name in keys):
+            value[name] = "..." + child[-keep:]
+        else:
+            _shorten_keys(child, keys, keep)
 
 
 def post(base_url, path, payload, key, runner_id, opener=urllib.request.urlopen, timeout=30):
@@ -336,6 +426,54 @@ PROVIDER_AUTH_PARAMS = frozenset({"provider", "model", "refresh", "code"})
 TAILNET_ACTIONS = frozenset({"status", "up"})
 TAILNET_SECONDS = 45
 TAILNET_OUTPUT_MAX = 16384
+# home_stats: the journal entry count and persistent disk use on a resident's
+# card, measured inside the resident exactly as the house measures a local
+# one (Agents::JournalEntryStats). Only the two numbers leave the resident.
+# The script is fixed in the runner; Rails sends a container name, never
+# code. It is a byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and
+# a house test keeps the two equal.
+HOME_STATS_VERSION = 1
+HOME_STATS_SECONDS = 30
+HOME_STATS_SCRIPT = r"""import json, pathlib, re, subprocess
+root = pathlib.Path("/home/agent/identity/memory/daily-journals")
+if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
+    raise RuntimeError("invalid journal directory")
+count = 0
+try:
+    paths = list(root.iterdir())
+except FileNotFoundError:
+    paths = []
+for path in paths:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
+        continue
+    fence = None
+    with path.open(encoding="utf-8") as journal:
+        for line in journal:
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+            if marker:
+                run = marker[1]
+                if fence is None:
+                    fence = run
+                elif run[0] == fence[0] and len(run) >= len(fence):
+                    fence = None
+                continue
+            if fence is None and re.match(r"^##[ \t]+\S", line):
+                count += 1
+# Allocated bytes, including hidden files; du does not follow symlinks.
+# Explicit volume roots exclude the image layer and temporary filesystems.
+storage_bytes = None
+try:
+    roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
+    if any(pathlib.Path(path).is_symlink() for path in roots):
+        raise ValueError("invalid volume root")
+    measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=10, check=True)
+    sizes = [int(line.split()[0]) for line in measurement.stdout.splitlines()]
+    if len(sizes) == len(roots) and all(size >= 0 for size in sizes):
+        storage_bytes = sum(sizes)
+except (OSError, ValueError, subprocess.SubprocessError):
+    pass
+print(json.dumps({"count": count, "storage_bytes": storage_bytes}))
+"""
 VOLUME_MOUNTS = (
     ("identity", "/home/agent/identity"),
     ("chaos", "/home/agent/.chaos"),
@@ -848,6 +986,30 @@ class ResidentHost:
                                   "timeout", str(TAILNET_SECONDS), "soulshouse-tailnet", action, "--json"],
                                  timeout=TAILNET_SECONDS + 15)
         return {"ok": bool(ok), "output": (output or "")[-TAILNET_OUTPUT_MAX:]}
+
+    def home_stats(self, payload):
+        """The numbers on the resident's card: dated journal entry headings
+        and persistent disk use, counted inside the resident by the fixed
+        HOME_STATS_SCRIPT. Returns {"count", "storage_bytes"}; storage_bytes
+        may be None. Anything malformed fails the command, so the house shows
+        the card as unavailable rather than wrong."""
+        name = payload.get("container_name")
+        self._known_resident(name)
+        ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STATS_SECONDS),
+                                  "python3", "-c", HOME_STATS_SCRIPT], timeout=HOME_STATS_SECONDS + 15)
+        if not ok:
+            raise CommandFailed("could not measure the resident's home")
+        try:
+            measured = json.loads((output or "").strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            raise CommandFailed("the resident's home measurement was unreadable")
+        count = measured.get("count") if isinstance(measured, dict) else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise CommandFailed("the resident's home measurement was unreadable")
+        size = measured.get("storage_bytes")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            size = None
+        return {"count": count, "storage_bytes": size}
 
     def update_runner(self, payload):
         """Install the house's current runner bundle (#593). Fetched by
@@ -1556,6 +1718,9 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     command_id, result = execute_command(body["command"], state, host)
     if command_id is None or not COMMAND_ID_RE.match(command_id):
         return True
+    result, cuts = fit_result(result)
+    if cuts:
+        print(f"command {command_id} result trimmed: {', '.join(cuts)}", file=sys.stderr)
     post(config["rails_url"], COMMAND_RESULT_PATH.format(id=command_id), result, key, config["runner_id"], opener=opener)
     return True
 

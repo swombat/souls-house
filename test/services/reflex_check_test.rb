@@ -111,6 +111,19 @@ class ReflexCheckTest < ActiveSupport::TestCase
     assert_equal [ [ @first.to_param ] ], calls
   end
 
+  test "a held reflex (arrived with an account import) is not asked until a person releases it" do
+    @second.update!(held_at: Time.current)
+    calls = []
+    UtilityInference.stub(:decide, ->(questions:, **) { calls << questions.keys; questions.keys.index_with(0.9) }) do
+      ReflexCheck.after_post(say("Done."))
+      @first.update!(held_at: Time.current)
+      ReflexCheck.after_post(say("Done again."))
+      @second.release!
+      ReflexCheck.after_post(say("Done a third time."))
+    end
+    assert_equal [ [ @first.to_param ], [ @second.to_param ] ], calls
+  end
+
   test "after_post runs synchronously with the short timeout" do
     message = say("Post")
     seen = nil

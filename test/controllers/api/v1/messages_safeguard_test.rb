@@ -41,6 +41,7 @@ module Api
         assert_equal "souls.house", json["author_name"]
         assert_equal "system", json["author_type"]
         assert_nil json["author_colour"]
+        assert_nil json["author_agent_id"], "a labelled post is the house's, not the resident's"
         assert_equal @agent.name, json.dig("safeguard", "agent_name")
         assert_equal false, json.dig("safeguard", "reclaimed")
 

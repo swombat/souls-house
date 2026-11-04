@@ -13,8 +13,10 @@
     agentIsResponding = false,
     activeRuntimeAgentIds = [],
     runtimeInteractions = [],
-    responseMarker = null,
+    latestReplies = {},
     fileUploadConfig = {},
+    voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onAgentTrigger = () => {},
     onSent = () => {},
     onWaiting = () => {},
@@ -32,7 +34,7 @@
     disabled={!chat?.respondable}
     {activeRuntimeAgentIds}
     {runtimeInteractions}
-    {responseMarker}
+    {latestReplies}
     onTrigger={onAgentTrigger} />
 {/if}
 
@@ -55,6 +57,8 @@
     disabled={!chat?.respondable}
     manualResponses={chat?.manual_responses}
     {fileUploadConfig}
+    {voiceMode}
+    {messages}
     onsent={onSent}
     onwaiting={onWaiting}
     onerror={onError}

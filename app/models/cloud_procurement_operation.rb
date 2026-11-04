@@ -31,8 +31,43 @@ class CloudProcurementOperation < ApplicationRecord
   belongs_to :requested_by, class_name: "User"
   has_one :runner_enrollment, foreign_key: :procurement_operation_id, inverse_of: false
 
+  state_machine :state, initial: :planned, action: nil do
+    state(*STATES.map(&:to_sym))
+
+    event :submit_purchase do
+      transition planned: :create_in_flight
+    end
+
+    event :refuse_purchase do
+      transition [ :planned, :create_in_flight ] => :refused
+    end
+
+    event :lose_create_result do
+      transition [ :create_in_flight, :unknown ] => :unknown
+    end
+
+    event :record_server do
+      transition [ :create_in_flight, :unknown ] => :reconciling
+    end
+
+    event :require_review do
+      transition [ :create_in_flight, :unknown, :reconciling, :deleting ] => :needs_review
+    end
+
+    event :confirm_provisioning do
+      transition reconciling: :provisioned
+    end
+
+    event :request_cleanup do
+      transition [ :provisioned, :reconciling, :needs_review ] => :deleting
+    end
+
+    event :confirm_deletion do
+      transition deleting: :deleted
+    end
+  end
+
   validates :public_id, :provider_name, :approval_reference, presence: true
-  validates :state, inclusion: { in: STATES }
   validates :server_type, inclusion: { in: SERVER_TYPES }
   validates :location, inclusion: { in: EU_LOCATIONS }
   validates :image_id, numericality: { only_integer: true, greater_than: 0 }
@@ -42,12 +77,34 @@ class CloudProcurementOperation < ApplicationRecord
 
   def unresolved? = UNRESOLVED_STATES.include?(state)
 
+  # CloudProcurement holds the operation's lock and supplies the evidence.
+  # Persist the edge and its metadata together; never perform provider I/O here.
+  def transition_to!(target, **attributes)
+    case target
+    when "create_in_flight" then submit_purchase!
+    when "refused" then refuse_purchase!
+    when "unknown" then lose_create_result!
+    when "reconciling" then record_server!
+    when "needs_review" then require_review!
+    when "provisioned" then confirm_provisioning!
+    when "deleting" then request_cleanup!
+    when "deleted" then confirm_deletion!
+    else raise ArgumentError, "Unknown purchase destination: #{target}"
+    end
+    update!(attributes)
+  end
+
   # Labels let reconciliation find the server; they prove nothing on their own.
   def discovery_labels
     { HetznerCloudClient::OPERATION_LABEL => public_id }
   end
 
   private
+
+  private :submit_purchase, :submit_purchase!, :refuse_purchase, :refuse_purchase!,
+    :lose_create_result, :lose_create_result!, :record_server, :record_server!,
+    :require_review, :require_review!, :confirm_provisioning, :confirm_provisioning!,
+    :request_cleanup, :request_cleanup!, :confirm_deletion, :confirm_deletion!
 
   def ssh_key_ids_are_positive_integers
     ids = ssh_key_ids

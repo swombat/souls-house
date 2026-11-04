@@ -1,6 +1,9 @@
 <script>
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
+  import { fileDropZone } from '$lib/file-drop-zone';
+  import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
+  import VoiceModeButton from '$lib/components/chat/VoiceModeButton.svelte';
   import { ArrowUp } from 'phosphor-svelte';
 
   let {
@@ -16,15 +19,42 @@
     isGroupChat = false,
     selectedAgentIds = [],
     placeholder = 'Type your message to start the chat...',
+    voiceMode = { offered: false, available: false, reason: null },
+    onVoiceStart,
     onSubmit,
     onKeydown,
     onInput,
   } = $props();
+
+  let uploader = $state(null);
+  let voiceNotice = $state('');
+  // As in a conversation: the wave stands in for Send while there is nothing
+  // to send. It needs a resident to talk to.
+  const showWave = $derived(
+    Boolean(voiceMode?.offered) &&
+      !message.trim() &&
+      selectedFiles.length === 0 &&
+      !processing &&
+      !(isGroupChat && selectedAgentIds.length === 0)
+  );
+
+  // A screenshot or image on the clipboard becomes an attachment; text pastes as text.
+  function handlePaste(event) {
+    if (processing) return;
+    const files = filesFromPaste(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    uploader?.addFiles(files);
+  }
 </script>
 
-<div class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4" data-testid="message-composer">
+<div
+  class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
+  data-testid="message-composer"
+  use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: processing }}>
   <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
     <FileUploadInput
+      bind:this={uploader}
       bind:files={selectedFiles}
       disabled={processing}
       maxSize={fileUploadConfig?.max_size || 52428800} />
@@ -33,6 +63,7 @@
       <textarea
         bind:this={textareaRef}
         bind:value={message}
+        onpaste={handlePaste}
         onkeydown={onKeydown}
         oninput={onInput}
         {placeholder}
@@ -51,14 +82,21 @@
         onsuccess={onTranscription}
         onerror={onError} />
     </div>
-    <button
-      onclick={onSubmit}
-      disabled={(!message.trim() && selectedFiles.length === 0) ||
-        processing ||
-        (isGroupChat && selectedAgentIds.length === 0)}
-      aria-label="Start conversation"
-      class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
-      <ArrowUp size={16} />
-    </button>
+    {#if showWave}
+      <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => onVoiceStart?.()} />
+    {:else}
+      <button
+        onclick={onSubmit}
+        disabled={(!message.trim() && selectedFiles.length === 0) ||
+          processing ||
+          (isGroupChat && selectedAgentIds.length === 0)}
+        aria-label="Start conversation"
+        class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+        <ArrowUp size={16} />
+      </button>
+    {/if}
   </div>
+  {#if voiceNotice}
+    <p class="mt-2 text-sm text-muted-foreground" role="status" data-testid="voice-mode-notice">{voiceNotice}</p>
+  {/if}
 </div>

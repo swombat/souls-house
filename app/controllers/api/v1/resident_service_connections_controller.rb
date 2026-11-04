@@ -181,7 +181,7 @@ module Api
       end
 
       def access_sentence(connection)
-        names = connection.agent_service_accesses.enabled.includes(:agent).map { |access| access.agent.name }.sort
+        names = connection.agent_service_accesses.effective.includes(:agent).map { |access| access.agent.name }.sort
         names.any? ? "Residents who can use it: #{names.join(', ')}." : "No resident can use it now."
       end
 
@@ -212,7 +212,7 @@ module Api
           status: connection.status,
           connected_by_name: connection.connected_by_name,
           authority_summary: connection.credential_metadata.to_h["authority_summary"],
-          residents: connection.agent_service_accesses.enabled.includes(:agent).map { |access| { id: access.agent.to_param, name: access.agent.name } }
+          residents: connection.agent_service_accesses.effective.includes(:agent).map { |access| { id: access.agent.to_param, name: access.agent.name } }
         }
       end
 

@@ -4,6 +4,7 @@ class TelegramSubscription < ApplicationRecord
 
   CHAT_KINDS = %w[direct group].freeze
   GROUP_CHAT_TYPES = %w[group supergroup].freeze
+  BOT_WAKE_LIMIT = 3
 
   belongs_to :agent
   # A direct thread belongs to the person who subscribed; a group thread
@@ -16,6 +17,10 @@ class TelegramSubscription < ApplicationRecord
 
   validates :chat_kind, inclusion: { in: CHAT_KINDS }
   validates :user, presence: true, if: :direct?
+  validates :bot_wake_streak, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: BOT_WAKE_LIMIT }
+  validate :valid_answer_bot_usernames
+
+  before_validation :normalize_answer_bot_usernames
 
   scope :direct, -> { where(chat_kind: "direct") }
   scope :groups, -> { where(chat_kind: "group") }
@@ -39,6 +44,10 @@ class TelegramSubscription < ApplicationRecord
 
   def group?
     chat_kind == "group"
+  end
+
+  def answers_bot?(username)
+    answers_bots? && (answer_bot_usernames.empty? || answer_bot_usernames.include?(username.to_s.downcase.delete_prefix("@")))
   end
 
   def subscriber_name
@@ -84,6 +93,17 @@ class TelegramSubscription < ApplicationRecord
   end
 
   private
+
+  def normalize_answer_bot_usernames
+    self.answer_bot_usernames = Array(answer_bot_usernames).map { |name| name.to_s.strip }.compact_blank
+      .map { |name| name.delete_prefix("@").downcase }.uniq
+  end
+
+  def valid_answer_bot_usernames
+    return if answer_bot_usernames.all? { |name| name.match?(/\A[a-z][a-z0-9_]{4,31}\z/) }
+
+    errors.add(:answer_bot_usernames, "must contain Telegram usernames (5–32 letters, numbers or underscores, starting with a letter)")
+  end
 
   def refresh_subscriber_count
     if previously_new_record?

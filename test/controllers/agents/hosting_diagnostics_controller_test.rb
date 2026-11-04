@@ -100,32 +100,4 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "identity", body["target"]
   end
 
-  test "sandbox recreation queues reconcile job for hosted agent" do
-    @agent.update!(
-      runtime: "external",
-      uuid: SecureRandom.uuid_v7,
-      container_name: "hk-agent-test",
-      container_image: "helixkit-agent-runtime:latest",
-      health_state: "healthy"
-    )
-
-    assert_enqueued_with(job: HostedAgentRuntimeReconcileJob, args: [ @agent.id, { force: true } ]) do
-      post account_agent_sandbox_recreation_path(@account, @agent)
-    end
-
-    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "settings")
-    assert_match "Restarting", flash[:notice]
-  end
-
-  test "sandbox recreation refuses inline agent" do
-    @agent.update!(runtime: "deprecated")
-
-    assert_no_enqueued_jobs only: HostedAgentRuntimeReconcileJob do
-      post account_agent_sandbox_recreation_path(@account, @agent)
-    end
-
-    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "settings")
-    assert_match "Only hosted residents", flash[:alert]
-  end
-
 end

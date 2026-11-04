@@ -25,12 +25,29 @@ class FieldRecordingReservationTest < ActiveSupport::TestCase
 
   test "consume and release each happen once, and release after consume does nothing" do
     reservation = reserve!(recording, 60_000)
+    consumed_at = Time.current.change(usec: 0)
 
-    assert reservation.consume!
-    assert_not reservation.consume!
+    assert reservation.consume!(now: consumed_at)
+    assert_not reservation.consume!(now: consumed_at + 1.day)
     assert_not reservation.release!(reason: "discarded")
     assert_equal "consumed", reservation.reload.state
     assert_nil reservation.released_at
+    assert_equal consumed_at, reservation.consumed_at
+  end
+
+  test "a stale transcription worker cannot consume released allowance or change its release reason" do
+    reservation = reserve!(recording, 60_000)
+    stale = FieldRecordingReservation.find(reservation.id)
+    released_at = Time.current.change(usec: 0)
+
+    assert reservation.release!(reason: "discarded", now: released_at)
+    assert_not stale.consume!(now: released_at + 1.minute)
+    assert_not stale.release!(reason: "failed", now: released_at + 2.minutes)
+    assert_equal "released", stale.state
+    assert_equal "discarded", stale.release_reason
+    assert_equal released_at, stale.released_at
+    assert_nil stale.consumed_at
+    assert_equal 0, FieldRecordingReservation.used_ms(@account)
   end
 
   test "room frees up when enough consumed allowance ages out" do

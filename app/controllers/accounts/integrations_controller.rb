@@ -7,11 +7,17 @@ class Accounts::IntegrationsController < ApplicationController
         (can_manage_account && definition.supports_management_scope?("account_managed"))
     end
     agents = current_account.agents.by_name.to_a
+    # Residents hosted elsewhere and seated here as guests (JWblqj). They are
+    # offered beside the hosted residents, switched on by the owner (or by
+    # whoever may provision an account-wide connection), and get nothing
+    # until their home approves.
+    guests = current_account.guest_agents.includes(:account).by_name.to_a
     connections = current_account.service_connections.account_managed
       .or(current_account.service_connections.personal.where(connected_by_user: Current.user))
       .includes(:connected_by_user).order(:id).to_a
     accesses = AgentServiceAccess
-      .where(agent: agents, service_connection: connections)
+      .where(agent: agents + guests, service_connection: connections)
+      .includes(:home_approval_by)
       .index_by { |access| [ access.agent_id, access.service_connection_id ] }
     repositories = watched_repositories_by_connection(connections)
 
@@ -43,6 +49,29 @@ class Accounts::IntegrationsController < ApplicationController
               tailnet_url: (account_agent_tailnet_path(current_account, agent) if tailnet_visible && access&.enabled?),
               integrations_url: (edit_account_agent_path(current_account, agent, tab: "integrations") if tailnet_visible)
             }
+            if sendable
+              resident[:can_send] = access&.can_send? || false
+              resident[:send_grant_url] = account_agent_service_access_send_grant_path(current_account, agent, connection.public_id)
+            end
+            resident
+          end + guests.filter_map do |agent|
+            access = accesses[[ agent.id, connection.id ]]
+            next unless agent.offered_for_sharing?(granted: access&.enabled? || false)
+
+            resident = {
+              id: agent.to_param,
+              name: agent.name,
+              active: agent.active?,
+              guest: true,
+              home_account_name: agent.account.name,
+              enabled: access&.enabled? || false,
+              effective: access&.effective? || false,
+              provisioning_status: access&.provisioning_status,
+              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id),
+              can_share: connection.guest_access_changeable_by?(Current.user, enabled: true),
+              can_withdraw: connection.guest_access_changeable_by?(Current.user, enabled: false)
+            }
+            resident.merge!(access.home_approval_json) if access
             if sendable
               resident[:can_send] = access&.can_send? || false
               resident[:send_grant_url] = account_agent_service_access_send_grant_path(current_account, agent, connection.public_id)

@@ -2,13 +2,26 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
-  import { accountGuestMembershipsPath, accountGuestMembershipPath } from '@/routes';
+  import ServiceIcon from '$lib/components/service-icon.svelte';
+  import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
+  import { Clock } from 'phosphor-svelte';
+  import { accountGuestMembershipsPath, accountGuestMembershipPath, accountAgentCommitmentsPath } from '@/routes';
 
   // guests: residents hosted elsewhere who are guests here.
   // away: residents hosted here who are guests elsewhere.
   // candidates: residents from your other accounts you may bring in.
   // canEnd: only account owners remove guests or withdraw residents.
-  let { accountId, guests = [], away = [], candidates = [], canEnd = false } = $props();
+  // formerGuests: residents that were guests here and left commitments here.
+  // awaySessions: runs each away seat has going in the account it visits, by membership id.
+  let {
+    accountId,
+    guests = [],
+    away = [],
+    awaySessions = {},
+    candidates = [],
+    formerGuests = [],
+    canEnd = false,
+  } = $props();
 
   let selected = $state('');
 
@@ -33,7 +46,22 @@
   }
 </script>
 
-{#if guests.length > 0 || away.length > 0 || candidates.length > 0}
+{#snippet sharedIntegrations(membership, place)}
+  {#if membership.integrations?.length}
+    <span class="flex flex-wrap gap-2" aria-label={`Integrations shared with ${membership.agent.name} by ${place}`}>
+      {#each membership.integrations as integration}
+        <span
+          class={integration.enabled ? 'text-primary' : 'text-muted-foreground/35'}
+          title={`${integration.label} · ${integration.status}`}
+          aria-label={`${integration.label}: ${integration.status}`}>
+          <ServiceIcon provider={integration.provider} size={18} />
+        </span>
+      {/each}
+    </span>
+  {/if}
+{/snippet}
+
+{#if guests.length > 0 || away.length > 0 || candidates.length > 0 || formerGuests.length > 0}
   <Card class="mt-8">
     <CardHeader>
       <CardTitle>Guest residents</CardTitle>
@@ -47,9 +75,15 @@
         <ul class="space-y-2" data-testid="guest-residents">
           {#each guests as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
-              <span
-                >{membership.agent.name}
-                <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
+              <span class="space-y-1">
+                <span class="block"
+                  >{membership.agent.name}
+                  <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
+                {@render sharedIntegrations(membership, 'this account')}
+                <a
+                  class="block text-xs text-muted-foreground underline underline-offset-4"
+                  href={accountAgentCommitmentsPath(accountId, membership.agent.id)}>Commitments made here</a>
+              </span>
               {#if canEnd}
                 <Button
                   variant="outline"
@@ -65,13 +99,50 @@
         </ul>
       {/if}
 
+      {#if formerGuests.length > 0}
+        <ul class="space-y-1 text-sm" data-testid="former-guests">
+          {#each formerGuests as former (former.id)}
+            <li>
+              {former.name} <span class="text-muted-foreground">· no longer a guest here</span>
+              <a class="ml-2 text-xs text-muted-foreground underline underline-offset-4" href={former.commitments_url}
+                >Commitments made here</a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
       {#if away.length > 0}
         <ul class="space-y-2" data-testid="away-residents">
           {#each away as membership (membership.id)}
             <li class="flex items-center justify-between gap-4">
-              <span
-                >{membership.agent.name}
-                <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+              <span class="space-y-1">
+                <span class="flex flex-wrap items-center gap-x-3 gap-y-1"
+                  ><span
+                    >{membership.agent.name}
+                    <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
+                  {#if membership.rhythms?.count > 0}
+                    {@const label = `${membership.rhythms.count} ${membership.rhythms.count === 1 ? 'rhythm' : 'rhythms'} with ${membership.agent.name} in ${membership.account.name}`}
+                    {#if membership.rhythms.url}
+                      <a
+                        href={membership.rhythms.url}
+                        data-testid="away-rhythms"
+                        class="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-muted-foreground hover:text-foreground"
+                        title={label}
+                        aria-label={label}
+                        ><Clock size={16} weight="duotone" aria-hidden="true" />{membership.rhythms.count}</a>
+                    {:else}
+                      <span
+                        data-testid="away-rhythms"
+                        class="inline-flex items-center gap-1 text-xs font-medium tabular-nums text-muted-foreground"
+                        title={label}
+                        ><Clock size={16} weight="duotone" aria-hidden="true" /><span aria-hidden="true"
+                          >{membership.rhythms.count}</span
+                        ><span class="sr-only">{label}</span></span>
+                    {/if}
+                  {/if}
+                  <ResidentSessionsSpinner sessions={awaySessions?.[membership.id]} /></span>
+                {@render sharedIntegrations(membership, membership.account.name)}
+              </span>
               {#if canEnd}
                 <Button
                   variant="outline"

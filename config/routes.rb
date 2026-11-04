@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
+  get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
   resources :stones, only: :show do
     get "revisions/:number", to: "stones#show", as: :revision
     get "revisions/:number/content", to: "stones#content", as: :revision_content
@@ -30,6 +32,7 @@ Rails.application.routes.draw do
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
+        post :voice_mode_fixture, to: "/test_support/e2e#voice_mode_fixture"
       end
     end
   end
@@ -61,7 +64,7 @@ Rails.application.routes.draw do
   resource :user, only: %i[edit update] do
     scope module: :users do
       resource :password, only: [ :edit, :update ]
-      resource :avatar, only: :destroy
+      resource :avatar, only: %i[update destroy]
     end
   end
 
@@ -128,6 +131,16 @@ Rails.application.routes.draw do
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
+    # Account export and import (docs/features/account-portability.md).
+    resource :portability, only: :show, module: :accounts, controller: "portability" do
+      post :release_field
+    end
+    resources :exports, only: [ :create ], module: :accounts, controller: "account_exports" do
+      get :download, on: :member
+    end
+    resources :imports, only: [ :create ], module: :accounts, controller: "account_imports" do
+      post :confirm, on: :member
+    end
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
@@ -203,6 +216,7 @@ Rails.application.routes.draw do
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]
+        resource :voice_mode_session, only: :create
       end
       resources :messages, only: [ :index, :create ]
     end
@@ -223,9 +237,16 @@ Rails.application.routes.draw do
         get "identity_export", to: "agents/runtime_checks#identity_export", as: :identity_export
         post "send_test_request", to: "agents/runtime_checks#send_test_request", as: :send_test_request
         post "send_orientation", to: "agents/runtime_checks#send_orientation", as: :send_orientation
+        patch :avatar, to: "agents/avatars#update"
+        delete :avatar, to: "agents/avatars#destroy"
+        get :voices, to: "agents/voices#index"
+        patch :voice, to: "agents/voices#update"
+        get "voice_preview/:voice_id", to: "agents/voices#preview", as: :voice_preview
       end
 
       scope module: :agents do
+        resources :reflex_releases, only: :create, path: "reflexes/:reflex_id/release"
+        resources :commitments, only: %i[index update destroy]
         resource :provisioning_retry, only: :create
         resource :orientation_retry, only: :create
         resource :hosting_diagnostics, only: :show do
@@ -248,8 +269,11 @@ Rails.application.routes.draw do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"
         end
+        # The home's answer when another house shares a connection with this
+        # resident (JWblqj): approve, decline or revoke. Owners only.
+        resources :guest_access_approvals, only: :update
         resource :tailnet, only: [ :show, :create ]
-        resources :memories, only: [ :create ] do
+        resources :memories, only: [] do
           resource :discard, only: [ :create, :destroy ], module: :memories
           resource :protection, only: [ :create, :destroy ], module: :memories
         end
@@ -307,6 +331,7 @@ Rails.application.routes.draw do
     scope module: :messages do
       resource :retry, only: :create
       resource :voice, only: :create
+      resource :speech, only: :show
       resource :safeguard_reset, only: :create
     end
   end
@@ -325,6 +350,10 @@ Rails.application.routes.draw do
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
       resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
+      resource :migration, only: %i[show create], controller: "resident_migrations" do
+        post :measure
+        get :measure, action: :show
+      end
     end
     resources :accounts, only: [ :index ] do
       member do
@@ -473,7 +502,13 @@ Rails.application.routes.draw do
       resources :reflexes, only: %i[index create destroy] do
         resources :judgments, only: :index, module: :reflexes
       end
+      resources :commitments, only: %i[index show create update destroy]
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      patch "agent/avatar", to: "agent_avatars#update"
+      delete "agent/avatar", to: "agent_avatars#destroy"
+      get "agent/voice", to: "agent_voices#show"
+      patch "agent/voice", to: "agent_voices#update"
+      delete "agent/voice", to: "agent_voices#destroy"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
@@ -563,6 +598,10 @@ Rails.application.routes.draw do
       end
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
+        # Read-only forwarding for services whose tokens can't be scoped
+        # down (Monzo). The adapter decides which paths are readable.
+        get "read", to: "service_connection_reads#show", as: :read_proxy_root, format: false
+        get "read/*path", to: "service_connection_reads#show", as: :read_proxy, format: false
         namespace :comms do
           resources :chats, only: :index
           resources :messages, only: %i[index create]

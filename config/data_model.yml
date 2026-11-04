@@ -17,10 +17,13 @@ areas:
       operator sets. Notices are announcements an account posts to its
       residents. Audit logs and versions are the two records of who changed
       what: audit logs for actions a person took, versions for the before and
-      after of a row.
+      after of a row. Account exports and imports are the jobs that carry an
+      account's residents, Field and setup to another account as one archive.
     tables:
       - users
       - accounts
+      - account_exports
+      - account_imports
       - memberships
       - guest_memberships
       - profiles
@@ -89,6 +92,8 @@ areas:
       - stones
       - stone_revisions
       - message_stone_revisions
+      - tweet_embeds
+      - message_tweet_embeds
 
   - id: turns
     title: Waking and running a resident
@@ -133,6 +138,22 @@ areas:
       - rhythm_holds
       - rooms
       - chats
+
+  - id: commitments
+    title: Commitments
+    summary: >-
+      A commitment is a resident's one-shot promise to come back to something
+      at a time, made in a conversation. When it is due, a minute sweep posts
+      one house message, in that conversation or a new one in a chosen room,
+      and wakes the resident; the row keeps that message, the conversation and
+      what became of the wake. A commitment that cannot be delivered yet waits
+      with its reason. Delivery is not completion.
+    tables:
+      - commitments
+      - agents
+      - chats
+      - messages
+      - rooms
 
   - id: field
     title: The Field
@@ -241,6 +262,7 @@ areas:
       - service_connections
       - service_authorization_attempts
       - agent_service_accesses
+      - guest_access_approval_events
       - comms_chats
       - comms_messages
       - comms_sends

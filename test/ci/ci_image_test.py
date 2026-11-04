@@ -7,7 +7,47 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def locked_package_version(lock, name):
+    entry = re.search(r'"' + re.escape(name) + r'":\s*\["([^"]+)"', lock)
+    if entry is None:
+        return None
+    specifier = entry.group(1)
+    version = re.fullmatch(
+        re.escape(name) + r'@(?:(\d+\.\d+\.\d+)|https://registry\.npmjs\.org/[^"]+-(\d+\.\d+\.\d+)\.tgz)',
+        specifier,
+    )
+    return (version.group(1) or version.group(2)) if version else None
+
+
 class CiImageTest(unittest.TestCase):
+    def test_locked_package_version_accepts_both_bun_notations(self):
+        for name in ("@playwright/test", "@playwright/experimental-ct-svelte"):
+            tarball = name.rsplit("/", 1)[-1]
+            for specifier in (
+                f"{name}@1.55.0",
+                f"{name}@https://registry.npmjs.org/{name}/-/{tarball}-1.55.0.tgz",
+            ):
+                with self.subTest(name=name, specifier=specifier):
+                    lock = f'"{name}": ["{specifier}", "", {{}}, "sha512-example"],'
+                    self.assertEqual("1.55.0", locked_package_version(lock, name))
+
+    def test_locked_package_version_rejects_missing_or_unrecognized_entries(self):
+        name = "@playwright/test"
+        for lock in (
+            '"@playwright/test-extra": ["@playwright/test-extra@1.55.0"],',
+            '"@playwright/test": ["another-package@1.55.0"],',
+            '"@playwright/test": ["@playwright/test@latest"],',
+            '"@playwright/test": ["@playwright/test@1.55.0.tgz"],',
+            '"@playwright/test": ["@playwright/test@https://registry.npmjs.org/@playwright/test/-/test-1.55.0"],',
+        ):
+            with self.subTest(lock=lock):
+                self.assertIsNone(locked_package_version(lock, name))
+
+    def test_locked_package_version_preserves_different_versions(self):
+        lock = '"@playwright/test": ["@playwright/test@1.55.1", "", {}],'
+        self.assertEqual("1.55.1", locked_package_version(lock, "@playwright/test"))
+        self.assertNotEqual("1.55.0", locked_package_version(lock, "@playwright/test"))
+
     def test_ci_native_tools_use_production_debian_generation(self):
         dockerfile = (ROOT / ".github/ci/Dockerfile").read_text()
         for image in ("ruby:${RUBY_VERSION}-slim-trixie", "node:${NODE_VERSION}-trixie-slim"):
@@ -32,9 +72,9 @@ class CiImageTest(unittest.TestCase):
         self.assertEqual(pins["BUN_VERSION"], package["packageManager"].removeprefix("bun@"))
         lock = (ROOT / "bun.lock").read_text()
         for name in ("@playwright/test", "@playwright/experimental-ct-svelte"):
-            version = re.search(r'"' + re.escape(name) + r'": \["[^"]+-(\d+\.\d+\.\d+)\.tgz"', lock)
+            version = locked_package_version(lock, name)
             self.assertIsNotNone(version, f"Cannot find locked version of {name}")
-            self.assertEqual(pins["PLAYWRIGHT_VERSION"], version.group(1))
+            self.assertEqual(pins["PLAYWRIGHT_VERSION"], version)
 
     def test_image_context_contains_no_application_or_credentials(self):
         context = ROOT / ".github/ci"
@@ -60,7 +100,7 @@ class CiImageTest(unittest.TestCase):
             self.assertRegex(dockerfile, r"\b" + re.escape(package) + r"\b")
         self.assertIn("import sys, yaml, tomllib", workflow)
         self.assertIn("sys.version_info >= (3, 11)", workflow)
-        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe pdfinfo pdftotext pdftoppm sh date sleep", workflow)
+        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep", workflow)
 
 
 if __name__ == "__main__":

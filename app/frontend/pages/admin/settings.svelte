@@ -6,6 +6,7 @@
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
+  import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
@@ -47,6 +48,7 @@
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
     formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
     formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'disabled');
+    formData.append('setting[voice_mode_scope]', form.voice_mode_scope ?? 'account_choice');
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
@@ -127,6 +129,7 @@
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
       <ReflexesSettingsCard {form} />
+      <VoiceModeSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />

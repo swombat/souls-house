@@ -78,6 +78,8 @@ class Reporter:
         self.disabled = False
         self.dropped = 0
         self.silence = None
+        # Set by the trigger shim from the payload: the waking turn was spoken.
+        self.voice_mode = False
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -295,7 +297,16 @@ class Reporter:
             except ProcessLookupError:
                 pass
             proc.wait(timeout=5)
-            raise
+            # Keep what Chaos wrote before the deadline (process.started and
+            # any turn events) so the timeout record names its session and
+            # usage instead of looking like a run that never started (#718).
+            for thread in readers[:2]:
+                thread.join(timeout=1)
+            raise subprocess.TimeoutExpired(
+                args, timeout,
+                output=(process_started + b"".join(retained)).decode(errors="replace"),
+                stderr=stderr.decode(errors="replace"),
+            ) from None
         finally:
             # Also prevent background descendants retaining pipes after the
             # supervised root exits. Only this invocation's process group.
@@ -343,9 +354,16 @@ class Reporter:
         if not conversation_id:
             return args
         if self.silence is None:
-            self.silence = silence_nudge.SilenceClock(
-                self.run_id, conversation_id, time.time(),
-                first_after=silence_nudge.FIRST_AFTER_SECS, repeat=silence_nudge.REPEAT_SECS)
+            if self.voice_mode:
+                self.silence = silence_nudge.SilenceClock(
+                    self.run_id, conversation_id, time.time(),
+                    first_after=silence_nudge.VOICE_FIRST_AFTER_SECS,
+                    repeat=silence_nudge.VOICE_REPEAT_SECS,
+                    ttl=silence_nudge.VOICE_NOTICE_TTL_SECS, voice=True)
+            else:
+                self.silence = silence_nudge.SilenceClock(
+                    self.run_id, conversation_id, time.time(),
+                    first_after=silence_nudge.FIRST_AFTER_SECS, repeat=silence_nudge.REPEAT_SECS)
         if not silence_nudge.supports_steer_file(args[0]):
             return args
         env["SOULSHOUSE_STEER_FILE"] = str(self.silence.path)

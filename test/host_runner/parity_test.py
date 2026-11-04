@@ -120,6 +120,51 @@ class ParityTest(unittest.TestCase):
     def test_tailnet_is_in_the_vocabulary(self):
         self.assertIn("tailnet", runner.COMMAND_KINDS)
 
+    def test_home_stats_runs_the_fixed_script_inside_the_resident_and_returns_only_numbers(self):
+        self.host.start_resident(spec())
+        self.docker.calls.clear()
+        answers = iter([(True, 'noise\n{"count": 37, "storage_bytes": 2048}')])
+        self.host.docker = lambda argv, timeout=120: (self.docker.calls.append(argv), next(answers))[1]
+        self.assertEqual({"count": 37, "storage_bytes": 2048}, self.host.home_stats({"container_name": "agent-pilot-1"}))
+        self.assertEqual([["docker", "exec", "agent-pilot-1", "timeout", "30", "python3", "-c", runner.HOME_STATS_SCRIPT]],
+                         self.docker.calls)
+
+    def test_home_stats_keeps_the_count_when_the_disk_figure_is_missing_or_bad(self):
+        self.host.start_resident(spec())
+        for size in (None, -1, "12", True):
+            with self.subTest(size=size):
+                self.host.docker = lambda argv, timeout=120, size=size: (
+                    True, runner.json.dumps({"count": 3, "storage_bytes": size}))
+                self.assertEqual({"count": 3, "storage_bytes": None},
+                                 self.host.home_stats({"container_name": "agent-pilot-1"}))
+
+    def test_home_stats_fails_on_unknown_residents_failed_execs_and_unreadable_answers(self):
+        self.host.start_resident(spec())
+        with self.assertRaises(runner.CommandFailed):
+            self.host.home_stats({"container_name": "agent-other"})
+        with self.assertRaises(runner.BadCommand):
+            self.host.home_stats({"container_name": "../x"})
+        for answer in ((False, "boom"), (True, ""), (True, "private prose"), (True, '{"count": -1}'),
+                       (True, '{"count": "3"}'), (True, '{"count": true}'), (True, "[1]")):
+            with self.subTest(answer=answer):
+                self.host.docker = lambda argv, timeout=120, answer=answer: answer
+                with self.assertRaises(runner.CommandFailed):
+                    self.host.home_stats({"container_name": "agent-pilot-1"})
+
+    def test_home_stats_is_in_the_vocabulary_and_announced(self):
+        self.assertIn("home_stats", runner.COMMAND_KINDS)
+        self.assertEqual(1, runner.HOME_STATS_VERSION)
+
+    def test_the_home_stats_script_counts_entries_in_a_real_home(self):
+        home = tempfile.mkdtemp()
+        journals = os.path.join(home, "daily-journals")
+        os.makedirs(journals)
+        with open(os.path.join(journals, "2026-10-29.md"), "w") as handle:
+            handle.write("# Day\n\n## 09:00 one\nprose\n```\n## fenced\n```\n## 10:00 two\n")
+        script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals", journals)
+        out = runner.subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(2, runner.json.loads(out)["count"])
+
 
 if __name__ == "__main__":
     unittest.main()

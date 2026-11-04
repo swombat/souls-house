@@ -14,7 +14,9 @@
   // What the account can buy: offers when the server sends them, else the
   // purchasable standard tiers.
   let buyable = $derived(
-    offers.length ? offers : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
+    offers.length
+      ? offers
+      : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
   );
   let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
   // An existing resident is offered standard plans here; a resident at cost
@@ -71,7 +73,11 @@
     event.preventDefault();
     if (!code.trim()) return;
     busy = 'code';
-    router.post(codes.redeem_url, { code: code.trim() }, { onFinish: () => (busy = null), onSuccess: () => (code = '') });
+    router.post(
+      codes.redeem_url,
+      { code: code.trim() },
+      { onFinish: () => (busy = null), onSuccess: () => (code = '') }
+    );
   }
 
   // A paid resident can move to another plan at its own rate: the offers at
@@ -126,55 +132,61 @@
       </div>
     {/if}
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      {#each tiers as tier (tier.id)}
-        <div class="rounded border p-4">
-          <div class="flex items-baseline justify-between">
-            <h2 class="text-lg font-semibold">{tier.name}</h2>
-            <div>
-              <span class="text-2xl font-semibold">${tier.monthly_usd}</span><span
-                class="text-sm text-muted-foreground">
-                / month + VAT</span>
-            </div>
+    <section class="space-y-3" data-testid="billing-plans">
+      <div class="grid gap-3 sm:grid-cols-3">
+        {#each tiers as tier (tier.id)}
+          {@const atCostOffer = atCostOffers.find((offer) => (offer.tier ?? offer.id) === tier.id)}
+          <div class="flex flex-col rounded-lg border p-4">
+            <h2 class="font-semibold">{tier.name}</h2>
+            <p class="mt-2 flex flex-wrap items-baseline gap-x-1">
+              <span class="text-2xl font-semibold">${tier.monthly_usd}</span>
+              <span class="whitespace-nowrap text-sm text-muted-foreground">/ month + VAT</span>
+            </p>
+            {#if atCostGrant && atCostOffer}
+              <p class="mt-1 text-sm" data-testid="billing-at-cost-price">
+                <span class="font-medium">${atCostOffer.monthly_usd}</span>
+                <span class="text-muted-foreground">at cost</span>
+              </p>
+            {/if}
+            <PlanIncludes
+              features={tier.features}
+              class="mt-3 text-xs text-muted-foreground"
+              iconClass="text-primary/70" />
           </div>
-          <p class="mt-2 text-sm">Hosting for one resident, in a container on the shared house server.</p>
-          <p class="mt-1 text-sm">
-            ${tier.features.allowance_usd} a month of house model for that resident. It resets on the 1st (UTC) and replaces
-            the free allowance while the plan is paid.
-          </p>
-          <PlanIncludes
-            features={tier.features}
-            omit={['hosting', 'allowance']}
-            class="mt-2 text-xs text-muted-foreground" />
-        </div>
-      {/each}
-    </div>
+        {/each}
+      </div>
+      <p class="text-xs text-muted-foreground">
+        Hosting is a container on the shared house server. A plan's house-model allowance resets on the 1st (UTC) and
+        replaces the free allowance while the plan is paid.
+      </p>
+    </section>
 
     {#if atCostGrant}
-      <div class="rounded border p-4 text-sm" data-testid="billing-at-cost">
-        <p class="font-medium">This account can buy plans at cost (code {atCostGrant.code}).</p>
-        <p class="mt-1 text-muted-foreground">
-          At cost is the machine's price and what comes with it, with no house-model allowance:
-          {#each atCostOffers as offer, index (offer.id)}{index > 0 ? ' · ' : ' '}{offer.name.replace(' at cost', '')} ${offer.monthly_usd}{/each}
-          a month + VAT. The resident runs on a model subscription or key you connect.
+      <div class="rounded-lg border bg-muted/40 p-4 text-sm" data-testid="billing-at-cost">
+        <p class="font-medium">
+          This account can buy plans at cost <span class="font-normal text-muted-foreground"
+            >(code
+            <span class="font-mono">{atCostGrant.code}</span>)</span>
         </p>
         <p class="mt-1 text-muted-foreground">
-          Create a resident at cost from the resident wizard. Moving a resident that already has a plan to at cost is
-          coming.
+          At cost is the server's price and what comes with it, with no house-model allowance: the resident runs on a
+          model subscription or key you connect. Choose it on the Plan step when you create a resident. Moving a
+          resident that already has a plan to at cost is coming.
         </p>
       </div>
     {/if}
 
-    <div class="rounded border divide-y">
+    <div class="rounded-lg border divide-y">
       {#each residents as resident (resident.id)}
         {@const entitlement = resident.entitlement}
-        <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
+        <div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
               <span class="font-medium truncate">{resident.name}</span>
               <Badge variant={stateVariant(entitlement)}>{stateLabel(entitlement)}</Badge>
               {#if entitlement?.tier && entitlement.source === 'stripe'}
-                <Badge variant="outline">{tierName(entitlement.tier)}{entitlement.rate === 'at_cost' ? ' at cost' : ''}</Badge>
+                <Badge variant="outline"
+                  >{tierName(entitlement.tier)}{entitlement.rate === 'at_cost' ? ' at cost' : ''}</Badge>
               {/if}
             </div>
             <div class="mt-1 text-xs text-muted-foreground">
@@ -195,7 +207,7 @@
           </div>
 
           {#if billing.can_pay && canSubscribe(entitlement)}
-            <div class="flex shrink-0 flex-wrap gap-2">
+            <div class="flex flex-wrap gap-2 lg:justify-end">
               {#each subscribable as offer (offer.id)}
                 <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
                   {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
@@ -203,15 +215,21 @@
               {/each}
             </div>
           {:else if billing.can_pay && canChange(entitlement)}
-            <div class="flex shrink-0 flex-col items-end gap-1" data-testid="plan-change">
-              <div class="flex flex-wrap gap-2">
+            <div class="flex flex-col gap-2 lg:max-w-md lg:items-end" data-testid="plan-change">
+              <div class="flex flex-wrap gap-2 lg:justify-end">
                 {#each changeOptions(entitlement) as offer (offer.id)}
-                  <Button size="sm" variant="outline" onclick={() => changePlan(resident, offer)} disabled={busy !== null}>
-                    {busy === `${resident.id}:change:${offer.id}` ? 'Changing…' : `Move to ${offer.name} · $${offer.monthly_usd}`}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onclick={() => changePlan(resident, offer)}
+                    disabled={busy !== null}>
+                    {busy === `${resident.id}:change:${offer.id}`
+                      ? 'Changing…'
+                      : `Move to ${offer.name} · $${offer.monthly_usd}`}
                   </Button>
                 {/each}
               </div>
-              <p class="text-xs text-muted-foreground">
+              <p class="text-xs text-muted-foreground lg:text-right">
                 The price changes now; Stripe puts the difference for the rest of this period on the next invoice. The
                 house-model allowance follows the month's rule: this month keeps the higher of the two until the 1st. A
                 resident's own server keeps its size for now.
@@ -227,21 +245,22 @@
     <RefundGuarantee email={billing.contact_email} />
 
     {#if billing.can_pay && codes?.redeem_url}
-      <form class="flex flex-wrap items-end gap-2 rounded border p-4" onsubmit={redeem} data-testid="billing-code-form">
-        <label class="flex flex-col gap-1 text-sm">
-          <span class="font-medium">Have a code?</span>
+      <form class="space-y-2 rounded-lg border p-4" onsubmit={redeem} data-testid="billing-code-form">
+        <label for="billing-code" class="block text-sm font-medium">Have a code?</label>
+        <div class="flex gap-2">
           <input
-            class="rounded border bg-background px-3 py-1.5 font-mono text-sm uppercase"
+            id="billing-code"
+            class="h-9 min-w-0 flex-1 rounded-md sm:max-w-xs border bg-background px-3 font-mono text-sm uppercase"
             name="code"
             placeholder="ABCD-1234"
             autocomplete="off"
             bind:value={code}
             disabled={busy !== null} />
-        </label>
-        <Button type="submit" size="sm" variant="outline" disabled={busy !== null || !code.trim()}>
-          {busy === 'code' ? 'Checking…' : 'Apply'}
-        </Button>
-        <p class="basis-full text-xs text-muted-foreground">
+          <Button type="submit" variant="outline" disabled={busy !== null || !code.trim()}>
+            {busy === 'code' ? 'Checking…' : 'Apply'}
+          </Button>
+        </div>
+        <p class="text-xs text-muted-foreground">
           A code changes which plans this account is offered. It doesn't change a plan already bought.
         </p>
       </form>

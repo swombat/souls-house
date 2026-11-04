@@ -167,13 +167,17 @@ class RunnerEnrollment < ApplicationRecord
   # start_resident naming exactly that image ID. Same rule as the other
   # endpoints: every check under the lock before the nonce is consumed.
   IMAGE_ID = /\Asha256:[0-9a-f]{64}\z/
+  IMAGE_FETCH_KINDS = %w[start_resident check_runtime_trust].freeze
 
   def authorize_image!(image_id:, nonce:, now: Time.current)
     with_lock do
       placement = require_live!
       raise Refused.new(:bad_image, 404) unless IMAGE_ID.match?(image_id.to_s)
 
-      wanted = commands.where(kind: "start_resident", state: "delivered")
+      # A GitHub import's runtime trust check (check_runtime_trust) runs in the
+      # resident's image before any start_resident exists, so it may fetch the
+      # image it was sent too; without this every VM import failed at 404.
+      wanted = commands.where(kind: IMAGE_FETCH_KINDS, state: "delivered")
         .where(generation: placement.generation).any? do |command|
           JSON.parse(command.payload_json.to_s)["image"] == image_id
         rescue JSON::ParserError

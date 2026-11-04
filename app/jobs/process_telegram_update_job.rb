@@ -108,7 +108,8 @@ class ProcessTelegramUpdateJob < ApplicationJob
   # whose Telegram is linked to this bot, addresses the bot there; or when an
   # owner switches it on in settings. Once on, every message is kept as
   # context, and only one addressed to the bot (an @mention of its username,
-  # a text_mention of it, or a reply to one of its own messages) wakes the
+  # a text_mention of it, a reply to one of its own messages, or, in a group
+  # that is already on, a person writing the resident's name) wakes the
   # resident, which then sees the conversation above the mention too.
   def process_membership(agent, member_update)
     chat = member_update["chat"] || {}
@@ -129,17 +130,53 @@ class ProcessTelegramUpdateJob < ApplicationJob
     return migrate_group(agent, message) if message["migrate_to_chat_id"]
 
     group = record_group(agent, message["chat"])
-    addressed = !message.dig("from", "is_bot") && addressed_to_bot?(agent, message)
-    allow_on_first_owner_address(agent, group, message) if addressed
-    return unless group.deliverable?
-
+    telegram_message = nil
     content = supported_content(message)
-    return unless content
+    group.with_lock do
+      # Deduplication, human resets and bot admission share this lock. A retry
+      # must not spend another slot, reset a later streak, or repeat its notice.
+      next if message["message_id"] && group.telegram_messages.exists?(telegram_message_id: message["message_id"])
 
-    telegram_message = create_inbound_message(group, message, content, addressed: addressed)
+      from_person = !message.dig("from", "is_bot")
+      explicitly_addressed = addressed_to_bot?(agent, message)
+      allow_on_first_owner_address(agent, group, message) if from_person && explicitly_addressed
+      next unless group.deliverable?
+
+      # Even a human sticker/service message breaks a bot streak. Keep a
+      # non-waking placeholder so a redelivery cannot reset a later streak.
+      unsupported = content.nil?
+      content ||= { text: "[Unsupported Telegram message]" } if from_person
+      next unless content
+
+      addressed = if from_person
+        !unsupported && (explicitly_addressed || names_resident?(agent, message))
+      else
+        explicitly_addressed && group.answers_bot?(message.dig("from", "username")) &&
+          (content[:media_kind].present? || text_wake_eligible?(agent))
+      end
+
+      capped = !from_person && addressed && group.bot_wake_streak >= TelegramSubscription::BOT_WAKE_LIMIT
+      # addressed is wake eligibility, not just syntactic addressing:
+      # downstream media preparation uses it too. Policy-suppressed bot media
+      # must follow the context path, never wake around the setting/list/cap.
+      addressed = false if capped
+      telegram_message = create_inbound_message(group, message, content, addressed: addressed)
+      next unless telegram_message
+
+      if from_person
+        group.update!(bot_wake_streak: 0, bot_cap_notice_message_id: nil) if group.bot_wake_streak.positive? || group.bot_cap_notice_message_id
+      elsif capped
+        unless group.bot_cap_notice_message_id
+          group.update!(bot_cap_notice_message_id: telegram_message.id)
+          TelegramGroupNoticeJob.perform_later(group, bot_cap_message_id: telegram_message.id)
+        end
+      elsif addressed
+        group.update!(bot_wake_streak: group.bot_wake_streak + 1)
+      end
+    end
     return unless telegram_message
 
-    if addressed
+    if telegram_message.addressed?
       enqueue_wake(agent, group, telegram_message, content)
     elsif content[:media_kind]
       prepare_context_media(group, telegram_message, content)
@@ -221,6 +258,19 @@ class ProcessTelegramUpdateJob < ApplicationJob
     end
   end
 
+  # The resident's name as a whole word, in any case: "Alanis?" and "ask
+  # alanis" wake her; "Alanisa" does not. Names under three characters are
+  # too likely to be ordinary words to count.
+  def names_resident?(agent, message)
+    name = agent.name.to_s.strip
+    return false if name.length < 3
+
+    text = message["text"] || message["caption"]
+    return false if text.blank?
+
+    text.match?(/(?<![\p{L}\p{N}_])#{Regexp.escape(name)}(?![\p{L}\p{N}_])/i)
+  end
+
   # Telegram measures entity offsets in UTF-16 code units.
   def entity_text(text, entity)
     return if text.blank?
@@ -238,9 +288,13 @@ class ProcessTelegramUpdateJob < ApplicationJob
       else
         PrepareTelegramMediaJob.perform_later(telegram_message, content[:file_id], content[:telegram_metadata])
       end
-    elsif agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
+    elsif text_wake_eligible?(agent)
       TelegramAgentTriggerJob.perform_later(subscription, telegram_message)
     end
+  end
+
+  def text_wake_eligible?(agent)
+    agent.active? && !agent.paused? && !agent.billing_held? && agent.external? && agent.trigger_bearer_token.present?
   end
 
   def create_inbound_message(subscription, message, content, addressed: true)

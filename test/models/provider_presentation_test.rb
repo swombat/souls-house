@@ -13,7 +13,10 @@ class ProviderPresentationTest < ActiveSupport::TestCase
   end
 
   teardown do
-    [ @account, @other ].each { |account| account.reload.destroy! }
+    [ @account, @other ].each do |account|
+      AuditLog.where(account_id: account.id).delete_all
+      account.reload.destroy!
+    end
   end
 
   test "provider presentation is a pure persisted read with no runtime client or writes" do

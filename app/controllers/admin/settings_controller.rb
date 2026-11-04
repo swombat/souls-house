@@ -72,6 +72,7 @@ class Admin::SettingsController < ApplicationController
       :safeguard_conversations_enabled,
       :follow_through_scope,
       :reflexes_scope,
+      :voice_mode_scope,
       :stalled_sweep_minutes,
       :stalled_sweep_wake,
       :new_residents_on_vm,
@@ -97,6 +98,7 @@ class Admin::SettingsController < ApplicationController
         name: agent.name,
         account: agent.account&.name,
         icon: agent.icon,
+        avatar_url: agent.avatar_url,
         colour: agent.colour,
         paused: agent.paused?,
         follow_through: agent.follow_through?

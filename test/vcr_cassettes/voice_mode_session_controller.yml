@@ -1,0 +1,33 @@
+---
+http_interactions:
+- request:
+    method: post
+    uri: https://api.openai.com/v1/realtime/client_secrets
+    body:
+      encoding: UTF-8
+      string: '{"expires_after":{"anchor":"created_at","seconds":120},"session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"noise_reduction":{"type":"near_field"},"transcription":{"model":"gpt-live-transcribe","delay":"low","keywords":["Research
+        Assistant","Code Reviewer","Memory Agent","No Tools Agent","souls.house"]},"turn_detection":null}}}}'
+    headers:
+      Content-Type:
+      - application/json
+      Authorization:
+      - Bearer <OPENAI_API_KEY>
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Date:
+      - Mon, 02 Nov 2026 07:56:25 GMT
+      Content-Type:
+      - application/json
+      X-Request-Id:
+      - e4b66b54-6d03-4588-ae6b-c4240263a744
+      Openai-Processing-Ms:
+      - '134'
+    body:
+      encoding: UTF-8
+      string: '{"value":"ek_00000000000000000000000000000000","expires_at":1793606305,"session":{"type":"transcription","object":"realtime.transcription_session","id":"sess_EfhBxs08fl1ugyIBEkqUr","expires_at":0,"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-live-transcribe","language":null,"languages":null,"keywords":["Research
+        Assistant","Code Reviewer","Memory Agent","No Tools Agent","souls.house"],"prompt":null},"noise_reduction":{"type":"near_field","strength":1.0},"turn_detection":null}},"include":null}}'
+  recorded_at: Mon, 02 Nov 2026 08:05:00 GMT
+recorded_with: VCR 6.3.1

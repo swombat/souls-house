@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  account_portability_expiry:
+    class: AccountPortability::ExpiryJob
+    queue: default
+    schedule: every hour at minute 35
+
   abandoned_app_uploads:
     class: AbandonedAppUploadsJob
     queue: default
@@ -96,6 +101,12 @@ production:
 
   rhythms:
     class: RhythmSweepJob
+    queue: default
+    schedule: every minute
+
+  # Residents' one-shot commitments (Commitment, #699 B).
+  commitments:
+    class: CommitmentSweepJob
     queue: default
     schedule: every minute
 
@@ -191,6 +202,13 @@ production:
     class: RollHoldWatchJob
     queue: default
     schedule: every 15 minutes
+
+  # Guest integration requests unanswered for 14 days are closed
+  # (GuestAccessRequestSweepJob).
+  guest_access_request_sweep:
+    class: GuestAccessRequestSweepJob
+    queue: default
+    schedule: every hour at minute 50
 
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob

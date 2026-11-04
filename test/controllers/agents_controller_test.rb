@@ -56,6 +56,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_not response.parsed_body.fetch("props").key?("grouped_models")
   end
 
+  test "a sessions-only partial counts this account's running sessions without building the cards" do
+    resident = @account.agents.where.not(id: @agent.id).first || @agent
+    AgentRuntimeInteraction.create!(agent: resident, trigger_kind: "wake", started_at: Time.current,
+      run_id: SecureRandom.uuid, execution_state: "running")
+    Agents::ResidentDirectory.stub :new, ->(*) { flunk "a sessions refresh built resident cards" } do
+      get account_agents_path(@account), headers: {
+        "X-Inertia" => "true",
+        "X-Inertia-Version" => ViteRuby.digest,
+        "X-Inertia-Partial-Component" => "agents/index",
+        "X-Inertia-Partial-Data" => "active_sessions"
+      }
+      assert_response :success
+    end
+    sessions = response.parsed_body.dig("props", "active_sessions")
+    assert_equal({ "chat" => 0, "telegram" => 0, "other" => 1 }, sessions.fetch(resident.to_param))
+    assert sessions.keys.all? { |id| @account.agents.find_by_obfuscated_id(id) }, "only this account's residents"
+  end
+
   test "birth claims funding atomically and a second birth creates no resident key or job" do
     attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
     assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
@@ -607,6 +625,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, inertia_shared_props.dig("interactions_pagination", "count")
   end
 
+  test "the runs tab says why the house refused a scheduled run before dispatch" do
+    AgentRuntimeInteraction.create!(
+      agent: @agent, trigger_kind: "wake", requested_by: "souls.house scheduled wake", session_id: "w",
+      started_at: 2.minutes.ago, finished_at: 1.minute.ago, transport_status: 412, runtime_status: "error",
+      response_body: { "status" => "error", "error_kind" => "needs_setup", "error" => "Edit the resident and set up credentials." }
+    )
+
+    get edit_account_agent_path(@account, @agent), params: { tab: "interactions" }
+
+    interaction = inertia_shared_props.fetch("interactions").first
+    assert_equal "Edit the resident and set up credentials.", interaction["setup_refusal"]
+    assert_not interaction.key?("response_body")
+  end
+
   test "interaction costs are reverse chronological and paginated" do
     26.times do |index|
       AgentRuntimeInteraction.create!(
@@ -792,23 +824,23 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "external agent update allows display name and model changes but ignores self-managed identity params" do
-    @agent.update!(
-      name: "Hosted Researcher",
-      model_id: "openrouter/auto",
-      voice_id: "original-voice"
-    )
+    @agent.update!(name: "Hosted Researcher", model_id: "openrouter/auto")
+    @agent.update_column(:voice_id, "original-voice")
     @agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 
-    patch account_agent_path(@account, @agent), params: {
-      agent: {
-        name: "Browser Rename",
-        system_prompt: "Changed prompt",
-        model_id: "openai/gpt-5.2",
-        voice_id: "changed-voice",
-        paused: true,
-        colour: "emerald"
+    voices = %w[original-voice changed-voice].map { |id| ElevenLabsVoices::Voice.new(voice_id: id, name: id, description: "", labels: {}, preview_url: nil) }
+    ElevenLabsVoices.stub(:catalogue, voices) do
+      patch account_agent_path(@account, @agent), params: {
+        agent: {
+          name: "Browser Rename",
+          system_prompt: "Changed prompt",
+          model_id: "openai/gpt-5.2",
+          voice_id: "changed-voice",
+          paused: true,
+          colour: "emerald"
+        }
       }
-    }
+    end
 
     assert_redirected_to account_agents_path(@account)
     @agent.reload

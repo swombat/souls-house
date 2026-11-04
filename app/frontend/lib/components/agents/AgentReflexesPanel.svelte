@@ -1,4 +1,6 @@
 <script>
+  import { router } from '@inertiajs/svelte';
+
   // A resident's reflexes, read-only. Residents write and forget their own
   // reflexes in conversation (docs/reflexes.md); this page only shows them.
   let { reflexes = {}, agentName = 'This resident' } = $props();
@@ -12,6 +14,10 @@
     return value
       ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value))
       : null;
+  }
+
+  function release(reflex) {
+    router.post(reflex.release_url, {}, { preserveScroll: true });
   }
 
   function offeredLine(reflex) {
@@ -41,7 +47,20 @@
         <dd class="whitespace-pre-line">{reflex.reminder}</dd>
       </div>
     </dl>
-    <p class="text-xs text-muted-foreground">{offeredLine(reflex)}</p>
+    {#if reflex.held_at && !reflex.discarded_at}
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-500/60 bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+        data-testid="reflex-held">
+        <span>Held since it was imported. It is not checked or offered until a person releases it.</span>
+        {#if reflex.release_url}
+          <button type="button" class="font-medium underline underline-offset-4" onclick={() => release(reflex)}>
+            Release
+          </button>
+        {/if}
+      </div>
+    {:else}
+      <p class="text-xs text-muted-foreground">{offeredLine(reflex)}</p>
+    {/if}
   </li>
 {/snippet}
 

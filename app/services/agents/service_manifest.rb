@@ -37,9 +37,9 @@ module Agents
           id: connection.id, status: connection.status,
           credential_revision: connection.credential_revision
         )
-        provisioned = access.enabled? && connections.include?(connection)
+        provisioned = access.effective? && connections.include?(connection)
         affected = AgentServiceAccess.where(
-          id: access.id, enabled: access.enabled, updated_at: access.updated_at,
+          id: access.id, enabled: access.enabled, home_approval: access.home_approval, updated_at: access.updated_at,
           service_connection_id: unchanged_connections.select(:id)
         ).update_all(
           provisioned_revision: provisioned ? connection.credential_revision : nil,
@@ -57,10 +57,12 @@ module Agents
       @accesses ||= agent.agent_service_accesses.includes(:service_connection).to_a
     end
 
+    # What the resident may use now (AgentServiceAccess#effective?): a
+    # guest's pending or voided grant is not in the manifest.
     def connections
       return [] if agent.github_resident_import&.approval_error
       @connections ||= accesses
-        .select(&:enabled?)
+        .select(&:effective?)
         .map(&:service_connection)
         .select { |connection| connection.status == "connected" }
     end

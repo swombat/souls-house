@@ -44,6 +44,17 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     assert_equal sub, entitlement.current_subscription
   end
 
+  test "replaying a paid subscription changes nothing and queues no effects" do
+    sub = subscription("sub_1", "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    attributes = entitlement.reload.attributes
+
+    assert_no_enqueued_jobs do
+      assert_not entitlement.apply_subscription!(sub, now: @now + 1.day)
+    end
+    assert_equal attributes, entitlement.reload.attributes
+  end
+
   test "past_due starts grace once; replaying it neither restarts grace nor lifts a hold" do
     sub = subscription("sub_1", "active")
     entitlement.apply_subscription!(sub, now: @now)
@@ -53,7 +64,9 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     assert entitlement.reload.grace?
     assert_equal @now + 14.days, entitlement.grace_deadline
 
-    entitlement.apply_subscription!(sub, now: @now + 3.days)
+    assert_no_enqueued_jobs do
+      assert_not entitlement.apply_subscription!(sub, now: @now + 3.days)
+    end
     assert_equal @now, entitlement.reload.grace_started_at
 
     assert entitlement.expire_grace!(now: @now + 14.days)
@@ -88,6 +101,55 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     entitlement.reload
     assert entitlement.active?
     assert_equal @now + 1.day, entitlement.hold_released_at
+  end
+
+  test "replaying an ended subscription preserves the hold and queues no effects" do
+    sub = subscription("sub_1", "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    sub.update!(stripe_status: "unpaid")
+    assert_enqueued_with(job: Billing::SleepJob, args: [ @agent.id ]) do
+      entitlement.apply_subscription!(sub, now: @now)
+    end
+    attributes = entitlement.reload.attributes
+
+    assert_no_enqueued_jobs do
+      assert_not entitlement.apply_subscription!(sub, now: @now + 1.day)
+    end
+    assert_equal attributes, entitlement.reload.attributes
+    assert_equal @now, entitlement.held_at
+  end
+
+  test "a grace deadline arriving after payment recovery cannot hold the resident" do
+    sub = subscription("sub_1", "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    sub.update!(stripe_status: "past_due")
+    entitlement.apply_subscription!(sub, now: @now)
+
+    sub.update!(stripe_status: "active")
+    entitlement.apply_subscription!(sub, now: @now + 1.day)
+
+    assert_no_enqueued_jobs do
+      assert_not entitlement.expire_grace!(now: @now + 14.days)
+    end
+    assert entitlement.reload.active?
+    assert_nil entitlement.grace_started_at
+    assert_nil entitlement.grace_deadline
+  end
+
+  test "rolling back a hold rolls back its metadata and queues no effects" do
+    sub = subscription("sub_1", "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    sub.update!(stripe_status: "unpaid")
+    attributes = entitlement.reload.attributes
+
+    assert_no_enqueued_jobs do
+      ResidentEntitlement.transaction(requires_new: true) do
+        entitlement.apply_subscription!(sub, now: @now)
+        assert entitlement.held?
+        raise ActiveRecord::Rollback
+      end
+    end
+    assert_equal attributes, entitlement.reload.attributes
   end
 
   test "a stale subscription's cancellation can't hold a resident whose replacement is paid" do

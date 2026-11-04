@@ -14,6 +14,7 @@
     CurrencyDollar,
     Graph,
     Lightning,
+    Handshake,
   } from 'phosphor-svelte';
   import {
     accountAgentsPath,
@@ -34,6 +35,7 @@
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
   import AgentReflexesPanel from '$lib/components/agents/AgentReflexesPanel.svelte';
+  import AgentCommitmentsPanel from '$lib/components/agents/AgentCommitmentsPanel.svelte';
   import ResidentPortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
 
   let {
@@ -50,6 +52,8 @@
     active_tab: activeTabProp = null,
     local_dev_endpoint_mode: localDevEndpointMode = false,
     identity_export_url: identityExportUrl = null,
+    avatar_path: avatarPath = null,
+    voice = null,
     memory_overview_url: memoryOverviewUrl = null,
     memory_history_url: memoryHistoryUrl = null,
     hosting_diagnostics_url: hostingDiagnosticsUrl = null,
@@ -60,6 +64,8 @@
     provider_subscription: providerSubscription = null,
     hosting_location: hostingLocation = null,
     service_connections: serviceConnections = [],
+    shared_connections: sharedConnections = [],
+    can_decide_guest_access: canDecideGuestAccess = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
@@ -70,6 +76,7 @@
     subagent_providers = [],
     subagents_available: subagentsAvailable = false,
     reflexes = {},
+    commitments = {},
     account,
   } = $props();
 
@@ -82,12 +89,13 @@
       'cost_report',
       'reflexes',
       'subagents_available',
+      'voice',
     ],
   });
 
   const updateIntegrationSync = createDynamicSync();
   $effect(() => {
-    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
+    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections', 'shared_connections'] });
   });
   const updateProviderSync = createDynamicSync();
   $effect(() => {
@@ -123,6 +131,7 @@
       activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'reflexes' &&
+      activeTab !== 'commitments' &&
       activeTab !== 'integrations' &&
       (!runtimeManaged ||
         activeTab === 'appearance' ||
@@ -146,6 +155,7 @@
     ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
+    { id: 'commitments', label: 'Commitments', icon: Handshake },
     { id: 'memory', label: 'Memory', icon: Graph },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
     ...(portability?.can_manage ? [{ id: 'portability', label: 'Export / Import', icon: CloudArrowUp }] : []),
@@ -250,7 +260,10 @@
             bind:icon={$form.agent.icon}
             nameError={$form.errors.name}
             colourOptions={colour_options}
-            iconOptions={icon_options} />
+            iconOptions={icon_options}
+            {avatarPath}
+            avatarUrl={agent.avatar_url}
+            {voice} />
         {:else if activeTab === 'settings'}
           <AgentRuntimeStatus {agent} {sandboxRecreationUrl} canRestart={canRestartRuntime} />
           <AgentSettingsPanel
@@ -286,6 +299,8 @@
             {sendingTestNotification}
             {registeringWebhook}
             {serviceConnections}
+            {sharedConnections}
+            {canDecideGuestAccess}
             onsendTestNotification={sendTestNotification}
             onregisterWebhook={registerWebhook} />
         {:else if activeTab === 'memory'}
@@ -299,6 +314,8 @@
             {runtimeObservabilityUrl} />
         {:else if activeTab === 'reflexes'}
           <AgentReflexesPanel {reflexes} agentName={agent.name} />
+        {:else if activeTab === 'commitments'}
+          <AgentCommitmentsPanel {commitments} agentName={agent.name} />
         {:else if activeTab === 'costs'}
           <AgentCostsPanel report={costReport} />
         {:else if activeTab === 'portability'}

@@ -110,10 +110,13 @@
 </AccountSettingsLayout>
 
 <Dialog.Root bind:open>
-  <Dialog.Content class="flex h-[min(760px,90dvh)] max-w-[calc(100%-1rem)] flex-col sm:max-w-3xl">
+  <!-- On phones the dialog scrolls as one page: with the keyboard open (interactive-widget=resizes-content)
+       a fixed-height layout left the icon grid zero rows tall. Desktop keeps the side-by-side, inner-scroll grid. -->
+  <Dialog.Content
+    class="flex h-[min(760px,90dvh)] max-w-[calc(100%-1rem)] flex-col overflow-y-auto overscroll-contain p-4 pb-0 sm:max-w-3xl sm:overflow-hidden sm:p-6">
     <Dialog.Header>
       <Dialog.Title>{editing ? 'Edit visual tag' : 'Create a visual tag'}</Dialog.Title>
-      <Dialog.Description
+      <Dialog.Description class="hidden sm:block"
         >Pick an icon by sight. Search the full Phosphor library, then make it yours.</Dialog.Description>
     </Dialog.Header>
     {#if open}

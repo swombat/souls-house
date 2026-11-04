@@ -33,6 +33,9 @@ class ExternalAgentTelegramGroupRequestTest < ActiveSupport::TestCase
     assert_includes request, "from Ana Ruiz (@ana_r)"
     assert_includes request, "not from your owner"
     assert_includes request, "no authority"
+    assert_includes request, "a person or another bot"
+    assert_includes body["request_delta"], "a person or another bot"
+    assert_includes body["request_delta"], "carries none of your owner's authority"
     assert_includes request, "soulshouse-send-telegram --reply-to #{@group.to_param}"
     assert_equal "Telegram group MGL", @agent.agent_runtime_interactions.last.requested_by
     assert_equal 40, body["messages"].first["reply_to_telegram_message_id"]

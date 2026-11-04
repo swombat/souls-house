@@ -6,7 +6,6 @@
 # advisory lock, so two Stripe fetches can't interleave here.
 class ResidentEntitlement < ApplicationRecord
 
-  STATES = %w[pending active grace held complimentary].freeze
   # A turn already running when the resident falls asleep may finish, its
   # house-model calls still funded by the plan, for at most this long.
   DRAIN = 30.minutes
@@ -17,8 +16,26 @@ class ResidentEntitlement < ApplicationRecord
   belongs_to :current_subscription, class_name: "ResidentSubscription", optional: true
   has_many :house_inference_calls, dependent: :restrict_with_error
 
+  # Subscription metadata and state are saved together by the domain methods
+  # below. Keep effects in after_commit, not in transition callbacks.
+  state_machine :state, initial: :pending, action: nil do
+    state :pending, :active, :grace, :held, :complimentary
+
+    event :activate_plan do
+      transition all => :active
+    end
+
+    event :enter_grace do
+      transition active: :grace
+    end
+
+    event :end_plan do
+      transition all => :complimentary, if: :complimentary_granted_at?
+      transition all => :held
+    end
+  end
+
   validates :agent_id, uniqueness: true
-  validates :state, inclusion: { in: STATES }
   validates :source, inclusion: { in: SOURCES }
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }, allow_nil: true
   validates :rate, inclusion: { in: Billing::Tier::RATES }
@@ -31,15 +48,10 @@ class ResidentEntitlement < ApplicationRecord
   after_commit :wake_up, if: -> { saved_change_to_state?(from: "held") }
   after_commit :tell_payment_failed, if: -> { saved_change_to_state?(from: "active", to: "grace") }
 
-  STATES.each do |name|
-    define_method(:"#{name}?") { state == name }
-  end
-
   def self.for_agent!(agent)
     find_or_create_by!(agent: agent) do |entitlement|
       entitlement.account = agent.account
       entitlement.source = "stripe"
-      entitlement.state = "pending"
     end
   end
 
@@ -47,6 +59,20 @@ class ResidentEntitlement < ApplicationRecord
   # replaces the legacy grant; it never stacks with it.
   def self.paid_for?(agent)
     find_by(agent: agent)&.paid? || false
+  end
+
+  # Free hosting (residents from before paying was possible) carries $10 a
+  # month of the house model of its own, the Conversation allowance (Daniel,
+  # jygXOY/jlnVNY, 2026-10-30: "they are on a free plan where they get a $10
+  # allowance, so they should continue functioning"). It replaces the per-user
+  # grant for that resident. A paid plan replaces it in turn while in force.
+  COMPLIMENTARY_ALLOWANCE_USD = BigDecimal(Billing::Tier.find!("conversation").allowance_usd.to_s)
+
+  # Whether this resident's own entitlement pays for its house-model calls
+  # now (paid plan, draining, or free hosting with its allowance). When true,
+  # the user's free grant isn't claimed or drawn on.
+  def self.funds_calls_for?(agent)
+    find_by(agent: agent)&.funds_calls? || false
   end
 
   # Applies a freshly fetched subscription. Returns true when the entitlement
@@ -95,18 +121,24 @@ class ResidentEntitlement < ApplicationRecord
   end
 
   # Whether the plan's ledger pays for this resident's house-model calls now.
-  def funds_calls? = paid? || draining?
+  def funds_calls? = paid? || draining? || complimentary?
 
   def tier_record = tier && Billing::Tier.find(tier)
+
+  def plan_name = complimentary? ? "free" : "#{tier_record&.name} plan"
 
   # The offer the current plan was bought at.
   def offer = tier_record&.offer(rate)
 
   # The month's limit is the highest paid allowance in force at any point in
   # that UTC month: a ceiling on the month's spend, never a balance that is
-  # topped up. Nothing while the plan isn't paid.
+  # topped up. Nothing while the plan isn't paid; free hosting has its own.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
+
+    # Free hosting's allowance is fixed: a paid plan that ended this month
+    # doesn't carry its higher ceiling into it. Spend so far still counts.
+    return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
 
     limits = [ self.class.offer_allowance(tier, rate) ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
@@ -131,6 +163,7 @@ class ResidentEntitlement < ApplicationRecord
       reservation = offering.fetch(:reservation_usd)
       check_house_call!(model_id, reservation, agent_id: agent_id)
       house_inference_calls.create!(agent_id: agent_id, month: HouseInference::Offering.month, model_id: model_id,
+        free_pool: complimentary?,
         provider_route: offering.fetch(:provider), charge_usd: reservation)
     end
   end
@@ -145,7 +178,14 @@ class ResidentEntitlement < ApplicationRecord
     end
     month = HouseInference::Offering.month
     limit = allowance_limit(month)
-    return if limit - allowance_spent(month) >= reservation
+    if limit - allowance_spent(month) >= reservation
+      # Free allowances, unlike paid ones, share the house-wide ceiling.
+      if complimentary? && HouseInferenceCall.free.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
+        raise HouseInference::Error.new("The house-wide inference allowance is currently used up.",
+          code: "house_allowance_unavailable", status: 503)
+      end
+      return
+    end
 
     # Keyed on the ceiling in force, not on the rate: a resident just moved
     # to at cost keeps this month's ceiling until the 1st.
@@ -156,7 +196,7 @@ class ResidentEntitlement < ApplicationRecord
       )
     end
     raise HouseInference::Error.new(
-      "This resident's #{tier_record&.name} plan allowance is used up for this month. It resets at the start of next month (UTC).",
+      "This resident's #{plan_name} allowance is used up for this month. It resets at the start of next month (UTC).",
       code: "house_allowance_exhausted", status: 402
     )
   end
@@ -165,7 +205,7 @@ class ResidentEntitlement < ApplicationRecord
     month = HouseInference::Offering.month
     limit = allowance_limit(month)
     used = allowance_spent(month)
-    { source: "plan", plan: tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
+    { source: complimentary? ? "free" : "plan", plan: complimentary? ? nil : tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
       remaining_usd: [ limit - used, 0 ].max.to_f, resets_at: month.next_month.iso8601,
       configured: HouseInference::Offering.configured? }
   end
@@ -197,6 +237,8 @@ class ResidentEntitlement < ApplicationRecord
 
   private
 
+  private :activate_plan, :activate_plan!, :enter_grace, :enter_grace!, :end_plan, :end_plan!
+
   def adoptable?(subscription)
     subscription.paid? && (current_subscription.nil? || !current_subscription.live?)
   end
@@ -204,7 +246,7 @@ class ResidentEntitlement < ApplicationRecord
   def activate(subscription, now)
     record_allowance(subscription.tier, subscription.rate, now)
     self.hold_released_at = now if held?
-    self.state = "active"
+    activate_plan!
     self.source = "stripe"
     self.tier = subscription.tier
     self.rate = subscription.rate
@@ -229,9 +271,9 @@ class ResidentEntitlement < ApplicationRecord
   # Grace starts only from active. Replaying past_due while in grace or held
   # neither restarts grace nor lifts a hold.
   def start_grace(now)
-    return unless active?
+    return unless can_enter_grace?
 
-    self.state = "grace"
+    enter_grace!
     self.grace_started_at = now
     self.grace_deadline = now + Billing::GRACE_PERIOD
   end
@@ -242,13 +284,9 @@ class ResidentEntitlement < ApplicationRecord
     record_allowance(nil, nil, now)
     self.grace_started_at = nil
     self.grace_deadline = nil
-    if complimentary_granted_at.present?
-      self.state = "complimentary"
-      self.source = "complimentary"
-    elsif !held?
-      self.state = "held"
-      self.held_at = now
-    end
+    self.held_at = now unless complimentary_granted_at? || held?
+    end_plan!
+    self.source = "complimentary" if complimentary?
   end
 
   # Asleep: queued work is cancelled and the container stopped once running

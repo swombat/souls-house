@@ -25,6 +25,12 @@ class AgentRuntimeInteraction < ApplicationRecord
   has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,
     inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
+  # The resident cards' session spinners (ResidentSessions): a run starting or
+  # ending, not its telemetry.
+  # (One callback: Rails keeps only the last after_commit for a method name.)
+  after_commit :refresh_resident_sessions, if: -> {
+    previously_new_record? || destroyed? || saved_change_to_finished_at? || saved_change_to_execution_state?
+  }
   after_save :broadcast_rhythm_activity_after_commit, if: -> {
     saved_changes.keys.intersect?(%w[id execution_state agent_id message_dispatch_id])
   }
@@ -87,6 +93,11 @@ class AgentRuntimeInteraction < ApplicationRecord
 
     { text: quiet_reason, at: quiet_reason_at&.iso8601 }
   end
+
+  def refresh_resident_sessions
+    ResidentSessions.refresh_for(agent)
+  end
+  private :refresh_resident_sessions
 
   def refresh_account_cost_activity
     # Read the persisted home, not a stale association or a guest conversation.
@@ -383,7 +394,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def subscription_based?
-    provider_auth_mode == "oauth_account"
+    provider_auth_mode == "oauth_account" || provider == "kimi"
   end
 
   def as_debug_json
@@ -401,6 +412,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr: stderr,
       error_class: error_class,
       error_message: error_message,
+      setup_refusal: setup_refusal,
+      failure_reason: failure_reason,
       container_oom_kills: container_oom_kills,
       out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
@@ -463,6 +476,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       agent_name: agent.name,
       agent_icon: agent.icon,
       agent_colour: agent.colour,
+      agent_avatar_url: agent.avatar_url,
       trigger_kind: trigger_kind,
       status: chat_activity_status,
       status_label: chat_activity_status_label,
@@ -528,6 +542,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr_may_be_truncated: stderr.to_s.length >= RUNTIME_OUTPUT_CAPTURE_LIMIT,
       error_class: error_class,
       error_message: error_message,
+      setup_refusal: setup_refusal,
+      failure_reason: failure_reason,
       container_oom_kills: container_oom_kills,
       out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
@@ -546,6 +562,31 @@ class AgentRuntimeInteraction < ApplicationRecord
       cache_ttl: cache_ttl,
       finished_at: finished_at&.iso8601
     )
+  end
+
+  # The house's own sentence when it refused a scheduled run before dispatch
+  # (Agents::InferenceAvailability.scheduled_refusal): what setup is missing.
+  # Only that one field of the response body, never the body itself.
+  # The safe cause line for a failed run (RunFailureNotice's wording), so
+  # the Runs tab says why without opening the output. Nil unless it failed.
+  def failure_reason
+    category = failure_category
+    return unless category
+
+    cause = RunFailureNotice::NO_REPLY_CAUSES[category]
+    # Why, sanitised at the gateway (#725): the provider's refusal, or the
+    # house's own check that refused it first. Only for this category; the
+    # room notice keeps the category alone.
+    if category == "house_provider_refused" && inference_refusal_reason.present?
+      cause = "#{cause} (reason: #{inference_refusal_reason})"
+    end
+    cause
+  end
+
+  def setup_refusal
+    return unless response_body.is_a?(Hash) && response_body["error_kind"] == Agents::InferenceAvailability::NEEDS_SETUP
+
+    response_body["error"].to_s.presence
   end
 
   def visible_in_chat_timeline?

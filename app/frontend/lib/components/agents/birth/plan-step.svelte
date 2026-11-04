@@ -31,6 +31,21 @@
   let tiers = $derived(billing.offers?.length ? billing.offers : billing.tiers || []);
   let chosen = $derived(tiers.find((candidate) => candidate.id === tier) || null);
   let atCost = $derived(chosen?.rate === 'at_cost');
+  // An account with a code is offered each plan at two rates. Show one rate's
+  // plans at a time, with a switch, rather than every offer side by side.
+  let rates = $derived([...new Set(tiers.map((offer) => offer.rate || 'standard'))]);
+  let rate = $derived(chosen?.rate || 'standard');
+  let shown = $derived(tiers.filter((offer) => (offer.rate || 'standard') === rate));
+  const RATE_LABELS = { standard: 'Standard', at_cost: 'At cost' };
+
+  function chooseRate(next) {
+    if (next === rate) return;
+    const sameTier = chosen?.tier ?? chosen?.id;
+    const match =
+      tiers.find((offer) => offer.rate === next && (offer.tier ?? offer.id) === sameTier) ||
+      tiers.find((offer) => offer.rate === next);
+    if (match) tier = match.id;
+  }
   let name = $derived(residentName.trim() || 'your resident');
 
   let cardFormOpen = $state(false);
@@ -90,8 +105,13 @@
 <CardHeader>
   <CardTitle>A plan for {name}</CardTitle>
   <CardDescription>
-    Each resident has its own plan. It pays for their home here and for the house model they think with, up to the
-    plan's monthly allowance.
+    {#if atCost}
+      Each resident has its own plan. At cost, it pays for their own server and nothing more: {name} thinks with a model
+      subscription or key you connect.
+    {:else}
+      Each resident has its own plan. It pays for their home here and for the house model they think with, up to the
+      plan's monthly allowance.
+    {/if}
   </CardDescription>
 </CardHeader>
 <CardContent class="space-y-8">
@@ -104,13 +124,35 @@
       </AlertDescription>
     </Alert>
   {:else}
-    <fieldset class="space-y-3" disabled={busy}>
-      <legend class="mb-3 text-sm font-medium">Plan</legend>
+    <fieldset class="space-y-4" disabled={busy}>
+      <legend class="sr-only">Plan</legend>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <span class="text-sm font-medium" aria-hidden="true">Plan</span>
+        {#if rates.length > 1}
+          <div
+            class="inline-flex rounded-md border bg-muted/40 p-0.5 text-sm"
+            role="group"
+            aria-label="Rate"
+            data-testid="plan-rate">
+            {#each rates as option (option)}
+              <button
+                type="button"
+                class="rounded px-3 py-1 transition-colors {option === rate
+                  ? 'bg-background font-medium shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'}"
+                aria-pressed={option === rate}
+                onclick={() => chooseRate(option)}>
+                {RATE_LABELS[option] ?? option}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <div
-        class="grid gap-3 {tiers.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}"
+        class="grid gap-3 {shown.length >= 3 ? 'sm:grid-cols-3' : shown.length === 2 ? 'sm:grid-cols-2' : ''}"
         role="radiogroup"
         aria-label="Plan">
-        {#each tiers as option (option.id)}
+        {#each shown as option (option.id)}
           {@const selected = option.id === tier}
           <label
             class="relative flex cursor-pointer flex-col rounded-lg border-2 p-4 transition-colors
@@ -120,18 +162,20 @@
               name="plan"
               value={option.id}
               class="sr-only"
+              aria-label={option.name}
               checked={selected}
               onchange={() => (tier = option.id)} />
             <span class="flex items-start justify-between gap-2">
-              <span class="font-semibold">{option.name}</span>
-              {#if selected}<CheckCircle class="size-5 text-primary" weight="fill" />{/if}
+              <span class="font-semibold"
+                >{option.rate === 'at_cost' ? option.name.replace(/ at cost$/, '') : option.name}</span>
+              {#if selected}<CheckCircle class="size-5 shrink-0 text-primary" weight="fill" />{/if}
             </span>
             <span class="mt-1 text-sm text-muted-foreground">
-              {option.rate === 'at_cost' ? 'The machine at its price, no house model.' : (planTaglines[option.tier ?? option.id] ?? '')}
+              {planTaglines[option.tier ?? option.id] ?? ''}
             </span>
-            <span class="mt-3">
+            <span class="mt-3 flex flex-wrap items-baseline gap-x-1">
               <span class="text-2xl font-semibold">${option.monthly_usd}</span>
-              <span class="text-sm text-muted-foreground">/ month + VAT</span>
+              <span class="whitespace-nowrap text-sm text-muted-foreground">/ month + VAT</span>
             </span>
             <PlanIncludes
               features={option.features}
@@ -204,7 +248,7 @@
     </section>
 
     {#if chosen}
-      <section class="rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
+      <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p>
           <span class="font-medium">Today:</span> ${chosen.monthly_usd} + VAT for {name}'s first month.
           <span class="font-medium">Then</span> ${chosen.monthly_usd} + VAT each month until you cancel.

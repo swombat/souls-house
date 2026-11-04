@@ -176,6 +176,24 @@ SUPPORTED_REASONING_EFFORTS = (
     "max",
     "ultra",
 )
+KIMI_MODEL_DEFAULTS = {
+    "k3.1-pro": "high", "k3.1-pro-highspeed": "high",
+    "k3": "high", "k3-256k": "high",
+    "kimi-for-coding": "max", "kimi-for-coding-highspeed": "high",
+}
+
+
+def kimi_reasoning_effort(model, effort):
+    # Unknown IDs and disabled thinking can silently route to another model.
+    if model not in KIMI_MODEL_DEFAULTS:
+        raise ValueError("Select an exact Kimi Code subscription model from resident settings")
+    effort = effort or KIMI_MODEL_DEFAULTS[model]
+    allowed = ("high",) if model == "kimi-for-coding-highspeed" else ("low", "high", "max")
+    if effort not in allowed:
+        raise ValueError("Kimi Code thinking must remain enabled; select a supported effort in resident settings")
+    return effort
+
+
 IDENTITY_FINGERPRINT_FILES = [
     "soul.md",
     "self-narrative.md",
@@ -184,6 +202,8 @@ IDENTITY_FINGERPRINT_FILES = [
 if imported_home.enabled():
     IDENTITY_FINGERPRINT_FILES += ["instructions.md", "resident-home.json"]
 IDENTITY_FILE_LIMIT = 80_000
+# Chaos's protected_context_max_bytes default (sys/kern/kern/src/config.rs).
+PROTECTED_CONTEXT_DEFAULT_CAP = 128 * 1024
 JOURNAL_MOST_RECENT_LIMIT = 12_000
 JOURNAL_MOST_RECENT_TAIL = 10_000
 JOURNAL_TOTAL_LIMIT = 16_000
@@ -215,6 +235,9 @@ app = Flask(__name__) if Flask else None
 _session_locks = {}
 _running_sessions = set()
 _activity_context = threading.local()
+# The env var the house provider's X-Soulshouse-Run header is read from
+# (runtime_settings.py). Set per invocation, never in the process env.
+INFERENCE_RUN_ENV = "SOULSHOUSE_INFERENCE_RUN"
 _session_locks_guard = threading.Lock()
 _auth_lock = threading.Lock()
 _auth_process = None
@@ -333,6 +356,13 @@ def trigger():
         }), 400
     if auth_mode not in ("api_key", "oauth_account"):
         return jsonify({"error": "auth_mode must be api_key or oauth_account"}), 400
+    if provider == "kimi":
+        if auth_mode != "api_key":
+            return jsonify({"error": "Kimi Code uses a Code Console API key, not OAuth"}), 400
+        try:
+            reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
 
     subscription_snapshot = None
     if auth_mode == "oauth_account":
@@ -370,6 +400,7 @@ def trigger():
                 provider, auth_mode,
             )
             reporter.conversation_id = conversation_id
+            reporter.voice_mode = payload.get("voice_mode") is True
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
@@ -377,6 +408,10 @@ def trigger():
         (payload.get("runtime_run_id"), conversation_id)
         if payload.get("trigger_kind") == "telegram" else None
     )
+    # Sent back on house inference calls (X-Soulshouse-Run, from the house
+    # provider's env_http_headers) so a refusal lands on this run only.
+    inference_run = str(payload.get("inference_run") or "")
+    _activity_context.inference_run = inference_run if inference_run.isdigit() else None
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
@@ -416,6 +451,7 @@ def trigger():
             reporter.disabled = True
         _activity_context.reporter = None
         _activity_context.telegram_run = None
+        _activity_context.inference_run = None
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         _unregister_running_session(session_id)
@@ -819,6 +855,25 @@ def require_house_trust(cwd, chaos_home):
     )
 
 
+SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
+
+
+def shell_env_excludes(env):
+    """The tool shell's exclude list, as a TOML array literal.
+
+    Chaos patterns have only `*` and `?`, so "every *KEY* name but one"
+    can't be one glob. `*KEY?*` covers names with KEY in the middle; names
+    ending in KEY are listed exactly from the environment Chaos is about to
+    inherit, minus SHELL_ENV_ALLOWED_KEYS.
+    """
+    ending_in_key = sorted(
+        name for name in env
+        if name.upper().endswith("KEY") and name not in SHELL_ENV_ALLOWED_KEYS
+    )
+    patterns = ["*KEY?*", "*SECRET*", "TRIGGER_BEARER_TOKEN", *ending_in_key]
+    return json.dumps(patterns, separators=(",", ":"))
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -837,6 +892,8 @@ def run_chaos(
     if timeout_secs <= 0:
         raise subprocess.TimeoutExpired(cmd=CHAOS_BIN, timeout=0)
     selected_provider = provider or AGENT_PROVIDER
+    if selected_provider == "kimi":
+        reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
     env = os.environ.copy()
     if auth_mode == "oauth_account":
         if selected_provider == "anthropic":
@@ -852,8 +909,12 @@ def run_chaos(
     # reporter (Telegram). Never mutate the process-wide environment.
     for key in ("SOULSHOUSE_RUNTIME_RUN_ID", "SOULSHOUSE_RUNTIME_CHAT_ID",
                 "SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID", "HELIXKIT_RUNTIME_RUN_ID",
-                "HELIXKIT_RUNTIME_CHAT_ID", "HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID"):
+                "HELIXKIT_RUNTIME_CHAT_ID", "HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID",
+                INFERENCE_RUN_ENV):
         env.pop(key, None)
+    inference_run = getattr(_activity_context, "inference_run", None)
+    if inference_run:
+        env[INFERENCE_RUN_ENV] = inference_run
     telegram_run = getattr(_activity_context, "telegram_run", None)
     if telegram_run and telegram_run[0]:
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])
@@ -886,10 +947,13 @@ def run_chaos(
         # including the resident's outbound bearer token, even with
         # inherit="all". Disable that broad default, then retain explicit
         # protection for provider keys, secrets, and the inbound trigger token.
+        # OPENROUTER_API_KEY is the one key a resident's own tools may use
+        # (image generation and the like): the house only passes it in when
+        # the account has its own key or falls back to house keys.
         "--headless",
         "-c", "shell_environment_policy.inherit=\"all\"",
         "-c", "shell_environment_policy.ignore_default_excludes=true",
-        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]',
+        "-c", f"shell_environment_policy.exclude={shell_env_excludes(env)}",
     ]
     if auth_mode == "oauth_account" and selected_provider == "anthropic":
         # Headless clamp is startup config, so this applies equally to fresh and
@@ -902,6 +966,15 @@ def run_chaos(
         # agy's default is only five minutes. Leave room for Chaos's 30-second
         # transport grace and reporting before the outer turn deadline.
         env["CHAOS_AGY_PRINT_TIMEOUT_SECONDS"] = str(max(1, int(timeout_secs) - 35))
+    if selected_provider == "kimi":
+        # Unknown-model Responses otherwise silently drops the requested effort.
+        # Kimi supports Responses reasoning; scope this capability to this route.
+        args += ["-c", "model_supports_reasoning_summaries=true"]
+        # Official models table, "Context window" row (checked 2026-11-03):
+        # https://www.kimi.com/code/docs/en/kimi-code/models.html
+        # K3.1 Pro/Highspeed, K3 and K2.8 Preview: 1M; the other two: 256K.
+        context_window = 262144 if model in ("k3-256k", "kimi-for-coding-highspeed") else 1048576
+        args += ["-c", f"model_context_window={context_window}"]
     if reasoning_effort:
         args += ["-c", f'model_reasoning_effort="{reasoning_effort}"']
     if resume_id:
@@ -930,17 +1003,27 @@ def run_chaos(
             try:
                 while True:
                     if cancel.is_set() or time.monotonic() >= expires:
-                        raise subprocess.TimeoutExpired(args, timeout_secs)
+                        break
                     try:
                         stdout, stderr = process.communicate(input=prompt_text if first else None, timeout=.5)
                         return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
                     except subprocess.TimeoutExpired:
                         first = False
-            finally:
+                # Out of time or cancelled. Kill the group, then collect what
+                # Chaos had already written: process.started carries the
+                # session id and turn events carry usage, so a timed-out run
+                # still records which session it was and what it spent (#718).
+                _kill_process_group(process)
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired as drained:
+                    # A detached descendant can hold the pipes past the kill.
+                    # The expired drain still carries what was read; keep it.
+                    stdout = _timeout_stream(drained, "stdout")
+                    stderr = _timeout_stream(drained, "stderr")
+                raise subprocess.TimeoutExpired(args, timeout_secs, output=stdout, stderr=stderr)
+            finally:
+                _kill_process_group(process)
                 process.wait(timeout=5)
     return subprocess.run(
         args,
@@ -950,6 +1033,13 @@ def run_chaos(
         timeout=timeout_secs,
         env=env,
     )
+
+
+def _kill_process_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def parse_events(stdout):
@@ -1857,10 +1947,13 @@ def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, component
 def identity_context() -> str:
     """Return identity and current hosting context, with soul first."""
     sections = []
+    # Files Chaos snapshots in full at session start are not sent again here:
+    # one copy, and it is the copy that survives compaction.
+    protected = protected_identity_files()
 
     # Keep soul.md first. This is the agent's own chosen/exported identity text,
     # and should be the first thing the model sees before runtime scaffolding.
-    soul = read_identity_file("soul.md")
+    soul = "" if _is_protected("soul.md", protected) else read_identity_file("soul.md")
     if soul:
         sections.append(soul)
 
@@ -1872,11 +1965,45 @@ def identity_context() -> str:
         ("self-narrative.md", "Self-narrative"),
         ("bootstrap.md", "Bootstrap notes"),
     ]:
+        if _is_protected(filename, protected):
+            continue
         content = read_identity_file(filename)
         if content:
             sections.append(f"## {label}: identity/{filename}\n\n{content}")
 
     return "\n\n".join(sections)
+
+
+def _is_protected(filename, protected):
+    return str((AGENT_IDENTITY_PATH / filename).resolve()) in protected
+
+
+def protected_identity_files():
+    """Paths that every Chaos home this resident runs in will snapshot whole.
+
+    A home whose settings cannot be read, whose list names a file that is
+    missing, or whose files exceed its protected-context cap (Chaos would keep
+    a truncated copy) protects nothing here. The fallback is a duplicate in
+    the prompt, never a missing soul.
+    """
+    homes = [CHAOS_HOME] + ([OAUTH_CHAOS_HOME] if OAUTH_CHAOS_HOME.is_dir() else [])
+    covered = None
+    for home in homes:
+        try:
+            result = subprocess.run([CHAOS_BIN, "config", "get"], capture_output=True, text=True,
+                                    timeout=30, env={**os.environ, "CHAOS_HOME": str(home)})
+            settings = json.loads(result.stdout) if result.returncode == 0 else {}
+            files = [Path(f).resolve() for f in settings.get("protected_context_files") or []]
+            # 0 is a real cap (Chaos snapshots nothing); only absence means the default.
+            cap = settings.get("protected_context_max_bytes")
+            cap = PROTECTED_CONTEXT_DEFAULT_CAP if cap is None else int(cap)
+            if sum(path.stat().st_size for path in files) > cap:
+                files = []
+        except Exception:
+            files = []
+        paths = {str(path) for path in files}
+        covered = paths if covered is None else covered & paths
+    return covered or set()
 
 
 def imported_runtime_context():

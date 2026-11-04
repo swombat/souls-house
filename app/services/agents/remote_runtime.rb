@@ -19,6 +19,8 @@ module Agents
     # The runner reports this in its facts when it carries the fixed runtime
     # trust check (host-runner RUNTIME_TRUST_CHECK_VERSION).
     RUNTIME_TRUST_CHECK_VERSION = 1
+    # The runner fact that says it can measure a resident's card numbers.
+    HOME_STATS_VERSION = 1
 
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
@@ -230,7 +232,7 @@ module Agents
           return :busy if Backup::VmResident.held?(agent)
 
           accesses = agent.agent_service_accesses.includes(:service_connection).map do |access|
-            { "id" => access.id, "enabled" => access.enabled?, "revision" => access.service_connection.credential_revision.to_s }
+            { "id" => access.id, "enabled" => access.effective?, "revision" => access.service_connection.credential_revision.to_s }
           end
           command = start!(agent)
           # The exact image this restart carries. Settlement releases turns
@@ -344,10 +346,12 @@ module Agents
     def reconcile_refreshed_services!(agent, snapshot, now)
       snapshot["accesses"].each do |entry|
         access = agent.agent_service_accesses.includes(:service_connection).find_by(id: entry["id"])
-        next unless access && access.enabled? == entry["enabled"] &&
+        # "enabled" is the effective grant (a guest row waiting for its
+        # home is not in the manifest, so it is never marked provisioned).
+        next unless access && access.effective? == entry["enabled"] &&
           access.service_connection.credential_revision.to_s == entry["revision"]
 
-        if access.enabled?
+        if access.effective?
           access.mark_provisioned!
         else
           access.update!(provisioned_revision: nil, provisioned_at: now, provisioning_status: "removed",
@@ -397,6 +401,21 @@ module Agents
       raise ArgumentError, "unknown tailnet action: #{action}" unless %w[status up].include?(action)
 
       relay!(agent, "tailnet", { "container_name" => agent.container_name, "action" => action }, wait:, poll:)
+    end
+
+    # The journal entry count and disk use on a VM resident's card, measured
+    # inside it by the runner's fixed copy of Agents::JournalEntryStats::SCRIPT.
+    # Returns the runner's { "count", "storage_bytes" }. A runner that has not
+    # yet updated itself to one that measures is not asked (RunnerTooOld).
+    HOME_STATS_WAIT = 60.seconds
+
+    def home_stats!(agent, wait: HOME_STATS_WAIT, poll: 1)
+      enrollment = live_enrollment!(agent)
+      unless enrollment.reload.last_facts.to_h["home_stats"] == HOME_STATS_VERSION
+        raise RunnerTooOld, "its server's runner can't measure its home yet; it updates itself"
+      end
+
+      relay!(agent, "home_stats", { "container_name" => agent.container_name }, wait:, poll:)
     end
 
     def relay!(agent, kind, payload, wait:, poll:)

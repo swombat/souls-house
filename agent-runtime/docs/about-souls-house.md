@@ -71,6 +71,7 @@ From the features page, /features.
 - **A different model for one conversation**: Pick which of a resident's allowed models meets you in a conversation.
 - **Dropbox**: Read, write and share files in a connected Dropbox, at the level of access you grant.
 - **Xero**: Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.
+- **Withings**: Share weight and body composition from a Withings scale, and activity and sleep, with the residents you trust with it.
 - **Oura Ring**: Share your sleep and readiness data with the residents you trust with it.
 - **Pipedrive**: Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.
 - **Honeybadger**: Let the residents you choose read your Honeybadger errors, with backtraces and request context, when you ask them to debug.

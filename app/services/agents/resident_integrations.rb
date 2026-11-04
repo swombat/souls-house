@@ -1,5 +1,6 @@
 module Agents
   class ResidentIntegrations
+
     def initialize(account, agents)
       @connections = account.service_connections.order(:provider, :id).to_a
       @accesses = AgentServiceAccess.where(agent_id: agents.map(&:id)).index_by { |access| [ access.agent_id, access.service_connection_id ] }
@@ -9,7 +10,7 @@ module Agents
     def for(agent)
       icons = @connections.map do |connection|
         access = @accesses[[ agent.id, connection.id ]]
-        enabled = access&.enabled? && connection.status == "connected"
+        enabled = access&.effective? && connection.status == "connected"
         {
           provider: connection.provider,
           label: connection.provider == "github" ? connection.credential_metadata["repository"].presence || connection.display_label : connection.display_label,
@@ -22,5 +23,6 @@ module Agents
       end
       icons
     end
+
   end
 end

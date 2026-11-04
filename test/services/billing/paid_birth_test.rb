@@ -128,11 +128,18 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "Aria", order.resident_name
     assert_predicate order.last_error, :present?
 
+    assert_no_difference "Agent.count" do
+      assert_raises(Agents::HostedProvisioning::ConfigurationError) { paid_birth.complete!(order) }
+    end
+    assert_equal "Aria", order.reload.resident_name
+
     Setting.instance.update!(new_residents_on_vm: false)
     assert_difference "Agent.count", 1 do
       paid_birth.complete!(order)
     end
     assert order.reload.born?
+    assert_equal({}, order.birth_attributes)
+    assert_nil order.last_error
   end
 
   test "asking again replaces an earlier unpaid order and cancels its subscription" do

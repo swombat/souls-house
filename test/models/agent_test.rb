@@ -2,6 +2,27 @@ require "test_helper"
 
 class AgentTest < ActiveSupport::TestCase
 
+  test "Kimi Code rejects unsupported effort before persisting an unusable default" do
+    agent = agents(:research_assistant)
+    previous_model = agent.model_id
+    assert_not agent.update(model_id: "kimi-code/k3", reasoning_effort: "medium")
+    assert agent.errors[:reasoning_effort].present?
+    assert_equal previous_model, agent.reload.model_id
+
+    %w[default low high max].each do |effort|
+      agent.assign_attributes(model_id: "kimi-code/k3", reasoning_effort: effort)
+      assert agent.valid?, agent.errors.full_messages.to_sentence
+    end
+    %w[none medium xhigh ultra].each do |effort|
+      agent.reasoning_effort = effort
+      assert_not agent.valid?
+    end
+    agent.assign_attributes(model_id: "kimi-code/kimi-for-coding-highspeed", reasoning_effort: "max")
+    assert_not agent.valid?
+    agent.reasoning_effort = "default"
+    assert agent.valid?
+  end
+
   test "turn timeout defaults to thirty minutes and accepts up to one day" do
     agent = agents(:research_assistant)
     assert_equal 30, agent.turn_timeout_minutes
@@ -98,7 +119,7 @@ class AgentTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
 
     assert_equal(
-      [ "active", "colour", "deprecated", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
+      [ "active", "avatar_url", "colour", "deprecated", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
       agent.as_json(as: :list).keys.sort
     )
   end
@@ -275,7 +296,9 @@ class AgentTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 
-    assert agent.update(voice_id: "new-voice-id")
+    ElevenLabsVoices.stub(:catalogue, [ ElevenLabsVoices::Voice.new(voice_id: "new-voice-id", name: "New", description: "", labels: {}, preview_url: nil) ]) do
+      assert agent.update(voice_id: "new-voice-id")
+    end
     assert_equal "new-voice-id", agent.reload.voice_id
   end
 

@@ -14,6 +14,11 @@ class SyncChannel < ApplicationCable::Channel
       model: Account,
       collections: []
     },
+    "ResidentSessions" => {
+      model: Account,
+      collections: [],
+      allow_all: true
+    },
     "FieldActivity" => {
       model: Account,
       collections: []

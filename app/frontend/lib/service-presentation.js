@@ -4,6 +4,11 @@ export function serviceDescription(service) {
     return 'Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through the Google Workspace gws client.';
   if (service.key === 'xero')
     return 'Contacts, invoices, bank transactions and reports in the Xero organisations you choose.';
+  if (service.key === 'freeagent')
+    return 'Invoices, bank explanations, VAT and receipts, within the approving FreeAgent user’s permissions.';
+  if (service.key === 'monzo')
+    return 'Read balances, pots and transactions on your Monzo account. Residents can never move money.';
+  if (service.key === 'withings') return 'Weight, body composition, activity and sleep from your Withings devices.';
   if (service.key === 'oura') return 'Sleep, readiness, activity, and direct Oura API access.';
   if (service.key === 'github') return 'Repository-scoped access using a fine-grained personal access token.';
   if (service.key === 'pipedrive')
@@ -27,6 +32,7 @@ export function serviceIconClass(serviceKey) {
   if (serviceKey === 'dropbox') return 'bg-blue-600 text-white';
   if (serviceKey === 'google_workspace') return 'bg-green-600 text-white';
   if (serviceKey === 'xero') return 'bg-cyan-600 text-white';
+  if (serviceKey === 'freeagent') return 'bg-blue-700 text-white';
   if (serviceKey === 'github') return 'bg-neutral-900 text-white';
   if (serviceKey === 'pipedrive') return 'bg-emerald-700 text-white';
   if (serviceKey === 'honeybadger') return 'bg-amber-600 text-white';

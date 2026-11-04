@@ -16,16 +16,18 @@
     DropboxLogo,
     GoogleLogo,
     Circle,
+    Scales,
     Plugs,
     Receipt,
     HardDrives,
     Cloud,
   } from 'phosphor-svelte';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { editAccountAgentPath } from '@/routes';
   import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
 
   import ResidentActivity from './ResidentActivity.svelte';
+  import ResidentSessionsSpinner from './ResidentSessionsSpinner.svelte';
   const integrationIcons = {
     telegram: TelegramLogo,
     github: GithubLogo,
@@ -33,6 +35,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    withings: Scales,
     xero: Receipt,
   };
   function diskSize(bytes) {
@@ -44,6 +47,7 @@
 
   let {
     agent,
+    sessions = null,
     accountId,
     onupgrade,
     ondisable,
@@ -52,7 +56,6 @@
     canManageProviderSubscription = false,
   } = $props();
   let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
-  let IconComponent = $derived(agentIconFor(agent.icon));
   let failedRuns = $derived(agent.failed_runs);
   // Only the site admin's grid sends these.
   let hostingTitle = $derived(
@@ -77,14 +80,13 @@
   <CardHeader class="pb-3">
     <div class="flex items-start justify-between">
       <div class="flex items-center gap-3">
-        <div
-          class="p-2 rounded-lg {agent.colour
-            ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900`
-            : 'bg-primary/10'}">
-          <IconComponent
-            class="size-5 {agent.colour ? `text-${agent.colour}-700 dark:text-${agent.colour}-300` : 'text-primary'}"
-            weight="duotone" />
-        </div>
+        <AgentAvatar
+          {agent}
+          class="size-9 rounded-lg flex items-center justify-center"
+          fallbackClass={agent.colour ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900` : 'bg-primary/10'}
+          iconClass="size-5 {agent.colour
+            ? `text-${agent.colour}-700 dark:text-${agent.colour}-300`
+            : 'text-primary'}" />
         <div>
           <div class="flex items-center gap-1.5">
             <CardTitle class="text-lg">{agent.name}</CardTitle>
@@ -115,6 +117,19 @@
               {agent.owner_email || 'no owner'}
             </p>
           {/if}
+          {#if agent.hosting?.kind === 'cloud' && agent.hosting.server_type}
+            <p class="text-xs text-muted-foreground mt-0.5 tabular-nums" data-testid="resident-vm">
+              <span class="font-medium">{agent.hosting.server_type.toUpperCase()}</span>{#if agent.hosting.vcpus}
+                · {agent.hosting.vcpus} vCPU · {agent.hosting.ram_gb} GB · {agent.hosting.disk_gb} GB disk{/if}{#if agent.hosting.eur_per_month != null}
+                · €{agent.hosting.eur_per_month.toFixed(2)}/mo{/if}
+            </p>
+          {/if}
+          {#if admin && agent.hosting?.kind === 'local' && !agent.deprecated}
+            <a
+              href={`/admin/agents/${agent.id}/migration`}
+              class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              data-testid="resident-migration-link">Move to its own server…</a>
+          {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
@@ -134,6 +149,7 @@
           </div>
         </div>
       </div>
+      <ResidentSessionsSpinner {sessions} />
     </div>
   </CardHeader>
   <CardContent>
@@ -148,11 +164,15 @@
         </p>
         {#if failedRuns.runtime_unavailable}
           <p class="mt-0.5">{agent.name}'s runtime isn't starting, so a new message won't get a reply.</p>
+        {:else if failedRuns.needs_setup && agent.inference_setup_message}
+          <p class="mt-0.5" data-testid="failed-runs-needs-setup">{agent.inference_setup_message}</p>
         {:else if failedRuns.model_unavailable}
           <p class="mt-0.5">
             {agent.name}'s model isn't available on its subscription, so a new message won't get a reply until another
             model is chosen.
           </p>
+        {:else if failedRuns.cause}
+          <p class="mt-0.5" data-testid="failed-runs-cause">Each one failed because {failedRuns.cause}.</p>
         {/if}
         {#if showActions && !admin}
           <a

@@ -57,6 +57,8 @@ module Api
           result["seed_roles"] = roles & AgentImportStage::ROLES if roles.is_a?(Array)
           trust_check = value["runtime_trust_check"]
           result["runtime_trust_check"] = trust_check if trust_check.is_a?(Integer) && trust_check.between?(1, 1000)
+          home_stats = value["home_stats"]
+          result["home_stats"] = home_stats if home_stats.is_a?(Integer) && home_stats.between?(1, 1000)
           bundle = value["runner_bundle_sha256"]
           result["runner_bundle_sha256"] = bundle if bundle.is_a?(String) && RunnerBundle::DIGEST.match?(bundle)
           result

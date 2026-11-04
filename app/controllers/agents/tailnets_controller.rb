@@ -19,7 +19,7 @@ class Agents::TailnetsController < ApplicationController
   def set_agent_and_access
     @agent = current_account.agents.find(params[:agent_id])
     @access = @agent.agent_service_accesses
-      .enabled
+      .effective
       .joins(:service_connection)
       .find_by(service_connections: { provider: "tailscale", status: "connected" })
     unless @access

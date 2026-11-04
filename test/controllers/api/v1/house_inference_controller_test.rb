@@ -55,6 +55,82 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test 'a refused call is recorded on the run named in the header and on no other run' do
+    # Two concurrent runs of the same resident, and one of another resident.
+    refused = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 2.minutes.ago)
+    sibling = @agent.agent_runtime_interactions.create!(trigger_kind: 'conversation', requested_by: 'house', started_at: 1.minute.ago)
+    finished = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house',
+      started_at: 1.hour.ago, finished_at: 50.minutes.ago)
+    foreign = agents(:code_reviewer).agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
+    grant = HouseInferenceGrant.find_by!(agent: @agent)
+    grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+      provider_route: 'fireworks/us', charge_usd: 10, status: 'settled')
+
+    HouseInference::Offering.stub(:configured?, true) do
+      [ foreign.id, finished.id, 'not-a-run', nil ].each do |header|
+        post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => header.to_s), as: :json
+        assert_response :payment_required
+      end
+      assert_nil foreign.reload.inference_refusal, 'another resident’s run is never marked'
+      assert_nil finished.reload.inference_refusal, 'a finished run did not make this call'
+      assert_nil refused.reload.inference_refusal
+      assert_nil sibling.reload.inference_refusal
+
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => refused.id.to_s), as: :json
+      assert_response :payment_required
+    end
+    assert_equal 'house_allowance_exhausted', refused.reload.inference_refusal
+    assert_nil sibling.reload.inference_refusal, 'a concurrent run of the same resident does not borrow the refusal'
+  end
+
+  test 'the house provider refusing a call is recorded too, and never overwrites an earlier refusal' do
+    run = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
+    refused = HouseInference::Error.new('refused', code: 'house_provider_refused', status: 502,
+      reason: 'Anthropic code 400 invalid_request_error: max_tokens: 64001 > 64000')
+    HouseInference::Gateway.stub(:new, ->(**) { raise refused }) do
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    end
+    assert_response :bad_gateway
+    assert_equal 'house_provider_refused', run.reload.inference_refusal
+    assert_equal refused.reason, run.inference_refusal_reason
+    refute_includes response.body, 'max_tokens', 'the reason is for the run record, not the resident'
+    run.update!(finished_at: Time.current, execution_state: 'failed')
+    assert_equal "the house's model provider refused a request it made (reason: #{refused.reason})",
+      run.failure_reason
+
+    run.update_columns(inference_refusal: 'house_allowance_exhausted', inference_refusal_reason: nil, finished_at: nil)
+    HouseInference::Gateway.stub(:new, ->(**) { raise refused }) do
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    end
+    assert_equal 'house_allowance_exhausted', run.reload.inference_refusal
+    assert_nil run.inference_refusal_reason
+  end
+
+  test 'a refusal that is not about the allowance is not recorded' do
+    run = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
+    HouseInference::Offering.stub(:configured?, false) do
+      post @path, params: @input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    end
+    assert_response :service_unavailable
+    assert_nil run.reload.inference_refusal
+  end
+
+  test 'a Haiku request ending in an assistant message is refused locally, unreserved, with the reason on the run (#725)' do
+    @agent.update!(model_id: HouseInference::Offering::HAIKU_MODEL_ID)
+    run = @agent.agent_runtime_interactions.create!(trigger_kind: 'wake', requested_by: 'house', started_at: 1.minute.ago)
+    input = @input.merge(model: @agent.model_id, messages: @input[:messages] + [ { role: 'assistant', content: 'synthetic half' } ])
+    assert_no_difference -> { HouseInferenceCall.count } do
+      HouseInference::Offering.stub(:configured?, true) do
+        post @path, params: input, headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+      end
+    end
+    assert_response :bad_request
+    assert_equal 'house_provider_refused', response.parsed_body.dig('error', 'code')
+    refute_includes response.body, 'prefill', 'the reason is for the run record, not the resident'
+    assert_equal 'house_provider_refused', run.reload.inference_refusal
+    assert_equal HouseInference::Request::PREFILL_REASON, run.inference_refusal_reason
+  end
+
   test 'unexpected gateway failures are not mistaken for empty successful responses' do
     HouseInference::Gateway.stub(:new, ->(**) { raise RuntimeError, "synthetic failure" }) do
       post @path, params: @input, headers: @headers, as: :json

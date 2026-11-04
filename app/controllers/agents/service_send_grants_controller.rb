@@ -7,7 +7,9 @@
 class Agents::ServiceSendGrantsController < ApplicationController
 
   def update
-    agent = current_account.agents.find(params[:agent_id])
+    # Guests too: a connection here can be shared with a resident hosted
+    # elsewhere, and sending through it stays the owner's to grant.
+    agent = current_account.conversation_agents.find(params[:agent_id])
     connection = current_account.service_connections.find_by_public_id!(params[:service_access_id])
     raise ActiveRecord::RecordNotFound unless CommsSending.available_for?(connection)
 
@@ -23,10 +25,13 @@ class Agents::ServiceSendGrantsController < ApplicationController
     audit(can_send ? :grant_resident_comms_send : :withdraw_resident_comms_send, connection,
           resident_id: agent.to_param, provider: connection.provider)
     respond_to do |format|
-      format.json { render json: { resident_id: agent.to_param, service_connection_id: connection.public_id, can_send: access.can_send? } }
+      format.json do
+        render json: { resident_id: agent.to_param, service_connection_id: connection.public_id, can_send: access.can_send?,
+                       effective: access.effective?, home_approval: access.home_approval }
+      end
       format.any do
         redirect_back_or_to account_integrations_path(current_account),
-                            notice: can_send ? "#{agent.name} can now send as you" : "#{agent.name} can no longer send"
+                            notice: send_notice(agent, access, can_send)
       end
     end
   rescue AgentServiceAccess::SendGrantRefused => error
@@ -34,6 +39,14 @@ class Agents::ServiceSendGrantsController < ApplicationController
   end
 
   private
+
+  # A guest's send grant is a new request to its home: it can't send yet.
+  def send_notice(agent, access, can_send)
+    return "#{agent.name} can no longer send" unless can_send
+    return "#{agent.name} can now send as you" if access.effective?
+
+    "Sending is waiting for approval from #{agent.name}'s home (#{agent.account.name})"
+  end
 
   def refuse(message, status)
     respond_to do |format|

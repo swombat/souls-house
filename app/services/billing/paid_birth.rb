@@ -118,7 +118,7 @@ module Billing
         next false if remote && remote.status.in?(PAID)
 
         @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
-        order.update!(state: "abandoned", birth_attributes: {})
+        order.abandon!
         true
       end
       complete!(order) unless abandoned
@@ -228,7 +228,7 @@ module Billing
           next unless earlier.pending?
 
           @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
-          earlier.update!(state: "abandoned", birth_attributes: {})
+          earlier.abandon!
         end
       end
     end
@@ -262,7 +262,7 @@ module Billing
         begin
           agent = Agents::HostedBirth.new(account: order.account, creator: order.creator,
             attributes: order.birth_attributes.symbolize_keys, open_beginning: order.open_beginning, paid: true).create!
-          order.update!(state: "born", agent: agent, born_at: Time.current, birth_attributes: {}, last_error: nil)
+          order.mark_born!(agent: agent)
         rescue ActiveRecord::RecordInvalid, Agents::HostedProvisioning::ConfigurationError => error
           failure = error
           raise ActiveRecord::Rollback
@@ -285,7 +285,7 @@ module Billing
     end
 
     def fail!(order, remote, error)
-      order.reload.update!(state: "failed", last_error: error.message.first(500))
+      order.reload.record_failure!(error.message)
       Rails.error.report(error, handled: true,
         context: { subsystem: "billing", birth_order_id: order.id, stripe_subscription_id: remote&.id })
       raise error

@@ -124,7 +124,7 @@ class CloudProcurement
         operation.with_lock do
           next unless %w[provisioned needs_review].include?(operation.state)
 
-          operation.update!(state: "deleting", delete_requested_at: now, review_reason: nil)
+          operation.transition_to!("deleting", delete_requested_at: now, review_reason: nil)
         end
         send_delete!(operation) if operation.reload.state == "deleting"
       end
@@ -187,7 +187,7 @@ class CloudProcurement
       # The plaintext token lives only in this local and the request body.
       user_data = @renderer.render(enrollment:, token:, rails_url: @config.rails_url,
         commands_enabled: @config.runner_commands)
-      operation.update!(state: "create_in_flight", create_sent_at: claimed_at)
+      operation.transition_to!("create_in_flight", create_sent_at: claimed_at)
       true
     end
     return operation unless claimed
@@ -257,7 +257,7 @@ class CloudProcurement
         raise NotAllowed, "only an operation with a verified server can be deleted"
       end
 
-      operation.update!(state: "deleting", delete_requested_at: now, review_reason: nil)
+      operation.transition_to!("deleting", delete_requested_at: now, review_reason: nil)
     end
     send_delete!(operation)
     operation.reload
@@ -297,7 +297,7 @@ class CloudProcurement
     operation.with_lock do
       next false unless operation.state == from
 
-      operation.update!(state: to, last_reconciled_at: now, **attributes)
+      operation.transition_to!(to, last_reconciled_at: now, **attributes)
       true
     end
   end
@@ -306,7 +306,7 @@ class CloudProcurement
     operation.with_lock do
       next unless operation.state == "create_in_flight"
 
-      operation.update!(state: "refused", last_error_code: code, last_reconciled_at: now)
+      operation.transition_to!("refused", last_error_code: code, last_reconciled_at: now)
       enrollment&.revoke!(now:)
     end
   end
@@ -326,12 +326,12 @@ class CloudProcurement
       end
 
       unless matches?(operation, server)
-        operation.update!(state: "needs_review", provider_server_id: server.id, review_reason: "created_server_mismatch",
+        operation.transition_to!("needs_review", provider_server_id: server.id, review_reason: "created_server_mismatch",
           last_reconciled_at: now)
         next
       end
 
-      operation.update!(state: "reconciling", provider_server_id: server.id, create_action_id: created.action_id,
+      operation.transition_to!("reconciling", provider_server_id: server.id, create_action_id: created.action_id,
         ipv4: server.ipv4, ipv6: server.ipv6, last_error_code: nil, last_reconciled_at: now)
     end
   end
@@ -398,13 +398,13 @@ class CloudProcurement
 
       enrollment = operation.runner_enrollment
       if enrollment.nil? || enrollment.revoked_at || now >= enrollment.expires_at
-        operation.update!(state: "needs_review", review_reason: "enrollment_unusable", last_reconciled_at: now)
+        operation.transition_to!("needs_review", review_reason: "enrollment_unusable", last_reconciled_at: now)
         next
       end
 
       enrollment.confirm_provider_server!(server.id)
       operation.agent_placement.update!(location: operation.location, provider_server_id: server.id)
-      operation.update!(state: "provisioned", provisioned_at: now, ipv4: server.ipv4, ipv6: server.ipv6,
+      operation.transition_to!("provisioned", provisioned_at: now, ipv4: server.ipv4, ipv6: server.ipv6,
         last_reconciled_at: now)
     end
   end
@@ -448,7 +448,7 @@ class CloudProcurement
         placement.update!(attributes)
       end
       operation.runner_enrollment&.revoke!(now:)
-      operation.update!(state: "deleted", deleted_at: now, last_reconciled_at: now)
+      operation.transition_to!("deleted", deleted_at: now, last_reconciled_at: now)
     end
   end
 

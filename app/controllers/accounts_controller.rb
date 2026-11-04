@@ -50,10 +50,14 @@ class AccountsController < ApplicationController
       can_be_personal: @account.can_be_personal?,
       members: -> { account_members_json },
       can_manage: @account.manageable_by?(Current.user),
+      can_invite_owner: @account.owned_by?(Current.user),
       current_user_id: Current.user.id,
       resident_handoff_cap: @account.resident_handoff_cap,
       reflexes_enabled: @account.reflexes_enabled,
-      reflexes_site_scope: Setting.instance.reflexes_scope
+      reflexes_site_scope: Setting.instance.reflexes_scope,
+      voice_mode_enabled: @account.voice_mode_enabled,
+      voice_mode_site_scope: Setting.instance.voice_mode_scope,
+      voice_mode_transcription_key: VoiceMode.transcription_key?(@account)
     }
   end
 
@@ -116,11 +120,12 @@ class AccountsController < ApplicationController
     @account = find_current_user_account!(params[:id])
   end
 
-  # The resident handoff cap (MessageHandoff) and the reflexes switch
-  # (ReflexCheck) are changed only by someone who can manage the account.
+  # The resident handoff cap (MessageHandoff), the reflexes switch
+  # (ReflexCheck) and the voice mode switch (VoiceMode) are changed only by
+  # someone who can manage the account.
   def account_params
     permitted = [ :name ]
-    permitted.push(:resident_handoff_cap, :reflexes_enabled) if @account.manageable_by?(Current.user)
+    permitted.push(:resident_handoff_cap, :reflexes_enabled, :voice_mode_enabled) if @account.manageable_by?(Current.user)
     params.require(:account).permit(permitted)
   end
 

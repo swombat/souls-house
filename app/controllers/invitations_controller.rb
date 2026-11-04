@@ -16,7 +16,7 @@ class InvitationsController < ApplicationController
 
   def send_invitation
     @invitation = create_invitation
-    return false unless @invitation.save
+    return false unless @invitation.persisted?
 
     audit_invitation_sent
     redirect_with_invitation_success
@@ -24,7 +24,7 @@ class InvitationsController < ApplicationController
   end
 
   def create_invitation
-    @account.invite_member(
+    @account.send_invitation(
       email: invitation_params[:email],
       role: invitation_params[:role],
       invited_by: Current.user

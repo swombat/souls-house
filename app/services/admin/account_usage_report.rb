@@ -63,7 +63,7 @@ module Admin
       # Deliberate allowlist: never serialize prompts, credentials or runtime output.
       {
         id: agent.to_param, name: agent.name, created_at: agent.created_at,
-        icon: agent.icon, colour: agent.colour,
+        icon: agent.icon, colour: agent.colour, avatar_url: agent.avatar_url,
         active: agent.active?, paused: agent.paused?, runtime: agent.runtime,
         health_state: agent.health_state, last_health_check_at: agent.last_health_check_at,
         model: agent.model_label, model_id: agent.model_id, reasoning_effort: agent.reasoning_effort,

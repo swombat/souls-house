@@ -1,5 +1,5 @@
 <script>
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { initialsFor } from '$lib/chat-display';
 
   let { participants = [], workingAgentIds = [] } = $props();
@@ -11,30 +11,46 @@
       ...participants.filter((p) => !(p.type === 'agent' && workingAgentIds.includes(p.id))),
     ].slice(0, Math.max(7, workingAgentIds.length))
   );
+
+  // The working ring takes the resident's own colour, in the same shades the
+  // rooms spinner (RoomWorkingSpinner) uses, so Lume orbits orange and Mira
+  // violet. Primary only for a resident without a colour.
+  function ringClass(colour) {
+    return colour ? `text-${colour}-600 dark:text-${colour}-300` : 'text-primary';
+  }
 </script>
 
 <div class="participants flex items-center -space-x-1">
   {#each visibleParticipants as participant, i (participant.id || participant.name + i)}
     {#if participant.type === 'agent'}
-      {@const IconComponent = agentIconFor(participant.icon)}
       {@const working = workingAgentIds.includes(participant.id)}
       <div
         class:working
-        class="participant relative w-5 h-5 rounded-full flex items-center justify-center border border-background {participant.colour
-          ? `bg-${participant.colour}-100 dark:bg-${participant.colour}-900`
-          : 'bg-muted'}"
+        class="participant relative"
         role="img"
         aria-label={working ? `${participant.name} is working` : participant.name}
         title={working ? `${participant.name} is working` : participant.name}>
         {#if working}
-          <span class="working-ring" aria-hidden="true"></span>
+          <span
+            class="working-ring {ringClass(participant.colour)}"
+            data-colour={participant.colour || ''}
+            aria-hidden="true"></span>
         {/if}
-        <IconComponent
-          size={10}
-          weight="duotone"
-          class={participant.colour
+        <AgentAvatar
+          agent={{
+            icon: participant.icon,
+            colour: participant.colour,
+            name: participant.name,
+            avatar_url: participant.avatar_url,
+          }}
+          class="w-5 h-5 rounded-full flex items-center justify-center border border-background"
+          fallbackClass={participant.colour
+            ? `bg-${participant.colour}-100 dark:bg-${participant.colour}-900`
+            : 'bg-muted'}
+          iconClass={participant.colour
             ? `text-${participant.colour}-600 dark:text-${participant.colour}-400`
-            : 'text-muted-foreground'} />
+            : 'text-muted-foreground'}
+          iconSize={10} />
       </div>
     {:else if participant.avatar_url}
       <img
@@ -79,7 +95,7 @@
   .working-ring {
     position: absolute;
     inset: -3px;
-    border: 2px solid var(--color-primary);
+    border: 2px solid currentColor;
     border-right-color: transparent;
     border-bottom-color: transparent;
     border-radius: 50%;
@@ -96,7 +112,7 @@
   @media (prefers-reduced-motion: reduce) {
     .working-ring {
       animation: none;
-      border-color: var(--color-primary);
+      border-color: currentColor;
     }
   }
 </style>
