@@ -113,11 +113,43 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_equal "woken", commitment.wake_state
     message = commitment.activation_message
     assert_equal "system", message.role
-    assert_match(/\A\*\*Commitment due\.\*\* Lume committed to this\./, message.content)
-    assert_includes message.content, "> Check the rebuild receipt and tell Daniel"
-    assert_includes message.content, "what to do now is Lume's call"
+    assert_match(/\A\*\*Commitment due:\*\* Check the rebuild receipt and tell Daniel\n\nLume · due /, message.content)
+    assert_includes message.content, "made "
+    assert_includes message.content, " here"
     # Mira is not woken by Lume's commitment.
     assert_equal 0, AgentRuntimeInteraction.where(agent: @mira).count
+  end
+
+  test "the due message shows the summary, not the text; the text stays in the cue" do
+    long = "Finish dependency release verification in eVvome: #581/#652 already deployed and verified.\n\n" \
+      "#740/#741/#742/#768 now approved. Check combined-master CI, then the deploy receipt."
+    commitment = commit(long, at: @now + 1.minute, summary: "  Verify the\n dependency deploys  ")
+    assert_equal "Verify the dependency deploys", commitment.summary
+    travel_to(@now + 2.minutes) { live { commitment.activate! } }
+    content = commitment.reload.activation_message.content
+    assert content.start_with?("**Commitment due:** Verify the dependency deploys\n\nLume · due ")
+    assert_not_includes content, "combined-master"
+    assert_operator content.length, :<, 200
+    cue = commitment.cue_text
+    assert_includes cue, "> #740/#741/#742/#768 now approved. Check combined-master CI, then the deploy receipt."
+    assert_includes cue, "headline (\"Verify the dependency deploys\")"
+    assert_equal "Verify the dependency deploys", commitment.as_json[:headline]
+  end
+
+  test "a summary is one short line" do
+    too_long = build("Check", at: @now + 1.hour, summary: "word " * 30)
+    assert_not too_long.valid?
+    assert too_long.errors[:summary].present?
+    assert_nil commit("Check it", at: @now + 1.hour, summary: "   ").summary
+  end
+
+  test "without a summary the headline is the text's first sentence, at most twelve words" do
+    assert_equal "Check the receipt.", Commitment.headline_from("Check the receipt. Then tell Daniel.")
+    assert_equal "Rebuild residents", Commitment.headline_from("\n\n## Rebuild residents\nthen the audit")
+    assert_equal "Rebuild the image", Commitment.headline_from("> - Rebuild the image")
+    words = (1..20).map { |n| "w#{n}" }.join(" ")
+    assert_equal "#{(1..12).map { |n| "w#{n}" }.join(" ")}…", Commitment.headline_from(words)
+    assert_operator Commitment.headline_from("x" * 500).length, :<=, Commitment::SUMMARY_LENGTH
   end
 
   test "a busy resident is held, not dropped" do
@@ -280,6 +312,7 @@ class CommitmentTest < ActiveSupport::TestCase
     cue = request.send(:commitment_cue_text)
     assert_includes cue, "Commitment due: you committed to this"
     assert_includes cue, "> Check the 03:00 receipt"
+    assert_includes cue, "headline (\"Check the 03:00 receipt\")"
     assert_includes cue, "message #{commitment.activation_message.to_param}"
 
     other = commit("Held cue", at: @now + 1.minute)
@@ -379,7 +412,7 @@ class CommitmentTest < ActiveSupport::TestCase
     commitment = commit("Late one", at: @now + 1.minute)
     travel_to(@now + 45.minutes) { live { commitment.activate! } }
     content = commitment.reload.activation_message.content
-    assert_match(/Due .*, delivered .* \(late\)/, content)
+    assert_match(/due .*, delivered .* \(late\)/, content)
   end
 
   test "an undeliverable commitment posts nothing, records why, and fires once it can" do

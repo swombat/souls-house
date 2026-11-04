@@ -99,6 +99,7 @@
         {c.destination === 'new_conversation' ? `New conversation in ${c.room_name || 'Main'}` : 'Same conversation'}
       </span>
     </div>
+    {#if c.summary}<p class="text-sm font-medium" data-testid="commitment-summary">{c.summary}</p>{/if}
     <p class="whitespace-pre-line text-sm">{c.text}</p>
     <p class="text-xs text-muted-foreground">
       {statusLine(c)}
