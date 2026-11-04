@@ -439,10 +439,10 @@ class MarkerAndVolumeHelperTest(unittest.TestCase):
     def test_volume_is_empty_checks_the_mountpoint_listing(self):
         volume = f"{self.name}-state"
         self.host.seed_volume(volume)
-        self.assertTrue(cr.volume_is_empty(self.host, volume))
+        self.assertTrue(cr.volume_is_empty(self.host, volume, lambda: 30.0))
         with open(os.path.join(self.host._volume_mountpoint(volume), "x"), "w") as handle:
             handle.write("x")
-        self.assertFalse(cr.volume_is_empty(self.host, volume))
+        self.assertFalse(cr.volume_is_empty(self.host, volume, lambda: 30.0))
 
     def test_remove_volume_is_a_noop_when_the_volume_does_not_exist(self):
         volume = f"{self.name}-chaos"
@@ -638,6 +638,34 @@ class RunRestoreCarrySessionTest(CarryRestoreTestCase):
         self.assertGreaterEqual(len(lookups), 6)  # create + inspect for both roles, then chaos for the session check
         self.assertNotIn(None, lookups)
         self.assertTrue(all(timeout <= 7 for timeout in lookups), lookups)
+
+
+    def test_a_slow_create_leaves_inspect_only_the_time_that_is_left(self):
+        # Mira #788 round 3: one captured timeout for both calls let a 6 s
+        # create be followed by a 7 s inspect. The clock advances here.
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        now = [1_000.0]
+        real_docker = self.host.docker
+        seen = []
+
+        def slow_docker(argv, timeout=None):
+            if argv[:3] == ["docker", "volume", "create"] or argv[3:5] == ["--format", "{{.Mountpoint}}"]:
+                seen.append((argv[2], timeout, now[0]))
+                if argv[2] == "create" and len(seen) == 1:
+                    now[0] += 6  # the first create takes 6 of the 7 s
+            return real_docker(argv, timeout=timeout)
+
+        self.host.docker = slow_docker
+        try:
+            self.run_restore(self.payload(shapes=shapes, deadline_seconds=cr.CLEANUP_SECONDS + 7), clock=lambda: now[0])
+        except (cr.CarryFailed, cr.CommandFailed):
+            pass
+        self.assertEqual("inspect", seen[1][0])
+        self.assertLessEqual(seen[1][1], 1.0 + 1e-9, seen)  # 1 s left, not 7
+        work_ends = 1_000.0 + 7
+        for _, timeout, at in seen:
+            self.assertLessEqual(at + timeout, work_ends + 1e-9, seen)
 
 
 class CheckSessionsDeadlineTest(unittest.TestCase):
