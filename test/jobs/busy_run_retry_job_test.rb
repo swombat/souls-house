@@ -103,10 +103,34 @@ class BusyRunRetryJobTest < ActiveJob::TestCase
     end
   end
 
+  test "an Ask all answered already_running is retried on behalf of the person who asked" do
+    @chat.messages.create!(role: "user", user: @user, content: "Both of you?")
+    AgentRuntimeInteraction.stub :live_activity_enabled?, true do
+      perform_enqueued_jobs(only: AllAgentsResponseJob) do
+        @chat.request_all_agents_response!(requested_by: "souls.house", user: @user)
+      end
+    end
+    run = @chat.agent_runtime_interactions.find_by!(agent: @resident)
+    assert_equal @user, run.requested_by_user, "Ask all carries the person onto each reservation"
+    busy = mark_busy(run)
+
+    AgentRuntimeInteraction.stub :live_activity_enabled?, true do
+      assert_difference -> { @chat.agent_runtime_interactions.where(agent: @resident).count }, 1 do
+        perform_enqueued_jobs(only: PendingWakeJob) { BusyRunRetryJob.perform_now(busy.id) }
+      end
+    end
+    wake = PendingWake.order(:id).last
+    assert_equal [ [ "trigger", @user.id ] ], wake.sources.pluck(:kind, :user_id)
+  end
+
   private
 
   def busy_run(kinds: [ "human" ], **options)
     run = AgentRuntimeInteraction.reserve!(agent: @resident, chat: @chat, wake_source_kinds: kinds, **options)
+    mark_busy(run)
+  end
+
+  def mark_busy(run)
     run.update_columns(transport_status: 409, runtime_status: "already_running")
     run.finish_execution!("busy")
     run

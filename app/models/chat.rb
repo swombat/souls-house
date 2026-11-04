@@ -405,7 +405,8 @@ class Chat < ApplicationRecord
       end
       if free.any?
         AllAgentsResponseJob.perform_later(self, free.map(&:id),
-          wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent))
+          wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent),
+          requested_by_user: requester_agent ? nil : user)
       end
       { triggered: free, queued: busy }
     end
