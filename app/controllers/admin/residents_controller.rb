@@ -35,8 +35,9 @@ class Admin::ResidentsController < ApplicationController
   def hosting(placement)
     return { kind: "local", state: placement&.state || "ready" } if placement.nil? || placement.backend == "local"
 
-    { kind: "cloud", state: placement.state, location: placement.location, kernel: @kernels[placement.id] }
-      .merge(machine(placement))
+    kernel = @kernels[placement.id]
+    { kind: "cloud", state: placement.state, location: placement.location }
+      .merge(kernel ? { kernel: } : {}).merge(machine(placement))
   end
 
   # Running vs installed kernel, from the live runner's last heartbeat
