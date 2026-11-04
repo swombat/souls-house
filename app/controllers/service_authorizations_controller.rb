@@ -111,7 +111,9 @@ class ServiceAuthorizationsController < ApplicationController
         if connection.management_scope != attempt.management_scope
           raise Services::AdapterError, "Service connection ownership does not match"
         end
-        raise Account::NotAuthorized unless connection.manageable_by?(attempt.user)
+        unless connection.manageable_by?(attempt.user)
+          raise Services::AdapterError, "You can no longer manage this service connection"
+        end
       end
 
       connection.connected_by_user = attempt.user

@@ -95,6 +95,22 @@ class GoogleReconnectTest < ActionDispatch::IntegrationTest
     assert_equal before_attributes, connection.reload.attributes
   end
 
+  test "fresh Connect refuses cleanly if account management rights are lost during OAuth" do
+    @account = accounts(:team_account)
+    connection = google_connection(management_scope: "account_managed")
+    before_attributes = connection.attributes
+
+    assert_no_difference "ServiceConnection.count" do
+      complete_connect(management_scope: "account_managed") do
+        memberships(:team_account_owner).update_columns(role: "member")
+      end
+    end
+
+    assert_redirected_to account_integrations_path(@account)
+    assert_match(/can no longer manage/, flash[:alert])
+    assert_equal before_attributes, connection.reload.attributes
+  end
+
   test "fresh Connect matches provider subject rather than email" do
     connection = google_connection(external_subject_id: "different-google-subject")
 
@@ -154,6 +170,7 @@ class GoogleReconnectTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     state = Rack::Utils.parse_query(URI(response.location).query).fetch("state")
     assert_nil ServiceAuthorizationAttempt.order(:id).last.service_connection_id
+    yield if block_given?
     result = {
       external_subject_id: "google-subject",
       external_identity: "person@example.test",
