@@ -78,6 +78,44 @@ class RetainedImageUrlsTest < ActionDispatch::IntegrationTest
     assert_hidden url
   end
 
+  test "a resident's removed picture keeps its bytes and hides its old URLs" do
+    sign_in @user
+    Setting.instance.update!(allow_agents: true)
+    account = accounts(:personal_account)
+    agent = agents(:research_assistant)
+    agent.avatar.attach(png("resident.png"))
+    blob = agent.avatar.blob
+    urls = [ blob_url(blob), representation_url(blob) ]
+    urls.each { |url| assert_served url }
+
+    delete avatar_account_agent_path(account, agent), headers: { "X-Inertia" => true }
+
+    assert_equal [ blob.id ], agent.reload.retired_avatars.blobs.pluck(:id)
+    assert blob.service.exist?(blob.key)
+    urls.each { |url| assert_hidden url }
+  end
+
+  test "a resident's replaced picture is hidden, comes back on restore, and stays served while shared" do
+    agent = agents(:research_assistant)
+    agent.avatar.attach(png("first.png"))
+    first = agent.avatar.blob
+    agent.update!(avatar: png("second.png"))
+    second = agent.reload.avatar.blob
+    first_urls = [ blob_url(first), representation_url(first) ]
+
+    first_urls.each { |url| assert_hidden url }
+    assert_served blob_url(second)
+
+    agent.restore_retired_avatar!(first)
+    first_urls.each { |url| assert_served url }
+    assert_hidden blob_url(second)
+
+    chat = accounts(:personal_account).chats.create!(model_id: "openrouter/auto", title: "Shared picture")
+    chat.messages.create!(content: "Same bytes", role: "user", user: @user).attachments.attach(first)
+    agent.reload.retire_avatar!
+    assert_served blob_url(first)
+  end
+
   private
 
   def png(name)

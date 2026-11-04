@@ -6,6 +6,8 @@
   import { CheckCircle, TelegramLogo } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
+  import SharedConnectionsPanel from '$lib/components/agents/SharedConnectionsPanel.svelte';
+  import { authorityDescription } from '$lib/connection-authority';
 
   let {
     form,
@@ -13,13 +15,22 @@
     account,
     telegramConfiguration = null,
     telegramSubscriberCount = 0,
+    telegramGroups = [],
+    canManageTelegramGroups = false,
     sendingTestNotification = false,
     registeringWebhook = false,
     serviceConnections = [],
+    sharedConnections = [],
+    canDecideGuestAccess = false,
     onsendTestNotification,
     onregisterWebhook,
   } = $props();
   let selectedIntegration = $state(null);
+  // Requests waiting for this house's decision go above everything else;
+  // decided ones (approved, declined, revoked…) stay at the bottom.
+  const isWaiting = (connection) => connection.home_approval === 'pending' && connection.enabled !== false;
+  const waitingConnections = $derived(sharedConnections.filter(isWaiting));
+  const decidedConnections = $derived(sharedConnections.filter((connection) => !isWaiting(connection)));
   const telegramAgent = $derived(
     telegramConfiguration
       ? {
@@ -41,29 +52,6 @@
   function toggleService(connection, enabled) {
     router.patch(connection.access_update_url, { enabled }, { preserveScroll: true });
   }
-
-  function authorityDescription(connection) {
-    if (connection.authority_summary) return connection.authority_summary;
-
-    const labels = {
-      drive: 'Drive',
-      docs: 'Docs',
-      sheets: 'Sheets',
-      slides: 'Slides',
-      calendar: 'Calendar',
-      gmail: 'Gmail',
-      meet: 'Meet',
-    };
-    const authority = Object.entries(connection.effective_authority || {})
-      .filter(([, level]) => level !== 'none')
-      .map(
-        ([product, level]) => `${labels[product] || product}: ${level === 'write' ? 'read and write' : 'read only'}`
-      );
-    if (authority.length > 0) return authority.join('; ');
-
-    const scopes = connection.granted_scopes || [];
-    return scopes.length > 0 ? scopes.join(', ') : 'Google did not confirm the granted scopes';
-  }
 </script>
 
 {#if selectedIntegration === 'telegram'}
@@ -73,6 +61,8 @@
     {telegramConfiguration}
     accountId={account.id}
     {telegramSubscriberCount}
+    {telegramGroups}
+    {canManageTelegramGroups}
     {sendingTestNotification}
     {registeringWebhook}
     {onsendTestNotification}
@@ -87,6 +77,8 @@
       </div>
       <Button href={`/accounts/${account.id}/integrations#connect-new`}>Add integration</Button>
     </div>
+
+    <SharedConnectionsPanel {agent} sharedConnections={waitingConnections} {canDecideGuestAccess} waiting />
 
     <div class="divide-y rounded-lg border">
       {#each serviceConnections as connection}
@@ -171,5 +163,6 @@
         </button>
       </div>
     </div>
+    <SharedConnectionsPanel {agent} sharedConnections={decidedConnections} {canDecideGuestAccess} />
   </div>
 {/if}

@@ -41,7 +41,9 @@
                     ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, roll or delete the token under My Profile → API Tokens in Cloudflare.`
                     : connection.provider === 'tailscale'
                       ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
-                      : `Disconnect ${connection.label}?`;
+                      : connection.provider === 'withings'
+                        ? `Disconnect ${connection.label}? This removes the house's Withings tokens, but a token a resident already holds can still read your health data until it expires (up to three hours). To revoke access at Withings now, remove the app from your Withings account.`
+                        : `Disconnect ${connection.label}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }

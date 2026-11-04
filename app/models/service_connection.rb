@@ -58,6 +58,10 @@ class ServiceConnection < ApplicationRecord
   # In the same transaction as the change, so no send can be claimed or
   # granted against a connection whose session, number or owner changed.
   after_update :withdraw_send_grants, if: :send_authority_changed?
+  # Same transaction: a guest's approval is of a particular owner, identity
+  # and authority. When any of that changes, the approval goes back to the
+  # home as a new request (JWblqj).
+  after_update :re_request_guest_approvals, if: :guest_approval_basis_changed?
   after_update_commit :reconcile_authority_change, if: :runtime_authority_changed?
   # The account's tweet stream is paid by this connection (FieldTweets).
   after_save :refresh_tweet_funding, if: :tweet_funding_changed?
@@ -83,6 +87,19 @@ class ServiceConnection < ApplicationRecord
   scope :connected, -> { where(status: "connected") }
   scope :personal, -> { where(management_scope: "personal") }
   scope :account_managed, -> { where(management_scope: "account_managed") }
+
+  # Row locks on a connection (lock!, with_lock) are FOR NO KEY UPDATE, not
+  # FOR UPDATE. They still exclude each other and any UPDATE of this row,
+  # which is what every caller relies on (grants, decisions, comms sends,
+  # logins). What they no longer block is the KEY SHARE lock a child row's
+  # foreign key takes on insert. A guest leaving (GuestMembership#
+  # end_integration_grants) holds its seat and access rows and then records
+  # an event pointing here; under FOR UPDATE a decision, grant or send that
+  # held this row while waiting for one of those access rows closed a
+  # deadlock cycle (Mira, #706 round 2).
+  def lock!(lock = true)
+    super(lock == true ? "FOR NO KEY UPDATE" : lock)
+  end
 
   def definition
     Services::Definition.fetch(provider)
@@ -179,6 +196,18 @@ class ServiceConnection < ApplicationRecord
     can_send ? owner?(user) : manageable_by?(user)
   end
 
+  # Sharing with a guest resident (JWblqj). A personal connection is its
+  # owner's alone to share, even where account admins may provision it to
+  # hosted residents (freely_provisionable confers nothing here); an
+  # account-wide one is shared by whoever can switch it on for residents
+  # today, the account owner included. Anyone who can manage the connection
+  # can take it back.
+  def guest_access_changeable_by?(user, enabled:)
+    return manageable_by?(user) unless enabled
+
+    personal? ? owner?(user) : provisionable_by?(user)
+  end
+
   def runtime_entry(agent:)
     {
       "connection_id" => public_id,
@@ -186,6 +215,9 @@ class ServiceConnection < ApplicationRecord
       "identity" => external_identity,
       "label" => display_label,
       "management_scope" => management_scope,
+      # Where the connection lives. A guest's own tools say "via Dana" so
+      # that choosing between two Google connections is plain.
+      "origin" => { "account" => account.name, "guest" => agent.account_id != account_id },
       "credential_revision" => credential_revision,
       "credential_strategy" => credential_strategy,
       "credentials" => runtime_credentials(agent: agent),
@@ -205,29 +237,46 @@ class ServiceConnection < ApplicationRecord
   end
 
   def runtime_credentials(agent:)
+    base = broker_origin_for(agent)
     case credential_strategy
     when "refresh_broker"
       {
-        "access_token_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
+        "access_token_endpoint" => "#{base}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
       }
     when "connector"
       # The payload holds the connector's callback secret. Residents get the
       # read endpoints only, never the payload.
       routes = Rails.application.routes.url_helpers
       endpoints = {
-        "chats_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
-        "messages_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
+        "chats_endpoint" => "#{base}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
+        "messages_endpoint" => "#{base}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
       }
       if provider == "telegram"
-        endpoints["search_endpoint"] = "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_search_path(public_id)}"
+        endpoints["search_endpoint"] = "#{base}#{routes.api_v1_service_connection_comms_search_path(public_id)}"
       end
       # POST to it to send as the owner: only for a resident the owner has
       # let send, on a provider sending is switched on for.
       endpoints["send_endpoint"] = endpoints["messages_endpoint"] if sendable_by?(agent)
       endpoints
+    when "read_proxy"
+      # The payload holds a token that can write. Residents get the house's
+      # read-only proxy, never the payload.
+      {
+        "api_endpoint" => "#{base}#{Rails.application.routes.url_helpers.api_v1_service_connection_read_proxy_root_path(public_id)}"
+      }
     else
       credential_payload_hash
     end
+  end
+
+  # Where the resident reaches the house's broker endpoints. A local resident
+  # uses the internal Docker name; a resident on its own VM can't resolve that
+  # name, so it gets the public origin, the same one RemoteRuntime gives it as
+  # SOULSHOUSE_APP_URL (Alanis, 2 Nov: every broker call failed DNS).
+  def broker_origin_for(agent)
+    return Agents::RemoteRuntime.public_origin if agent && Agents::RemoteRuntime.remote?(agent)
+
+    Agents::Config.internal_url
   end
 
   # Whether this resident may send through this connection right now (the
@@ -716,6 +765,23 @@ class ServiceConnection < ApplicationRecord
     saved_change_to_credential_payload? ||
       saved_change_to_status? ||
       saved_change_to_credential_revision?
+  end
+
+  def guest_approval_basis_changed?
+    (saved_changes.keys & %w[connected_by_user_id external_subject_id management_scope credential_metadata]).any?
+  end
+
+  # Lock order as withdraw_send_grants: this connection's row is held by the
+  # UPDATE; the access rows are locked second. An approval, or a request
+  # still waiting, whose snapshot no longer matches is re-asked (a new
+  # generation, so a page showing the old one is refused); a re-auth of
+  # the same identity with the same authority keeps it.
+  def re_request_guest_approvals
+    agent_service_accesses.where(enabled: true, home_approval: %w[approved pending]).lock.each do |access|
+      next unless access.home_approval_stale?
+
+      access.request_home_approval!(actor: nil, reason: "authority_changed")
+    end
   end
 
   # No revival (WhatsApp spec §5): a grant to speak as the owner does not

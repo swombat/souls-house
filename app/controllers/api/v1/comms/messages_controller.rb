@@ -30,7 +30,7 @@ module Api
           end
 
           access = @connection.agent_service_accesses.find_by!(agent_id: current_api_agent.id)
-          unless access.enabled? && access.can_send?
+          unless access.effective? && access.can_send?
             raise CommsSending::Refused.new(:send_not_granted, :forbidden, "This resident may read this connection but not send through it")
           end
 

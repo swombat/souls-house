@@ -30,6 +30,20 @@ class PagesController < ApplicationController
     render inertia: "self-host-technical"
   end
 
+  # Public: the live schema by concern, for people reading the open source. The
+  # areas come from config/data_model.yml; the tables from the database.
+  def data_model
+    area = params[:area] ? DataModel.find(params[:area]) : DataModel.areas.first
+    raise ActiveRecord::RecordNotFound, "no data-model area #{params[:area]}" unless area
+
+    render inertia: "data-model", props: {
+      areas: DataModel.areas_json,
+      area: DataModel.area_json(area),
+      table_count: DataModel.schema_tables.size,
+      map_url: DataModel::REPOSITORY_PATH
+    }
+  end
+
   # Public, unlinked for now. Plans come from the catalogue, never from copy, and the
   # page must stay true with no Stripe keys: an unpriced plan offers no checkout.
   # What each plan includes is shown as what it gets when plans open; today's

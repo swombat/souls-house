@@ -16,6 +16,41 @@ is needed. The host resolves latest master / latest published mainline Chaos
 once and records exact revisions. A green result means verification completed,
 not merely that the request was accepted.
 
+### Automatic rebuilds after a merge
+
+A merge that passes CI deploys Rails on its own (`deploy-rails-on-green.yml`).
+After Rails is healthy, the host compares `agent-runtime/` at the deployed
+commit with the commit the residents' image was last built from
+(`/var/lib/house-deploy/runtime-source.json`, written by every runtime build
+once its image passes its checks; hosts without that file fall back to the
+newest run that built an image). If anything there changed, or the comparison
+can't be made, the receipt says `runtime_rebuild_needed: true` and the same
+workflow runs **Rebuild residents** as a second job, bound to the same tested
+commit (`runtime expect <sha>`): if master has moved on, the host builds
+nothing (superseded) and the newer commit's own deploy decides again. A
+Rails-only merge rebuilds nobody. Chaos never moves automatically.
+
+Rebuild residents rolls idle residents straight away and leaves busy ones to
+the host's minute sweep. A rebuild whose only unfinished work is busy host
+residents (`skipped` equal to `waiting`, nothing `held`) is green; anything
+held, a failed births alias, or an unreachable VM is red.
+
+A failed or interrupted rebuild latches rebuilds, Chaos updates and **both**,
+but not Rails deploys: the latch moves to `runtime-latch.json` and later Rails
+deploys keep shipping. Their automatic rebuild jobs are refused (red) until the
+failed job is acknowledged, for example by running Rebuild residents with
+`acknowledge_failed_job` set to its id.
+
+A roll the minute sweep attempts after the run has ended can still fail. That
+hold lives in `pending-rolls.json` (`held`, or `births_alias_failed`), so the
+gate refuses rebuilds, Chaos updates and **both** while it is there, however
+many Rails deploys come after. Rails keeps deploying. Acknowledging the run
+that owns the queue (its id is the queue's `run`) releases it, once that run
+has finished. The gate's check is repeated by the worker under the deployment
+lock, because a sweep can hold a roll after the gate admitted a rebuild; the
+sweep writes its queue under the gate lock, and never writes back a queue that
+was acknowledged during its pass.
+
 Only the `swombat` GitHub account may execute deployments. The shared transport
 checks both the original caller (`github.actor`) and the current attempt's
 caller (`github.triggering_actor`) before the environment-backed job starts.
@@ -154,15 +189,34 @@ Rails uses Kamal's normal deploy lock, including against manual Mac/Dell deploys
 It skips automatic runtime-build/reconcile hooks, checks web/jobs revisions and
 public `/up`, and refreshes Telegram webhooks separately.
 
-Chaos retains previous images and original volumes, waits at most ten minutes
-per busy resident, and restarts one resident at a time. The existing SQL admission
-gate blocks enqueue/admission only for the short actual restart, so new requests
-wait and are delivered afterwards instead of being cancelled by a visible pause.
-PostgreSQL releases a gate idle in external Docker/HTTP work for90 seconds;
-per-resident receipts record observed `gate_seconds`. This bounds a hung external
-call, not a claim that every failure automatically restores a usable resident.
-No model is invoked, private memory read, or full-volume snapshot made. Skipped
-busy residents remain unchanged: final **partial** is red in Actions.
+Chaos retains previous images and original volumes. Residents roll with one
+canary first, then in parallel. The worker tries residents one at a time,
+stock ones first, until one comes back healthy on the new image (busy ones are
+skipped for the sweep). If that canary fails, nobody else is touched: they are
+listed as `untouched` on the queue, and the sweep rolls nobody while the
+image has a held failure and no proven canary. After the canary, host
+residents roll `roll_concurrency` at a time (settings.json, default 6), and a
+failure is held without stopping the others. VM residents all restart at once
+(`vm_roll_concurrency`, default 32), each waiting at most ten minutes to be
+idle; the first VM failure is raised after every other VM has settled. A
+downgrade is refused before anyone is rolled. The minute sweep uses the same
+canary-then-pool order.
+
+A host roll (`roll-resident.rb`) holds the house-wide SQL turn gate only to
+check the resident is idle and set its roll hold (`agents.runtime_roll_started_at`).
+The restart itself runs outside the gate under the resident's own row lock, so
+other residents' turns, and other rolls, carry on. While the hold is set,
+admission skips that resident: a turn that arrives is queued and delivered
+afterwards, not cancelled. A healthy roll clears the hold and dispatches
+waiting turns; a failed one switches the resident off (as before) and clears
+it. A worker that dies mid-roll leaves the hold set, so that resident's turns
+wait for an operator, and a later roll answers `held` instead of taking the
+hold over. PostgreSQL ends a roll transaction idle in external Docker/HTTP work
+after 90 seconds; per-resident receipts record observed `gate_seconds` (now
+the gate part only). This bounds a hung external call, not a claim that every
+failure automatically restores a usable resident. No model is invoked,
+private memory read, or full-volume snapshot made. Skipped busy residents
+remain unchanged: final **partial** is red in Actions.
 
 **Manual runtime operators must take the same host lock:**
 

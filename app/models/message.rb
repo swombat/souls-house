@@ -15,6 +15,7 @@ class Message < ApplicationRecord
   include Message::Revisioned
   include Message::ReplyAttention
   include Message::SafeguardLabel
+  include Message::TweetEmbeds
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -46,6 +47,9 @@ class Message < ApplicationRecord
 
   attr_accessor :skip_content_validation
   attr_accessor :suppress_automatic_dispatch
+  # A line that records something about the room (a tag change) rather than
+  # new conversation: it must not move the room up the list.
+  attr_accessor :skip_chat_activity
   attr_reader :single_resident_response_triggered
   # Set by the resident API when a resident posts: the residents named in
   # recipient_agent_ids ([] for none). Tags in the content are read too. Nil
@@ -83,6 +87,8 @@ class Message < ApplicationRecord
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def record_chat_message_time
+    return if skip_chat_activity
+
     chat.with_lock do
       if chat.last_message_at.nil? || created_at > chat.last_message_at
         chat.update!(last_message_at: created_at)
@@ -221,14 +227,15 @@ class Message < ApplicationRecord
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
                   :progress_message, :progress_break_after, :progress_status, :progress_run_id, :runtime_interaction_id,
                   :completed, :created_at_formatted, :created_at_hour, :streaming,
-                  :files_json, :stones_json, :content_html, :tools_used, :tool_status,
+                  :files_json, :stones_json, :tweet_embeds_json, :content_html, :tools_used, :tool_status,
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,
-                  :editable, :deletable,
+                  :editable, :deletable, :controls_admin_only,
                   :moderation_flagged, :moderation_severity, :moderation_scores,
-                  :audio_source, :audio_url,
+                  :audio_source, :audio_url, :voice_mode,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link do |hash, options|
+                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link,
+                  :author_agent_id do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end
@@ -298,6 +305,13 @@ class Message < ApplicationRecord
     else
       "System"
     end
+  end
+
+  # The resident who wrote this, as the obfuscated id the frontend uses for
+  # residents (agent_id in the payload is the raw column). Lets the trigger bar
+  # release only the resident whose reply arrived.
+  def author_agent_id
+    Agent.encode_id(agent_id) if agent_id && !safeguard_labelled?
   end
 
   def author_type
@@ -385,6 +399,11 @@ class Message < ApplicationRecord
 
   def editable
     editable_by?(Current.user)
+  end
+
+  # Edit/delete offered only because the viewer is a site admin, not the author.
+  def controls_admin_only
+    role == "user" && Current.user.present? && user_id != Current.user.id && Current.user.site_admin
   end
 
   # A human edit or discard, serialized against this message's wake (#94 B,

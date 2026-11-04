@@ -113,6 +113,19 @@ def parse_args(arguments: list[str]) -> tuple[str | None, list[str]]:
 
 
 def select_connection(manifest: dict, connection_id: str | None) -> dict:
+    return _select_connection(manifest, connection_id)
+
+
+def describe_connection(service: dict) -> str:
+    """svc_12 (anna@example.com, via Dana) when the connection is a guest grant."""
+    text = service.get("connection_id", "?")
+    identity = service.get("identity") or service.get("label")
+    origin = service.get("origin") or {}
+    detail = ", ".join(part for part in [identity, f"via {origin.get('account')}" if origin.get("guest") else None] if part)
+    return f"{text} ({detail})" if detail else text
+
+
+def _select_connection(manifest: dict, connection_id: str | None) -> dict:
     connections = [
         service
         for service in manifest.get("services", [])
@@ -127,7 +140,7 @@ def select_connection(manifest: dict, connection_id: str | None) -> dict:
         if not connections:
             raise ValueError(f"Google Workspace connection not found: {connection_id}")
     elif len(connections) > 1:
-        ids = ", ".join(service.get("connection_id", "?") for service in connections)
+        ids = ", ".join(describe_connection(service) for service in connections)
         raise ValueError(
             f"Several Google Workspace connections are available ({ids}); "
             "choose one with --connection"

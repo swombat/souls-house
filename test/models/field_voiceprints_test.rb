@@ -89,6 +89,19 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     end
   end
 
+  test "one pass cuts several samples, each byte for byte what a single cut makes" do
+    recording = ready_recording(account: @account, user: @user)
+    lists = [ [ [ 0, 400 ], [ 500, 900 ] ], [ [ 100, 300 ] ], [ [ 200, 700 ] ] ]
+    singles = lists.map { |segments| FieldVoiceprints::Sample.cut(recording, segments) { |path| File.binread(path) } }
+    opened = 0
+    blob = recording.audio.blob
+    original = blob.method(:open)
+    blob.define_singleton_method(:open) { |*args, **options, &block| opened += 1; original.call(*args, **options, &block) }
+    many = FieldVoiceprints::Sample.cut_many(recording, lists) { |paths| paths.map { |path| File.binread(path) } }
+    assert_equal 1, opened, "the recording is fetched once for all of them"
+    assert_equal singles, many
+  end
+
   test "nothing biometric happens while a gate is shut: nothing learned, nothing embedded, no guess" do
     client = embeddings
     store_print!(@voice)
@@ -141,6 +154,38 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     assert_empty client.calls
     assert_nil @voice.reload.voiceprint
     assert_equal 0, FieldVoiceSample.count
+  end
+
+  def fill_with_included!(voice, count: FieldVoiceprints::Limits::ACTIVE)
+    (count / 2.0).ceil.times.flat_map { long_ready_recording(account: @account, user: @user).speakers.to_a }.first(count).map do |speaker|
+      speaker.name_as!(voice, by: @user)
+      digest = FieldVoiceSample.source_digest_for(speaker.reload, [ [ 0, 12_000 ] ])
+      sample = voice.samples.create!(account: @account, field_recording_speaker: speaker, field_recording_id: speaker.field_recording_id,
+        speech_ms: 17_000, profile: FieldVoiceprints::Profiles::ECAPA, label_origin: "human", eligible: true,
+        source_segments: [ [ 0, 12_000 ] ], source_digest: digest, vector: voice_vector(1))
+      speaker.update!(sample_confirmed_digest: digest, sample_confirmed_by: @user, sample_confirmed_at: Time.current)
+      assert sample.manually_confirmed?, "a confirmed, included sample: none of them is awaiting review"
+      sample
+    end
+  end
+
+  test "with twenty included, no new candidate is offered, but an included one can still be refreshed" do
+    included = fill_with_included!(@voice)
+    with_recognition(@account) do
+      assert FieldVoiceprints::Limits.full?(@voice)
+      assert_not FieldVoiceprints::Learning.enqueue!(snapshot), "a new candidate is not queued"
+      assert_nil @speaker.reload.sample_learning_status
+
+      assert_equal :no_sample, fake_cut { FieldVoiceprints::Learning.learn!(snapshot, client: embeddings) },
+        "one already queued before the twentieth is dropped, not offered"
+      assert_nil FieldVoiceSample.find_by(field_voice: @voice, field_recording_speaker: @speaker)
+
+      refreshed = included.first.field_recording_speaker
+      assert_not FieldVoiceprints::Limits.full?(@voice, speaker: refreshed)
+      included.first.update!(eligible: false) # rejected
+      assert_not FieldVoiceprints::Limits.full?(@voice), "below twenty, candidates are offered again"
+      assert FieldVoiceprints::Learning.enqueue!(snapshot)
+    end
   end
 
   # A recording nobody has touched: identification may guess at its speakers.

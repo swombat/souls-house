@@ -20,9 +20,14 @@ function residents(accountSuffix) {
 
 async function routeUsage(page) {
   await page.route('**/residents/*/provider_subscription_usage', (route) => {
-    const percent = route.request().url().includes('/low-') ? 15 : 70;
+    const percent = route.request().url().includes('/low-') ? 20 : 70;
     return route.fulfill({
-      json: { windows: [{ id: 'session', remaining_percent: percent, resets_at: '2026-10-18T00:00:00Z' }] },
+      json: {
+        windows: [
+          { id: 'session', remaining_percent: 90, resets_at: '2026-10-18T00:00:00Z' },
+          { id: 'weekly', remaining_percent: percent, resets_at: '2026-10-24T00:00:00Z' },
+        ],
+      },
     });
   });
 }
@@ -32,12 +37,12 @@ async function buttonNames(component, names) {
   return labels.map((label) => names.find((name) => label.includes(name))).filter(Boolean);
 }
 
-test('ask bar orders residents by weekly availability, then by name', async ({ mount, page }) => {
+test('ask bar warns at low OpenAI allowance and orders by the minimum supplied percentage', async ({ mount, page }) => {
   await routeUsage(page);
   const component = await mount(AgentTriggerBar, {
-    props: { accountId: 'order-bar', chatId: 'chat', showUsage: true, agents: residents('bar') },
+    props: { accountId: 'order-bar', chatId: 'chat', showUsage: false, agents: residents('bar') },
   });
-  await expect(component.getByRole('button', { name: /^Low/ })).toHaveAccessibleName('Low (15% left)');
+  await expect(component.getByRole('button', { name: /^Low/ })).toHaveAccessibleName('Low (20% left)');
   await expect(component.getByRole('button', { name: /^High/ })).toHaveAccessibleName('High (70% left)');
   await expect.poll(() => buttonNames(component, ['High', 'Low', 'amy', 'Zed'])).toEqual(['High', 'Low', 'amy', 'Zed']);
 });
@@ -57,12 +62,12 @@ test('ask bar falls back to alphabetical order with no subscriptions', async ({ 
   await expect.poll(() => buttonNames(component, ['ash', 'Bram', 'Cleo'])).toEqual(['ash', 'Bram', 'Cleo']);
 });
 
-test('new chat picker orders residents by weekly availability, then by name', async ({ mount, page }) => {
+test('new chat picker orders residents by known allowance, then by name', async ({ mount, page }) => {
   await routeUsage(page);
   const component = await mount(GroupChatAgentPicker, {
     props: { accountId: 'order-picker', showUsage: true, agents: residents('picker') },
   });
-  await expect(component.getByRole('button', { name: /^Low/ })).toContainText('Low (15% left)');
+  await expect(component.getByRole('button', { name: /^Low/ })).toContainText('Low (20% left)');
   await expect(component.getByRole('button', { name: /^High/ })).toContainText('High (70% left)');
   await expect.poll(() => buttonNames(component, ['High', 'Low', 'amy', 'Zed'])).toEqual(['High', 'Low', 'amy', 'Zed']);
 });

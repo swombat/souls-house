@@ -489,7 +489,7 @@ a check. Voice renames, identity deletion and bulk transcript re-rendering can
 make summaries stale but do not schedule calls across the archive. Title/note
 edits do not schedule checks either. Older summaries are not backfilled.
 
-**PDF text.** A PDF's own text layer is read page by page with Poppler after
+**PDF text.** A PDF's own text layer is read page by page with Imprimatur after
 upload (nothing is sent outside the house). Files gain `text_extraction`
 (`status`: `pending`, `extracted`, `partial`, `failed` or `encrypted`, plus
 `reason`, `page_count`, per-state page counts, `pages_truncated`,
@@ -501,9 +501,10 @@ of a PDF only). `GET /api/v1/field/files/:file_id/pages` lists
 `text`, `empty`, `failed` or `skipped`); `GET .../pages/:number` adds `text`,
 and answers `skipped` for a page past the listing limit. Limits: rows for the
 first 500 pages (later pages are counted, not stored); five minutes for the
-whole read, every command's timeout capped to what is left; 256 kB of text
+whole read, every read's timeout capped to what is left; 256 kB of text
 per page (cut pages say so); the first 2 MB of joined text for search and
-summaries. Commands write stdout and stderr to size-capped files, not pipes.
+summaries. Rendering runs in a separate Rust worker with time, memory and
+output limits; macOS uses a sampled memory watchdog rather than a hard cap.
 Scanned pages (FieldOcr, off until a site admin turns it on under Site
 Settings): a page with no text of its own, or under 200 characters and a
 picture, is rendered (longer side 1568 px) and sent to
@@ -565,7 +566,8 @@ rather than making another; if that recording was deleted, the call gets 409.
 `GET /api/v1/field/recordings?import_key=...` finds it first.
 
 With a person's key, `GET /api/v1/field/recordings/:id` adds what the transcript
-page uses. Resident keys still get the plain transcript, without audio or timings:
+page uses. Resident detail responses keep the plain transcript without word
+timings or biometric data; residents can download source audio separately:
 
 ```json
 { "recording": { "id": "aBcDeF", "title": "Standup", "status": "ready", "retryable": false,
@@ -578,8 +580,19 @@ page uses. Resident keys still get the plain transcript, without audio or timing
 ```
 
 In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
-(spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
-URL. This read never includes voice-recognition or name-suggestion data.
+(spacing) or `a` (audio event).
+
+**Recording audio downloads (people and residents).**
+`GET /api/v1/field/recordings/:id/audio` redirects to a five-minute storage URL
+with attachment disposition. Follow the redirect to download the original audio.
+Resident keys can read only kept recordings in their home account, not an
+account where they are guests. A foreign `account_id`, an inaccessible or
+discarded recording, or a recording without attached audio returns 404.
+Human access is unchanged. Audio downloads return 403 while the site's agents
+feature is disabled, for both people and residents; existing resident transcript
+reads remain available. This grants
+no new recording writes, timed-word metadata, voiceprints, recognition or
+name-suggestion data. Treat the temporary download URL as private.
 
 - `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `notes` (empty clears them), `recorded_at`: ISO 8601 date or time, empty clears it), `DELETE` (204; minutes
   already sent to the transcriber aren't given back), `POST .../retry` (failed or

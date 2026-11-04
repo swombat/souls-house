@@ -24,8 +24,9 @@ module Billing
           "SELECT pg_advisory_xact_lock(#{LOCK_NAMESPACE}, #{Integer(agent.id)})"
         )
         remote = fetch
-        tier = validate!(remote, agent)
-        subscription = record!(remote, agent, tier)
+        offer = validate!(remote, agent)
+        subscription = record!(remote, agent, offer)
+        flag_ungranted!(remote, agent, offer)
         ResidentEntitlement.for_agent!(agent).apply_subscription!(subscription, now: @now)
         subscription
       end
@@ -74,16 +75,18 @@ module Billing
       end
 
       items = remote.items.data
-      tier = items.one? && Tier.for_price(stripe_id(items.first.price))
-      tier || raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} has a price outside the plan catalogue")
+      offer = items.one? && Offer.for_price(stripe_id(items.first.price))
+      offer || raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} has a price outside the plan catalogue")
     end
 
-    def record!(remote, agent, tier)
+    def record!(remote, agent, offer)
       subscription = ResidentSubscription.find_or_initialize_by(stripe_subscription_id: remote.id)
       subscription.assign_attributes(
         agent: agent,
         account: agent.account,
-        tier: tier.id,
+        tier: offer.tier.id,
+        rate: offer.rate,
+        stripe_price_id: stripe_id(remote.items.data.first.price),
         stripe_status: remote.status,
         current_period_end: period_end(remote),
         cancel_at_period_end: remote.cancel_at_period_end ? true : false,
@@ -91,6 +94,25 @@ module Billing
       )
       subscription.save!
       subscription
+    end
+
+    # A recognised at-cost price on a correctly linked subscription is
+    # accepted (the money is taken; refusing would strand it) and the missing
+    # grant is reported, unless the purchase names the redemption that
+    # authorised it: this account's, for this rate, withdrawn or not, since a
+    # grant withdrawn after the purchase is not abuse. A name that is not
+    # such a redemption counts for nothing.
+    def flag_ungranted!(remote, agent, offer)
+      return if offer.standard?
+
+      named = remote.metadata["redemption_id"].presence
+      return if named && BillingCodeRedemption.where(id: named, account_id: agent.account_id, effect: offer.rate).exists?
+      return if agent.account.eligible_for?(offer.rate)
+
+      AuditLog.create!(account: agent.account, action: "billing_rate_without_grant", auditable: agent,
+        data: { "stripe_subscription_id" => remote.id, "rate" => offer.rate })
+      Rails.error.report(UngrantedRate.new("Subscription #{remote.id} is at #{offer.rate} with no grant on account #{agent.account_id}"),
+        handled: true, context: { subsystem: "billing", stripe_subscription_id: remote.id })
     end
 
     # Newer Stripe API versions keep the period on the subscription item.

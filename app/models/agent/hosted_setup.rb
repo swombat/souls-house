@@ -54,17 +54,40 @@ module Agent::HostedSetup
   # Authority and connection status must also be read under these locks.
   # A resident's own API has the additional restriction that it may manage
   # only connections it set up, not every connection its key's person owns.
+  #
+  # A guest (the connection lives in an account where this resident has a
+  # seat, JWblqj) is switched on by the connection's owner, or by whoever can
+  # provision an account-wide one, and gets nothing until its home approves:
+  # the row is born pending. Switching it off voids the approval. The seat is
+  # held FOR SHARE under the connection's lock, so a departure in flight
+  # (GuestMembership#close_seats, which locks the seat FOR UPDATE and then
+  # destroys these rows) either finishes first and this is refused, or waits
+  # for this to commit and then removes what it granted.
   def set_service_access!(connection, enabled:, actor: Current.user, resident_actor: nil)
     enabled = ActiveModel::Type::Boolean.new.cast(enabled)
     connection.transaction do
       connection.lock!
+      guest = account_id != connection.account_id
+      if guest
+        # A resident's own key manages its home's connections only.
+        raise ActiveRecord::RecordNotFound if resident_actor
+
+        seat = GuestMembership.lock("FOR SHARE").find_by(agent_id: id, account_id: connection.account_id)
+        raise AgentServiceAccess::ReadGrantRefused.new("#{name} is not a guest in this account", status: :not_found) unless seat
+      end
       access = AgentServiceAccess.lock.find_by(agent_id: id, service_connection_id: connection.id) ||
         agent_service_accesses.build(service_connection: connection)
       if resident_actor && !connection.resident_managed_by?(resident_actor)
         raise ActiveRecord::RecordNotFound
       end
-      unless connection.resident_access_changeable_by?(actor, enabled: enabled)
-        raise AgentServiceAccess::ReadGrantRefused, "You cannot change this resident's access"
+      allowed = guest ? connection.guest_access_changeable_by?(actor, enabled: enabled) : connection.resident_access_changeable_by?(actor, enabled: enabled)
+      unless allowed
+        message = if guest && enabled && connection.personal?
+          "Only the connection's owner can share it with a guest"
+        else
+          "You cannot change this resident's access"
+        end
+        raise AgentServiceAccess::ReadGrantRefused, message
       end
       if enabled && connection.status != "connected"
         raise AgentServiceAccess::ReadGrantRefused.new(
@@ -72,6 +95,19 @@ module Agent::HostedSetup
         )
       end
       access.send_grant_actor = actor
+      if guest
+        access.follows_default = false
+        if enabled
+          # Already asked or already approved: nothing to re-ask.
+          next access if access.persisted? && access.enabled? && access.home_approval.in?(AgentServiceAccess::OPEN_HOME_APPROVALS)
+
+          access.provisioning_status = "pending"
+          next access.request_home_approval!(actor: actor)
+        end
+
+        access.provisioning_status = "removal_pending"
+        next access.withdraw_home_approval!(actor: actor)
+      end
       access.enabled = enabled
       access.follows_default = false
       access.provisioning_status = enabled ? "pending" : "removal_pending"

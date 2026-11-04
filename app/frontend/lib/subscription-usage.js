@@ -21,15 +21,14 @@ export function displayUsageWindows(usage, provider, modelId = '') {
   }
 
   if (provider === 'openai') {
-    if (model.includes('codex-spark')) {
-      const spark = windows.filter((window) => windowLabel(window).includes('codex-spark'));
-      return compactWindows([findWindow(spark, 'session', '5-hour'), findWindow(spark, 'weekly', 'Weekly')]);
-    }
-
-    const weekly =
-      windows.find((window) => String(window.id || '').toLowerCase() === 'session') ||
-      windows.find((window) => windowLabel(window) === 'session');
-    return compactWindows([{ ...weekly, displayLabel: 'Weekly' }]);
+    // Normalized ids/labels and reset timestamps do not establish a duration.
+    const applicable = windows.filter(
+      (window) => windowLabel(window).includes('codex-spark') === model.includes('codex-spark')
+    );
+    return applicable.map((window, index) => ({
+      ...window,
+      displayLabel: applicable.length === 1 ? 'Allowance' : `Allowance ${index + 1}`,
+    }));
   }
 
   return windows.map((window) => ({ ...window, displayLabel: window.label || 'Usage' }));
@@ -62,6 +61,18 @@ export function weeklyRemainingPercent(usage, provider, modelId = '') {
   const remaining = weekly?.remaining_percent;
   if (remaining == null || remaining === '' || !Number.isFinite(Number(remaining))) return null;
   return clampPercent(remaining);
+}
+
+// OpenAI supplies allowances without verified durations. Keep low-allowance
+// warnings useful by using the most constrained applicable window, not by
+// pretending one of them is weekly.
+export function allowanceRemainingPercent(usage, provider, modelId = '') {
+  if (provider !== 'openai') return weeklyRemainingPercent(usage, provider, modelId);
+  const remaining = displayUsageWindows(usage, provider, modelId)
+    .map((window) => window.remaining_percent)
+    .filter((value) => value != null && value !== '' && Number.isFinite(Number(value)))
+    .map(clampPercent);
+  return remaining.length ? Math.min(...remaining) : null;
 }
 
 export function predictionTone(prediction) {

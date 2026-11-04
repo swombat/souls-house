@@ -11,6 +11,7 @@
   import { NewConversationDraft } from '$lib/new-conversation-draft';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { armVoiceStart, disarmVoiceStart } from '$lib/voice-mode-start';
 
   let {
     chats = [],
@@ -19,6 +20,7 @@
     agents = [],
     show_usage_in_chat: showUsageInChat = false,
     file_upload_config = null,
+    voiceMode = { offered: false, available: false, reason: null },
   } = $props();
 
   // Keyed by user/account: restore before any binding setter can write.
@@ -90,8 +92,11 @@
   }
   onMount(autoResize);
 
-  function startChat() {
-    if (!message.trim() && selectedFiles.length === 0) return;
+  // voice: the wave was tapped on an empty composer. The conversation is
+  // created with no opening message and voice mode opens on its page; the
+  // first thing said there is the opening message.
+  function startChat({ voice = false } = {}) {
+    if (!voice && !message.trim() && selectedFiles.length === 0) return;
     if (selectedAgentIds.length === 0 || processing) return;
 
     let submitted;
@@ -103,6 +108,10 @@
     }
     processing = true;
     error = '';
+    if (voice) armVoiceStart();
+    // Only a conversation page arriving may claim the intent; every other end
+    // (refusal, validation error, network failure, HTML error, cancel) clears it.
+    let landed = false;
 
     const formData = new FormData();
     formData.append('message', message);
@@ -116,6 +125,7 @@
     router.post(accountChatsPath(account.id), formData, {
       headers: userId ? { 'X-Draft-User': userId } : {},
       onSuccess: (page) => {
+        landed = page.component === 'chats/show';
         if (draft.sent(submitted, page.props?.flash?.draft_submission_id)) {
           message = '';
           title = '';
@@ -128,7 +138,10 @@
         error = 'Could not start the conversation. Please try again.';
       },
       // Refused redirects, failures and cancellation never clear the draft.
-      onFinish: () => (processing = false),
+      onFinish: () => {
+        if (voice && !landed) disarmVoiceStart();
+        processing = false;
+      },
     });
   }
 </script>
@@ -155,7 +168,11 @@
             draft.edit({ title: value });
           }
         }
-        onMenuOpen={() => (sidebarOpen = true)} />
+        onMenuOpen={() => (sidebarOpen = true)}>
+        {#snippet actions()}
+          <NewChatRoomPicker bind:roomId />
+        {/snippet}
+      </NewChatHeader>
       <GroupChatAgentPicker
         {agents}
         accountId={account.id}
@@ -170,11 +187,15 @@
       <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
-    <NewChatRoomPicker bind:roomId />
     {#if error}
       <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
     {/if}
-    <div class="px-4 py-2 text-xs text-muted-foreground" aria-live="polite">
+    <!-- On a phone the routine draft note goes; warnings still show. -->
+    <div
+      class="px-4 text-xs text-muted-foreground {draftState.storageError || draftState.submissionId
+        ? 'py-2'
+        : 'hidden md:block md:py-2'}"
+      aria-live="polite">
       {#if draftState.storageError}
         <p role="alert">Browser storage is unavailable. This draft may not survive a reload.</p>
       {:else if userId}
@@ -205,6 +226,8 @@
       isGroupChat={true}
       {selectedAgentIds}
       {placeholder}
+      {voiceMode}
+      onVoiceStart={() => startChat({ voice: true })}
       onSubmit={startChat}
       onKeydown={handleKeydown}
       onInput={autoResize} />

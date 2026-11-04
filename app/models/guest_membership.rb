@@ -15,6 +15,7 @@ class GuestMembership < ApplicationRecord
   validate :added_by_belongs_to_both_accounts, on: :create
 
   before_destroy :close_seats
+  before_destroy :end_integration_grants
   after_save :refresh_guest_directory, if: -> {
     (saved_changes.keys & %w[id account_id agent_id]).any?
   }
@@ -51,7 +52,7 @@ class GuestMembership < ApplicationRecord
   def as_json(*)
     {
       id: to_param,
-      agent: { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon },
+      agent: { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon, avatar_url: agent.avatar_url },
       account: { id: account.to_param, name: account.name },
       home_account: { id: agent.account.to_param, name: agent.account.name },
       added_at: created_at.iso8601
@@ -82,6 +83,19 @@ class GuestMembership < ApplicationRecord
       next unless chat.respondable?
 
       chat.messages.create!(role: "user", content: "[System Notice] #{agent.name} has left the conversation.")
+    end
+  end
+
+  # Leaving ends every integration this account shared with the guest
+  # (JWblqj), approved or still pending. close_seats already holds this row
+  # FOR UPDATE, so a grant in flight (Agent#set_service_access!, which holds
+  # the seat FOR SHARE) has either committed, and is removed here, or waits
+  # and then finds no seat. Coming back as a guest starts from nothing.
+  def end_integration_grants
+    AgentServiceAccess.where(agent_id: agent_id, service_connection_id: account.service_connections.select(:id))
+      .lock.includes(:service_connection).each do |access|
+      GuestAccessApprovalEvent.record!(access, action: "guest_left", actor: nil) if access.home_approval.in?(AgentServiceAccess::OPEN_HOME_APPROVALS)
+      access.destroy!
     end
   end
 

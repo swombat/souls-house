@@ -33,6 +33,7 @@ test('owner can select the export/import tab with no settings submit action', as
       'cost_report',
       'reflexes',
       'subagents_available',
+      'voice',
     ],
   });
   await fireEvent.click(screen.getByRole('button', { name: 'Export / Import' }));

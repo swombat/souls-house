@@ -140,4 +140,76 @@ class Agents::ProviderSubscriptionsControllerTest < ActionDispatch::IntegrationT
     assert_empty @agent.provider_connection("openai")
   end
 
+  test "a login seen connected again after expiry is recorded as observed, once, not as a sign-in" do
+    @agent.record_provider_connection!("anthropic", status: "connected", plan: "Max")
+    @agent.mark_provider_connection_status!("anthropic", "expired")
+
+    2.times { get_status("anthropic", "connected") }
+
+    rows = provider_audits(Agent::PROVIDER_CONNECTION_OBSERVED)
+    assert_equal 1, rows.count
+    assert_equal({ "agent_id" => @agent.id, "provider" => "anthropic", "previous_status" => "expired", "plan" => "Max" }, rows.last.data)
+    assert_equal 0, provider_audits(Agent::PROVIDER_SIGN_IN_STARTED).count
+    assert_equal "connected", @agent.reload.provider_connection("anthropic")["status"]
+  end
+
+  test "Connect and the code step are recorded as facts; connected status afterwards claims nothing more" do
+    @agent.record_provider_connection!("anthropic", status: "connected", plan: "Max")
+
+    start_sign_in("anthropic")
+    client = Object.new
+    client.define_singleton_method(:submit_code) { |provider:, code:| { "status" => "finalizing", "provider" => provider } }
+    AgentProviderAuthClient.stub(:new, client) do
+      post code_account_agent_provider_subscription_path(@account, @agent), params: { provider: "anthropic", code: "secret-code" }, as: :json
+    end
+    assert_response :success
+    get_status("anthropic", "connected")
+
+    assert_equal 1, provider_audits(Agent::PROVIDER_SIGN_IN_STARTED).count
+    assert_equal 1, provider_audits(Agent::PROVIDER_SIGN_IN_CODE_SUBMITTED).count
+    # Already connected in the house: the old credentials may be what answered,
+    # so nothing is written that would read as a completed sign-in.
+    assert_equal 0, provider_audits(Agent::PROVIDER_CONNECTION_OBSERVED).count
+    assert_not_includes AuditLog.where(auditable: @agent).pluck(:data).to_json, "secret-code"
+  end
+
+  test "a disconnected login seen connected again is observed with previous status none" do
+    @agent.record_provider_connection!("anthropic", status: "connected")
+    client = Object.new
+    client.define_singleton_method(:disconnect) { |provider:| { "status" => "none", "provider" => provider } }
+    AgentProviderAuthClient.stub(:new, client) do
+      delete account_agent_provider_subscription_path(@account, @agent), params: { provider: "anthropic" }, as: :json
+    end
+    assert_response :success
+
+    get_status("anthropic", "connected")
+
+    row = provider_audits(Agent::PROVIDER_CONNECTION_OBSERVED).last
+    assert_nil row.data["previous_status"]
+  end
+
+  private
+
+  def provider_audits(action)
+    AuditLog.where(auditable: @agent, action:)
+  end
+
+  def start_sign_in(provider)
+    client = Object.new
+    client.define_singleton_method(:start) { |provider:| { "status" => "pending", "provider" => provider } }
+    AgentProviderAuthClient.stub(:new, client) do
+      post account_agent_provider_subscription_path(@account, @agent), params: { provider: }, as: :json
+    end
+    assert_response :success
+  end
+
+  def get_status(provider, status)
+    client = Object.new
+    client.define_singleton_method(:status) { |provider:| { "status" => status, "provider" => provider, "plan" => "Max" } }
+    AgentProviderAuthClient.stub(:new, client) do
+      get account_agent_provider_subscription_path(@account, @agent), params: { provider: }, as: :json
+    end
+    assert_response :success
+  end
+
 end

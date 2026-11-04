@@ -27,6 +27,7 @@ module FieldFile::PdfOcr
     # A file waiting on OCR always gets to an end, even if OCR was turned
     # off meanwhile (its pages then say so); any other file only while on.
     return false unless kept? && pdf_readable? && (pdf_transcription_pending? || FieldOcr.eligible?(self))
+    return false if import_held?
 
     deadline = FieldFile::PdfExtraction::Deadline.new(clock, OCR_TIME_BUDGET)
     todo = pages.reload.select { FieldOcr.candidate?(it) && it.model_status.nil? }
@@ -80,7 +81,7 @@ module FieldFile::PdfOcr
   def transcribe_page(path, page, call, render_timeout, deadline, inference)
     png = begin
       PdfText.render_page(path, page.page_number, timeout: render_timeout)
-    rescue PdfText::CommandFailed => e
+    rescue Imprimatur::Error, SystemCallError, IOError, ArgumentError => e
       call.release!
       mark_model(page, "failed", "The page could not be turned into an image (#{e.message})")
       return nil

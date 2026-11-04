@@ -263,7 +263,8 @@ class Chat < ApplicationRecord
   # Uses cursor-based pagination with before_id for efficient loading of older messages
   # Returns the most recent N messages that are older than before_id, in ascending order for display
   def messages_page(before_id: nil, limit: 30)
-    scope = messages.kept.includes(:user, :agent, :runtime_interaction, handoffs: :recipient_agent).with_attached_attachments.with_attached_audio_recording
+    scope = messages.kept.includes(:user, :agent, :runtime_interaction, handoffs: :recipient_agent, message_tweet_embeds: :tweet_embed)
+      .with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
     # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
@@ -304,7 +305,8 @@ class Chat < ApplicationRecord
         id: agent.to_param,
         name: agent.name,
         icon: agent.icon,
-        colour: agent.colour
+        colour: agent.colour,
+        avatar_url: agent.avatar_url
       }
     end
 

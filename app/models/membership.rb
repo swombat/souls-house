@@ -67,6 +67,7 @@ class Membership < ApplicationRecord
     message: "is already a member of this account"
   }
   validate :enforce_personal_account_rules
+  validate :inviter_may_grant_owner, on: :create
   before_destroy :ensure_removable
 
   # Callbacks with proper naming
@@ -257,6 +258,15 @@ class Membership < ApplicationRecord
       errors.add(:role, "must be owner for personal accounts") if role != "owner"
       errors.add(:base, "Personal accounts can only have one user") if account.memberships.where.not(id: id).exists?
     end
+  end
+
+  # Any confirmed member may invite (Account#manageable_by?), but owner unlocks
+  # billing, births and portability, so only an owner may hand it out.
+  def inviter_may_grant_owner
+    return unless owner? && invited_by && account
+    return if account.owned_by?(invited_by)
+
+    errors.add(:base, "Only an owner can invite someone as owner")
   end
 
   def ensure_removable

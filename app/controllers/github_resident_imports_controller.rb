@@ -37,9 +37,13 @@ class GithubResidentImportsController < ApplicationController
     redirect_to account_github_resident_import_path(current_account, @import), notice: "Import requested. An authorized account manager must approve repository execution."
   rescue Account::NotAuthorized
     head :forbidden
-  rescue Agents::GithubImportSource::Error, ActiveRecord::RecordInvalid, ArgumentError, KeyError
-    redirect_to new_account_github_resident_import_path(current_account),
-      inertia: { errors: { base: [ "Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest." ] } }
+  rescue Agents::GithubImportSource::Error => error
+    # These messages are written for people (Git's own diagnostics never reach
+    # them), so the person sees which check failed instead of a list to guess
+    # through (2026-11-01: a missing validator read as "check your manifest").
+    import_request_failed("Import request failed: #{error.message}.")
+  rescue ActiveRecord::RecordInvalid, ArgumentError, KeyError
+    import_request_failed("Import request failed. Check the fine-grained connection, branch, model and portable_v1 manifest.")
   end
 
   def approve
@@ -78,6 +82,10 @@ class GithubResidentImportsController < ApplicationController
   end
 
   private
+
+  def import_request_failed(message)
+    redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ message ] } }
+  end
 
   def require_import_authority!
     head :forbidden unless GithubResidentImport.requestable_by?(current_account, Current.user)

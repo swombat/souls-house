@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import PlanStep from './plan-step.svelte';
 
 const tiers = [
@@ -46,6 +46,69 @@ test('offers each plan with its price, preselects the first, and states the term
   expect(terms).toHaveTextContent('Then $20 + VAT each month until you cancel.');
   expect(terms).toHaveTextContent('within 30 days for a full refund');
   expect(screen.getByTestId('plan-test-mode')).toHaveTextContent('4242 4242 4242 4242');
+});
+
+test('offers at cost beside standard when the account holds a code, and says what at cost means', () => {
+  const offers = [
+    { ...tiers[0], tier: 'conversation', rate: 'standard' },
+    {
+      id: 'conversation_at_cost',
+      tier: 'conversation',
+      rate: 'at_cost',
+      name: 'Conversation at cost',
+      monthly_usd: 8,
+      purchasable: true,
+      features: { hosting: true, allowance_usd: 0, swarm_searches: 0, subagents: false },
+    },
+  ];
+  render(PlanStep, { billing: { ...billing, offers }, residentName: 'Aria', tier: 'conversation_at_cost' });
+
+  expect(screen.getByRole('radio', { name: /Conversation at cost/ })).toBeChecked();
+  // One rate at a time: the switch shows At cost, and the standard card is not on screen.
+  expect(screen.getByRole('button', { name: 'At cost' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('radio', { name: /^Conversation$/ })).toBeNull();
+  expect(screen.getByText('No house model included: runs on its own subscription or key')).toBeVisible();
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $8 + VAT for Aria's first month.");
+  expect(screen.getByTestId('plan-at-cost-terms')).toHaveTextContent('includes no house-model allowance');
+});
+
+test('the rate switch moves to the same plan at the other rate', async () => {
+  const offers = [
+    { ...tiers[0], tier: 'conversation', rate: 'standard' },
+    { ...tiers[1], tier: 'life', rate: 'standard' },
+    {
+      id: 'conversation_at_cost',
+      tier: 'conversation',
+      rate: 'at_cost',
+      name: 'Conversation at cost',
+      monthly_usd: 8,
+      purchasable: true,
+      features: { hosting: true, allowance_usd: 0, swarm_searches: 0, subagents: false },
+    },
+    {
+      id: 'life_at_cost',
+      tier: 'life',
+      rate: 'at_cost',
+      name: 'Life at cost',
+      monthly_usd: 11,
+      purchasable: true,
+      features: { hosting: true, allowance_usd: 0, swarm_searches: 20, subagents: false },
+    },
+  ];
+  render(PlanStep, { billing: { ...billing, offers }, residentName: 'Aria', tier: 'life' });
+  expect(screen.getByRole('radio', { name: /^Life$/ })).toBeChecked();
+  await fireEvent.click(screen.getByRole('button', { name: 'At cost' }));
+  expect(screen.getByRole('radio', { name: /Life at cost/ })).toBeChecked();
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $11 + VAT for Aria's first month.");
+});
+
+test('a draft the plan does not fit is told so', () => {
+  render(PlanStep, {
+    billing,
+    residentName: 'Aria',
+    blocked: 'At cost includes no house model, and Aria is set to think on the house.',
+  });
+  expect(screen.getByTestId('plan-blocked')).toHaveTextContent('At cost includes no house model');
 });
 
 test('without a card on file it asks for one, and says nothing is charged yet', () => {

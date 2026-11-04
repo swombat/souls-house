@@ -29,6 +29,29 @@ class ServiceConnectionTest < ActiveSupport::TestCase
     assert_includes credentials["access_token_endpoint"], "/api/v1/service_connections/svc_#{connection.id}/access_token"
   end
 
+  test "a resident on its own VM gets broker endpoints on the public origin" do
+    connection = accounts(:personal_account).service_connections.create!(
+      connected_by_user: users(:user_1),
+      provider: "oura",
+      external_subject_id: "oura-user-vm",
+      management_scope: "personal",
+      credential_kind: "oauth2",
+      credential_payload_hash: { "access_token" => "a", "refresh_token" => "r", "expires_at" => 2.days.from_now.utc.iso8601 },
+      credential_metadata: { "credential_strategy" => "refresh_broker", "granted_scopes" => OuraApi::SCOPES }
+    )
+    agent = agents(:research_assistant)
+    local = connection.runtime_credentials(agent:)["access_token_endpoint"]
+    assert local.start_with?(Agents::Config.internal_url)
+
+    AgentPlacement.create!(agent:, backend: "hetzner_cloud", state: "ready", provider_server_id: 4243)
+    previous = ENV["SOULSHOUSE_DOMAIN"]
+    ENV["SOULSHOUSE_DOMAIN"] = "souls.example"
+    remote = connection.runtime_credentials(agent:)["access_token_endpoint"]
+    assert_equal "https://souls.example/api/v1/service_connections/svc_#{connection.id}/access_token", remote
+  ensure
+    ENV["SOULSHOUSE_DOMAIN"] = previous
+  end
+
   test "credential rotation updates encrypted payload without changing authority revision" do
     connection = accounts(:personal_account).service_connections.create!(
       connected_by_user: users(:user_1),

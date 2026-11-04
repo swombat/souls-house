@@ -15,6 +15,7 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
   include Agent::HostedSetup
+  include RetainsReplacedAttachment
 
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
@@ -35,11 +36,15 @@ class Agent < ApplicationRecord
   has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
+  belongs_to :created_by_user, class_name: "User", optional: true
+  belongs_to :first_conversation_chat, class_name: "Chat", optional: true
+  belongs_to :first_conversation_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_many :chat_agents, dependent: :destroy
   has_many :room_model_defaults, dependent: :delete_all
   has_many :agent_backup_snapshots, dependent: :destroy
   has_many :agent_runtime_interactions, dependent: :destroy
   has_many :reflexes, dependent: :destroy
+  has_many :commitments, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :safeguard_detections, dependent: :destroy
   has_many :safeguard_classifier_failures, dependent: :destroy
@@ -81,7 +86,7 @@ class Agent < ApplicationRecord
     telegram_bot_token telegram_webhook_token trigger_bearer_token
   ].freeze
   LIST_JSON_ATTRIBUTES = %i[
-    name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason inference_setup_message
+    name model_id model_label active? paused? colour icon avatar_url runtime health_state deprecated? unavailability_reason inference_setup_message
   ].freeze
 
   # "Imported" is a class of home profile: a reviewed private home cloned into
@@ -111,10 +116,18 @@ class Agent < ApplicationRecord
   validates :refinement_prompt, length: { maximum: 10_000 }
   validates :colour, inclusion: { in: VALID_COLOURS }, allow_nil: true
   validates :icon, inclusion: { in: VALID_ICONS }, allow_nil: true
+  # A picture, like a person's: shown wherever the resident's face is drawn,
+  # in place of the icon. Colour stays; the icon is still recommended for the
+  # places too small for a picture to read.
+  has_one_attached :avatar
+  retains_replaced_attachment :avatar, history: :retired_avatars
+  validates :avatar, content_type: [ "image/png", "image/jpeg", "image/gif", "image/webp" ],
+                     size: { less_than: 5.megabytes }
   validates :thinking_budget,
              numericality: { greater_than_or_equal_to: 1000, less_than_or_equal_to: 50000 },
              allow_nil: true
   validates :reasoning_effort, inclusion: { in: REASONING_EFFORTS }
+  validate :kimi_code_reasoning_effort_is_supported
   validates :refinement_threshold,
              numericality: { greater_than: 0, less_than_or_equal_to: 1 },
              allow_nil: true
@@ -124,6 +137,11 @@ class Agent < ApplicationRecord
     unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
+  # A changed voice must be one of the standard ElevenLabs voices. Only a
+  # change on an existing resident is checked: ids a resident already has
+  # (including older non-standard ones) and predecessor copies are kept.
+  normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
+  validate :voice_is_standard, if: -> { persisted? && will_save_change_to_voice_id? && voice_id.present? }
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -133,6 +151,17 @@ class Agent < ApplicationRecord
       ResidentEntitlement.where(agent_id: id).where.not(state: "held").where.not(hold_released_at: nil).exists?
   }
   after_create_commit :apply_default_service_accesses
+  # Switching a resident back on ends any failed-roll hold on it, so a later
+  # deliberate pause isn't reported as the roll's (RollHoldWatchJob).
+  after_update_commit :close_roll_holds, if: lambda {
+    (saved_change_to_active? || saved_change_to_paused?) && active? && !paused?
+  }
+  # A new resident speaks first once its first wake has settled
+  # (Agents::FirstConversation). Every orientation writer lands here.
+  after_update_commit -> { Agents::FirstConversation.offer_later(self) }, if: lambda {
+    saved_change_to_orientation_completed_at?(from: nil) ||
+      (saved_change_to_orientation_last_error_at? && orientation_last_error_at.present?)
+  }
   after_save :refresh_integration_presentation, if: -> {
     (saved_changes.keys & %w[id account_id name active github_resident_import_id runtime colour icon]).any?
   }
@@ -238,12 +267,13 @@ class Agent < ApplicationRecord
 
   json_attributes :name, :system_prompt, :reflection_prompt, :memory_reflection_prompt,
                   :summary_prompt, :refinement_prompt, :refinement_threshold,
-                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon,
+                  :model_id, :model_label, :enabled_tools, :active?, :paused?, :colour, :icon, :avatar_url,
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
-                  :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
+                   :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
                    :last_health_check_at, :health_state, :consecutive_health_failures,
+                   :health_failing_since, :health_failure_kind, :runtime_restart_count,
                    :github_repo_url, :github_repo_owner, :github_repo_name,
                    :github_deploy_key_id, :container_name, :sandbox_host, :container_image,
                       :sandbox_last_error, :sandbox_last_error_at, :birth_committed_at,
@@ -261,7 +291,7 @@ class Agent < ApplicationRecord
     hash.except!(*SENSITIVE_JSON_ATTRIBUTES.map(&:to_s))
 
     if options&.dig(:as) == :resident_card
-      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
+      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon", "avatar_url",
         "deprecated?", "runtime", "reasoning_effort", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
     end
 
@@ -277,6 +307,23 @@ class Agent < ApplicationRecord
     return json_attrs unless options&.dig(:as) == :list
 
     LIST_JSON_ATTRIBUTES
+  end
+
+  def avatar_url
+    return nil unless avatar.attached?
+
+    helpers = Rails.application.routes.url_helpers
+    if avatar.variable?
+      helpers.rails_representation_url(avatar.variant(resize_to_fill: [ 200, 200 ]), only_path: true)
+    else
+      helpers.rails_blob_url(avatar, only_path: true)
+    end
+  end
+
+  # After the picture is set or removed here: the resident's Telegram bot
+  # follows (SyncTelegramBotPhotoJob). No-op without a linked bot.
+  def sync_telegram_photo_later
+    SyncTelegramBotPhotoJob.perform_later(self) if telegram_configured?
   end
 
   def model_label
@@ -357,15 +404,69 @@ class Agent < ApplicationRecord
   end
 
   def mark_provider_connection_status!(provider, status)
-    connection = provider_connection(provider)
-    return if connection.blank?
+    with_lock do
+      connection = provider_connection(provider)
+      next if connection.blank?
 
-    update!(
-      provider_connections: provider_connections.to_h.merge(
-        provider.to_s => connection.merge("status" => status.to_s)
+      previous_status = connection["status"]
+      update!(
+        provider_connections: provider_connections.to_h.merge(
+          provider.to_s => connection.merge("status" => status.to_s)
+        )
       )
+      if status.to_s == "expired" && previous_status != "expired"
+        audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+      end
+    end
+  end
+
+  # A status read found the provider account connected. Records it, and
+  # audits the change when it was not already connected. Under the row lock,
+  # so competing polls write the observation once.
+  def observe_provider_connected!(provider, email:, plan:)
+    with_lock do
+      previous = provider_connection(provider)
+      record_provider_connection!(
+        provider,
+        email:, plan:, status: "connected",
+        connected_at: previous["connected_at"] || Time.current.iso8601
+      )
+      if previous["status"] != "connected"
+        audit_provider_connection!(PROVIDER_CONNECTION_OBSERVED, provider, previous_status: previous["status"], plan:)
+      end
+    end
+  end
+
+  # Provider subscription logins leave an audit trail (Daniel, 2026-11-01,
+  # exGRgY: "if there isn't an audit log event for this, please add it").
+  # Only what Rails actually knows, named as that (Mira, #704 rounds 1-2):
+  #   sign_in_started       an owner pressed Connect
+  #   sign_in_code_submitted an owner pasted the browser code (never stored)
+  #   connection_observed   a status read found the login connected when the
+  #                         house had it as expired, absent or unknown. Not
+  #                         proof a sign-in succeeded: the runtime can report
+  #                         older credentials that still work.
+  #   expired               the house marked the login expired after a run's
+  #                         auth failure; not proof the provider expired it.
+  # So "did anyone sign in again between a failure and its recovery?" is
+  # answered by whether a sign_in_started row sits between them.
+  # Metadata only (provider, plan, previous status), never the account email
+  # or anything from the token or the one-time code.
+  PROVIDER_SIGN_IN_STARTED = "agent.provider.sign_in_started".freeze
+  PROVIDER_SIGN_IN_CODE_SUBMITTED = "agent.provider.sign_in_code_submitted".freeze
+  PROVIDER_CONNECTION_OBSERVED = "agent.provider.connection_observed".freeze
+  PROVIDER_EXPIRED = "agent.provider.expired".freeze
+
+  def audit_provider_connection!(action, provider, **data)
+    AuditLog.create!(
+      action:,
+      auditable: self,
+      account_id:,
+      user: Current.user,
+      data: { agent_id: id, provider: provider.to_s, **data }.compact
     )
   end
+  private :audit_provider_connection!
 
   def soul_seed
     system_prompt
@@ -384,6 +485,16 @@ class Agent < ApplicationRecord
   end
 
   private
+
+  def kimi_code_reasoning_effort_is_supported
+    return unless model_id.to_s.start_with?("kimi-code/")
+
+    profile = Chat.reasoning_effort_config(model_id)
+    allowed = [ "default", *profile&.dig(:options)&.pluck(:value) ]
+    unless profile && allowed.include?(reasoning_effort)
+      errors.add(:reasoning_effort, "must be a supported Kimi Code effort: #{allowed.join(', ')}")
+    end
+  end
 
   # Retired records remain editable before the explicit data transition, but
   # neither new records nor runtime changes may introduce a legacy value.
@@ -428,12 +539,24 @@ class Agent < ApplicationRecord
     ModelChangeOrientationJob.perform_later(id, model_id)
   end
 
+  def voice_is_standard
+    errors.add(:voice_id, "is not one of the standard ElevenLabs voices") unless ElevenLabsVoices.standard?(voice_id)
+  rescue ElevenLabsVoices::Unavailable
+    errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
+  end
+
   def identity_fields_are_read_only_when_external
     return unless persisted? && identity_owned_by_agent?
 
     return unless EXTERNALLY_MANAGED_ATTRIBUTES.any? { |field| will_save_change_to_attribute?(field) }
 
     errors.add(:base, "Identity and runtime-managed fields are resident-owned and read-only in souls.house")
+  end
+
+  def close_roll_holds
+    ResidentSwitchedOffNotice.close_open_holds!(self)
+  rescue StandardError => error
+    Rails.logger.warn "[RollHold] agent #{id}: #{error.class}: #{error.message}"
   end
 
 end

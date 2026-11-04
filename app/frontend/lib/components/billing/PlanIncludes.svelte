@@ -11,7 +11,14 @@
 
   const lines = $derived([
     ...(features.hosting ? [{ key: 'hosting', icon: House, text: 'Hosting for one resident' }] : []),
-    { key: 'allowance', icon: Sparkle, text: `$${features.allowance_usd} a month of house model` },
+    {
+      key: 'allowance',
+      icon: Sparkle,
+      text:
+        features.allowance_usd > 0
+          ? `$${features.allowance_usd} a month of house model`
+          : 'No house model included: runs on its own subscription or key',
+    },
     ...(features.swarm_searches > 0
       ? [{ key: 'swarm', icon: MagnifyingGlass, text: `Swarm search, ${features.swarm_searches} a month` }]
       : []),

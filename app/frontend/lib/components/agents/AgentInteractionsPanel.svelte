@@ -2,6 +2,7 @@
   import InteractionCard from './interaction-card.svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
+  import { ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
 
   let { interactions = [], pagination = {}, account, agent, runtimeObservabilityUrl = null } = $props();
 
@@ -39,8 +40,12 @@
       </p>
     </div>
     {#if runtimeObservabilityUrl}
-      <a href={runtimeObservabilityUrl}>
-        <Button type="button" variant="outline" size="sm">Detailed runtime usage</Button>
+      <a href={runtimeObservabilityUrl} title="Site admins only">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class={`${ADMIN_ONLY_TEXT} border-red-300 dark:border-red-900`}>Detailed runtime usage</Button>
       </a>
     {/if}
   </div>

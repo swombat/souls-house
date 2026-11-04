@@ -2,11 +2,43 @@ require "test_helper"
 
 class ChatThinkingTest < ActiveSupport::TestCase
 
+  test "Kimi Code subscription catalogue uses exact IDs without remapping Moonshot" do
+    provider_ids = %w[k3.1-pro k3.1-pro-highspeed k3 k3-256k kimi-for-coding kimi-for-coding-highspeed]
+    models = Chat::MODELS.select { |model| model[:model_id].start_with?("kimi-code/") }
+
+    assert_equal provider_ids.map { |id| "kimi-code/#{id}" }, models.pluck(:model_id)
+    assert_equal provider_ids, models.pluck(:provider_model_id)
+    assert_equal [ "Kimi Code subscription" ], models.pluck(:group).uniq
+    models.each { |model| assert Chat.supports_thinking?(model[:model_id]), model[:model_id] }
+
+    Chat::MODELS.select { |model| model[:model_id].start_with?("moonshotai/") }.each do |model|
+      assert_nil model[:provider_model_id], model[:model_id]
+    end
+  end
+
+  test "Kimi Code exposes only model-preserving efforts and documented defaults" do
+    {
+      "k3.1-pro" => "high", "k3.1-pro-highspeed" => "high",
+      "k3" => "high", "k3-256k" => "high", "kimi-for-coding" => "max"
+    }.each do |id, default|
+      config = Chat.reasoning_effort_config("kimi-code/#{id}")
+      assert_equal default, config[:default], id
+      assert_equal %w[low high max], config[:options].pluck(:value), id
+    end
+
+    fixed = Chat.reasoning_effort_config("kimi-code/kimi-for-coding-highspeed")
+    assert_equal "high", fixed[:default]
+    assert_equal [ "high" ], fixed[:options].pluck(:value)
+    assert_equal [ "On (fixed)" ], fixed[:options].pluck(:label)
+    assert_nil Chat.reasoning_effort_config("kimi-code/not-a-model")
+  end
+
   test "September additions have provider groups and catalog reasoning controls" do
     {
       "openai/gpt-6-astra-pro" => [ "OpenAI", %w[low medium high xhigh max] ],
       "openai/gpt-6-sol" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-sol-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6.1-terra" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-luna" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-luna-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "anthropic/claude-opus-5.5" => [ "Anthropic", %w[low medium high xhigh max] ],
@@ -308,7 +340,8 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "qwen/qwen3.7-plus",
       "x-ai/grok-4.6",
       "z-ai/glm-5.3",
-      "z-ai/glm-5.3-prime"
+      "z-ai/glm-5.3-prime",
+      "z-ai/glm-5.3-flashx-legal"
     ].each do |model_id|
       assert_includes model_ids, model_id
     end

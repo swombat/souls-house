@@ -134,7 +134,8 @@ class RhythmTest < ActiveSupport::TestCase
       assert_equal :unavailable, result.status
       assert_equal "resident_paused: #{second.name}", result.reason
     end
-    assert_equal 1, @rhythm.open_holds.count
+    assert_not @rhythm.held?
+    assert_equal "resident_paused: #{second.name}", @rhythm.reload.last_skip_reason
   end
 
   test "opening and pause reason are bounded" do
@@ -155,18 +156,74 @@ class RhythmTest < ActiveSupport::TestCase
     assert @rhythm.manageable_by?(@user)
   end
 
-  test "paused resident makes a truthful system hold and release requires correction" do
+  test "an unavailable slot is skipped with its reason and the next due slot fires once it clears" do
     @agent.update!(paused: true)
-    assert_no_difference "Chat.count" do
+    assert_no_difference [ "Chat.count", "RhythmOccurrence.count", "RhythmHold.count" ] do
       result = @rhythm.fire!(now: @now)
       assert_equal :unavailable, result.status
-      assert_match "resident_paused", result.reason
+      assert_equal "resident_paused: #{@agent.name}", result.reason
     end
-    assert_equal [ "system" ], @rhythm.open_holds.pluck(:kind)
-    assert_equal :unavailable, @rhythm.resume!(holder: @user).status
-    assert @rhythm.held?
+    @rhythm.reload
+    assert_not @rhythm.held?
+    assert_equal @now, @rhythm.last_skipped_at
+    assert_equal "resident_paused: #{@agent.name}", @rhythm.last_skip_reason
+    # The schedule moved past the slot: the sweep does not retry every minute.
+    assert_equal Time.utc(2026, 10, 4, 9), @rhythm.next_run_at
+    assert_equal :not_due, @rhythm.fire!(now: @now + 1.hour).status
+
     @agent.update!(paused: false)
-    assert_equal :active, @rhythm.resume!(holder: @user).status
+    result = nil
+    assert_difference "RhythmOccurrence.count", 1 do
+      result = @rhythm.fire!(now: Time.utc(2026, 10, 4, 9, 1))
+    end
+    assert_equal :created, result.status
+    # No backfill: the skipped slot stays skipped.
+    assert_equal [ Time.utc(2026, 10, 4, 9) ], @rhythm.occurrences.pluck(:scheduled_for)
+    @rhythm.reload
+    assert_nil @rhythm.last_skipped_at
+    assert_nil @rhythm.last_skip_reason
+  end
+
+  test "a slot that never becomes possible is skipped every time and never held" do
+    @agent.update!(paused: true)
+    [ @now, Time.utc(2026, 10, 4, 9, 1), Time.utc(2026, 10, 5, 9, 1) ].each do |now|
+      assert_equal :unavailable, @rhythm.fire!(now: now).status
+    end
+    assert_empty @rhythm.holds
+    assert_equal Time.utc(2026, 10, 5, 9, 1), @rhythm.reload.last_skipped_at
+    assert_equal Time.utc(2026, 10, 6, 9), @rhythm.next_run_at
+  end
+
+  test "an empty selection places no hold and skips each slot with its reason" do
+    @rhythm.update!(agents: [])
+    assert_not @rhythm.held?
+    assert_no_difference [ "Chat.count", "RhythmHold.count" ] do
+      result = @rhythm.fire!(now: @now)
+      assert_equal :unavailable, result.status
+      assert_equal "no_selected_residents", result.reason
+    end
+    assert_equal "no_selected_residents", @rhythm.reload.last_skip_reason
+    @rhythm.update!(agents: [ @agent ])
+    assert_equal :created, @rhythm.fire!(now: Time.utc(2026, 10, 4, 9, 1)).status
+  end
+
+  test "a manual start that cannot run is refused without recording a skip or moving the schedule" do
+    @agent.update!(paused: true)
+    original_next_run = @rhythm.next_run_at
+    result = @rhythm.fire!(now: @now, manual: true, request_key: "manual-paused")
+    assert_equal :unavailable, result.status
+    @rhythm.reload
+    assert_nil @rhythm.last_skipped_at
+    assert_equal original_next_run, @rhythm.next_run_at
+  end
+
+  test "no open hold can be a system hold any more" do
+    @rhythm.pause!(holder: @user, reason: "Wait")
+    hold = @rhythm.open_holds.first
+    assert_raises ActiveRecord::StatementInvalid do
+      RhythmHold.transaction(requires_new: true) { hold.update_column(:kind, "system") }
+    end
+    assert_not RhythmHold.new(rhythm: @rhythm, kind: "system", reason: "x").valid?
   end
 
   test "removed creator membership prevents scheduled work" do
@@ -178,7 +235,7 @@ class RhythmTest < ActiveSupport::TestCase
     end
   end
 
-  test "accepted guest can be selected and guest removal produces a system hold" do
+  test "accepted guest can be selected and guest removal skips the slot with its reason" do
     guest = agents(:other_account_agent)
     GuestMembership.create!(account: @account, agent: guest, added_by: @user)
     @rhythm.agents = [ guest ]
@@ -186,7 +243,8 @@ class RhythmTest < ActiveSupport::TestCase
     assert_equal [ guest.id ], @rhythm.resident_ids
     @account.guest_memberships.find_by!(agent: guest).destroy!
     assert_equal :unavailable, @rhythm.fire!(now: @now).status
-    assert_match "resident_not_present", @rhythm.open_holds.first.reason
+    assert_not @rhythm.held?
+    assert_match "resident_not_present", @rhythm.reload.last_skip_reason
   end
 
   test "cross-account resident without guest membership is rejected" do
@@ -269,7 +327,7 @@ class RhythmTest < ActiveSupport::TestCase
     result = rhythm.fire!(manual: true, request_key: "withdrawn")
     assert_equal :unavailable, result.status
     assert_equal "creator_not_member", result.reason
-    assert_equal :unavailable, rhythm.resume!(holder: @account.owner).status
+    assert_not rhythm.held?
   end
 
   test "resident creator availability blocks firing even after leaving selection" do
@@ -280,11 +338,12 @@ class RhythmTest < ActiveSupport::TestCase
     assert_no_difference "Chat.count" do
       assert_equal "creator_paused", rhythm.fire!(manual: true, request_key: "paused").reason
     end
-    assert_equal :unavailable, rhythm.resume!(holder: @agent).status
+    # Nothing is held, so there is nothing for the creator to release.
+    assert_equal :forbidden, rhythm.resume!(holder: @agent).status
     @agent.update!(paused: false, active: false)
-    assert_equal :unavailable, rhythm.resume!(holder: @user).status
+    assert_equal "creator_unavailable", rhythm.fire!(manual: true, request_key: "inactive").reason
     @agent.update!(active: true)
-    assert_equal :active, rhythm.resume!(holder: @agent).status
+    assert_equal :created, rhythm.fire!(manual: true, request_key: "back").status
   end
 
   test "a withdrawn selection does not prevent owner editing or corrective removal" do
@@ -317,7 +376,7 @@ class RhythmTest < ActiveSupport::TestCase
     assert_empty rhythm.agents
     assert_equal "creator_not_member", rhythm.fire!(manual: true, request_key: "gone").reason
     assert_nil RhythmPresentation.new(rhythm, user: @user).as_json.dig(:creator, :name)
-    assert_equal :unavailable, rhythm.resume!(holder: @user).status
+    assert_not rhythm.held?
 
     human = User.create!(email_address: "temporary-rhythm@example.test", password: "password123")
     human_rhythm = Rhythm.create!(@rhythm.attributes.except("id", "created_at", "updated_at").merge(
@@ -328,17 +387,17 @@ class RhythmTest < ActiveSupport::TestCase
     assert_equal "creator_not_member", human_rhythm.fire!(manual: true, request_key: "human-gone").reason
   end
 
-  test "last self leave holds immediately and stale model instances cannot restore membership or erase holds" do
+  test "last self leave places no hold and stale model instances cannot restore membership or erase holds" do
     stale = Rhythm.find(@rhythm.id)
     stale.agents.load
     @rhythm.pause!(holder: @agent, reason: "Keep my hold")
     @rhythm.leave!(agent: @agent)
     assert_empty @rhythm.reload.agents
-    assert_equal %w[agent system], @rhythm.open_holds.order(:kind).pluck(:kind)
+    assert_equal %w[agent], @rhythm.open_holds.order(:kind).pluck(:kind)
     stale.join!(agent: @agent)
     stale.join!(agent: @agent)
     assert_equal 1, @rhythm.rhythm_agents.count
-    assert_equal %w[agent system], @rhythm.open_holds.order(:kind).pluck(:kind)
+    assert_equal %w[agent], @rhythm.open_holds.order(:kind).pluck(:kind)
     assert_equal :held, @rhythm.fire!(manual: true, request_key: "stale-held").status
     assert_equal :held, stale.resume!(holder: @user).status
     assert_equal :active, @rhythm.resume!(holder: @agent).status

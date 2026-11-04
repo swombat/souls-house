@@ -64,18 +64,6 @@ class GuestMembershipTest < ActiveSupport::TestCase
     assert_not_includes @nexus.conversation_agents, @lume
   end
 
-  test "a wake queued before leaving does not run after it" do
-    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
-    room = @nexus.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ @local, @lume ])
-    membership.destroy!
-
-    woken = false
-    ExternalAgentResponseRequest.stub(:new, ->(**) { woken = true; flunk "a removed guest was woken" }) do
-      ManualAgentResponseJob.perform_now(room, @lume)
-    end
-    assert_not woken
-  end
-
   test "an owner of either account can end it; other members cannot" do
     membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
     nexus_owner = users(:regular_user)

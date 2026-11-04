@@ -2,6 +2,19 @@ require "test_helper"
 
 class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
 
+  test "Kimi Code key turns do not inherit API prices or count as metered billing" do
+    %w[k3.1-pro kimi-for-coding kimi-code/k3.1-pro].each do |model|
+      interaction = build_interaction(provider: "kimi", model: model,
+        uncached_input_tokens: 1_000_000, output_tokens: 1_000_000)
+      assert interaction.subscription_based?
+      cost = interaction.estimated_cost
+      assert_equal "0.0", cost[:amount_usd]
+      assert_equal "subscription", cost[:pricing_source]
+      assert_not cost[:applies_to_billing]
+      assert_nil cost[:components_usd]
+    end
+  end
+
   test "estimates direct Anthropic cost with one hour cache pricing" do
     interaction = build_interaction(
       provider: "anthropic",
@@ -209,9 +222,22 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
 
   test "October price rules do not swallow neighbouring Qwen and GLM IDs" do
     %w[qwen/qwen3.8-max-prime-0902 qwen/qwen3.8-max-preview z-ai/glm-5.3-flash
-       z-ai/glm-5.3-flashx z-ai/glm-5.3-prime-turbo].each do |model|
+       z-ai/glm-5.3-flashx z-ai/glm-5.3-prime-turbo z-ai/glm-5.3-flashx-legal-pro].each do |model|
       assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
     end
+  end
+
+  test "GLM 5.3 FlashX Legal uses its November list price" do
+    cost = build_interaction(
+      provider: "openrouter", model: "z-ai/glm-5.3-flashx-legal",
+      uncached_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000
+    ).estimated_cost
+    assert_equal "estimated", cost[:status]
+    assert_equal "z-ai/glm-5.3-flashx-legal", cost[:pricing_model]
+    assert_equal "2026-11-03", cost[:pricing_as_of]
+    assert_equal "1.695", cost[:amount_usd]
+    assert_equal "0.075", cost.dig(:components_usd, :cache_read_input)
   end
 
   test "Gemini 4 Argon uses launch pricing until December and doubles after" do
@@ -265,6 +291,21 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "estimated", cost[:status]
     assert_equal "0.765", cost[:amount_usd]
     assert_equal "0.015", cost.dig(:components_usd, :cache_read_input)
+  end
+
+  test "GPT-6.1 Terra is priced from the OpenAI standard endpoint" do
+    [ "openai/gpt-6.1-terra", "gpt-6.1-terra" ].each do |model|
+      cost = build_interaction(
+        model: model,
+        uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+        cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+      ).estimated_cost
+      assert_equal "estimated", cost[:status], model
+      assert_equal "7.3", cost[:amount_usd], model
+      assert_equal "1.25", cost.dig(:components_usd, :cache_creation_input), model
+      assert_equal "0.05", cost.dig(:components_usd, :cache_read_input), model
+    end
+    assert_equal "gpt-6.1-terra", Chat.provider_model_id("openai/gpt-6.1-terra")
   end
 
   test "Kimi K3.1 Pro is priced from the Moonshot AI standard endpoint" do

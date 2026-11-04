@@ -81,6 +81,32 @@ test('the list shows schedule, residents, creator and the next time in the rhyth
   expect(screen.getByText(/Next: .*09:00/)).toBeInTheDocument();
 });
 
+test('a paused rhythm shows its last skip without promising the next slot', () => {
+  const last_skip = { at: '2026-10-26T08:00:00Z', reason: 'resident_paused: Mira', explanation: 'Mira is paused' };
+  const holds = [{ id: 'h1', holder_name: 'Daniel', holder_type: 'human', reason: 'Not this week' }];
+  render(RhythmShow, { account, rhythm: rhythmFixture({ state: 'paused', holds, last_skip }) });
+  expect(screen.getByTestId('rhythm-last-skip')).toHaveTextContent(/Skipped .*: Mira is paused\.$/);
+  expect(screen.getByTestId('rhythm-last-skip')).not.toHaveTextContent(/tries again/);
+});
+
+test('an active rhythm with a skip says the next slot tries again', () => {
+  const last_skip = { at: '2026-10-26T08:00:00Z', reason: 'resident_paused: Mira', explanation: 'Mira is paused' };
+  render(RhythmShow, { account, rhythm: rhythmFixture({ last_skip }) });
+  expect(screen.getByTestId('rhythm-last-skip')).toHaveTextContent(/tries again on its own/);
+});
+
+test('a card shows the last skipped slot and its reason next to the next time', () => {
+  const last_skip = { at: '2026-10-26T08:00:00Z', reason: 'resident_paused: Mira', explanation: 'Mira is paused' };
+  render(RhythmsIndex, { account, rhythms: [rhythmFixture({ last_skip })] });
+  expect(screen.getByText(/Next: .*09:00/)).toBeInTheDocument();
+  expect(screen.getByTestId('rhythm-card-last-skip')).toHaveTextContent(/Skipped .*09:00: Mira is paused/);
+});
+
+test('a card without a skip shows no skip line', () => {
+  render(RhythmsIndex, { account, rhythms: [rhythmFixture()] });
+  expect(screen.queryByTestId('rhythm-card-last-skip')).not.toBeInTheDocument();
+});
+
 test('a paused rhythm names who is holding it instead of a next time', () => {
   const holds = [{ id: 'h1', holder_name: 'Mira', holder_type: 'agent', reason: 'Not useful lately' }];
   render(RhythmsIndex, { account, rhythms: [rhythmFixture({ state: 'paused', holds })] });
@@ -132,22 +158,26 @@ test('a resident-created invitation shows its author without granting a viewing 
   expect(screen.queryByRole('button', { name: /Start one now/ })).not.toBeInTheDocument();
 });
 
-test('an empty resident invitation remains visible with its system hold', () => {
+test('an empty resident invitation stays active and says why its last slot was skipped', () => {
+  const last_skip = {
+    at: '2026-10-26T08:00:00Z',
+    reason: 'no_selected_residents',
+    explanation: 'no residents are selected',
+  };
   render(RhythmShow, {
     account,
     rhythm: rhythmFixture({
       creator: { id: 'mira', name: 'Mira', type: 'agent' },
       residents: [],
       resident_ids: [],
-      state: 'paused',
-      holds: [{ id: 'h1', holder_name: 'System', holder_type: 'system', reason: 'no_selected_residents' }],
+      last_skip,
       can_manage: true,
       can_resume: false,
     }),
   });
-  expect(screen.getByText('no_selected_residents')).toBeInTheDocument();
-  expect(screen.getByText('Not while paused')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Start one now/ })).toBeDisabled();
+  expect(screen.getByTestId('rhythm-last-skip')).toHaveTextContent(/Skipped .*09:00: no residents are selected/);
+  expect(screen.queryByText('Not while paused')).not.toBeInTheDocument();
+  expect(screen.queryByText('Paused by')).not.toBeInTheDocument();
 });
 
 test('the form asks the server for the preview and shows the first occurrence', async () => {

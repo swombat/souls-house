@@ -73,6 +73,70 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     assert @agent.paused?
   end
 
+  test "the roll hold is set while the container restarts and cleared after" do
+    seen = nil
+    sandbox = Object.new
+    sandbox.define_singleton_method(:recreate!) { seen = Agent.find(ENV["DEPLOY_RESIDENT_ID"]).runtime_roll_started_at }
+    client = Minitest::Mock.new
+    client.expect(:turn_status, {status: 404, body: {"ledger_id" => "fixture"}}, [String])
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, sandbox) do
+        Agents::Endpoint.stub(:url_for, "https://runtime.example.test") do
+          ChaosTriggerClient.stub(:new, client) do
+            assert_equal "healthy", run_script.fetch("result")
+          end
+        end
+      end
+    end
+    assert seen, "turn admission must see the hold during the restart"
+    assert_nil @agent.reload.runtime_roll_started_at
+    assert @agent.active?
+  end
+
+  test "a turn queued during the roll waits and is admitted after it" do
+    interaction = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake",
+      session_id: "fixture-session", started_at: Time.current, endpoint_url: "https://runtime.example.test")
+    turn = nil
+    sandbox = Object.new
+    sandbox.define_singleton_method(:recreate!) do
+      turn = ResidentTurn.enqueue!(interaction, {session_id: "fixture-session"})
+      raise "admitted mid-roll" if ResidentTurn.admit!.include?(turn.id)
+    end
+    client = Minitest::Mock.new
+    client.expect(:turn_status, {status: 404, body: {"ledger_id" => "fixture"}}, [String])
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, sandbox) do
+        Agents::Endpoint.stub(:url_for, "https://runtime.example.test") do
+          ChaosTriggerClient.stub(:new, client) do
+            assert_equal "healthy", run_script.fetch("result")
+          end
+        end
+      end
+    end
+    assert_equal "queued", turn.reload.state
+  end
+
+  test "a hold already set is never taken over" do
+    @agent.update!(runtime_roll_started_at: 1.hour.ago)
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, ->(*) { flunk "Held resident must not restart" }) do
+        assert_equal "held", run_script.fetch("result")
+      end
+    end
+    assert @agent.reload.runtime_roll_started_at
+  end
+
+  test "failed recreation clears the hold along with switching the resident off" do
+    sandbox = Object.new
+    def sandbox.recreate! = raise("fixture failure")
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, sandbox) do
+        assert_raises(RuntimeError) { run_script }
+      end
+    end
+    assert_nil @agent.reload.runtime_roll_started_at
+  end
+
   test "failed recreation leaves a visible hold not a silent rollback" do
     sandbox = Object.new
     def sandbox.recreate! = raise("fixture failure")
@@ -84,6 +148,25 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     assert_not @agent.reload.active?
     assert @agent.paused?
     assert_equal "fixture:new", @agent.container_image
+    hold = AuditLog.find_by!(action: "resident_switched_off_by_roll", auditable: @agent)
+    assert_nil hold.user
+    notice = Chat.find(hold.data.fetch("chat_id")).messages.sole
+    assert_equal "system", notice.role
+    assert_includes notice.content, "#{@agent.name} was switched off by a failed house update"
+  end
+
+  test "a failing notice never hides the roll's own failure" do
+    sandbox = Object.new
+    def sandbox.recreate! = raise("fixture failure")
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, sandbox) do
+        ResidentSwitchedOffNotice.stub(:switched_off!, ->(*) { raise "notice failure" }) do
+          error = assert_raises(RuntimeError) { run_script }
+          assert_equal "fixture failure", error.message
+        end
+      end
+    end
+    assert_not @agent.reload.active?
   end
 
 end

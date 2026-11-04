@@ -46,6 +46,8 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
   HELPERS = {
     "soulshouse-post-message" => { args: %w[c1], stdin: "hello" },
     "soulshouse-model" => { args: %w[c1] },
+    "soulshouse-avatar" => { args: %w[remove] },
+    "soulshouse-voice" => { args: %w[remove] },
     "soulshouse-quiet-reason" => { args: %w[c1], stdin: "busy elsewhere",
                                    env: { "SOULSHOUSE_RUNTIME_CHAT_ID" => "c1", "SOULSHOUSE_RUNTIME_RUN_ID" => "r1" } },
     "soulshouse-usage" => { args: [] },
@@ -53,6 +55,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-x" => { args: %w[search redirect guards] },
     "soulshouse-youtube" => { args: %w[ask https://www.youtube.com/watch?v=dQw4w9WgXcQ what] },
     "soulshouse-reflex" => { args: %w[list] },
+    "soulshouse-commitment" => { args: %w[list] },
     "soulshouse-gws" => { args: %w[drive files list], manifest: :google_workspace },
     "soulshouse-comms" => { args: %w[chats], manifest: :whatsapp },
     "github_import_approval.py" => { python: "import github_import_approval as g; g.fetch_approval()" },
@@ -62,9 +65,9 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
       "s = a.refresh(); print(s, file=sys.stderr); sys.exit(0 if s == 'fetched' else 1)" }
   }.freeze
 
-  # Guarded before #502 and covered by their own tests; the static check
-  # still holds them to the rule.
-  GUARDED_EARLIER = %w[soulshouse-ghost soulshouse-integrations soulshouse-stone memory_client.py runtime_activity.py].freeze
+  # Covered by their own redirect-refusal tests (including Twenty added after
+  # #502); the static check still holds them to the rule.
+  GUARDED_EARLIER = %w[soulshouse-ghost soulshouse-twenty soulshouse-integrations soulshouse-stone memory_client.py runtime_activity.py].freeze
 
   def self.credential_senders
     Dir.glob(RUNTIME.join("**/*").to_s).select { |path| File.file?(path) }.filter_map do |path|
@@ -99,7 +102,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
 
     %w[
       soulshouse-comms soulshouse-gws soulshouse-model soulshouse-post-message soulshouse-send-telegram
-      soulshouse-usage soulshouse-x soulshouse-youtube github_import_approval.py soulshouse-reflex
+      soulshouse-usage soulshouse-x soulshouse-youtube github_import_approval.py soulshouse-reflex soulshouse-commitment
       soulshouse-quiet-reason soulshouse-ghost soulshouse-integrations soulshouse-stone memory_client.py
       runtime_activity.py
     ].each { |name| assert_includes senders, name }
@@ -117,7 +120,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     end
   end
 
-  test "every credential sender is either driven end to end here or was guarded earlier" do
+  test "every credential sender is either driven end to end here or covered by dedicated tests" do
     assert_equal self.class.credential_senders, (HELPERS.keys + GUARDED_EARLIER).sort
   end
 

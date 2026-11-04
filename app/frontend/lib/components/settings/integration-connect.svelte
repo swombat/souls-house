@@ -128,6 +128,15 @@
     </p>
   {/if}
 
+  {#if focusedService.key === 'freeagent'}
+    <p class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+      Residents you grant access will act as the FreeAgent user who approves this connection, within that user's
+      permission level and on their company. FreeAgent has no read-only OAuth scope: this may allow accounting changes,
+      not just reading. Residents are told to change records only when you ask. Disconnecting here removes house access,
+      not changes already made; revoke the app in FreeAgent to withdraw its authorisation there too.
+    </p>
+  {/if}
+
   {#if focusedService.connection_method === 'credentials'}
     <div class="space-y-4">
       {#if focusedService.key === 'github'}

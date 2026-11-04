@@ -8,9 +8,10 @@ class FakeStripe
     def retrieve(id, *) = handlers.fetch(:retrieve).call(id)
     def create(params = {}, opts = {}) = handlers.fetch(:create).call(params, opts)
     def expire(id, *) = handlers.fetch(:expire).call(id)
-    def update(id, params = {}, *) = handlers.fetch(:update).call(id, params)
+    def update(id, params = {}, opts = {}, *) = handlers.fetch(:update).call(id, params, opts)
     def cancel(id, *) = handlers.fetch(:cancel).call(id)
     def search(params = {}, *) = handlers.fetch(:search).call(params)
+    def list(params = {}, *) = handlers.fetch(:list).call(params)
   end
 
   attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states,
@@ -21,6 +22,7 @@ class FakeStripe
     @created_customers = []
     @checkout_sessions = []
     @portal_sessions = []
+    @portal_configurations = []
     @expired_sessions = []
     # Checkout session id => { status:, subscription: }, as Stripe would report it.
     @session_states = {}
@@ -29,6 +31,7 @@ class FakeStripe
     @payment_methods = {}
     @created_subscriptions = []
     @subscription_updates = []
+    @update_responses = {}
     @cancelled_subscriptions = []
   end
 
@@ -61,6 +64,12 @@ class FakeStripe
     @create_fault = [ error, created ]
   end
 
+  # The next Checkout session create has no certain answer: Stripe made the
+  # session (created: true) or didn't, and the caller sees only the error.
+  def fail_next_checkout_create(error = Stripe::APIConnectionError.new("timed out"), created: true)
+    @checkout_fault = [ error, created ]
+  end
+
   # Search hasn't indexed anything yet (Stripe's search lags by up to a minute).
   def search_lags!
     @search_lags = true
@@ -79,7 +88,7 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { agent_id: agent.id.to_s },
-      items: { object: "list", data: [ { price: { id: price }, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, current_period_end: period_end.to_i } ] }
     }
   end
 
@@ -90,6 +99,12 @@ class FakeStripe
       retrieve: ->(id) { construct(stored_subscription(id)) },
       create: lambda { |params, opts|
         if (existing = @subscriptions.values.find { |sub| sub[:idempotency_key] && sub[:idempotency_key] == opts[:idempotency_key] })
+          # Stripe replays a key only for identical parameters; a replay
+          # whose payload moved in any way is refused, not silently honoured.
+          if params.except(:expand) != existing[:create_params]
+            raise Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters they " \
+                                               "were first used with. #{params.except(:expand)} vs #{existing[:create_params]}")
+          end
           next construct(with_invoice(existing))
         end
         if @create_fault
@@ -103,7 +118,8 @@ class FakeStripe
           id: id, object: "subscription", status: "incomplete", customer: params[:customer],
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
           default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
-          items: { object: "list", data: params[:items].map { |item| { price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
+          create_params: params.except(:expand).deep_dup,
+          items: { object: "list", data: params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
         }
         raise error if error
         construct(with_invoice(@subscriptions[id]))
@@ -113,17 +129,30 @@ class FakeStripe
         found = @search_lags ? [] : @subscriptions.values.select { |sub| sub.dig(:metadata, "birth_order") == reference }
         Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
       },
-      update: lambda { |id, params|
+      update: lambda { |id, params, opts = {}|
         if @update_fault
           error = @update_fault
           @update_fault = nil
           raise error
         end
-        @subscription_updates << [ id, params ]
+        # Stripe replays an idempotency key: the cached response, no mutation.
+        if (key = opts[:idempotency_key]) && (cached = @update_responses[key])
+          @subscription_updates << [ id, params, opts.merge(replayed: true) ]
+          next cached
+        end
+        @subscription_updates << [ id, params, opts ]
         stored = stored_subscription(id)
         stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
         stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
-        construct(with_invoice(stored))
+        Array(params[:items]).each do |change|
+          item = stored[:items][:data].find { |row| row[:id] == change[:id] } ||
+            raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
+          item[:price] = { id: change[:price] } if change[:price]
+        end
+        stored[:description] = params[:description] if params.key?(:description)
+        response = construct(with_invoice(stored))
+        @update_responses[opts[:idempotency_key]] = response if opts[:idempotency_key]
+        response
       },
       cancel: lambda { |id|
         @cancelled_subscriptions << id
@@ -146,7 +175,7 @@ class FakeStripe
         method = customer.dig(:invoice_settings, :default_payment_method)
         construct(customer.merge(invoice_settings: { default_payment_method: method && @payment_methods.fetch(method) }))
       },
-      update: lambda { |id, params|
+      update: lambda { |id, params, _opts = {}|
         @customer_updates << [ id, params ]
         customer = @customers.fetch(id) { put_customer(id) }
         if (method = params.dig(:invoice_settings, :default_payment_method))
@@ -161,9 +190,23 @@ class FakeStripe
   def checkout
     sessions = Service.new(
       create: lambda { |params, opts|
+        # Stripe replays an idempotency key only for identical parameters.
+        if (replayed = @session_states.find { |_id, state| state[:idempotency_key] && state[:idempotency_key] == opts[:idempotency_key] })
+          id, state = replayed
+          if params != state[:create_params]
+            raise Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters they " \
+                                               "were first used with. #{params} vs #{state[:create_params]}")
+          end
+          next Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
+        end
+        fault = @checkout_fault
+        @checkout_fault = nil
+        raise fault[0] if fault && !fault[1]
         @checkout_sessions << [ params, opts ]
         id = "cs_test_#{@checkout_sessions.size}"
-        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer] }
+        @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer],
+                                idempotency_key: opts[:idempotency_key], create_params: params.deep_dup }
+        raise fault[0] if fault
         Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
       },
       retrieve: lambda { |id|
@@ -184,8 +227,31 @@ class FakeStripe
       @portal_sessions << params
       Stripe::StripeObject.construct_from(url: "https://billing.stripe.com/p/session/test_1")
     })
-    Struct.new(:sessions).new(sessions)
+    configurations = Service.new(list: lambda { |params|
+      all = @portal_configurations
+      from = params[:starting_after] ? all.index { |row| row[:id] == params[:starting_after] } + 1 : 0
+      size = @portal_page_size || params[:limit] || 100
+      page = all[from, size] || []
+      Stripe::StripeObject.construct_from(object: "list", data: page.map(&:deep_dup), has_more: from + size < all.size)
+    })
+    Struct.new(:sessions, :configurations).new(sessions, configurations)
   end
+
+  # A portal configuration whose plan switcher offers these prices (none by
+  # default: the house's portal lets nobody switch plans). allowed: what the
+  # switcher may change; products: nil for a plan list Stripe didn't send.
+  def put_portal_configuration(prices: [], active: true, enabled: true, allowed: %w[price quantity], products: :from_prices)
+    product_list = products == :from_prices ? (prices.empty? ? [] : [ { product: "prod_test", prices: prices } ]) : products
+    update = { enabled: enabled, default_allowed_updates: allowed }
+    update[:products] = product_list unless product_list.nil?
+    @portal_configurations << {
+      id: "bpc_test_#{@portal_configurations.size + 1}", active: active, is_default: @portal_configurations.empty?,
+      features: { subscription_update: update, subscription_cancel: { enabled: true } }
+    }
+  end
+
+  # Pages of this size from configurations.list, to test pagination.
+  def portal_page_size!(size) = @portal_page_size = size
 
   def subscriptions = subscriptions_service
 
@@ -209,11 +275,16 @@ class FakeStripe
     CONVERSATION_PRICE = "price_test_conversation".freeze
     LIFE_PRICE = "price_test_life".freeze
     WORK_PRICE = "price_test_work".freeze
+    CONVERSATION_AT_COST_PRICE = "price_test_conversation_at_cost".freeze
+    LIFE_AT_COST_PRICE = "price_test_life_at_cost".freeze
+    WORK_AT_COST_PRICE = "price_test_work_at_cost".freeze
 
     STRIPE_ENV = {
       "STRIPE_SECRET_KEY" => "sk_test_fake", "STRIPE_WEBHOOK_SECRET" => "whsec_test_fake",
       "STRIPE_PRICE_CONVERSATION" => CONVERSATION_PRICE, "STRIPE_PRICE_LIFE" => LIFE_PRICE,
-      "STRIPE_PRICE_WORK" => WORK_PRICE
+      "STRIPE_PRICE_WORK" => WORK_PRICE,
+      "STRIPE_PRICE_CONVERSATION_AT_COST" => CONVERSATION_AT_COST_PRICE, "STRIPE_PRICE_LIFE_AT_COST" => LIFE_AT_COST_PRICE,
+      "STRIPE_PRICE_WORK_AT_COST" => WORK_AT_COST_PRICE
     }.freeze
 
     def self.included(base)

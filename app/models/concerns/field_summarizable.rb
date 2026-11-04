@@ -20,7 +20,7 @@ module FieldSummarizable
     # Rows the hourly sweep should (re)queue: readable, kept, unsummarised,
     # under the attempt cap, and not claimed by a call still in flight.
     scope :summary_due, ->(now: Time.current) {
-      summary_readable.kept.where(summarized_at: nil).where(summary_attempts: ...MAX_ATTEMPTS)
+      summary_readable.kept.where(summarized_at: nil, import_held_at: nil).where(summary_attempts: ...MAX_ATTEMPTS)
         .where("summary_claimed_at IS NULL OR summary_claimed_at < ?", now - CLAIM_TTL)
     }
   end
@@ -40,7 +40,24 @@ module FieldSummarizable
     summary_input_digest == FieldSummaries.current_input_digest(self) ? "current" : "stale"
   end
 
+  # An item brought in by an account import waits for a person to release it
+  # (docs/features/account-portability.md): nothing leaves the house for it.
+  def import_held? = import_held_at.present?
+
+  # Released by a person (Accounts::Portability::Release): the item then
+  # goes through what a new upload would.
+  def release_import_hold!
+    return false unless import_held?
+
+    update_columns(import_held_at: nil)
+    after_import_release if respond_to?(:after_import_release, true)
+    enqueue_summary
+    true
+  end
+
   def enqueue_summary
+    return if import_held?
+
     FieldItems::SummarizeJob.perform_later(self) if FieldSummaries.enabled? && summarizable? && !summarized?
   end
 
@@ -177,6 +194,7 @@ module FieldSummarizable
   # Called only under the row lock. Return the owning token, not just true:
   # an expired worker must not store over, or release, a newer worker's claim.
   def take_summary_claim!(now:)
+    return false if import_held?
     if kept? && summary_source_blank? && summary_attempts < MAX_ATTEMPTS
       update_columns(summary_attempts: MAX_ATTEMPTS, summary_claimed_at: nil, summary_claim_token: nil)
       return false

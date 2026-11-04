@@ -153,10 +153,29 @@ module RunnerUserData
     io.string
   end
 
+  # Comments, formatting and docstrings go; executable behaviour stays: the
+  # compacted module must parse to exactly the original's AST with its
+  # docstrings removed, and a module that reads __doc__ is refused, since
+  # there removing them would change behaviour. Docstrings came out in #593,
+  # when the runner reached Hetzner's user_data margin.
+  DOCSTRING_STRIP = <<~PYTHON.freeze
+    def strip_docstrings(tree):
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Name, ast.Attribute)) and "__doc__" in (getattr(node, "id", None), getattr(node, "attr", None)):
+                raise ValueError("runner reads __doc__")
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                body = node.body
+                if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+                    node.body = body[1:] or [ast.Pass()]
+        return tree
+  PYTHON
+
   def compact_source(source)
     script = <<~PYTHON
       import ast, sys
-      original = ast.parse(sys.stdin.read())
+      #{DOCSTRING_STRIP.gsub("\n", "\n      ").rstrip}
+      original = strip_docstrings(ast.parse(sys.stdin.read()))
       compact = ast.unparse(original) + "\\n"
       if ast.dump(original, include_attributes=False) != ast.dump(ast.parse(compact), include_attributes=False):
           raise ValueError("runner AST changed")

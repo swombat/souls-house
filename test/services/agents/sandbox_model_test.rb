@@ -3,9 +3,37 @@ require "test_helper"
 module Agents
   class SandboxModelTest < ActiveSupport::TestCase
 
+    test "Kimi Code subscription models use their exact provider IDs without OAuth" do
+      agent = agents(:research_assistant)
+      agent.provider_auth_modes = {}
+      %w[k3.1-pro k3.1-pro-highspeed k3 k3-256k kimi-for-coding kimi-for-coding-highspeed].each do |id|
+        agent.model_id = "kimi-code/#{id}"
+        [ true, false ].each do |available|
+          ResolvesProvider.stub(:api_key_available?, available) do
+            assert_equal({ provider: "kimi", model: id }, Agents::Sandbox.chaos_selection_for(agent))
+          end
+        end
+        assert_nil Agents::Sandbox.subscription_provider_for(agent)
+        assert_equal "api_key", agent.provider_auth_mode("kimi")
+      end
+      assert_includes Agents::Sandbox::SUPPORTED_CHAOS_PROVIDER_IDS, "kimi"
+    end
+
+    test "Kimi Code rejects unknown IDs and leaves existing Moonshot selections intact" do
+      agent = agents(:research_assistant)
+      assert_raises(ArgumentError) { Agents::Sandbox.chaos_selection_for(agent, model_id: "kimi-code/typo") }
+      ResolvesProvider.stub(:api_key_available?, true) do
+        Chat::MODELS.select { |model| model[:model_id].start_with?("moonshotai/") }.each do |config|
+          id = config[:model_id]
+          assert_equal({ provider: "openrouter", model: id }, Agents::Sandbox.chaos_selection_for(agent, model_id: id))
+        end
+      end
+    end
+
     test "Recent direct models route through API and OAuth with direct provider IDs" do
       {
         "openai/gpt-6-sol" => [ "openai", "gpt-6-sol" ],
+        "openai/gpt-6.1-terra" => [ "openai", "gpt-6.1-terra" ],
         "openai/gpt-6-luna" => [ "openai", "gpt-6-luna" ],
         "anthropic/claude-opus-5.5" => [ "anthropic", "claude-opus-5-5" ],
         "anthropic/claude-fable-5.1" => [ "anthropic", "claude-fable-5-1" ],
@@ -172,11 +200,13 @@ module Agents
       end
     end
 
-    test "every selectable model falls back intact through OpenRouter" do
+    test "every non-subscription selectable model falls back intact through OpenRouter" do
       agent = agents(:research_assistant)
 
       ResolvesProvider.stub :api_key_available?, false do
         Chat::MODELS.map { |model| model.fetch(:model_id) }.uniq.each do |model_id|
+          next if model_id.start_with?("kimi-code/")
+
           agent.model_id = model_id
 
           assert_equal "openrouter", Agents::Sandbox.chaos_provider_for(agent), model_id

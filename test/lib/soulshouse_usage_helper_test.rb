@@ -68,14 +68,14 @@ class SoulshouseUsageHelperTest < ActiveSupport::TestCase
       cases = [
           ({"provider": "anthropic", "windows": [weekly]}, 106),
           ({"provider": "xai", "windows": [weekly]}, 106),
-          ({"provider": "openai", "windows": [dict(weekly, id="session", label="Session")]}, 106),
+          ({"provider": "openai", "windows": [dict(weekly, id="session", label="Session")]}, None),
           ({"provider": "gemini", "windows": [
               dict(weekly, label="Claude/GPT weekly", remaining_percent=99),
               dict(weekly, label="Gemini weekly"),
           ]}, 106),
           ({"provider": "openai", "model": "codex-spark", "windows": [
               dict(weekly, label="codex-spark weekly"),
-          ]}, 106),
+          ]}, None),
           ({"provider": "anthropic", "windows": []}, None),
           ({"provider": "anthropic", "windows": [dict(weekly, label="Session")]}, None),
           ({"provider": "anthropic", "windows": [dict(weekly, resets_at=None)]}, None),
@@ -134,7 +134,7 @@ class SoulshouseUsageHelperTest < ActiveSupport::TestCase
       loader.exec_module(mod)
       #{snippet}
     PY
-    stdout, stderr, status = Open3.capture3("python3", "-c", command)
+    stdout, stderr, status = Open3.capture3({ "PATH" => ENV.fetch("PATH") }, "python3", "-c", command, unsetenv_others: true)
     assert status.success?, stderr
     stdout
   end

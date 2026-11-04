@@ -141,7 +141,7 @@ class RhythmsController < ApplicationController
     eligible = current_account.conversation_agents.eligible_for_conversation.order(:name).to_a
     residents = (eligible + (@rhythm&.agents&.to_a || [])).uniq(&:id)
     residents.map do |agent|
-      { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon,
+      { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon, avatar_url: agent.avatar_url,
         paused: agent.paused?, unavailable: !eligible.include?(agent),
         default_model_label: agent.model_label, model_choices: agent.model_choices }
     end

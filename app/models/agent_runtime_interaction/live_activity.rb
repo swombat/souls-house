@@ -53,7 +53,9 @@ module AgentRuntimeInteraction::LiveActivity
   end
 
   def live_activity?
-    run_id.present?
+    # Telegram uses the same opaque identity for delivery, not the room's
+    # activity/event protocol (which requires a conversation).
+    run_id.present? && trigger_kind != "telegram"
   end
 
   # A run a human message asked for may start only while that request still
@@ -65,6 +67,10 @@ module AgentRuntimeInteraction::LiveActivity
     return claim_released_wake! if released_pending_wake
     return claim_handoff! if message_handoffs.exists?
     return claim_stalled_sweep! if stalled_thread_sweep_id
+    return claim_first_conversation! if Agent.exists?(first_conversation_interaction_id: id)
+    if (commitment = Commitment.find_by(wake_interaction_id: id))
+      return claim_commitment!(commitment)
+    end
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
@@ -99,6 +105,30 @@ module AgentRuntimeInteraction::LiveActivity
     end
   end
 
+  # A run a due commitment woke (Commitment#wake!) starts only while the
+  # commitment could still be delivered: still activated, resident not
+  # paused or held, still in the room (Commitment#claim_refusal_reason).
+  # Checked under the commitment's lock, then this interaction's. Refused,
+  # the commitment goes back to retrying with the reason; it is a scheduled
+  # wake, never a person's deliberate override.
+  def claim_commitment!(commitment)
+    commitment.with_lock do
+      reason = commitment.claim_refusal_reason
+      next claim_dispatch_unchecked! unless reason
+
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      if refused && commitment.activated? && commitment.wake_interaction_id == id
+        commitment.update!(wake_state: "retrying", wake_reason: "claim_refused:#{reason}")
+      end
+      false
+    end
+  end
+
   # A run a resident's handoff woke at once (MessageHandoff#dispatch!) starts
   # only while the request still stands, as a held one's release would:
   # message kept, author and recipient still in the room, recipient not
@@ -119,6 +149,21 @@ module AgentRuntimeInteraction::LiveActivity
       handoffs.zip(reasons).each { |handoff, reason| handoff.refuse_claim!(reason) } if refused
       false
     end
+  end
+
+  # A new resident's greeting (Agents::FirstConversation) starts only while it
+  # is still owed to this run: nobody has written to the resident first, and
+  # the resident is not paused, held or unready. The claim is made while the
+  # chat row is locked, so a person's message (which touches that row) lands
+  # either before the check and stops the greeting, or after the claim.
+  # Lock order: chat, agent, then this interaction, as in reserve!.
+  def claim_first_conversation!
+    greeted = Agent.find_by(first_conversation_interaction_id: id)
+    claimed = greeted && Agents::FirstConversation.new(greeted).claim(self) { claim_dispatch_unchecked! }
+    return true if claimed
+
+    with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES) }
+    false
   end
 
   # A run the stalled-thread sweeper woke starts only while every gate that

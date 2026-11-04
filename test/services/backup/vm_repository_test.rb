@@ -66,6 +66,15 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
     PG.connect(dbname: ActiveRecord::Base.connection_db_config.database)
   end
 
+  # PG::Connection#close doesn't wait for the server backend to exit, so its
+  # session locks can outlive the call for a moment. Release them first, or
+  # the next acquire in the same test can race them (backup_busy on CI).
+  def close_observer(connection)
+    connection.exec("SELECT pg_advisory_unlock_all()")
+  ensure
+    connection.close
+  end
+
   def lock_value(connection, sql)
     connection.exec(sql).getvalue(0, 0) == "t"
   end
@@ -242,14 +251,14 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
       assert_empty @puts
     ensure
       connection.exec("SELECT pg_advisory_unlock_all()")
-      connection.close
+      close_observer(connection)
     end
     @client.stub_responses(:put_object, lambda do |_context|
       connection = observer
       begin
         refute lock_value(connection, "SELECT pg_try_advisory_lock(#{key})")
       ensure
-        connection.close
+        close_observer(connection)
       end
       {}
     end)
@@ -269,7 +278,7 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
       assert lock_value(connection, "SELECT pg_try_advisory_lock(#{endpoint})"), "endpoint slot is released when enrollment slots are full"
     ensure
       connection.exec("SELECT pg_advisory_unlock_all()")
-      connection.close
+      close_observer(connection)
     end
     assert_raises(RuntimeError) { Backup::VmRepository::Admission.with(999, limit: 1) { raise "failure" } }
     assert Backup::VmRepository::Admission.with(999, limit: 1) { true }
@@ -294,7 +303,7 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
       endpoint = Backup::VmRepository.lock_key("slot:endpoint:0")
       assert lock_value(connection, "SELECT pg_try_advisory_lock(#{endpoint})"), "timed-out request leaves no shared slot"
     ensure
-      connection.close
+      close_observer(connection)
     end
     @client.stub_responses(:put_object, {})
     assert Backup::VmRepository::Admission.with(999, limit: 1) { @repository.create("config", "x") }
@@ -343,7 +352,7 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
     separate = observer
     assert wait_for_lock(separate, key), "server releases locks after noticing the discarded socket closed"
   ensure
-    separate&.close
+    close_observer(separate) if separate
     pool&.disconnect!
   end
 

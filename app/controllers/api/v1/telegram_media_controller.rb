@@ -23,7 +23,7 @@ module Api
       private
 
       def telegram_message
-        subscription = current_api_agent.telegram_subscriptions.find(params[:conversation_id])
+        subscription = current_api_agent.telegram_threads.find(params[:conversation_id])
         subscription.telegram_messages.find(params[:message_id])
       end
 

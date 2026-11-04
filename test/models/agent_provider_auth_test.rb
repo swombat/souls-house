@@ -43,4 +43,17 @@ class AgentProviderAuthTest < ActiveSupport::TestCase
     assert_empty agent.provider_connection("openai")
   end
 
+  test "a house-marked expiry is audited once per transition" do
+    agent = agents(:research_assistant)
+    agent.record_provider_connection!("anthropic", status: "connected")
+    assert_equal 0, AuditLog.where(auditable: agent).where("action LIKE 'agent.provider.%'").count
+
+    assert_difference -> { AuditLog.where(action: Agent::PROVIDER_EXPIRED, auditable: agent).count }, 1 do
+      agent.mark_provider_connection_status!("anthropic", "expired")
+      agent.mark_provider_connection_status!("anthropic", "expired")
+    end
+    row = AuditLog.where(action: Agent::PROVIDER_EXPIRED, auditable: agent).last
+    assert_equal({ "agent_id" => agent.id, "provider" => "anthropic", "previous_status" => "connected" }, row.data)
+  end
+
 end

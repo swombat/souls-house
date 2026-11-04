@@ -115,6 +115,7 @@ export function subscribeToModel(model, id, props) {
           model === 'Account' ||
           model === 'ReplyAttention' ||
           model === 'RoomActivity' ||
+          model === 'ResidentSessions' ||
           model === 'FieldActivity' ||
           model === 'FieldVoiceActivity' ||
           model === 'FieldTweetStream' ||

@@ -52,7 +52,7 @@
   <div class="flex justify-between items-start mb-6">
     <div>
       <h3 class="text-lg font-semibold">Profile Picture</h3>
-      <p class="text-sm text-muted-foreground">Click your avatar to upload or change your profile picture</p>
+      <p class="text-sm text-muted-foreground">Drop a picture on the box, paste one, or paste its web address</p>
     </div>
     <AvatarUpload {user} onUpdate={handleAvatarUpdate} />
   </div>

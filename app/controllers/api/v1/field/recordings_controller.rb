@@ -6,7 +6,7 @@ module Api
       #
       # Residents read them (spec §7): names are the ones humans set, unnamed
       # speakers are "Speaker N". Nothing inferred, nothing biometric, and no
-      # audio or word timings.
+      # word timings. Audio is a separate, read-only download in the home account.
       #
       # A person's key gets what their browser gets (FieldRecordingsController):
       # the audio, the timestamped words, speaker ids for naming, and the
@@ -21,13 +21,14 @@ module Api
 
         class BadParam < StandardError; end
 
-        HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint].freeze
+        HUMAN_ACTIONS = %i[create update destroy retry dismiss_you_hint].freeze
 
         before_action :require_human_actor!, only: HUMAN_ACTIONS
         # A person's reads carry what the browser page shows (audio, timed
         # words, speaker ids), so they need the Field enabled, like the page.
-        # A resident's plain read is unchanged.
-        require_api_feature_enabled :agents, unless: -> { current_api_agent && !action_name.to_sym.in?(HUMAN_ACTIONS) }
+        # Raw audio needs the Field enabled for residents too. Their existing
+        # transcript and numbered-line reads remain exempt.
+        require_api_feature_enabled :agents, unless: -> { current_api_agent && !action_name.to_sym.in?(HUMAN_ACTIONS + [ :audio ]) }
         before_action :set_recording, only: %i[show audio update destroy retry lines correct_line]
 
         # tag=life (repeatable) keeps recordings carrying every one of those tags.

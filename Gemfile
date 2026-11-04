@@ -13,6 +13,10 @@ gem "activestorage", rails_version
 gem "activesupport", rails_version
 gem "railties", rails_version
 
+# State machines for Ruby objects and persisted Active Record lifecycles.
+gem "state_machines", "~> 0.202.0"
+gem "state_machines-activerecord", "~> 0.200.0"
+
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
@@ -46,6 +50,9 @@ gem "thruster", require: false
 gem "image_processing", "~> 2.2.0"
 gem "ruby-vips", "~> 2.3.0"
 
+# Resource-limited PDF reads and page rendering in the native worker.
+gem "imprimatur", "0.8.1"
+
 # Use Amazon S3 for Active Storage in production
 gem "aws-sdk-s3", require: false
 
@@ -76,6 +83,8 @@ group :development, :test do
 end
 
 group :development do
+  gem "state_machines-mermaid", "~> 0.1.0"
+
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
 end

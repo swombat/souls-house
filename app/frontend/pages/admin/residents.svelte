@@ -1,7 +1,19 @@
 <script>
   import AgentGrid from '$lib/components/agents/AgentGrid.svelte';
+  import { createDynamicSync } from '$lib/use-sync';
+  import { visibleRefresh } from '$lib/visible-refresh';
 
-  let { residents = [] } = $props();
+  let { residents = [], active_sessions: activeSessions = {}, active_session_totals: totals = null } = $props();
+
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({ 'ResidentSessions:all': ['active_sessions', 'active_session_totals'] });
+  });
+  // A run that ages out of the working window ends without a broadcast.
+  $effect(() => visibleRefresh(['active_sessions', 'active_session_totals']));
+
+  const sum = (kinds) => (kinds ? kinds.chat + kinds.telegram + kinds.other : 0);
+  const breakdown = (kinds) => `${kinds.chat} chat · ${kinds.telegram} Telegram · ${kinds.other} other`;
   let query = $state('');
   let hosting = $state('all');
 
@@ -33,6 +45,17 @@
     <p class="text-sm text-muted-foreground">
       {live.length} active · {live.length - cloudCount} on the house server · {cloudCount} on their own cloud VM
     </p>
+    {#if totals}
+      <p class="mt-1 text-sm" data-testid="site-active-sessions">
+        {#if sum(totals.all)}
+          <span class="font-medium">{sum(totals.all)} active {sum(totals.all) === 1 ? 'session' : 'sessions'}</span>
+          <span class="text-muted-foreground">
+            · {breakdown(totals.all)} · house server {sum(totals.house)} · cloud VMs {sum(totals.vm)}</span>
+        {:else}
+          <span class="text-muted-foreground">No active sessions</span>
+        {/if}
+      </p>
+    {/if}
   </div>
 
   <div class="flex flex-wrap items-center gap-3">
@@ -54,7 +77,7 @@
   </div>
 
   {#if shown.length}
-    <AgentGrid agents={shown} showActions={false} admin={true} />
+    <AgentGrid agents={shown} {activeSessions} showActions={false} admin={true} />
   {:else}
     <p class="text-sm text-muted-foreground">No residents match.</p>
   {/if}

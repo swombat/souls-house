@@ -39,6 +39,21 @@ class RemoteTriggerClientTest < ActiveSupport::TestCase
     assert_equal [ "turn_status", @turn.id ], [ command.kind, command.resident_turn_id ]
   end
 
+  test "VM submission preserves the continuity fields for the same runtime shim" do
+    payload = {
+      "session_id" => "vm-telegram",
+      "request" => "Full fresh context",
+      "request_delta" => "Only the new message",
+      "persistent_session" => true,
+      "session_policy" => { "max_age_minutes" => 1440 }
+    }
+    answer = lambda do |command|
+      assert_equal payload, command.envelope.fetch("payload").fetch("body")
+      { "outcome" => "done", "result" => { "status" => 202, "body" => { "state" => "accepted" } } }
+    end
+    assert_equal 202, client(answer: answer).submit_turn(@turn.dispatch_id, payload, ledger_id: SecureRandom.uuid)[:status]
+  end
+
   test "only the resident's own 404 is a 404; no runner trouble ever becomes one" do
     assert_equal 404, client(answer: relayed(404, { "ledger_id" => "x" })).turn_status(@turn.dispatch_id)[:status]
     {

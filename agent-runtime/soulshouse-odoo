@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Read partners and invoices from Odoo 16–19 and SaaS 16–19 using legacy JSON-RPC.
+
+These fixed read-only operations are a helper convention, not API-key permissions.
+"""
+
+import argparse
+import http.client
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import ssl
+import sys
+import urllib.parse
+import yaml
+
+MAX_RESPONSE = 1024 * 1024
+TIMEOUT = 20
+
+
+class OdooError(Exception):
+    pass
+
+
+def manifest_data(text):
+    return yaml.safe_load(text) or {}
+
+
+def load_connection(connection_id):
+    path = (os.environ.get("SOULSHOUSE_SERVICES_FILE")
+            or os.environ.get("HELIXKIT_SERVICES_FILE") or "/run/helixkit/services.yml")
+    data = manifest_data(Path(path).read_text())
+    services = [s for s in data["services"] if s.get("provider") == "odoo"
+                and (not connection_id or s.get("connection_id") == connection_id)]
+    if len(services) != 1:
+        raise OdooError("Choose exactly one Odoo connection with --connection")
+    service = services[0]
+    meta = service["metadata"]
+    key = service["credentials"]["api_key"]
+    if (not isinstance(key, str) or not key or meta["protocol"] != "jsonrpc"
+            or type(meta["uid"]) is not int or meta["uid"] <= 0
+            or any(not isinstance(meta[k], str) or not meta[k] for k in ("database", "login"))
+            or not isinstance(meta["odoo_version"], str)
+            or not re.fullmatch(r"(?:saas~)?(?:16|17|18|19)(?:\.[0-9]+)*(?:\+e)?", meta["odoo_version"])):
+        raise OdooError("Unsupported or incomplete Odoo metadata")
+    return meta, key
+
+
+def endpoint(url):
+    parsed = urllib.parse.urlsplit(url)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or parsed.query or parsed.fragment
+            or parsed.path not in ("", "/", "/jsonrpc") or "%" in parsed.netloc
+            or any(ord(c) <= 32 for c in url)):
+        raise OdooError("Odoo requires a public HTTPS JSON-RPC URL")
+    port = parsed.port or 443
+    addresses = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    if not addresses:
+        raise OdooError("Odoo DNS returned no addresses")
+    for _, _, _, _, address in addresses:
+        ip = ipaddress.ip_address(address[0])
+        if (not ip.is_global or ip.is_multicast or ip.is_unspecified
+                or getattr(ip, "ipv4_mapped", None) is not None):
+            raise OdooError("Odoo address is not public")
+    return parsed.hostname, port, addresses[0]
+
+
+class PinnedHTTPS(http.client.HTTPSConnection):
+    def __init__(self, host, port, address):
+        super().__init__(host, port, timeout=TIMEOUT, context=ssl.create_default_context())
+        self.address = address
+
+    def connect(self):
+        family, kind, proto, _, address = self.address
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(TIMEOUT)
+            sock.connect(address)
+            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        except BaseException:
+            sock.close()
+            raise
+
+
+class Client:
+    def __init__(self, url):
+        self.host, self.port, self.address = endpoint(url)
+        self.sequence = 0
+
+    def call(self, service, method, args):
+        self.sequence += 1
+        payload = {"jsonrpc": "2.0", "method": "call", "id": self.sequence,
+                   "params": {"service": service, "method": method, "args": args}}
+        conn = PinnedHTTPS(self.host, self.port, self.address)
+        try:
+            conn.request("POST", "/jsonrpc", json.dumps(payload).encode(),
+                         {"Content-Type": "application/json", "Accept": "application/json"})
+            response = conn.getresponse()
+            if response.status != 200:
+                raise OdooError("Odoo HTTP request failed (redirects are not followed)")
+            raw = response.read(MAX_RESPONSE + 1)
+            if len(raw) > MAX_RESPONSE:
+                raise OdooError("Odoo response exceeds 1 MiB")
+            result = json.loads(raw)
+            if (not isinstance(result, dict) or result.get("jsonrpc") != "2.0"
+                    or result.get("id") != self.sequence or "error" in result or "result" not in result):
+                raise OdooError("Odoo JSON-RPC request failed")
+            return result["result"]
+        finally:
+            conn.close()
+
+
+class SafeParser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse normally echoes invalid values and unknown arguments.
+        self.exit(2, "soulshouse-odoo: invalid command or options; use --help\n")
+
+
+def build_parser():
+    parser = SafeParser(description=__doc__)
+    parser.add_argument("--connection")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for command in ("partners", "invoices"):
+        child = sub.add_parser(command)
+        child.add_argument("--connection", default=argparse.SUPPRESS)
+        child.add_argument("--limit", type=int, default=20)
+        child.add_argument("--offset", type=int, default=0)
+    return parser
+
+
+def run(args):
+    if not 1 <= args.limit <= 100 or not 0 <= args.offset <= 100000:
+        raise OdooError("Use --limit 1..100 and --offset 0..100000")
+    meta, key = load_connection(args.connection)
+    client = Client(meta["api_url"])
+    uid = client.call("common", "authenticate", [meta["database"], meta["login"], key, {}])
+    if type(uid) is not int or uid != meta["uid"]:
+        raise OdooError("Odoo authentication does not match connection metadata")
+    if args.command == "partners":
+        model, domain = "res.partner", []
+        fields = ["id", "name", "email", "phone", "is_company"]
+    else:
+        model = "account.move"
+        domain = [["move_type", "in", ["out_invoice", "in_invoice"]]]
+        fields = ["id", "name", "move_type", "partner_id", "invoice_date",
+                  "amount_total", "amount_residual", "currency_id", "state", "payment_state"]
+    records = client.call("object", "execute_kw",
+                          [meta["database"], uid, key, model, "search_read", [domain],
+                           {"fields": fields, "limit": args.limit, "offset": args.offset, "order": "id asc"}])
+    if not isinstance(records, list) or len(records) > args.limit:
+        raise OdooError("Invalid Odoo records")
+    # A hostile server can echo the credential even in otherwise valid records.
+    output = json.dumps(records, ensure_ascii=True)
+    def contains_key(value):
+        if isinstance(value, str):
+            return key in value
+        if isinstance(value, dict):
+            return any(contains_key(k) or contains_key(v) for k, v in value.items())
+        if isinstance(value, list):
+            return any(contains_key(v) for v in value)
+        return False
+
+    if contains_key(records):
+        raise OdooError("Odoo returned sensitive data")
+    print(output)
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        run(args)
+        return 0
+    except Exception:
+        # Never print exception text: transport and server errors may contain keys.
+        print("soulshouse-odoo: request refused or failed; check the Odoo connection", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

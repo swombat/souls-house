@@ -40,7 +40,10 @@ test('resident integration updates reload only safe service props, not settings 
     active_tab: 'integrations',
   });
   await waitFor(() =>
-    expect(subscribeToModel).toHaveBeenCalledWith('IntegrationStatus', 'first', ['service_connections'])
+    expect(subscribeToModel).toHaveBeenCalledWith('IntegrationStatus', 'first', [
+      'service_connections',
+      'shared_connections',
+    ])
   );
   expect(subscribeToModel.mock.calls.filter(([model]) => model === 'IntegrationStatus')).toHaveLength(1);
 });
@@ -57,7 +60,7 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
       available: false,
       connection: { status: 'expired' },
     },
-    active_tab: 'hosting',
+    active_tab: 'settings',
   };
   const view = render(EditResident, props);
   await waitFor(() =>
@@ -74,8 +77,12 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
     'cost_report',
     'reflexes',
     'subagents_available',
+    'voice',
   ]);
-  expect(subscribeToModel).toHaveBeenCalledWith('IntegrationStatus', 'first', ['service_connections']);
+  expect(subscribeToModel).toHaveBeenCalledWith('IntegrationStatus', 'first', [
+    'service_connections',
+    'shared_connections',
+  ]);
   const providers = () => subscribeToModel.mock.calls.filter(([model]) => model === 'ProviderPresentation');
   const unsubscribe =
     subscribeToModel.mock.results[subscribeToModel.mock.calls.findIndex(([model]) => model === 'ProviderPresentation')]

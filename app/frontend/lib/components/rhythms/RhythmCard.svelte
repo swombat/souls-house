@@ -37,6 +37,11 @@
         Next: {nextRun}
       {/if}
     </p>
+    {#if rhythm.last_skip}
+      <p class="mt-1 text-xs text-muted-foreground" data-testid="rhythm-card-last-skip">
+        Skipped {formatWhen(rhythm.last_skip.at, zone)}: {rhythm.last_skip.explanation}
+      </p>
+    {/if}
   </Link>
 
   {#if recentRuns.length > 0}

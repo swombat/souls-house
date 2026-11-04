@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  account_portability_expiry:
+    class: AccountPortability::ExpiryJob
+    queue: default
+    schedule: every hour at minute 35
+
   abandoned_app_uploads:
     class: AbandonedAppUploadsJob
     queue: default
@@ -37,6 +42,13 @@ production:
     queue: default
     schedule: every day at 4:40am
 
+  # Titles conversations the create-time GenerateTitleJob left untitled, on
+  # the house key and another model family (TitleSweepJob).
+  title_sweep:
+    class: TitleSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
     queue: default
@@ -47,6 +59,13 @@ production:
   # Judges quiet rooms for the stalled-thread sweeper (StalledThreadSweeper).
   # Does nothing while Setting#stalled_sweep_minutes is 0. Shadow only: it
   # records verdicts and wakes nobody.
+  # Re-offers a new resident's first conversation if a job was lost between
+  # opening it and waking the resident (Agents::FirstConversation).
+  first_conversation_sweep:
+    class: FirstConversationSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   stalled_thread_sweep:
     class: StalledThreadSweepJob
     queue: default
@@ -82,6 +101,12 @@ production:
 
   rhythms:
     class: RhythmSweepJob
+    queue: default
+    schedule: every minute
+
+  # Residents' one-shot commitments (Commitment, #699 B).
+  commitments:
+    class: CommitmentSweepJob
     queue: default
     schedule: every minute
 
@@ -172,6 +197,18 @@ production:
     class: AgentHealthCheckJob
     queue: default
     schedule: every 5 minutes
+
+  roll_hold_watch:
+    class: RollHoldWatchJob
+    queue: default
+    schedule: every 15 minutes
+
+  # Guest integration requests unanswered for 14 days are closed
+  # (GuestAccessRequestSweepJob).
+  guest_access_request_sweep:
+    class: GuestAccessRequestSweepJob
+    queue: default
+    schedule: every hour at minute 50
 
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob

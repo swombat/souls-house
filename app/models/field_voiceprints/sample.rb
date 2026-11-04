@@ -57,19 +57,33 @@ module FieldVoiceprints::Sample
   # Cuts the segments from the recording into one mono 16 kHz WAV. Yields the
   # path; the file is gone when the block returns.
   def cut(recording, segments)
+    cut_many(recording, [ segments ]) { |paths| yield paths.first }
+  end
+
+  # The same cut for several segment lists from one recording, in a single
+  # download and a single decode. Yields the paths, in order; the files are
+  # gone when the block returns.
+  def cut_many(recording, segment_lists)
     recording.audio.blob.open do |input|
-      Tempfile.create([ "voice-sample", ".wav" ]) do |output|
-        filters = segments.each_with_index.map do |(from, to), index|
-          "[0:a]atrim=start=#{from / 1000.0}:end=#{to / 1000.0},asetpts=PTS-STARTPTS[s#{index}]"
+      Dir.mktmpdir("voice-sample") do |dir|
+        graph = []
+        outputs = []
+        segment_lists.each_with_index do |segments, list|
+          labels = segments.each_with_index.map do |(from, to), index|
+            graph << "[0:a]atrim=start=#{from / 1000.0}:end=#{to / 1000.0},asetpts=PTS-STARTPTS[s#{list}_#{index}]"
+            "[s#{list}_#{index}]"
+          end
+          graph << "#{labels.join}concat=n=#{segments.size}:v=0:a=1[out#{list}]"
+          outputs << File.join(dir, "sample-#{list}.wav")
         end
-        concat = "#{segments.each_index.map { |index| "[s#{index}]" }.join}concat=n=#{segments.size}:v=0:a=1[out]"
+        maps = outputs.each_with_index.flat_map { |path, list| [ "-map", "[out#{list}]", "-ac", "1", "-ar", "16000", path ] }
         _out, _err, status = Open3.capture3(
           "timeout", "120", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", input.path,
-          "-filter_complex", [ *filters, concat ].join(";"), "-map", "[out]", "-ac", "1", "-ar", "16000", output.path
+          "-filter_complex", graph.join(";"), *maps
         )
         raise Refused, "The sample couldn't be cut from this recording." unless status.success?
 
-        yield output.path
+        yield outputs
       end
     end
   end

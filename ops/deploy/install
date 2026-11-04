@@ -42,5 +42,35 @@ StandardOutput=null
 StandardError=null
 EOF
 done
+# Rolls residents a Rebuild found busy, one minute at a time (worker.py sweep).
+cat > /etc/systemd/system/house-deploy-sweep.service <<EOF
+[Unit]
+Description=Roll residents a Rebuild left busy, if now idle
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/house-deploy/worker.py sweep
+User=root
+UMask=0077
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+TimeoutStartSec=30min
+StandardOutput=null
+StandardError=null
+EOF
+cat > /etc/systemd/system/house-deploy-sweep.timer <<EOF
+[Unit]
+Description=Every minute: roll pending residents that are idle
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
 systemctl daemon-reload
+systemctl enable --now house-deploy-sweep.timer
 echo 'Installed. Provision settings, secrets, SSH keys and tools image before requesting a deploy.'

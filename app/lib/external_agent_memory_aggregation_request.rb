@@ -41,6 +41,10 @@ class ExternalAgentMemoryAggregationRequest
       request_text: request,
       provider_auth_mode: auth_mode
     ) do |interaction|
+      # A resident that can't make the run is told so on the run, not sent it.
+      refusal = Agents::InferenceAvailability.scheduled_refusal(agent)
+      next { status: 412, body: refusal } if refusal
+
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
         interaction: interaction,
         conversation_id: nil,

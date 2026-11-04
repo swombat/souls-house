@@ -105,23 +105,37 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "last resident leaves safely and creator explicitly recovers system hold after rejoin" do
+  test "last resident leaving places no hold; the slot is skipped visibly and the next one fires after rejoin" do
     rhythm = resident_rhythm
     post leave_api_v1_rhythm_path(rhythm), headers: @headers
     assert_response :ok
     assert_empty rhythm.reload.agents
-    assert_equal "paused", response.parsed_body.dig("rhythm", "state")
-    assert response.parsed_body.dig("rhythm", "can_resume")
+    assert_equal "active", response.parsed_body.dig("rhythm", "state")
+    assert_not response.parsed_body.dig("rhythm", "can_resume")
+    assert_nil response.parsed_body.dig("rhythm", "last_skip")
+    # Nothing of the creator's own is held, so there is nothing to resume.
     post resume_api_v1_rhythm_path(rhythm), headers: @headers
-    assert_response :conflict
-    assert_equal "no_selected_residents", response.parsed_body["reason"]
-    post join_api_v1_rhythm_path(rhythm), headers: @headers
+    assert_response :forbidden
+
+    now = Time.current
+    rhythm.update_column(:next_run_at, now - 1.minute)
+    assert_equal :unavailable, rhythm.fire!(now: now).status
+    get api_v1_rhythm_path(rhythm), headers: @headers
     assert_response :ok
-    assert_equal "paused", response.parsed_body.dig("rhythm", "state")
-    post resume_api_v1_rhythm_path(rhythm), headers: @headers
-    assert_response :ok
+    skip = response.parsed_body.dig("rhythm", "last_skip")
+    assert_equal "no_selected_residents", skip["reason"]
+    assert_equal "no residents are selected", skip["explanation"]
+    assert_equal now.change(usec: 0).iso8601, Time.iso8601(skip["at"]).change(usec: 0).iso8601
     assert_equal "active", response.parsed_body.dig("rhythm", "state")
     assert rhythm.reload.next_run_at.future?
+
+    post join_api_v1_rhythm_path(rhythm), headers: @headers
+    assert_response :ok
+    assert_equal "active", response.parsed_body.dig("rhythm", "state")
+    rhythm.update_column(:next_run_at, now - 1.minute)
+    assert_equal :created, rhythm.fire!(now: now).status
+    get api_v1_rhythm_path(rhythm), headers: @headers
+    assert_nil response.parsed_body.dig("rhythm", "last_skip")
   end
 
   test "creator may pause after leaving but cannot erase another residents hold" do

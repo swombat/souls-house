@@ -1,10 +1,10 @@
 import { accountAgentProviderSubscriptionUsagePath } from '@/routes';
-import { weeklyRemainingPercent } from '$lib/subscription-usage';
+import { allowanceRemainingPercent } from '$lib/subscription-usage';
 
 const CACHE_TTL_MS = 60_000;
 const usageCache = new Map();
 
-export async function loadAgentWeeklyRemaining(accountId, agent) {
+export async function loadAgentRemaining(accountId, agent) {
   const subscription = agent?.provider_subscription;
   if (
     !subscription?.available ||
@@ -25,7 +25,7 @@ export async function loadAgentWeeklyRemaining(accountId, agent) {
       if (!response.ok) throw new Error('Usage unavailable');
       return response.json();
     })
-    .then((usage) => weeklyRemainingPercent(usage, subscription.provider, agent.model_id))
+    .then((usage) => allowanceRemainingPercent(usage, subscription.provider, agent.model_id))
     .catch(() => null);
 
   usageCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, promise });
@@ -48,7 +48,7 @@ function hasRemaining(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-// Residents with a subscription (and so a weekly percentage left) come first,
+// Residents with a known subscription allowance come first,
 // most available first. Everyone else follows in alphabetical order. Ties on
 // percentage fall back to the name so the order stays stable.
 export function sortAgentsByAvailability(agents = [], remainingById = {}) {
@@ -63,14 +63,14 @@ export function sortAgentsByAvailability(agents = [], remainingById = {}) {
   });
 }
 
-// Loads every resident's weekly remaining percentage (cached per resident) and
+// Loads every resident's remaining allowance percentage (cached per resident) and
 // calls onUpdate(agentId, percent | null) as each arrives. Callers merge into
 // their existing map, so a refresh keeps the current order until new numbers
 // land instead of flickering back to alphabetical. Returns a cancel function.
-export function watchAgentsWeeklyRemaining(accountId, agents, onUpdate) {
+export function watchAgentsRemaining(accountId, agents, onUpdate) {
   let cancelled = false;
   for (const agent of agents) {
-    Promise.resolve(loadAgentWeeklyRemaining(accountId, agent)).then((value) => {
+    Promise.resolve(loadAgentRemaining(accountId, agent)).then((value) => {
       if (!cancelled) onUpdate(agent.id, value);
     });
   }

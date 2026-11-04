@@ -42,6 +42,13 @@ FIRST_AFTER_SECS = 120
 REPEAT_SECS = 180
 NOTICE_TTL_SECS = 90
 MESSAGE_TTL_SECS = 900
+# A spoken turn: the person may be listening on a phone, where eighty seconds
+# of quiet reads as nothing happening. Souls.house says so in the trigger
+# payload (`voice_mode`); the clock then asks for a spoken-size line about
+# every twenty seconds. A notice not delivered by the next one is stale.
+VOICE_FIRST_AFTER_SECS = 20
+VOICE_REPEAT_SECS = 20
+VOICE_NOTICE_TTL_SECS = 20
 
 _support = {}
 _support_lock = threading.Lock()
@@ -84,8 +91,16 @@ def describe(seconds):
     return f"{minutes}m {rest:02d}s" if minutes else f"{rest}s"
 
 
-def notice_text(silence_secs, conversation_id):
+def notice_text(silence_secs, conversation_id, voice=False):
     where = f"conversation {conversation_id}" if conversation_id else "this conversation"
+    if voice:
+        return (
+            "[souls.house runtime notice, not a message from a person] "
+            f"Voice mode: the latest message in {where} was spoken, and the person may be "
+            f"listening for you. No visible post from you there for {describe(silence_secs)}. "
+            "Say what you are doing in one spoken sentence, about twenty seconds aloud at most: "
+            "post it there now, no lists or links. Then carry on."
+        )
     return (
         "[souls.house runtime notice, not a message from a person] "
         f"No visible post from you in {where} for {describe(silence_secs)}. "
@@ -138,7 +153,8 @@ def _rendered_fields(messages):
 
 class SilenceClock:
     def __init__(self, run_id, conversation_id, started_at, directory=None,
-                 first_after=FIRST_AFTER_SECS, repeat=REPEAT_SECS, ttl=NOTICE_TTL_SECS):
+                 first_after=FIRST_AFTER_SECS, repeat=REPEAT_SECS, ttl=NOTICE_TTL_SECS,
+                 voice=False):
         base = Path(directory or os.environ.get("SOULSHOUSE_STEER_DIR")
                     or Path(tempfile.gettempdir()) / "soulshouse-steer")
         self.path = base / f"{run_id}.json"
@@ -147,6 +163,7 @@ class SilenceClock:
         self.first_after = first_after
         self.repeat = repeat
         self.ttl = ttl
+        self.voice = voice
         self.last_post_at = None
         self.last_notice_at = None
         self.notices = 0
@@ -226,7 +243,7 @@ class SilenceClock:
             if self.last_notice_at is not None and self.last_notice_at >= anchor \
                     and now - self.last_notice_at < self.repeat:
                 return None
-            text = notice_text(silence, self.conversation_id)
+            text = notice_text(silence, self.conversation_id, self.voice)
             self.notices += 1
             self.nudge = {"text": text, "expires_at": now + self.ttl}
             self._new_notice()

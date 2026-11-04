@@ -115,21 +115,15 @@ def display_windows(payload):
     if provider == "xai":
         return compact([display_window(windows[0], "Weekly") if windows else None])
     if provider == "openai":
-        if "codex-spark" in model:
-            spark = [window for window in windows if "codex-spark" in label(window)]
-            return compact([
-                find_window(spark, "session", "5-hour"),
-                find_window(spark, "weekly", "Weekly"),
-            ])
-        weekly = next(
-            (
-                window
-                for window in windows
-                if str(window.get("id") or "").lower() == "session" or label(window) == "session"
-            ),
-            None,
-        )
-        return compact([display_window(weekly, "Weekly")])
+        # Normalized ids/labels and reset timestamps do not establish a duration.
+        applicable = [
+            window for window in windows
+            if ("codex-spark" in label(window)) == ("codex-spark" in model)
+        ]
+        return [
+            display_window(window, "Allowance" if len(applicable) == 1 else f"Allowance {index + 1}")
+            for index, window in enumerate(applicable)
+        ]
 
     return compact([display_window(window, window.get("label") or "Usage") for window in windows])
 

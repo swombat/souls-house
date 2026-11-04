@@ -150,9 +150,9 @@ class RhythmActivityTest < ActiveSupport::TestCase
     assert_equal 2, @rhythm.open_holds.count
   end
 
-  test "resident creator can release system holds in bulk while a human hold remains" do
+  test "resident creator releases its own hold in bulk while a human hold remains" do
     @rhythm.update!(creator: nil, creator_agent: @agent)
-    @rhythm.pause!(holder: :system, reason: "Synthetic resolved problem")
+    @rhythm.pause!(holder: @agent, reason: "My own pause")
     @rhythm.pause!(holder: @user, reason: "Keep this")
     before = @rhythm.updated_at
 

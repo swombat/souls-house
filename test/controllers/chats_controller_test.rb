@@ -23,6 +23,25 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "the chat pages carry the account's voice mode status" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: nil)
+
+    get account_chat_path(@account, @chat)
+    assert_equal({ "offered" => true, "available" => false, "reason" => "no_transcription_key" },
+      inertia_props.dig("props", "voice_mode"))
+
+    @account.update!(openai_api_key: "sk-account")
+    @inertia_props = nil
+    get account_chats_path(@account)
+    assert_equal({ "offered" => true, "available" => true, "reason" => nil }, inertia_props.dig("props", "voice_mode"))
+
+    Setting.instance.update!(voice_mode_scope: "disabled")
+    @inertia_props = nil
+    get new_account_chat_path(@account)
+    assert_equal "site_disabled", inertia_props.dig("props", "voice_mode", "reason")
+  end
+
   test "sidebar leaves out quiet rhythm runs and brings them back once a person replies" do
     resident = agents(:research_assistant)
     rhythm = Rhythm.create!(account: @account, creator_agent: resident, title: "House watch", opening: "Look round.",
@@ -50,7 +69,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     archived_pin = @account.chats.create!(title: "Archived pin", visual_tag: pin, last_message_at: 1.second.ago)
     archived_pin.archive!
 
-    get account_chats_path(@account)
+    get account_chats_path(@account, show_archived: true)
     ids = inertia_shared_props.fetch("chats").pluck("id")
     expected = [ new_pin, old_pin, @chat, tagged, archived_pin ].map(&:to_param)
     assert_equal expected, ids & expected
@@ -65,11 +84,12 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     [ false, true ].each do |site_admin|
       @user.update!(is_site_admin: site_admin)
       [ account_chats_path(@account), new_account_chat_path(@account), account_chat_path(@account, @chat) ].each do |path|
+        @inertia_props = nil
         get path
         assert_response :success
         ids = inertia_shared_props.fetch("chats").pluck("id")
         assert_includes ids, resident_chat.to_param
-        assert_includes ids, archived_chat.to_param
+        assert_not_includes ids, archived_chat.to_param
         assert_not_includes ids, deleted_chat.to_param
         assert_not_includes ids, other_chat.to_param
       end
@@ -186,7 +206,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
     agent_json = inertia_shared_props.fetch("agents").sole
     assert_equal(
-      [ "active", "colour", "deprecated", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "model_selection", "name", "paused", "runtime", "unavailability_reason" ],
+      [ "active", "avatar_url", "colour", "deprecated", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "model_selection", "name", "paused", "runtime", "unavailability_reason" ],
       agent_json.keys.sort
     )
     assert_equal(
@@ -720,7 +740,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     archived_chat.archive!
     active_chat = @account.chats.create!(title: "Active Chat", last_message_at: 1.hour.ago)
 
-    get account_chats_path(@account)
+    get account_chats_path(@account, show_archived: true)
     ids = inertia_shared_props.fetch("chats").pluck("id")
 
     assert_includes ids, active_chat.to_param
@@ -737,6 +757,65 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
     assert_includes ids, @chat.to_param
     assert_not_includes ids, discarded_chat.to_param
+  end
+
+  test "archived sidebar filter applies on index new and show without widening account access" do
+    archived_chat = @account.chats.create!(title: "Archived", archived_at: Time.current)
+    deleted_chat = @account.chats.create!(title: "Deleted archive", archived_at: Time.current, discarded_at: Time.current)
+    foreign_chat = accounts(:team_account).chats.create!(title: "Foreign archive", archived_at: Time.current)
+
+    [ account_chats_path(@account), new_account_chat_path(@account), account_chat_path(@account, @chat) ].each do |path|
+      [ nil, "false", "true" ].each do |show_archived|
+        @inertia_props = nil
+        get path, params: { show_archived: show_archived }
+        assert_response :success
+        ids = inertia_shared_props.fetch("chats").pluck("id")
+        assert_includes ids, @chat.to_param
+        assert_equal show_archived == "true", ids.include?(archived_chat.to_param)
+        assert_not_includes ids, deleted_chat.to_param
+        assert_not_includes ids, foreign_chat.to_param
+      end
+    end
+  end
+
+  test "confirmed ordinary member can include archived chats within the selected room" do
+    account = accounts(:team_account)
+    room = account.rooms.create!(name: "Study")
+    active_chat = account.chats.create!(title: "Active", room: room)
+    archived_chat = account.chats.create!(title: "Archived", room: room, archived_at: Time.current)
+    main_archive = account.chats.create!(title: "Main archive", archived_at: Time.current)
+    delete logout_path
+    sign_in users(:existing_user)
+
+    get account_chats_path(account, room: room.to_param, show_archived: true)
+    assert_response :success
+    ids = inertia_shared_props.fetch("chats").pluck("id")
+    assert_includes ids, active_chat.to_param
+    assert_includes ids, archived_chat.to_param
+    assert_not_includes ids, main_archive.to_param
+  end
+
+  test "archived transcripts stay directly accessible with the archived filter off" do
+    @chat.archive!
+
+    get account_chat_path(@account, @chat)
+    assert_response :success
+    assert_equal @chat.to_param, inertia_shared_props.fetch("chat").fetch("id")
+    assert_not_includes inertia_shared_props.fetch("chats").pluck("id"), @chat.to_param
+  end
+
+  test "show_deleted preserves its audit listing regardless of the archived filter" do
+    archived_chat = @account.chats.create!(title: "Archived", archived_at: Time.current)
+    deleted_chat = @account.chats.create!(title: "Deleted archive", archived_at: Time.current, discarded_at: Time.current)
+
+    [ nil, "false", "true" ].each do |show_archived|
+      @inertia_props = nil
+      get account_chats_path(@account), params: { show_deleted: true, show_archived: show_archived }
+      assert_response :success
+      ids = inertia_shared_props.fetch("chats").pluck("id")
+      assert_includes ids, archived_chat.to_param
+      assert_includes ids, deleted_chat.to_param
+    end
   end
 
   test "index includes discarded chats when the owner asks for show_deleted" do

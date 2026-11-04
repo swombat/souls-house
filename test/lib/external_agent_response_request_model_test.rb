@@ -1,4 +1,78 @@
 require "test_helper"
+
+class ExternalAgentResponseRequestVoiceModeTest < ActiveSupport::TestCase
+
+  # The trigger text says when the latest human turn was spoken in voice mode,
+  # so the resident knows its reply will be heard, not read.
+  test "the trigger text carries the voice mode note only while the latest human turn was spoken" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(title: "Spoken", manual_responses: true, agents: [ agent ])
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Typed.", suppress_automatic_dispatch: true)
+    assert_not_includes request.send(:trigger_intro_text), "voice mode"
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Spoken.", voice_mode: true, suppress_automatic_dispatch: true)
+    text = request.send(:trigger_intro_text)
+    assert_includes text, "explicit human request"
+    assert_includes text, ExternalAgentResponseRequest::VOICE_MODE_NOTE
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Back to typing.", suppress_automatic_dispatch: true)
+    assert_not_includes request.send(:trigger_intro_text), "voice mode"
+  end
+
+  # After a spoken message and End, a later peer or scheduled wake must not be
+  # told the person is listening: only a wake a human caused carries the note,
+  # and the note never promises playback.
+  test "the voice mode note is only for a wake a human caused and promises no playback" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(title: "Spoken then ended", manual_responses: true, agents: [ agent ])
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Spoken.", voice_mode: true, suppress_automatic_dispatch: true)
+
+    [ [ "peer" ], [ "scheduled" ] ].each do |kinds|
+      request = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: kinds)
+      assert_not_includes request.send(:trigger_intro_text), "voice mode", "#{kinds.first} wake"
+    end
+
+    human = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
+    assert_includes human.send(:trigger_intro_text), ExternalAgentResponseRequest::VOICE_MODE_NOTE
+    # Playback is likely but not certain (the browser may have closed): "may", never a promise.
+    assert_match(/may be read aloud/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
+    assert_no_match(/will be read|will be heard|is listening/, ExternalAgentResponseRequest::VOICE_MODE_NOTE)
+  end
+
+  # On a phone eighty seconds of silence reads as nothing happening: the note
+  # asks for an acknowledgement first and spoken-size updates while working.
+  test "the voice mode note asks for an acknowledgement and twenty-second updates" do
+    note = ExternalAgentResponseRequest::VOICE_MODE_NOTE
+    assert_match(/Let me look at that/, note)
+    assert_match(/before or alongside your first tool call/, note)
+    assert_match(/every twenty seconds/, note)
+    assert_match(/answer as its own short message/, note)
+    assert_match(/Answer briefly in plain spoken sentences/, note)
+  end
+
+  # The runtime's silence clock can't read the transcript: the payload tells
+  # it the turn was spoken, only for a human wake on a spoken latest turn.
+  test "the runtime payload carries voice_mode only for a human wake on a spoken turn" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(title: "Spoken payload", manual_responses: true, agents: [ agent ])
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Typed.", suppress_automatic_dispatch: true)
+    human = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: [ "human" ])
+    assert_nil human.send(:trigger_payload)[:voice_mode]
+
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Spoken, find me the vet.", voice_mode: true, suppress_automatic_dispatch: true)
+    assert_equal true, human.send(:trigger_payload)[:voice_mode]
+    composed = human.send(:trigger_intro_text)
+    assert_includes composed, "every twenty seconds"
+
+    [ [ "peer" ], [ "scheduled" ] ].each do |kinds|
+      other = ExternalAgentResponseRequest.new(agent: agent, chat: chat, wake_source_kinds: kinds)
+      assert_nil other.send(:trigger_payload)[:voice_mode], "#{kinds.first} wake"
+    end
+  end
+
+end
 require "webmock/minitest"
 
 # The conversation's model selection reaches Chaos, the prompt and the record

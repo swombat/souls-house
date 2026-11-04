@@ -159,6 +159,8 @@ module TestSupport
         agent.telegram_subscriptions.first!.mark_blocked!
       when "bookkeeping"
         agent.telegram_subscriptions.first!.request_runtime_reset!
+      when "group"
+        agent.telegram_groups.create!(telegram_chat_id: -agent.id, title: "E2E group")
       else
         return head :unprocessable_entity
       end
@@ -298,7 +300,7 @@ module TestSupport
       if params[:operation] == "setup"
         user = account.users.find_by!(email_address: params.fetch(:email))
         other = Account.create!(name: "#{account.name} Other", account_type: :team)
-        other.add_user!(user, role: "member", skip_confirmation: true)
+        other.add_user!(user, role: "owner", skip_confirmation: true)
         private_account = Account.create!(name: "#{account.name} Inaccessible", account_type: :team)
         [ other, private_account ].each { |target| create_agent!(target, "#{target.name} Resident", "slate") }
         render json: { other: other.to_param, hidden: private_account.to_param }
@@ -327,6 +329,20 @@ module TestSupport
     # What the transcription endpoint returns besides the text: the recording, stored and signed.
     # Browser tests stub transcription itself (no speech-to-text provider in test) but send a
     # real signed id, so the composers keep their audio hold until the send has gone through.
+    # Voice mode on for one account (#748): the account's own switch, a
+    # placeholder transcription key so the mode counts as available, and a
+    # standard voice on its residents so their replies are speakable. The e2e
+    # refuses the voice session request and stubs speech audio in the browser,
+    # so neither OpenAI nor ElevenLabs is reached.
+    def voice_mode_fixture
+      account = Account.find(params.fetch(:account_id))
+      account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")
+      # update_column: the voice_id validation asks ElevenLabs for its voice list
+      # over the network, which CI has no key for and a test must not depend on.
+      account.agents.active.find_each { |agent| agent.update_column(:voice_id, "TX3LPaxmHKxFdv7VOQHJ") }
+      render json: { voice_mode: VoiceMode.status_for(account).to_h }
+    end
+
     def audio_blob
       blob = ActiveStorage::Blob.create_and_upload!(
         io: Rails.root.join("test/fixtures/files/test_audio.webm").open,
@@ -533,10 +549,28 @@ module TestSupport
           content: "It is a quarter to four, so the deploy can go out before five.")
         clock.judgments.create!(message: post, score: 0.93, offered: true)
       end
+      # Where each resident runs (Settings -> Advanced): the first on the
+      # main server, the second on a synthetic, never-contacted Hetzner VM.
+      if params[:hosting_location]
+        agents.first.update_columns(health_state: "healthy", last_health_check_at: Time.current)
+        placement = AgentPlacement.create!(agent: agents.second, backend: "hetzner_cloud", state: "ready",
+          location: "fsn1", provider_server_id: 900_000_000 + rand(99_999_999))
+        CloudProcurementOperation.create!(agent_placement: placement, requested_by: admin_user,
+          public_id: SecureRandom.hex(4), approval_reference: "e2e", location: "fsn1", server_type: "cx23",
+          image_id: 1, ssh_key_ids: [ 1 ], provider_name: "e2e-#{run_id}-resident", state: "provisioned")
+      end
       if params[:missing_resident_credentials]
         account.update!(use_system_ai_credentials: false)
         agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
           orientation_last_error: "Synthetic raw provider exception", orientation_last_error_at: Time.current)
+      end
+      # Who sees what on a resident's Settings and Hosting tabs: a Claude
+      # resident (so the clamping block renders) that the house marked
+      # unhealthy, and a healthy one that should show no status line.
+      if params[:hosting_visibility]
+        agents.first.update_columns(model_id: "anthropic/claude-opus-5.5", health_state: "unhealthy",
+          sandbox_last_error: "Synthetic: container exited (code 137)", sandbox_last_error_at: Time.current)
+        agents.second.update_columns(health_state: "healthy", last_health_check_at: Time.current)
       end
       if params[:costs].in?(%w[mixed unpriced])
         2.times do
@@ -1000,6 +1034,8 @@ module TestSupport
       AuditLog.where(account: accounts).or(AuditLog.where(user: users)).destroy_all
       Session.where(user: users).destroy_all
       GithubResidentImport.where(account: accounts).destroy_all
+      # Purchases are history and block a placement's destroy; synthetic ones go.
+      CloudProcurementOperation.where(agent_placement: AgentPlacement.where(agent_id: agent_ids)).delete_all
       connections = ServiceConnection.where(account_id: accounts.select(:id))
       CommsMessage.where(service_connection: connections).delete_all
       CommsChat.where(service_connection: connections).delete_all

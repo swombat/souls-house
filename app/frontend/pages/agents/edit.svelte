@@ -1,5 +1,7 @@
 <script>
   import AgentHostingPanel from '$lib/components/agents/agent-hosting-panel.svelte';
+  import AgentRuntimeStatus from '$lib/components/agents/AgentRuntimeStatus.svelte';
+  import AgentSubscriptionSettings from '$lib/components/agents/AgentSubscriptionSettings.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import {
@@ -12,6 +14,7 @@
     CurrencyDollar,
     Graph,
     Lightning,
+    Handshake,
   } from 'phosphor-svelte';
   import {
     accountAgentsPath,
@@ -32,6 +35,7 @@
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
   import AgentReflexesPanel from '$lib/components/agents/AgentReflexesPanel.svelte';
+  import AgentCommitmentsPanel from '$lib/components/agents/AgentCommitmentsPanel.svelte';
   import ResidentPortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
 
   let {
@@ -40,19 +44,28 @@
     billing_hold: billingHold = null,
     telegram_configuration: telegramConfiguration = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
+    telegram_groups: telegramGroups = [],
+    can_manage_telegram_groups: canManageTelegramGroups = false,
     grouped_models = {},
     colour_options = [],
     icon_options = [],
     active_tab: activeTabProp = null,
     local_dev_endpoint_mode: localDevEndpointMode = false,
     identity_export_url: identityExportUrl = null,
+    avatar_path: avatarPath = null,
+    voice = null,
     memory_overview_url: memoryOverviewUrl = null,
     memory_history_url: memoryHistoryUrl = null,
     hosting_diagnostics_url: hostingDiagnosticsUrl = null,
+    can_view_hosting: canViewHosting = false,
+    can_restart_runtime: canRestartRuntime = false,
     runtime_observability_url: runtimeObservabilityUrl = null,
     sandbox_recreation_url: sandboxRecreationUrl = null,
     provider_subscription: providerSubscription = null,
+    hosting_location: hostingLocation = null,
     service_connections: serviceConnections = [],
+    shared_connections: sharedConnections = [],
+    can_decide_guest_access: canDecideGuestAccess = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
@@ -63,6 +76,7 @@
     subagent_providers = [],
     subagents_available: subagentsAvailable = false,
     reflexes = {},
+    commitments = {},
     account,
   } = $props();
 
@@ -75,12 +89,13 @@
       'cost_report',
       'reflexes',
       'subagents_available',
+      'voice',
     ],
   });
 
   const updateIntegrationSync = createDynamicSync();
   $effect(() => {
-    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
+    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections', 'shared_connections'] });
   });
   const updateProviderSync = createDynamicSync();
   $effect(() => {
@@ -91,15 +106,21 @@
   const updateTelegramSync = createDynamicSync();
   $effect(() => {
     updateTelegramSync({
-      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count'],
+      [`TelegramPresentation:${agent.id}`]: ['telegram_configuration', 'telegram_subscriber_count', 'telegram_groups'],
     });
   });
 
   let selectedModel = $state(agent.model_id);
   let sendingTestNotification = $state(false);
   let registeringWebhook = $state(false);
+  // Hosting is site-admin only; old ?tab=hosting links land on Settings,
+  // where the subscription now lives.
   let activeTab = $state(
-    activeTabProp === 'identity' ? 'appearance' : activeTabProp === 'model' ? 'settings' : activeTabProp || 'appearance'
+    activeTabProp === 'identity'
+      ? 'appearance'
+      : activeTabProp === 'model' || (activeTabProp === 'hosting' && !canViewHosting)
+        ? 'settings'
+        : activeTabProp || 'appearance'
   );
   let runtimeManaged = $derived(
     Boolean(agent.birth_committed_at) || agent.runtime === 'external' || agent.runtime === 'offline'
@@ -110,6 +131,7 @@
       activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'reflexes' &&
+      activeTab !== 'commitments' &&
       activeTab !== 'integrations' &&
       (!runtimeManaged ||
         activeTab === 'appearance' ||
@@ -130,9 +152,10 @@
     { id: 'settings', label: 'Settings', icon: Gear },
     ...(showSubagents ? [{ id: 'subagents', label: 'Sub-agents', icon: UsersThree }] : []),
     { id: 'integrations', label: 'Integrations', icon: Plug },
-    { id: 'hosting', label: 'Hosting', icon: CloudArrowUp },
+    ...(canViewHosting ? [{ id: 'hosting', label: 'Hosting', icon: CloudArrowUp }] : []),
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'reflexes', label: 'Reflexes', icon: Lightning },
+    { id: 'commitments', label: 'Commitments', icon: Handshake },
     { id: 'memory', label: 'Memory', icon: Graph },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
     ...(portability?.can_manage ? [{ id: 'portability', label: 'Export / Import', icon: CloudArrowUp }] : []),
@@ -218,7 +241,7 @@
 
       <!-- Content area -->
       <div class="flex-1 min-w-0 space-y-6">
-        {#if hostingVisited}
+        {#if hostingVisited && canViewHosting}
           <div hidden={activeTab !== 'hosting'}>
             <AgentHostingPanel
               {agent}
@@ -226,9 +249,7 @@
               {runtimeManaged}
               {sandboxRecreationUrl}
               {identityExportUrl}
-              {hostingDiagnosticsUrl}
-              {providerSubscription}
-              {canManageProviderSubscription} />
+              {hostingDiagnosticsUrl} />
           </div>
         {/if}
 
@@ -239,14 +260,25 @@
             bind:icon={$form.agent.icon}
             nameError={$form.errors.name}
             colourOptions={colour_options}
-            iconOptions={icon_options} />
+            iconOptions={icon_options}
+            {avatarPath}
+            avatarUrl={agent.avatar_url}
+            {voice} />
         {:else if activeTab === 'settings'}
+          <AgentRuntimeStatus {agent} {sandboxRecreationUrl} canRestart={canRestartRuntime} />
           <AgentSettingsPanel
             {houseAllowance}
             {form}
             groupedModels={grouped_models}
             {runtimeManaged}
-            bind:selectedModel />
+            {hostingLocation}
+            bind:selectedModel>
+            {#snippet subscription()}
+              {#if providerSubscription}
+                <AgentSubscriptionSettings {account} {providerSubscription} {canManageProviderSubscription} />
+              {/if}
+            {/snippet}
+          </AgentSettingsPanel>
         {:else if activeTab === 'subagents' && showSubagents}
           <AgentSubagentsPanel
             bind:enabled={$form.agent.subagents_enabled}
@@ -262,9 +294,13 @@
             {account}
             {telegramConfiguration}
             {telegramSubscriberCount}
+            {telegramGroups}
+            {canManageTelegramGroups}
             {sendingTestNotification}
             {registeringWebhook}
             {serviceConnections}
+            {sharedConnections}
+            {canDecideGuestAccess}
             onsendTestNotification={sendTestNotification}
             onregisterWebhook={registerWebhook} />
         {:else if activeTab === 'memory'}
@@ -278,6 +314,8 @@
             {runtimeObservabilityUrl} />
         {:else if activeTab === 'reflexes'}
           <AgentReflexesPanel {reflexes} agentName={agent.name} />
+        {:else if activeTab === 'commitments'}
+          <AgentCommitmentsPanel {commitments} agentName={agent.name} />
         {:else if activeTab === 'costs'}
           <AgentCostsPanel report={costReport} />
         {:else if activeTab === 'portability'}

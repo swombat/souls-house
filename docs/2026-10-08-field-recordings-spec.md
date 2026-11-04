@@ -440,7 +440,11 @@ duplicate does nothing:
 **Transcript view** (`field/recordings/show`, a page of its own rather than
 the side panel, because transcripts are long):
 
-- The audio player is at the top. Clicking a word seeks to it.
+- The audio player is at the top. Clicking a word seeks to it. The player
+  loads a seekable copy of MP3 originals (`FieldRecording::Playback`, an AAC
+  .m4a made by `PlaybackJob` after admission, or on the page's first open for
+  older recordings): browsers seek a VBR MP3 by estimate, and on an hour-long
+  file the sound and the highlighted word were 14 s apart (2026-10-28).
 - Turns: consecutive words with the same `spk`, with breaks at gaps over
   1.5 s. Each turn shows the speaker's display name and a timestamp.
 - Words whose speaker is uncertain are **not reassigned**. In slice A

@@ -11,6 +11,11 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
       trigger_bearer_token: "tr_valid",
       persistent_session: true
     )
+    notice_id = 999
+    stub_request(:post, %r{https://api.telegram.org/bot.*/sendMessage}).to_return do
+      notice_id += 1
+      { body: { ok: true, result: { message_id: notice_id } }.to_json }
+    end
     @subscription = @agent.telegram_subscriptions.create!(
       user: users(:user_1),
       telegram_chat_id: 111,
@@ -79,6 +84,53 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     assert_equal @subscription.to_param, interaction.conversation_obfuscated_id
   end
 
+  test "synchronous and asynchronous completions announce no delivered reply once" do
+    stub_request(:post, "https://agent.example.com/trigger").to_return do |request|
+      payload = JSON.parse(request.body)
+      assert payload["runtime_run_id"].present?
+      { status: 200, body: { status: "ok", telegram_delivery_run_id: payload["runtime_run_id"] }.to_json }
+    end
+    result = nil
+    perform_enqueued_jobs(only: TelegramTurnCompletionNoticeJob) do
+      result = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+    end
+    assert_equal 200, result[:status]
+    assert_equal 1, @subscription.telegram_messages.where(sender_name: "souls.house").count
+
+    @subscription.telegram_messages.create!(role: "user", text: "Another question", sent_at: Time.current)
+    ResidentTurn.stub(:enabled?, true) do
+      result = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+      assert_equal 202, result[:status]
+      turn = ResidentTurn.pending.last
+      run = turn.agent_runtime_interaction
+      completion = { "status" => 200, "body" => { "status" => "ok", "telegram_delivery_run_id" => run.run_id } }
+      perform_enqueued_jobs(only: TelegramTurnCompletionNoticeJob) do
+        turn.finish!(completion)
+        turn.reload.finish!(completion)
+      end
+      assert_equal 2, @subscription.telegram_messages.where(sender_name: "souls.house").count
+      assert_equal "ok", run.reload.runtime_status
+    end
+  end
+
+  test "a helper-delivered reply suppresses notice on completion" do
+    stub_request(:post, "https://agent.example.com/trigger").to_return do |request|
+      payload = JSON.parse(request.body)
+      run = @agent.agent_runtime_interactions.find_by!(run_id: payload["runtime_run_id"])
+      @subscription.telegram_messages.create!(
+        role: "assistant", text: "Delivered by helper", telegram_message_id: 71,
+        sent_at: Time.current, agent_runtime_interaction: run
+      )
+      { status: 200, body: { status: "ok", telegram_delivery_run_id: run.run_id }.to_json }
+    end
+    result = nil
+    perform_enqueued_jobs(only: TelegramTurnCompletionNoticeJob) do
+      result = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+    end
+    assert_equal 200, result[:status]
+    assert_empty @subscription.telegram_messages.where(sender_name: "souls.house")
+  end
+
   test "returns a busy response so the job can retry rapid follow-up messages" do
     stub_request(:post, "https://agent.example.com/trigger")
       .to_return(status: 409, body: { status: "already_running" }.to_json)
@@ -90,6 +142,31 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     ).call
 
     assert_equal 409, result[:status]
+  end
+
+  test "a later job retries the first busy message before any successful cursor exists" do
+    bodies = []
+    stub_request(:post, "https://agent.example.com/trigger")
+      .to_return do |request|
+        bodies << JSON.parse(request.body)
+        if bodies.one?
+          { status: 409, body: { status: "already_running" }.to_json }
+        else
+          { status: 200, body: { status: "ok" }.to_json }
+        end
+      end
+    first = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+    assert_equal 409, first[:status]
+
+    follow_up = @subscription.telegram_messages.create!(role: "user", text: "Also this", sent_at: Time.current)
+    second = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: follow_up).call
+    assert_equal 200, second[:status]
+    assert_equal [ @message.text, follow_up.text ], bodies.last.fetch("messages").pluck("text")
+
+    # The older retry must not replay either message after the batch succeeds.
+    retried = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+    assert_equal 204, retried[:status]
+    assert_equal 2, bodies.size
   end
 
   test "batches every queued message into one ordered trigger" do
@@ -212,6 +289,9 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
   end
 
   test "waits for earlier media before delivering later text" do
+    stub_request(:post, "https://agent.example.com/trigger")
+      .to_return(status: 200, body: { status: "ok" }.to_json)
+    ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
     media = @subscription.telegram_messages.create!(
       role: "user",
       text: "[Photo — processing]",

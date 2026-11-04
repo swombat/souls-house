@@ -47,8 +47,16 @@ class ResidentTurn < ApplicationRecord
       last_admitted = where.not(admitted_at: nil).group(:agent_id).maximum(:admitted_at)
       selected = []
       candidates = where(state: "queued").order(:created_at, :id).to_a
+      # Set under this gate; cleared without it, so a stale read only delays a
+      # turn until the dispatch the roll enqueues when it clears the hold.
+      rolling = Agent.where.not(runtime_roll_started_at: nil).pluck(:id).to_set
       while selected.length < available
-        eligible = candidates.reject { |turn| busy_sessions.include?(turn.session_id) || Backup::VmResident.held?(turn.agent) }
+        # A backup hold or a runtime roll (ops/deploy/roll-resident.rb) keeps
+        # the turn queued: it waits for the hold to clear, it isn't cancelled.
+        eligible = candidates.reject do |turn|
+          busy_sessions.include?(turn.session_id) || Backup::VmResident.held?(turn.agent) ||
+            rolling.include?(turn.agent_id)
+        end
         break if eligible.empty?
         turn = eligible.min_by { |item| [ last_admitted[item.agent_id] || Time.at(0), item.created_at, item.id ] }
         candidates.delete(turn)
@@ -106,7 +114,11 @@ class ResidentTurn < ApplicationRecord
   # Settles the dispatch when it no longer stands. Lock order: turn, then
   # dispatch (admission holds the turn lock here); nothing takes a dispatch
   # lock and then a turn lock.
+  # A new resident's queued greeting also stops standing once a person has
+  # written to it first (Agents::FirstConversation.turn_deliverable?).
   def dispatch_deliverable?
+    return false unless Agents::FirstConversation.turn_deliverable?(agent_runtime_interaction)
+
     dispatch = agent_runtime_interaction.message_dispatch
     dispatch.nil? || dispatch.with_lock { dispatch.deliverable! }
   end

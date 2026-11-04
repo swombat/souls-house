@@ -16,6 +16,7 @@
   } from 'phosphor-svelte';
   import { page } from '@inertiajs/svelte';
   import { destinations, MAIN } from '$lib/rooms';
+  import { ADMIN_ONLY_FOCUS, ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
 
   let {
     chat,
@@ -134,22 +135,27 @@
 
       {#if isSiteAdmin}
         <DropdownMenu.Separator />
-        <DropdownMenu.Item onclick={onModerateAll}>
+        <DropdownMenu.Label class={`text-xs font-medium ${ADMIN_ONLY_TEXT}`}>Site admins only</DropdownMenu.Label>
+        <DropdownMenu.Item onclick={onModerateAll} class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
           <ShieldCheck size={16} class="mr-2" weight="duotone" />
           Moderate All Messages
         </DropdownMenu.Item>
-        <DropdownMenu.CheckboxItem checked={showAllMessages} onCheckedChange={(checked) => (showAllMessages = checked)}>
+        <DropdownMenu.CheckboxItem
+          checked={showAllMessages}
+          onCheckedChange={(checked) => (showAllMessages = checked)}
+          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
           Show all messages
         </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
           checked={showMessageTelemetry}
-          onCheckedChange={(checked) => (showMessageTelemetry = checked)}>
+          onCheckedChange={(checked) => (showMessageTelemetry = checked)}
+          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
           View telemetry
         </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
           checked={debugMode}
           onCheckedChange={(checked) => (debugMode = checked)}
-          class="text-orange-600 focus:text-orange-600">
+          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
           Debug mode
         </DropdownMenu.CheckboxItem>
       {/if}

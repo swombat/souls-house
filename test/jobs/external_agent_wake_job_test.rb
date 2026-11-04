@@ -13,6 +13,9 @@ class ExternalAgentWakeJobTest < ActiveJob::TestCase
       health_state: "healthy",
       consecutive_health_failures: 0
     )
+    # Scheduled runs are refused before dispatch without a usable credential
+    # (InferenceAvailability); fund the route so the trigger itself is tested.
+    @agent.account.update!(openrouter_api_key: "test-router")
   end
 
   test "sends scheduled wake invitations to external agents" do

@@ -19,6 +19,7 @@ class Agents::ProviderSubscriptionsController < ApplicationController
 
   def create
     result = auth_client.start(provider:)
+    audit(Agent::PROVIDER_SIGN_IN_STARTED, @agent, provider:) unless result["status"] == "connected"
     render json: result
   rescue AgentProviderAuthClient::Error => e
     render_client_error(e)
@@ -54,7 +55,9 @@ class Agents::ProviderSubscriptionsController < ApplicationController
   end
 
   def code
-    render json: auth_client.submit_code(provider:, code: params.require(:code))
+    result = auth_client.submit_code(provider:, code: params.require(:code))
+    audit(Agent::PROVIDER_SIGN_IN_CODE_SUBMITTED, @agent, provider:)
+    render json: result
   rescue AgentProviderAuthClient::Error => e
     render_client_error(e)
   end
@@ -72,13 +75,7 @@ class Agents::ProviderSubscriptionsController < ApplicationController
   def persist_status!(result)
     case result["status"]
     when "connected"
-      @agent.record_provider_connection!(
-        provider,
-        email: result["email"],
-        plan: result["plan"],
-        status: "connected",
-        connected_at: @agent.provider_connection(provider)["connected_at"] || Time.current.iso8601
-      )
+      @agent.observe_provider_connected!(provider, email: result["email"], plan: result["plan"])
     when "none"
       @agent.clear_provider_connection!(provider) if @agent.provider_connection(provider).present?
     end

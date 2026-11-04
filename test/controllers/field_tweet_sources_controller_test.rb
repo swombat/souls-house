@@ -62,15 +62,29 @@ class FieldTweetSourcesControllerTest < ActionDispatch::IntegrationTest
     assert @account.reload.field_tweets_house_key?
   end
 
-  test "pause, resume and stop following; tweets already in stay" do
+  test "pause and resume keep saved collection work; stop following keeps imported tweets" do
+    now = Time.current.change(usec: 0)
+    travel_to now
     @account.update!(field_tweets_house_key: true)
-    source = @account.create_field_tweet_source!(handle: "danielt")
+    source = @account.create_field_tweet_source!(handle: "danielt", connected_at: now - 2.hours,
+      checkpoint_at: now - 1.hour, window_since: now - 1.hour, window_until: now - 1.minute,
+      window_cursor: "saved-page", window_pages: 2, failure_count: 4, next_attempt_at: now + 1.hour)
     tweet = @account.field_tweets.create!(FieldTweet.attributes_from(tweet_payload(1, at: Time.current), fetched_at: Time.current).merge(field_tweet_source: source))
+    backlog = source.backlog_items.create!(provider_tweet_id: "2", posted_at: now - 5.minutes,
+      attrs: FieldTweet.attributes_from(tweet_payload(2, at: now - 5.minutes), fetched_at: now))
+    window = source.attributes.slice("checkpoint_at", "window_since", "window_until", "window_cursor", "window_pages")
 
     post pause_account_field_tweet_source_path(@account)
     assert_equal "paused", source.reload.state
+    assert_equal window, source.attributes.slice(*window.keys)
+    assert_equal [ 4, now + 1.hour ], [ source.failure_count, source.next_attempt_at ]
+
     post resume_account_field_tweet_source_path(@account)
     assert_equal "active", source.reload.state
+    assert_nil source.state_reason
+    assert_equal [ 0, now ], [ source.failure_count, source.next_attempt_at ]
+    assert_equal window, source.attributes.slice(*window.keys)
+    assert source.backlog_items.exists?(backlog.id)
 
     delete account_field_tweet_source_path(@account)
     assert_nil @account.reload.field_tweet_source

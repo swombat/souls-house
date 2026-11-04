@@ -5,6 +5,7 @@ class ServiceAuthorizationsController < ApplicationController
   def create
     definition = Services::Definition.fetch(params.require(:provider))
     raise ArgumentError, "This service uses direct credential entry" unless definition.connection_method == "oauth2"
+    raise ArgumentError, "This service is not available on this house" unless definition.available?
 
     management_scope = params.require(:management_scope)
     authorize_management_scope!(management_scope)

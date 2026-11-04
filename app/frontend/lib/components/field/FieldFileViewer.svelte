@@ -5,6 +5,7 @@
   import { DownloadSimple, LinkSimple, Trash } from 'phosphor-svelte';
   import { formatBytes, formatWhen } from '$lib/field';
   import PdfText from '$lib/components/field/PdfText.svelte';
+  import { Streamdown } from 'svelte-streamdown';
 
   let { file, link, onDelete } = $props();
   let copied = $state(false);
@@ -61,6 +62,21 @@
 
     {#if file.text_extraction}
       <PdfText extraction={file.text_extraction} pages={file.pages} />
+    {/if}
+
+    {#if file.text}
+      <div class="border-t pt-4" data-testid="field-file-text" data-text-kind={file.text_kind}>
+        {#if file.text_kind === 'markdown'}
+          <Streamdown
+            content={file.text}
+            parseIncompleteMarkdown={false}
+            baseTheme="shadcn"
+            shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
+            class="prose max-w-none [overflow-wrap:anywhere]" />
+        {:else}
+          <pre class="text-sm whitespace-pre-wrap [overflow-wrap:anywhere] font-mono">{file.text}</pre>
+        {/if}
+      </div>
     {/if}
 
     <div class="flex flex-wrap gap-2">

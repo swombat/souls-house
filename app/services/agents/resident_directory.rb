@@ -28,9 +28,27 @@ module Agents
           mnemodyne_node_count: agent.deprecated? ? nil : node_counts.fetch(agent.id, 0),
           mnemodyne_edge_count: agent.deprecated? ? nil : edge_counts.fetch(agent.id, 0),
           provider_subscription: ProviderSubscriptionPresentation.call(agent),
-          failed_runs: RunFailureStreak.call(agent).as_card_json
+          failed_runs: failed_runs_card(agent)
         ).merge(block_given? ? yield(agent) : {})
       end
+    end
+
+    private
+
+    # The card's streak is the conversation streak. A resident the house
+    # refuses to dispatch for missing setup has no conversation runs (rooms
+    # refuse it before a run exists), so its scheduled refusals are the only
+    # evidence: shown only when every failure in that streak is needs_setup.
+    def failed_runs_card(agent)
+      card = RunFailureStreak.call(agent).as_card_json
+      return card if card
+
+      # Only while the resident still lacks setup now: a repaired credential
+      # leaves the old refusals in history until its next scheduled run.
+      return if agent.inference_setup_message.blank?
+
+      scheduled = RunFailureStreak.call(agent, kind: :scheduled)
+      scheduled.as_card_json if scheduled.needs_setup?
     end
 
   end

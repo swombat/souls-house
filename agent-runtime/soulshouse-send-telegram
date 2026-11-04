@@ -93,6 +93,11 @@ def main() -> int:
 
     url = f"{app_url.rstrip('/')}/api/v1/telegram_messages"
     fields = {"text": text}
+    run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID") or os.environ.get("HELIXKIT_RUNTIME_RUN_ID")
+    runtime_thread = (os.environ.get("SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID")
+                      or os.environ.get("HELIXKIT_RUNTIME_TELEGRAM_THREAD_ID"))
+    if run_id and runtime_thread and (not args.reply_to or args.reply_to == runtime_thread):
+        fields["runtime_run_id"] = run_id
     if args.reply_to:
         fields["reply_to"] = args.reply_to
     else:

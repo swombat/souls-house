@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 """Host-owned worker. Raw subprocess output never crosses the SSH boundary."""
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -16,6 +18,53 @@ CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
 SHA = re.compile(r"[0-9a-f]{40}")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+# Host residents a Rebuild found busy. The run records them here and ends; the
+# minute timer (`worker.py sweep`) rolls each one in the first minute it is
+# idle, so a resident who is busy for hours still moves the same day.
+def pending_rolls():
+    return ROOT / "pending-rolls.json"
+
+
+def queue_held():
+    """The sweep queue holds a failed roll or alias tag (gate.held_queue, read
+    again here under the deployment lock: the gate may have admitted a rebuild
+    while the queue was busy-only, and a sweep can hold a roll before that
+    rebuild gets the lock)."""
+    path = pending_rolls()
+    if not path.exists():
+        return False
+    queue = json.loads(path.read_text())
+    return bool(queue.get("held") or queue.get("births_alias_failed"))
+
+
+# What a merge must change for residents to need a new image: the image's
+# whole build context. Anything else ships with Rails alone.
+RUNTIME_PATHS = ("agent-runtime",)
+
+
+def runtime_source():
+    """The souls-house commit the residents' current image was built from.
+
+    Written by every runtime build once the image has passed its checks. For
+    hosts that built before this file existed, the newest runtime-building run
+    that got as far as checking its image (chaos_version on its receipt)."""
+    path = ROOT / "runtime-source.json"
+    if path.exists():
+        revision = json.loads(path.read_text()).get("rails_revision") or ""
+        return revision if SHA.fullmatch(revision) else None
+    newest = None
+    for status in (ROOT / "runs").glob("*/status.json"):
+        try:
+            data = json.loads(status.read_text())
+        except (OSError, ValueError):
+            continue
+        revision = data.get("rails_revision") or ""
+        if (data.get("operation") in ("runtime", "chaos", "both") and data.get("chaos_version")
+                and data.get("state") in ("success", "partial") and SHA.fullmatch(revision)):
+            mtime = status.stat().st_mtime
+            if newest is None or mtime > newest[0]:
+                newest = (mtime, revision)
+    return newest[1] if newest else None
 
 
 def github(path):
@@ -38,6 +87,38 @@ def published_revision(releases, reachable):
         if {asset, asset + ".sha256"} <= names and reachable(revision):
             return revision
     raise RuntimeError("No published mainline Linux runtime")
+
+
+def roll_in_parallel(items, roll_one, record, *, concurrency, canary=True):
+    """Roll residents with one canary first, then the rest at once.
+
+    roll_one(item) returns the roll script's answer (never raises: an error is
+    {"result": "unknown"}). record(item, result) is called once per attempt,
+    under the caller's own lock if it needs one. With canary, items are tried
+    one at a time (stock residents first) until one comes back healthy or
+    current on the new image; a busy one is just skipped. Any other answer
+    during that phase stops everything: nobody else is touched. After the
+    canary, the rest go through a pool of `concurrency` at once, and one
+    failure doesn't stop the others (it is held, as before).
+
+    Returns (canary_proven, untouched): untouched are the items never tried
+    because the canary failed."""
+    remaining = sorted(items, key=lambda item: not item.get("stock", True))
+    proven = not canary
+    while remaining and not proven:
+        item = remaining.pop(0)
+        result = roll_one(item)
+        record(item, result)
+        answer = result.get("result")
+        if answer in ("healthy", "current"):
+            proven = True
+        elif answer != "busy":
+            return False, remaining
+    if remaining:
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+            for item, result in zip(remaining, pool.map(roll_one, remaining)):
+                record(item, result)
+    return proven, []
 
 
 def version_tuple(version):
@@ -73,6 +154,10 @@ def verify_migrations(before, after, accepted=()):
 
 
 class Worker:
+    # Rolls run in threads: status.json, the private log and the sweep queue
+    # are written under this one lock.
+    lock = threading.RLock()
+
     def __init__(self, operation):
         self.settings = json.loads((CONFIG / "settings.json").read_text())
         self.data = json.loads((ROOT / "current.json").read_text())
@@ -84,14 +169,16 @@ class Worker:
         self.repo = self.directory / "repo"
 
     def report(self, step, **values):
-        self.data.update(step=step, **values)
-        atomic(self.directory / "status.json", self.data)
+        with self.lock:
+            self.data.update(step=step, **values)
+            atomic(self.directory / "status.json", self.data)
 
     def run(self, args, *, input=None, capture=False, timeout=3600, cwd=None, umask=-1):
         result = subprocess.run(args, input=input, text=True, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, timeout=timeout, cwd=cwd, umask=umask)
-        self.log.write(result.stdout + result.stderr)
-        self.log.flush()
+        with self.lock:
+            self.log.write(result.stdout + result.stderr)
+            self.log.flush()
         if result.returncode:
             raise RuntimeError("Subprocess failed; private diagnostics retained")
         return result.stdout.strip() if capture else None
@@ -169,6 +256,39 @@ class Worker:
                   self.settings["health_url"]], timeout=40)
         self.rails("RefreshTelegramWebhooksJob.perform_later; puts({ok:true}.to_json)")
         self.report("Rails healthy")
+
+    def check_runtime_change(self):
+        """After a Rails deploy: does this commit change the resident image?
+
+        The answer goes on the receipt (runtime_rebuild_needed) and the
+        automatic deploy workflow runs Rebuild residents when it is true. This
+        never fails the Rails deploy: when the comparison can't be made the
+        answer is true, because an extra rebuild only rolls idle residents and
+        a missed one leaves them on old code with nobody told."""
+        revision = self.data["rails_revision"]
+        try:
+            source = runtime_source()
+        except Exception as error:
+            self.log.write(f"\nruntime source: {type(error).__name__}: {error}\n")
+            self.log.flush()
+            source = None
+        if source == revision:
+            needed = False
+        elif source is None:
+            needed = True
+        else:
+            try:
+                self.run(["git", "fetch", "--quiet", "--depth", "1", "origin", source],
+                         cwd=self.repo, timeout=300)
+                changed = self.run(["git", "diff", "--name-only", source, "HEAD", "--",
+                                    *RUNTIME_PATHS], cwd=self.repo, capture=True)
+                needed = bool(changed.strip())
+            except Exception as error:
+                self.log.write(f"\nruntime comparison: {type(error).__name__}: {error}\n")
+                self.log.flush()
+                needed = True
+        self.report("resident image " + ("changed; rebuild needed" if needed else "unchanged"),
+                    runtime_rebuild_needed=needed, runtime_source=source)
 
     def container_exists(self, name):
         result = subprocess.run(["docker", "container", "inspect", "--format", "{{.Id}}", name],
@@ -305,6 +425,13 @@ class Worker:
                   "-v", f"{self.repo}:/source:ro", "-e", "CHAOS_TEST_BIN=/usr/local/bin/chaos",
                   "--entrypoint", "python3", stock, "-m", "unittest", "discover",
                   "-s", "/source/test", "-p", "runtime_config_test.py"], timeout=300)
+        # From here on, residents move to this source. A later Rails deploy
+        # compares against it to decide whether they need another rebuild. A
+        # roll that fails below is held for the operator; rebuilding the same
+        # source again would only repeat it.
+        if SHA.fullmatch(self.data.get("rails_revision") or ""):
+            atomic(ROOT / "runtime-source.json",
+                   {"rails_revision": self.data["rails_revision"], "run": self.data["id"]})
         if pinned:
             # Same source must give the same binary. Check every resident before
             # touching any, so a mismatch never leaves the fleet half-rolled.
@@ -328,35 +455,103 @@ class Worker:
         # Residents now running the stock image this run built. Births use the
         # stock alias, so it moves once one of them proves the image runs.
         proven = []
+        held = []
+        # This run covers every resident, so an older run's list is superseded.
+        # The intended work is written BEFORE any attempt and checkpointed after
+        # each one, so no error later in this run (timeout, probe, VM) can lose
+        # a resident the sweep still has to roll.
+        pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                   for r in residents]
+        queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
+                 "held": held, "stock_image": stock,
+                 # Not ours to roll, but unresolved: the receipt never claims
+                 # completion while any of these remain (VM skips, unreachable).
+                 "external_skipped": list(unreachable),
+                 # Set only once the alias tag has actually succeeded.
+                 "births_image_moved": False, "births_allowed": True}
+        atomic(pending_rolls(), queue)
         script = (CODE / "roll-resident.rb").read_text()
+        # Every resident's binary is read before anyone is touched, so a
+        # downgrade stops the run with the fleet unchanged.
+        old_versions = {}
         for resident in residents:
-            resident_id = resident["id"]
-            image = development if str(resident_id) in self.settings["custom_residents"] else stock
-            old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
-            if version_tuple(version) < version_tuple(old_version):
+            try:
+                raw = self.run(
+                    ["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+                # Parsed inside the guard: an answer we can't read is an
+                # unknown resident (held, never rolled), not an aborted run
+                # that leaves the whole queue for the sweep with no hold.
+                old = version_tuple(raw)
+            except Exception:
+                raw, old = None, None
+            old_versions[resident["id"]] = raw
+            if old is not None and version_tuple(version) < old:
+                pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
-            self.report("waiting for idle resident", resident_id=resident_id)
-            deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
-            while True:
-                result = self.rails(script, {
+
+        def roll_one(entry):
+            resident_id = entry["id"]
+            self.report("rolling resident if idle", resident_id=resident_id)
+            if old_versions.get(resident_id) is None:
+                return {"result": "unknown"}
+            try:
+                return self.rails(script, {
                     "DEPLOY_RESIDENT_ID": str(resident_id),
-                    "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
-                if result["result"] in ("healthy", "current"):
+                    "DEPLOY_RESIDENT_IMAGE": entry["image"], "DEPLOY_CHAOS_VERSION": version})
+            except Exception:
+                # Outcome unknown (transport, timeout or the roll script).
+                # Held, never retried automatically; the others carry on.
+                return {"result": "unknown"}
+
+        def record(entry, result):
+            resident_id = entry["id"]
+            with self.lock:
+                if result.get("result") in ("healthy", "current"):
+                    pending.remove(entry)
                     atomic(self.directory / f"resident-{resident_id}.json", result)
-                    self.report("resident healthy", resident_id=resident_id)
-                    if image == stock:
+                    if entry["image"] == stock:
                         proven.append(resident_id)
-                    break
-                if result["result"] != "busy":
-                    raise RuntimeError("Unexpected restart result")
-                if time.monotonic() >= deadline:
+                    self.report("resident healthy", resident_id=resident_id)
+                elif result.get("result") == "busy":
                     skipped.append(resident_id)
-                    self.report("busy resident left unchanged", skipped=skipped)
-                    break
-                time.sleep(15)
+                    self.report("busy resident will roll when idle", skipped=list(skipped))
+                else:
+                    pending.remove(entry)
+                    held.append(resident_id)
+                    queue["births_allowed"] = False
+                atomic(pending_rolls(), queue)
+
+        canary_proven, untouched = roll_in_parallel(
+            list(pending), roll_one, record,
+            concurrency=self.settings.get("roll_concurrency", 6))
+        queue["canary_proven"] = canary_proven
+        if untouched:
+            # The canary failed: everyone else stays exactly as they were, and
+            # nothing is left for the sweep to roll onto a suspect image.
+            for entry in untouched:
+                pending.remove(entry)
+            queue["untouched"] = [e["id"] for e in untouched]
+            self.report("canary failed; other residents left untouched", untouched=queue["untouched"])
+        atomic(pending_rolls(), queue)
+        host_waiting = {e["id"] for e in pending}
+        if held:
+            queue["external_skipped"] += [r["id"] for r in vm_running]
+            atomic(pending_rolls(), queue)
+            self.report("resident roll failed; held for operator review", held=held)
+            raise RuntimeError("Unexpected restart result")
         if vm_running:
-            self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            try:
+                self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+            except Exception:
+                # A VM that failed casts doubt on the image: births stay put.
+                queue["births_allowed"] = False
+                queue["external_skipped"] = [i for i in skipped if i not in host_waiting] + \
+                    [r["id"] for r in vm_running if r["id"] not in proven and r["id"] not in skipped]
+                atomic(pending_rolls(), queue)
+                raise
+        queue["external_skipped"] = [i for i in skipped if i not in host_waiting]
+        atomic(pending_rolls(), queue)
         # A partial run still moves the alias: what was skipped was busy or
         # unreachable, not broken, and new residents (on the host or their own
         # VM) must be born on the Chaos the house is moving to, not on the last
@@ -364,9 +559,17 @@ class Worker:
         if proven:
             for alias in self.settings["stock_aliases"]:
                 self.run(["docker", "tag", stock, alias])
+            queue["births_image_moved"] = True
+        if pending:
+            atomic(pending_rolls(), queue)
+        else:
+            pending_rolls().unlink(missing_ok=True)
         if skipped:
             self.report("runtime rollout incomplete", state="partial", skipped=skipped,
-                        births_image_moved=bool(proven))
+                        births_image_moved=bool(proven),
+                        # The host residents the minute sweep will still roll.
+                        # When skipped is exactly these, nothing is stuck.
+                        waiting=[e["id"] for e in pending])
             return
         if not proven:
             # Only custom residents moved: the stock image never ran as one.
@@ -391,10 +594,13 @@ class Worker:
         if not IMAGE_ID.fullmatch(target_id):
             raise RuntimeError("Built image has no image ID")
         script = self.vm_script()
+        # Checked for all before any restart, so a downgrade touches nobody.
         for resident in vm_running:
-            resident_id = resident["id"]
             if version_tuple(version) < version_tuple(self.image_version(resident["running_image"])):
                 raise RuntimeError("Refusing runtime version downgrade")
+
+        def roll_one(resident):
+            resident_id = resident["id"]
             self.report("waiting for idle resident", resident_id=resident_id)
             deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
             while True:
@@ -409,14 +615,16 @@ class Worker:
                     break
                 time.sleep(15)
             if result["result"] == "current":
-                atomic(self.directory / f"resident-{resident_id}.json", result)
-                self.report("resident healthy", resident_id=resident_id)
-                proven.append(resident_id)
-                continue
+                with self.lock:
+                    atomic(self.directory / f"resident-{resident_id}.json", result)
+                    proven.append(resident_id)
+                    self.report("resident healthy", resident_id=resident_id)
+                return
             if result["result"] != "started":
-                skipped.append(resident_id)
-                self.report("busy resident left unchanged", skipped=skipped)
-                continue
+                with self.lock:
+                    skipped.append(resident_id)
+                    self.report("busy resident left unchanged", skipped=list(skipped))
+                return
             self.report("waiting for resident's server", resident_id=resident_id)
             # The VM fetches the image from the house before it can restart.
             deadline = time.monotonic() + self.settings.get("vm_restart_wait_seconds", 3600)
@@ -426,15 +634,34 @@ class Worker:
                     "DEPLOY_RESIDENT_IMAGE_ID": target_id,
                     "DEPLOY_VM_COMMAND_ID": str(result["command_id"])})
                 if status["result"] == "healthy":
-                    atomic(self.directory / f"resident-{resident_id}.json", status)
-                    self.report("resident healthy", resident_id=resident_id)
-                    proven.append(resident_id)
-                    break
+                    with self.lock:
+                        atomic(self.directory / f"resident-{resident_id}.json", status)
+                        proven.append(resident_id)
+                        self.report("resident healthy", resident_id=resident_id)
+                    return
                 if status["result"] != "pending":
                     raise RuntimeError("VM resident restart failed; turns stay held for operator review")
                 if time.monotonic() >= deadline:
                     raise RuntimeError("VM resident restart did not settle; turns stay held until it does")
                 time.sleep(15)
+
+        # If no stock resident has proven this image yet (every host resident
+        # was busy, or there are only VMs), one VM proves it first. A failure
+        # here raises before any other VM is touched; a busy one is skipped.
+        remaining = list(vm_running)
+        while remaining and not proven:
+            roll_one(remaining.pop(0))
+        # Then each VM restarts on its own machine, so the rest go at once;
+        # the first failure is raised once every other VM has settled.
+        errors = []
+        with ThreadPoolExecutor(max_workers=max(1, self.settings.get("vm_roll_concurrency", 32))) as pool:
+            for future in [pool.submit(roll_one, r) for r in remaining]:
+                try:
+                    future.result()
+                except Exception as error:
+                    errors.append(error)
+        if errors:
+            raise errors[0]
 
     def check_runtime_permissions(self, image):
         self.run(["docker", "run", "--rm", "--network", "none", "--user", "agent",
@@ -446,16 +673,36 @@ class Worker:
                   "assert root/'runtime_hooks.py' in paths; "
                   "[compile(p.read_bytes(),str(p),'exec') for p in paths]"], timeout=60)
 
+    def acquire(self, lock):
+        """The minute sweep holds this lock for one pass. A deploy that starts
+        mid-pass waits for it (bounded) instead of failing and latching."""
+        deadline = time.monotonic() + self.settings.get("sweep_lock_wait_seconds", 1800)
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise
+                self.report("waiting for resident sweep to finish")
+                time.sleep(5)
+
     def execute(self):
         try:
             # Same lock for manual runtime operations, as documented.
             with (ROOT / "deployment.lock").open("a") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.acquire(lock)
+                if self.data["operation"] != "rails" and queue_held():
+                    # Never replace a held queue (and retry its held work)
+                    # without the acknowledgement the gate asks for.
+                    raise RuntimeError("Held resident roll requires operator inspection")
                 self.checkout()
                 if self.data["state"] == "superseded":
                     return
                 if self.data["operation"] in ("rails", "both"):
                     self.deploy_rails()
+                if self.data["operation"] == "rails":
+                    self.check_runtime_change()
                 if self.data["operation"] in ("chaos", "both"):
                     self.update_chaos()
                 if self.data["operation"] == "runtime":
@@ -471,8 +718,151 @@ class Worker:
             self.log.close()
 
 
+class Sweeper(Worker):
+    """The minute timer's half of a Rebuild. Each tick, every resident still
+    waiting in pending-rolls.json gets one roll attempt: idle ones move, busy
+    ones wait for the next minute. It never waits for a resident. A deploy that
+    starts mid-tick waits for the lock (Worker.execute), so a tick never fails
+    a deploy; while a deploy holds the lock the tick does nothing.
+
+    A roll that fails, or whose outcome is unknown, is HELD: kept in the file
+    and on the run's receipt, never retried automatically (retrying a broken
+    image every minute is the loop the 29 Oct crash taught us to avoid). The
+    others carry on. The run's receipt follows the sweep, and the first stock
+    resident it proves moves the births alias if the run itself couldn't."""
+
+    def __init__(self):
+        self.settings = json.loads((CONFIG / "settings.json").read_text())
+        self.log = (ROOT / "sweep.log").open("a")
+
+    def note(self, line):
+        with self.lock:
+            self.log.write(line)
+            self.log.flush()
+
+    def receipt(self, state):
+        path = ROOT / "runs" / state["run"] / "status.json"
+        if not path.exists():
+            return
+        data = json.loads(path.read_text())
+        if data.get("state") not in ("partial", "failed") or data.get("acknowledged"):
+            return
+        waiting = [r["id"] for r in state["residents"]] + state.get("external_skipped", [])
+        data["skipped"] = waiting
+        data["waiting"] = [r["id"] for r in state["residents"]]
+        data["held"] = state["held"]
+        data["births_image_moved"] = state["births_image_moved"]
+        if state.get("births_alias_failed"):
+            data["births_alias_failed"] = True
+        if state["held"]:
+            data["step"] = "resident roll failed; held for operator review"
+        elif state.get("births_alias_failed"):
+            data["step"] = "births alias tag failed; held for operator review"
+        elif waiting:
+            data["step"] = "busy residents roll when idle"
+        elif data["state"] == "partial":
+            data.update(state="success", step="all residents healthy")
+        atomic(path, data)
+
+    def commit(self, state):
+        """Write the pass's result, unless the queue was acknowledged meanwhile.
+
+        acknowledge (gate.py, under gate.lock) archives a held queue; a pass
+        that read it before then must not write it back. So the write happens
+        under gate.lock too, and only if the file is still this run's queue.
+        Lock order is always deployment.lock then gate.lock (the worker drops
+        gate.lock before it takes deployment.lock; the gate never takes
+        deployment.lock), so this cannot deadlock."""
+        with (ROOT / "gate.lock").open("a") as gate_lock:
+            fcntl.flock(gate_lock, fcntl.LOCK_EX)
+            path = pending_rolls()
+            if not path.exists() or json.loads(path.read_text()).get("run") != state["run"]:
+                self.log.write("queue acknowledged during the pass; not written back\n")
+                return False
+            self.receipt(state)
+            if state["residents"] or state["held"] or state.get("births_alias_failed"):
+                atomic(path, state)
+            else:
+                atomic(ROOT / "last-sweep.json", state)
+                path.unlink()
+            return True
+
+    def sweep(self):
+        try:
+            with (ROOT / "deployment.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return "deploy running"
+                if not pending_rolls().exists():
+                    return "nothing pending"
+                state = json.loads(pending_rolls().read_text())
+                state.setdefault("held", [])
+                state.setdefault("births_image_moved", False)
+                # A queue from before canaries existed: a stock resident it
+                # proved is the same evidence.
+                canary_proven = state.get("canary_proven", state["births_image_moved"])
+                if state["held"] and not canary_proven:
+                    # The image never ran healthy and something failed on it:
+                    # roll nobody else onto it until an operator has looked.
+                    return f"{len(state['residents'])} waiting, {len(state['held'])} held"
+                script = (CODE / "roll-resident.rb").read_text()
+                waiting = []
+
+                def roll_one(resident):
+                    try:
+                        return self.rails(script, {
+                            "DEPLOY_RESIDENT_ID": str(resident["id"]),
+                            "DEPLOY_RESIDENT_IMAGE": resident["image"],
+                            "DEPLOY_CHAOS_VERSION": state["chaos_version"]})
+                    except Exception as error:
+                        self.note(f"\nresident {resident['id']}: {type(error).__name__}\n")
+                        return {"result": "unknown"}
+
+                def record(resident, result):
+                    with self.lock:
+                        if result.get("result") == "busy":
+                            waiting.append(resident)
+                        elif result.get("result") in ("healthy", "current"):
+                            self.note(f"resident {resident['id']}: {result['result']}\n")
+                            if (resident.get("stock") and state.get("births_allowed", True)
+                                    and not state["held"] and not state["births_image_moved"]
+                                    and not state.get("births_alias_failed")):
+                                try:
+                                    for alias in self.settings.get("stock_aliases", []):
+                                        self.run(["docker", "tag", resident["image"], alias])
+                                    state["births_image_moved"] = True
+                                except Exception as error:
+                                    # Held like a failed roll: kept on the receipt and in
+                                    # the file, never retried here. The resident itself
+                                    # is healthy and is not rolled again.
+                                    self.note(f"births alias tag failed: {type(error).__name__}\n")
+                                    state["births_alias_failed"] = True
+                        else:
+                            state["held"].append(resident["id"])
+
+                proven, untouched = roll_in_parallel(
+                    state["residents"], roll_one, record,
+                    concurrency=self.settings.get("roll_concurrency", 6), canary=not canary_proven)
+                state["canary_proven"] = proven
+                # A canary that failed here leaves the rest waiting, untouched;
+                # the held entry stops the next tick from trying them.
+                waiting.extend(untouched)
+                waiting.sort(key=lambda r: [e["id"] for e in state["residents"]].index(r["id"]))
+                state["residents"] = waiting
+                state["checked_at"] = int(time.time())
+                if not self.commit(state):
+                    return "acknowledged during pass"
+                return f"{len(waiting)} waiting, {len(state['held'])} held"
+        finally:
+            self.log.close()
+
+
 if __name__ == "__main__":
     os.umask(0o077)
+    if sys.argv[1:] == ["sweep"]:
+        print(Sweeper().sweep())
+        sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
     # Serialize startup with the privileged gate, which has already written

@@ -36,6 +36,12 @@ class Account < ApplicationRecord
     moonshot: { env: "MOONSHOT_API_KEY", credentials: %i[ai moonshot api_token] },
     minimax: { env: "MINIMAX_API_KEY", credentials: %i[ai minimax api_token] }
   }.freeze
+  # House-held tokens for services that aren't model providers. No account
+  # column and no bring-your-own field: they reach a resident only through the
+  # house fallback (use_system_ai_credentials), next to the model keys.
+  HOUSE_SERVICE_TOKENS = {
+    huggingface: { env: "HF_TOKEN", credentials: %i[huggingface token] }
+  }.freeze
   AI_CREDENTIAL_ATTRIBUTES = [
     :use_system_ai_credentials,
     *AI_PROVIDERS.keys.map { |provider| "#{provider}_api_key".to_sym }
@@ -55,7 +61,10 @@ class Account < ApplicationRecord
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
+  has_many :account_exports, dependent: :destroy
+  has_many :account_imports, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
+  has_many :billing_code_redemptions, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.
@@ -214,6 +223,18 @@ class Account < ApplicationRecord
     )
   end
 
+  # Builds and saves an invitation in one transaction, so a refused invitation
+  # (wrong role, personal account, already a member) leaves no bare user row
+  # behind. Returns the membership; check persisted? or read its errors.
+  def send_invitation(email:, role:, invited_by:)
+    invitation = nil
+    transaction do
+      invitation = invite_member(email: email, role: role, invited_by: invited_by)
+      raise ActiveRecord::Rollback unless invitation.save
+    end
+    invitation
+  end
+
   # Residents who can take part in this account's conversations: those hosted
   # here and accepted guests. `agents` keeps meaning hosting ownership, for
   # runtime administration, billing and deletion.
@@ -357,6 +378,16 @@ class Account < ApplicationRecord
     AI_PROVIDERS.filter_map do |provider, config|
       value = ai_api_key(provider)
       [ config.fetch(:env), value ] if value.present? && !value.start_with?("<")
+    end.to_h.merge(house_service_tokens)
+  end
+
+  def house_service_tokens
+    return {} unless use_system_ai_credentials?
+
+    HOUSE_SERVICE_TOKENS.values.filter_map do |config|
+      value = Rails.application.credentials.dig(*config.fetch(:credentials)).presence ||
+        ENV[config.fetch(:env)].presence
+      [ config.fetch(:env), value ] if value.present? && !value.start_with?("<")
     end.to_h
   end
 
@@ -417,6 +448,28 @@ class Account < ApplicationRecord
     tiers = ResidentEntitlement.where(account: self, state: Billing::Tier::IN_FORCE_STATES,
       tier: Billing::Tier.with_swarm_search.map(&:id)).pluck(:tier)
     tiers.sum { |id| Billing::Tier.find(id)&.swarm_searches.to_i }
+  end
+
+  # The rates this account may buy plans at: standard always, plus any rate a
+  # live billing-code redemption grants (docs/proposals/2026-10-28-billing-codes-at-cost.md).
+  # The redemption is the grant; there is no flag here.
+  def eligible_rates
+    [ "standard" ] | (billing_code_redemptions.live.distinct.pluck(:effect) & Billing::Tier::RATES)
+  end
+
+  def eligible_for?(rate) = eligible_rates.include?(rate.to_s)
+
+  # The live redemption that grants a rate; named on the purchases it
+  # authorises, so a grant withdrawn afterwards is not read as abuse.
+  def grant_for(rate)
+    return nil if rate.to_s == "standard"
+
+    billing_code_redemptions.live.where(effect: rate.to_s).order(:id).first
+  end
+
+  # What this account can buy now: every purchasable offer at a rate it holds.
+  def purchasable_offers
+    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.purchasable? && eligible_for?(offer.rate) }
   end
 
   def recording_unlimited? = includes_site_admin?

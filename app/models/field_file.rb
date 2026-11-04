@@ -38,6 +38,19 @@ class FieldFile < ApplicationRecord
 
   broadcasts_to :account
 
+  # Read what was never read before it was imported (the archive carries
+  # whatever extraction the source had done).
+  def after_import_release
+    if pdf? && pdf_status.in?([ nil, "pending" ])
+      update_columns(pdf_status: "pending")
+      FieldFiles::ExtractPdfJob.perform_later(id)
+    elsif text_extractable? && text_extracted_at.nil?
+      FieldFiles::ExtractTextJob.perform_later(id)
+    elsif pdf? && pdf_transcription_pending?
+      FieldFiles::OcrPdfJob.perform_later(id)
+    end
+  end
+
   # An imported file sorts by when it is from, not when it arrived.
   scope :newest_first, -> { order(Arel.sql("COALESCE(field_files.dated_at, field_files.created_at) DESC"), id: :desc) }
   # Files whose words have been read (FieldSummarizable): plain text, and

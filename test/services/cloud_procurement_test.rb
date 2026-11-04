@@ -65,6 +65,19 @@ class CloudProcurementTest < ActiveSupport::TestCase
     service.plan!(placement:, requested_by: @admin, approval_reference: "house room KjXOAe/YkaQnj", server_type: "cx23")
   end
 
+  # #621: the machine follows the plan. Before this, every VM birth got the
+  # settings' server type whatever plan was bought.
+  test "a VM birth orders the machine its plan bought; the settings' machine when the house pays" do
+    @placement.update!(admitted_by_setting_at: @now, birth_requested_by: @admin)
+    assert_equal "cx23", service.plan_for_vm_birth!(placement: @placement).server_type
+
+    paid = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "hetzner_cloud", state: "pending",
+      admitted_by_setting_at: @now, birth_requested_by: @admin)
+    ResidentBirthOrder.create!(account: paid.agent.account, creator: @admin, agent: paid.agent, tier: "work",
+      state: "born", birth_attributes: {})
+    assert_equal "cx43", service.plan_for_vm_birth!(placement: paid).server_type
+  end
+
   def server_for(operation, id: 4242, status: "running", **overrides)
     labels = { HetznerCloudClient::MANAGED_LABEL => "true", HetznerCloudClient::PLACEMENT_LABEL => operation.agent_placement_id.to_s,
                HetznerCloudClient::OPERATION_LABEL => operation.public_id }

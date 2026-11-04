@@ -5,6 +5,7 @@ class Setting < ApplicationRecord
 
   FOLLOW_THROUGH_SCOPES = %w[off selected all].freeze
   REFLEXES_SCOPES = %w[disabled account_choice enabled].freeze
+  VOICE_MODE_SCOPES = %w[disabled account_choice enabled].freeze
   TWEET_STREAM_COLUMNS = %w[
     field_tweets_enabled field_tweets_daily_import_cap
     field_tweets_account_monthly_usd_ceiling field_tweets_poll_minutes
@@ -33,6 +34,7 @@ class Setting < ApplicationRecord
   validates :vm_resident_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
   validates :reflexes_scope, inclusion: { in: REFLEXES_SCOPES }
+  validates :voice_mode_scope, inclusion: { in: VOICE_MODE_SCOPES }
   validates :stalled_sweep_minutes, inclusion: { in: StalledThreadSweeper::INTERVALS }
   validates :site_name, presence: true, length: { maximum: 100 }
   validates :safeguard_owner_notice_threshold,
@@ -67,6 +69,20 @@ class Setting < ApplicationRecord
     case reflexes_scope
     when "enabled" then true
     when "account_choice" then agent.account&.reflexes_enabled? || false
+    else false
+    end
+  end
+
+  # Voice mode in conversations (VoiceMode) follows the same three states:
+  # disabled is off for every account, enabled is on for every account, and
+  # under account_choice (the default) the account's own switch
+  # (accounts.voice_mode_enabled) decides. An account's switch is kept while
+  # the site overrides it.
+  def voice_mode_enabled_for?(account)
+    return false if account.nil?
+    case voice_mode_scope
+    when "enabled" then true
+    when "account_choice" then account.voice_mode_enabled? || false
     else false
     end
   end

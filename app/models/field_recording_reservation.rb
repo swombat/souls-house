@@ -8,12 +8,22 @@
 class FieldRecordingReservation < ApplicationRecord
 
   WINDOW = 7.days
-  STATES = %w[pending consumed released].freeze
 
   belongs_to :account
   belongs_to :field_recording
 
-  validates :state, inclusion: { in: STATES }
+  state_machine :state, initial: :pending, action: nil do
+    state :pending, :consumed, :released
+
+    event :consume_allowance do
+      transition pending: :consumed
+    end
+
+    event :release_allowance do
+      transition pending: :released
+    end
+  end
+
   validates :audio_ms, numericality: { only_integer: true, greater_than: 0 }
 
   scope :counting_at, ->(now) {
@@ -62,17 +72,23 @@ class FieldRecordingReservation < ApplicationRecord
   end
 
   def consume!(now: Time.current)
-    settle!(state: "consumed", consumed_at: now, updated_at: now)
+    settle!(:consume_allowance, consumed_at: now, updated_at: now)
   end
 
   def release!(reason:, now: Time.current)
-    settle!(state: "released", released_at: now, release_reason: reason, updated_at: now)
+    settle!(:release_allowance, released_at: now, release_reason: reason, updated_at: now)
   end
 
   private
 
-  def settle!(attributes)
-    changed = self.class.where(id:, state: "pending").update_all(attributes) == 1
+  private :consume_allowance, :consume_allowance!, :release_allowance, :release_allowance!
+
+  def settle!(event, attributes)
+    # Resolve the edge from pending, not this worker's cached state. The
+    # database's compare-and-set decides the winner without a read/save race.
+    transition = self.class.state_machine(:state).events[event].transition_for(self, from: :pending)
+    changed = self.class.where(id:, state: transition.from)
+      .update_all(attributes.merge(state: transition.to)) == 1
     reload
     changed
   end

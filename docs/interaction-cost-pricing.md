@@ -70,6 +70,16 @@ discount ends, the row should move to the list price. No cache-write price is
 listed, so cache writes fall back to the input rate. OpenRouter only; Inception
 is a new group in souls.house.
 
+GPT-6.1 Terra (added October 26, 2026, the day OpenAI released it; system card
+deploymentsafety.openai.com/gpt-6-1-terra): input 1, cache read 0.05, cache
+write 1.25, output 5, from the OpenRouter standard endpoint for
+`openai/gpt-6.1-terra` (OpenAI provider, `openai/gpt-6.1-terra-20261026`) on
+2026-10-26. The same provider lists flex (0.5 / 2.5) and priority (2 / 10)
+tiers and a long-context tier above 272k prompt tokens (2 in / 7.5 out) that
+these estimates do not model. Direct id `gpt-6.1-terra`. Same reasoning
+controls as GPT-6.1 Sol (none to max). Recheck against OpenAI's pricing page,
+which returned HTTP 403 from the house.
+
 Kimi K3.1 Pro (added October 24, 2026, the day Moonshot AI released it,
 kimi.com/en/blog/kimi-k3-1-pro): input 2, cache read 0.20, output 10, from the
 OpenRouter standard endpoint for `moonshotai/kimi-k3.1-pro` (Moonshot AI
@@ -155,3 +165,11 @@ GLM 5.3 was first recorded on 2026-10-25 at 0.079 input and 0.078 cache read;
 by 2026-10-26 OpenRouter listed the lower rates above. The other three were
 unchanged. GLM 5.3's price has moved once already, so recheck it before
 relying on old GLM 5.3 estimates.
+
+## November 2026 additions
+
+NOVEMBER_MODELS take their list prices from the OpenRouter catalogue and the
+model's endpoint list (`/api/v1/models/<id>/endpoints`, single Z.AI route),
+checked on 2026-11-03 (USD per million tokens, input / output / cache read):
+GLM 5.3 FlashX Legal (`z-ai/glm-5.3-flashx-legal`) 0.37 / 1.25 / 0.075.
+GLM 5.3 FlashX itself stays unpriced.

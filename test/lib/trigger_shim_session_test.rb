@@ -1326,8 +1326,55 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes args, 'model_reasoning_effort="high"'
     assert_includes args, 'shell_environment_policy.inherit="all"'
     assert_includes args, "shell_environment_policy.ignore_default_excludes=true"
-    assert_includes args, 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]'
+    exclude = args.find { |a| a.start_with?("shell_environment_policy.exclude=") }
+    assert exclude, "expected a shell exclude list"
+    assert_includes exclude, '"*KEY?*","*SECRET*","TRIGGER_BEARER_TOKEN"'
     assert_not_includes args, "--dangerously-bypass-approvals-and-sandbox"
+  end
+
+  test "Kimi exact IDs keep thinking enabled and set Responses capability only for Kimi" do
+    out = run_shim_python(<<~PY)
+      captured = []
+      def fake_run(args, **kwargs):
+          captured.append(args)
+          return mod.subprocess.CompletedProcess(args, 0, "", "")
+      mod.subprocess.run = fake_run
+      mod.run_chaos("k3-256k", 30, "REQUEST", True, provider="kimi")
+      mod.run_chaos("gpt-5.2", 30, "REQUEST", True, provider="openai")
+      rejected = []
+      for model, effort in [("wrong-id", "high"), ("k3", "none"), ("kimi-for-coding-highspeed", "low")]:
+          try:
+              mod.kimi_reasoning_effort(model, effort)
+          except ValueError:
+              rejected.append(True)
+      print(json.dumps({"calls": captured, "rejected": rejected,
+                       "preview": mod.kimi_reasoning_effort("kimi-for-coding", None)}))
+    PY
+    result = JSON.parse(out)
+    kimi, other = result.fetch("calls")
+    assert_includes kimi, "model_supports_reasoning_summaries=true"
+    assert_includes kimi, "model_context_window=262144"
+    assert_includes kimi, 'model_reasoning_effort="high"'
+    assert_not_includes other, "model_supports_reasoning_summaries=true"
+    assert_equal [ true, true, true ], result["rejected"]
+    assert_equal "max", result["preview"]
+  end
+
+  test "the tool shell keeps OPENROUTER_API_KEY and drops every other key" do
+    out = run_shim_python(<<~PY)
+      env = {
+        "OPENROUTER_API_KEY": "or", "OPENAI_API_KEY": "oa", "ANTHROPIC_API_KEY": "an",
+        "SOME_KEY_FILE": "f", "HF_TOKEN": "hf", "PATH": "/bin", "lower_api_key": "lk",
+      }
+      print(mod.shell_env_excludes(env))
+    PY
+
+    patterns = JSON.parse(out)
+    names = %w[OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE HF_TOKEN PATH TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret]
+    # Chaos matches shell_environment_policy patterns case-insensitively.
+    glob = ->(pattern, name) { File.fnmatch?(pattern, name, File::FNM_DOTMATCH | File::FNM_CASEFOLD) }
+    excluded = names.select { |n| patterns.any? { |p| glob.(p, n) } }
+    assert_equal %w[OPENAI_API_KEY ANTHROPIC_API_KEY SOME_KEY_FILE TRIGGER_BEARER_TOKEN DB_SECRET lower_api_key db_secret], excluded
   end
 
   test "trigger shim accepts every reasoning effort the app can send" do

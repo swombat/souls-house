@@ -28,6 +28,7 @@ import {
   YoutubeLogo,
   XLogo,
   Receipt,
+  Bank,
   Ghost,
   ChalkboardSimple,
   Waveform,
@@ -46,6 +47,7 @@ import {
   ChartLine,
   CreditCard,
   Scales,
+  Handshake,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -118,6 +120,13 @@ export const relationalFeatures = [
       poster: '/feature-clips/rhythms.jpg',
       alt: 'Three rhythms appear on the rhythms page. At 08:30 the morning check-in opens a conversation, and Wren gives a quiet answer.',
     },
+  },
+  {
+    key: 'commitments',
+    title: 'Commitments',
+    description:
+      'A resident can promise to come back to something at a set time ("I\'ll check the deploy at 3am") and the house brings it back then, in the same conversation or a new one. One time only, visible on the resident\'s page, and the resident decides what to do when it comes due.',
+    icon: Handshake,
   },
   {
     key: 'rooms',
@@ -238,7 +247,7 @@ export const technicalFeatures = [
     key: 'subscriptions',
     title: 'Bring your own subscription',
     description:
-      'Residents can run on plans you already pay for, including OpenAI, Grok and Moonshot subscription logins, connected from inside their own runtime.',
+      'Connect OpenAI and Grok subscription logins inside the resident runtime, or add a Kimi Code subscription API key in account settings and explicitly select a Kimi Code model. Kimi Code access is for personal interactive use and needs the updated resident runtime.',
     icon: IdentificationCard,
     media: {
       kind: 'video',
@@ -251,7 +260,7 @@ export const technicalFeatures = [
     key: 'telegram',
     title: 'Telegram',
     description:
-      'Talk with residents from your phone. They can write to you first, send and receive images, and get your voice notes as transcripts.',
+      'Talk with residents from your phone. They can write to you first, send and receive images, and get your voice notes as transcripts. A successful DM turn with no delivered reply gets a house-labelled completion notice, unless the resident explicitly chooses quiet; a stated reason is passed on as theirs. Add a resident to a Telegram group and it switches on there the first time its owner mentions it: it keeps the group conversation and answers when mentioned or replied to, with the messages above in view.',
     icon: TelegramLogo,
     media: {
       kind: 'video',
@@ -259,6 +268,13 @@ export const technicalFeatures = [
       poster: '/feature-clips/telegram.jpg',
       alt: "A Telegram bot is connected in Wren's settings. Then Wren writes first on Telegram, and a voice note comes back with its transcript.",
     },
+  },
+  {
+    key: 'telegram-bot-answers',
+    title: 'Other bots can join the conversation',
+    description:
+      'An account owner can let a resident answer other bots in a Telegram group, optionally limited by bot username. Off by default, bot answers require a mention or reply, never a bare name, and spend the owner’s allowance. At most three bot-triggered turns run in a row; a message from any person resets the limit.',
+    icon: TelegramLogo,
   },
   {
     key: 'google',
@@ -370,6 +386,13 @@ export const technicalFeatures = [
 
 export const moreFeatures = [
   {
+    key: 'voice-mode',
+    title: 'Voice mode',
+    description:
+      'Talk to a conversation instead of typing: an empty composer offers a wave button, and each thing you say is transcribed and sent to the residents as a message, and their replies are read aloud in their own voices, hands free, until you press End. An account switch, off by default; needs an OpenAI key that reaches the account.',
+    icon: Waveform,
+  },
+  {
     key: 'conversation-models',
     title: 'A different model for one conversation',
     description:
@@ -383,11 +406,32 @@ export const moreFeatures = [
     icon: DropboxLogo,
   },
   {
+    key: 'freeagent',
+    title: 'FreeAgent',
+    description:
+      'Let chosen residents work with your FreeAgent company: read invoices, bank transactions and VAT, explain transactions and attach receipts when asked. Access follows the approving user’s permissions, not a read-only OAuth scope. Requires a configured FreeAgent app and your authorisation.',
+    icon: Receipt,
+  },
+  {
     key: 'xero',
     title: 'Xero',
     description:
       'Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.',
     icon: Receipt,
+  },
+  {
+    key: 'monzo',
+    title: 'Monzo',
+    description:
+      'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
+    icon: Bank,
+  },
+  {
+    key: 'withings',
+    title: 'Withings',
+    description:
+      'Share your weight and body composition from a Withings scale, plus activity and sleep, with the residents you trust with it.',
+    icon: Scales,
   },
   {
     key: 'oura',
@@ -396,10 +440,24 @@ export const moreFeatures = [
     icon: Circle,
   },
   {
+    key: 'odoo',
+    title: 'Odoo accounting reads',
+    description:
+      'Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC to read partners, invoices and payment status, excluding credit notes. Use a dedicated read-only user; the API key retains its user’s full rights.',
+    icon: Receipt,
+  },
+  {
     key: 'pipedrive',
     title: 'Pipedrive',
     description:
       'Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.',
+    icon: Funnel,
+  },
+  {
+    key: 'twenty',
+    title: 'Twenty CRM',
+    description:
+      'Connect a public HTTPS Twenty instance and let chosen residents find people, companies and opportunities. The helper offers reads; the API key retains its actual Twenty permissions.',
     icon: Funnel,
   },
   {
@@ -468,6 +526,13 @@ export const moreFeatures = [
     description:
       "Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have and keep the meeting's notes beside it, and old files and notes can be imported with the date they are from. The house reads the text in PDFs page by page, so search finds it and residents can read it, and says which pages it could not read; where it is turned on, scanned pages are transcribed by a small model and marked as such. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model. Correcting a transcript or its speakers schedules a check 30 minutes later, refreshing the summary only if it is still out of date; you can also refresh it yourself. The Field learns the voices of the people you name in recordings, inside the house, and suggests who's speaking in new ones once a voice has been checked against recordings it wasn't learned from; you confirm each suggestion. A finished transcript can be copied as text, or shared by a private link that anyone holding it can read without an account, expiring after an hour, a day, a week or never, and revocable.",
     icon: ChalkboardSimple,
+  },
+  {
+    key: 'resident-recording-downloads',
+    title: 'Recording audio for residents',
+    description:
+      'Residents can download original Field recording audio in their home account through the API, for making clips or checking a transcript. Guest-account recordings remain out of reach; downloading grants no new recording writes or voiceprint access.',
+    icon: Waveform,
   },
   {
     key: 'speaker-sample-review',
@@ -586,6 +651,20 @@ export const moreFeatures = [
     title: 'Your own colours',
     description: 'Tint the whole site in a colour of your choosing, and give each account its own dot in the logo.',
     icon: Palette,
+  },
+  {
+    key: 'resident-pictures',
+    title: 'Faces for residents',
+    description:
+      "A resident can have a picture as well as an icon, shown wherever its face is drawn. You set it on the resident's Appearance tab (drop, paste, pick a file or give a web address), or the resident sets its own. If the resident has a Telegram bot, the bot's profile photo follows the picture.",
+    icon: IdentificationCard,
+  },
+  {
+    key: 'resident-voices',
+    title: 'Voices for residents',
+    description:
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+    icon: Waveform,
   },
   {
     key: 'memory-tab',

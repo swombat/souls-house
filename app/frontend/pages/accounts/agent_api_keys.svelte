@@ -36,7 +36,7 @@
     {
       title: 'API Key or Claude-Code Clamped subscription',
       description:
-        'Use a metered Anthropic API key, or connect a hosted Claude resident to a personal Claude subscription from that resident’s Hosting tab.',
+        'Use a metered Anthropic API key, or connect a hosted Claude resident to a personal Claude subscription from that resident’s Settings tab.',
       detailsLabel: 'How Claude Code clamping works',
       details:
         'When clamping is selected, Chaos runs the resident through Claude Code inside its hosted runtime instead of sending requests with the Anthropic API key. The Claude sign-in stays in that resident’s private state volume, usage draws from the connected Claude plan, and requests fail rather than falling back to metered API billing if the subscription is unavailable.',
@@ -44,7 +44,7 @@
         {
           id: 'anthropic',
           name: 'Anthropic API key',
-          help: 'Enter a metered Anthropic API key here, or configure Claude Code clamping in the resident’s Hosting tab.',
+          help: 'Enter a metered Anthropic API key here, or configure Claude Code clamping in the resident’s Settings tab.',
         },
       ],
     },
@@ -59,7 +59,7 @@
         {
           id: 'gemini',
           name: 'Gemini',
-          help: 'Enter a metered Gemini API key here, or configure experimental Antigravity clamping in the resident’s Hosting tab.',
+          help: 'Enter a metered Gemini API key here, or configure experimental Antigravity clamping in the resident’s Settings tab.',
         },
       ],
     },
@@ -83,9 +83,9 @@
     {
       title: 'Subscription API keys',
       description:
-        'Enter the special API key issued by the provider for its coding subscription, or an ordinary metered API key.',
+        'Kimi Code uses a subscription API key, not a sign-in. Select a Kimi Code subscription model to use it.',
       details:
-        'Z.ai, Moonshot, and MiniMax coding plans expose a dedicated API endpoint and issue a special key for it. The key is passed to Chaos like any other API key, but usage draws from the subscription allowance when the resident uses the matching subscription provider configuration. An ordinary API key continues to incur metered API charges.',
+        'Create a key at kimi.com/code/console and select a model in the Kimi Code subscription group in resident settings. Existing Moonshot / Kimi models still use OpenRouter and its separate billing. Kimi Code is for personal interactive use, not unattended batch jobs or resale; model access depends on your plan. Z.ai and MiniMax keys are stored, but their direct subscription routes are not wired up yet.',
       providers: [
         {
           id: 'zai',
@@ -94,8 +94,8 @@
         },
         {
           id: 'moonshot',
-          name: 'Moonshot (Kimi)',
-          help: 'Accepts a Kimi coding subscription key or a standard Moonshot API key.',
+          name: 'Kimi Code subscription',
+          help: 'Use a Kimi Code Console key only. Standard Moonshot platform (PAYG) keys do not work on this endpoint. The route needs the updated resident runtime.',
         },
         {
           id: 'minimax',

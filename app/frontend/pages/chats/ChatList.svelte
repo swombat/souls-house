@@ -20,6 +20,21 @@
 
   // Check if user can see deleted chats
   const canSeeDeleted = $derived($page.props.is_account_admin || $page.props.user?.site_admin);
+  // Red when the toggle is there only because the viewer is a site admin: every
+  // confirmed member gets it, and is_account_admin already includes site admins.
+  const deletedIsAdminOnly = $derived(!!$page.props.viewing_as_site_admin);
+
+  const showArchived = $derived(new URLSearchParams($page.url.split('?')[1] || '').get('show_archived') === 'true');
+
+  function toggleShowArchived() {
+    const url = new URL(window.location.href);
+    if (showArchived) {
+      url.searchParams.delete('show_archived');
+    } else {
+      url.searchParams.set('show_archived', 'true');
+    }
+    router.visit(url.toString(), { preserveState: true });
+  }
 
   // Show deleted toggle state
   let showDeleted = $state(
@@ -56,9 +71,12 @@
     {accountId}
     {hasRooms}
     {canSeeDeleted}
+    {deletedIsAdminOnly}
+    {showArchived}
     {showDeleted}
     onCreate={createNewChat}
     {onClose}
+    onToggleArchived={toggleShowArchived}
     onToggleDeleted={toggleShowDeleted} />
 
   <div class="flex-1 overflow-y-auto" data-chat-sidebar-scroller use:keepSidebarScroll={scrollKey}>
@@ -71,6 +89,7 @@
             {chat}
             {accountId}
             {activeChatId}
+            {showArchived}
             visualTags={$page.props.visual_tags || []}
             rooms={$page.props.rooms || []} />
         {/each}

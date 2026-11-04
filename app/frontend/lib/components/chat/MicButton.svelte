@@ -2,6 +2,7 @@
   import { Microphone, MicrophoneSlash, Spinner } from 'phosphor-svelte';
   import { onDestroy, onMount } from 'svelte';
   import { holdForRecording } from '$lib/recording-guard';
+  import { abandonRecorder, micErrorMessage, recorderOptions, stopStream } from '$lib/mic-recorder';
   import {
     clearRecovery,
     loadRecovery,
@@ -20,6 +21,7 @@
   let state = $state('idle');
 
   let mediaRecorder = null;
+  let destroyed = false;
   let audioChunks = [];
   // Held from the moment recording starts until the transcript (or an error) is back, so a
   // background refresh after a deploy cannot reload the page and lose the audio.
@@ -65,12 +67,15 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
+    if (mediaRecorder?.state === 'recording') abandonRecorder(mediaRecorder);
     release();
     failureHold?.();
     failureHold = null;
   });
 
   const isRecording = $derived(state === 'recording');
+  const isStarting = $derived(state === 'starting');
   const isTranscribing = $derived(state === 'transcribing');
   const isFailed = $derived(state === 'failed');
 
@@ -83,19 +88,18 @@
   }
 
   async function startRecording() {
+    // Until the mic answers, further clicks must not start a second, unseen recorder.
+    state = 'starting';
+    let stream = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Left the conversation while the prompt was open: start nothing, hold nothing.
+      if (destroyed) {
+        stopStream(stream);
+        return;
+      }
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : '';
-
-      const options = mimeType ? { mimeType } : {};
-      const recorder = new MediaRecorder(stream, options);
+      const recorder = new MediaRecorder(stream, recorderOptions());
       audioChunks = [];
 
       recorder.ondataavailable = (event) => {
@@ -103,16 +107,14 @@
           audioChunks.push(event.data);
         }
       };
-
       recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
+        stopStream(stream);
 
         if (audioChunks.length === 0) {
           state = 'idle';
           release();
           return;
         }
-
         const actualMimeType = recorder.mimeType || 'audio/webm';
         const blob = new Blob(audioChunks, { type: actualMimeType });
         audioChunks = [];
@@ -127,20 +129,18 @@
         await transcribe(blob, actualMimeType);
       };
 
+      // Backstop: never overwrite a recorder or hold without stopping and releasing it.
+      if (mediaRecorder && mediaRecorder !== recorder) abandonRecorder(mediaRecorder);
+      release();
       recorder.start();
       mediaRecorder = recorder;
       state = 'recording';
       releaseHold = holdForRecording();
     } catch (err) {
+      stopStream(stream);
       state = 'idle';
       release();
-      if (err.name === 'NotAllowedError') {
-        onerror?.('Microphone access denied. Please allow microphone access in your browser settings.');
-      } else if (err.name === 'NotFoundError') {
-        onerror?.('No microphone found. Please connect a microphone and try again.');
-      } else {
-        onerror?.('Could not start recording');
-      }
+      onerror?.(micErrorMessage(err));
     }
   }
 
@@ -277,12 +277,14 @@
            disabled:pointer-events-none disabled:opacity-50"
     title={isRecording
       ? 'Stop recording'
-      : isTranscribing
-        ? 'Transcribing...'
-        : isFailed
-          ? 'Retry or discard the voice note first'
-          : 'Record voice message'}>
-    {#if isTranscribing}
+      : isStarting
+        ? 'Starting…'
+        : isTranscribing
+          ? 'Transcribing...'
+          : isFailed
+            ? 'Retry or discard the voice note first'
+            : 'Record voice message'}>
+    {#if isTranscribing || isStarting}
       <Spinner size={18} class="animate-spin" />
     {:else if isRecording}
       <MicrophoneSlash size={18} />

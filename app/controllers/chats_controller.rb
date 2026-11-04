@@ -16,7 +16,8 @@ class ChatsController < ApplicationController
       agents: available_agents(as: :list),
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
-      file_upload_config: file_upload_config
+      file_upload_config: file_upload_config,
+      voice_mode: VoiceMode.status_for(current_account)
     }
   end
 
@@ -29,7 +30,8 @@ class ChatsController < ApplicationController
       account: current_account.as_json,
       agents: available_agents(as: :list),
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
-      file_upload_config: file_upload_config
+      file_upload_config: file_upload_config,
+      voice_mode: VoiceMode.status_for(current_account)
     }
   end
 
@@ -39,7 +41,8 @@ class ChatsController < ApplicationController
     select_room!(params[:room] == RoomSelection::ALL ? :all : @chat.room)
     props = {
       account: current_account.as_json,
-      show_usage_in_chat: Setting.instance.show_usage_in_chat
+      show_usage_in_chat: Setting.instance.show_usage_in_chat,
+      voice_mode: VoiceMode.status_for(current_account)
     }
 
     if inertia_prop_requested?(:chats)
@@ -158,7 +161,8 @@ class ChatsController < ApplicationController
     else
       # Quiet rhythm runs live on their rhythm's page (Chat::QuietRhythmRun).
       chats = chats.listed
-      chats.active.pinned_first.latest + chats.archived.latest
+      active_chats = chats.active.pinned_first.latest
+      params[:show_archived] == "true" ? active_chats + chats.archived.latest : active_chats
     end
   end
 

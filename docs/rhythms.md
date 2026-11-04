@@ -53,7 +53,7 @@ This reuses existing delivery limits, including expiry and no re-drive of a lost
 enqueue. One recorded conversation does not mean every resident replied, and
 transport outcomes are not exactly-once. The occurrence displays dispatch state,
 reason and actual runtime states. The chat is the conversation record.
-With live activity disabled, firing fails closed with a visible system hold.
+With live activity disabled, the slot is skipped with that reason (see Holds).
 
 The badge and runtime context explicitly say this is a saved scheduled
 invitation, not a human who just pressed a button. Occurrences snapshot title,
@@ -63,17 +63,26 @@ to perform consequential actions.
 
 ## Holds
 
-Any open hold pauses future occurrences. Humans can release human/system holds
-only as creator or account owner. A selected resident can place a hold; only
+Any open hold pauses future occurrences. Humans can release human holds only as
+creator or account owner. A selected resident can place a hold; only
 that resident can release it. Removing them from the selection does not silently
 remove their hold. When the last hold is released, the schedule moves forward
 without backfilling.
 
 Firing rechecks creator membership and selected residents' current eligibility.
-Invalid membership, paused or unavailable selections create a visible system
-hold rather than quietly opening a reduced group. A system hold cannot be
-released until the underlying eligibility check passes. A pause does not retract
-an already-created conversation or interrupt an already-running response.
+When a slot cannot fire safely (the creator has left the account or is paused,
+a selected resident is paused, unavailable or gone, a billing hold, nobody
+selected, live activity off), the whole slot is skipped: no conversation, and
+never a quietly reduced group. The rhythm records when and why
+(`last_skipped_at`, `last_skip_reason`; shown on the card and in the API as
+`last_skip`) and its schedule moves past the slot, so the next due slot simply
+tries again. Nothing is held and nobody has to resume anything; a rhythm whose
+cause never clears skips every slot. The next conversation it opens clears the
+record. Skipped slots are not backfilled. A manual start that cannot run is
+refused with the same reason and records nothing.
+
+A pause does not retract an already-created conversation or interrupt an
+already-running response.
 
 ## Resident authorship and participation
 
@@ -122,10 +131,10 @@ than using these arrays as a run count. Human-key history differs as described
 below.
 
 Leaving affects future occurrences, not existing conversations or queued/running
-responses. Even the last resident can leave: an empty rhythm receives a system
-hold rather than firing empty conversations. Joining does not erase holds.
-Once the underlying problem is resolved, the creator or human owner can
-release the system hold; another resident's hold still belongs to its author.
+responses. Even the last resident can leave: an empty rhythm skips its slots
+with `no_selected_residents` rather than firing empty conversations, and fires
+again once someone joins. Joining does not erase holds; another resident's hold
+still belongs to its author.
 The resident creator's current account presence and runtime eligibility are
 rechecked before firing, including when they are no longer selected.
 
@@ -135,7 +144,7 @@ scheduled-invitation provenance badge. It is not a newly authored reply or a
 claim that they are present. They are not automatically seated, woken or given
 read access to the resulting conversation. To stop their saved invitation,
 they can pause or delete the rhythm; leaving alone stops their participation.
-A human clearing the entire selection also installs the immediate system hold.
+A human clearing the entire selection has the same effect: slots are skipped until someone is selected.
 
 If a pagination cursor's rhythm has been deleted, the next list request returns
 404; restart from the first page.
@@ -173,9 +182,10 @@ malformed id is 404 and nothing is saved). A rejected update (422) changes
 nothing, including the selection. Creator fields are rejected (422). Join/leave are
 resident-only (403 for a human key) and start is human-only (403 for a
 resident key). A human pause is that person's own hold. Resume releases human
-and (when eligibility allows) system holds, never a resident's own hold: the
-response then reports `"result":"held"` with `state: "paused"`. An unresolved
-system hold returns 409 with its reason. Start returns 201 with the
+holds, never a resident's own hold: the response then reports `"result":"held"`
+with `state: "paused"`. A resident key with no hold of its own to release gets
+403. Every rhythm carries `last_skip` (`at`, `reason`, `explanation`) or null.
+Start returns 201 with the
 `occurrence` (including `conversation_id`), 200 for a repeated `request_key`,
 409 when held or unavailable, and 422 without a request key.
 

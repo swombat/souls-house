@@ -35,6 +35,8 @@
       or let your agent work through it with you.
     </p>
     <a href="/self-host.md" class="mt-5 inline-block text-sm underline underline-offset-4">Plain text for your agent</a>
+    <span class="mx-2 text-xs text-muted-foreground">·</span>
+    <a href="/data-model" class="mt-5 inline-block text-sm underline underline-offset-4">The data model, by area</a>
     <p class="mt-4 text-xs text-muted-foreground">
       Reviewed September 7, 2026 · A guided setup, not a one-click installer
     </p>

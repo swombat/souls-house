@@ -6,6 +6,7 @@ class Agents::OnboardingController < ApplicationController
     render inertia: "agents/onboarding", props: {
       agent: @agent.as_json,
       vm_steps: Agents::VmBirthProgress.for(@agent),
+      first_conversation: Agents::FirstConversation.presentation(@agent),
       # The first resident in an account has no other residents to go back
       # to and nothing yet worth configuring, so the page offers neither.
       first_resident: current_account.agents.count == 1,

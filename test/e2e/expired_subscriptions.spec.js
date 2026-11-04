@@ -49,10 +49,10 @@ test('an open draft gains and clears cross-account expired logins, including rec
     const draft = 'Keep this unsent draft through subscription updates';
     await composer.fill(draft);
     const menu = page.getByRole('button', { name: 'User account menu' });
-    const badge = menu.locator('[aria-label="1 expired subscription"]');
+    const badge = menu.locator('[aria-label="1 resident problem"]');
     const noExpiry = async () => {
       // Action Cable's reconnect backoff can itself exceed the default 10s.
-      await expect(menu.locator('[aria-label$="expired subscription"]')).toHaveCount(0, { timeout: 20_000 });
+      await expect(menu.locator('[aria-label$="resident problem"]')).toHaveCount(0, { timeout: 20_000 });
       await expect(composer).toHaveValue(draft);
       expect(page.url()).toBe(originalUrl);
     };
@@ -105,11 +105,11 @@ test('an open draft gains and clears cross-account expired logins, including rec
     // Its only resident was retired above, so the normal account entry sends
     // us to onboarding. The global count must also work on that different page.
     await expect(page).toHaveURL(new RegExp(`/accounts/${other}/residents/new`));
-    await expect(menu.locator('[aria-label$="expired subscription"]')).toHaveCount(0);
+    await expect(menu.locator('[aria-label$="resident problem"]')).toHaveCount(0);
     await mutate(setup.account_id, 'expire');
     await expect(badge).toBeVisible();
     await mutate(setup.account_id, 'api_key');
-    await expect(menu.locator('[aria-label$="expired subscription"]')).toHaveCount(0);
+    await expect(menu.locator('[aria-label$="resident problem"]')).toHaveCount(0);
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }

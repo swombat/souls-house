@@ -64,4 +64,36 @@ class Agents::ResidentDirectoryTest < ActiveSupport::TestCase
     end
   end
 
+  test "a resident refused for missing setup shows its scheduled streak; other scheduled failures stay off the card" do
+    agent = agents(:other_account_agent)
+    make = ->(body, at, status: 412) {
+      AgentRuntimeInteraction.create!(agent: agent, trigger_kind: "wake", requested_by: "souls.house", session_id: "w",
+        started_at: at - 1.minute, finished_at: at, transport_status: status, runtime_status: "error", response_body: body)
+    }
+    card = -> {
+      AgentJournalStatsJob.stub(:request_refresh, nil) do
+        Agents::ResidentDirectory.new(agent.account).call.find { |row| row["id"] == agent.to_param }
+      end
+    }
+    refusal = { "status" => "error", "error_kind" => "needs_setup", "error" => "set up" }
+    agent.update!(model_id: "x-ai/grok-4.7", provider_auth_modes: {}, provider_connections: {})
+    agent.account.update_columns(use_system_ai_credentials: false)
+    Account::AI_PROVIDERS.each_key { |provider| agent.account.update!("#{provider}_api_key" => nil) }
+    assert agent.reload.inference_setup_message.present?, "fixture resident still has setup"
+    ScheduledRunFailureNoticeJob.stub(:perform_later, nil) do
+      make.(refusal, 3.hours.ago)
+      make.(refusal, 2.hours.ago)
+      streak = card.().fetch(:failed_runs)
+      assert_equal 2, streak[:count]
+      assert_equal true, streak[:needs_setup]
+
+      Agents::InferenceAvailability.stub(:setup_message, nil) do
+        assert_nil card.().fetch(:failed_runs), "a repaired resident's old refusals are not current setup"
+      end
+
+      make.({ "status" => "error" }, 1.hour.ago, status: 500)
+      assert_nil card.().fetch(:failed_runs), "mixed history is not proof of missing setup"
+    end
+  end
+
 end

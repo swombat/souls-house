@@ -5,10 +5,9 @@
   import { Label } from '$lib/components/shadcn/label';
   import { Alert, AlertDescription, AlertTitle } from '$lib/components/shadcn/alert';
   import { Info } from 'phosphor-svelte';
-  import { agentIconFor } from '$lib/agent-icons';
+  import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import { findModelLabel } from '$lib/agent-models';
   let { form, grouped_models, selectedModel, openBeginning, acknowledged = $bindable(false), onedit } = $props();
-  let IconComponent = $derived(agentIconFor($form.agent.icon));
 </script>
 
 <CardHeader>
@@ -17,16 +16,15 @@
 </CardHeader>
 <CardContent class="space-y-6">
   <div class="flex items-center gap-4 rounded-lg border p-4">
-    <div
-      class="rounded-xl p-3 {$form.agent.colour
+    <AgentAvatar
+      agent={$form.agent}
+      class="size-[3.25rem] rounded-xl flex items-center justify-center"
+      fallbackClass={$form.agent.colour
         ? `bg-${$form.agent.colour}-100 dark:bg-${$form.agent.colour}-900`
-        : 'bg-primary/10'}">
-      <IconComponent
-        class="size-7 {$form.agent.colour
-          ? `text-${$form.agent.colour}-700 dark:text-${$form.agent.colour}-300`
-          : 'text-primary'}"
-        weight="duotone" />
-    </div>
+        : 'bg-primary/10'}
+      iconClass="size-7 {$form.agent.colour
+        ? `text-${$form.agent.colour}-700 dark:text-${$form.agent.colour}-300`
+        : 'text-primary'}" />
     <div>
       <p class="text-lg font-semibold">{$form.agent.name}</p>
       <p class="text-sm text-muted-foreground">

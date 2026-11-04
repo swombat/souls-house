@@ -32,6 +32,15 @@ test('heartbeats stay in view; availability and sessions fold under Advanced', a
   expect(headings.at(-1)).toBe('Turn timeout (minutes)');
 });
 
+test('where the resident runs folds under Advanced, first', async () => {
+  const form = writable({ agent: {}, errors: {} });
+  render(AgentSettingsPanel, { form, runtimeManaged: true, hostingLocation: { kind: 'house' } });
+  expect(screen.queryByText('Where this resident runs')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));
+  const headings = [...document.querySelectorAll('#advanced-settings h2')].map((node) => node.textContent.trim());
+  expect(headings[0]).toBe('Where this resident runs');
+});
+
 test('an error on an advanced setting opens the section', () => {
   const form = writable({ agent: { turn_timeout_minutes: 0 }, errors: { turn_timeout_minutes: 'must be at least 1' } });
   render(AgentSettingsPanel, { form, runtimeManaged: true });
@@ -43,4 +52,24 @@ test('a disabled or paused resident opens Advanced so it can be switched back on
   render(AgentSettingsPanel, { form, runtimeManaged: true });
   expect(screen.getByRole('button', { name: 'Hide advanced settings' })).toHaveAttribute('aria-expanded', 'true');
   expect(screen.getByText('Availability')).toBeInTheDocument();
+});
+
+test('managed runtime continuity switches remain editable and preserve an explicit fresh choice', async () => {
+  // VM residents, like local hosted residents, reach this panel with
+  // runtimeManaged=true (external/offline or a committed birth).
+  const form = writable({
+    agent: { persistent_session: true, persistent_wake_session: true },
+    errors: {},
+  });
+  render(AgentSettingsPanel, { form, runtimeManaged: true });
+  await fireEvent.click(screen.getByRole('button', { name: 'Advanced settings' }));
+  const conversations = screen.getByRole('switch', { name: 'Persistent conversation sessions' });
+  const heartbeats = screen.getByRole('switch', { name: 'Persistent heartbeat session' });
+  expect(conversations).toBeEnabled();
+  expect(heartbeats).toBeEnabled();
+  expect(conversations).toHaveAttribute('aria-checked', 'true');
+  expect(heartbeats).toHaveAttribute('aria-checked', 'true');
+  await fireEvent.click(conversations);
+  expect(get(form).agent.persistent_session).toBe(false);
+  expect(get(form).agent.persistent_wake_session).toBe(true);
 });

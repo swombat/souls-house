@@ -70,7 +70,7 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
 
   def mark_service_accesses_reconciled!(agent)
     agent.agent_service_accesses.includes(:service_connection).find_each do |access|
-      if access.enabled?
+      if access.effective?
         access.mark_provisioned!
       else
         access.update!(

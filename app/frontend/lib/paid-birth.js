@@ -14,7 +14,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Returns { redirectTo } once born, or { redirectTo: null, order } when Stripe
 // is still confirming.
-export async function payForResident({ billing, agent, tier, providerKey, onPhase = () => {}, pollMs = 1500 }) {
+export async function payForResident({
+  billing,
+  agent,
+  tier,
+  rate = 'standard',
+  providerKey,
+  onPhase = () => {},
+  pollMs = 1500,
+}) {
   const stripe = await loadStripe(billing.publishable_key);
   onPhase('starting');
   let payment;
@@ -22,6 +30,7 @@ export async function payForResident({ billing, agent, tier, providerKey, onPhas
     payment = await postJson(billing.birth_orders_url, {
       agent,
       tier,
+      rate,
       ...(providerKey ? { provider_key: providerKey } : {}),
     });
   } catch (error) {

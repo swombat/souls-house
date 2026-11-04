@@ -39,6 +39,25 @@ const twitterapi = {
 };
 
 describe('integration scope and connection flow', () => {
+  it('explains FreeAgent user authority without offering a fictitious read-only scope', async () => {
+    const freeagent = {
+      ...dropbox,
+      key: 'freeagent',
+      name: 'FreeAgent',
+      access_profiles: [{ key: 'user_permissions', name: 'User permissions', default: true }],
+    };
+    render(IntegrationConnect, { account, focusedService: freeagent, canManageAccount: false });
+    expect(screen.getByText(/FreeAgent has no read-only OAuth scope/)).toBeInTheDocument();
+    expect(screen.getByText(/within that user's permission level/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect FreeAgent' }));
+    expect(submitNativePost).toHaveBeenCalledWith('/accounts/selected-house/service_authorizations', {
+      provider: 'freeagent',
+      management_scope: 'personal',
+      access_profile: 'user_permissions',
+    });
+  });
+
   it('retains unsent credentials and ownership when read-only service props refresh', async () => {
     const props = { account, focusedService: github, canManageAccount: true };
     const view = render(IntegrationConnect, props);

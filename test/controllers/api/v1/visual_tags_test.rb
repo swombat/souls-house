@@ -72,6 +72,50 @@ module Api
         assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned] }
       end
 
+      test "a resident's tag change is written into the room under the resident's name; other edits are not" do
+        update_room({ title: "Only a rename" })
+        assert_response :success
+        assert_empty @room.messages.where(role: "system")
+
+        update_room({ visual_tag_id: @tag.to_param })
+        assert_response :success
+        assert_equal [ "#{@agent.name} tagged this conversation Research." ],
+          @room.messages.where(role: "system").pluck(:content)
+
+        update_room({ visual_tag_id: @tag.to_param, title: "Same tag, new title" })
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+
+        update_room({ visual_tag_id: nil }, headers: @human_headers)
+        assert_response :success
+        assert_equal "#{ResidentFacingName.for(@user)} removed the tag Research.",
+          @room.messages.where(role: "system").order(:id).last.content
+      end
+
+      test "API tag lines read the previous tag under the lock" do
+        other = @account.visual_tags.create!(label: "Plans", icon: "Compass", colour: "green")
+        real_resolve = VisualTag.method(:resolve_for)
+        overlapping = ->(account, id) { Chat.where(id: @room.id).update_all(visual_tag_id: other.id); real_resolve.call(account, id) }
+        VisualTag.stub(:resolve_for, overlapping) { update_room({ visual_tag_id: @tag.to_param }) }
+        assert_response :success
+        assert_equal [ "#{@agent.name} changed the tag to Research (was Plans)." ],
+          @room.messages.where(role: "system").pluck(:content)
+
+        same = ->(account, id) { Chat.where(id: @room.id).update_all(visual_tag_id: other.id); real_resolve.call(account, id) }
+        VisualTag.stub(:resolve_for, same) { update_room({ visual_tag_id: other.to_param }) }
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+      end
+
+      test "a resident's tag change does not move the room up the list" do
+        earlier = 2.hours.ago.change(usec: 0)
+        @room.update_columns(last_message_at: earlier)
+        update_room({ visual_tag_id: @tag.to_param })
+        assert_response :success
+        assert_equal 1, @room.messages.where(role: "system").count
+        assert_equal earlier, @room.reload.last_message_at
+      end
+
       test "human account key can select a room tag" do
         update_room({ visual_tag_id: @tag.to_param }, headers: @human_headers)
         assert_response :success

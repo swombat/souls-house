@@ -6,12 +6,78 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
   include FieldRecordingHelpers
 
   setup do
+    Setting.instance.update!(allow_agents: true)
     @user = users(:user_1)
     @resident = agents(:research_assistant)
     @account = @resident.account
     key = ApiKey.generate_for(@user, name: "Field tests", agent: @resident)
     @headers = { "Authorization" => "Bearer #{key.raw_token}" }
     @recording = ready_recording(account: @account, user: @user, title: "Board call")
+  end
+
+  test "a resident downloads only its home recording audio through an expiring attachment URL" do
+    [ {}, { account_id: @account.to_param } ].each do |params|
+      get audio_api_v1_field_recording_path(@recording), params:, headers: @headers
+      assert_response :redirect
+      location = URI.parse(response.location)
+      token = location.path.split("/").last(2).first
+      download = ActiveStorage.verifier.verified(token, purpose: :blob_key).with_indifferent_access
+      assert_equal @recording.audio.blob.key, download.fetch(:key)
+      assert_includes download.fetch(:disposition), "attachment"
+
+      travel 6.minutes do
+        assert_nil ActiveStorage.verifier.verified(token, purpose: :blob_key)
+      end
+    end
+  end
+
+  test "audio is not available without authentication" do
+    get audio_api_v1_field_recording_path(@recording)
+    assert_response :unauthorized
+  end
+
+  test "resident audio refuses cross-account and guest recordings and foreign account selectors" do
+    other_account = accounts(:team_account)
+    theirs = ready_recording(account: other_account, user: @user)
+    get audio_api_v1_field_recording_path(theirs), headers: @headers
+    assert_response :not_found
+
+    other_account.guest_memberships.create!(agent: @resident, added_by: @user)
+    get audio_api_v1_field_recording_path(theirs), headers: @headers
+    assert_response :not_found
+    [ @recording, theirs ].each do |recording|
+      get audio_api_v1_field_recording_path(recording), params: { account_id: other_account.to_param }, headers: @headers
+      assert_response :not_found
+      assert_nil response.headers["Location"]
+    end
+  end
+
+  test "resident audio refuses discarded recordings, missing recordings and missing audio" do
+    @recording.audio.purge
+    get audio_api_v1_field_recording_path(@recording), headers: @headers
+    assert_response :not_found
+
+    discarded = ready_recording(account: @account, user: @user)
+    discarded.discard_and_settle!
+    get audio_api_v1_field_recording_path(discarded), headers: @headers
+    assert_response :not_found
+    get audio_api_v1_field_recording_path("missing"), headers: @headers
+    assert_response :not_found
+  end
+
+  test "audio access does not admit resident recording uploads or lifecycle writes" do
+    assert_no_difference -> { FieldRecording.count } do
+      post api_v1_field_recordings_path, params: { upload_id: @recording.audio.blob.signed_id }, headers: @headers, as: :json
+      assert_response :forbidden
+      post retry_api_v1_field_recording_path(@recording), headers: @headers
+      assert_response :forbidden
+    end
+    patch api_v1_field_recording_path(@recording), params: { title: "Not allowed" }, headers: @headers, as: :json
+    assert_response :forbidden
+    delete api_v1_field_recording_path(@recording), headers: @headers
+    assert_response :forbidden
+    assert_equal "Board call", @recording.reload.title
+    assert @recording.kept?
   end
 
   test "a resident reads transcripts with the names humans set, and nothing else" do

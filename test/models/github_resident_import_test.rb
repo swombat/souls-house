@@ -94,15 +94,36 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     assert_match(/no longer connected/, request.approval_error)
     connection.update!(status: "connected", credential_metadata: connection.credential_metadata.merge("repository" => "other/repo"))
     assert_match(/repository configuration changed/, request.approval_error)
+    connection.update!(credential_metadata: connection.credential_metadata.merge("repository" => request.repository))
+    assert_nil request.approval_error
+
+    request.update_column(:approved_commit_sha, "c" * 40)
+    assert_match(/Reviewed revision changed/, request.approval_error)
+    request.update_column(:approved_commit_sha, request.commit_sha)
+
+    owner, repo = request.repository.split("/")
+    agent = request.create_agent!(account: request.account, name: "Configuration gate", runtime: "external",
+      home_profile: "portable_v1", portable_home_id: request.portable_home_id,
+      github_repo_url: "https://github.com/#{request.repository}", github_repo_owner: owner, github_repo_name: repo,
+      container_image: request.approved_image)
+    assert_nil request.reload.approval_error
+    agent.update_column(:github_repo_url, "https://github.com/other/repo")
+    assert_match(/Resident runtime configuration changed/, request.reload.approval_error)
   end
 
   test "stale review and classic tokens cannot be approved" do
     request = import_request
     Agents::GithubImportSource.stub(:new, source_stub(request)) do
       assert_raises(ArgumentError) { request.approve!(users(:user_1), review_revision: "old") }
+      # The classic token gets its own fingerprint on both sides, so only the
+      # fine-grained prefix check stands between it and approval.
+      fingerprint = Services::GithubTokenAdapter.fingerprint("ghp_synthetic")
       request.service_connection.credential_payload_hash = { "token" => "ghp_synthetic" }
+      request.service_connection.credential_fingerprint = fingerprint
       request.service_connection.save!
+      request.update_column(:credential_fingerprint, fingerprint)
       assert_raises(ArgumentError) { request.approve!(users(:user_1), review_revision: request.review_revision) }
+      assert_nil request.reload.approved_at
     end
   end
 

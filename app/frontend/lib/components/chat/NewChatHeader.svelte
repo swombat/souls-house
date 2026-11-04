@@ -3,7 +3,7 @@
   import { List } from 'phosphor-svelte';
   import ChatTitleEditor from './ChatTitleEditor.svelte';
 
-  let { onMenuOpen, title = $bindable('') } = $props();
+  let { onMenuOpen, title = $bindable(''), actions = null } = $props();
 </script>
 
 <header class="border-b border-border bg-muted/30 px-4 md:px-6 py-3 md:py-4">
@@ -16,5 +16,8 @@
       onDraftTitle={(value) => (title = value)}
       onCancelTitle={(value) => (title = value)}
       onSaveTitle={(value) => (title = value)} />
+    {#if actions}
+      <div class="ml-auto shrink-0">{@render actions()}</div>
+    {/if}
   </div>
 </header>

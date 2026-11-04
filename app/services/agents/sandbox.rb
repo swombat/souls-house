@@ -7,11 +7,17 @@ module Agents
     class SandboxError < StandardError; end
 
     REPO_PATH = "/home/agent/repo"
+    # Exclusive against every other writer of this resident's row, but not
+    # against FOR KEY SHARE: a turn inserted for this resident (its foreign key
+    # takes KEY SHARE) must not wait for a container restart while its
+    # transaction holds the house-wide turn gate. FOR UPDATE would make every
+    # turn in the house wait for one resident's docker work.
+    ROW_LOCK = "FOR NO KEY UPDATE"
     WORK_PATH = "/home/agent/work"
     STATE_PATH = "/home/agent/state"
     IDENTITY_PATH = "/home/agent/identity"
     CHAOS_BUILT_IN_PROVIDER_IDS = %w[anthropic openai xai].freeze
-    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter house].freeze
+    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter house kimi].freeze
     SUPPORTED_CHAOS_PROVIDER_IDS = (
       CHAOS_BUILT_IN_PROVIDER_IDS + CHAOS_RUNTIME_PROVIDER_IDS
     ).freeze
@@ -20,7 +26,8 @@ module Agents
       openai: "openai",
       gemini: "gemini",
       xai: "xai",
-      openrouter: "openrouter"
+      openrouter: "openrouter",
+      kimi: "kimi"
     }.freeze
 
     attr_reader :agent
@@ -30,7 +37,7 @@ module Agents
     end
 
     def spawn!
-      agent.with_lock do
+      agent.with_lock(ROW_LOCK) do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
         ensure_awake!
         spawn_without_portability_gate!
@@ -103,7 +110,7 @@ module Agents
     end
 
     def recreate!
-      agent.with_lock do
+      agent.with_lock(ROW_LOCK) do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
         ensure_awake!
         recreate_without_portability_gate!
@@ -205,7 +212,7 @@ module Agents
     end
 
     def start!
-      agent.with_lock do
+      agent.with_lock(ROW_LOCK) do
         raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
         ensure_awake!
         start_without_portability_gate!
@@ -345,6 +352,22 @@ module Agents
       Net::HTTP.get_response(uri).code == "200"
     rescue StandardError
       false
+    end
+
+    # Docker's count of restart-policy restarts of this container since it was
+    # created (recreate! starts it again from zero). nil when there is no
+    # container or Docker can't answer. AgentHealthCheckJob compares it between
+    # probes: a count that grew means the resident was down in between, however
+    # the probe found it.
+    def restart_count
+      return nil if agent.container_name.blank?
+
+      result = docker_capture("container", "inspect", "--format", "{{.RestartCount}}", agent.container_name)
+      return nil unless result[:ok]
+
+      Integer(result[:stdout].strip, 10)
+    rescue StandardError
+      nil
     end
 
     # How many times the kernel OOM-killed a process in this resident's
