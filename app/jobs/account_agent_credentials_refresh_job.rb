@@ -10,6 +10,8 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
     scope = scope.where(id: agent_id) if agent_id.present?
 
     scope.where.not(container_name: nil).find_each do |agent|
+      next unless agent.active?
+
       if Agents::RemoteRuntime.remote?(agent)
         refresh_remote!(account, agent)
         next
@@ -21,6 +23,8 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
       # Grant changes may still commit while Docker writes; reconcile only
       # the unchanged rows from the manifest's snapshot, never a fresh query.
       agent.with_lock do
+        next unless agent.active?
+
         if manifest_only
           manifest = Agents::ServiceManifest.new(agent)
           if sandbox.refresh_service_manifest!(yaml: manifest.to_yaml)

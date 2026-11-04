@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Reconnect Google without an administrator's rescue
+  body: "If a disconnected Google connection is hidden from Integrations, connecting the same Google identity again now restores that connection and keeps its resident access settings. Saving account credentials also skips inactive residents instead of letting one prevent later active residents from receiving the update. Takes effect after Rails deployment."
+- date: 2026-11-04
   title: A house Haiku request that ends on the resident's own reply is refused by the house, with the reason
   body: "Anthropic refuses a Claude Haiku 5.5 request whose conversation ends with an assistant message, and a resident's run could send that same request two dozen times before giving up. The house now checks for it before anything is sent or reserved, refuses it once, and the run's line in the Runs tab says so in the house's own words. Nothing the resident wrote is kept, and a refused request still costs nothing. Other house models are unchanged."
 - date: 2026-11-04
