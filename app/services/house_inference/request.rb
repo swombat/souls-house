@@ -29,6 +29,13 @@ module HouseInference
       if input.key?('parallel_tool_calls') && input['parallel_tool_calls'] != true
         raise Error.new('House inference allows parallel tool calls only; parallel_tool_calls must be true or omitted.', status: 422)
       end
+      # Refused here, before anything is reserved, rather than sent to be
+      # refused upstream every time the runtime retries it (#725). Only for
+      # routes known to refuse it, and never "fixed" by inventing a user turn.
+      if offering[:assistant_last] == false && assistant_prefill?(messages.last)
+        raise Error.new('This house model needs the conversation to end with a user or tool message, not an assistant message.',
+          code: 'house_provider_refused', status: 422, reason: PREFILL_REASON)
+      end
       tools = input['tools']
       if tools && (!tools.is_a?(Array) || tools.any? { |tool| !tool.is_a?(Hash) || tool['type'] != 'function' })
         raise Error.new('Only function tools are supported.', status: 422)
@@ -51,6 +58,18 @@ module HouseInference
         'usage' => { 'include' => true })
       body['stream_options'] = { 'include_usage' => true } if body['stream']
       body
+    end
+
+    PREFILL_REASON = 'house check before sending: the request ends with an assistant message, which this model refuses (no prefill)'.freeze
+
+    # An assistant message with text in it. An empty one is dropped upstream
+    # and accepted (live check, 2026-11-04), so it is not refused here.
+    def self.assistant_prefill?(message)
+      return false unless message['role'] == 'assistant'
+
+      content = message['content']
+      text = content.is_a?(Array) ? content.map { |part| part['text'] }.join : content.to_s
+      text.strip.present?
     end
 
   end

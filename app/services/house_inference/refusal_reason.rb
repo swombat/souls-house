@@ -52,6 +52,7 @@ module HouseInference
       [ /must have non-empty content/i, 'empty message content' ],
       [ /roles must alternate/i, 'message roles must alternate' ],
       [ /no endpoints found/i, 'no provider endpoint accepts this request' ],
+      [ /assistant message prefill/i, 'the request ends with an assistant message, which this model refuses (no prefill)' ],
       [ /(?:does not support|not supported|unsupported)/i, 'not supported by this model or route' ],
       [ /context (?:length|window)/i, 'context too long' ]
     ].freeze

@@ -70,4 +70,25 @@ class HouseInference::RequestTest < ActiveSupport::TestCase
     assert_equal @input['tools'], body['tools']
   end
 
+  test 'Haiku refuses a conversation ending in an assistant message before anything is sent (#725)' do
+    offering = HouseInference::Offering.find(HouseInference::Offering::HAIKU_MODEL_ID)
+    haiku = @input.merge('model' => HouseInference::Offering::HAIKU_MODEL_ID)
+    [ 'partial reply', [ { 'type' => 'text', 'text' => 'partial reply' } ] ].each do |content|
+      error = assert_raises(HouseInference::Error) do
+        HouseInference::Request.build(haiku.merge('messages' => @input['messages'] + [ { 'role' => 'assistant', 'content' => content } ]), offering)
+      end
+      assert_equal 422, error.status
+      assert_equal 'house_provider_refused', error.code
+      assert_equal HouseInference::Request::PREFILL_REASON, error.reason
+      refute_includes error.reason, 'partial reply'
+    end
+    # An empty assistant message is accepted upstream, and so is a user or
+    # tool message last.
+    [ { 'role' => 'assistant', 'content' => '' }, { 'role' => 'assistant', 'content' => nil }, { 'role' => 'user', 'content' => 'again' } ].each do |last|
+      assert HouseInference::Request.build(haiku.merge('messages' => @input['messages'] + [ last ]), offering)
+    end
+    # Only routes known to refuse it: DeepSeek is unchanged.
+    assert HouseInference::Request.build(@input.merge('messages' => @input['messages'] + [ { 'role' => 'assistant', 'content' => 'partial' } ]), @offering)
+  end
+
 end
