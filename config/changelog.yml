@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: A conversation gets its title from its first message, even when it starts empty
+  body: "A conversation used to ask for its title only at the moment it was created, which worked when every conversation was created with its first message. Starting one with the voice-mode wave, or through the API without a message, made it empty at that moment, so it stayed \"New Conversation\" until the five-minute tidy-up caught it. The title is now asked for when the first message you send lands, and a few seconds later the title appears in the open conversation's header without a reload. Accounts without their own OpenRouter key are titled on the house's key straight away instead of waiting for the tidy-up."
+- date: 2026-11-04
   title: The dry run for moving a resident to its own server measures its sessions and sign-ins
   body: "Site Admin's dry run for moving a house resident to its own server now also measures the two volumes a move has to carry for the resident to wake with its conversations and sign-ins intact: how big they are, how many sessions are mapped, and which sign-ins are there, by name only and without opening a file. It refuses a resident with no session database, or one too large for the carry's repository budget, and says that size check is conservative rather than proof that it fits. Moves still don't carry these volumes yet."
 - date: 2026-11-04

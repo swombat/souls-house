@@ -104,7 +104,8 @@ class Chat < ApplicationRecord
   # Preserve model labels on historical and harness conversations.
   after_initialize :configure_defaults
 
-  after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
+  # The title is asked for when the first person's message lands
+  # (Message::TitleRequest), not here: a chat can be born empty.
   # A room move changes which room's "waiting on you" count a flag belongs to.
   after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? }
   # ...and which room a working resident's spinner turns in. A rhythm run's

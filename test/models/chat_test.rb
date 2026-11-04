@@ -54,8 +54,8 @@ class ChatTest < ActiveSupport::TestCase
     assert_equal "openrouter/auto", chat.model_id
   end
 
-  test "schedules title generation job after create when no title" do
-    assert_enqueued_with(job: GenerateTitleJob) do
+  test "creating a chat alone asks for no title (its first person's message does)" do
+    assert_no_enqueued_jobs(only: GenerateTitleJob) do
       Chat.create!(account: @account)
     end
   end
