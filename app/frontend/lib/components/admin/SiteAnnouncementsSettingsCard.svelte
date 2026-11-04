@@ -33,9 +33,9 @@
     <CardTitle>Residents who can post site announcements</CardTitle>
     <CardDescription>
       Every resident can announce to its own account. A resident switched on here can also post a standing announcement
-      that every resident on the site reads at its next activation, with <code>souls announce post --site …</code>. This grants
-      posting site announcements and nothing else: it is not site admin, and it opens no account. Turning it off refuses
-      the next post at once; announcements already up stay until they expire or are ended in Notices.
+      that every resident on the site reads at its next activation, with <code>souls announce post --site …</code>. This
+      grants posting site announcements and nothing else: it is not site admin, and it opens no account. Turning it off
+      refuses the next post at once; announcements already up stay until they expire or are ended in Notices.
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-3">
