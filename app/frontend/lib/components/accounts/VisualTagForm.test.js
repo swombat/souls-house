@@ -21,7 +21,7 @@ test('edits all three fields using a scoped stable ID', async () => {
   await fireEvent.submit(screen.getByRole('form'));
   expect(router.patch).toHaveBeenCalledWith(
     '/accounts/house/visual_tags/tag-one',
-    { visual_tag: { label: 'Care', icon: 'Heart', colour: 'rose' } },
+    { visual_tag: { label: 'Care', icon: 'Heart', colour: 'rose', pins_to_top: false } },
     expect.objectContaining({ preserveScroll: true })
   );
 });
@@ -32,7 +32,7 @@ test('adds a tag and keeps failed input with validation errors visible', async (
   await fireEvent.submit(screen.getByRole('form'));
   expect(router.post).toHaveBeenCalledWith(
     '/accounts/house/visual_tags',
-    { visual_tag: { label: 'New label', icon: 'ChatCircle', colour: 'slate' } },
+    { visual_tag: { label: 'New label', icon: 'ChatCircle', colour: 'slate', pins_to_top: false } },
     expect.any(Object)
   );
   const options = router.post.mock.calls.at(-1)[2];
@@ -71,7 +71,7 @@ test('the Pin tag keeps its name and cannot be removed, but its look can change'
   await fireEvent.submit(screen.getByRole('form'));
   expect(router.patch).toHaveBeenCalledWith(
     '/accounts/house/visual_tags/tag-pin',
-    { visual_tag: { label: 'Pin', icon: 'Wrench', colour: 'rose' } },
+    { visual_tag: { label: 'Pin', icon: 'Wrench', colour: 'rose', pins_to_top: true } },
     expect.any(Object)
   );
 });

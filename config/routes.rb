@@ -453,7 +453,7 @@ Rails.application.routes.draw do
         resource :avatar, only: %i[update destroy], controller: "me/avatars"
       end
       resources :accounts, only: :index
-      resources :visual_tags, only: :index
+      resources :visual_tags, only: %i[index update]
       resources :rooms, only: %i[index create update destroy] do
         collection do
           patch :main

@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Label } from '$lib/components/shadcn/label/index.js';
+  import { Switch } from '$lib/components/shadcn/switch';
   import VisualTagIcon from '$lib/components/chat/VisualTagIcon.svelte';
   import VisualTagIconBrowser from './VisualTagIconBrowser.svelte';
   import { visualTagColour } from '$lib/visual-tags';
@@ -12,18 +13,32 @@
   let label = $state(tag?.label || '');
   let icon = $state(tag?.icon || 'ChatCircle');
   let colour = $state(tag?.colour || 'slate');
+  let pinsToTop = $state(Boolean(tag?.pins_to_top));
   let saving = $state(false);
   let errors = $state({});
-  const changed = $derived(!tag || label !== tag.label || icon !== tag.icon || colour !== tag.colour);
+  const changed = $derived(
+    !tag || label !== tag.label || icon !== tag.icon || colour !== tag.colour || pinsToTop !== Boolean(tag.pins_to_top)
+  );
 
   // Refresh an untouched form when another account member edits the palette.
   let source = $state(tag);
   $effect(() => {
-    if (source?.label !== tag?.label || source?.icon !== tag?.icon || source?.colour !== tag?.colour) {
-      if (label === source?.label && icon === source?.icon && colour === source?.colour) {
+    if (
+      source?.label !== tag?.label ||
+      source?.icon !== tag?.icon ||
+      source?.colour !== tag?.colour ||
+      source?.pins_to_top !== tag?.pins_to_top
+    ) {
+      if (
+        label === source?.label &&
+        icon === source?.icon &&
+        colour === source?.colour &&
+        pinsToTop === Boolean(source?.pins_to_top)
+      ) {
         label = tag?.label || '';
         icon = tag?.icon || 'ChatCircle';
         colour = tag?.colour || 'slate';
+        pinsToTop = Boolean(tag?.pins_to_top);
       }
       source = tag;
     }
@@ -37,7 +52,7 @@
     const path = `/accounts/${accountId}/visual_tags${tag ? `/${tag.id}` : ''}`;
     router[tag ? 'patch' : 'post'](
       path,
-      { visual_tag: { label: label.trim(), icon, colour } },
+      { visual_tag: { label: label.trim(), icon, colour, pins_to_top: tag?.pinned ? true : pinsToTop } },
       {
         preserveScroll: true,
         onError: (value) => (errors = value),
@@ -91,6 +106,22 @@
             icon, but not its name, and it can't be removed.
           </p>
         {/if}
+      </div>
+      <div class="space-y-1">
+        <label class="flex items-center justify-between gap-3 text-sm font-medium">
+          <span>Keep at the top</span>
+          <Switch
+            aria-label="Keep conversations with this tag at the top"
+            data-testid="visual-tag-pins-to-top"
+            checked={tag?.pinned ? true : pinsToTop}
+            disabled={!canManage || saving || tag?.pinned}
+            onCheckedChange={(value) => (pinsToTop = value)} />
+        </label>
+        <p class="text-xs text-muted-foreground">
+          {tag?.pinned
+            ? 'The Pin tag always keeps its conversations at the top.'
+            : 'Conversations with this tag stay at the top of the list, with pinned ones.'}
+        </p>
       </div>
       <fieldset disabled={!canManage || saving}>
         <legend class="mb-2 text-sm font-medium">Colour</legend>

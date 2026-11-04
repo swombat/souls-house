@@ -116,8 +116,11 @@ class Chat < ApplicationRecord
   # nil is Main; :all is every room.
   scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
-  # Pinned conversations lead; chain before `latest` so each group keeps recency order.
-  scope :pinned_first, -> { left_joins(:visual_tag).order(Arel.sql("visual_tags.pinned IS TRUE DESC")) }
+  # Conversations whose tag keeps them on top (the Pin, or any tag set to)
+  # lead; chain before `latest` so each group keeps recency order.
+  scope :pinned_first, -> {
+    left_joins(:visual_tag).order(Arel.sql("(visual_tags.pinned OR visual_tags.pins_to_top) IS TRUE DESC"))
+  }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
