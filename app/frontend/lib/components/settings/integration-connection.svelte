@@ -10,10 +10,11 @@
   import ConnectionTelegramStatus from './connection-telegram-status.svelte';
   import ConnectionWhatsappPairing from './connection-whatsapp-pairing.svelte';
   import ConnectionWhatsappStatus from './connection-whatsapp-status.svelte';
-  import { accessSummary, attentionLabel, connectionTitle } from '$lib/connection-summary';
+  import { accessSummary, attentionLabel, connectionTitle, serviceLine } from '$lib/connection-summary';
   import { CaretDown, UsersThree, WarningCircle } from 'phosphor-svelte';
   let { connection, services, account, open = false, onToggle = () => {} } = $props();
   let title = $derived(connectionTitle(connection));
+  let service = $derived(serviceLine(connection));
   let summary = $derived(accessSummary(connection));
   let attention = $derived(attentionLabel(connection));
   let panelId = $derived(`connection-${connection.id}-details`);
@@ -67,7 +68,12 @@
       <ServiceIcon provider={connection.provider} size={22} />
     </div>
     <div class="pointer-events-none relative min-w-0 flex-1 space-y-1">
-      <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
+      <div>
+        <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
+        {#if service}
+          <p class="truncate text-xs text-muted-foreground" data-testid="connection-service">{service}</p>
+        {/if}
+      </div>
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <span
           class={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${

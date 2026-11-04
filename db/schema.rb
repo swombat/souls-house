@@ -2929,6 +2929,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "pinned", default: false, null: false
+    t.boolean "pins_to_top", default: false, null: false
     t.index ["account_id"], name: "index_visual_tags_on_account_id"
     t.index ["account_id"], name: "index_visual_tags_on_account_id_pinned", unique: true, where: "pinned"
     t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true

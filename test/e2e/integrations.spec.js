@@ -25,6 +25,8 @@ for (const role of ['primary_user', 'secondary_user']) {
       await expect(page.getByRole('heading', { name: 'Your integrations', exact: true })).toBeVisible();
       const shared = page.getByRole('article').filter({ hasText: 'Team files' });
       await expect(shared).toBeVisible();
+      // The icon alone does not say which service a row is; the name does.
+      await expect(shared.getByTestId('connection-service')).toHaveText('Dropbox');
       // Connected integrations come before the picker, each one a compact row
       // that says who has access; the switches open underneath it.
       const existingTop = (await page.getByRole('heading', { name: 'Your integrations', exact: true }).boundingBox()).y;
