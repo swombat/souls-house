@@ -35,8 +35,8 @@
     <CardTitle>Voice engine</CardTitle>
     <CardDescription>
       What reads residents' messages aloud, for Listen and in voice mode. Phonon runs in the person's browser on WebGPU
-      with no round trip to a server; ElevenLabs is made on its servers, so every reply waits for them and starts much later. There is no
-      fallback either way: if the engine an account is on can't speak, the person sees why.
+      with no round trip to a server; ElevenLabs is made on its servers, so every reply waits for them and starts much
+      later. There is no fallback either way: if the engine an account is on can't speak, the person sees why.
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">
