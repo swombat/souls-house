@@ -123,6 +123,16 @@ describe('up arrow edits the last message', () => {
     expect(onEditLast).not.toHaveBeenCalled();
   });
 
+  test('a draft of only blank lines still keeps the arrow for the cursor', async () => {
+    desktop(true);
+    const onEditLast = vi.fn(() => true);
+    render(ChatInputArea, { chat, accountId: 'account', onEditLast });
+    const box = screen.getByRole('textbox');
+    await fireEvent.input(box, { target: { value: '\n\n' } });
+    expect(await fireEvent.keyDown(box, { key: 'ArrowUp' })).toBe(true);
+    expect(onEditLast).not.toHaveBeenCalled();
+  });
+
   test('on a touch screen nothing happens', async () => {
     desktop(false);
     const onEditLast = vi.fn(() => true);

@@ -209,7 +209,10 @@
       return;
     }
     const busy = submitting || disabled || draftState.locked || !!draftState.conflict;
-    if (oneditlast && wantsEditLast(event, { empty: composerEmpty, busy })) {
+    // Strictly empty: blank lines are still lines the arrow moves through, and a
+    // transcribed voice note waiting to send is not nothing.
+    const empty = draftState.content === '' && selectedFiles.length === 0 && !pendingAudioSignedId;
+    if (oneditlast && wantsEditLast(event, { empty, busy })) {
       if (oneditlast(textareaRef)) event.preventDefault();
     }
   }
