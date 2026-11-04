@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Reconnect Google without an administrator's rescue
+  body: "If a disconnected Google connection is hidden from Integrations, connecting the same Google identity again now restores that connection and keeps its resident access settings. Saving account credentials also skips inactive residents instead of letting one prevent later active residents from receiving the update. Takes effect after Rails deployment."
+- date: 2026-11-04
   title: Voice mode sends what you said with its recording again
   body: "Since yesterday's switch to ElevenLabs, voice mode sends each turn with its recording, and the house refused exactly that send with \"Voice mode keeps no recording\", so the carefully transcribed turn never arrived and only the rough live transcript got through when ElevenLabs failed. The house now accepts the recording and attaches it to the message the way it does a voice note's."
 - date: 2026-11-04
