@@ -13,6 +13,7 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     dockerfile = Rails.root.join("Dockerfile").read
     assert_includes dockerfile, "COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py"
     assert_includes dockerfile, "COPY host-runner/backup_proxy.py host-runner/backup_proxy.py"
+    assert_includes dockerfile, "COPY host-runner/birth_fetch.py host-runner/birth_fetch.py"
     assert_includes dockerfile, "COPY --from=build --chown=rails:rails /rails/host-runner /rails/host-runner"
   end
 
@@ -36,38 +37,64 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     secrets = [ Rails.application.secret_key_base, Rails.application.credentials.dig(:hetzner, :api_token) ].compact
     secrets.each { |secret| assert_not_includes output, secret }
     config = JSON.parse(parsed["write_files"].find { |f| f["path"] == "/etc/souls-house-runner/config.json" }["content"])
-    assert_equal %w[enrollment_token rails_url runner_id], config.keys.sort
+    assert_equal %w[birth_bundle_sha256 enrollment_token rails_url runner_id], config.keys.sort
     assert_equal "0600", parsed["write_files"].find { |f| f["path"] == "/etc/souls-house-runner/config.json" }["permissions"]
   end
 
-  test "embeds AST-equivalent runner source in this repository" do
-    bundle = parsed["write_files"].find { |f| f["path"] == "/opt/souls-house-runner/source.tar.xz" }
-    assert_equal "b64", bundle["encoding"]
-    unpacked, _error, status = Open3.capture3("xz", "--decompress", "--stdout",
-      stdin_data: Base64.strict_decode64(bundle["content"]), binmode: true)
-    assert status.success?
-    assert_includes parsed["packages"], "xz-utils"
-    archive = StringIO.new(unpacked)
-    sources = {}
-    Gem::Package::TarReader.new(archive) do |tar|
-      tar.each do |entry|
-        assert entry.file?
-        sources[entry.full_name] = entry.read
-        assert_equal entry.full_name == "souls_house_runner.py" ? 0755 : 0644, entry.header.mode
-      end
-    end
-    assert_equal %w[backup_proxy.py souls_house_runner.py], sources.keys.sort
-    sources.each do |name, source|
-      original = File.read(Rails.root.join("host-runner", name))
-      script = "import ast,json,sys\n#{RunnerUserData::DOCSTRING_STRIP}\na,b=json.load(sys.stdin)\n" \
-        "assert ast.dump(strip_docstrings(ast.parse(a)), include_attributes=False)==ast.dump(ast.parse(b), include_attributes=False)\n" \
-        "assert ast.get_docstring(ast.parse(b)) is None"
-      _out, _err, proof = Open3.capture3("python3", "-c", script, stdin_data: JSON.generate([ original, source ]))
-      assert proof.success?, "embedded #{name} preserves the complete executable AST, docstrings aside"
-      assert_equal RunnerUserData.compact_source(original), source
-    end
-    extract = %w[tar -xJf /opt/souls-house-runner/source.tar.xz -C /opt/souls-house-runner]
-    assert_operator parsed["runcmd"].index(extract), :<, parsed["runcmd"].index(%w[systemctl enable --now souls-house-runner])
+  # #779: the runner is not embedded. The document pins one digest; the
+  # house keeps those bytes, so a release between render and fetch serves
+  # the same runner.
+  test "pins the current runner bundle by digest instead of embedding it" do
+    paths = parsed["write_files"].map { |f| f["path"] }
+    assert_not paths.any? { |path| path.include?("source.tar") }
+    assert_not_includes parsed["packages"], "xz-utils"
+    bundle = RunnerBundle.current
+    config = JSON.parse(parsed["write_files"].find { |f| f["path"] == "/etc/souls-house-runner/config.json" }["content"])
+    assert_equal bundle.sha256, config["birth_bundle_sha256"]
+    assert_equal bundle.sha256, @enrollment.reload.birth_bundle_sha256
+    assert_equal bundle.bytes, RunnerBirthBundle.find_by!(sha256: bundle.sha256).bytes
+    assert_equal 1, render.scan(/\b[0-9a-f]{64}\b/).uniq.size
+  end
+
+  test "carries the compacted fetch script, and its unit retries within the birth deadline" do
+    script = parsed["write_files"].find { |f| f["path"] == RunnerUserData::FETCH_SCRIPT }
+    assert_equal "gz+b64", script["encoding"]
+    assert_equal "0700", script["permissions"]
+    source = Zlib.gunzip(Base64.strict_decode64(script["content"]))
+    assert_equal RunnerUserData.compact_source(File.read(RunnerUserData::FETCH_SOURCE_PATH)), source
+    unit = parsed["write_files"].find { |f| f["path"].end_with?("souls-house-runner-fetch.service") }["content"]
+    assert_includes unit, "ExecStart=/usr/bin/python3 #{RunnerUserData::FETCH_SCRIPT}"
+    assert_includes unit, "Restart=on-failure"
+    assert_includes unit, "RestartPreventExitStatus=3"
+    assert_includes unit, "StartLimitIntervalSec=0"
+    runner = parsed["write_files"].find { |f| f["path"].end_with?("souls-house-runner.service") }["content"]
+    assert_includes runner, "ConditionPathExists=/opt/souls-house-runner/current/bundle.sha256"
+    assert_not_includes runner, "Requires="
+    give_up = source[/GIVE_UP_AFTER = (.+)$/, 1]
+    assert_equal RunnerUserData::FETCH_GIVE_UP_AFTER.to_i, eval(give_up) # rubocop:disable Security/Eval
+    assert_operator RunnerUserData::FETCH_GIVE_UP_AFTER, :<, Agents::VmBirthPolicy::BIRTH_DEADLINE
+    assert_includes parsed["runcmd"], %w[systemctl enable --now --no-block souls-house-runner-fetch]
+    assert_includes parsed["runcmd"], %w[systemctl enable souls-house-runner]
+  end
+
+  test "a release between render and fetch still serves the pinned bytes" do
+    render
+    pinned = @enrollment.reload.birth_bundle_sha256
+    newer = RunnerBundle::Bundle.new(bytes: "newer".b, sha256: Digest::SHA256.hexdigest("newer"))
+    other, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
+    RunnerBirthBundle.pin!(other, bundle: newer)
+    assert_equal RunnerBirthBundle.find_by!(sha256: pinned).bytes, @enrollment.authorize_birth_bundle!(token: @token, sha256: pinned)
+  end
+
+  test "drops a pinned blob once no unenrolled enrollment pins it" do
+    render
+    pinned = @enrollment.reload.birth_bundle_sha256
+    @enrollment.update!(enrolled_at: Time.current, public_key: Base64.strict_encode64("k" * 32))
+    other, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
+    newer = RunnerBundle::Bundle.new(bytes: "newer".b, sha256: Digest::SHA256.hexdigest("newer"))
+    RunnerBirthBundle.pin!(other, bundle: newer)
+    assert_nil RunnerBirthBundle.find_by(sha256: pinned)
+    assert RunnerBirthBundle.find_by(sha256: newer.sha256)
   end
 
   test "the command channel is on only for a literal true" do
@@ -81,15 +108,14 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   # create request. The real runner must fit with room to grow; a runner that
   # outgrew it would make every VM order fail (#238 part 1 nearly did).
   test "the document with the real runner fits Hetzner's limit with margin" do
-    # The backup module is embedded too. The reserve was 2 KiB; master sat
-    # about 50 bytes inside it on 4 Nov, and the kernel-reboot runner
-    # (KernelReboot) needs ~770 more, so the reserve is 1 KiB. Weighed as
-    # production renders it: the house's own origin and the command channel
-    # on (no runtime_image). The lasting fix is not embedding the runner at
-    # all (fetch by pinned digest at birth, #779); until then, this line is
-    # where every runner change is weighed.
+    # The runner is fetched by digest at birth (#779), so runner changes no
+    # longer weigh here. What remains (config, units, firewall, the fetch
+    # script) must stay well inside the limit: an 8 KiB ceiling leaves room
+    # for the whole document to quadruple before a VM order fails. Weighed
+    # as production renders it: the house's own origin and the command
+    # channel on (no runtime_image).
     production = render(rails_url: "https://souls.house", commands_enabled: true)
-    assert_operator production.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 1.kilobyte
+    assert_operator production.bytesize, :<, 8.kilobytes
     assert_operator render.bytesize, :<=, production.bytesize
     assert_equal production, render(rails_url: "https://souls.house", commands_enabled: true)
   end
@@ -101,7 +127,7 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_equal %w[68 546], nft.scan(/udp sport \d+ udp dport (\d+)/).flatten
     assert_equal %w[systemctl mask nftables.service], parsed["runcmd"].first
     enabled = parsed["runcmd"].select { |cmd| cmd[1] == "enable" }.map(&:last)
-    assert_equal %w[souls-house-firewall docker souls-house-runner], enabled
+    assert_equal %w[souls-house-firewall docker souls-house-runner souls-house-runner-fetch], enabled
   end
 
   # Debian 13 split the client out of docker.io; without docker-cli the

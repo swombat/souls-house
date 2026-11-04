@@ -1,6 +1,7 @@
 # The runner a VM should be running (#593). Runners ship inside cloud-init at
 # birth, so without this a Rails deploy never reaches them. The bundle is the
-# same deterministic, AST-checked, XZ-compressed tar RunnerUserData embeds;
+# deterministic, AST-checked, XZ-compressed tar a new VM fetches at birth by
+# the digest its user_data pins (RunnerBirthBundle, #779);
 # its digest changes exactly when the runner source does.
 #
 # A runner reports the bundle it runs (fact runner_bundle_sha256; absent on

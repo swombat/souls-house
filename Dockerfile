@@ -88,6 +88,7 @@ COPY agent-runtime/imported_home.py agent-runtime/imported_home.py
 COPY agent-runtime/standard_home_sync.py agent-runtime/standard_home_sync.py
 COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
 COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
+COPY host-runner/birth_fetch.py host-runner/birth_fetch.py
 COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .
