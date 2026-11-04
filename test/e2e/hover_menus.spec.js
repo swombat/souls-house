@@ -64,6 +64,18 @@ test('chat list menus open on hover on desktop', async ({ page, request }, testI
     await page.mouse.move(900, 600);
     await expect(page.getByRole('menu')).toHaveCount(0);
 
+    // Hover, then click: the menu is pinned (moving away keeps it) and the
+    // page stays unlocked, as it was while hovering.
+    await actions.first().hover();
+    await expect(page.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
+    await actions.first().click();
+    await page.mouse.move(900, 600);
+    await page.waitForTimeout(400);
+    await expect(page.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
+    expect(await page.evaluate(() => getComputedStyle(document.body).pointerEvents)).not.toBe('none');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+
     // A click still opens and closes the menu as before.
     await actions.first().click();
     await expect(page.getByRole('menuitem', { name: 'Archive' })).toBeVisible();

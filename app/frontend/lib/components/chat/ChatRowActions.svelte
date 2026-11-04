@@ -69,7 +69,7 @@
     onpointerleave={menu.leave}
     onOpenAutoFocus={menu.openAutoFocus}
     onCloseAutoFocus={menu.closeAutoFocus}
-    preventScroll={!menu.viaHover}>
+    preventScroll={menu.lockScroll}>
     <DropdownMenu.Item onclick={toggleArchive}>
       <Archive size={14} class="mr-2 shrink-0" weight="duotone" />
       {chat.archived ? 'Unarchive' : 'Archive'}

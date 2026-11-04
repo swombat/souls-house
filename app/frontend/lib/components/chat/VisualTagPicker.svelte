@@ -113,7 +113,7 @@
     onpointerleave={menu.leave}
     onOpenAutoFocus={menu.openAutoFocus}
     onCloseAutoFocus={menu.closeAutoFocus}
-    preventScroll={!menu.viaHover}>
+    preventScroll={menu.lockScroll}>
     <DropdownMenu.Label>Visual tag</DropdownMenu.Label>
     <DropdownMenu.Item onclick={() => selectTag(null)}>
       <Tag size={16} class="mr-2 text-muted-foreground" />

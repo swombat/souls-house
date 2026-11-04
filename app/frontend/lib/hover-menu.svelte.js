@@ -11,7 +11,11 @@
 // A hover-opened menu must not lock the page: bits-ui's scroll lock sets
 // pointer-events: none on <body>, so the trigger stops being under the mouse,
 // the next small move reads as leaving, and the menu flickers shut and open.
-// Pass `preventScroll={!menu.viaHover}` to the menu content.
+// Pass `preventScroll={menu.lockScroll}` to the menu content. The lock is
+// decided once, when the menu opens, and held until it closes: a menu opened by
+// hover and then pinned by a click stays unlocked (bits-ui only reads the
+// setting on mount, and the page underneath scrolling is harmless here). A
+// menu opened by a direct click or the keyboard locks as before.
 export const HOVER_QUERY = '(hover: hover) and (pointer: fine)';
 
 function canHover(event) {
@@ -22,8 +26,11 @@ function canHover(event) {
 
 export class HoverMenu {
   open = $state(false);
-  // Reactive: the menu content reads it to skip the page-wide scroll lock.
+  // True while the menu is open by hover alone (not yet pinned by a click).
   viaHover = $state(false);
+  // Whether the open menu locks page scroll; false for a menu opened by hover,
+  // including after a click pins it. Reset when the menu closes.
+  lockScroll = $state(true);
   #closingViaHover = false;
   #openTimer = null;
   #closeTimer = null;
@@ -62,6 +69,7 @@ export class HoverMenu {
     this.#openTimer = setTimeout(() => {
       this.#openTimer = null;
       this.viaHover = true;
+      this.lockScroll = false;
       this.open = true;
     }, this.#openDelay);
   };
@@ -77,6 +85,7 @@ export class HoverMenu {
       this.#closingViaHover = true;
       this.open = false;
       this.viaHover = false;
+      this.lockScroll = true;
     }, this.#closeDelay);
   };
 
@@ -98,6 +107,7 @@ export class HoverMenu {
     if (this.viaHover) this.#closingViaHover = true;
     this.#clear();
     this.viaHover = false;
+    this.lockScroll = true;
   };
 
   openAutoFocus = (event) => {

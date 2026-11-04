@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import ChatRowActions from './ChatRowActions.svelte';
 import VisualTagPicker from './VisualTagPicker.svelte';
+import { HoverMenu } from '$lib/hover-menu.svelte.js';
 
 // Desktop hover-to-open for the chat list's tag picker and ⋯ menu.
 const chat = { id: 'chat-one', title: 'A question', visual_tag: null, room_id: null };
@@ -124,4 +125,35 @@ test('a button that slides under a still mouse does not open its menu', async ()
   await fireEvent.pointerMove(button, { pointerType: 'mouse', movementX: 2 });
   await settle(200);
   expect(button).toHaveAttribute('aria-expanded', 'true');
+});
+
+// Scroll lock is decided when a menu opens and held until it closes: a hover
+// open stays unlocked even once a click pins it; a direct click locks.
+test('a hover-opened menu stays unlocked when a click pins it; a clicked one locks', async () => {
+  pointer(true);
+  const menu = new HoverMenu();
+  const mouse = (extra = {}) => new TestPointerEvent('pointermove', { pointerType: 'mouse', ...extra });
+  expect(menu.lockScroll).toBe(true);
+
+  menu.move(mouse({ movementX: 2 }));
+  await settle(200);
+  expect(menu.open).toBe(true);
+  expect(menu.lockScroll).toBe(false);
+
+  const down = mouse({ button: 0 });
+  menu.pointerdown(down);
+  expect(menu.viaHover).toBe(false);
+  menu.leave(mouse());
+  await settle(400);
+  expect(menu.open).toBe(true);
+  expect(menu.lockScroll).toBe(false);
+
+  // Closed (Escape, a choice, outside click), then opened by a direct click.
+  menu.open = false;
+  menu.openChange(false);
+  expect(menu.lockScroll).toBe(true);
+  menu.open = true;
+  menu.openChange(true);
+  expect(menu.lockScroll).toBe(true);
+  menu.destroy();
 });
