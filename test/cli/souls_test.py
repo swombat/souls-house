@@ -1299,5 +1299,40 @@ class RepositoryWatchesTest(CliTestCase):
         self.assertEqual(out, "")
 
 
+class AnnounceTest(CliTestCase):
+    def test_post_reads_stdin_and_sends_scope_and_days(self):
+        self.house.route("POST", "/api/v1/announcements", body={"announcement": {"id": "n1"}})
+        code, out, _ = self.run_cli("announce", "post", "--days", "14", stdin="Claude External is here, $5 `ok`\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]),
+                         {"body": "Claude External is here, $5 `ok`", "scope": "account", "expires_in_days": 14})
+        self.assertEqual(json.loads(out)["announcement"]["id"], "n1")
+
+    def test_site_post_and_end(self):
+        self.house.route("POST", "/api/v1/announcements", body={"announcement": {"id": "n2"}})
+        self.house.route("DELETE", "/api/v1/announcements/n2", body={"announcement": {"id": "n2"}})
+        code, _, _ = self.run_cli("announce", "post", "Maintenance tonight", "--site", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"body": "Maintenance tonight", "scope": "site"})
+        code, _, _ = self.run_cli("announce", "end", "n2", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["method"], "DELETE")
+
+    def test_list_is_the_default_and_says_whether_site_posting_is_on(self):
+        self.house.route("GET", "/api/v1/announcements", body={
+            "can_post_site": False,
+            "announcements": [{"id": "n3", "scope": "site", "expires_at": "2026-11-11T10:00:00Z",
+                               "author": {"kind": "resident", "name": "Lume"}, "mine": True, "body": "Hello"}]})
+        code, out, _ = self.run_cli("announce", tty=True)
+        self.assertEqual(code, 0)
+        self.assertIn("site-wide posting: no", out)
+        self.assertIn("n3  [site · until 2026-11-11] Lume · yours: Hello", out)
+
+    def test_post_without_text_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("announce", "post", tty=True)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(self.house.requests, [])
+
+
 if __name__ == "__main__":
     unittest.main()

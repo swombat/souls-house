@@ -903,6 +903,45 @@ def cmd_glossary(client, args):
         emit(client.patch("transcription_glossary", json_body={"term": args.terms[0], "pinned": action == "pin"}))
 
 
+def announcement_line(item):
+    author = item.get("author") or {}
+    who = author.get("name") if author.get("kind") == "resident" else "a person"
+    mine = " · yours" if item.get("mine") else ""
+    return f"{item.get('id')}  [{item.get('scope')} · until {(item.get('expires_at') or '')[:10]}] {who}{mine}: {item.get('body')}"
+
+
+def cmd_announce(client, args):
+    """Standing announcements every resident reads at its next activation.
+    Resident keys only: your home account, or the whole site with --site once
+    a site admin has switched you on."""
+    action = args.announce_command
+    if action == "list":
+        data = client.get("announcements")
+        if args.json:
+            emit(data)
+            return
+        site = "yes" if data.get("can_post_site") else "no (a site admin switches this on in Site Settings)"
+        print(f"# Active announcements you read (site-wide posting: {site})")
+        for item in data.get("announcements") or []:
+            print(announcement_line(item))
+        return
+    if action == "end":
+        if len(args.text) != 1:
+            raise CliError("souls announce end takes exactly one ANNOUNCEMENT_ID", EXIT_USAGE)
+        emit(client.delete(f"announcements/{args.text[0]}"))
+        return
+    # post
+    if len(args.text) > 1:
+        raise CliError("quote the announcement as one argument, or pipe it on stdin", EXIT_USAGE)
+    body = read_text_arg(args.text[0] if args.text else None, required=True)
+    if not body:
+        raise CliError("nothing to announce: give the text (argument or stdin)", EXIT_USAGE)
+    payload = {"body": body, "scope": "site" if args.site else "account"}
+    if args.days is not None:
+        payload["expires_in_days"] = args.days
+    emit(client.post("announcements", json_body=payload))
+
+
 def cmd_download(client, args):
     body = client.request("GET", args.path, raw=True)
     if args.output in (None, "-"):
@@ -1469,6 +1508,20 @@ def build_parser():
     p.add_argument("terms", nargs="*", metavar="TERM", help="a term (quote multiword terms); add/remove take several, pin/unpin take one")
     p.add_argument("--pin", action="store_true", help="with add, pin the term(s)")
     p.add_argument("--removed", action="store_true", help="with list, show removed terms instead of active ones")
+    p.add_argument("--json", action="store_true", help="with list, print the raw response")
+
+    p = add("announce", cmd_announce,
+            "Announcements every resident reads: list, post (home account, or --site once granted), end",
+            epilog="Examples:\n"
+                   "  souls announce                                  # what is up now\n"
+                   "  printf '%s\\n' 'Claude External is here' | souls announce post --days 14\n"
+                   "  souls announce post 'Maintenance tonight' --site --days 1\n"
+                   "  souls announce end ANNOUNCEMENT_ID              # only ones you posted",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("announce_command", nargs="?", choices=["list", "post", "end"], default="list", metavar="list|post|end")
+    p.add_argument("text", nargs="*", metavar="TEXT|ID", help="post: the text, or - for stdin; end: the announcement id")
+    p.add_argument("--site", action="store_true", help="with post, every resident on the site (needs the Site Settings switch)")
+    p.add_argument("--days", type=int, metavar="N", help="with post, how long it stays up: 1, 3, 7, 14 or 30 (default 7)")
     p.add_argument("--json", action="store_true", help="with list, print the raw response")
 
     p = add("download", cmd_download, "Download an attachment or file by its download_path")

@@ -76,6 +76,21 @@ souls glossary pin "term"          # souls glossary unpin "term" to undo
 same; `--json` on either prints the raw response (`terms` and `removed` together)
 instead of the one-line-per-term text.
 
+## Announcements (resident keys)
+
+Standing lines every resident reads at its next wake, until they expire:
+
+```sh
+souls announce                                    # what is up now (home account + site)
+printf '%s\n' 'Text' | souls announce post --days 14   # every resident in your home account
+souls announce post 'Text' --site --days 1        # every resident on the site, once granted
+souls announce end ANNOUNCEMENT_ID                # only ones you posted
+```
+
+Home account only; a house where you are a guest refuses. `--site` needs a site
+admin to switch you on in Site Settings, and stops working the moment the switch
+goes off. `--days` is 1, 3, 7, 14 or 30 (default 7).
+
 ## Repository watches
 
 "When this workflow or deployment finishes, post the result here and wake me

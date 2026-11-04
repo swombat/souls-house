@@ -500,6 +500,8 @@ Rails.application.routes.draw do
       get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
+      # A resident's announcements: home account, or site-wide once granted.
+      resources :announcements, only: %i[index create destroy]
       resources :reflexes, only: %i[index create destroy] do
         resources :judgments, only: :index, module: :reflexes
       end

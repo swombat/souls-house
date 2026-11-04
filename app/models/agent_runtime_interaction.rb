@@ -22,6 +22,8 @@ class AgentRuntimeInteraction < ApplicationRecord
   # A follow-through nudge points at the run it continues (FollowThroughCheck).
   belongs_to :follow_through_of, class_name: "AgentRuntimeInteraction", optional: true
   belongs_to :stalled_thread_sweep, optional: true
+  # The person whose button press reserved this run (BusyRunRetryJob).
+  belongs_to :requested_by_user, class_name: "User", optional: true
   has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,
     inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
@@ -49,6 +51,11 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_update_commit :sync_message_handoffs, if: -> {
     chat_id && trigger_kind == "conversation" && (saved_change_to_finished_at? || saved_change_to_runtime_status?)
   }
+  # A person's request that found the resident still letting go of its
+  # previous run is asked again a moment later (BusyRunRetryJob).
+  after_update_commit :enqueue_busy_run_retry, if: -> {
+    saved_change_to_execution_state? && BusyRunRetryJob.retry?(self)
+  }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -58,6 +65,12 @@ class AgentRuntimeInteraction < ApplicationRecord
     TelegramTurnCompletionNoticeJob.perform_later(id)
   rescue StandardError => error
     Rails.logger.warn("Telegram completion notice enqueue failed for interaction #{id}: #{error.class}")
+  end
+
+  def enqueue_busy_run_retry
+    BusyRunRetryJob.set(wait: BusyRunRetryJob::DELAY).perform_later(id)
+  rescue StandardError => error
+    Rails.logger.warn("Busy run retry enqueue failed for interaction #{id}: #{error.class}")
   end
   private :enqueue_telegram_completion_notice
 

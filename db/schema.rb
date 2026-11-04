@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -382,6 +382,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
     t.datetime "telegram_completion_notice_at"
     t.string "inference_refusal"
     t.string "inference_refusal_reason"
+    t.bigint "requested_by_user_id"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -393,6 +394,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
     t.index ["failure_notice_message_id"], name: "index_agent_runtime_interactions_on_failure_notice_message_id", unique: true
     t.index ["follow_through_of_id"], name: "index_agent_runtime_interactions_on_follow_through_of_id", unique: true, where: "(follow_through_of_id IS NOT NULL)"
     t.index ["message_dispatch_id"], name: "index_agent_runtime_interactions_on_message_dispatch_id"
+    t.index ["requested_by_user_id"], name: "index_agent_runtime_interactions_on_requested_by_user_id", where: "(requested_by_user_id IS NOT NULL)"
     t.index ["run_id"], name: "index_agent_runtime_interactions_on_run_id", unique: true
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
     t.index ["stalled_thread_sweep_id"], name: "index_agent_runtime_interactions_on_stalled_thread_sweep_id"
@@ -432,6 +434,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
     t.integer "backup_keep_monthly", default: 12, null: false
     t.integer "backup_keep_weekly", default: 4, null: false
     t.datetime "birth_committed_at"
+    t.boolean "can_post_site_announcements", default: false, null: false
     t.string "colour"
     t.integer "consecutive_health_failures", default: 0, null: false
     t.integer "container_cpu_shares", default: 1024, null: false
@@ -2023,6 +2026,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
     t.bigint "account_id"
     t.text "body"
     t.datetime "created_at", null: false
+    t.bigint "created_by_agent_id"
     t.bigint "created_by_id"
     t.datetime "expires_at", null: false
     t.string "notice_type", null: false
@@ -2030,6 +2034,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
     t.string "scope", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_notices_on_account_id"
+    t.index ["created_by_agent_id"], name: "index_notices_on_created_by_agent_id"
     t.index ["created_by_id"], name: "index_notices_on_created_by_id"
     t.index ["expires_at"], name: "index_notices_on_expires_at"
     t.index ["scope", "account_id", "expires_at"], name: "index_notices_on_scope_and_account_id_and_expires_at"
@@ -3036,6 +3041,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
   add_foreign_key "agent_runtime_interactions", "message_dispatches", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "messages", column: "failure_notice_message_id", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "stalled_thread_sweeps", on_delete: :nullify
+  add_foreign_key "agent_runtime_interactions", "users", column: "requested_by_user_id", on_delete: :nullify
   add_foreign_key "agent_service_accesses", "agents"
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agent_service_accesses", "users", column: "home_approval_by_id", on_delete: :nullify
@@ -3203,6 +3209,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_080000) do
   add_foreign_key "mnemodyne_uses", "mnemodyne_vaults", column: "vault_id"
   add_foreign_key "mnemodyne_vaults", "agents"
   add_foreign_key "notices", "accounts"
+  add_foreign_key "notices", "agents", column: "created_by_agent_id"
   add_foreign_key "notices", "users", column: "created_by_id"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_grants", "users", column: "resource_owner_id"
