@@ -1,6 +1,6 @@
 class AllAgentsResponseJob < ApplicationJob
 
-  def perform(chat, agent_ids, after_interaction_id: nil, wake_source_kinds: [])
+  def perform(chat, agent_ids, after_interaction_id: nil, wake_source_kinds: [], requested_by_user: nil)
     return if agent_ids.empty? || !chat.respondable? || !chat.manual_responses?
 
     if after_interaction_id
@@ -16,7 +16,7 @@ class AllAgentsResponseJob < ApplicationJob
         continue_chain(chat, agent_ids, previous, dispatch)
       end
     else
-      dispatch_all(chat, agent_ids, wake_source_kinds)
+      dispatch_all(chat, agent_ids, wake_source_kinds, requested_by_user)
     end
   end
 
@@ -26,7 +26,9 @@ class AllAgentsResponseJob < ApplicationJob
   # starts from the room as it is now, not from whoever finished first; a
   # resident who wants to read the others' answers can wait and read them.
   # A resident already responding is skipped, never woken as a second copy.
-  def dispatch_all(chat, agent_ids, wake_source_kinds)
+  # The person who asked goes on each reservation, so a run that comes back
+  # "already running" can still be retried on their behalf (BusyRunRetryJob).
+  def dispatch_all(chat, agent_ids, wake_source_kinds, requested_by_user = nil)
     reserved = live_reservations?
     busy = []
     chat.agents.where(id: agent_ids).sort_by { |agent| agent_ids.index(agent.id) }.each do |agent|
@@ -35,7 +37,8 @@ class AllAgentsResponseJob < ApplicationJob
         next
       end
       begin
-        AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, wake_source_kinds: wake_source_kinds)
+        AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, wake_source_kinds: wake_source_kinds,
+          requested_by_user: requested_by_user)
       rescue Agent::RuntimeAvailability::Unavailable
         # Removed/disabled residents do not hold up the others.
         next
