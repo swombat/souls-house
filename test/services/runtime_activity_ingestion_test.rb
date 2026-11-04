@@ -4,6 +4,7 @@ require "action_cable/test_helper"
 class RuntimeActivityIngestionTest < ActiveSupport::TestCase
 
   include ActionCable::TestHelper
+  include ActiveJob::TestHelper
 
   setup do
     @agent = agents(:research_assistant)
@@ -89,6 +90,21 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     ingest(2, "supervisor.finished", { "outcome" => "completed", "runtime_status" => "ok" })
     assert_equal "completed", @run.reload.execution_state
     assert_equal 504, @run.transport_status
+  end
+
+  test "a finished turn held in the container's ledger is collected promptly, not at the next sweep" do
+    turn = ResidentTurn.enqueue!(@run, { session_id: SecureRandom.uuid, request: "prompt" })
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    assert_no_enqueued_jobs(only: ResidentTurnPollJob) { ingest(2, "heartbeat") }
+    assert_enqueued_jobs 2, only: ResidentTurnPollJob do
+      ingest(3, "supervisor.finished", { "outcome" => "completed" })
+    end
+    assert_enqueued_with(job: ResidentTurnPollJob, args: [ turn.id ])
+
+    turn.update_columns(finished_at: Time.current)
+    assert_no_enqueued_jobs(only: ResidentTurnPollJob) do
+      ingest(3, "supervisor.finished", { "outcome" => "completed" })
+    end
   end
 
   test "callbacks are scoped and expire without granting general API access" do

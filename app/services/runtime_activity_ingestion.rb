@@ -86,10 +86,11 @@ class RuntimeActivityIngestion
       attempt.save!
     end
     if broadcast && run.chat
-      ActionCable.server.broadcast("Chat:#{run.chat.to_param}", {
-        action: "runtime_activity_changed", run_id: run.run_id, revision: run.live_activity_json[:revision]
-      })
-    end
+        ActionCable.server.broadcast("Chat:#{run.chat.to_param}", {
+          action: "runtime_activity_changed", run_id: run.run_id, revision: run.live_activity_json[:revision]
+        })
+      end
+    collect_turn_promptly if events.any? { |event| event["type"] == "supervisor.finished" }
     {
       accepted: true, share_narration: run.narration_shared && run.agent.reload.share_working_narration?,
       last_resident_post_at: run.last_resident_post_at&.iso8601(3), server_time: Time.current.iso8601(3),
@@ -98,6 +99,19 @@ class RuntimeActivityIngestion
   end
 
   private
+
+  # supervisor.finished marks the run finished, and the card says so, but a
+  # turn handed to the container's ledger stays pending here until it is next
+  # polled (the sweep checks every ~20 s). Until then a new request for the same
+  # session is refused as busy (ResidentTurn::SessionBusy). Collect the result
+  # now. The container records it a moment after this event (after the
+  # reporter's ≤2 s flush), so look again shortly after if the first look is early.
+  def collect_turn_promptly
+    turn = run.resident_turn
+    return unless turn && !turn.finished_at?
+
+    [ 1, 4 ].each { |seconds| ResidentTurnPollJob.set(wait: seconds.seconds).perform_later(turn.id) }
+  end
 
   attr_reader :run, :payload
 
