@@ -12,7 +12,7 @@ class ResidentPortabilityTransportTest < ActiveSupport::TestCase
     @agent = agents(:research_assistant)
     @agent.update_columns(uuid: SecureRandom.uuid)
     @resources = Agents::Resources.new(@agent)
-    @resources.define_singleton_method(:verify_existing!) { true }
+    @resources.define_singleton_method(:verify_existing!) { |**| true }
     @transport = Transport.new(@agent)
     @transport.instance_variable_set(:@resources, @resources)
   end
@@ -37,7 +37,7 @@ class ResidentPortabilityTransportTest < ActiveSupport::TestCase
   end
 
   test "capture never auto creates missing volume" do
-    Open3.stub(:capture3, [ "", "missing", Status.new(1) ]) do
+    Agents::BoundedCommand.stub(:capture3, [ "", "missing", Status.new(1) ]) do
       assert_raises(Error) { @transport.capture("identity", StringIO.new) }
     end
   end
@@ -51,7 +51,7 @@ class ResidentPortabilityTransportTest < ActiveSupport::TestCase
       script = args[1] == "run" ? "STDERR.write('x'*100000); STDOUT.write('synthetic'); exit 1" : "exit 0"
       original.call("ruby", "-e", script, **options, &block)
     end
-    Open3.stub(:capture3, [ "present", "", Status.new(0) ]) do
+    Agents::BoundedCommand.stub(:capture3, [ "present", "", Status.new(0) ]) do
       Open3.stub(:popen3, fake) do
         assert_raises(Error) { @transport.capture("identity", StringIO.new) }
       end
@@ -72,11 +72,13 @@ class ResidentPortabilityTransportTest < ActiveSupport::TestCase
       commands << args
       original.call("ruby", "-e", args[1] == "run" ? "sleep 20" : "exit 0", **options, &block)
     end
+    # The stream gets what is left of capture's 60 s (a little under 60);
+    # the carrier cleanup keeps its own 15 s.
     timeout = ->(seconds, &block) do
-      raise Timeout::Error if seconds == 60
+      raise Timeout::Error if seconds > 15
       block.call
     end
-    Open3.stub(:capture3, [ "present", "", Status.new(0) ]) do
+    Agents::BoundedCommand.stub(:capture3, [ "present", "", Status.new(0) ]) do
       Open3.stub(:popen3, fake) do
         Timeout.stub(:timeout, timeout) { assert_raises(Error) { @transport.capture("identity", StringIO.new) } }
       end
@@ -86,10 +88,13 @@ class ResidentPortabilityTransportTest < ActiveSupport::TestCase
   end
 
   test "ownership refusal precedes Docker IO" do
-    @resources.define_singleton_method(:verify_existing!) { raise Agents::Resources::OwnershipError }
-    Open3.stub(:capture3, ->(*) { flunk "Foreign resources cannot be inspected or mounted" }) do
-      assert_raises(Agents::Resources::OwnershipError) { @transport.stopped! }
-      assert_raises(Agents::Resources::OwnershipError) { @transport.capture("identity", StringIO.new) }
+    @resources.define_singleton_method(:verify_existing!) { |**| raise Agents::Resources::OwnershipError }
+    foreign = ->(*, **) { flunk "Foreign resources cannot be inspected or mounted" }
+    Open3.stub(:capture3, foreign) do
+      Agents::BoundedCommand.stub(:capture3, foreign) do
+        assert_raises(Agents::Resources::OwnershipError) { @transport.stopped! }
+        assert_raises(Agents::Resources::OwnershipError) { @transport.capture("identity", StringIO.new) }
+      end
     end
   end
 

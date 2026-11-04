@@ -11,6 +11,11 @@ class Admin::ResidentMigrationsController < ApplicationController
   before_action :require_site_admin
   before_action :set_agent
 
+  # The whole measurement must answer inside the proxy's response timeout
+  # (config/deploy.yml, 120 s), with room for the audit, rendering and a
+  # timed-out read's carrier cleanup (Transport#remove_carrier!, up to 15 s).
+  MEASURE_DEADLINE_SECONDS = 90
+
   # The gates only: reads no volume, so it is safe to reload or prefetch.
   def show
     render_report(measure: false)
@@ -33,7 +38,8 @@ class Admin::ResidentMigrationsController < ApplicationController
   private
 
   def render_report(measure:)
-    report = Agents::VmMigration::Plan.new(Agents::VmMigration.new(@agent)).call(measure:, requested_by: Current.user)
+    report = Agents::VmMigration::Plan.new(Agents::VmMigration.new(@agent),
+      deadline_seconds: (MEASURE_DEADLINE_SECONDS if measure)).call(measure:, requested_by: Current.user)
     render inertia: "admin/resident-migration", props: {
       resident: { id: @agent.id, name: @agent.name, account_name: @agent.account.name },
       report: report.to_h, measured: measure

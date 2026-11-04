@@ -3,11 +3,11 @@ module Agents
 
     module_function
 
-    def check!
+    def check!(deadline: nil)
       return unless LocalInstance.current.local?
       host = ENV["DOCKER_HOST"]
       if host.blank? || ENV["DOCKER_CONTEXT"].present?
-        stdout, _stderr, status = Open3.capture3("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
+        stdout, _stderr, status = BoundedCommand.capture3("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}", deadline:)
         raise Resources::OwnershipError, "Cannot determine local Docker endpoint" unless status.success?
         host = stdout.strip
       end
