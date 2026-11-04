@@ -50,7 +50,12 @@ test.describe('voice mode replies', () => {
     });
     expect(response.ok()).toBe(true);
     setup = await response.json();
-    const voice = await request.post('/test/e2e/voice_mode_fixture', { data: { account_id: setup.account_id } });
+  });
+
+  async function openVoiceMode({ page, request, engine }) {
+    const voice = await request.post('/test/e2e/voice_mode_fixture', {
+      data: { account_id: setup.account_id, ...(engine ? { speech_engine: engine } : {}) },
+    });
     expect(voice.ok()).toBe(true);
     expect((await voice.json()).voice_mode).toMatchObject({ offered: true, available: true });
 
@@ -59,7 +64,7 @@ test.describe('voice mode replies', () => {
     await page.getByLabel(/password/i).fill(setup.password);
     await page.getByRole('button', { name: /sign in|log in/i }).click();
     await expect(page).not.toHaveURL(/\/login/);
-  });
+  }
 
   test.afterEach(async ({ request }) => {
     if (setup) await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
@@ -69,6 +74,8 @@ test.describe('voice mode replies', () => {
     page,
     request,
   }) => {
+    // The ElevenLabs engine: the player asks the server for each reply's audio.
+    await openVoiceMode({ page, request, engine: 'elevenlabs' });
     const fixture = await (
       await request.post('/test/e2e/conversation_fixture', {
         data: { account_id: setup.account_id, count: 2, prefix: 'Before voice mode', resident_count: 1 },
@@ -113,5 +120,50 @@ test.describe('voice mode replies', () => {
     expect(speech.filter((path) => path.includes(landed.message_id))).toHaveLength(1);
     expect(sessions.length).toBeGreaterThan(0);
     expect(sessions.every((method) => method === 'POST')).toBe(true);
+  });
+  // Phonon, the default engine, runs in the browser. This headless Chromium
+  // has no WebGPU adapter, so the panel must say why, and the reply must not
+  // be read by ElevenLabs instead (no fallback, jEDyze): no /speech request.
+  test('under Phonon a browser without WebGPU says so in the panel and never falls back to ElevenLabs', async ({
+    page,
+    request,
+  }) => {
+    await openVoiceMode({ page, request });
+    const fixture = await (
+      await request.post('/test/e2e/conversation_fixture', {
+        data: { account_id: setup.account_id, count: 1, prefix: 'Before voice mode', resident_count: 1 },
+      })
+    ).json();
+
+    const speech = [];
+    const texts = [];
+    await page.route('**/messages/*/speech', (route) => {
+      speech.push(route.request().url());
+      return route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav() });
+    });
+    page.on('request', (req) => {
+      if (/\/messages\/[^/]+\/speech_text/.test(req.url())) texts.push(new URL(req.url()).pathname);
+    });
+    await page.route('**/voice_mode_session', (route) =>
+      route.fulfill({ status: 503, json: { error: 'No transcription in this test.' } })
+    );
+    await page.addInitScript(() => {
+      delete BaseAudioContext.prototype.audioWorklet;
+    });
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    await page.getByTestId('voice-mode-button').click();
+    await expect(page.getByTestId('voice-mode-panel')).toBeVisible();
+    await page.getByRole('button', { name: 'Mute' }).click();
+
+    const landed = await (
+      await request.post('/test/e2e/assistant_message', {
+        data: { chat_id: fixture.chat_id, content: 'Landed for Phonon' },
+      })
+    ).json();
+
+    await expect(page.getByText('Landed for Phonon').first()).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => texts, { timeout: 10_000 }).toContain(`/messages/${landed.message_id}/speech_text`);
+    await expect(page.getByTestId('voice-mode-phonon-status')).toHaveText(/needs WebGPU/, { timeout: 10_000 });
+    expect(speech).toEqual([]);
   });
 });

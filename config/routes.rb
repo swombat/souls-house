@@ -333,6 +333,7 @@ Rails.application.routes.draw do
       resource :retry, only: :create
       resource :voice, only: :create
       resource :speech, only: :show
+      resource :speech_text, only: :show
       resource :safeguard_reset, only: :create
     end
   end

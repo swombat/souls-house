@@ -4,6 +4,12 @@ export function buildChatSubscriptions({ account, chat }) {
   if (chat) {
     subscriptions[`Chat:${chat.id}`] = ['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents'];
     subscriptions[`Chat:${chat.id}:messages`] = 'messages';
+    // The account's voice engine or voice mode switch changing reaches an open
+    // conversation, so the voice panel stops reading with the old engine
+    // (SpeechEngine, Mira in jEDyze). A change to the site's scope reaches it
+    // the same way: VoiceModeInvalidationJob sends a content-free marker to
+    // every account's stream (Setting:all stays admin-only).
+    subscriptions[`Account:${account.id}`] = ['voice_mode'];
 
     if (chat.active_whiteboard) {
       subscriptions[`Whiteboard:${chat.active_whiteboard.id}`] = ['chat', 'messages'];

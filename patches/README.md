@@ -49,3 +49,16 @@ prop **and** provides equivalent dollar-boundary/streaming protection, keeping t
 MessageBubble and mobile-layout regression tests. Docker must
 copy `patches/` before the frozen Bun install. The patch key uses the tarball URL
 because this repository's existing lockfile records dependencies that way.
+
+## phonon-webgpu — files from this site, not huggingface.co
+
+`phonon-webgpu` (github:blixt/phonon@36e7e5e, Apache-2.0, no npm release) builds
+every model, tokenizer and voice URL from one `hubFile()` template pointing at
+huggingface.co, with no option to change it. The patch points that template at
+`/phonon-assets/<repo>/<revision>/<path>`, which `bin/phonon-assets` fills at
+image build from the pins in `config/phonon_assets.json` (sha256-checked). The
+revisions stay in the URLs, so the library's Cache Storage keys still change
+when a pin does.
+
+Owner: Lume. Remove when upstream takes a base-URL option, keeping the
+SpeechEngine tests and the asset manifest test.

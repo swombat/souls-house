@@ -46,18 +46,28 @@ class VoiceModeTest < ActiveSupport::TestCase
   end
 
   test "no account is never offered" do
-    assert_equal [ false, false, "site_disabled" ], VoiceMode.status_for(nil).to_a
+    assert_equal [ false, false, "site_disabled" ], VoiceMode.status_for(nil).to_a.first(3)
   end
 
   test "the status serialises for the page" do
     @account.update!(voice_mode_enabled: true, openai_api_key: "sk-account")
-    assert_equal({ "offered" => true, "available" => true, "reason" => nil }, VoiceMode.status_for(@account).as_json)
+    assert_equal({ "offered" => true, "available" => true, "reason" => nil, "speech_engine" => "phonon" },
+      VoiceMode.status_for(@account).as_json)
+  end
+
+  # The open panel stops reading when this changes (SpeechEngine, jEDyze).
+  test "the status carries the account's voice engine" do
+    @account.update!(voice_mode_enabled: true, speech_engine: "elevenlabs")
+    Setting.instance.update!(speech_engine_scope: "account_choice")
+    assert_equal "elevenlabs", VoiceMode.status_for(@account.reload).speech_engine
+    Setting.instance.update!(speech_engine_scope: "disabled")
+    assert_equal "phonon", VoiceMode.status_for(@account.reload).speech_engine
   end
 
   private
 
   def status_tuple
-    VoiceMode.status_for(@account.reload).to_a
+    VoiceMode.status_for(@account.reload).to_a.first(3)
   end
 
   test "speech text passes a short reply through and cuts a long one at a sentence end, saying so" do

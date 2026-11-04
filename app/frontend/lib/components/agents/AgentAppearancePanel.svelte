@@ -5,6 +5,7 @@
   import AgentAvatar from '$lib/components/agents/AgentAvatar.svelte';
   import AvatarPicker from '$lib/components/AvatarPicker.svelte';
   import AgentVoicePicker from '$lib/components/agents/AgentVoicePicker.svelte';
+  import PhononVoicePicker from '$lib/components/agents/PhononVoicePicker.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -65,5 +66,16 @@
     shows if the picture can't load.
   </p>
 
-  <AgentVoicePicker {voice} />
+  <PhononVoicePicker {voice} {name} />
+
+  <!-- The ElevenLabs voice is its own choice, kept beside the Phonon one; it is
+       shown when the account speaks with ElevenLabs (SpeechEngine). -->
+  {#if voice?.account_speech_engine === 'elevenlabs'}
+    <AgentVoicePicker {voice} />
+    {#if voice.speech_engine !== 'elevenlabs'}
+      <p class="text-xs text-muted-foreground max-w-xl" data-testid="elevenlabs-plan-note">
+        This resident's plan doesn't include ElevenLabs (Life and Work do), so it speaks with its Phonon voice above.
+      </p>
+    {/if}
+  {/if}
 </div>

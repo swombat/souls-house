@@ -57,7 +57,10 @@ class AccountsController < ApplicationController
       reflexes_site_scope: Setting.instance.reflexes_scope,
       voice_mode_enabled: @account.voice_mode_enabled,
       voice_mode_site_scope: Setting.instance.voice_mode_scope,
-      voice_mode_transcription_key: VoiceMode.transcription_key?(@account)
+      voice_mode_transcription_key: VoiceMode.transcription_key?(@account),
+      speech_engine: @account.speech_engine,
+      speech_engine_site_scope: Setting.instance.speech_engine_scope,
+      eleven_labs_key_present: @account.eleven_labs_api_key.present?
     }
   end
 
@@ -102,6 +105,7 @@ class AccountsController < ApplicationController
   end
 
   def update_account_settings
+    return redirect_to(@account, alert: SPEECH_ENGINE_NOT_OFFERED) if choosing_unoffered_engine?
     return unless @account.update!(account_params)
 
     audit_account_changes if account_has_meaningful_changes?
@@ -116,6 +120,15 @@ class AccountsController < ApplicationController
     audit_with_changes(:update_account_settings, @account)
   end
 
+  SPEECH_ENGINE_NOT_OFFERED = "ElevenLabs isn't offered as a voice engine on this site just now, so this account stays on Phonon."
+
+  # ElevenLabs can be chosen only while the site leaves the engine to each
+  # account (SpeechEngine); going back to Phonon is always allowed.
+  def choosing_unoffered_engine?
+    params.dig(:account, :speech_engine) == SpeechEngine::ELEVENLABS &&
+      @account.speech_engine != SpeechEngine::ELEVENLABS && !SpeechEngine.choice_offered?
+  end
+
   def set_account
     @account = find_current_user_account!(params[:id])
   end
@@ -125,7 +138,9 @@ class AccountsController < ApplicationController
   # someone who can manage the account.
   def account_params
     permitted = [ :name ]
-    permitted.push(:resident_handoff_cap, :reflexes_enabled, :voice_mode_enabled) if @account.manageable_by?(Current.user)
+    if @account.manageable_by?(Current.user)
+      permitted.push(:resident_handoff_cap, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key)
+    end
     params.require(:account).permit(permitted)
   end
 

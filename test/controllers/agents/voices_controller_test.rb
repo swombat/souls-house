@@ -94,4 +94,25 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, response.parsed_body["unavailable"]
   end
 
+
+  # The Phonon voice (jEDyze): its own choice beside the ElevenLabs one.
+  test "a person sets the resident's Phonon voice without touching its ElevenLabs voice" do
+    @agent.update_column(:voice_id, "std-aria")
+    hugh = PhononVoices.catalogue.find { |voice| voice.name == "Hugh" }
+
+    patch voice_account_agent_path(@account, @agent), params: { phonon_voice: hugh.id }, headers: { "X-Inertia" => true }
+
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "appearance")
+    assert_equal [ hugh.id, "std-aria" ], @agent.reload.values_at(:phonon_voice, :voice_id)
+    assert_equal hugh.id, AuditLog.where(action: "set_agent_voice", auditable: @agent).last.data["phonon_voice"]
+
+    patch voice_account_agent_path(@account, @agent), params: { phonon_voice: "made-up" }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal hugh.id, @agent.reload.phonon_voice
+
+    patch voice_account_agent_path(@account, @agent), params: { phonon_voice: "" }, as: :json
+    assert_response :success
+    assert_nil @agent.reload.phonon_voice
+  end
+
 end

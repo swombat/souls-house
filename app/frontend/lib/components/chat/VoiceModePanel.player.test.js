@@ -4,6 +4,20 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 // The panel with the REAL reply picker and the REAL player (#748, Mira's
 // round 1): only the microphone, the transcriber and the <audio> element are
 // stand-ins. The audio log is what a person would hear, in order.
+
+// The ElevenLabs answer from the speech source (SpeechEngine), given at once:
+// a thenable that runs its callback synchronously, so the order of what is
+// heard can be asserted step by step as before the source existed. Phonon's
+// own path is covered in speech-source.test.js and voice-mode-phonon.test.js.
+const syncThen = (value) => ({ then: (ok) => syncThen(ok ? ok(value) : value) });
+vi.mock('$lib/speech-source', async () => ({
+  accountSpeechEngine: (await import('svelte/store')).writable('elevenlabs'),
+  createSpeechSource: () => ({
+    resolve: (id) => syncThen({ url: `/messages/${id}/speech`, engine: 'elevenlabs' }),
+    close: () => {},
+  }),
+}));
+
 let callbacks;
 vi.mock('$lib/voice-mode-capture', () => ({
   captureSupported: () => true,

@@ -54,6 +54,7 @@
     "marked": "^16.3.0",
     "mermaid": "^12.2.0",
     "mode-watcher": "^1.1.0",
+    "phonon-webgpu": "github:blixt/phonon#36e7e5eff820733be38e9df19ccf58ae891bd45c",
     "qrcode": "^1.5.4",
     "svelte": "^5.55.7",
     "svelte-highlight": "^7.8.4",
@@ -68,6 +69,7 @@
     }
   },
   "patchedDependencies": {
-    "svelte-streamdown@https://registry.npmjs.org/svelte-streamdown/-/svelte-streamdown-2.6.1.tgz": "patches/svelte-streamdown@https%3A%2F%2Fregistry.npmjs.org%2Fsvelte-streamdown%2F-%2Fsvelte-streamdown-2.6.1.tgz.patch"
+    "svelte-streamdown@https://registry.npmjs.org/svelte-streamdown/-/svelte-streamdown-2.6.1.tgz": "patches/svelte-streamdown@https%3A%2F%2Fregistry.npmjs.org%2Fsvelte-streamdown%2F-%2Fsvelte-streamdown-2.6.1.tgz.patch",
+    "phonon-webgpu@github:blixt/phonon#36e7e5e": "patches/phonon-webgpu@github%3Ablixt%2Fphonon#36e7e5e.patch"
   }
 }

@@ -8,6 +8,7 @@
   import SiteAnnouncementsSettingsCard from '$lib/components/admin/SiteAnnouncementsSettingsCard.svelte';
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
+  import SpeechEngineSettingsCard from '$lib/components/admin/SpeechEngineSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
@@ -54,6 +55,7 @@
     formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
     formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'disabled');
     formData.append('setting[voice_mode_scope]', form.voice_mode_scope ?? 'account_choice');
+    formData.append('setting[speech_engine_scope]', form.speech_engine_scope ?? 'disabled');
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
@@ -138,6 +140,7 @@
       <SiteAnnouncementsSettingsCard residents={site_announcement_residents} bind:picked={siteAnnouncementsPicked} />
       <ReflexesSettingsCard {form} />
       <VoiceModeSettingsCard {form} />
+      <SpeechEngineSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
