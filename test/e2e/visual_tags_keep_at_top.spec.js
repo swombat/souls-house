@@ -27,7 +27,10 @@ test('keep at top on an ordinary tag moves its conversations up', async ({ page,
         .evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label').replace('Change visual tag: ', '')));
 
     async function tag(current, choice) {
-      await nav.getByRole('button', { name: `Change visual tag: ${current}`, exact: true }).first().click();
+      await nav
+        .getByRole('button', { name: `Change visual tag: ${current}`, exact: true })
+        .first()
+        .click();
       await page.getByRole('menuitem', { name: choice, exact: true }).click();
       await expect(nav.getByRole('button', { name: `Change visual tag: ${choice}`, exact: true })).toHaveCount(1);
       await expect(page.getByRole('menu')).toHaveCount(0);
