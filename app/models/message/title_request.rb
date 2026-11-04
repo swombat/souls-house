@@ -9,9 +9,11 @@
 #
 # create_with_message! saves the chat and its first message in one
 # transaction, so this one hook serves both kinds of birth. Only the
-# earliest kept person's message asks (by id, so two messages committing at
-# once can't both stand back, and a second message never pays for a second
-# model call); GenerateTitleJob still returns at once if a title exists.
+# earliest kept person's message asks (by id), so a second message after the
+# first has committed asks nothing. Ids are allocated before commit, though,
+# so two first messages committing out of order can both ask (Mira, #774):
+# GenerateTitleJob runs one at a time per chat and the later job finds the
+# title already there, so that race costs a queued job, not a model call.
 module Message::TitleRequest
 
   extend ActiveSupport::Concern

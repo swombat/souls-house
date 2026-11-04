@@ -87,6 +87,26 @@ class GenerateTitleJobTest < ActiveSupport::TestCase
     end
   end
 
+  # Two first messages committing out of id order can both enqueue (Mira,
+  # #774). The jobs share one per-chat slot, so the second runs after the
+  # first and, finding its title, makes no call.
+  test "title jobs for one chat run one at a time and the later one pays for nothing" do
+    chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")
+    other = build_chat_with_conversation(model_id: "openai/gpt-5-mini")
+
+    assert_equal 1, GenerateTitleJob.concurrency_limit
+    assert_equal GenerateTitleJob.new(chat).concurrency_key, GenerateTitleJob.new(Chat.find(chat.id)).concurrency_key
+    assert_not_equal GenerateTitleJob.new(chat).concurrency_key, GenerateTitleJob.new(other).concurrency_key
+
+    calls = 0
+    UtilityInference.stub :title, ->(**) { calls += 1; "Q4 campaign plan" } do
+      GenerateTitleJob.perform_now(Chat.find(chat.id))
+      GenerateTitleJob.perform_now(Chat.find(chat.id))
+    end
+    assert_equal 1, calls
+    assert_equal "Q4 campaign plan", chat.reload.title
+  end
+
   test "an account without its own key is titled on the house key straight away" do
     @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
     chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")

@@ -6,7 +6,14 @@
 # TitleSweepJob tick. That house call spends one of the chat's
 # title_sweep_attempts, so the sweep's cap still bounds what a chat no model
 # can title costs.
+#
+# One job per chat at a time: Message::TitleRequest can enqueue twice when two
+# first messages commit out of id order (Mira, #774), and the second job then
+# runs only after the first has finished, so its blank-title check sees the
+# title the first one wrote and pays for nothing.
 class GenerateTitleJob < ApplicationJob
+
+  limits_concurrency to: 1, key: ->(chat) { "generate-title-#{chat.id}" }, duration: 5.minutes
 
   def perform(chat)
     return if chat.title.present?
