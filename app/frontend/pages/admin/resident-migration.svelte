@@ -104,6 +104,23 @@
             {mb(report.limits.archive_compressed_bytes)}.
           </span>
         </p>
+        {#if report.carry}
+          <div class="space-y-1 text-sm" data-testid="migration-runtime" data-ok={report.carry.ok}>
+            <p>
+              <span class="font-medium">Sessions and sign-ins (Chaos and state volumes):</span>
+              {#each report.runtime as volume, i}{i ? '; ' : ''}{volume.volume}: {mb(volume.bytes)} in
+                {volume.files.toLocaleString()} files{#if volume.sessions !== null}, {volume.sessions} mapped sessions{/if}{/each}.
+              <span class={report.carry.ok ? 'text-green-600' : 'text-red-600'}
+                >{report.carry.ok ? 'No refusal found.' : report.carry.refusal}</span>
+            </p>
+            <p class="text-xs text-muted-foreground">
+              Present: {report.runtime
+                .flatMap((volume) => volume.present.map((path) => `${volume.volume}/${path}`))
+                .join(', ') || 'none of the paths checked'}. Source bytes {mb(report.carry.source_bytes)} against the
+              {mb(report.carry.budget_bytes)} repository budget: a conservative gate, not proof it fits.
+            </p>
+          </div>
+        {/if}
         <div class="text-xs text-muted-foreground" data-testid="migration-unchecked">
           <p class="font-medium">Not checked by this dry run; the real copy decides:</p>
           <ul class="list-disc pl-5">

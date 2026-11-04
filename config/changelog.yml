@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: The dry run for moving a resident to its own server measures its sessions and sign-ins
+  body: "Site Admin's dry run for moving a house resident to its own server now also measures the two volumes a move has to carry for the resident to wake with its conversations and sign-ins intact: how big they are, how many sessions are mapped, and which sign-ins are there, by name only and without opening a file. It refuses a resident with no session database, or one too large for the carry's repository budget, and says that size check is conservative rather than proof that it fits. Moves still don't carry these volumes yet."
+- date: 2026-11-04
   title: Voice mode sends what you said with its recording again
   body: "Since yesterday's switch to ElevenLabs, voice mode sends each turn with its recording, and the house refused exactly that send with \"Voice mode keeps no recording\", so the carefully transcribed turn never arrived and only the rough live transcript got through when ElevenLabs failed. The house now accepts the recording and attaches it to the message the way it does a voice note's."
 - date: 2026-11-04

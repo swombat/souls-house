@@ -43,6 +43,60 @@ module Agents::Portability
       stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly", IMAGE, "tar", "cf", "-", "-C", "/data", "." ], output: output)
     end
 
+    # The runtime volumes a move must carry (#426 slice 3C), measured without
+    # opening a file: how many files and bytes, which of the named paths
+    # exist, and how many entries the shim's session map holds. Read-only,
+    # no network, a disposable busybox like capture.
+    INVENTORY_ROOTS = %i[chaos state].freeze
+    INVENTORY_PROBES = {
+      chaos: %w[chaos.sqlite helixkit-sessions oauth-runtime oauth-runtime/chaos.sqlite auth.json config.toml],
+      state: %w[claude antigravity tailscale]
+    }.freeze
+    INVENTORY_SCRIPT = <<~'SH'.freeze
+      cd /data || exit 3
+      find . -type f -exec stat -c %s {} + | awk 'BEGIN { n = 0; s = 0 } { n++; s += $1 } END { printf "files %d\nbytes %.0f\n", n, s }'
+      for p in "$@"; do if [ -e "./$p" ]; then echo "has $p"; fi; done
+      if [ -d ./helixkit-sessions ]; then echo "sessions $(find ./helixkit-sessions -type f | wc -l)"; fi
+    SH
+    INVENTORY_SECONDS = 300
+
+    def inventory(root)
+      root = root.to_sym
+      raise Error, "Unsupported runtime volume" unless INVENTORY_ROOTS.include?(root)
+
+      resources.verify_existing!
+      volume = resources.volumes.fetch(root)
+      _, _, status = Open3.capture3("docker", "volume", "inspect", volume)
+      raise Error, "A required resident volume is missing" unless status.success?
+
+      probes = INVENTORY_PROBES.fetch(root)
+      output = StringIO.new
+      stream([ "docker", "run", "--rm", "--network", "none", "--read-only", "--mount", "type=volume,src=#{volume},dst=/data,readonly",
+               IMAGE, "sh", "-c", INVENTORY_SCRIPT, "sh", *probes ], output:, timeout: INVENTORY_SECONDS)
+      self.class.parse_inventory(output.string, probes)
+    end
+
+    # Strict: anything but the lines the script prints is a refusal, never a
+    # guess.
+    def self.parse_inventory(text, probes)
+      result = { files: nil, bytes: nil, present: [], sessions: nil }
+      text.each_line(chomp: true) do |line|
+        case line
+        when /\Afiles (\d+)\z/ then result[:files] = Integer(Regexp.last_match(1), 10)
+        when /\Abytes (\d+)\z/ then result[:bytes] = Integer(Regexp.last_match(1), 10)
+        when /\Asessions\s+(\d+)\z/ then result[:sessions] = Integer(Regexp.last_match(1), 10)
+        when /\Ahas (\S+)\z/
+          raise Error, "Resident runtime state cannot be measured" unless probes.include?(Regexp.last_match(1))
+
+          result[:present] << Regexp.last_match(1)
+        else raise Error, "Resident runtime state cannot be measured"
+        end
+      end
+      raise Error, "Resident runtime state cannot be measured" if result[:files].nil? || result[:bytes].nil?
+
+      result
+    end
+
     def create_volumes!
       @created = []
       resources.verify_existing!
@@ -77,7 +131,7 @@ module Agents::Portability
       raise Error, "Resident storage operation failed" unless status.success?
     end
 
-    def stream(args, output: nil, input: nil)
+    def stream(args, output: nil, input: nil, timeout: 60)
       carrier = "#{resources.container}-portable-#{SecureRandom.hex(8)}"
       args = args.dup
       args.insert(2, "--name", carrier, *resources.labels, "--label", "house.souls.purpose=resident-portability")
@@ -95,7 +149,7 @@ module Agents::Portability
             while stderr.read(64.kilobytes); end
           end
           begin
-            Timeout.timeout(60) do
+            Timeout.timeout(timeout) do
               count = 0
               while (chunk = stdout.read(64.kilobytes))
                 count += chunk.bytesize

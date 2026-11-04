@@ -23,8 +23,8 @@ module Agents
       FACTS = [
         "No live move until rollback after cutover is built (#426 slice 3C). Until then a move can only be " \
         "undone before its server takes over.",
-        "The Chaos and state volumes are not carried. Identity, repository and work move; runtime sessions and " \
-        "provider sign-ins start fresh on the server."
+        "The Chaos and state volumes are not carried yet (#426 slice 3C). Until they are, identity, repository and " \
+        "work move, and runtime sessions and provider sign-ins would start fresh on the server."
       ].freeze
 
       Role = Data.define(:role, :compressed_bytes, :unpacked_bytes, :entries, :refusal) do
@@ -46,28 +46,58 @@ module Agents
                      fits: fits?, refusal: }
       end
 
+      # One runtime volume a move has to carry (slice 3C): its size, and
+      # which of the paths continuity depends on are there. Names only; no
+      # file is opened. sessions is the number of entries in the shim's
+      # session map (nil when it has none).
+      Runtime = Data.define(:volume, :files, :bytes, :present, :sessions) do
+        def to_h = { volume:, files:, bytes:, present:, sessions: }
+      end
+
+      # The runtime carry as a whole. The size gate is conservative and about
+      # the source: the volumes' logical bytes against the repository's
+      # budget, before compression or deduplication and without what the
+      # repository already holds. It never claims the carry fits.
+      Carry = Data.define(:source_bytes, :budget_bytes, :refusal) do
+        def ok? = refusal.nil?
+
+        def to_h = { source_bytes:, budget_bytes:, gate: "source bytes against the repository budget", ok: ok?, refusal: }
+      end
+
+      NO_SESSIONS = "Its Chaos home has no session database, so there are no sessions a move could carry. " \
+                    "A move would start it fresh, and moves don't do that.".freeze
+
       # What the dry run does not check, so "no refusal found" is never read
       # as "the copy will succeed".
       UNCHECKED = [
         "The compressed size of the whole archive (#{Portability::Archive::MAX_COMPRESSED / 1.megabyte} MiB limit): " \
           "the figure shown is an estimate, not a bound. Only the real copy measures it.",
-        "The size of the archive's manifest, which lists every file: checked only by the real copy."
+        "The size of the archive's manifest, which lists every file: checked only by the real copy.",
+        "Whether the runtime carry fits its repository: the gate compares the Chaos and state volumes' source bytes " \
+          "with the repository budget. What the repository already holds, compression and deduplication are not " \
+          "counted."
       ].freeze
 
-      Report = Data.define(:agent_id, :name, :gates, :roles, :whole, :measure_error, :facts) do
-        def measured? = roles.any? && !whole.nil?
+      Report = Data.define(:agent_id, :name, :gates, :roles, :whole, :runtime, :carry, :measure_error, :facts) do
+        def measured? = roles.any? && !whole.nil? && runtime.any? && !carry.nil?
 
         # Every gate passes and nothing measured would be refused. Not a
         # promise that the copy succeeds: see UNCHECKED.
-        def no_refusal_found? = gates.all?(&:ok?) && measured? && measure_error.nil? && roles.all?(&:fits?) && whole.fits?
+        def no_refusal_found?
+          gates.all?(&:ok?) && measured? && measure_error.nil? && roles.all?(&:fits?) && whole.fits? && carry.ok?
+        end
 
         def to_h
           { agent_id:, name:, no_refusal_found: no_refusal_found?,
             gates: gates.map { |gate| { name: gate.name, ok: gate.ok?, refusal: gate.refusal } },
-            limits: Plan.limits, roles: roles.map(&:to_h), whole: whole&.to_h, measure_error:, facts:,
-            unchecked: UNCHECKED }
+            limits: Plan.limits, roles: roles.map(&:to_h), whole: whole&.to_h, runtime: runtime.map(&:to_h),
+            carry: carry&.to_h, measure_error:, facts:, unchecked: UNCHECKED }
         end
       end
+
+      # The budget of the resident's VM backup repository, where the carry
+      # would go (Backup::VmRepository's own default).
+      def self.carry_budget_bytes = Integer(ENV.fetch("VM_BACKUP_BUDGET_BYTES", 20.gigabytes.to_s), 10)
 
       def self.limits
         { compressed_bytes: Portability::Stage.max_role_bytes, unpacked_bytes: Portability::Stage.max_role_unpacked,
@@ -98,26 +128,53 @@ module Agents
         agent = @migration.agent
         roles = []
         whole = nil
+        runtime = []
+        carry = nil
         error = nil
         if measure
           begin
             roles, whole = measure_home
+            runtime, carry = measure_runtime
           rescue Portability::Error, Resources::OwnershipError => failure
             roles = []
             whole = nil
+            runtime = []
+            carry = nil
             error = failure.message
           end
           AuditLog.create!(action: "vm_migration_dry_run", user: requested_by, account: agent.account, auditable: agent,
             data: { "roles" => roles.map { |role| role.to_h.stringify_keys }, "whole" => whole&.to_h&.stringify_keys,
+                    "runtime" => runtime.map { |volume| volume.to_h.stringify_keys },
+                    "carry" => carry&.to_h&.stringify_keys,
                     "measure_error" => error })
         end
-        Report.new(agent_id: agent.id, name: agent.name, gates: @migration.gates, roles:, whole:, measure_error: error,
-          facts: FACTS)
+        Report.new(agent_id: agent.id, name: agent.name, gates: @migration.gates, roles:, whole:, runtime:, carry:,
+          measure_error: error, facts: FACTS)
       end
 
       private
 
       def transport = @transport ||= Portability::Transport.new(@migration.agent)
+
+      def measure_runtime
+        runtime = Portability::Transport::INVENTORY_ROOTS.map do |volume|
+          found = transport.inventory(volume)
+          Runtime.new(volume: volume.to_s, files: found[:files], bytes: found[:bytes], present: found[:present].sort,
+            sessions: found[:sessions])
+        end
+        source = runtime.sum(&:bytes)
+        budget = Plan.carry_budget_bytes
+        chaos = runtime.find { |volume| volume.volume == "chaos" }
+        refusal =
+          if chaos.present.exclude?("chaos.sqlite") then NO_SESSIONS
+          elsif source > budget
+            "Its Chaos and state volumes hold #{human(source)}, more than the #{human(budget)} " \
+              "repository budget a move carries them through"
+          end
+        [ runtime, Carry.new(source_bytes: source, budget_bytes: budget, refusal:) ]
+      end
+
+      def human(bytes) = ActiveSupport::NumberHelper.number_to_human_size(bytes)
 
       def measure_home
         Dir.mktmpdir("resident-migration-plan-") do |dir|
