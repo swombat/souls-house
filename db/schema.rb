@@ -265,7 +265,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
     t.string "kind"
     t.datetime "house_runtime_ready_at"
     t.jsonb "carry"
-    t.datetime "carry_restored_at"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"

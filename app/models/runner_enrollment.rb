@@ -194,11 +194,17 @@ class RunnerEnrollment < ApplicationRecord
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
   end
 
-  def authorize_backup!(nonce:, now: Time.current)
+  # A delivered backup_resident authorises the whole restic protocol; a
+  # delivered restore_carry (#426 slice 3C) authorises reads only, so a
+  # restore can never write, lock or delete in the repository.
+  BACKUP_READS = %i[read head list].freeze
+
+  def authorize_backup!(nonce:, operation:, now: Time.current)
     with_lock do
       placement = require_live!
       raise Refused.new(:placement_unavailable, 409) if placement.state == "failed"
-      wanted = commands.where(kind: "backup_resident", state: "delivered", generation: placement.generation).exists?
+      kinds = BACKUP_READS.include?(operation) ? %w[backup_resident restore_carry] : %w[backup_resident]
+      wanted = commands.where(kind: kinds, state: "delivered", generation: placement.generation).exists?
       raise Refused.new(:backup_not_requested, 404) unless wanted
       consume_nonce!(nonce, now)
       placement.agent

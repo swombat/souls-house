@@ -113,7 +113,7 @@ module Agents
         end
         house_ready_at = agent.runtime_ready_at
         placement.update!(backend: "hetzner_cloud", kind: "migration", state: "staged", generation:,
-          house_runtime_ready_at: house_ready_at, carry_restored_at: nil,
+          house_runtime_ready_at: house_ready_at,
           carry: { "snapshot_id" => carry.snapshot_id, "generation" => generation, "tags" => carry.tags, "shapes" => carry.shapes })
         agent.update_columns(runtime_ready_at: nil, runtime: "offline", updated_at: Time.current)
         AuditLog.create!(action: "vm_migration_staged", user: requested_by, account: agent.account, auditable: agent,
@@ -175,7 +175,7 @@ module Agents
         placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
           house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
           cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
-          location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil, carry_restored_at: nil)
+          location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
         agent.import_stages.delete_all
         agent.update_columns(runtime_ready_at: house_ready_at, active: false, paused: true, runtime: "offline",
           health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil, updated_at: Time.current)

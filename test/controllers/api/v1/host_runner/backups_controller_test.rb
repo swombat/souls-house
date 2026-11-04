@@ -151,6 +151,36 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     assert_equal "agents/11111111-1111-4111-8111-111111111111/locks/#{ID}", delete[:params][:key]
   end
 
+  test "a delivered restore_carry reads the repository and can never write, lock or delete in it" do
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "restore_carry", payload: {})
+    command.deliver!(now: Time.current)
+    @client.stub_responses(:head_object, { content_length: 3 })
+    @client.stub_responses(:get_object, { body: "abc", content_length: 3 })
+    fetch("#{BASE}/config", method: "HEAD")
+    assert_response :ok
+    fetch("#{BASE}/config")
+    assert_response :ok
+    assert_equal "abc", response.body
+    fetch("#{BASE}/snapshots/")
+    assert_response :ok
+    reads = @client.api_requests.size
+
+    fetch("#{BASE}/locks/#{ID}", method: "POST", body: "lock")
+    assert_response :not_found
+    fetch("#{BASE}/locks/#{ID}", method: "DELETE")
+    assert_response :not_found
+    fetch("#{BASE}/?create=true", method: "POST")
+    assert_response :not_found
+    fetch("#{BASE}/data/#{ID}", method: "POST", body: "pack")
+    assert_response :not_found
+    assert_equal reads, @client.api_requests.size, "no write reached storage"
+    assert_not(@client.api_requests.any? { |request| %i[put_object delete_object].include?(request[:operation_name]) })
+
+    command.record_result!({ "outcome" => "done" }, now: Time.current)
+    fetch("#{BASE}/config")
+    assert_response :not_found, "an answered restore authorises nothing"
+  end
+
   test "queued answered stale generation and absent backup commands do not authorize storage" do
     fetch("#{BASE}/config")
     assert_response :not_found
