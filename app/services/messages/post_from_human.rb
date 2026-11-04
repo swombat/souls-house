@@ -69,15 +69,11 @@ class Messages::PostFromHuman
       unless VoiceMode.available_for?(@chat.account)
         return Result.new(status: :voice_mode_unavailable, message: message, sole_resident: @chat.sole_resident.present?)
       end
-      # Voice mode keeps text only: a recording sent with it is refused, so
-      # the retention promise holds on the server, not just in the browser.
-      if @audio_signed_id.present?
-        message.errors.add(:base, "Voice mode keeps no recording; send the text without audio")
-        return Result.new(status: :invalid, message: message, sole_resident: @chat.sole_resident.present?)
-      end
       message.voice_mode = true
-      # Spoken, though no recording is kept: voice mode streams to the
-      # transcriber and sends text only.
+      # Spoken. Since #761 the panel sends each turn's recording with its
+      # ElevenLabs text, and it is attached below exactly as a voice note's is
+      # (#770). A turn sent without one (the rough live-transcript fallback
+      # when the recording wasn't kept) is still spoken.
       message.audio_source = true
     end
     if @client_message_id
