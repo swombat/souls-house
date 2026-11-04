@@ -90,3 +90,44 @@ test('the wave intent is spent even when the mode cannot start here', () => {
   expect(screen.queryByTestId('voice-mode-panel')).toBeNull();
   expect(takeVoiceStart()).toBe(false);
 });
+
+// Up arrow in the empty composer edits your last message (desktop pointer only).
+describe('up arrow edits the last message', () => {
+  const desktop = (matches) => window.matchMedia.mockImplementation((query) => ({ matches, media: query }));
+  afterEach(() => desktop(false));
+
+  test('an empty box hands the textarea to the page and keeps the key', async () => {
+    desktop(true);
+    const onEditLast = vi.fn(() => true);
+    render(ChatInputArea, { chat, accountId: 'account', onEditLast });
+    const box = screen.getByRole('textbox');
+    const allowed = await fireEvent.keyDown(box, { key: 'ArrowUp' });
+    expect(onEditLast).toHaveBeenCalledWith(box);
+    expect(allowed).toBe(false);
+  });
+
+  test('with nothing to edit the key is left alone', async () => {
+    desktop(true);
+    const onEditLast = vi.fn(() => false);
+    render(ChatInputArea, { chat, accountId: 'account', onEditLast });
+    expect(await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowUp' })).toBe(true);
+  });
+
+  test('a draft in the box keeps the arrow for the cursor', async () => {
+    desktop(true);
+    const onEditLast = vi.fn(() => true);
+    render(ChatInputArea, { chat, accountId: 'account', onEditLast });
+    const box = screen.getByRole('textbox');
+    await fireEvent.input(box, { target: { value: 'line one\nline two' } });
+    expect(await fireEvent.keyDown(box, { key: 'ArrowUp' })).toBe(true);
+    expect(onEditLast).not.toHaveBeenCalled();
+  });
+
+  test('on a touch screen nothing happens', async () => {
+    desktop(false);
+    const onEditLast = vi.fn(() => true);
+    render(ChatInputArea, { chat, accountId: 'account', onEditLast });
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowUp' });
+    expect(onEditLast).not.toHaveBeenCalled();
+  });
+});

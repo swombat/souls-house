@@ -12,6 +12,7 @@
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { takeVoiceStart } from '$lib/voice-mode-start';
+  import { wantsEditLast } from '$lib/edit-last-message';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -31,6 +32,9 @@
     onwaiting,
     onerror,
     onagentprompt,
+    // Up arrow in an empty box (desktop): asks the page to edit your last
+    // message, passing the textarea to refocus afterwards. Returns true when it did.
+    oneditlast,
   } = $props();
 
   let selectedFiles = $state([]);
@@ -202,6 +206,11 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
+      return;
+    }
+    const busy = submitting || disabled || draftState.locked || !!draftState.conflict;
+    if (oneditlast && wantsEditLast(event, { empty: composerEmpty, busy })) {
+      if (oneditlast(textareaRef)) event.preventDefault();
     }
   }
 

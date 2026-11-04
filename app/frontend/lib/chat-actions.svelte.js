@@ -15,6 +15,7 @@ export function createChatActions(context, history) {
     editDrawerOpen: false,
     editingMessageId: null,
     editingContent: '',
+    editReturnFocus: null,
     errorMessage: null,
     successMessage: null,
   });
@@ -104,13 +105,24 @@ export function createChatActions(context, history) {
       ui.lightboxImage = file;
       ui.lightboxOpen = true;
     },
-    edit(message) {
+    // returnFocus: where focus goes when the drawer closes (the composer, when
+    // the up-arrow shortcut opened it).
+    edit(message, { returnFocus = null } = {}) {
       ui.editingMessageId = message.id;
       ui.editingContent = message.content;
+      ui.editReturnFocus = returnFocus;
       ui.editDrawerOpen = true;
     },
+    editClosed() {
+      const target = ui.editReturnFocus;
+      ui.editReturnFocus = null;
+      if (!target?.isConnected || target.disabled) return false;
+      setTimeout(() => target.focus(), 0);
+      return true;
+    },
     editSaved(messageId, content) {
-      history.update(messageId, { content, editable: false });
+      // The author can edit again (Message#editable is not one-shot); the reload brings the rest.
+      history.update(messageId, { content });
       ui.editDrawerOpen = false;
       ui.editingMessageId = null;
       ui.editingContent = '';

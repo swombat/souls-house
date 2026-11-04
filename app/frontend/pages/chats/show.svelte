@@ -9,6 +9,7 @@
   import { createChatRuntimeActivity } from '$lib/chat-runtime-activity.svelte';
   import { createChatResponse } from '$lib/chat-response.svelte';
   import { createChatActions } from '$lib/chat-actions.svelte';
+  import { lastEditableOwnMessage } from '$lib/edit-last-message';
   import ChatList from './ChatList.svelte';
   import ChatHeader from '$lib/components/chat/ChatHeader.svelte';
   import TokenWarningBanner from '$lib/components/chat/TokenWarningBanner.svelte';
@@ -109,6 +110,14 @@
     actions.notify(message);
     response.clearWaiting();
   }
+  // Up arrow in the empty composer: open your last message in the edit drawer, as its pencil does.
+  function editLast(composer) {
+    if (actions.ui.editDrawerOpen) return false;
+    const message = lastEditableOwnMessage(history.messages);
+    if (!message) return false;
+    actions.edit(message, { returnFocus: composer });
+    return true;
+  }
 </script>
 
 <svelte:head>
@@ -194,7 +203,8 @@
       onSent={sent}
       onWaiting={response.wait}
       onError={sendFailed}
-      onAgentPrompt={response.prompt} />
+      onAgentPrompt={response.prompt}
+      onEditLast={editLast} />
   </main>
 </div>
 
@@ -219,6 +229,7 @@
   bind:lightboxOpen={actions.ui.lightboxOpen}
   lightboxImage={actions.ui.lightboxImage}
   onEditSaved={actions.editSaved}
+  onEditClosed={actions.editClosed}
   onError={actions.notify}
   onAssignAgent={actions.assignToAgent}
   onAddAgent={actions.addAgentToChat} />
