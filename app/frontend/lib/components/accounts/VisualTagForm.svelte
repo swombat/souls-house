@@ -17,11 +17,7 @@
   let saving = $state(false);
   let errors = $state({});
   const changed = $derived(
-    !tag ||
-      label !== tag.label ||
-      icon !== tag.icon ||
-      colour !== tag.colour ||
-      pinsToTop !== Boolean(tag.pins_to_top)
+    !tag || label !== tag.label || icon !== tag.icon || colour !== tag.colour || pinsToTop !== Boolean(tag.pins_to_top)
   );
 
   // Refresh an untouched form when another account member edits the palette.
