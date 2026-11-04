@@ -11,6 +11,7 @@ Rails.application.routes.draw do
         post :setup, to: "/test_support/e2e#setup"
         post :conversation_fixture, to: "/test_support/e2e#conversation_fixture"
         post :append_messages, to: "/test_support/e2e#append_messages"
+        post :title_chat, to: "/test_support/e2e#title_chat"
         post :assistant_message, to: "/test_support/e2e#assistant_message"
         post :runtime_activity, to: "/test_support/e2e#runtime_activity"
         post :invitation_url, to: "/test_support/e2e#invitation_url"

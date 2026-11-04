@@ -16,6 +16,7 @@ class Message < ApplicationRecord
   include Message::ReplyAttention
   include Message::SafeguardLabel
   include Message::TweetEmbeds
+  include Message::TitleRequest
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true

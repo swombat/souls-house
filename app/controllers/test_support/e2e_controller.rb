@@ -745,7 +745,7 @@ module TestSupport
       chat = account.chats.new(
         model_id: "openrouter/auto",
         manual_responses: true,
-        title: "E2E long conversation"
+        title: params.key?(:title) ? params[:title].presence : "E2E long conversation"
       )
       chat.agents = agents
       chat.save!
@@ -800,6 +800,14 @@ module TestSupport
       render json: {
         messages: messages.map { |message| { id: message.to_param, content: message.content } }
       }
+    end
+
+    # The write GenerateTitleJob makes, through the normal broadcast path, so a
+    # test can watch an open conversation's header pick up a title.
+    def title_chat
+      chat = Chat.find(params.fetch(:chat_id))
+      chat.update!(title: params.fetch(:title).to_s.first(80))
+      render json: { chat_id: chat.to_param, title: chat.title }
     end
 
     def invitation_url
