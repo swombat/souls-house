@@ -207,6 +207,20 @@ class StandardHomeSyncTest(unittest.TestCase):
         self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
         self.assertEqual(self.git(self.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/rescue'), '')
 
+    def test_house_seed_marker_at_root_is_not_dirt_but_nested_copy_is(self):
+        # The runner leaves .souls-house-seed untracked at the volume root.
+        (self.home / '.souls-house-seed').write_text('0' * 64 + '\n')
+        (self.home / 'journal.txt').write_text('base\nsaved\n')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['state'], status['reason_code']), (0, 'ok', 'synced'))
+        self.assertEqual(self.git(self.remote, 'ls-tree', '--name-only', 'main', '.souls-house-seed'), '')
+        self.assertEqual(self.git(self.home, 'rev-parse', 'HEAD'), self.git(self.remote, 'rev-parse', 'main'))
+        nested = self.home / 'notes'
+        nested.mkdir()
+        (nested / '.souls-house-seed').write_text('resident file\n')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+
     def test_staged_changes_and_git_operations_preserved(self):
         (self.home / 'journal.txt').write_text('base\nstaged\n')
         self.git(self.home, 'add', 'journal.txt')

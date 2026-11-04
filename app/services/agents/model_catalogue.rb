@@ -23,7 +23,8 @@ module Agents
       "anthropic/" => "anthropic",
       "openai/" => "openai",
       "google/" => "gemini",
-      "x-ai/" => "xai"
+      "x-ai/" => "xai",
+      "kimi-code/" => "moonshot"
     }.freeze
 
     # The account key a resident on this model would use: the model's own

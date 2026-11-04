@@ -16,7 +16,10 @@ spec.loader.exec_module(s)
 
 class RuntimeConfigTest(unittest.TestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {"SOULSHOUSE_APP_URL": "", "HELIXKIT_APP_URL": ""})
+        self.env = patch.dict(os.environ, {
+            "SOULSHOUSE_APP_URL": "", "HELIXKIT_APP_URL": "",
+            "SOULSHOUSE_HOME_PROFILE": "", "AGENT_IDENTITY_PATH": "/fixture/identity",
+        })
         self.env.start()
         self.addCleanup(self.env.stop)
 
@@ -49,7 +52,7 @@ class RuntimeConfigTest(unittest.TestCase):
             s.prepare(home, run)
             self.assertEqual(calls[:3], [('--help',), ('migrate', '--dry-run'), ('migrate',)])
             edits = [a for a in calls if a[0] == 'set']
-            self.assertEqual([a[1] for a in edits], ['model_providers.openrouter'])
+            self.assertEqual([a[1] for a in edits], ['model_providers.openrouter', 'model_providers.kimi'])
             self.assertEqual(calls[-1], ('doctor',))
             self.assertEqual(tomllib.loads((home/'config.toml').read_text()), {'storage_url':'sqlite:///kept.sqlite'})
 
@@ -87,11 +90,26 @@ class RuntimeConfigTest(unittest.TestCase):
             return {a[1]: json.loads(a[2]) for a in calls if a[0] == 'set'}
 
     def test_compaction_defaults_for_a_house_home(self):
-        sets = self._sets(env={'SOULSHOUSE_HOME_PROFILE': '', 'AGENT_IDENTITY_PATH': '/home/agent/identity'})
+        sets = self._sets(env={'SOULSHOUSE_HOME_PROFILE': '', 'AGENT_IDENTITY_PATH': '/fixture/identity'})
         self.assertEqual(sets['model_auto_compact_token_limit'], 400000)
         self.assertEqual(sets['protected_context_files'],
-                         ['/home/agent/identity/soul.md', '/home/agent/identity/self-narrative.md'])
+                         ['/fixture/identity/soul.md', '/fixture/identity/self-narrative.md'])
         self.assertEqual(sets['protected_context_max_bytes'], 256 * 1024)
+
+    def test_kimi_defaults_use_native_responses_without_impersonation(self):
+        self.assertEqual(self._sets()['model_providers.kimi'], {
+            'name': 'Kimi Code',
+            'base_url': 'https://api.kimi.ai/coding/v1',
+            'env_key': 'MOONSHOT_API_KEY',
+            'wire_api': 'responses',
+        })
+
+    def test_existing_kimi_provider_is_never_overwritten_even_if_empty(self):
+        for provider in ({}, {'name': 'Resident Kimi', 'base_url': 'https://custom.test/v1',
+                              'wire_api': 'responses'}):
+            with self.subTest(provider=provider):
+                sets = self._sets(json.dumps({'model_providers': {'kimi': provider}}))
+                self.assertNotIn('model_providers.kimi', sets)
 
     def test_explicit_compaction_choices_are_kept(self):
         # An empty protected list is an opt-out, not an absence.
@@ -222,7 +240,13 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        self.env = patch.dict(os.environ, {'CHAOS_BIN':os.environ['CHAOS_TEST_BIN'], 'SOULSHOUSE_APP_URL': '', 'HELIXKIT_APP_URL': ''})
+        # Only synthetic paths and explicitly allowed variables reach real Chaos.
+        self.env = patch.dict(os.environ, {
+            'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8',
+            'HOME': str(self.home), 'CHAOS_HOME': str(self.home),
+            'CHAOS_BIN': os.environ['CHAOS_TEST_BIN'],
+            'AGENT_IDENTITY_PATH': str(self.home / 'identity'),
+        }, clear=True)
         self.env.start();self.addCleanup(self.env.stop)
 
     def read(self):
@@ -238,7 +262,8 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.assertEqual(first['protected_context_files'],
                          ['/fixture/identity/soul.md', '/fixture/identity/self-narrative.md'])
         self.assertEqual(first['protected_context_max_bytes'], 256 * 1024)
-        self.assertEqual(set(first['model_providers']), {'gemini','openrouter'})
+        self.assertEqual(set(first['model_providers']), {'gemini','openrouter','kimi'})
+        self.assertEqual(first['model_providers']['kimi'], s.DEFAULTS['model_providers']['kimi'])
         self.assertEqual(self.read(), first)
         self.assertEqual(set(tomllib.loads((self.home/'config.toml').read_text())), {'storage_url'})
 
@@ -251,6 +276,9 @@ class RealRuntimeConfigTest(unittest.TestCase):
                 s.command(home, 'set', 'protected_context_files', '[]')
                 s.command(home, 'set', 'model_auto_compact_token_limit', '150000')
                 s.command(home, 'set', 'protected_context_max_bytes', '0')
+                s.command(home, 'set', 'model_providers.kimi', json.dumps({
+                    'name': 'Resident Kimi', 'base_url': 'http://127.0.0.1:1/v1',
+                    'wire_api': 'responses'}))
             s.main()
             s.main()
         for home in (self.home, oauth):
@@ -259,6 +287,7 @@ class RealRuntimeConfigTest(unittest.TestCase):
                 self.assertEqual(settings['protected_context_files'], [])
                 self.assertEqual(settings['model_auto_compact_token_limit'], 150000)
                 self.assertEqual(settings['protected_context_max_bytes'], 0)
+                self.assertEqual(settings['model_providers']['kimi']['name'], 'Resident Kimi')
 
     def test_legacy_choices_custom_provider_and_second_boot(self):
         # Only binaries that still import legacy TOML settings (before seuros/chaos#110).

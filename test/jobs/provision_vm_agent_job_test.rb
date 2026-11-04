@@ -1492,4 +1492,204 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
+  # Slice 3B: the operator's dry run and the one call that moves.
+
+  def plan(agent, transport: HouseTransport.new)
+    Agents::VmMigration::Plan.new(migration(agent), transport:)
+  end
+
+  test "the dry run answers every gate, not just the first refusal, and refusal is still the first" do
+    with_house do
+      agent = house_resident!
+      agent.update_columns(active: true, paused: false)
+      @setting.update!(new_residents_on_vm: false)
+
+      gates = migration(agent).gates
+      assert_equal 7, gates.size
+      failing = gates.reject(&:ok?)
+      assert_equal Agents::VmMigration::SWITCHED_OFF, failing.first.refusal
+      assert_match(/inactive, paused/, failing.last.refusal, "the resident's own answer is there too")
+      assert_equal Agents::VmMigration::SWITCHED_OFF, migration(agent).refusal
+
+      @setting.update!(new_residents_on_vm: true)
+      agent.update_columns(active: false, paused: true)
+      assert migration(agent).gates.all?(&:ok?)
+      assert_nil migration(agent).refusal
+    end
+  end
+
+  test "the dry run measures each role against the seed limits and changes nothing" do
+    with_house do
+      lived_since = 3.days.ago.change(usec: 0)
+      agent = house_resident!(lived_since:)
+      agent.update_columns(active: true, paused: false)
+      report = plan(agent).call(measure: true, requested_by: @user)
+
+      assert_equal %w[identity repo work], report.roles.map(&:role)
+      identity = report.roles.first
+      assert_equal "identity as lived on the house".bytesize + "A soul with days behind it".bytesize, identity.unpacked_bytes
+      assert_equal 2, identity.entries
+      assert identity.compressed_bytes.positive?
+      assert report.roles.all?(&:fits?)
+      assert_not report.no_refusal_found?, "a running resident can be measured but not moved"
+      assert_equal Agents::VmMigration::Plan::FACTS, report.facts
+      assert_equal Agents::Portability::Stage.max_role_bytes, report.to_h[:limits][:compressed_bytes]
+
+      agent.reload
+      assert_nil agent.placement
+      assert_empty agent.import_stages
+      assert_equal lived_since, agent.runtime_ready_at
+      assert agent.active?
+      audit = AuditLog.find_by!(action: "vm_migration_dry_run", auditable: agent)
+      assert_equal @user, audit.user
+      assert_equal %w[identity repo work], audit.data["roles"].map { |role| role["role"] }
+
+      agent.update_columns(active: false, paused: true)
+      assert plan(agent.reload).call(measure: true, requested_by: @user).no_refusal_found?
+    end
+  end
+
+  test "the dry run names a role that would be refused, with the copy's own words" do
+    with_house do
+      agent = house_resident!
+      report = Agents::Portability::Stage.stub(:max_role_entries, 1) do
+        Agents::Portability::Stage.stub(:max_role_bytes, 10) { plan(agent).call(measure: true) }
+      end
+      identity, repo = report.roles
+      assert_match(/more files than a resident server can be seeded with \(1\)/, identity.refusal)
+      assert_match(/repo home is larger .* \(0 MB compressed\)/, repo.refusal)
+      assert_not report.no_refusal_found?
+
+      audits = AuditLog.where(action: "vm_migration_dry_run").count
+      gates_only = plan(agent).call(measure: false)
+      assert_empty gates_only.roles
+      assert_equal audits, AuditLog.where(action: "vm_migration_dry_run").count, "a gates-only answer reads no volume"
+    end
+  end
+
+  test "a transport refusal is reported, not raised" do
+    with_house do
+      agent = house_resident!
+      broken = Object.new
+      broken.define_singleton_method(:capture) { |*| raise Agents::Portability::Error, "A required resident volume is missing" }
+      report = plan(agent, transport: broken).call(measure: true)
+      assert_equal "A required resident volume is missing", report.measure_error
+      assert_empty report.roles
+      assert_not report.no_refusal_found?
+    end
+  end
+
+  test "move! stages and admits through the same gates; refused, it changes nothing" do
+    with_house do
+      agent = house_resident!
+      @setting.update!(new_residents_on_vm: false)
+      error = assert_raises(Agents::VmMigration::Refused) { move!(agent) }
+      assert_equal Agents::VmMigration::SWITCHED_OFF, error.message
+      assert_nil agent.reload.placement
+      assert agent.runtime_ready_at
+
+      @setting.update!(new_residents_on_vm: true)
+      placement = move!(agent.reload)
+      assert_equal %w[migration pending], [ placement.reload.kind, placement.state ]
+      assert AuditLog.exists?(action: "vm_migration_admitted", auditable: agent)
+      assert_equal 1, Agents::VmBirthPolicy.current.vm_count
+    end
+  end
+
+  test "move! returns a fresh stage to the house when admission refuses it" do
+    with_house do
+      lived_since = 3.days.ago.change(usec: 0)
+      agent = house_resident!(lived_since:)
+      policy = Agents::VmBirthPolicy.current
+      refuse = ->(**) { raise Agents::VmBirthPolicy::Refused, Agents::VmBirthPolicy::MIGRATION_SWITCHED_OFF }
+      error = policy.stub(:admit_import!, refuse) do
+        assert_raises(Agents::VmMigration::Refused) { move!(agent, policy:) }
+      end
+      assert_equal Agents::VmBirthPolicy::MIGRATION_SWITCHED_OFF, error.message
+
+      agent.reload
+      assert Agents::RuntimeLocation.local?(agent)
+      assert_equal [ "local", "ready" ], [ agent.placement.backend, agent.placement.state ]
+      assert_equal lived_since, agent.runtime_ready_at
+      assert_empty agent.import_stages
+      assert agent.paused?
+      assert AuditLog.exists?(action: "vm_migration_returned_to_house", auditable: agent)
+    end
+  end
+
+  # Swaps a limit constant for one test, as Export reads it.
+  def with_archive_limit(name, value)
+    archive = Agents::Portability::Archive
+    original = archive.const_get(name)
+    silence_warnings { archive.const_set(name, value) }
+    yield
+  ensure
+    silence_warnings { archive.const_set(name, original) }
+  end
+
+  test "the dry run checks the whole archive as Export does, so it finds the refusals the copy would make" do
+    with_house do
+      agent = house_resident!
+      fits = plan(agent).call(measure: true)
+      assert fits.whole.fits?
+      assert_equal 3 + 4, fits.whole.entries, "three role directories and four files, as Export counts them"
+      assert fits.no_refusal_found?
+
+      with_archive_limit(:MAX_ENTRIES, 10) do
+        report = plan(agent).call(measure: true)
+        assert report.roles.all?(&:fits?), "each role alone is under the limit"
+        assert_equal "Resident files exceed v1 limits", report.whole.refusal
+        assert_not report.no_refusal_found?
+        error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
+        assert_equal "Resident files exceed v1 limits", error.message, "the same words as the copy"
+      end
+
+      with_archive_limit(:MAX_COMPRESSED, 1000) do
+        report = plan(agent).call(measure: true)
+        assert report.whole.fits?, "the compressed size is an estimate, never a refusal"
+        assert report.whole.estimated_compressed_bytes.positive?
+        assert_match(/estimate, not a bound/, report.to_h[:unchecked].first)
+        assert_not report.to_h.key?(:ready), "no overall readiness claim"
+      end
+    end
+  end
+
+  test "the dry run refuses the legacy diary's JSON size exactly as the copy does" do
+    with_house do
+      agent = house_resident!
+      agent.memories.create!(content: "a" * 2000, memory_type: "journal")
+      assert plan(agent).call(measure: true).whole.fits?
+
+      with_archive_limit(:MAX_JSON, 1000) do
+        report = plan(agent).call(measure: true)
+        assert report.roles.all?(&:fits?)
+        assert_operator report.whole.legacy_bytes, :>, 1000
+        assert_equal "Resident metadata exceeds v1 limit", report.whole.refusal
+        assert_not report.no_refusal_found?
+        error = assert_raises(Agents::VmMigration::Refused) { stage_move!(agent) }
+        assert_equal "Resident metadata exceeds v1 limit", error.message, "the same words as the copy"
+      end
+    end
+  end
+
+  test "measuring a resident the house does not run is reported and audited, not raised" do
+    with_house do
+      agent = house_resident!
+      stage_move!(agent)
+      report = Agents::VmMigration::Plan.new(migration(agent.reload)).call(measure: true, requested_by: @user)
+      assert report.measure_error.present?
+      assert_empty report.roles
+      assert_not report.no_refusal_found?
+      audit = AuditLog.where(action: "vm_migration_dry_run", auditable: agent).last
+      assert_equal report.measure_error, audit.data["measure_error"]
+      assert_equal "staged", agent.placement.reload.state, "the ownership check refused before any Docker access"
+    end
+  end
+
+  def move!(agent, policy: Agents::VmBirthPolicy.current)
+    Agents::Config.stub(:internal_url, "http://synthetic.invalid") do
+      Agents::VmMigration.new(agent, policy:).move!(requested_by: @user, transport: HouseTransport.new)
+    end
+  end
+
 end

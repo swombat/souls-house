@@ -113,3 +113,109 @@ test('a closed player accepts nothing more: no reply starts after End', () => {
   expect(audio.play).not.toHaveBeenCalled();
   expect(player.speaking).toBe(false);
 });
+
+test('interrupting returns what it dropped: the playing reply, then the queue', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  expect(player.interrupt()).toEqual([]);
+  player.enqueue('a');
+  player.enqueue('b');
+  player.enqueue('c');
+  audio.currentTime = 7.5;
+  expect(player.interrupt()).toEqual([
+    { id: 'a', at: 7.5, playing: true },
+    { id: 'b', at: 0, playing: false },
+    { id: 'c', at: 0, playing: false },
+  ]);
+  expect(player.interrupt()).toEqual([]);
+});
+
+test('an interrupted reply is parked, not torn down: a resume plays on from the same position on the same audio (#758)', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 12;
+  expect(player.interrupt()).toEqual([{ id: 'a', at: 12, playing: true }]);
+  expect(audio.src).toBe('/messages/a/speech');
+  expect(audio.log.at(-1)).toEqual(['pause']);
+  player.enqueue('a', { resume: true });
+  // No new request: the same source plays on, from where it paused.
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+  expect(audio.currentTime).toBe(12);
+  // Interrupted again later: the real position, not an estimate.
+  audio.currentTime = 19;
+  expect(player.interrupt()).toEqual([{ id: 'a', at: 19, playing: true }]);
+  player.enqueue('a', { resume: true });
+  audio.end();
+  expect(player.speaking).toBe(false);
+  expect(audio.log.filter(([kind]) => kind === 'play')).toHaveLength(3);
+});
+
+test('a restart, or a resume of anything but the parked reply, is a fresh request from the top', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 2;
+  player.interrupt();
+  audio.src = '/messages/a/speech';
+  player.enqueue('a');
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+  player.interrupt();
+  player.enqueue('b', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/b/speech']);
+  audio.end();
+  player.enqueue('a', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+});
+
+test('a resumed reply whose parked stream died is asked for again from the top, never skipped', async () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 30;
+  player.interrupt();
+  audio.src = 'stale';
+  audio.refuse = true;
+  player.enqueue('a', { resume: true });
+  audio.refuse = false;
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+  expect(player.speaking).toBe(true);
+});
+
+test('End drops a parked reply: nothing resumes after close', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 9;
+  player.interrupt();
+  player.close();
+  expect(audio.src).toBe('');
+  player.enqueue('a', { resume: true });
+  expect(audio.log.filter(([kind]) => kind === 'play')).toHaveLength(1);
+});
+
+test('an error while the reply is parked forgets it: the resume is a fresh request (Mira, round 2)', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 30;
+  player.interrupt();
+  audio.src = 'stale';
+  audio.dispatchEvent(new Event('error'));
+  player.enqueue('a', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+});
+
+test('a parked element already in error is not resumed, even if its error event was missed', () => {
+  const audio = fakeAudio();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 30;
+  player.interrupt();
+  audio.src = 'stale';
+  audio.error = { code: 2 };
+  player.enqueue('a', { resume: true });
+  expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
+});

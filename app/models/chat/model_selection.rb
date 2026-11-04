@@ -4,6 +4,7 @@ module Chat::ModelSelection
 
   # Available AI models grouped by category
   # Model IDs from OpenRouter API: https://openrouter.ai/api/v1/models
+  # kimi-code/* is an explicit subscription-only namespace, not OpenRouter.
   # provider_model_id: the model ID used when calling the provider's direct API
   # When adding/updating models, also update AgentRuntimeInteractionCost prices,
   # cache rates and pricing tests (both catalogue and direct provider IDs).
@@ -452,6 +453,16 @@ module Chat::ModelSelection
     { model_id: "moonshotai/kimi-k2-thinking", label: "Kimi K2 Thinking", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2-0905", label: "Kimi K2 0905", group: "Moonshot / Kimi" },
 
+    # Kimi Code subscription IDs, verified 2026-11-03:
+    # https://www.kimi.com/code/docs/en/kimi-code/models.html
+    # Keep these separate from the existing moonshotai/* OpenRouter selections.
+    { model_id: "kimi-code/k3.1-pro", label: "Kimi Code K3.1 Pro", group: "Kimi Code subscription", provider_model_id: "k3.1-pro", thinking: { supported: true } },
+    { model_id: "kimi-code/k3.1-pro-highspeed", label: "Kimi Code K3.1 Pro Highspeed", group: "Kimi Code subscription", provider_model_id: "k3.1-pro-highspeed", thinking: { supported: true } },
+    { model_id: "kimi-code/k3", label: "Kimi Code K3", group: "Kimi Code subscription", provider_model_id: "k3", thinking: { supported: true } },
+    { model_id: "kimi-code/k3-256k", label: "Kimi Code K3 256K", group: "Kimi Code subscription", provider_model_id: "k3-256k", thinking: { supported: true } },
+    { model_id: "kimi-code/kimi-for-coding", label: "Kimi Code K2.8 Preview", group: "Kimi Code subscription", provider_model_id: "kimi-for-coding", thinking: { supported: true } },
+    { model_id: "kimi-code/kimi-for-coding-highspeed", label: "Kimi Code K2.7 Code Highspeed", group: "Kimi Code subscription", provider_model_id: "kimi-for-coding-highspeed", thinking: { supported: true } },
+
     # MiniMax
     { model_id: "minimax/minimax-m3.1-flash", label: "MiniMax M3.1 Flash", group: "MiniMax", thinking: { supported: true } },
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "MiniMax", thinking: { supported: true } },
@@ -523,6 +534,7 @@ module Chat::ModelSelection
     # Z.ai
     { model_id: "z-ai/glm-5.3-prime", label: "GLM 5.3 Prime", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Z.ai", thinking: { supported: true } },
+    { model_id: "z-ai/glm-5.3-flashx-legal", label: "GLM 5.3 FlashX Legal", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3-flashx", label: "GLM 5.3 FlashX", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3-flash", label: "GLM 5.3 Flash", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Z.ai", thinking: { supported: true } },
@@ -601,6 +613,19 @@ module Chat::ModelSelection
       default: "high",
       options: %i[low medium high xhigh]
     },
+    # Off rejects K3.1 or silently selects K2.8 for the other Code models.
+    # Use the detailed model page's defaults, not its inconsistent overview.
+    kimi_code: {
+      label: "Reasoning effort",
+      default: "high",
+      options: %i[low high max]
+    },
+    kimi_code_fixed: {
+      label: "Thinking mode",
+      default: "high",
+      options: %i[high],
+      labels: { high: "On (fixed)" }
+    },
     thinking_mode: {
       label: "Thinking mode",
       default: "high",
@@ -663,6 +688,12 @@ module Chat::ModelSelection
 
     def reasoning_profile_for(model_id)
       case model_id
+      when "kimi-code/k3.1-pro", "kimi-code/k3.1-pro-highspeed", "kimi-code/k3", "kimi-code/k3-256k"
+        REASONING_PROFILES[:kimi_code]
+      when "kimi-code/kimi-for-coding"
+        REASONING_PROFILES[:kimi_code].merge(default: "max")
+      when "kimi-code/kimi-for-coding-highspeed"
+        REASONING_PROFILES[:kimi_code_fixed]
       when "openai/gpt-6.1-sol", "openai/gpt-6.1-sol-pro", "openai/gpt-6.1-terra", "openai/gpt-6-sol", "openai/gpt-6-sol-pro", "openai/gpt-6-luna", "openai/gpt-6-luna-pro"
         REASONING_PROFILES[:openai_max].merge(options: %i[none low medium high xhigh max])
       when "openai/gpt-6-astra-pro"

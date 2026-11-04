@@ -42,40 +42,31 @@ test('older history loaded by scrolling is never read, whatever its ids look lik
   expect(picker.take([...older, current, reply('mmm-new', 31)])).toEqual(['mmm-new']);
 });
 
-test('speech supersedes a reply still arriving: it is not read when it completes, even after the turn', () => {
+test('a reply still arriving when the person speaks is read once it completes, after the turn is sent (#758)', () => {
   const pending = reply('old-turn', 3, { streaming: true, completed: false });
   const picker = createReplyPicker([pending]);
-  picker.hold([pending]);
+  picker.hold();
   expect(picker.take([reply('old-turn', 3)])).toEqual([]);
   picker.release();
-  expect(picker.take([reply('old-turn', 3)])).toEqual([]);
+  expect(picker.take([reply('old-turn', 3)])).toEqual(['old-turn']);
 });
 
-test('nothing is read while the person is speaking; a progress note landing then stays unread', () => {
+test('nothing is read while the person is speaking; what landed then is read after, before later replies', () => {
   const picker = createReplyPicker([reply('old', 1)]);
-  picker.hold([reply('old', 1)]);
-  expect(picker.take([reply('old', 1), reply('during', 2, { progress_message: true })])).toEqual([]);
+  picker.hold();
+  const during = reply('during', 2, { progress_message: true });
+  expect(picker.take([reply('old', 1), during])).toEqual([]);
   picker.release();
-  expect(picker.take([reply('old', 1), reply('during', 2), reply('answer', 3)])).toEqual(['answer']);
+  expect(picker.take([reply('old', 1), during, reply('answer', 3)])).toEqual(['during', 'answer']);
 });
 
-test('a run interrupted mid-way stays silent for good: its later final reply is not read, a new run is', () => {
+test('each message is read once, whatever run it belongs to, across bursts (#755)', () => {
   const picker = createReplyPicker([]);
-  const progress = reply('progress', 10, { progress_message: true, runtime_interaction_id: 'old-run' });
+  const progress = reply('progress', 10, { progress_message: true, runtime_interaction_id: 'run' });
   expect(picker.take([progress])).toEqual(['progress']);
-  picker.hold([progress]);
+  picker.hold();
   picker.release();
-  const oldFinal = reply('old-final', 11, { runtime_interaction_id: 'old-run' });
-  expect(picker.take([progress, oldFinal])).toEqual([]);
-  const answer = reply('answer', 12, { runtime_interaction_id: 'new-run' });
-  expect(picker.take([progress, oldFinal, answer])).toEqual(['answer']);
-});
-
-test('without run provenance only the superseded message itself stays silent', () => {
-  const picker = createReplyPicker([]);
-  const earlier = reply('earlier', 10);
-  picker.take([earlier]);
-  picker.hold([earlier]);
-  picker.release();
-  expect(picker.take([earlier, reply('later', 11)])).toEqual(['later']);
+  const next = reply('next', 11, { progress_message: true, runtime_interaction_id: 'run' });
+  expect(picker.take([progress, next])).toEqual(['next']);
+  expect(picker.take([progress, next])).toEqual([]);
 });

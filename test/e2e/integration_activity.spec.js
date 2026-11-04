@@ -124,7 +124,7 @@ test('connector chat counts follow real events and reconnect without replacing d
           'rooms'
         );
       expect(readers[0].reloads.at(-1).partial.split(',').sort()).toEqual(accountProps.sort());
-      expect(readers[1].reloads.at(-1).partial).toBe('service_connections');
+      expect(readers[1].reloads.at(-1).partial).toBe('service_connections,shared_connections');
       expect(readers[1].confirmations).toBe(1);
       expect(readers[2].confirmations).toBe(1);
     };

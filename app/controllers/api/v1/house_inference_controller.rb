@@ -70,9 +70,10 @@ module Api
         return unless run_id.match?(/\A\d{1,18}\z/)
 
         # The first refusal is the one the run failed on; a later call's
-        # refusal doesn't overwrite it.
+        # refusal doesn't overwrite it. Its sanitised reason (#725) goes with
+        # it.
         current_api_agent.agent_runtime_interactions.where(id: run_id, finished_at: nil, inference_refusal: nil)
-          .update_all(inference_refusal: error.code)
+          .update_all(inference_refusal: error.code, inference_refusal_reason: error.reason)
       rescue StandardError => e
         Rails.logger.warn("House inference refusal not recorded (#{e.class.name})")
       end
