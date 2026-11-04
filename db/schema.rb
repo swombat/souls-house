@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -434,6 +434,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_140000) do
     t.integer "backup_keep_monthly", default: 12, null: false
     t.integer "backup_keep_weekly", default: 4, null: false
     t.datetime "birth_committed_at"
+    t.boolean "can_post_site_announcements", default: false, null: false
     t.string "colour"
     t.integer "consecutive_health_failures", default: 0, null: false
     t.integer "container_cpu_shares", default: 1024, null: false
@@ -2025,6 +2026,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_140000) do
     t.bigint "account_id"
     t.text "body"
     t.datetime "created_at", null: false
+    t.bigint "created_by_agent_id"
     t.bigint "created_by_id"
     t.datetime "expires_at", null: false
     t.string "notice_type", null: false
@@ -2032,6 +2034,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_140000) do
     t.string "scope", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_notices_on_account_id"
+    t.index ["created_by_agent_id"], name: "index_notices_on_created_by_agent_id"
     t.index ["created_by_id"], name: "index_notices_on_created_by_id"
     t.index ["expires_at"], name: "index_notices_on_expires_at"
     t.index ["scope", "account_id", "expires_at"], name: "index_notices_on_scope_and_account_id_and_expires_at"
@@ -3206,6 +3209,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_140000) do
   add_foreign_key "mnemodyne_uses", "mnemodyne_vaults", column: "vault_id"
   add_foreign_key "mnemodyne_vaults", "agents"
   add_foreign_key "notices", "accounts"
+  add_foreign_key "notices", "agents", column: "created_by_agent_id"
   add_foreign_key "notices", "users", column: "created_by_id"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_grants", "users", column: "resource_owner_id"

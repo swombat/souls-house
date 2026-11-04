@@ -5,6 +5,7 @@
   import FeatureToggleSettingsCard from '$lib/components/admin/FeatureToggleSettingsCard.svelte';
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
+  import SiteAnnouncementsSettingsCard from '$lib/components/admin/SiteAnnouncementsSettingsCard.svelte';
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
@@ -16,6 +17,7 @@
   let {
     setting = {},
     follow_through_residents = [],
+    site_announcement_residents = [],
     stalled_sweep_accounts = [],
     vm_births = {},
     billing = {},
@@ -27,6 +29,9 @@
 
   let form = $state({ ...setting });
   let followThroughPicked = $state(follow_through_residents.filter((r) => r.follow_through).map((r) => r.id));
+  let siteAnnouncementsPicked = $state(
+    site_announcement_residents.filter((r) => r.can_post_site_announcements).map((r) => r.id)
+  );
   let stalledSweepAccounts = $state(stalled_sweep_accounts.filter((a) => a.enabled).map((a) => a.id));
   let logoFile = $state(null);
   let submitting = $state(false);
@@ -68,6 +73,8 @@
     if (form.field_tweets_resume_house) formData.append('setting[field_tweets_resume_house]', 'true');
     formData.append('setting[follow_through_resident_ids][]', '');
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
+    formData.append('setting[site_announcement_resident_ids][]', '');
+    for (const id of siteAnnouncementsPicked) formData.append('setting[site_announcement_resident_ids][]', id);
     formData.append('setting[stalled_sweep_account_ids][]', '');
     for (const id of stalledSweepAccounts) formData.append('setting[stalled_sweep_account_ids][]', id);
 
@@ -128,6 +135,7 @@
       </div>
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
+      <SiteAnnouncementsSettingsCard residents={site_announcement_residents} bind:picked={siteAnnouncementsPicked} />
       <ReflexesSettingsCard {form} />
       <VoiceModeSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />

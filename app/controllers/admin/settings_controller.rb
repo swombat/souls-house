@@ -9,6 +9,7 @@ class Admin::SettingsController < ApplicationController
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
       follow_through_residents: -> { follow_through_residents },
+      site_announcement_residents: -> { site_announcement_residents },
       stalled_sweep_accounts: -> { stalled_sweep_accounts },
       vm_births: -> { Agents::VmBirthPolicy.current.as_json },
       billing: -> { billing_status },
@@ -29,12 +30,14 @@ class Admin::SettingsController < ApplicationController
     saved = Setting.transaction do
       setting.update(setting_params).tap do |ok|
         update_follow_through_residents if ok && params[:setting]&.key?(:follow_through_resident_ids)
+        update_site_announcement_residents if ok && params[:setting]&.key?(:site_announcement_resident_ids)
         update_stalled_sweep_accounts if ok && params[:setting]&.key?(:stalled_sweep_account_ids)
       end
     end
 
     if saved
-      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@stalled_sweep_changes.to_h)
+      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@site_announcement_changes.to_h,
+        **@stalled_sweep_changes.to_h)
       redirect_to admin_settings_path, notice: "Settings updated"
     else
       redirect_to admin_settings_path, inertia: { errors: setting.errors.to_hash }
@@ -120,6 +123,40 @@ class Admin::SettingsController < ApplicationController
     @follow_through_changes = {
       follow_through_on: Agent.where(id: turned_on).map(&:to_param),
       follow_through_off: Agent.where(id: turned_off).map(&:to_param)
+    }.compact_blank
+  end
+
+  # Every active resident, each with its site-announcement switch (jmmlAj).
+  def site_announcement_residents
+    Agent.active.includes(:account).sort_by { |a| [ a.account&.name.to_s.downcase, a.name.to_s.downcase ] }.map do |agent|
+      {
+        id: agent.to_param,
+        name: agent.name,
+        account: agent.account&.name,
+        icon: agent.icon,
+        avatar_url: agent.avatar_url,
+        colour: agent.colour,
+        paused: agent.paused?,
+        can_post_site_announcements: agent.can_post_site_announcements?
+      }
+    end
+  end
+
+  # The form sends the full list of switched-on residents; anyone not in it is
+  # off, including an inactive resident that still had the switch.
+  def update_site_announcement_residents
+    picked = Array(params[:setting][:site_announcement_resident_ids]).compact_blank.filter_map do |param|
+      Agent.find_by_obfuscated_id(param)&.id
+    rescue StandardError
+      nil
+    end
+    turned_on = Agent.active.where(id: picked, can_post_site_announcements: false).pluck(:id)
+    turned_off = Agent.where(can_post_site_announcements: true).where.not(id: picked).pluck(:id)
+    Agent.where(id: turned_on).update_all(can_post_site_announcements: true, updated_at: Time.current)
+    Agent.where(id: turned_off).update_all(can_post_site_announcements: false, updated_at: Time.current)
+    @site_announcement_changes = {
+      site_announcements_on: Agent.where(id: turned_on).map(&:to_param),
+      site_announcements_off: Agent.where(id: turned_off).map(&:to_param)
     }.compact_blank
   end
 
