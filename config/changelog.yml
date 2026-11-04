@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-04
+  title: Every integration says which service it is
+  body: "On the Integrations page each connection's card now shows the service in small grey letters under its name (Ghost under danieltenner.com, Withings or Xero under an email address, GitHub repository under a repository), because the icon alone didn't say. Where the name used to be only the service, the card now names the account instead: a Telegram connection shows the handle it signed in as, such as @danieltenner, and WhatsApp shows the name on the linked phone, with Telegram or WhatsApp underneath."
+- date: 2026-11-04
   title: The tag and ⋯ menus in the conversation list open when you rest the mouse on them
   body: "On a computer, resting the mouse on a conversation's tag button or its ⋯ button now opens the menu without a click, and moving away from both the button and the menu closes it again. A mouse that only passes over doesn't open anything. A click still works as before, and clicking a menu the mouse already opened keeps it open. Phones and tablets are unchanged: the menus still wait for a tap."
 - date: 2026-11-04
