@@ -17,7 +17,9 @@
 # `restic restore --verify` re-reads it after restore.
 # set -e with pipefail: a failed find, sort or stat fails the digest instead
 # of describing a smaller tree. Every value is taken by assignment, so a
-# failure inside a command substitution stops the script too.
+# failure inside a command substitution stops the script too. The inner
+# readlink shell chains with &&, so a failed readlink makes xargs exit
+# non-zero (123) and pipefail fails the digest.
 set -eo pipefail
 cd "$1"
 list="$(mktemp)"
@@ -29,7 +31,7 @@ find . -type l -print0 | LC_ALL=C sort -z > "$links"
 paths="$(sha256sum < "$list" | cut -c1-64)"
 attrs="$(xargs -0 -r stat -c '%F|%a|%u:%g' < "$list" | sha256sum | cut -c1-64)"
 sizes="$(xargs -0 -r stat -c '%s' < "$files" | sha256sum | cut -c1-64)"
-targets="$(xargs -0 -r -n1 sh -c 'readlink -n "$1"; printf "\0"' readlink < "$links" | sha256sum | cut -c1-64)"
+targets="$(xargs -0 -r -n1 sh -c 'readlink -n "$1" && printf "\0"' readlink < "$links" | sha256sum | cut -c1-64)"
 entries="$(tr -cd '\0' < "$list" | wc -c | tr -d ' ')"
 shape="$(printf '%s %s %s %s\n' "$paths" "$attrs" "$sizes" "$targets" | sha256sum | cut -c1-64)"
 rm -f "$list" "$files" "$links"

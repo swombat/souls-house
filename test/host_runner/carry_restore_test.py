@@ -537,6 +537,22 @@ class CheckSessionsTest(unittest.TestCase):
         with self.assertRaisesRegex(CommandFailed, "not a directory"):
             cr.check_sessions(self.root)
 
+    def test_a_symlinked_oauth_home_outside_the_volume_fails(self):
+        # Mira's catch on #788: oauth-runtime as a link to a map and database
+        # outside the restored volume must not be accepted as resolved.
+        outside = tempfile.mkdtemp(prefix="carry-outside-")
+        self.addCleanup(shutil.rmtree, outside, True)
+        import sqlite3 as sql
+        connection = sql.connect(os.path.join(outside, "chaos.sqlite"))
+        connection.execute("CREATE TABLE processes (id TEXT PRIMARY KEY NOT NULL)")
+        connection.execute("INSERT INTO processes (id) VALUES ('q1')")
+        connection.commit()
+        connection.close()
+        self.map(outside, c="q1")
+        os.symlink(outside, os.path.join(self.root, "oauth-runtime"))
+        with self.assertRaisesRegex(CommandFailed, "Chaos home is not a directory"):
+            cr.check_sessions(self.root)
+
 
 class RunRestoreCarrySessionTest(CarryRestoreTestCase):
     def test_an_unresolved_session_after_restore_fails_and_clears_the_claimed_volumes(self):
@@ -566,3 +582,43 @@ class RunRestoreCarrySessionTest(CarryRestoreTestCase):
         result = self.run_restore(self.payload(shapes=shapes))
         self.assertEqual({"mapped": 0, "resolved": 0}, result["sessions"])
         self.assertEqual(result["sessions"], cr.read_marker(self.host, self.name)["sessions"])
+
+
+class CarryShapeScriptTest(unittest.TestCase):
+    """Runs carry_shape.sh itself under dash (the CI shell closest to the
+    pinned image's busybox ash). The pinned-image run is recorded on the PR."""
+
+    SCRIPT = os.path.join(HERE, "..", "..", "host-runner", "carry_shape.sh")
+
+    def setUp(self):
+        self.tree = tempfile.mkdtemp(prefix="carry-shape-")
+        self.addCleanup(shutil.rmtree, self.tree, True)
+        with open(os.path.join(self.tree, "a"), "w", encoding="utf-8") as handle:
+            handle.write("x")
+        os.symlink("a", os.path.join(self.tree, "link"))
+
+    def run_script(self, env=None):
+        import subprocess
+        shell = shutil.which("dash") or shutil.which("sh")
+        return subprocess.run([shell, self.SCRIPT, self.tree], capture_output=True, text=True, env=env, timeout=30)
+
+    def test_prints_exactly_the_two_lines(self):
+        result = self.run_script()
+        self.assertEqual(0, result.returncode, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(2, len(lines))
+        self.assertEqual("entries 2", lines[0])
+        self.assertRegex(lines[1], r"^shape [0-9a-f]{64}$")
+
+    def test_a_failed_readlink_fails_the_digest(self):
+        # Mira's catch on #788: the inner shell used to print the NUL anyway.
+        bin_dir = tempfile.mkdtemp(prefix="carry-shape-bin-")
+        self.addCleanup(shutil.rmtree, bin_dir, True)
+        fake = os.path.join(bin_dir, "readlink")
+        with open(fake, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\nexit 1\n")
+        os.chmod(fake, 0o755)
+        env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ.get("PATH", ""))
+        result = self.run_script(env=env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn("shape ", result.stdout)

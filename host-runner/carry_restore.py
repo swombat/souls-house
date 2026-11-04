@@ -152,6 +152,13 @@ def check_sessions(root):
     mapped = resolved = 0
     for home in SESSION_HOMES:
         base = os.path.join(root, home) if home else root
+        if home:
+            if not os.path.lexists(base):
+                continue
+            # A home below the root must be a real directory inside the
+            # restored volume; following a link would check someone else's map.
+            if os.path.islink(base) or not os.path.isdir(base):
+                raise CommandFailed("a restored Chaos home is not a directory")
         sessions = os.path.join(base, "helixkit-sessions")
         if not os.path.lexists(sessions):
             continue
