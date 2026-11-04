@@ -48,6 +48,26 @@ class Agents::PortabilityTransportInventoryTest < ActiveSupport::TestCase
     assert_equal "fine\n", stdout
   end
 
+  # Mira's round-3 case: the leader exits at once, a backgrounded child keeps
+  # the pipes open. Waiting for the leader alone returned success after the
+  # child finished; the drain must share the deadline and the group must be
+  # killed though its leader is gone.
+  test "a leader that exits while its child holds the pipes is still bounded" do
+    Dir.mktmpdir do |dir|
+      pidfile = File.join(dir, "pid")
+      started = Agents::BoundedCommand.now
+      assert_raises(Agents::BoundedCommand::TimedOut) do
+        Agents::BoundedCommand.capture3("sh", "-c", "sleep 30 & echo $! > #{pidfile}; exit 0", deadline: started + 0.3)
+      end
+      assert_operator Agents::BoundedCommand.now - started, :<, 3
+      pid = Integer(File.read(pidfile).strip, 10)
+      deadline = Agents::BoundedCommand.now + 2
+      sleep 0.05 while File.exist?("/proc/#{pid}") && !File.read("/proc/#{pid}/stat").split[2].eql?("Z") && Agents::BoundedCommand.now < deadline
+      alive = File.exist?("/proc/#{pid}") && !File.read("/proc/#{pid}/stat").split[2].eql?("Z")
+      refute alive, "the orphaned child in the command's group was killed"
+    end
+  end
+
   test "the ownership and volume inspects count against an inventory's timeout" do
     resources = Struct.new(:volumes) { def verify_existing!(deadline:) = (@deadline = deadline) }.new({ state: "synthetic-state" })
     transport = Transport.new(Agent.new)
