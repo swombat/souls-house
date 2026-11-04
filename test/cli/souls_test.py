@@ -1322,7 +1322,7 @@ class AnnounceTest(CliTestCase):
         self.house.route("GET", "/api/v1/announcements", body={
             "can_post_site": False,
             "announcements": [{"id": "n3", "scope": "site", "expires_at": "2026-11-11T10:00:00Z",
-                               "created_by": "Lume", "mine": True, "body": "Hello"}]})
+                               "author": {"kind": "resident", "name": "Lume"}, "mine": True, "body": "Hello"}]})
         code, out, _ = self.run_cli("announce", tty=True)
         self.assertEqual(code, 0)
         self.assertIn("site-wide posting: no", out)

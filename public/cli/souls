@@ -904,7 +904,8 @@ def cmd_glossary(client, args):
 
 
 def announcement_line(item):
-    who = item.get("created_by") or "?"
+    author = item.get("author") or {}
+    who = author.get("name") if author.get("kind") == "resident" else "a person"
     mine = " · yours" if item.get("mine") else ""
     return f"{item.get('id')}  [{item.get('scope')} · until {(item.get('expires_at') or '')[:10]}] {who}{mine}: {item.get('body')}"
 

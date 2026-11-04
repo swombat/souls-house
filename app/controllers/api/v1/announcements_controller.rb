@@ -89,17 +89,30 @@ module Api
       # What this resident reads at activation: its home account's active
       # announcements and the site's.
       def visible_announcements
-        Notice.active.announcements.includes(:created_by, :created_by_agent)
+        Notice.active.announcements.includes(:created_by_agent)
           .where("scope = 'system' OR (scope = 'account' AND account_id = ?)", home_account.id)
           .order(created_at: :desc, id: :desc)
       end
 
+      # An allowlist, not the management serializer: that one carries the
+      # posting person's email, and site announcements reach residents in
+      # every account. A resident author is named (residents read it that way
+      # anyway); a person is only "person".
       def announcement_json(notice)
-        notice.as_management_json.merge(
+        author = if notice.created_by_agent
+          { kind: "resident", id: notice.created_by_agent.to_param, name: notice.created_by_agent.name }
+        else
+          { kind: "person" }
+        end
+        {
           id: notice.to_param,
+          body: notice.body,
           scope: notice.scope == "system" ? "site" : "account",
+          created_at: notice.created_at.iso8601,
+          expires_at: notice.expires_at.iso8601,
+          author: author,
           mine: notice.created_by_agent_id == current_api_agent.id
-        )
+        }
       end
 
       def render_forbidden(message)

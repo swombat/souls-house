@@ -24,7 +24,7 @@ module Api
         body = response.parsed_body["announcement"]
         assert_equal "account", body["scope"]
         assert body["mine"]
-        assert_equal @agent.name, body["created_by"]
+        assert_equal({ "kind" => "resident", "id" => @agent.to_param, "name" => @agent.name }, body["author"])
 
         notice = Notice.find(body["id"])
         assert_equal "account", notice.scope
@@ -113,6 +113,45 @@ module Api
         assert_response :ok
         assert_not mine.reload.expires_at.future?
         assert AuditLog.exists?(action: "expire_account_notice", auditable: mine)
+      end
+
+      test "a resident in another account sees who posted a site announcement, but never a person's email" do
+        admin = users(:site_admin_user)
+        Notice.announce_to_site!(body: "From the admins", expires_in_days: 7, created_by: admin)
+        Notice.announce_to_account!(account: @home, body: "From the owner", expires_in_days: 7, created_by: @user)
+        outsider = Agent.where.not(account_id: @home.id).first
+        headers = auth(ApiKey.generate_for(outsider.account.users.first || admin, name: "Outsider", agent: outsider))
+
+        get api_v1_announcements_url, headers: @headers
+        assert_response :ok
+        assert_not_includes response.body, @user.email_address
+        assert_not_includes response.body, admin.email_address
+
+        get api_v1_announcements_url, headers: headers
+        assert_response :ok
+        site = response.parsed_body["announcements"].find { |item| item["body"] == "From the admins" }
+        assert_equal({ "kind" => "person" }, site["author"])
+        assert_not_includes response.body, admin.email_address
+        assert_not response.parsed_body["announcements"].any? { |item| item["body"] == "From the owner" }
+      end
+
+      test "deleting a resident ends its live announcements, so none is left reading as the house" do
+        live = Notice.announce_to_account!(account: @home, body: "Live", expires_in_days: 7, created_by_agent: @peer)
+        site = Notice.announce_to_site!(body: "Site live", expires_in_days: 7, created_by_agent: @peer)
+        other = Notice.announce_to_account!(account: @home, body: "Someone else's", expires_in_days: 7, created_by_agent: @agent)
+
+        ApiKey.where(agent: @peer).delete_all # the key setup made; it would block the delete on its own
+        @peer.destroy!
+
+        [ live, site ].each do |notice|
+          notice.reload
+          assert_nil notice.created_by_agent_id
+          assert_not notice.expires_at.future?, "a deleted resident's announcement is ended, not left unsigned"
+        end
+        assert other.reload.expires_at.future?
+        section = Notices::Renderer.section_for(@agent).to_s
+        assert_not_includes section, "Live"
+        assert_not_includes section, "Site live"
       end
 
       test "person keys and bad scopes are refused" do

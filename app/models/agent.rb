@@ -44,9 +44,12 @@ class Agent < ApplicationRecord
   has_many :agent_backup_snapshots, dependent: :destroy
   has_many :agent_runtime_interactions, dependent: :destroy
   has_many :reflexes, dependent: :destroy
-  # Announcements this resident posted. They outlive it, unsigned.
+  # Announcements this resident posted. Deleting the resident ends the live
+  # ones first, so an unsigned one is never shown as the house speaking; the
+  # rows are kept, unsigned.
   has_many :posted_notices, class_name: "Notice", foreign_key: :created_by_agent_id,
     inverse_of: :created_by_agent, dependent: :nullify
+  before_destroy :end_posted_announcements, prepend: true
   has_many :commitments, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :safeguard_detections, dependent: :destroy
@@ -560,6 +563,10 @@ class Agent < ApplicationRecord
     ResidentSwitchedOffNotice.close_open_holds!(self)
   rescue StandardError => error
     Rails.logger.warn "[RollHold] agent #{id}: #{error.class}: #{error.message}"
+  end
+
+  def end_posted_announcements
+    Notice.active.where(created_by_agent_id: id).update_all(expires_at: Time.current, updated_at: Time.current)
   end
 
 end
