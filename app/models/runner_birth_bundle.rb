@@ -6,21 +6,29 @@
 # through update_runner.
 class RunnerBirthBundle < ApplicationRecord
 
+  # A blob no enrollment pins survives this long after its last pin!, so a
+  # prune never deletes one that another birth has reused but whose
+  # enrollment pin is not yet visible.
+  PRUNE_GRACE = 1.hour
+
   validates :sha256, format: { with: RunnerBundle::DIGEST }
   validates :bytes, presence: true
 
-  # Pins the current bundle to this enrollment and returns its digest. Drops
-  # blobs no unenrolled, unrevoked, unexpired enrollment still pins.
+  # Pins the current bundle to this enrollment and returns its digest. The
+  # upsert (re)creates the blob or refreshes its updated_at in one statement,
+  # before the pin: a concurrent prune either ran first (and the upsert
+  # recreates the row) or rechecks updated_at on the refreshed row and keeps
+  # it. Then drops blobs that no unenrolled, unrevoked, unexpired enrollment
+  # pins and that nothing has pinned within PRUNE_GRACE.
   def self.pin!(enrollment, bundle: RunnerBundle.current, now: Time.current)
-    begin
-      find_or_create_by!(sha256: bundle.sha256) { |row| row.bytes = bundle.bytes }
-    rescue ActiveRecord::RecordNotUnique
-      retry
-    end
+    record = new(sha256: bundle.sha256, bytes: bundle.bytes)
+    raise ActiveRecord::RecordInvalid, record unless record.valid?
+    upsert({ sha256: bundle.sha256, bytes: bundle.bytes, created_at: now, updated_at: now },
+      unique_by: :sha256, on_duplicate: Arel.sql("updated_at = EXCLUDED.updated_at"), record_timestamps: false)
     enrollment.update!(birth_bundle_sha256: bundle.sha256)
     pinned = RunnerEnrollment.where(enrolled_at: nil, revoked_at: nil).where("expires_at > ?", now)
       .where.not(birth_bundle_sha256: nil).select(:birth_bundle_sha256)
-    where.not(sha256: pinned).delete_all
+    where.not(sha256: pinned).where("updated_at < ?", now - PRUNE_GRACE).delete_all
     bundle.sha256
   end
 

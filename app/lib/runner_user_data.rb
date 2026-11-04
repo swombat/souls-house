@@ -77,6 +77,7 @@ module RunnerUserData
     [Service]
     Type=oneshot
     ExecStart=/usr/bin/python3 #{FETCH_SCRIPT}
+    TimeoutStartSec=300
     Restart=on-failure
     RestartSec=30
     RestartPreventExitStatus=3

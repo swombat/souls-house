@@ -66,6 +66,9 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_includes unit, "ExecStart=/usr/bin/python3 #{RunnerUserData::FETCH_SCRIPT}"
     assert_includes unit, "Restart=on-failure"
     assert_includes unit, "RestartPreventExitStatus=3"
+    # A oneshot has no start timeout by default; this is the backstop behind
+    # birth_fetch's in-process attempt watchdog.
+    assert_includes unit, "TimeoutStartSec=300"
     assert_includes unit, "StartLimitIntervalSec=0"
     runner = parsed["write_files"].find { |f| f["path"].end_with?("souls-house-runner.service") }["content"]
     assert_includes runner, "ConditionPathExists=/opt/souls-house-runner/current/bundle.sha256"
@@ -93,8 +96,33 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     other, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
     newer = RunnerBundle::Bundle.new(bytes: "newer".b, sha256: Digest::SHA256.hexdigest("newer"))
     RunnerBirthBundle.pin!(other, bundle: newer)
+    assert RunnerBirthBundle.find_by(sha256: pinned), "kept inside the grace"
+    RunnerBirthBundle.pin!(other, bundle: newer, now: Time.current + RunnerBirthBundle::PRUNE_GRACE + 1.minute)
     assert_nil RunnerBirthBundle.find_by(sha256: pinned)
     assert RunnerBirthBundle.find_by(sha256: newer.sha256)
+  end
+
+  # Jorge's race (#793 review): birth A reuses an old unpinned blob, and birth
+  # B prunes before A's enrollment pin is visible. Modelled by clearing A's
+  # pin after its pin! — the blob must survive on its refreshed updated_at.
+  test "a reused blob survives a prune that cannot yet see its new pin" do
+    old = RunnerBundle::Bundle.new(bytes: "old".b, sha256: Digest::SHA256.hexdigest("old"))
+    RunnerBirthBundle.create!(sha256: old.sha256, bytes: old.bytes, updated_at: 2.days.ago, created_at: 2.days.ago)
+    first, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
+    RunnerBirthBundle.pin!(first, bundle: old)
+    first.update_column(:birth_bundle_sha256, nil)
+    second, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
+    RunnerBirthBundle.pin!(second, bundle: RunnerBundle::Bundle.new(bytes: "newer".b, sha256: Digest::SHA256.hexdigest("newer")))
+    assert_equal "old".b, RunnerBirthBundle.find_by!(sha256: old.sha256).bytes
+  end
+
+  test "pin! recreates a blob a prune deleted between renders" do
+    old = RunnerBundle::Bundle.new(bytes: "old".b, sha256: Digest::SHA256.hexdigest("old"))
+    first, _token = RunnerEnrollment.mint!(placement: @enrollment.agent_placement)
+    RunnerBirthBundle.pin!(first, bundle: old)
+    RunnerBirthBundle.where(sha256: old.sha256).delete_all
+    RunnerBirthBundle.pin!(first, bundle: old)
+    assert_equal "old".b, RunnerBirthBundle.find_by!(sha256: old.sha256).bytes
   end
 
   test "the command channel is on only for a literal true" do

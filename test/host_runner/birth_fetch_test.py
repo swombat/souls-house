@@ -198,6 +198,36 @@ class BirthFetchTest(unittest.TestCase):
         self.assertLess(elapsed, 2.5)
         self.assert_nothing_installed()
 
+    def trickle(self, head, tail):
+        """A peer that sends `head`, then one byte of `tail` every 0.04 s:
+        never idle for a read timeout, so only the attempt clock can end it."""
+        def answer(handler):
+            try:
+                handler.wfile.write(head)
+                handler.wfile.flush()
+                for byte in tail:
+                    handler.wfile.write(bytes([byte]))
+                    handler.wfile.flush()
+                    time.sleep(0.04)
+            except OSError:
+                pass
+
+        self.origin.responses.append(answer)
+        with mock.patch.object(birth_fetch, "ATTEMPT_SECONDS", 0.5), mock.patch.object(birth_fetch, "READ_SECONDS", 30):
+            began = time.monotonic()
+            code, err = self.main()
+            elapsed = time.monotonic() - began
+        self.assertEqual(1, code)
+        self.assertIn("attempt deadline", err)
+        self.assertLess(elapsed, 1.2)
+        self.assert_nothing_installed()
+
+    def test_trickling_headers_end_at_the_attempt_deadline(self):
+        self.trickle(b"HTTP/1.1 200 OK\r\n", b"X-Slow: " + b"y" * 200 + b"\r\n\r\n")
+
+    def test_a_trickling_body_ends_at_the_attempt_deadline(self):
+        self.trickle(b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(self.data), self.data * 4)
+
     def test_a_failed_attempt_then_a_later_one_installs_and_starts(self):
         self.origin.responses.append((503, {}, b""))
         self.assertEqual(1, self.main()[0])

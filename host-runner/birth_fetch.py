@@ -18,10 +18,12 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import urllib.parse
 
@@ -76,26 +78,46 @@ def origin_parts(rails_url):
 
 def fetch(rails_url, runner_id, token, digest, clock=time.monotonic, connection=None):
     """The pinned bundle's bytes. http.client follows no redirects; every
-    socket wait is capped by the attempt's remaining time."""
+    socket wait is capped by the attempt's remaining time, and a watchdog
+    shuts the socket down at the deadline: a socket timeout bounds one wait,
+    not a peer that trickles a byte per wait through the handshake, headers
+    or body."""
     host, port = origin_parts(rails_url)
     deadline = clock() + ATTEMPT_SECONDS
+    held = []
+    cut = threading.Event()
 
     def wait(limit):
         remaining = deadline - clock()
-        if remaining <= 0:
+        if remaining <= 0 or cut.is_set():
             raise Failed("attempt deadline")
         return min(limit, remaining)
+
+    def shut():
+        cut.set()
+        sock = held[0] if held else conn.sock
+        if sock is not None:
+            try:
+                # The plain socket's shutdown, not SSLSocket's: it wakes a
+                # blocked read without touching the TLS object under it.
+                socket.socket.shutdown(sock, socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     if connection is None:
         conn = http.client.HTTPSConnection(host, port, timeout=wait(CONNECT_SECONDS),
                                            context=ssl.create_default_context())
     else:
         conn = connection(host, port, timeout=wait(CONNECT_SECONDS))
+    watchdog = threading.Timer(wait(ATTEMPT_SECONDS), shut)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         conn.connect()
         # Kept: http.client drops conn.sock once a response will close, but
         # the response still reads from this socket.
         sock = conn.sock
+        held.append(sock)
         sock.settimeout(wait(READ_SECONDS))
         conn.request("GET", BUNDLE_PATH + digest, headers={
             "Authorization": f"Bearer {token}", "X-Runner-Id": runner_id, "Accept": "application/x-xz"})
@@ -113,8 +135,15 @@ def fetch(rails_url, runner_id, token, digest, clock=time.monotonic, connection=
             if len(data) > MAX_BYTES:
                 raise Failed("too large")
         wait(READ_SECONDS)
+    except Exception:
+        if cut.is_set():
+            raise Failed("attempt deadline")
+        raise
     finally:
+        watchdog.cancel()
         conn.close()
+    if cut.is_set():
+        raise Failed("attempt deadline")
     if hashlib.sha256(bytes(data)).hexdigest() != digest:
         raise Failed("digest mismatch")
     return bytes(data)
