@@ -21,6 +21,7 @@ Nothing about the files leaves the server except the two digests and counts.
 """
 
 import hmac
+import json
 import os
 import re
 import secrets
@@ -29,7 +30,7 @@ import time
 
 from backup_proxy import (CLEANUP_SECONDS, HEX_RE, MAX_DEADLINE_SECONDS, RESTIC_IMAGE, UUID_RE, BackupProxy,
                           bounded_docker)
-from souls_house_runner import BadCommand, CommandFailed, NAME_RE, volume_name
+from souls_house_runner import COMMAND_ID_RE, BadCommand, CommandFailed, NAME_RE, volume_name
 
 CARRY_ROLES = ("chaos", "state")
 CARRY_TOOL_PREFIX = "souls-house-carry-"
@@ -47,6 +48,52 @@ class CarryFailed(CommandFailed):
 def _require(condition, message):
     if not condition:
         raise BadCommand(message)
+
+
+
+# The host side of a restore: a marker per resident in the runner's state
+# directory, and the few volume operations. Kept here, not in the runner,
+# so the birth package stays under Hetzner's user_data limit.
+def _marker_path(host, name):
+    _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
+    return os.path.join(host.state_dir, "carry", f"{name}.json")
+
+
+def read_marker(host, name):
+    path = _marker_path(host, name)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise CommandFailed("unreadable carry marker")
+    return data
+
+
+def write_marker(host, name, data):
+    host._write_private(_marker_path(host, name), json.dumps(data, sort_keys=True))
+
+
+def clear_marker(host, name):
+    path = _marker_path(host, name)
+    if os.path.exists(path):
+        os.unlink(path)
+
+
+def volume_exists(host, volume):
+    ok, _ = host.docker(["docker", "volume", "inspect", volume])
+    return ok
+
+
+def volume_is_empty(host, volume):
+    return not os.listdir(host._volume_mountpoint(volume))
+
+
+def remove_volume(host, volume):
+    if not volume_exists(host, volume):
+        return True
+    ok, _ = host.docker(["docker", "volume", "rm", volume])
+    return ok
 
 
 def validate_carry(payload):
@@ -108,12 +155,16 @@ def shape_argv(name, role, tool, script):
     ]
 
 
-def run_restore_carry(payload, host, *, signed_request, docker=None, proxy_factory=BackupProxy,
+def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_factory=BackupProxy,
                       clock=time.monotonic, script=None):
-    """host supplies volume_is_empty(volume) -> bool (creating it empty when
-    missing), volume_exists(volume), remove_volume(volume) -> bool, and
-    read_/write_/clear_carry_marker(name), kept in the runner's own state
-    directory, never inside a resident's volume."""
+    """host is the runner's ResidentHost: its backup_request transport, the
+    current command id, state_dir (the marker lives there, never inside a
+    resident's volume), docker and _volume_mountpoint."""
+    signed_request = signed_request or host.backup_request
+    if signed_request is None:
+        raise BadCommand("backup transport unavailable")
+    _require(isinstance(host.current_command_id, str) and COMMAND_ID_RE.fullmatch(host.current_command_id),
+             "restore command id is missing")
     spec = validate_carry(payload)
     name = spec["container_name"]
     docker = docker or bounded_docker
@@ -125,7 +176,7 @@ def run_restore_carry(payload, host, *, signed_request, docker=None, proxy_facto
     work_ends = ends - CLEANUP_SECONDS
     result = {"container_name": name, "snapshot_id": spec["snapshot_id"], "shapes": {}, "tools_stopped": False,
               "duration_ms": 0, "already": False}
-    remembered = host.read_carry_marker(name)
+    remembered = read_marker(host, name)
     if remembered is not None:
         _require(remembered.get("snapshot_id") == spec["snapshot_id"] and remembered.get("shapes") == spec["shapes"],
                  "this resident's homes were claimed for a different carry")
@@ -149,13 +200,13 @@ def run_restore_carry(payload, host, *, signed_request, docker=None, proxy_facto
         # above, and still true): what is in them is only its partial
         # restore, so they are discarded and begun again from empty.
         for volume in claimed:
-            if not host.remove_volume(volume):
+            if not remove_volume(host, volume):
                 raise CommandFailed("could not clear an interrupted restore")
     for role, volume in zip(CARRY_ROLES, claimed):
-        _require(host.volume_is_empty(volume), f"{role} volume is not empty; restore_carry never overwrites a home")
+        _require(volume_is_empty(host, volume), f"{role} volume is not empty; restore_carry never overwrites a home")
     # The claim is written before anything is restored, so a retry can tell
     # its own partial restore from a home it must never touch.
-    host.write_carry_marker(name, {"state": "claimed", "snapshot_id": spec["snapshot_id"], "shapes": spec["shapes"]})
+    write_marker(host, name, {"state": "claimed", "snapshot_id": spec["snapshot_id"], "shapes": spec["shapes"]})
 
     tools = []
     error = None
@@ -224,12 +275,12 @@ def run_restore_carry(payload, host, *, signed_request, docker=None, proxy_facto
             # them, so removing them loses nothing and lets a retry begin
             # from empty. With a tool possibly still running, leave them.
             for volume in claimed:
-                if not host.remove_volume(volume):
+                if not remove_volume(host, volume):
                     error = error or "could not clear a partly restored home"
-            if error and all(not host.volume_exists(volume) for volume in claimed):
-                host.clear_carry_marker(name)
+            if error and all(not volume_exists(host, volume) for volume in claimed):
+                clear_marker(host, name)
         result["duration_ms"] = round((clock() - started) * 1000)
     if error:
         raise CarryFailed(error, result)
-    host.write_carry_marker(name, {"state": "verified", "snapshot_id": spec["snapshot_id"], "shapes": result["shapes"]})
+    write_marker(host, name, {"state": "verified", "snapshot_id": spec["snapshot_id"], "shapes": result["shapes"]})
     return result

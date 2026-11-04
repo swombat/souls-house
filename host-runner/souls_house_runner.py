@@ -1109,7 +1109,7 @@ class ResidentHost:
         try:
             os.chmod(staging, 0o755)
             for name, source in files.items():
-                _write_synced(os.path.join(staging, name), source, RUNNER_BUNDLE_FILES[name])
+                _write_synced(os.path.join(staging, name), source, RUNNER_PACKAGE_FILES[name])
             if not self.self_check(staging):
                 raise CommandFailed("the new runner failed its self-check; the old one stays")
             _write_synced(os.path.join(staging, RUNNER_BUNDLE_MARKER), (digest + "\n").encode(), 0o644)
@@ -1183,47 +1183,11 @@ class ResidentHost:
     # restored from the house's carry snapshot before its first start. The
     # work and its refusals are in carry_restore.py.
     def restore_carry(self, payload):
-        from carry_restore import run_restore_carry
-        if self.backup_request is None:
-            raise BadCommand("backup transport unavailable")
-        _require(isinstance(self.current_command_id, str) and
-                 COMMAND_ID_RE.fullmatch(self.current_command_id), "restore command id is missing")
-        return run_restore_carry(payload, self, signed_request=self.backup_request)
-
-    def _carry_marker_path(self, name):
-        _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
-        return os.path.join(self.state_dir, "carry", f"{name}.json")
-
-    def read_carry_marker(self, name):
-        path = self._carry_marker_path(name)
-        if not os.path.exists(path):
-            return None
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            raise CommandFailed("unreadable carry marker")
-        return data
-
-    def write_carry_marker(self, name, data):
-        self._write_private(self._carry_marker_path(name), json.dumps(data, sort_keys=True))
-
-    def clear_carry_marker(self, name):
-        path = self._carry_marker_path(name)
-        if os.path.exists(path):
-            os.unlink(path)
-
-    def volume_exists(self, volume):
-        ok, _ = self.docker(["docker", "volume", "inspect", volume])
-        return ok
-
-    def volume_is_empty(self, volume):
-        return not os.listdir(self._volume_mountpoint(volume))
-
-    def remove_volume(self, volume):
-        if not self.volume_exists(volume):
-            return True
-        ok, _ = self.docker(["docker", "volume", "rm", volume])
-        return ok
+        try:
+            from carry_restore import run_restore_carry
+        except ImportError:
+            raise BadCommand("restore_carry needs the full runner package")
+        return run_restore_carry(payload, self)
 
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
@@ -1414,6 +1378,10 @@ RUNNER_BUNDLE_MAX_BYTES = 256 * 1024
 RUNNER_SOURCE_MAX_BYTES = 256 * 1024
 RUNNER_BUNDLE_DEADLINE = 2 * 60
 RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
+# The full package (#426 3C) adds these beside the pair, for a migration's
+# restore; the pair alone is the birth package. Nothing else is accepted.
+RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644}
+RUNNER_PACKAGE_FILES = {**RUNNER_BUNDLE_FILES, **RUNNER_CARRY_FILES}
 RUNNER_BUNDLE_MARKER = "bundle.sha256"
 RUNNER_VERSIONS = "versions"
 RUNNER_CURRENT = "current"
@@ -1547,14 +1515,15 @@ def prune_runner_versions(runner_dir=RUNNER_DIR):
 
 
 def unpack_runner_bundle(data):
-    """The bundle's files as {name: bytes}: exactly RUNNER_BUNDLE_FILES, each a
-    regular file of at most RUNNER_SOURCE_MAX_BYTES whose source compiles.
-    Anything else is refused whole; nothing is ever cut to a prefix."""
+    """The bundle's files as {name: bytes}: exactly the birth pair, or the pair
+    and RUNNER_CARRY_FILES; each a regular file of at most
+    RUNNER_SOURCE_MAX_BYTES, each Python one compiling. Anything else is
+    refused whole; nothing is ever cut to a prefix."""
     files = {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:xz") as archive:
             for member in archive.getmembers():
-                if member.name not in RUNNER_BUNDLE_FILES or not member.isreg() or member.name in files:
+                if member.name not in RUNNER_PACKAGE_FILES or not member.isreg() or member.name in files:
                     raise BadCommand(f"unexpected entry in runner bundle: {member.name!r}")
                 if member.size > RUNNER_SOURCE_MAX_BYTES:
                     raise BadCommand(f"runner bundle {member.name} is larger than {RUNNER_SOURCE_MAX_BYTES} bytes")
@@ -1565,9 +1534,11 @@ def unpack_runner_bundle(data):
                 files[member.name] = source
     except (tarfile.TarError, EOFError, OSError) as error:
         raise BadCommand(f"runner bundle is not a valid archive: {error}")
-    if set(files) != set(RUNNER_BUNDLE_FILES):
+    if set(files) not in (set(RUNNER_BUNDLE_FILES), set(RUNNER_PACKAGE_FILES)):
         raise BadCommand("runner bundle is missing a file")
     for name, source in files.items():
+        if not name.endswith(".py"):
+            continue
         try:
             compile(source, name, "exec")
         except (SyntaxError, ValueError) as error:
