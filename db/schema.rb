@@ -816,6 +816,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
     t.integer "reschedule_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "summary"
     t.index ["account_id"], name: "index_commitments_on_account_id"
     t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
     t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"

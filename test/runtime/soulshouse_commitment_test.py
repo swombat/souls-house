@@ -16,7 +16,7 @@ NOW = datetime.datetime(2026, 11, 2, 7, 30, 15, 999, tzinfo=datetime.timezone.ut
 
 def args(**overrides):
     base = dict(conversation=None, text="Check it", text_file=None, at=None, within="30m",
-                source_message=None, new_conversation=False, room=None, room_id=None)
+                source_message=None, new_conversation=False, room=None, room_id=None, summary=None)
     base.update(overrides)
     return argparse.Namespace(**base)
 
@@ -47,6 +47,12 @@ class CommitmentTests(unittest.TestCase):
     def test_new_conversation_carries_the_room(self):
         payload = cli.build_add_payload(args(conversation="c1", new_conversation=True, room="Ops"), {})
         self.assertEqual(("new_conversation", "Ops"), (payload["destination"], payload["room"]))
+
+    def test_summary_is_sent_trimmed_and_only_when_given(self):
+        payload = cli.build_add_payload(args(conversation="c1", summary="  Check the deploy receipt "), {})
+        self.assertEqual("Check the deploy receipt", payload["summary"])
+        self.assertNotIn("summary", cli.build_add_payload(args(conversation="c1"), {}))
+        self.assertNotIn("summary", cli.build_add_payload(args(conversation="c1", summary="   "), {}))
 
     def test_room_without_new_conversation_is_refused(self):
         with self.assertRaises(ValueError):
