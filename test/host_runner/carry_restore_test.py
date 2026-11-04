@@ -59,6 +59,7 @@ class FakeHost:
         self.backup_request = "fake-signed-request"
         self.current_command_id = "a" * 32
         self.docker_calls = []
+        self.docker_timeouts = []
         self.existing = set()
         self.removed = []
 
@@ -82,8 +83,9 @@ class FakeHost:
             with open(os.path.join(path, name), "w", encoding="utf-8") as handle:
                 handle.write("leftover")
 
-    def docker(self, argv):
+    def docker(self, argv, timeout=None):
         self.docker_calls.append(list(argv))
+        self.docker_timeouts.append(timeout)
         if argv[:3] == ["docker", "volume", "inspect"]:
             name = argv[3]
             return (name in self.existing), ("" if name in self.existing else "no such volume")
@@ -582,6 +584,66 @@ class RunRestoreCarrySessionTest(CarryRestoreTestCase):
         result = self.run_restore(self.payload(shapes=shapes))
         self.assertEqual({"mapped": 0, "resolved": 0}, result["sessions"])
         self.assertEqual(result["sessions"], cr.read_marker(self.host, self.name)["sessions"])
+
+
+    def test_a_session_check_that_finishes_late_is_not_certified(self):
+        # Mira's reproduction on #788: a 60 s request whose session check
+        # ran for 1000 s returned success and wrote "verified".
+        shapes = valid_shapes()
+        self.docker.shape_outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        now = [1_000.0]
+        real = cr.check_sessions
+
+        def slow(root, deadline=None, clock=None):
+            counts = real(root)
+            now[0] += 1_000.0
+            return counts
+
+        cr.check_sessions = slow
+        self.addCleanup(setattr, cr, "check_sessions", real)
+        with self.assertRaises(cr.CarryFailed) as caught:
+            self.run_restore(self.payload(shapes=shapes, deadline_seconds=60), clock=lambda: now[0])
+        self.assertIn("deadline", str(caught.exception))
+        marker = cr.read_marker(self.host, self.name)
+        self.assertNotEqual("verified", (marker or {}).get("state"))
+
+    def test_volume_calls_carry_a_timeout(self):
+        shapes = valid_shapes()
+        outputs = {role: shape_output(shapes[role]) for role in cr.CARRY_ROLES}
+        outputs["state"] = shape_output({"entries": shapes["state"]["entries"], "shape": "9" * 64})
+        self.docker.shape_outputs = outputs
+        with self.assertRaises(cr.CarryFailed):
+            self.run_restore(self.payload(shapes=shapes))  # the failure path removes the claimed volumes
+        self.assertTrue(self.host.docker_timeouts)
+        self.assertNotIn(None, self.host.docker_timeouts)
+
+
+class CheckSessionsDeadlineTest(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="carry-sessions-deadline-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        import sqlite3 as sql
+        connection = sql.connect(os.path.join(self.root, "chaos.sqlite"))
+        connection.execute("CREATE TABLE processes (id TEXT PRIMARY KEY NOT NULL)")
+        connection.execute("INSERT INTO processes (id) VALUES ('p1')")
+        connection.commit()
+        connection.close()
+        sessions = os.path.join(self.root, "helixkit-sessions")
+        os.makedirs(sessions)
+        with open(os.path.join(sessions, "a.json"), "w", encoding="utf-8") as handle:
+            json.dump({"chaos_process_id": "p1"}, handle)
+
+    def test_within_its_deadline_it_resolves(self):
+        self.assertEqual({"mapped": 1, "resolved": 1}, cr.check_sessions(self.root, deadline=10.0, clock=lambda: 0.0))
+
+    def test_past_its_deadline_it_stops(self):
+        with self.assertRaisesRegex(CommandFailed, "deadline"):
+            cr.check_sessions(self.root, deadline=10.0, clock=lambda: 11.0)
+
+    def test_a_deadline_passing_during_the_copy_stops_it(self):
+        ticks = iter([0.0, 0.0] + [11.0] * 100)
+        with self.assertRaisesRegex(CommandFailed, "deadline"):
+            cr.check_sessions(self.root, deadline=10.0, clock=lambda: next(ticks))
 
 
 class CarryShapeScriptTest(unittest.TestCase):

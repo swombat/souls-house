@@ -47,6 +47,7 @@ SHAPE_RE = re.compile(r"entries (0|[1-9][0-9]{0,9})\nshape ([0-9a-f]{64})\n?\Z")
 SESSION_HOMES = ("", "oauth-runtime")
 MAX_SESSION_RECORDS = 100_000
 MAX_SESSION_RECORD_BYTES = 1 << 20
+VOLUME_CALL_SECONDS = 30
 
 
 class CarryFailed(CommandFailed):
@@ -90,8 +91,8 @@ def clear_marker(host, name):
         os.unlink(path)
 
 
-def volume_exists(host, volume):
-    ok, _ = host.docker(["docker", "volume", "inspect", volume])
+def volume_exists(host, volume, timeout=VOLUME_CALL_SECONDS):
+    ok, _ = host.docker(["docker", "volume", "inspect", volume], timeout=timeout)
     return ok
 
 
@@ -99,11 +100,15 @@ def volume_is_empty(host, volume):
     return not os.listdir(host._volume_mountpoint(volume))
 
 
-def remove_volume(host, volume):
-    if not volume_exists(host, volume):
+def remove_volume(host, volume, timeout=VOLUME_CALL_SECONDS):
+    if not volume_exists(host, volume, timeout=timeout):
         return True
-    ok, _ = host.docker(["docker", "volume", "rm", volume])
+    ok, _ = host.docker(["docker", "volume", "rm", volume], timeout=timeout)
     return ok
+
+
+def _cleanup_timeout(ends, clock):
+    return max(0.001, min(VOLUME_CALL_SECONDS, ends - clock()))
 
 
 def validate_carry(payload):
@@ -143,13 +148,30 @@ def _regular(path):
         return False
 
 
-def check_sessions(root):
+def _copy_in_time(source, target, in_time, chunk=1 << 20):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(source, flags)
+    with os.fdopen(fd, "rb") as reader, open(target, "xb") as writer:
+        while True:
+            in_time()
+            data = reader.read(chunk)
+            if not data:
+                return
+            writer.write(data)
+
+
+def check_sessions(root, deadline=None, clock=time.monotonic):
     """Every session the shim would resume in the restored chaos volume names
     a process that exists in that home's chaos.sqlite. Reads a copy of the
     database (and its WAL), so the restored volume is not touched; returns
     only counts. A map that can't be read, or a mapped session that does not
-    resolve, fails the carry."""
+    resolve, fails the carry. With a deadline, every record, copy chunk and
+    query step checks the clock, so a slow volume can't run past it."""
     mapped = resolved = 0
+
+    def in_time():
+        if deadline is not None and clock() >= deadline:
+            raise CommandFailed("restore_carry deadline exceeded while checking sessions")
     for home in SESSION_HOMES:
         base = os.path.join(root, home) if home else root
         if home:
@@ -169,6 +191,7 @@ def check_sessions(root):
         if len(entries) > MAX_SESSION_RECORDS:
             raise CommandFailed("the restored session map is too large to check")
         for entry in entries:
+            in_time()
             path = os.path.join(sessions, entry)
             if not _regular(path) or os.path.getsize(path) > MAX_SESSION_RECORD_BYTES:
                 raise CommandFailed("the restored session map has an entry that can't be read")
@@ -193,15 +216,20 @@ def check_sessions(root):
         with tempfile.TemporaryDirectory(prefix="souls-house-carry-sessions-") as temp:
             os.chmod(temp, 0o700)
             copy = os.path.join(temp, "chaos.sqlite")
-            shutil.copyfile(database, copy)
+            _copy_in_time(database, copy, in_time)
             if _regular(database + "-wal"):
-                shutil.copyfile(database + "-wal", copy + "-wal")
+                _copy_in_time(database + "-wal", copy + "-wal", in_time)
+            in_time()
             connection = sqlite3.connect(copy)
+            if deadline is not None:
+                # A nonzero return interrupts the running statement.
+                connection.set_progress_handler(lambda: 1 if clock() >= deadline else 0, 1000)
             try:
                 for process_id in ids:
                     found = connection.execute("SELECT 1 FROM processes WHERE id = ? LIMIT 1", (process_id,)).fetchone()
                     resolved += 1 if found else 0
             except sqlite3.Error:
+                in_time()
                 raise CommandFailed("the restored Chaos database can't be read") from None
             finally:
                 connection.close()
@@ -285,10 +313,11 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
         # above, and still true): what is in them is only its partial
         # restore, so they are discarded and begun again from empty.
         for volume in claimed:
-            if not remove_volume(host, volume):
+            if not remove_volume(host, volume, timeout=min(VOLUME_CALL_SECONDS, remaining())):
                 raise CommandFailed("could not clear an interrupted restore")
     for role, volume in zip(CARRY_ROLES, claimed):
         _require(volume_is_empty(host, volume), f"{role} volume is not empty; restore_carry never overwrites a home")
+        remaining()
     # The claim is written before anything is restored, so a retry can tell
     # its own partial restore from a home it must never touch.
     write_marker(host, name, {"state": "claimed", "snapshot_id": spec["snapshot_id"], "shapes": spec["shapes"]})
@@ -327,7 +356,10 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
             want, got = spec["shapes"][role], result["shapes"][role]
             if got["entries"] != want["entries"] or not hmac.compare_digest(got["shape"], want["shape"]):
                 raise CommandFailed(f"the restored {role} home does not match the house's")
-        result["sessions"] = check_sessions(host._volume_mountpoint(volume_name(name, "chaos")))
+        chaos_root = host._volume_mountpoint(volume_name(name, "chaos"))
+        remaining()
+        result["sessions"] = check_sessions(chaos_root, deadline=work_ends, clock=clock)
+        remaining()  # a check that finished late is not a result
         verified = True
     except BadCommand:
         raise
@@ -349,7 +381,7 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
                 cleanup_ok = False
         try:
             ok, output = docker(["docker", "ps", "-a", "--filter", CARRY_TOOL_FILTER, "--format", "{{.Names}}"],
-                                timeout=5)
+                                timeout=max(0.001, min(5, ends - clock())))
             result["tools_stopped"] = cleanup_ok and ok and not output.strip()
         except Exception:
             result["tools_stopped"] = False
@@ -361,11 +393,17 @@ def run_restore_carry(payload, host, *, signed_request=None, docker=None, proxy_
             # them, so removing them loses nothing and lets a retry begin
             # from empty. With a tool possibly still running, leave them.
             for volume in claimed:
-                if not remove_volume(host, volume):
+                if not remove_volume(host, volume, timeout=_cleanup_timeout(ends, clock)):
                     error = error or "could not clear a partly restored home"
-            if error and all(not volume_exists(host, volume) for volume in claimed):
+            if error and all(not volume_exists(host, volume, timeout=_cleanup_timeout(ends, clock))
+                             for volume in claimed):
                 clear_marker(host, name)
         result["duration_ms"] = round((clock() - started) * 1000)
+    if not error and clock() >= ends:
+        # Verified work that only finished after the deadline is not
+        # certified: the house has stopped waiting for it. The claim marker
+        # stays, so a retry for this carry discards and restores again.
+        error = "restore_carry finished after its deadline"
     if error:
         raise CarryFailed(error, result)
     write_marker(host, name, {"state": "verified", "snapshot_id": spec["snapshot_id"], "shapes": result["shapes"],
