@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -264,6 +264,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_150000) do
     t.datetime "seeded_at"
     t.string "kind"
     t.datetime "house_runtime_ready_at"
+    t.jsonb "carry"
+    t.datetime "carry_restored_at"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
