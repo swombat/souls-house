@@ -64,11 +64,14 @@ class Admin::ResidentMigrationsControllerTest < ActionDispatch::IntegrationTest
     assert_not AuditLog.exists?(action: "vm_migration_dry_run", auditable: @agent)
   end
 
-  test "the real run goes through the same refusals: switched off, it is not moved" do
+  test "the web apply is refused before any carry and names the console door" do
     sign_in users(:site_admin_user)
-    post admin_agent_migration_path(@agent)
+    Agents::VmMigration.stub(:new, ->(*) { flunk "a web request must not start a move" }) do
+      post admin_agent_migration_path(@agent)
+    end
     assert_redirected_to admin_agent_migration_path(@agent)
-    assert_equal "Not moved: #{Agents::VmMigration::SWITCHED_OFF}", flash[:alert]
+    assert_includes flash[:alert], "Not moved:"
+    assert_includes flash[:alert], "vm:migrate[#{@agent.id}]"
     assert_nil @agent.reload.placement
     assert @agent.runtime_ready_at
   end

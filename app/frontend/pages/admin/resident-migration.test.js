@@ -44,7 +44,7 @@ test('shows every gate, says it will refuse, and measures only when asked', asyn
   expect(router.post).toHaveBeenCalledWith('/admin/agents/7/migration/measure', {}, { preserveScroll: true });
 });
 
-test('shows a role that would be refused, and moves only after confirming', async () => {
+test('shows a role that would be refused, and names the console door instead of moving', async () => {
   const roles = [
     { role: 'identity', compressed_bytes: 1048576, unpacked_bytes: 2097152, entries: 12, fits: true, refusal: null },
     {
@@ -65,16 +65,20 @@ test('shows a role that would be refused, and moves only after confirming', asyn
     fits: false,
     refusal: 'Resident files exceed v1 limits',
   };
-  render(ResidentMigration, { resident, report: report({ roles, whole }), measured: true });
+  render(ResidentMigration, {
+    resident,
+    report: report({ roles, whole }),
+    measured: true,
+    apply_command: 'runs from the console: bin/rails "vm:migrate[7]" MODE=apply REQUESTED_BY=<your email>',
+  });
   expect(screen.getByText(/The work home is larger/)).toBeVisible();
   expect(screen.getByTestId('migration-whole')).toHaveTextContent('Resident files exceed v1 limits');
   expect(screen.getByTestId('migration-estimate')).toHaveTextContent('estimated (not a bound)');
   expect(screen.getByTestId('migration-whole')).not.toHaveTextContent('at most');
   expect(screen.getByTestId('migration-unchecked')).toHaveTextContent('an estimate, not a bound');
-  await fireEvent.click(screen.getByTestId('migration-move'));
+  expect(screen.getByTestId('migration-apply')).toHaveTextContent('vm:migrate[7]');
+  expect(screen.queryByTestId('migration-move')).toBeNull();
   expect(router.post).not.toHaveBeenCalled();
-  await fireEvent.click(screen.getByTestId('migration-confirm'));
-  expect(router.post).toHaveBeenCalledWith('/admin/agents/7/migration', {}, expect.any(Object));
 });
 
 test('shows the runtime carry by name and size, and calls its size gate conservative', () => {

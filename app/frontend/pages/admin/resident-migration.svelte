@@ -2,9 +2,7 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
 
-  let { resident, report, measured = false, flash = {} } = $props();
-  let moving = $state(false);
-  let confirming = $state(false);
+  let { resident, report, measured = false, apply_command = '', flash = {} } = $props();
 
   const path = $derived(`/admin/agents/${resident.id}/migration`);
   const mb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -12,11 +10,6 @@
 
   function measure() {
     router.post(`${path}/measure`, {}, { preserveScroll: true });
-  }
-
-  function move() {
-    moving = true;
-    router.post(path, {}, { onFinish: () => ((moving = false), (confirming = false)) });
   }
 </script>
 
@@ -27,7 +20,7 @@
     <a href="/admin/residents" class="text-sm text-muted-foreground hover:text-foreground">← All residents</a>
     <h1 class="mt-2 text-2xl font-semibold">Move {resident.name} to its own server</h1>
     <p class="text-sm text-muted-foreground">
-      {resident.account_name} · A dry run first: nothing here changes until “Move it now”.
+      {resident.account_name} · A dry run: nothing here changes the resident.
     </p>
   </div>
 
@@ -146,14 +139,8 @@
       house and gets no turn before its server's first verified backup.
       {#if blocked.length}It will refuse now: {blocked[0].refusal}{/if}
     </p>
-    {#if confirming}
-      <div class="flex gap-2">
-        <Button variant="destructive" size="sm" disabled={moving} onclick={move} data-testid="migration-confirm"
-          >{moving ? 'Moving…' : `Move ${resident.name} now`}</Button>
-        <Button variant="outline" size="sm" onclick={() => (confirming = false)}>Cancel</Button>
-      </div>
-    {:else}
-      <Button size="sm" onclick={() => (confirming = true)} data-testid="migration-move">Move it now…</Button>
-    {/if}
+    <p class="text-sm" data-testid="migration-apply">
+      The move itself isn't run from this page. Not moved: {apply_command}
+    </p>
   </section>
 </div>
