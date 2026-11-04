@@ -40,11 +40,13 @@ export function describeFailure(error) {
   const message = String(error?.message || error || '');
   if (error?.name === 'AbortError') return { kind: 'aborted', message: 'Stopped.' };
   if (/no WebGPU/i.test(message)) return { kind: 'no_webgpu', message: NO_WEBGPU };
-  if (/could not download/i.test(message) || /Failed to fetch|NetworkError|Load failed/i.test(message))
+  if (/could not download/i.test(message) || /Failed to fetch|NetworkError|Load failed/i.test(message)) {
+    const status = message.match(/\((\d{3})\)/)?.[1];
     return {
       kind: 'download',
-      message: `Phonon's voice files didn't download (${message.replace(/^.*?\((\d+)\).*$/, '$1') || 'network error'}). Check the connection and try again.`,
+      message: `Phonon's voice files didn't download (${status ? `HTTP ${status}` : 'network error'}). Check the connection and try again.`,
     };
+  }
   if (/device|lost/i.test(message))
     return { kind: 'device_lost', message: 'The graphics device Phonon was using went away. Try again to reload it.' };
   return { kind: 'failed', message: `Phonon couldn't speak: ${message || 'unknown error'}.` };

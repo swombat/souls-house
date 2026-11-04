@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -88,6 +88,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_160000) do
     t.boolean "x_posting_house_app", default: false, null: false
     t.boolean "billing_required", default: false, null: false
     t.boolean "voice_mode_enabled", default: false, null: false
+    t.string "speech_engine", default: "phonon", null: false
+    t.text "eleven_labs_api_key"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -528,6 +530,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_160000) do
     t.datetime "first_conversation_woken_at"
     t.bigint "first_conversation_interaction_id"
     t.integer "first_conversation_attempts", default: 0, null: false
+    t.string "phonon_voice"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -2687,6 +2690,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_160000) do
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
     t.string "voice_mode_scope", default: "account_choice", null: false
+    t.string "speech_engine_scope", default: "disabled", null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

@@ -42,14 +42,20 @@ export function createSpeechSource({
   const made = new Map(); // id -> blob URL, newest last
   let closed = false;
 
+  // A reply made twice (an interrupted synthesis that finished anyway) keeps
+  // the URL already handed out, and the new one is released at once.
   function keep(id, url) {
-    made.delete(id);
+    if (made.has(id)) {
+      revokeUrl(url);
+      return made.get(id);
+    }
     made.set(id, url);
     while (made.size > KEEP) {
       const [oldest, oldUrl] = made.entries().next().value;
       made.delete(oldest);
       revokeUrl(oldUrl);
     }
+    return url;
   }
 
   return {
@@ -63,9 +69,7 @@ export function createSpeechSource({
       if (!answer.text) throw new SpeechError('There is nothing in this message to read aloud.', { reason: 'empty' });
       const { blob } = await synthesize(answer.text, { voice: answer.voice, signal });
       if (closed) throw new SpeechError('Stopped.');
-      const url = createUrl(blob);
-      keep(id, url);
-      return { url, engine: 'phonon' };
+      return { url: keep(id, createUrl(blob)), engine: 'phonon' };
     },
     has(id) {
       return made.has(id);

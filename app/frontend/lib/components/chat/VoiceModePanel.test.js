@@ -518,3 +518,22 @@ test('a stalled upload does not hold later turns: it falls back to rough, and it
     vi.useRealTimers();
   }
 });
+
+test('changing the voice engine while open stops the old reader and reads on with a new one; the same engine changes nothing', async () => {
+  const { createPlayer } = await import('$lib/voice-mode-playback');
+  createPlayer.mockClear();
+  const { rerender } = render(VoiceModePanel, { ...props, speechEngine: 'phonon' });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  const first = player;
+  expect(createPlayer).toHaveBeenCalledTimes(1);
+
+  await rerender({ ...props, speechEngine: 'phonon' });
+  expect(first.log).not.toContainEqual(['close']);
+  expect(createPlayer).toHaveBeenCalledTimes(1);
+
+  await rerender({ ...props, speechEngine: 'elevenlabs' });
+  expect(first.log).toContainEqual(['close']);
+  expect(createPlayer).toHaveBeenCalledTimes(2);
+  expect(player).not.toBe(first);
+  expect(player.log).not.toContainEqual(['close']);
+});
