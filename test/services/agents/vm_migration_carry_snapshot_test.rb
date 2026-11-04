@@ -15,17 +15,21 @@ class Agents::VmMigrationCarrySnapshotTest < ActiveSupport::TestCase
   end
 
   class FakeAdapter
+
     attr_reader :opened
     def repository_url = "rest:http://carry:#{CREDENTIAL}@127.0.0.1:4242/"
     def probe_url = "http://127.0.0.1:4242/.carry-probe/#{'1' * 32}"
     def probe_answer = "carry-probe #{'1' * 32}"
+
     def open(_agent, deadline:)
       @opened = deadline
       yield self
     end
+
   end
 
   class FakeDocker
+
     attr_reader :calls
     def initialize(&respond)
       @respond = respond
@@ -41,6 +45,7 @@ class Agents::VmMigrationCarrySnapshotTest < ActiveSupport::TestCase
 
     def runs = @calls.select { |call| call[:argv][0, 2] == %w[docker run] }
     def restic(subcommand) = runs.select { |call| call[:argv].include?(subcommand) && call[:argv].include?("rest.connections=1") }
+
   end
 
   setup do
