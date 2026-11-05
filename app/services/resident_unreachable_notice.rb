@@ -10,8 +10,11 @@
 # the resident's home account are told once, in a conversation of its own in
 # Main with the resident in it (a system line wakes nobody), with an audit entry
 # as the record; and once more, in the same conversation, when the probe passes
-# again. The breaker's open state is the latch: an open circuit is never
-# announced twice however long it lasts, and closing it is what says "back".
+# again. The audit rows are the latch: an outage with no "reachable again" row
+# is open, and an open outage is never announced twice however long it lasts.
+# The latch and the failure count (consecutive_health_failures) are both rows,
+# so a restarted process and every worker see the same outage; an in-memory
+# breaker (#680) would forget it on restart and announce it again.
 #
 # Nothing is said about a resident asleep for billing (its container is stopped
 # on purpose, and the asleep banner already says so), a resident switched off
@@ -22,12 +25,8 @@
 class ResidentUnreachableNotice
 
   THRESHOLD = 3
-  CIRCUIT_WINDOW = 1.day.to_i
-  CIRCUIT_KEY = "resident_reachable:%s".freeze
   UNREACHABLE = "resident_unreachable".freeze
   REACHABLE = "resident_reachable_again".freeze
-
-  class ProbeFailed < StandardError; end
 
   # The latest outage of this resident that has not been closed by a recovery.
   def self.open_outage(agent)
@@ -45,16 +44,6 @@ class ResidentUnreachableNotice
     nil
   end
 
-  # The circuit for one resident. Its open state is process-wide and shared by
-  # every observer of that resident; a new instance restores it from storage.
-  def self.circuit_for(agent)
-    BreakerMachines::Registry.instance.get_or_create_dynamic_circuit(
-      CIRCUIT_KEY % agent.id, agent,
-      failure_threshold: THRESHOLD, failure_window: CIRCUIT_WINDOW,
-      reset_timeout: CIRCUIT_WINDOW, reset_timeout_jitter: 0
-    )
-  end
-
   def initialize(agent)
     @agent = agent
   end
@@ -62,33 +51,18 @@ class ResidentUnreachableNotice
   # The read, the decision and the write happen under a lock on the resident's
   # row, re-read inside it: two health jobs can overlap (the probes are
   # sequential network calls and can outlast the five-minute schedule), and
-  # without the lock both would see the circuit closed and each open one, or
-  # both see it open and each close it.
+  # without the lock both would see no open outage and each open one, or both
+  # see the same open outage and each close it.
   def observe!
     @agent.with_lock do
-      open = announced_outage?
+      outage = self.class.open_outage(@agent)
       if @agent.health_state == "healthy"
-        close_circuit!
-        reachable_again!(self.class.open_outage(@agent)) if open
-      elsif !open && @agent.health_state == "unhealthy" && worth_saying?
-        record_failure!
-        unreachable! if announced_outage?
+        reachable_again!(outage) if outage
+      elsif outage.nil? && @agent.health_state == "unhealthy" &&
+          @agent.consecutive_health_failures >= THRESHOLD && worth_saying?
+        unreachable!
       end
     end
-  end
-
-  def announced_outage?
-    self.class.circuit_for(@agent).open?
-  end
-
-  def close_circuit!
-    self.class.circuit_for(@agent).reset!
-  end
-
-  def record_failure!
-    self.class.circuit_for(@agent).call { raise ProbeFailed }
-  rescue ProbeFailed
-    nil
   end
 
   def unreachable!
@@ -106,8 +80,6 @@ class ResidentUnreachableNotice
   end
 
   def reachable_again!(outage)
-    return unless outage
-
     chat = Chat.find_by(id: outage.data&.dig("chat_id"), account_id: @agent.account_id)
     at = Time.current
     Agent.transaction do

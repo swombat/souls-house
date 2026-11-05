@@ -57,8 +57,9 @@ class Api::V1::Field::SwarmSearchesControllerTest < ActionDispatch::IntegrationT
       swarm(tag: "research", question: { a: 1 })
       assert_response :unprocessable_entity
 
-      ThrottleMachines.storage.increment_counter("field_swarm:account:#{@account.id}", 1.day.to_i,
-        FieldSwarm::MAX_SEARCHES_PER_ACCOUNT_PER_DAY)
+      FieldSwarm::MAX_SEARCHES_PER_ACCOUNT_PER_DAY.times do
+        FieldSwarmSearch.create!(account: @account, question_chars: 1, model_id: FieldSwarm::MODEL, status: "complete")
+      end
       swarm(tag: "research", question: "Worth?")
       assert_response :too_many_requests
     end
