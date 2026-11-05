@@ -14,6 +14,10 @@ module Billing
   class UngrantedRate < StandardError; end
 
   GRACE_PERIOD = 14.days
+  # Upgrade the SDK independently of Stripe's billing request contract.
+  # This is the version used by stripe-ruby 20.0.0; changing it needs a
+  # separate billing compatibility review.
+  STRIPE_API_VERSION = "2026-09-30.endive"
 
   def self.secret_key
     Rails.application.credentials.dig(:stripe, :secret_key).presence || ENV["STRIPE_SECRET_KEY"].presence
@@ -48,7 +52,7 @@ module Billing
   def self.client
     raise NotConfigured, "Stripe is not configured on this house" if secret_key.blank?
 
-    Stripe::StripeClient.new(secret_key)
+    Stripe::StripeClient.new(secret_key, stripe_version: STRIPE_API_VERSION)
   end
 
 end
