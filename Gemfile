@@ -17,6 +17,13 @@ gem "railties", rails_version
 gem "state_machines", "~> 0.202.0"
 gem "state_machines-activerecord", "~> 0.200.0"
 
+# Resilience patterns: rate limiting, retries with backoff, circuit breaking,
+# and gated feature rollout.
+gem "throttle_machines"
+gem "chrono_machines"
+gem "breaker_machines"
+gem "star_gates"
+
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
@@ -83,7 +90,7 @@ group :development, :test do
 end
 
 group :development do
-  gem "state_machines-mermaid", "~> 0.1.0"
+  gem "state_machines-mermaid", "~> 0.2"
 
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
@@ -130,3 +137,5 @@ gem "paper_trail", "~> 17.0"
 gem "doorkeeper", "5.9.9"
 
 gem "stripe", "~> 20.0"
+
+gem "async", "~> 2.46"

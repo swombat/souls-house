@@ -20,7 +20,7 @@ module ApiHumanReach
     # The web's `require_feature_enabled :agents`, answered in JSON.
     def require_api_feature_enabled(feature, **options)
       before_action(**options) do
-        unless Setting.instance.public_send(:"allow_#{feature}?")
+        unless Setting.feature_enabled?(feature)
           render json: { error: "This feature is currently disabled" }, status: :forbidden
         end
       end
