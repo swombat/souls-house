@@ -871,6 +871,7 @@ SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
 
 
 REFLEX_TRACE_PATH = AGENT_IDENTITY_PATH / "memory" / "automation" / "state" / "stop-events.jsonl"
+REFLEX_TRACE_TAIL_BYTES = 64 * 1024
 
 
 def log_reflex_skips(since, trace_path=None):
@@ -885,10 +886,16 @@ def log_reflex_skips(since, trace_path=None):
     """
     path = Path(trace_path) if trace_path else REFLEX_TRACE_PATH
     try:
-        with path.open(encoding="utf-8") as fh:
-            lines = fh.readlines()[-50:]
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - REFLEX_TRACE_TAIL_BYTES))
+            tail = fh.read()
     except OSError:
         return 0
+    lines = tail.decode("utf-8", errors="replace").splitlines()
+    if size > REFLEX_TRACE_TAIL_BYTES:
+        lines = lines[1:]  # first line is probably cut mid-row
     reasons = []
     for line in lines:
         try:

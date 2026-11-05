@@ -113,6 +113,24 @@ class ShimPassesRouteTest(unittest.TestCase):
         self.assertIn("route_refuses_assistant_last", logs.output[0])
         self.assertEqual(shim.log_reflex_skips(since, Path(temporary.name) / "missing.jsonl"), 0)
 
+    def test_invalid_utf8_and_a_large_trace_stay_contained(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        shim = self.load_shim(Path(temporary.name))
+        trace = Path(temporary.name) / "stop-events.jsonl"
+        since = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
+        skip = json.dumps({"recorded_at": "2026-11-05T11:00:02+01:00",
+                           "journal_skipped": "route_refuses_assistant_last"}).encode()
+        old = json.dumps({"recorded_at": "2026-11-05T09:00:00+00:00",
+                          "journal_skipped": "route_refuses_assistant_last"}).encode()
+        filler = b"\xff\xfe not utf-8 \x80\n" + old + b"\n"
+        trace.write_bytes(filler * (2 * shim.REFLEX_TRACE_TAIL_BYTES // len(filler)) + skip + b"\n")
+        with self.assertLogs(shim.log, level="WARNING") as logs:
+            self.assertEqual(shim.log_reflex_skips(since, trace), 1)
+        self.assertIn("route_refuses_assistant_last", logs.output[0])
+        trace.write_bytes(b"\xff\xfe\x80\n")
+        self.assertEqual(shim.log_reflex_skips(since, trace), 0)
+
     def test_a_run_whose_hook_skipped_is_logged_by_the_trigger(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
