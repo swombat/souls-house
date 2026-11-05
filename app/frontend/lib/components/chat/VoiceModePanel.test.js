@@ -772,7 +772,7 @@ test('after End, a late turn that cannot be sent is kept for next time as its ca
   expect(posts[0].content).toContain('five, six, seven, eight');
 });
 
-test('End with a clean transcript still pending writes the turn down first; a reopened panel and the late result send it under one identity (#797 review)', async () => {
+test('End with a clean transcript still pending writes the turn down first; a reopened panel sends it, and the late result does not send it again (#797 review)', async () => {
   const onend = vi.fn();
   render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
   await waitFor(() => expect(callbacks).not.toBeNull());
@@ -797,9 +797,50 @@ test('End with a clean transcript still pending writes the turn down first; a re
   expect(posts[0].clientId).toBe(identity);
 
   slow.resolve({ text: 'Five, six, seven, eight.', signedId: 'sig-late', error: null });
-  await waitFor(() => expect(posts).toHaveLength(2));
-  expect(posts[1]).toMatchObject({ content: 'Five, six, seven, eight.', clientId: identity });
   await waitFor(() => expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+});
+
+test('End writes down the live text that arrived after the turn closed, not only the caption before it (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Words received after commit.');
+  await waitFor(() => expect(screen.getByText(/Words received after commit/)).toBeTruthy());
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  const stored = JSON.parse(sessionStorage.getItem('voice-mode-held:chat'));
+  expect(stored).toHaveLength(1);
+  expect(stored[0].text).toContain('Words received after commit');
+});
+
+test('Discard in a reopened panel is final: the panel that ended does not send the turn when its late result arrives (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Do not send this.');
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  expect(JSON.parse(sessionStorage.getItem('voice-mode-held:chat'))).toHaveLength(1);
+
+  cleanup();
+  posts.reply = { ok: false, status: 502, body: {} };
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy());
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
+
+  slow.resolve({ text: 'Do not send this.', signedId: 'sig-late', error: null });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
 });
 
 test('a retried held turn is posted with the identity of its first send (#797 review)', async () => {

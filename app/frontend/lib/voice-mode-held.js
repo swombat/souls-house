@@ -29,6 +29,33 @@ export function heldStorageKey(chatId) {
   return `voice-mode-held:${chatId}`;
 }
 
+// Identities a queue has let go of (sent, discarded, no words after all),
+// under `<key>:finished`. A turn's identity is unique, so once any panel has
+// finished it, no other panel sends it or writes it back: Discard in a
+// reopened panel is final even while the panel that ended is still finishing
+// that turn (Mira, #797 review).
+const FINISHED_KEEP = 100;
+
+function readFinished(storage, key) {
+  try {
+    const list = JSON.parse(storage?.getItem(`${key}:finished`) || '[]');
+    return new Set(Array.isArray(list) ? list : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markFinished(storage, key, clientMessageId) {
+  if (!clientMessageId) return;
+  try {
+    const list = [...readFinished(storage, key)].filter((id) => id !== clientMessageId);
+    list.push(clientMessageId);
+    storage?.setItem(`${key}:finished`, JSON.stringify(list.slice(-FINISHED_KEEP)));
+  } catch {
+    // storage unavailable: this panel still drops the turn
+  }
+}
+
 function readStored(storage, key) {
   try {
     const raw = storage?.getItem(key);
@@ -64,7 +91,11 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
 
   function persist() {
     try {
-      const others = readStored(storage, key).filter((item) => !seen.has(item.clientMessageId));
+      const finished = readFinished(storage, key);
+      items = items.filter((item) => !finished.has(item.clientMessageId));
+      const others = readStored(storage, key).filter(
+        (item) => !seen.has(item.clientMessageId) && !finished.has(item.clientMessageId)
+      );
       const mine = items
         .filter((item) => item.text?.trim())
         .map(({ clientMessageId, text, signedId, durationMs, error }) => ({
@@ -134,10 +165,24 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
     changed();
   }
 
+  // Lets a turn go for good, here and in every panel sharing the key.
   function discard(id) {
+    const item = items.find((other) => other.id === id);
+    if (item) markFinished(storage, key, item.clientMessageId);
     const before = items.length;
     items = items.filter((item) => item.id !== id);
     if (items.length !== before) changed();
+  }
+
+  // A turn some panel has already sent or let go: not to be sent again.
+  function finished(clientMessageId) {
+    return Boolean(clientMessageId) && readFinished(storage, key).has(clientMessageId);
+  }
+
+  // A turn this panel sent without holding it: recorded as finished too, so a
+  // copy another panel holds is not sent a second time.
+  function finish(clientMessageId) {
+    markFinished(storage, key, clientMessageId);
   }
 
   // Sends from the front, in order, until one fails. auto: an automatic retry
@@ -159,7 +204,14 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
           result = { ok: false, error: error?.message || 'Could not send what you said.' };
         }
         if (!items.includes(item)) continue; // discarded while it was being sent
+        if (finished(item.clientMessageId)) {
+          // Another panel sent or discarded it meanwhile.
+          items = items.filter((other) => other !== item);
+          changed();
+          continue;
+        }
         if (result?.ok) {
+          markFinished(storage, key, item.clientMessageId);
           items = items.filter((other) => other !== item);
           changed();
           continue;
@@ -176,6 +228,7 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
         }
         if (result?.dropped) {
           // Transcribed again and there were no words after all.
+          markFinished(storage, key, item.clientMessageId);
           items = items.filter((other) => other !== item);
           changed();
           continue;
@@ -200,6 +253,8 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
     hold,
     update,
     discard,
+    finished,
+    finish,
     drain,
     // The live turn object, for deliver() to read samples from.
     item: (id) => items.find((item) => item.id === id) || null,

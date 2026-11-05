@@ -122,4 +122,19 @@ describe('createHeldTurns', () => {
     a.discard(first);
     expect(JSON.parse(storage.data.k).map((t) => t.text)).toEqual(['from b']);
   });
+
+  test('a turn one panel discards is finished for every panel: the other neither sends it nor writes it back', async () => {
+    const storage = memoryStorage();
+    const deliver = vi.fn(async () => ({ ok: true }));
+    const old = createHeldTurns({ storage, key: 'k', deliver });
+    const oldId = old.hold({ text: 'said once', clientMessageId: 'vm-cccccccc' });
+    const reopened = createHeldTurns({ storage, key: 'k', deliver: async () => ({ ok: false }) });
+    reopened.discard(reopened.list()[0].id);
+    expect(old.finished('vm-cccccccc')).toBe(true);
+    old.update(oldId, { text: 'said once, clean' });
+    expect(storage.data.k).toBeUndefined();
+    expect(old.size).toBe(0);
+    await old.drain();
+    expect(deliver).not.toHaveBeenCalled();
+  });
 });
