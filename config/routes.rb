@@ -333,6 +333,7 @@ Rails.application.routes.draw do
       resource :retry, only: :create
       resource :voice, only: :create
       resource :speech, only: :show
+      resource :speech_text, only: :show
       resource :safeguard_reset, only: :create
     end
   end
@@ -437,6 +438,7 @@ Rails.application.routes.draw do
         resources :images, only: :show, constraints: { id: /sha256:[0-9a-f]{64}/ }
         resources :seeds, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :runner_bundles, only: :show, constraints: { id: /[0-9a-f]{64}/ }
+        resources :birth_bundles, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :commands, only: [] do
           post :next, on: :collection
           post :result, on: :member
@@ -453,7 +455,7 @@ Rails.application.routes.draw do
         resource :avatar, only: %i[update destroy], controller: "me/avatars"
       end
       resources :accounts, only: :index
-      resources :visual_tags, only: :index
+      resources :visual_tags, only: %i[index update]
       resources :rooms, only: %i[index create update destroy] do
         collection do
           patch :main

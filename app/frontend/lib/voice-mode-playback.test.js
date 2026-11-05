@@ -219,3 +219,117 @@ test('a parked element already in error is not resumed, even if its error event 
   player.enqueue('a', { resume: true });
   expect(audio.log.at(-1)).toEqual(['play', '/messages/a/speech']);
 });
+
+// Phonon makes the audio before it can play, so urlFor answers with a promise.
+// Each request is kept here with its signal and its own resolve/reject.
+function deferredSource() {
+  const requests = [];
+  const urlFor = vi.fn((id, { signal } = {}) => {
+    let resolve, reject;
+    const promise = new Promise((ok, fail) => ((resolve = ok), (reject = fail)));
+    requests.push({ id, signal, resolve, reject });
+    return promise;
+  });
+  return { urlFor, requests };
+}
+const flush = async () => {
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+};
+
+test('a reply still being made plays nothing until its audio is ready', async () => {
+  const audio = fakeAudio();
+  const { urlFor, requests } = deferredSource();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  expect(player.speaking).toBe(true);
+  await flush();
+  expect(audio.play).not.toHaveBeenCalled();
+  requests[0].resolve('blob:a');
+  await flush();
+  expect(audio.log).toEqual([['play', 'blob:a']]);
+});
+
+test('interrupting a reply still being made aborts the making, parks nothing, and ignores its late audio', async () => {
+  const audio = fakeAudio();
+  const { urlFor, requests } = deferredSource();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  audio.currentTime = 4; // left over from an earlier clip: not this reply's position
+  expect(player.interrupt()).toEqual([{ id: 'a', at: 0, playing: false }]);
+  expect(requests[0].signal.aborted).toBe(true);
+  expect(audio.pause).not.toHaveBeenCalled();
+
+  requests[0].resolve('blob:a');
+  await flush();
+  expect(audio.src).toBeUndefined();
+  expect(audio.play).not.toHaveBeenCalled();
+
+  // It was never parked, so a resume asks for it again.
+  player.enqueue('a', { resume: true });
+  expect(requests).toHaveLength(2);
+  expect(requests[1].id).toBe('a');
+  requests[1].resolve('blob:a2');
+  await flush();
+  expect(audio.log).toEqual([['play', 'blob:a2']]);
+});
+
+test('a reply that cannot be made is reported and the next one plays', async () => {
+  const audio = fakeAudio();
+  const onerror = vi.fn();
+  const { urlFor, requests } = deferredSource();
+  const player = createPlayer({ audio, urlFor, onerror });
+  player.enqueue('a');
+  player.enqueue('b');
+  const failure = new Error('Phonon needs WebGPU.');
+  requests[0].reject(failure);
+  await flush();
+  expect(onerror).toHaveBeenCalledWith('a', failure);
+  expect(requests[1].id).toBe('b');
+  requests[1].resolve('blob:b');
+  await flush();
+  expect(audio.log).toEqual([['play', 'blob:b']]);
+});
+
+test('an aborted making is not reported as a failure', async () => {
+  const audio = fakeAudio();
+  const onerror = vi.fn();
+  const { urlFor, requests } = deferredSource();
+  const player = createPlayer({ audio, urlFor, onerror });
+  player.enqueue('a');
+  player.enqueue('b');
+  requests[0].reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+  await flush();
+  expect(onerror).not.toHaveBeenCalled();
+  expect(requests.map(({ id }) => id)).toEqual(['a', 'b']);
+});
+
+test('closing while a reply is being made means it never plays', async () => {
+  const audio = fakeAudio();
+  const { urlFor, requests } = deferredSource();
+  const player = createPlayer({ audio, urlFor });
+  player.enqueue('a');
+  player.close();
+  expect(requests[0].signal.aborted).toBe(true);
+  requests[0].resolve('blob:a');
+  await flush();
+  expect(audio.play).not.toHaveBeenCalled();
+  expect(player.speaking).toBe(false);
+});
+
+// Mira's review of #790 (Bob's Sol pass): the unlock clip, or the reply before,
+// ending while the next reply is still being made by Phonon must not skip it.
+test('an ended event while the next reply is still being made does not skip it', async () => {
+  const audio = fakeAudio();
+  let resolveA;
+  const player = createPlayer({ audio, urlFor: () => new Promise((resolve) => (resolveA = resolve)) });
+  unlockAudio(audio);
+  player.enqueue('A');
+  audio.end(); // the unlock clip finishing
+  expect(player.speaking).toBe(true);
+  resolveA('blob:A');
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(audio.log.at(-1)).toEqual(['play', 'blob:A']);
+  audio.end();
+  expect(player.speaking).toBe(false);
+});

@@ -116,7 +116,7 @@ test('voices are native radios in one named group, so arrow keys and the single 
     expect(r.type).toBe('radio');
     expect(r.name).toBe('agent-voice');
   }
-  expect(screen.getByRole('radiogroup', { name: 'Voice' })).toBeInTheDocument();
+  expect(screen.getByRole('radiogroup', { name: 'ElevenLabs voice' })).toBeInTheDocument();
 
   // Keyboard selection changes the pick the same way a tap does.
   const brian = screen.getByRole('radio', { name: /Brian/ });

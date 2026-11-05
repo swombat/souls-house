@@ -29,7 +29,7 @@ module Api
 
         current_api_agent.require_conversation_runtime!
         attributes = {
-          agent: current_api_agent, source_chat: chat, text: params[:text],
+          agent: current_api_agent, source_chat: chat, text: params[:text], summary: params[:summary],
           due_at: parse_due_at(params[:due_at]), destination: params[:destination].presence || "same_conversation"
         }
         if params[:source_message_id].present?

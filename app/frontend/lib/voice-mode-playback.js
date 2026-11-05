@@ -58,7 +58,7 @@ export function unlockAudio(audio = sharedAudio()) {
   audio.play()?.catch?.(() => {});
 }
 
-export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
+export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror } = {}) {
   let queue = [];
   let current = null;
   let parked = null;
@@ -73,15 +73,32 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     next();
   }
 
-  // A resumed reply that cannot play on is asked for again from the top.
-  function failed(item) {
+  // A resumed reply that cannot play on is asked for again from the top. Any
+  // other failure is reported (an interruption's abort is not a failure) and
+  // the queue moves on.
+  function failed(item, error) {
     if (item !== current) return;
     if (item.resumed) {
       current = null;
       queue.unshift({ id: item.id, generation });
       return next();
     }
+    if (error && error.name !== 'AbortError') onerror?.(item.id, error);
     finish(item);
+  }
+
+  // The source is set only now, so an item still being made (Phonon) never
+  // counts as playing: an interruption before this point parks nothing.
+  function start(item, url) {
+    if (closed || item !== current || item.generation !== generation) return;
+    if (!url) return failed(item, new Error('No audio for this reply.'));
+    item.started = true;
+    audio.src = url;
+    play(item, audio.play());
+  }
+
+  function play(item, started) {
+    started?.catch?.((error) => item.generation === generation && failed(item, error));
   }
 
   function next() {
@@ -89,41 +106,60 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
     if (!item) return report();
     current = item;
     report();
-    let started;
     if (item.resume && parked?.id === item.id && !audio.error) {
       item.resumed = true;
+      item.started = true;
       parked = null;
-      started = audio.play();
-    } else {
-      parked = null;
-      audio.src = urlFor(item.id);
-      started = audio.play();
+      return play(item, audio.play());
     }
-    started?.catch?.(() => item.generation === generation && failed(item));
+    parked = null;
+    // urlFor may answer at once (a URL) or later (a promise of one: Phonon
+    // makes the audio first). Interrupting aborts the making.
+    item.controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let source;
+    try {
+      source = urlFor(item.id, { signal: item.controller?.signal });
+    } catch (error) {
+      return failed(item, error);
+    }
+    if (typeof source?.then === 'function') {
+      source.then(
+        (url) => start(item, url),
+        (error) => item.generation === generation && failed(item, error)
+      );
+    } else {
+      start(item, source);
+    }
   }
 
-  const onended = () => current && finish(current);
+  // Only a reply whose audio was set ends: the unlock clip (or the previous
+  // reply) finishing while the next one is still being made must not skip it.
+  const onended = () => current?.started && finish(current);
   // An error while a reply is parked means that source is dead: forget it, so
   // its resume is a fresh request rather than a play() on a broken element.
-  const onerror = () => {
-    if (current) return failed(current);
-    parked = null;
+  const onerrorEvent = () => {
+    if (current?.started) return failed(current);
+    if (!current) parked = null;
   };
   audio.addEventListener('ended', onended);
-  audio.addEventListener('error', onerror);
+  audio.addEventListener('error', onerrorEvent);
 
   function stop() {
     generation += 1;
-    const position = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const started = Boolean(current?.started);
+    const position = started && Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
     const dropped = [
-      ...(current ? [{ id: current.id, at: position, playing: true }] : []),
+      ...(current ? [{ id: current.id, at: position, playing: started }] : []),
       ...queue.map((item) => ({ id: item.id, at: 0, playing: false })),
     ];
     queue = [];
     if (current) {
-      parked = { id: current.id };
+      current.controller?.abort();
+      if (started) {
+        parked = { id: current.id };
+        audio.pause();
+      }
       current = null;
-      audio.pause();
       report();
     }
     return dropped;
@@ -140,10 +176,11 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange } = {}) {
       closed = true;
       stop();
       parked = null;
+      audio.pause?.();
       audio.removeAttribute('src');
       audio.load?.();
       audio.removeEventListener('ended', onended);
-      audio.removeEventListener('error', onerror);
+      audio.removeEventListener('error', onerrorEvent);
     },
     get speaking() {
       return current !== null;

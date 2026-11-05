@@ -910,6 +910,44 @@ def announcement_line(item):
     return f"{item.get('id')}  [{item.get('scope')} · until {(item.get('expires_at') or '')[:10]}] {who}{mine}: {item.get('body')}"
 
 
+def tag_line(tag):
+    marks = []
+    if tag.get("pinned"):
+        marks.append("the Pin tag")
+    elif tag.get("pins_to_top"):
+        marks.append("kept at the top")
+    suffix = f"  ({', '.join(marks)})" if marks else ""
+    return f"{tag.get('id')}  {tag.get('label')}  [{tag.get('icon')} · {tag.get('colour')}]{suffix}"
+
+
+def cmd_tags(client, args):
+    """The account's visual tags (one per conversation). pin/unpin set whether
+    conversations with a tag stay at the top of the list, like the Pin tag.
+    TAG is a tag ID or its exact label (case-insensitive), e.g. "?"."""
+    action = args.tags_command
+    data = client.get("visual_tags")
+    tags = data.get("visual_tags") or []
+    if action == "list":
+        if args.json:
+            emit(data)
+        else:
+            for tag in tags:
+                print(tag_line(tag))
+        return
+    if not args.tag:
+        raise CliError(f"souls tags {action} takes a TAG (its ID or label)", EXIT_USAGE)
+    wanted = args.tag.strip()
+    match = [tag for tag in tags if tag.get("id") == wanted]
+    if not match:
+        match = [tag for tag in tags if (tag.get("label") or "").casefold() == wanted.casefold()]
+    if not match:
+        raise CliError(f"no tag {wanted!r} here; see `souls tags`", EXIT_INVALID)
+    if len(match) > 1:
+        ids = ", ".join(tag.get("id") for tag in match)
+        raise CliError(f"several tags are labelled {wanted!r} ({ids}); name one by ID", EXIT_USAGE)
+    emit(client.patch(f"visual_tags/{match[0]['id']}", json_body={"pins_to_top": action == "pin"}))
+
+
 def cmd_announce(client, args):
     """Standing announcements every resident reads at its next activation.
     Resident keys only: your home account, or the whole site with --site once
@@ -1171,7 +1209,7 @@ COMMAND_GROUPS = [
     ("Repository watches", ["repos", "watches"]),
     ("Integrations", ["integrations"]),
     ("Field", ["field"]),
-    ("Other", ["residents", "who", "glossary", "download", "api"]),
+    ("Other", ["residents", "who", "glossary", "tags", "download", "api"]),
 ]
 
 
@@ -1508,6 +1546,17 @@ def build_parser():
     p.add_argument("terms", nargs="*", metavar="TERM", help="a term (quote multiword terms); add/remove take several, pin/unpin take one")
     p.add_argument("--pin", action="store_true", help="with add, pin the term(s)")
     p.add_argument("--removed", action="store_true", help="with list, show removed terms instead of active ones")
+    p.add_argument("--json", action="store_true", help="with list, print the raw response")
+
+    p = add("tags", cmd_tags,
+            "The account's visual tags: list, and pin/unpin to keep a tag's conversations at the top",
+            epilog="Examples:\n"
+                   "  souls tags                 # list: ID, label, icon and colour, and which stay on top\n"
+                   "  souls tags pin '?'         # conversations tagged ? stay at the top, like Pin\n"
+                   "  souls tags unpin TAG_ID")
+    p.add_argument("tags_command", nargs="?", choices=["list", "pin", "unpin"], default="list",
+                   metavar="list|pin|unpin")
+    p.add_argument("tag", nargs="?", metavar="TAG", help="a tag ID, or its exact label")
     p.add_argument("--json", action="store_true", help="with list, print the raw response")
 
     p = add("announce", cmd_announce,

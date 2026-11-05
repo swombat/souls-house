@@ -148,6 +148,11 @@ class Agent < ApplicationRecord
   # (including older non-standard ones) and predecessor copies are kept.
   normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
   validate :voice_is_standard, if: -> { persisted? && will_save_change_to_voice_id? && voice_id.present? }
+  # Its Phonon voice (SpeechEngine): one of the catalogue's English voices, or
+  # nil for the catalogue default. Kept beside voice_id, so switching engine
+  # keeps each engine's choice.
+  normalizes :phonon_voice, with: ->(value) { value.to_s.strip.presence }
+  validate :phonon_voice_is_standard, if: -> { will_save_change_to_phonon_voice? && phonon_voice.present? }
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -277,7 +282,7 @@ class Agent < ApplicationRecord
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
-                   :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
+                   :voiced?, :voice_id, :phonon_voice, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
                    :last_health_check_at, :health_state, :consecutive_health_failures,
                    :health_failing_since, :health_failure_kind, :runtime_restart_count,
                    :github_repo_url, :github_repo_owner, :github_repo_name,
@@ -342,8 +347,11 @@ class Agent < ApplicationRecord
     thinking_enabled? && Chat.supports_thinking?(model_id)
   end
 
+  # Every resident can be read aloud: with Phonon (the default engine) a
+  # resident with no voice of its own uses the catalogue's default one. Under
+  # ElevenLabs a missing voice is a reason SpeechEngine gives, not silence.
   def voiced?
-    voice_id.present?
+    true
   end
 
   def inline? = runtime == "inline"
@@ -549,6 +557,10 @@ class Agent < ApplicationRecord
     errors.add(:voice_id, "is not one of the standard ElevenLabs voices") unless ElevenLabsVoices.standard?(voice_id)
   rescue ElevenLabsVoices::Unavailable
     errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
+  end
+
+  def phonon_voice_is_standard
+    errors.add(:phonon_voice, "is not one of the Phonon voices") unless PhononVoices.standard?(phonon_voice)
   end
 
   def identity_fields_are_read_only_when_external

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConversationDraft, clearLocalDrafts } from './conversation-draft';
+import { ConversationDraft, DRAFT_LOGOUT, clearLocalDrafts, watchDraftPage } from './conversation-draft';
 
 describe('private conversation drafts', () => {
   let remote, request, editors;
@@ -204,5 +204,33 @@ describe('private conversation drafts', () => {
       await vi.advanceTimersByTimeAsync(200);
     }
     expect(remote.revision).toBeGreaterThan(0);
+  });
+});
+
+// Moved out of MessageComposer unchanged (#792, Svelte size ceiling): the page wiring.
+describe('watchDraftPage', () => {
+  const fakeDraft = () => ({ refresh: vi.fn(), dispose: vi.fn(), suppressPersistence: false });
+
+  it('refreshes when the window regains focus and stops after cleanup', () => {
+    const draft = fakeDraft();
+    const unwatch = watchDraftPage(draft, { userId: 'u1' });
+    window.dispatchEvent(new Event('focus'));
+    expect(draft.refresh).toHaveBeenCalledTimes(1);
+    unwatch();
+    window.dispatchEvent(new Event('focus'));
+    expect(draft.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("this user's sign-out elsewhere disposes the draft without persisting and locks the editor", () => {
+    const draft = fakeDraft();
+    const onlogout = vi.fn();
+    const unwatch = watchDraftPage(draft, { userId: 'u1', onlogout });
+    window.dispatchEvent(new StorageEvent('storage', { key: `${DRAFT_LOGOUT}u2` }));
+    expect(onlogout).not.toHaveBeenCalled();
+    window.dispatchEvent(new StorageEvent('storage', { key: `${DRAFT_LOGOUT}u1` }));
+    expect(draft.suppressPersistence).toBe(true);
+    expect(draft.dispose).toHaveBeenCalled();
+    expect(onlogout).toHaveBeenCalledTimes(1);
+    unwatch();
   });
 });

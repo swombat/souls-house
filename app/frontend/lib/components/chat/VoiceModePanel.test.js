@@ -1,9 +1,24 @@
+import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 // The microphone is replaced by a fake whose callbacks the test drives, and
 // the realtime transcriber by one whose transcripts the test settles. A "turn"
 // is the detector saying an utterance began, streamed, and ended.
+
+// The ElevenLabs answer from the speech source (SpeechEngine), given at once:
+// a thenable that runs its callback synchronously, so the order of what is
+// heard can be asserted step by step as before the source existed. Phonon's
+// own path is covered in speech-source.test.js and voice-mode-phonon.test.js.
+const syncThen = (value) => ({ then: (ok) => syncThen(ok ? ok(value) : value) });
+vi.mock('$lib/speech-source', async () => ({
+  accountSpeechEngine: (await import('svelte/store')).writable('elevenlabs'),
+  createSpeechSource: () => ({
+    resolve: (id) => syncThen({ url: `/messages/${id}/speech`, engine: 'elevenlabs' }),
+    close: () => {},
+  }),
+}));
+
 let callbacks;
 let stopped;
 vi.mock('$lib/voice-mode-capture', () => ({
@@ -78,8 +93,8 @@ vi.mock('$lib/voice-mode-turn-audio', async (importOriginal) => {
       return Promise.resolve().then(() =>
         transcriber.lastCommit.then(
           (text) => ({ text: typeof text === 'string' ? text : '', signedId: 'sig-1', error: null }),
-          () => ({ text: '', signedId: null, error: 'upload failed' }),
-        ),
+          () => ({ text: '', signedId: null, error: 'upload failed' })
+        )
       );
     }),
   };
@@ -309,7 +324,9 @@ const reply = (id, extra = {}) => ({
 test('replies that arrive after voice mode opens are read aloud, the backlog is not, and speaking interrupts them', async () => {
   const { rerender } = render(VoiceModePanel, { ...props, messages: [reply('old')] });
   await waitFor(() => expect(callbacks).toBeTruthy());
-  expect(player.options.urlFor('r1')).toBe('/messages/r1/speech');
+  let url;
+  player.options.urlFor('r1').then((value) => (url = value));
+  expect(url).toBe('/messages/r1/speech');
 
   await rerender({ ...props, messages: [reply('old'), reply('r1', { streaming: true, completed: false })] });
   await rerender({ ...props, messages: [reply('old'), reply('r1'), reply('p1', { progress_message: true })] });
@@ -387,14 +404,19 @@ test('a reply spoken over comes back after the sent turn: from the top under 5 s
   await rerender({ ...props, messages: [long, short] });
 
   transcriber.results.push('Wait.');
-  player.interrupts = [[{ id: 'long', at: 12.4, playing: true }, { id: 'short', at: 0, playing: false }]];
+  player.interrupts = [
+    [
+      { id: 'long', at: 12.4, playing: true },
+      { id: 'short', at: 0, playing: false },
+    ],
+  ];
   callbacks.onspeechstart(new Float32Array(10));
   callbacks.onturn(1500);
   await waitFor(() =>
     expect(player.log.slice(-2)).toEqual([
       ['enqueue', 'long', 'resume'],
       ['enqueue', 'short'],
-    ]),
+    ])
   );
 
   transcriber.results.push('Again.');
@@ -411,7 +433,9 @@ test('the message carries the ElevenLabs text; the live text shows grey and puls
   scribe.results.push(clean.promise);
   speak('Hey Seuros, what is the time?');
   await waitFor(() =>
-    expect(screen.getByTestId('voice-mode-provisional')).toHaveTextContent('Hey Seuros, what is the time? (in progress)'),
+    expect(screen.getByTestId('voice-mode-provisional')).toHaveTextContent(
+      'Hey Seuros, what is the time? (in progress)'
+    )
   );
   expect(screen.getByTestId('voice-mode-provisional').className).toContain('animate-pulse');
   expect(posts).toHaveLength(0);
@@ -502,4 +526,28 @@ test('a stalled upload does not hold later turns: it falls back to rough, and it
   } finally {
     vi.useRealTimers();
   }
+});
+
+test('changing the voice engine while open stops the old reader and reads on with a new one; the same engine changes nothing', async () => {
+  const { createPlayer } = await import('$lib/voice-mode-playback');
+  const { accountSpeechEngine } = await import('$lib/speech-source');
+  accountSpeechEngine.set('elevenlabs');
+  createPlayer.mockClear();
+  render(VoiceModePanel, { ...props });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  const first = player;
+  expect(createPlayer).toHaveBeenCalledTimes(1);
+
+  accountSpeechEngine.set('elevenlabs');
+  await tick();
+  expect(first.log).not.toContainEqual(['close']);
+  expect(createPlayer).toHaveBeenCalledTimes(1);
+
+  accountSpeechEngine.set('phonon');
+  await tick();
+  expect(first.log).toContainEqual(['close']);
+  expect(createPlayer).toHaveBeenCalledTimes(2);
+  expect(player).not.toBe(first);
+  expect(player.log).not.toContainEqual(['close']);
+  accountSpeechEngine.set('elevenlabs');
 });

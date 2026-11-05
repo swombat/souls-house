@@ -34,6 +34,8 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'resident_handoff_cap',
     'reflexes_enabled',
     'voice_mode_enabled',
+    'speech_engine',
+    'eleven_labs_key_present',
   ]);
   const cleanup = subscribe.mock.results[0].value;
   await view.rerender({

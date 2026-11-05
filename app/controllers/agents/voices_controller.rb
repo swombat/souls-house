@@ -18,13 +18,28 @@ class Agents::VoicesController < ApplicationController
     render json: { current_voice_id: @agent.voice_id, voices: [], unavailable: true }
   end
 
+  # voice_id sets the ElevenLabs voice; phonon_voice the Phonon one (nil for
+  # the catalogue default). Each engine keeps its own choice (SpeechEngine).
   def update
+    return update_phonon_voice if params.key?(:phonon_voice)
+
     @agent.voice_id = params[:voice_id]
     if @agent.save
       audit(:set_agent_voice, @agent, voice_id: @agent.voice_id)
       respond_ok(@agent.voice_id ? "Voice updated" : "Voice removed")
     else
       respond_error(@agent.errors.full_messages_for(:voice_id).to_sentence.presence || @agent.errors.full_messages.to_sentence)
+    end
+  end
+
+  def update_phonon_voice
+    @agent.phonon_voice = params[:phonon_voice]
+    if @agent.save
+      audit(:set_agent_voice, @agent, phonon_voice: @agent.phonon_voice)
+      respond_ok("Voice updated", :phonon_voice)
+    else
+      respond_error(@agent.errors.full_messages_for(:phonon_voice).to_sentence.presence || @agent.errors.full_messages.to_sentence,
+        :phonon_voice)
     end
   end
 
@@ -57,15 +72,15 @@ class Agents::VoicesController < ApplicationController
     edit_account_agent_path(current_account, @agent, tab: "appearance")
   end
 
-  def respond_ok(notice)
+  def respond_ok(notice, field = :voice_id)
     inertia_request? ?
       redirect_with_inertia_flash(:success, notice, back_path) :
-      render(json: { success: true, voice_id: @agent.voice_id }, status: :ok)
+      render(json: { success: true, field => @agent.public_send(field) }, status: :ok)
   end
 
-  def respond_error(message)
+  def respond_error(message, field = :voice_id)
     inertia_request? ?
-      redirect_to(back_path, inertia: { errors: { voice_id: message } }) :
+      redirect_to(back_path, inertia: { errors: { field => message } }) :
       render(json: { errors: [ message ] }, status: :unprocessable_entity)
   end
 

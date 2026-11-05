@@ -5,7 +5,7 @@
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Plus, PencilSimple } from 'phosphor-svelte';
+  import { Plus, PencilSimple, PushPin } from 'phosphor-svelte';
   import VisualTagIcon from '$lib/components/chat/VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { createDynamicSync } from '$lib/use-sync';
@@ -93,6 +93,12 @@
           <span class="min-w-0 flex-1 break-words text-sm font-medium">
             {tag.label} <span class="text-muted-foreground">({tag.conversation_count})</span>
           </span>
+          {#if tag.pins_to_top}<PushPin
+              size={14}
+              weight="fill"
+              aria-label="Kept at the top"
+              data-testid="visual-tag-kept-on-top"
+              class="shrink-0 text-muted-foreground" />{/if}
           {#if can_manage}<PencilSimple
               size={16}
               class="shrink-0 text-muted-foreground/50 group-hover:text-foreground" />{/if}

@@ -1334,5 +1334,42 @@ class AnnounceTest(CliTestCase):
         self.assertEqual(self.house.requests, [])
 
 
+class TagsTest(CliTestCase):
+    PALETTE = {"visual_tags": [
+        {"id": "pinA", "label": "Pin", "icon": "PushPin", "colour": "amber", "pinned": True, "pins_to_top": True},
+        {"id": "qQ", "label": "?", "icon": "Question", "colour": "amber", "pinned": False, "pins_to_top": False},
+    ]}
+
+    def test_list_marks_the_pin_and_tags_kept_on_top(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        code, out, _ = self.run_cli("tags", tty=True)
+        self.assertEqual(code, 0)
+        self.assertIn("pinA  Pin  [PushPin · amber]  (the Pin tag)", out)
+        self.assertIn("qQ  ?  [Question · amber]", out)
+
+    def test_pin_by_label_patches_that_tag_with_a_boolean(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        self.house.route("PATCH", "/api/v1/visual_tags/qQ", body={"visual_tag": {"id": "qQ", "pins_to_top": True}})
+        code, out, _ = self.run_cli("tags", "pin", "?", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["method"], "PATCH")
+        self.assertEqual(json.loads(self.last()["body"]), {"pins_to_top": True})
+        self.assertTrue(json.loads(out)["visual_tag"]["pins_to_top"])
+
+    def test_unpin_by_id(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        self.house.route("PATCH", "/api/v1/visual_tags/qQ", body={"visual_tag": {"id": "qQ", "pins_to_top": False}})
+        code, _, _ = self.run_cli("tags", "unpin", "qQ", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"pins_to_top": False})
+
+    def test_unknown_tag_is_refused_without_a_write(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        code, _, err = self.run_cli("tags", "pin", "nope", tty=True)
+        self.assertEqual(code, souls.EXIT_INVALID)
+        self.assertIn("no tag 'nope'", err)
+        self.assertTrue(all(r["method"] == "GET" for r in self.house.requests))
+
+
 if __name__ == "__main__":
     unittest.main()
