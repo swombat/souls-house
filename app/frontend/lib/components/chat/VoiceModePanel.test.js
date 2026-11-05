@@ -179,7 +179,7 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
   render(VoiceModePanel, { ...props, onsent });
   await waitFor(() => expect(callbacks).not.toBeNull());
   expect(transcriber.connect).toHaveBeenCalled();
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
 
   speak('What is on today? Over to you.');
   await waitFor(() => expect(posts).toHaveLength(1));
@@ -193,7 +193,7 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
   expect(scribe.calls).toEqual([{ length: 7680, sampleRate: 24000 }]);
   await waitFor(() => expect(screen.getByTestId('voice-mode-heard')).toHaveTextContent('What is on today?'));
   expect(onsent).toHaveBeenCalledWith({ id: 'm1' });
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
 });
 
 test('the caption shows the words as they arrive and clears when the turn is sent', async () => {
@@ -234,7 +234,7 @@ test('a turn whose transcripts both fail is held with Retry, and listening goes 
   await waitFor(() => expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('dropped'));
   expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('not transcribed yet');
   expect(posts).toHaveLength(0);
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
 
   // Retry asks ElevenLabs again with the kept recording, then sends.
   scribe.results.push({ text: 'Five, six, seven, eight.', signedId: 'sig-9', error: null });
@@ -321,7 +321,7 @@ test('the system muting the mic closes the open turn, says paused, and unmuting 
   );
 
   callbacks.onrestore();
-  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you'));
   expect(handles[0].resume).toHaveBeenCalled();
   expect(transcriber.connect.mock.calls.length).toBeGreaterThan(1);
 });
@@ -341,21 +341,22 @@ test('the screen going off (pagehide) pauses; coming back reopens a mic whose tr
   showPage('visible');
   await waitFor(() => expect(handles).toHaveLength(2));
   expect(handles[0].stop).toHaveBeenCalled();
-  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you'));
   expect(navigator.wakeLock.request).toHaveBeenCalledTimes(2);
 
   await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
   await waitFor(() => expect(wakeLocks.at(-1).release).toHaveBeenCalled());
 });
 
-test('a pause inside an open turn says the turn goes on, not that it is listening (Daniel, ezmgrw)', async () => {
+test('when nothing is being heard the label invites the next thing, not "Listening" (Daniel, jNwAdJ eBVREL)', async () => {
   render(VoiceModePanel, props);
   await waitFor(() => expect(callbacks).not.toBeNull());
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent(
+    'Waiting for you. Speak again to say something else.'
+  );
+  expect(screen.getByTestId('voice-mode-status')).not.toHaveTextContent('Listening');
   callbacks.onspeechstart(new Float32Array(10));
-  callbacks.onlevel(0.2, 0.012);
   await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Hearing you'));
-  callbacks.onlevel(0.001, 0.012);
-  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Continuing to speak'));
 });
 
 test('a refusal because the mode is off ends voice mode and says why', async () => {
@@ -420,7 +421,7 @@ test('mute keeps the microphone open but marks the state; End stops the capture'
   await fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
   expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted');
   await fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
   await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
   await waitFor(() => expect(onend).toHaveBeenCalledWith({ sent: 0 }));
   expect(stopped).toBe(true);

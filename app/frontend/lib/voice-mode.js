@@ -250,16 +250,17 @@ export function stripReleasePhrase(text) {
 // off or the page went to the back, 'muted' when the system took the mic,
 // 'suspended' when the audio engine stopped). It outranks every phase but the
 // first two: nothing is being heard, whatever the phase says.
-// quiet: the person has stopped inside a turn that is still open. The turn is
-// not sent until the pause is long enough, so the label says the turn goes on
-// (Daniel, jNwAdJ ezmgrw: "it should say continuing to speak").
+// Idle (nothing being heard, nothing being read): not "Listening", which
+// sounds like recording and like the person's turn is still open. It says the
+// room is theirs to speak again (Daniel, jNwAdJ ezmgrw, clarified eBVREL:
+// "it should say something like, speak again to say something else").
 export const PAUSED_STATUS = {
   hidden: 'Paused: the screen went off. Open the page again to carry on.',
   muted: 'Paused: the system took the microphone. It resumes when it gives it back.',
   suspended: 'Paused: the browser stopped the audio. Open the page again to carry on.',
 };
 
-export function voiceModeStatus({ phase, muted, note, speaking, paused = null, quiet = false }) {
+export function voiceModeStatus({ phase, muted, note, speaking, paused = null }) {
   if (phase === 'starting') return 'Opening the microphone…';
   if (phase === 'failed') return note || 'Voice mode could not start.';
   if (paused) return PAUSED_STATUS[paused] || PAUSED_STATUS.hidden;
@@ -267,7 +268,7 @@ export function voiceModeStatus({ phase, muted, note, speaking, paused = null, q
   if (phase === 'transcribing') return `Transcribing…${hush}`;
   if (phase === 'sending') return `Sending…${hush}`;
   if (muted) return 'Muted. Nothing you say is sent.';
-  if (phase === 'hearing') return quiet ? 'Continuing to speak… nothing sent yet.' : 'Hearing you…';
+  if (phase === 'hearing') return 'Hearing you…';
   if (speaking) return 'Speaking. Talk to interrupt.';
-  return 'Listening. Speak, and pause when you are done.';
+  return 'Waiting for you. Speak again to say something else.';
 }

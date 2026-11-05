@@ -164,10 +164,9 @@ describe('pcm16Base64', () => {
 describe('voiceModeStatus', () => {
   const base = { phase: 'listening', muted: false, note: '', speaking: null };
 
-  test('an open turn the person has paused in says the turn goes on (Daniel, jNwAdJ ezmgrw)', () => {
+  test('idle says the room is the person\'s to speak again, not "Listening" (Daniel, jNwAdJ eBVREL)', () => {
+    expect(voiceModeStatus(base)).toBe('Waiting for you. Speak again to say something else.');
     expect(voiceModeStatus({ ...base, phase: 'hearing' })).toBe('Hearing you…');
-    expect(voiceModeStatus({ ...base, phase: 'hearing', quiet: true })).toBe('Continuing to speak… nothing sent yet.');
-    expect(voiceModeStatus({ ...base, quiet: true })).toMatch(/^Listening/);
   });
 
   test('a pause outranks every phase but starting and failed, and says why (jMapOj)', () => {

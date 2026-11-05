@@ -49,8 +49,6 @@
   let stale = $state(false);
   // Why the browser stopped the microphone, or null (voiceModeStatus).
   let paused = $state(null);
-  // The person has gone quiet inside a turn that is still open.
-  let quiet = $state(false);
   let held = $state([]);
   let speakingId = $state(null);
   // The reply being read, shown as text too: on a phone the panel is the only
@@ -74,7 +72,7 @@
   let watchdog = null;
 
   const busy = $derived(!paused && (phase === 'transcribing' || phase === 'sending'));
-  const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId, paused, quiet }));
+  const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId, paused }));
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
@@ -98,7 +96,6 @@
       threshold = limit;
       lastSampleAt = performance.now();
       stale = false;
-      quiet = phase === 'hearing' && rms < limit;
     },
     onspeechstart: (samples) => {
       reader.speechStarted();
@@ -116,12 +113,10 @@
       recorder.discard();
       transcriber?.discard();
       caption = '';
-      quiet = false;
       if (phase === 'hearing') phase = 'listening';
     },
     onturn: (durationMs) => {
       reader.committed(messages);
-      quiet = false;
       // The caption as shown: if the transcriber's final answer is lost with
       // the connection, these are still the person's words (jNwAdJ YVvdnw).
       const shown = caption;
@@ -365,7 +360,6 @@
   function pause(reason) {
     if (ended || paused || !capture) return;
     paused = reason;
-    quiet = false;
     try {
       capture.flush();
     } catch (error) {
