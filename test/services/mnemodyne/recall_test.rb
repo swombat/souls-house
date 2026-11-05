@@ -145,6 +145,36 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     end
   end
 
+  test "automatic recall anchors on the closest returnable node even past thirty private ones" do
+    profile = "synthetic-v1"
+    private_near = Array.new(31) do |i|
+      @vault.nodes.create!(node_type: "memory", content: "Private near #{i}", disclosure: "never_automatic", charge: 0.5)
+    end
+    target = @vault.nodes.create!(node_type: "memory", content: "Eligible target", disclosure: "automatic", charge: 0.05)
+    distractor = @vault.nodes.create!(node_type: "memory", content: "Heavy distractor", disclosure: "automatic", charge: 0.95)
+    @vault.edges.create!(source: distractor, target: @need, edge_type: "surfaced_need", weight: 1.0)
+    private_near.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.001 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+      @vault.edges.create!(source: node, target: distractor, edge_type: "theme", weight: 1.0)
+    end
+    { target => [ 0.9, 0.1 ], distractor => [ 0.7, 0.7 ], @memory => [ 0.0, 1.0 ] }.each do |node, vector|
+      node.update_columns(embedding: vector, embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        20.times do |seed|
+          [ 1, 5 ].each do |limit|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "near", automatic: true, limit: limit, random: Random.new(seed)).call[:results]
+            assert_equal target.id, results.first[:id]
+            assert results.all? { |row| row[:id] != private_near.first.id }
+          end
+        end
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|

@@ -45,18 +45,23 @@ class Mnemodyne::Recall
       @adjacency[edge.target_id] << [ edge.source_id, edge.weight ] if SYMMETRIC_TYPES.include?(edge.edge_type)
     end
     vector = nil
+    anchor_id = nil
     if @query.present?
       vector = Mnemodyne::Embeddings.embed(@query)
-      seeds = nodes.select { |node| current_embedding?(node, vector) }
-        .sort_by { |node| -Mnemodyne::Embeddings.cosine(vector, node.embedding) }.first(30)
+      ranked = nodes.select { |node| current_embedding?(node, vector) }
+        .sort_by { |node| -Mnemodyne::Embeddings.cosine(vector, node.embedding) }
+      seeds = ranked.first(30)
+      # With a query, the closest node that may be returned is the match and
+      # comes first; gravity (charge, need alignment) orders and samples the
+      # rest but must not displace it. Private nodes stay in the seed pool for
+      # traversal and alignment, so the anchor is searched over the whole ranked
+      # set: thirty private near-matches must not hide the eligible one. Before
+      # this an exact-content query returned its own node about one time in six,
+      # because only five random seeds were walked and scored.
+      anchor_id = (@automatic ? ranked.find { |node| node.disclosure == "automatic" } : ranked.first)&.id
     else
       seeds = @seed_ids.filter_map { |id| @nodes[id] }
     end
-    # With a query, the closest seed is the match and is returned first; gravity
-    # (charge, need alignment) orders and samples the rest but must not displace
-    # it. Before this an exact-content query returned its own node about one
-    # time in six, because only five random seeds were walked and scored.
-    anchor_id = seeds.first&.id if vector
     starts = seeds.sample([ 5, seeds.length ].min, random: @random)
     starts = [ @nodes.fetch(anchor_id) ] + starts.reject { |node| node.id == anchor_id }.first(starts.length - 1) if anchor_id && starts.none? { |node| node.id == anchor_id }
     visited = starts.map(&:id).to_set
