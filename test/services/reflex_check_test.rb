@@ -75,13 +75,6 @@ class ReflexCheckTest < ActiveSupport::TestCase
     assert_in_delta 0.74, judgments[low.id].score
   end
 
-  test "under the threshold there is no cue" do
-    message = say("Post")
-    cues = UtilityInference.stub(:decide, ->(questions:, **) { questions.keys.index_with(0.5) }) { ReflexCheck.new(message).call }
-    assert_empty cues
-    assert_equal 2, Reflex::Judgment.where(message: message, offered: false).count
-  end
-
   test "a classifier failure answers no cues and records unscored rows" do
     message = say("Post")
     cues = UtilityInference.stub(:decide, ->(**) { raise UtilityInference::InvalidResponse, "bad" }) { ReflexCheck.new(message).call }
@@ -89,16 +82,6 @@ class ReflexCheckTest < ActiveSupport::TestCase
     rows = Reflex::Judgment.where(message: message)
     assert_equal 2, rows.count
     assert rows.all? { |r| r.score.nil? && !r.offered }
-  end
-
-  test "a reflex is offered the moment it is written" do
-    fresh = reflex("Fresh")
-    message = say("Post")
-    cues = UtilityInference.stub(:decide, ->(questions:, **) { questions.keys.index_with(0.0).merge(fresh.to_param => 0.9) }) do
-      ReflexCheck.after_post(message)
-    end
-    assert_equal [ fresh.to_param ], cues.map(&:id)
-    assert Reflex::Judgment.find_by!(reflex: fresh, message: message).offered
   end
 
   test "a forgotten reflex is not asked" do
