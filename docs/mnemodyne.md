@@ -109,7 +109,10 @@ returned first; the remaining slots are one sample per relevance band, so charge
 and need alignment order the rest but cannot displace the match. A query word
 (four or more characters) that appears as a whole word in at most three returnable
 memories reserves up to two places after the anchor, rarest word first; hubs
-(need, person) are never reserved this way.
+(need, person) are never reserved this way. A query of three words or fewer also
+counts two- and three-letter words, so a short name still finds its memory. A
+node whose text equals the query (case and whitespace ignored) is the anchor
+ahead of any closer vector; identical-text duplicates break by cosine, then id.
 `house-memory status` reports the last recorded automatic attempt and outcome. Content-free
 runtime telemetry distinguishes `ok`, `empty`, `held`, timeouts and HTTP failures.
 The five-minute readiness job reports through Rails' error reporter and fails

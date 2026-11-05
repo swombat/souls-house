@@ -12,6 +12,7 @@ class Mnemodyne::Recall
   LEXICAL_SLOTS = 2
   LEXICAL_MAX_DF = 3
   LEXICAL_MAX_TERMS = 24
+  SHORT_QUERY_WORDS = 3
   class CapacityExceeded < StandardError; end
 
   def initialize(vault:, query: nil, seed_node_ids: [], node_activations: {}, automatic: false, limit: 5, random: Random.new)
@@ -66,7 +67,14 @@ class Mnemodyne::Recall
       # set: thirty private near-matches must not hide the eligible one. Before
       # this an exact-content query returned its own node about one time in six,
       # because only five random seeds were walked and scored.
-      anchor_id = (@automatic ? ranked.find { |node| node.disclosure == "automatic" } : ranked.first)&.id
+      eligible = @automatic ? ranked.select { |node| node.disclosure == "automatic" } : ranked
+      # A node whose text is the query is the match whatever the embedder says
+      # (bge can put another memory closer to a node's content than the node,
+      # whose vector also carries its description). Duplicates: closest, then id.
+      wanted = normalize_text(@query)
+      exact = nodes.select { |node| (!@automatic || node.disclosure == "automatic") && normalize_text(node.content) == wanted }
+      exact = exact.sort_by { |node| [ current_embedding?(node, vector) ? -Mnemodyne::Embeddings.cosine(vector, node.embedding) : 1.0, node.id ] }
+      anchor_id = (exact.first || eligible.first)&.id
     else
       seeds = @seed_ids.filter_map { |id| @nodes[id] }
     end
@@ -117,6 +125,10 @@ class Mnemodyne::Recall
 
   private
 
+  def normalize_text(text)
+    text.to_s.unicode_normalize(:nfkc).downcase.split.join(" ")
+  end
+
   def score_row(node, vector)
     alignment = alignment(node.id)
     similarity = vector && current_embedding?(node, vector) ? Mnemodyne::Embeddings.cosine(vector, node.embedding) : 0.0
@@ -127,7 +139,10 @@ class Mnemodyne::Recall
   # first. Hubs are never returned; automatic recall only returns automatic nodes.
   def lexical_matches(except: [])
     return [] if @query.blank?
-    terms = @query.scan(/[[:alnum:]][[:alnum:]_'-]{3,}/).map(&:downcase).uniq.max_by(LEXICAL_MAX_TERMS, &:length)
+    words = @query.scan(/[[:alnum:]][[:alnum:]_'-]*/)
+    # A short query is probably a name: then two- and three-letter words count too.
+    min_length = words.length <= SHORT_QUERY_WORDS ? 2 : 4
+    terms = words.select { |word| word.length >= min_length }.map(&:downcase).uniq.max_by(LEXICAL_MAX_TERMS, &:length)
     return [] if terms.empty?
     pool = @nodes.values.reject { |node| HUB_TYPES.include?(node.node_type) || except.include?(node.id) }
     pool = pool.select { |node| node.disclosure == "automatic" } if @automatic

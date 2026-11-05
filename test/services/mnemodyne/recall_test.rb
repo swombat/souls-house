@@ -208,6 +208,48 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     end
   end
 
+  test "a node whose text is the query wins the anchor over a closer vector, duplicates deterministically" do
+    profile = "synthetic-v1"
+    closer = @vault.nodes.create!(node_type: "memory", content: "Something else entirely", disclosure: "automatic", charge: 0.9)
+    exact = @vault.nodes.create!(node_type: "memory", content: "The  kettle on the table", disclosure: "automatic", charge: 0.05)
+    twin = @vault.nodes.create!(node_type: "memory", content: "the kettle on the TABLE", disclosure: "automatic", charge: 0.05)
+    { closer => [ 1.0, 0.0 ], exact => [ 0.6, 0.8 ], twin => [ 0.0, 1.0 ] }.each do |node, vector|
+      node.update_columns(embedding: vector, embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        10.times do |seed|
+          [ false, true ].each do |automatic|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "the kettle on the table ", automatic: automatic, random: Random.new(seed)).call[:results]
+            assert_equal exact.id, results.first[:id]
+          end
+        end
+      end
+    end
+  end
+
+  test "a short query treats a two- or three-letter name as a lexical term" do
+    profile = "synthetic-v1"
+    ada = @vault.nodes.create!(node_type: "memory", content: "Lunch with Ada on Thursday", disclosure: "automatic", charge: 0.05)
+    filler = Array.new(32) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.9) }
+    filler.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.001 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    ada.update_columns(embedding: [ 0.0, 1.0 ], embedding_profile: profile,
+      embedding_digest: Digest::SHA256.hexdigest(ada.embedding_text))
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        ids = Mnemodyne::Recall.new(vault: @vault, query: "Ada", automatic: true, random: Random.new(0)).call[:results].map { |row| row[:id] }
+        assert_includes ids, ada.id
+        long = Mnemodyne::Recall.new(vault: @vault, query: "tell me ada stuff from the past year or so", random: Random.new(0))
+        long.call
+        assert_empty long.send(:lexical_matches).select { |node| node.id == ada.id }, "short words in a long prompt are not lexical terms"
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|
