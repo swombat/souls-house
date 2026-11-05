@@ -2,6 +2,7 @@ require "test_helper"
 require "webmock/minitest"
 
 class Billing::ClientTest < ActiveSupport::TestCase
+
   test "SDK upgrades retain the reviewed billing API version" do
     Billing.stub(:secret_key, "sk_test_fake") do
       request = stub_request(:get, "https://api.stripe.com/v1/customers/cus_version_test")
@@ -13,4 +14,5 @@ class Billing::ClientTest < ActiveSupport::TestCase
       assert_requested request
     end
   end
+
 end
