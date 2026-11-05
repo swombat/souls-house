@@ -230,7 +230,7 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     result = Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Spoken.", voice_mode: true).call
     assert result.created?
     assert result.message.voice_mode?
-    assert result.message.audio_source?, "spoken, though no recording is kept"
+    assert result.message.audio_source?, "spoken, even when sent without its recording"
     assert_not result.message.audio_recording.attached?
 
     @account.update!(voice_mode_enabled: false)

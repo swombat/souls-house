@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
+  import { ConversationDraft, watchDraftPage } from '$lib/conversation-draft';
   import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import { fileDropZone } from '$lib/file-drop-zone';
@@ -12,6 +12,7 @@
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { takeVoiceStart } from '$lib/voice-mode-start';
+  import { wantsEditLast } from '$lib/edit-last-message';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -31,6 +32,9 @@
     onwaiting,
     onerror,
     onagentprompt,
+    // Up arrow in an empty box (desktop): asks the page to edit your last
+    // message, passing the textarea to refocus afterwards. Returns true when it did.
+    oneditlast,
   } = $props();
 
   let selectedFiles = $state([]);
@@ -75,33 +79,15 @@
     });
     draftState = draft.snapshot();
     draft.refresh();
-    const refresh = () => {
-      if (document.visibilityState === 'visible') draft.refresh();
-    };
-    const logout = (event) => {
-      if (event.key !== `${DRAFT_LOGOUT}${userId}`) return;
-      draft.suppressPersistence = true;
-      draft.dispose();
-      draftState = {
-        ...draftState,
-        content: '',
-        status: 'Signed out—reload before editing',
-        recoveries: [],
-        conflict: null,
-        locked: true,
-      };
-    };
-    window.addEventListener('storage', logout);
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    const poll = setInterval(refresh, 15_000);
+    const unwatch = watchDraftPage(draft, {
+      userId,
+      onlogout: () => {
+        const signedOut = { content: '', status: 'Signed out—reload before editing', recoveries: [], conflict: null };
+        draftState = { ...draftState, ...signedOut, locked: true };
+      },
+    });
     return () => {
-      clearInterval(poll);
-      window.removeEventListener('storage', logout);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      unwatch();
       draft.dispose();
       setPendingAudio(null);
     };
@@ -202,6 +188,14 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
+      return;
+    }
+    const busy = submitting || disabled || draftState.locked || !!draftState.conflict;
+    // Strictly empty: blank lines are still lines the arrow moves through, and a
+    // transcribed voice note waiting to send is not nothing.
+    const empty = draftState.content === '' && selectedFiles.length === 0 && !pendingAudioSignedId;
+    if (oneditlast && wantsEditLast(event, { empty, busy })) {
+      if (oneditlast(textareaRef)) event.preventDefault();
     }
   }
 

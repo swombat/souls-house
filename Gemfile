@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Use only the Rails components the app needs, without Action Mailbox or Action Text.
-rails_version = "~> 8.1.4"
+rails_version = ["~> 8.1.4", ">= 8.1.4.1"] # 8.1.4.1: 21 security advisories (Active Storage FFmpeg disclosure, proxy streaming)
 gem "actioncable", rails_version
 gem "actionmailer", rails_version
 gem "actionpack", rails_version
@@ -114,13 +114,13 @@ gem "hashids"
 
 gem "ruby-openai"
 
-gem "pagy", "~> 43.7.1"
+gem "pagy", "~> 43.8.1"
 
 gem "active_storage_validations"
 
 gem "redcarpet"
 
-gem "honeybadger", "~> 6.9"
+gem "honeybadger", "~> 6.10"
 
 # Soft delete support
 gem "discard", "~> 2.0"

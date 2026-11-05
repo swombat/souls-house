@@ -32,6 +32,33 @@ export function clearLocalDrafts(userId, storage = browserStorage()) {
   storage.setItem(`${DRAFT_LOGOUT}${userId}`, crypto.randomUUID());
 }
 
+// A mounted composer's draft follows the page: it refreshes when the tab comes
+// back (focus, online, visible) and every 15 s, and stops for good when this
+// user signs out in another tab (onlogout then locks the editor). Returns the cleanup.
+export function watchDraftPage(draft, { userId, onlogout }) {
+  const refresh = () => {
+    if (document.visibilityState === 'visible') draft.refresh();
+  };
+  const logout = (event) => {
+    if (event.key !== `${DRAFT_LOGOUT}${userId}`) return;
+    draft.suppressPersistence = true;
+    draft.dispose();
+    onlogout?.();
+  };
+  window.addEventListener('storage', logout);
+  window.addEventListener('focus', refresh);
+  window.addEventListener('online', refresh);
+  document.addEventListener('visibilitychange', refresh);
+  const poll = setInterval(refresh, 15_000);
+  return () => {
+    clearInterval(poll);
+    window.removeEventListener('storage', logout);
+    window.removeEventListener('focus', refresh);
+    window.removeEventListener('online', refresh);
+    document.removeEventListener('visibilitychange', refresh);
+  };
+}
+
 export class ConversationDraft {
   constructor({
     userId,

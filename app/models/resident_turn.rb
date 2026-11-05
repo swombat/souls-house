@@ -50,12 +50,16 @@ class ResidentTurn < ApplicationRecord
       # Set under this gate; cleared without it, so a stale read only delays a
       # turn until the dispatch the roll enqueues when it clears the hold.
       rolling = Agent.where.not(runtime_roll_started_at: nil).pluck(:id).to_set
+      # A VM rebooting onto a new kernel (KernelReboot): released when the
+      # heartbeat shows the fresh boot, which dispatches again.
+      rebooting = KernelReboot.holding_agent_ids
       while selected.length < available
-        # A backup hold or a runtime roll (ops/deploy/roll-resident.rb) keeps
-        # the turn queued: it waits for the hold to clear, it isn't cancelled.
+        # A backup hold, a runtime roll (ops/deploy/roll-resident.rb) or a
+        # kernel reboot keeps the turn queued: it waits for the hold to clear,
+        # it isn't cancelled.
         eligible = candidates.reject do |turn|
           busy_sessions.include?(turn.session_id) || Backup::VmResident.held?(turn.agent) ||
-            rolling.include?(turn.agent_id)
+            rolling.include?(turn.agent_id) || rebooting.include?(turn.agent_id)
         end
         break if eligible.empty?
         turn = eligible.min_by { |item| [ last_admitted[item.agent_id] || Time.at(0), item.created_at, item.id ] }

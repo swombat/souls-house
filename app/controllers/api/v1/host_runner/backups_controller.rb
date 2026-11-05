@@ -43,7 +43,7 @@ module Api
               headers: request.headers, public_key_b64: enrollment.public_key,
               expected_runner_id: enrollment.public_id, max_body_bytes: Backup::VmRepository::MAX_BYTES
             )
-            agent = enrollment.authorize_backup!(nonce:)
+            agent = enrollment.authorize_backup!(nonce:, operation:)
             repository = self.class.repository_factory.call(agent)
             Backup::VmRepository::Admission.with(enrollment.id) do
               serve(repository, operation, path, body)

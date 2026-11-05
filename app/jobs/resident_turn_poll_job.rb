@@ -3,11 +3,20 @@ class ResidentTurnPollJob < ApplicationJob
   queue_as :resident_dispatch
   discard_on ActiveRecord::RecordNotFound
 
-  def perform(id)
-    claimed = ResidentTurn.pending.where(id: id).where.not(state: "queued")
+  # A prompt follow-up (prompt_until set) keeps looking every PROMPT_INTERVAL
+  # until the turn is collected or the deadline passes, including when another
+  # poll holds the claim: that poll may be returning a stale "running".
+  PROMPT_INTERVAL = 2.seconds
+
+  def perform(id, prompt_until: nil)
+    claimable = ResidentTurn.pending.where(id: id).where.not(state: "queued")
+    claimed = claimable
       .where("poll_claimed_until IS NULL OR poll_claimed_until < ?", Time.current)
       .update_all(poll_claimed_until: 45.seconds.from_now)
-    return unless claimed == 1
+    unless claimed == 1
+      follow_up(id, prompt_until) if claimable.exists?
+      return
+    end
     turn = ResidentTurn.find(id)
     return if turn.finished_at? || turn.state == "queued"
     interaction = turn.agent_runtime_interaction
@@ -67,7 +76,18 @@ class ResidentTurnPollJob < ApplicationJob
     turn&.record_check!(diagnostic: "Runtime check failed (#{error.class})")
     Rails.logger.warn("Resident turn #{id} reconciliation failed: #{error.class}")
   ensure
-    ResidentTurn.where(id: id).update_all(poll_claimed_until: nil) if claimed == 1
+    if claimed == 1
+      ResidentTurn.where(id: id).update_all(poll_claimed_until: nil)
+      follow_up(id, prompt_until) if ResidentTurn.pending.where(id: id).exists?
+    end
+  end
+
+  private
+
+  def follow_up(id, prompt_until)
+    return unless prompt_until && PROMPT_INTERVAL.from_now <= prompt_until
+
+    self.class.set(wait: PROMPT_INTERVAL).perform_later(id, prompt_until: prompt_until)
   end
 
 end

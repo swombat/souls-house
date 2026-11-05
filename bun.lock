@@ -16,6 +16,7 @@
         "marked": "^16.3.0",
         "mermaid": "^12.2.0",
         "mode-watcher": "^1.1.0",
+        "phonon-webgpu": "github:blixt/phonon#36e7e5eff820733be38e9df19ccf58ae891bd45c",
         "qrcode": "^1.5.4",
         "svelte": "^5.55.7",
         "svelte-highlight": "^7.8.4",
@@ -52,6 +53,7 @@
     },
   },
   "patchedDependencies": {
+    "phonon-webgpu@github:blixt/phonon#36e7e5e": "patches/phonon-webgpu@github%3Ablixt%2Fphonon#36e7e5e.patch",
     "svelte-streamdown@https://registry.npmjs.org/svelte-streamdown/-/svelte-streamdown-2.6.1.tgz": "patches/svelte-streamdown@https%3A%2F%2Fregistry.npmjs.org%2Fsvelte-streamdown%2F-%2Fsvelte-streamdown-2.6.1.tgz.patch",
   },
   "overrides": {
@@ -757,6 +759,8 @@
     "path-exists": ["path-exists@4.0.0", "", {}, "sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w=="],
 
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
+
+    "phonon-webgpu": ["phonon-webgpu@github:blixt/phonon#36e7e5e", {}, "blixt-phonon-36e7e5e", "sha512-lseOcWk7poE/A2WpOSWEuurpGynZMs4eU7o30SksXNRpAnazhHe/hJ8C4bdGOV3xBREV3FyXUtv6k5ncTZXjOw=="],
 
     "phosphor-svelte": ["phosphor-svelte@https://registry.npmjs.org/phosphor-svelte/-/phosphor-svelte-3.0.1.tgz", { "dependencies": { "estree-walker": "^3.0.3", "magic-string": "^0.30.13" } }, "sha512-QuxdzWCBjNZXglk4XpmaKb+JRA6XgKOYWpBY8k82NZwxO5ec7u2iFuueAijKYgj/7hLWHtreAPc2Q5uZFNTRSQ=="],
 

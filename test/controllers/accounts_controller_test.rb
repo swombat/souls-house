@@ -271,4 +271,45 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+
+  # The voice engine (SpeechEngine, jEDyze): ElevenLabs can be chosen only
+  # while the site leaves it to each account; the account's own key is
+  # write-only, and its value never reaches the page or the audit log.
+  test "an account chooses ElevenLabs only while the site offers it, and can always go back to Phonon" do
+    Setting.instance.update!(speech_engine_scope: "disabled")
+    patch account_path(@team_account), params: { account: { speech_engine: "elevenlabs" } }
+    assert_redirected_to @team_account
+    assert_equal "phonon", @team_account.reload.speech_engine
+    assert_match(/isn't offered/, flash[:alert])
+
+    Setting.instance.update!(speech_engine_scope: "account_choice")
+    patch account_path(@team_account), params: { account: { speech_engine: "elevenlabs" } }
+    assert_equal "elevenlabs", @team_account.reload.speech_engine
+
+    Setting.instance.update!(speech_engine_scope: "disabled")
+    patch account_path(@team_account), params: { account: { speech_engine: "phonon" } }
+    assert_equal "phonon", @team_account.reload.speech_engine
+
+    patch account_path(@team_account), params: { account: { speech_engine: "something-else" } }
+    assert_equal "phonon", @team_account.reload.speech_engine
+  end
+
+  test "the account's ElevenLabs key is saved, shown only as present, removable, and never audited in clear" do
+    Setting.instance.update!(speech_engine_scope: "account_choice")
+    patch account_path(@team_account), params: { account: { eleven_labs_api_key: "xi-secret-123" } }
+    assert_equal "xi-secret-123", @team_account.reload.eleven_labs_api_key
+    log = AuditLog.where(action: "update_account_settings", auditable: @team_account).last
+    assert_not_includes log.data.to_json, "xi-secret-123"
+
+    get account_path(@team_account)
+    props = inertia_props["props"]
+    assert_equal true, props["eleven_labs_key_present"]
+    assert_equal "account_choice", props["speech_engine_site_scope"]
+    assert_equal "phonon", props["speech_engine"]
+    assert_not_includes response.body, "xi-secret-123"
+
+    patch account_path(@team_account), params: { account: { eleven_labs_api_key: "" } }
+    assert_nil @team_account.reload.eleven_labs_api_key
+  end
+
 end

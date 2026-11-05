@@ -146,6 +146,40 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_not listed[other.to_param]["follow_through"]
   end
 
+  test "admin switches residents on for site announcements, and off again" do
+    lume = agents(:research_assistant)
+    other = agents(:code_reviewer)
+    other.update_columns(can_post_site_announcements: true)
+    sign_in @admin
+
+    patch admin_settings_path, params: { setting: { site_announcement_resident_ids: [ "", lume.to_param ] } }
+
+    assert_redirected_to admin_settings_path
+    assert lume.reload.can_post_site_announcements?
+    assert_not other.reload.can_post_site_announcements?, "a resident left out of the list is switched off"
+    audit = AuditLog.where(action: "update_settings").last
+    assert_equal [ lume.to_param ], audit.data["site_announcements_on"]
+    assert_equal [ other.to_param ], audit.data["site_announcements_off"]
+
+    get admin_settings_path
+    listed = inertia_shared_props["site_announcement_residents"].index_by { |r| r["id"] }
+    assert listed[lume.to_param]["can_post_site_announcements"]
+    assert_not listed[other.to_param]["can_post_site_announcements"]
+
+    patch admin_settings_path, params: { setting: { site_announcement_resident_ids: [ "" ] } }
+    assert_not lume.reload.can_post_site_announcements?
+  end
+
+  test "a site's settings form without the list leaves the switches alone" do
+    lume = agents(:research_assistant)
+    lume.update_columns(can_post_site_announcements: true)
+    sign_in @admin
+
+    patch admin_settings_path, params: { setting: { site_name: "Still here" } }
+
+    assert lume.reload.can_post_site_announcements?
+  end
+
   test "admin sets the stalled-thread interval and picks the accounts it may read" do
     mine = accounts(:personal_account)
     other = accounts(:team_account)

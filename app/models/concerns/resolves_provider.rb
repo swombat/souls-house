@@ -14,6 +14,13 @@ module ResolvesProvider
     # Models without a mapping (OpenRouter aliases, :thinking suffix, etc.) stay on OpenRouter.
     config = Chat.model_config(model_id)
     direct_model_id = config&.dig(:provider_model_id)
+    # A subscription selection never falls back to a different billing route.
+    # Keep the route even without a key so InferenceAvailability can report setup.
+    if model_id.start_with?("kimi-code/")
+      raise ArgumentError, "Unknown Kimi Code subscription model: #{model_id}" unless direct_model_id
+
+      return { provider: :kimi, model_id: direct_model_id }
+    end
     return { provider: :openrouter, model_id: model_id } unless direct_model_id
 
     if model_id.start_with?("anthropic/") && api_key_available?(:anthropic, account: account)
@@ -30,6 +37,8 @@ module ResolvesProvider
   end
 
   def api_key_available?(provider, account: nil)
+    # The Kimi Code transport uses the existing account Moonshot key slot.
+    provider = :moonshot if provider.to_s == "kimi"
     key = account&.ai_api_key(provider)
     return key.present? && !key.start_with?("<") if account
 

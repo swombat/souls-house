@@ -14,11 +14,19 @@ module VoiceMode
 
   TRANSCRIPTION_PROVIDER = :openai
 
-  Status = Struct.new(:offered, :available, :reason, keyword_init: true) do
-    def as_json(*) = { "offered" => offered, "available" => available, "reason" => reason }
+  # speech_engine: the account's voice engine (SpeechEngine), so an open
+  # voice-mode panel can stop reading when it changes.
+  Status = Struct.new(:offered, :available, :reason, :speech_engine, keyword_init: true) do
+    def as_json(*) = { "offered" => offered, "available" => available, "reason" => reason, "speech_engine" => speech_engine }
   end
 
   def self.status_for(account)
+    status = gated_status(account)
+    status.speech_engine = SpeechEngine.account_engine(account) if account
+    status
+  end
+
+  def self.gated_status(account)
     return Status.new(offered: false, available: false, reason: "site_disabled") if account.nil?
 
     setting = Setting.instance

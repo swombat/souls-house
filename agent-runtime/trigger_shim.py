@@ -176,6 +176,24 @@ SUPPORTED_REASONING_EFFORTS = (
     "max",
     "ultra",
 )
+KIMI_MODEL_DEFAULTS = {
+    "k3.1-pro": "high", "k3.1-pro-highspeed": "high",
+    "k3": "high", "k3-256k": "high",
+    "kimi-for-coding": "max", "kimi-for-coding-highspeed": "high",
+}
+
+
+def kimi_reasoning_effort(model, effort):
+    # Unknown IDs and disabled thinking can silently route to another model.
+    if model not in KIMI_MODEL_DEFAULTS:
+        raise ValueError("Select an exact Kimi Code subscription model from resident settings")
+    effort = effort or KIMI_MODEL_DEFAULTS[model]
+    allowed = ("high",) if model == "kimi-for-coding-highspeed" else ("low", "high", "max")
+    if effort not in allowed:
+        raise ValueError("Kimi Code thinking must remain enabled; select a supported effort in resident settings")
+    return effort
+
+
 IDENTITY_FINGERPRINT_FILES = [
     "soul.md",
     "self-narrative.md",
@@ -338,6 +356,13 @@ def trigger():
         }), 400
     if auth_mode not in ("api_key", "oauth_account"):
         return jsonify({"error": "auth_mode must be api_key or oauth_account"}), 400
+    if provider == "kimi":
+        if auth_mode != "api_key":
+            return jsonify({"error": "Kimi Code uses a Code Console API key, not OAuth"}), 400
+        try:
+            reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
 
     subscription_snapshot = None
     if auth_mode == "oauth_account":
@@ -366,6 +391,7 @@ def trigger():
         }), 409
 
     reporter = None
+    lock_released = False
     if payload.get("activity"):
         try:
             from runtime_activity import Reporter
@@ -375,6 +401,7 @@ def trigger():
                 provider, auth_mode,
             )
             reporter.conversation_id = conversation_id
+            reporter.voice_mode = payload.get("voice_mode") is True
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
@@ -417,6 +444,14 @@ def trigger():
                 subscription_snapshot=subscription_snapshot,
                 **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
+        # Let go of the session before announcing the end. The house marks the
+        # run finished the moment it ingests supervisor.finished, and a person
+        # watching the card taps the button then; a lock still held for the
+        # reporter's flush answered that tap 409 already_running and the
+        # request was lost.
+        _unregister_running_session(session_id)
+        session_lock.release()
+        lock_released = True
         if reporter:
             reporter.finish(response)
         return response
@@ -428,8 +463,9 @@ def trigger():
         _activity_context.inference_run = None
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
-        _unregister_running_session(session_id)
-        session_lock.release()
+        if not lock_released:
+            _unregister_running_session(session_id)
+            session_lock.release()
 
 
 def legacy_trigger(
@@ -866,6 +902,8 @@ def run_chaos(
     if timeout_secs <= 0:
         raise subprocess.TimeoutExpired(cmd=CHAOS_BIN, timeout=0)
     selected_provider = provider or AGENT_PROVIDER
+    if selected_provider == "kimi":
+        reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
     env = os.environ.copy()
     if auth_mode == "oauth_account":
         if selected_provider == "anthropic":
@@ -938,6 +976,15 @@ def run_chaos(
         # agy's default is only five minutes. Leave room for Chaos's 30-second
         # transport grace and reporting before the outer turn deadline.
         env["CHAOS_AGY_PRINT_TIMEOUT_SECONDS"] = str(max(1, int(timeout_secs) - 35))
+    if selected_provider == "kimi":
+        # Unknown-model Responses otherwise silently drops the requested effort.
+        # Kimi supports Responses reasoning; scope this capability to this route.
+        args += ["-c", "model_supports_reasoning_summaries=true"]
+        # Official models table, "Context window" row (checked 2026-11-03):
+        # https://www.kimi.com/code/docs/en/kimi-code/models.html
+        # K3.1 Pro/Highspeed, K3 and K2.8 Preview: 1M; the other two: 256K.
+        context_window = 262144 if model in ("k3-256k", "kimi-for-coding-highspeed") else 1048576
+        args += ["-c", f"model_context_window={context_window}"]
     if reasoning_effort:
         args += ["-c", f'model_reasoning_effort="{reasoning_effort}"']
     if resume_id:

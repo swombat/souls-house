@@ -38,7 +38,8 @@ test.describe('Account settings', () => {
       'placeholder',
       'Enter a replacement key'
     );
-    await expect(component.getByLabel('Moonshot (Kimi)', { exact: true })).toBeVisible();
+    await expect(component.getByLabel('Kimi Code subscription', { exact: true })).toBeVisible();
+    await expect(component.getByText(/Standard Moonshot platform \(PAYG\) keys do not work/)).toBeVisible();
     await expect(component.getByText('Set', { exact: true })).toHaveCount(2);
     await expect(component.getByText('Not set', { exact: true })).toHaveCount(6);
     await expect(component.getByText('Shared AI keys are available as a fallback')).toBeVisible();

@@ -1,0 +1,28 @@
+Phonon on WebGPU
+Copyright 2026 Blixt
+
+This is an independent runtime for the Phonon 31M text-to-speech model. It is not made or
+endorsed by Gradium.
+
+The model, its tokenizer and its voice catalog are by Gradium (https://gradium.ai), under the
+Apache License 2.0: https://huggingface.co/gradium/phonon-31m-en and
+https://huggingface.co/gradium/phonon-voices. This repository does not include them. The code
+downloads the tokenizer and voices from Hugging Face at pinned revisions, and the weights
+converted by scripts/build-weights.ts from https://huggingface.co/blixt/phonon-31m-en-webgpu.
+
+Phonon builds on Pocket TTS and the Mimi codec by Kyutai (https://kyutai.org).
+
+The benchmark compares this runtime with phonon-tts by Gradium (Apache-2.0 or MIT) and
+kokoro-js by Joshua Lochner, running Kokoro 82M by hexgrad (Apache-2.0). They are development
+dependencies only.
+
+---
+This house serves, unmodified, from /phonon-assets/<repo>/<revision>/<path>:
+- blixt/phonon-31m-en-webgpu@f4635a6d phonon-31m-en.int8.bin (Gradium's phonon-31m-en,
+  converted by blixt), Apache-2.0;
+- gradium/phonon-31m-en@92741c5b tokenizer.5.0.0.json, Apache-2.0;
+- gradium/phonon-voices@0ee17205 voices.jsonl and the English voices, Apache-2.0.
+Each file is pinned by sha256 in config/phonon_assets.json. The runtime (phonon-webgpu,
+github:blixt/phonon@36e7e5ef, Apache-2.0) is bundled with one change: its file URLs point at
+/phonon-assets on this site instead of huggingface.co (patches/phonon-webgpu@*.patch).
+Phonon's 40M models (CC BY-NC 4.0) are not served or used.

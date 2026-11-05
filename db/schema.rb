@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -88,6 +88,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.boolean "x_posting_house_app", default: false, null: false
     t.boolean "billing_required", default: false, null: false
     t.boolean "voice_mode_enabled", default: false, null: false
+    t.string "speech_engine", default: "phonon", null: false
+    t.text "eleven_labs_api_key"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -264,6 +266,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.datetime "seeded_at"
     t.string "kind"
     t.datetime "house_runtime_ready_at"
+    t.jsonb "carry"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
@@ -381,6 +384,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.datetime "quiet_reason_at"
     t.datetime "telegram_completion_notice_at"
     t.string "inference_refusal"
+    t.string "inference_refusal_reason"
+    t.bigint "requested_by_user_id"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -392,6 +397,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.index ["failure_notice_message_id"], name: "index_agent_runtime_interactions_on_failure_notice_message_id", unique: true
     t.index ["follow_through_of_id"], name: "index_agent_runtime_interactions_on_follow_through_of_id", unique: true, where: "(follow_through_of_id IS NOT NULL)"
     t.index ["message_dispatch_id"], name: "index_agent_runtime_interactions_on_message_dispatch_id"
+    t.index ["requested_by_user_id"], name: "index_agent_runtime_interactions_on_requested_by_user_id", where: "(requested_by_user_id IS NOT NULL)"
     t.index ["run_id"], name: "index_agent_runtime_interactions_on_run_id", unique: true
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
     t.index ["stalled_thread_sweep_id"], name: "index_agent_runtime_interactions_on_stalled_thread_sweep_id"
@@ -431,6 +437,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.integer "backup_keep_monthly", default: 12, null: false
     t.integer "backup_keep_weekly", default: 4, null: false
     t.datetime "birth_committed_at"
+    t.boolean "can_post_site_announcements", default: false, null: false
     t.string "colour"
     t.integer "consecutive_health_failures", default: 0, null: false
     t.integer "container_cpu_shares", default: 1024, null: false
@@ -524,6 +531,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.datetime "first_conversation_woken_at"
     t.bigint "first_conversation_interaction_id"
     t.integer "first_conversation_attempts", default: 0, null: false
+    t.string "phonon_voice"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -809,6 +817,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.integer "reschedule_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "summary"
     t.index ["account_id"], name: "index_commitments_on_account_id"
     t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
     t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"
@@ -1722,6 +1731,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.string "model_id", null: false
     t.date "month", null: false
     t.string "provider_route", null: false
+    t.string "refusal_reason"
     t.bigint "resident_entitlement_id"
     t.string "status", default: "pending", null: false
     t.datetime "updated_at", null: false
@@ -2021,6 +2031,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.bigint "account_id"
     t.text "body"
     t.datetime "created_at", null: false
+    t.bigint "created_by_agent_id"
     t.bigint "created_by_id"
     t.datetime "expires_at", null: false
     t.string "notice_type", null: false
@@ -2028,6 +2039,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.string "scope", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_notices_on_account_id"
+    t.index ["created_by_agent_id"], name: "index_notices_on_created_by_agent_id"
     t.index ["created_by_id"], name: "index_notices_on_created_by_id"
     t.index ["expires_at"], name: "index_notices_on_expires_at"
     t.index ["scope", "account_id", "expires_at"], name: "index_notices_on_scope_and_account_id_and_expires_at"
@@ -2480,6 +2492,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.index ["id", "account_id"], name: "index_rooms_on_id_and_account_id", unique: true
   end
 
+  create_table "runner_birth_bundles", force: :cascade do |t|
+    t.string "sha256", null: false
+    t.binary "bytes", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["sha256"], name: "index_runner_birth_bundles_on_sha256", unique: true
+  end
+
   create_table "runner_commands", force: :cascade do |t|
     t.string "public_id", null: false
     t.bigint "runner_enrollment_id", null: false
@@ -2518,6 +2538,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.datetime "revoked_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "birth_bundle_sha256"
+    t.integer "birth_bundle_fetches", default: 0, null: false
     t.index ["agent_placement_id"], name: "index_runner_enrollments_on_agent_placement_id"
     t.index ["procurement_operation_id"], name: "index_runner_enrollments_on_procurement_operation_id", unique: true, where: "(procurement_operation_id IS NOT NULL)"
     t.index ["public_id"], name: "index_runner_enrollments_on_public_id", unique: true
@@ -2680,6 +2702,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
     t.string "voice_mode_scope", default: "account_choice", null: false
+    t.string "speech_engine_scope", default: "disabled", null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|
@@ -2921,6 +2944,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "pinned", default: false, null: false
+    t.boolean "pins_to_top", default: false, null: false
     t.index ["account_id"], name: "index_visual_tags_on_account_id"
     t.index ["account_id"], name: "index_visual_tags_on_account_id_pinned", unique: true, where: "pinned"
     t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true
@@ -3034,6 +3058,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
   add_foreign_key "agent_runtime_interactions", "message_dispatches", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "messages", column: "failure_notice_message_id", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "stalled_thread_sweeps", on_delete: :nullify
+  add_foreign_key "agent_runtime_interactions", "users", column: "requested_by_user_id", on_delete: :nullify
   add_foreign_key "agent_service_accesses", "agents"
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agent_service_accesses", "users", column: "home_approval_by_id", on_delete: :nullify
@@ -3201,6 +3226,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_02_130000) do
   add_foreign_key "mnemodyne_uses", "mnemodyne_vaults", column: "vault_id"
   add_foreign_key "mnemodyne_vaults", "agents"
   add_foreign_key "notices", "accounts"
+  add_foreign_key "notices", "agents", column: "created_by_agent_id"
   add_foreign_key "notices", "users", column: "created_by_id"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_grants", "users", column: "resource_owner_id"

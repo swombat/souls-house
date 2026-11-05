@@ -94,6 +94,15 @@ module Agents
     # selected for a conversation runs at that model's own profile default
     # (agreed in pJWRRj): low effort on Sol is not carried over to Astra.
     def resolved_effort
+      if model_id.to_s.start_with?("kimi-code/")
+        config = Chat.reasoning_effort_config(model_id)
+        effort = selected_by_conversation ? config[:default] : agent.reasoning_effort
+        effort = config[:default] if effort.blank? || effort == "default"
+        unless config[:options].any? { |option| option[:value] == effort }
+          raise ArgumentError, "Kimi Code requires one of #{config[:options].map { |option| option[:value] }.join(', ')}"
+        end
+        return effort
+      end
       return agent.reasoning_effort unless selected_by_conversation
 
       config = Chat.reasoning_effort_config(model_id)

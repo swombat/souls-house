@@ -100,24 +100,34 @@ class ServiceAuthorizationsController < ApplicationController
       )
     end
 
-    if connection.persisted? && connection.connected_by_user_id != attempt.user_id
-      raise Services::AdapterError, "That external identity is already connected by another account member"
-    end
-    if connection.persisted? && attempt.definition.structured_authority? && attempt.service_connection.nil?
-      raise Services::AdapterError, "That Google identity is already connected; edit its access instead"
-    end
+    connection.with_lock do
+      if connection.persisted? && connection.connected_by_user_id != attempt.user_id
+        raise Services::AdapterError, "That external identity is already connected by another account member"
+      end
+      if connection.persisted? && attempt.definition.structured_authority? && attempt.service_connection.nil?
+        unless connection.status == "revoked"
+          raise Services::AdapterError, "That Google identity is already connected; edit its access instead"
+        end
+        if connection.management_scope != attempt.management_scope
+          raise Services::AdapterError, "Service connection ownership does not match"
+        end
+        unless connection.manageable_by?(attempt.user)
+          raise Services::AdapterError, "You can no longer manage this service connection"
+        end
+      end
 
-    connection.connected_by_user = attempt.user
-    connection.external_subject_id = result.fetch(:external_subject_id)
-    connection.external_identity = result[:external_identity]
-    connection.label ||= result[:external_identity]
-    connection.management_scope = attempt.management_scope
-    connection.credential_kind = result.fetch(:credential_kind)
-    connection.credential_payload_hash = result.fetch(:credential_payload)
-    connection.credential_metadata = result.fetch(:credential_metadata)
-    connection.status = "connected"
-    connection.credential_revision += 1 if connection.persisted?
-    connection.save!
+      connection.connected_by_user = attempt.user
+      connection.external_subject_id = result.fetch(:external_subject_id)
+      connection.external_identity = result[:external_identity]
+      connection.label ||= result[:external_identity]
+      connection.management_scope = attempt.management_scope
+      connection.credential_kind = result.fetch(:credential_kind)
+      connection.credential_payload_hash = result.fetch(:credential_payload)
+      connection.credential_metadata = result.fetch(:credential_metadata)
+      connection.status = "connected"
+      connection.credential_revision += 1 if connection.persisted?
+      connection.save!
+    end
     connection
   end
 

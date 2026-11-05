@@ -1,0 +1,285 @@
+{
+  "_comment": "Phonon 31M English (Apache-2.0, Gradium; runtime by blixt). Served from /phonon-assets/<repo>/<revision>/<path>, fetched and sha256-checked by bin/phonon-assets. Only phonon-31m-en: the 40M models are CC BY-NC.",
+  "files": [
+    {
+      "repo": "blixt/phonon-31m-en-webgpu",
+      "revision": "f4635a6dddaa6072451e0155c03c97fbe889b6ec",
+      "path": "phonon-31m-en.int8.bin",
+      "bytes": 43690044,
+      "sha256": "94f9899fe623251260f30892db8356c7293da09196dc9df9c3c4bb1ddc4f5a85"
+    },
+    {
+      "repo": "gradium/phonon-31m-en",
+      "revision": "92741c5b07d085ff840e26fea8ce43110b87852f",
+      "path": "tokenizer.5.0.0.json",
+      "bytes": 302879,
+      "sha256": "28161547feed30fa70e9ce6da0b791835db9c9720683d87f17e0327f01687cc5"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices.jsonl",
+      "bytes": 33407,
+      "sha256": "874f34998ce581b94f2b8912aa015639f52b5fd62eba3ba11e1b64dcaed7d802"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/NbpkqMVS3CJeq2j8.safetensors",
+      "bytes": 256136,
+      "sha256": "97c7f8c253413574406ab80dd23f49c3ebb2517163b00a9bf86b9c4cf43e7e23"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/NIWIOv5vTi5eRMj8.safetensors",
+      "bytes": 256136,
+      "sha256": "444378eb06b7c492b86e8fc7d13e4db1a3c0cf3e68891a960bf6f0a41a13ef35"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/vjFyp2BcCyTlUmYb.safetensors",
+      "bytes": 256136,
+      "sha256": "958ea94da14f46dd48c7f64adac11ed2ad2aa45f7ccd165dfebab5272664402e"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/4SZHfMpw-p46Ywgs.safetensors",
+      "bytes": 256136,
+      "sha256": "6b3da6e2d796a20c51af892c482bd6509fb88267a221aff83c870843dee2a123"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/bXwrkHhURL1VFJdG.safetensors",
+      "bytes": 256136,
+      "sha256": "a879938aa9a2df0a8220bdadef88137929f71e887bd91e7db205bd5fa11661d2"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/nGzMHMPAWGaJFHOo.safetensors",
+      "bytes": 256136,
+      "sha256": "a0c3dcb91b2247eca56536be9ae8e8becc1c807b1136c5fe101552d6a155b24a"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/LMDIYE0Oa377Qh6Z.safetensors",
+      "bytes": 256136,
+      "sha256": "45c582673cb20edb04ddcca2b5a8865ddfb0a82599efadb269021e87d20fbdd4"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/40QrMVgAxFiUnP9f.safetensors",
+      "bytes": 256136,
+      "sha256": "0de1098d1051686a138d068e83ff09deb5053328bc74ec9541a1fdb90bfc24da"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/0zLApsZfVLLNaEGl.safetensors",
+      "bytes": 256136,
+      "sha256": "dc1341c8937af5534e6bbcc5c0fc5e7c10312229b59061228074f93683fe2261"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/_6Aslh2DxfmnRLmP.safetensors",
+      "bytes": 256136,
+      "sha256": "beae9e4030efce0a935fcb0f807dc0784d598bcaa87ad4aacb047436b1eaa411"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/qIxlZ7Ei8KvWlyQH.safetensors",
+      "bytes": 256136,
+      "sha256": "6e04b84d3ae8751b22bca0a4f63936f9cb648f4f2182b2d0788071ea1c0b68a1"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/d9XCyhjo4JhkHF1d.safetensors",
+      "bytes": 256136,
+      "sha256": "eab20e4f159b48cfbc01b1885804e24f681f80e7a64f909182763a4e3361bee8"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/6PWnV0Nq4wu7RVBT.safetensors",
+      "bytes": 256136,
+      "sha256": "56494ee67d533ad227ff0dfd0b1c13ff5aa91f1ad6e596e66c2986ba3005e844"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/GgfEkEJtxZR7gnpy.safetensors",
+      "bytes": 256136,
+      "sha256": "eb3cd47418349e618408c16bea7153988b3ad04b41a6033039dd474a9a4dcd23"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/uem82D50GRv2Dwma.safetensors",
+      "bytes": 256136,
+      "sha256": "d41a8f01d6e33450f1ce062d332914da10beee99e585dab531750706f187c48a"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/y9bQqIDnyxwqK01t.safetensors",
+      "bytes": 256136,
+      "sha256": "21eade9d83b2e66b9364e1b6cd999a3a6704c000a71f27f34e05ace5cdfd58bb"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/gDT1nz7Ie36ZhL-C.safetensors",
+      "bytes": 256136,
+      "sha256": "1980ab3c35fa98a25b5f3b5e643fd852e14ca8a12a4a26b06aaf1abf2a8c68b1"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/m9MxpY6IUGXtWp76.safetensors",
+      "bytes": 256136,
+      "sha256": "a906ebf17e43fded12b3d6bd077abb2df33bc86eff51c1beeb82e5d416527db3"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/X6NceqF285Gr04gb.safetensors",
+      "bytes": 256136,
+      "sha256": "4de75497fff3030168e8aa6dca23ffeb332b1bc8c25d0bf3507ceadac953ae9c"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/YyKcxPG7iIgS3jsK.safetensors",
+      "bytes": 256136,
+      "sha256": "3169d74b47a54d1eb15e4c243f56393abe9fe90c7e1c308ecf96ee67618b152a"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/zUCxzrOrugTSis03.safetensors",
+      "bytes": 256136,
+      "sha256": "ff1d0735b8b45710462b1d1f846da040f970c6eb62c7c2f36dbfb8e5bde74f1e"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/JOW0vchyswkQUMDS.safetensors",
+      "bytes": 256136,
+      "sha256": "cc9ac1107b0ffce282374a19beb7bfa95847724e6b7afbac991b4ae4277d5e6d"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/dME3IWyZBvmh1n1q.safetensors",
+      "bytes": 256136,
+      "sha256": "09ab315c7f4b72b4d71e66cb756184cedfb1f14d222d096e115bf95bfe7b29dc"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/Zn7g6NxLqXlJb7Qi.safetensors",
+      "bytes": 256136,
+      "sha256": "baea0ea9506f3237a5ebfc61afb7c72dbd189c5603b199ef42fbb00dbda379e0"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/gfP44RlHwr2kEwk7.safetensors",
+      "bytes": 256136,
+      "sha256": "bcc207a73b7885e45b49ab633d3377a10158292e3a7cef9cd6764ad107f1cb9b"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/xPDpsV3F592srkjA.safetensors",
+      "bytes": 256136,
+      "sha256": "a09f615b0084980ebc4076d71550bf73ccd8d4df076bbbee4a9beb523a1379d9"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/nOykTmcH9ydsGGIc.safetensors",
+      "bytes": 256136,
+      "sha256": "2ff2db91e70648623df8d42c0dcd7c336b2f14cb4362d602a20f292a4d862154"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/lX3LavMNdlIbgEHH.safetensors",
+      "bytes": 256136,
+      "sha256": "d3f9429205e5906dcd3c78edaf7c9d5148c7e389e34c82c86f72f154adb5d923"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/dGyGDKo2osj7h3s7.safetensors",
+      "bytes": 256136,
+      "sha256": "83900e020c14946426614c6553c5a138ba6277e1aaa69832223bd0f0f8b73893"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/cXoIXJ2llS8S0WOW.safetensors",
+      "bytes": 256136,
+      "sha256": "a05944e4c69d61d10d66f689175ba0b081930df2d77b22f04d00ac40d3d69ecb"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/GXaSqMEmOg12OIYb.safetensors",
+      "bytes": 256136,
+      "sha256": "bfa37bac98aefbb9de80f792c47d01a0f9e3b94e73776169040c249c8b722759"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/xO8xQo3BrB8FuI6J.safetensors",
+      "bytes": 256136,
+      "sha256": "63ab4b15427844a804480a1603774262e8903dee33cb279e2749860dbfaedd10"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/cYtsRSxV5q9IMehn.safetensors",
+      "bytes": 256136,
+      "sha256": "b30fa847686ec1eb6be8c5bea4b6a5c5076ea66c3ff053cf98210a155d8aad1e"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/gSgG5Tor0GPEnqzC.safetensors",
+      "bytes": 256136,
+      "sha256": "a83430cc022b85c83753f859f9e44f406651646dab994fced8ef7a9a88005971"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/NIWoEurJHMJjyUTe.safetensors",
+      "bytes": 256136,
+      "sha256": "bc8a8fcb95bb4f32d2d4376aa69d81b186b3ba2f8e9b6cb6a403b2b194590e85"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/y2eiKxtQo2B67deU.safetensors",
+      "bytes": 256136,
+      "sha256": "b3cea6789aeb58822af16ba08c4e5105d7febb840dcb67b47f426c19d1a8f209"
+    },
+    {
+      "repo": "gradium/phonon-voices",
+      "revision": "0ee17205f254b5abc43b266c8a0f215565c352f7",
+      "path": "voices/QXNr0SvkukLB4wPq.safetensors",
+      "bytes": 256136,
+      "sha256": "f390c09f5e279c0f2171995a534b92f5ca5c83443906879da68fc27445f89d89"
+    }
+  ]
+}

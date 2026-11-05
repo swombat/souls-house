@@ -1,10 +1,11 @@
 # Every five minutes: give a title to any conversation that has a user
 # message, is more than five minutes old and still has none, so none stays
 # untitled for much more than ten (Daniel, 2026-10-29). GenerateTitleJob runs once
-# at create, on the account's own OpenRouter key; it does nothing when the
-# account has no key (BYO-subscription accounts) and fails outright when that
-# key can't reach the title model (seen 2026-10-28: a 404 for
-# google/gemini-2.5-flash). Neither retries, so the chat stayed "New
+# when the first person's message lands, on the account's own OpenRouter key and
+# then on the house's (it spends one of this job's attempts when it does). It
+# doesn't retry, and before 2026-11-04 it did nothing for accounts with no key
+# and failed outright when that key couldn't reach the title model (seen
+# 2026-10-28: a 404 for google/gemini-2.5-flash), so the chat stayed "New
 # Conversation" for good.
 #
 # The sweep asks again on the house's key, on a model from a different family
@@ -67,14 +68,17 @@ class TitleSweepJob < ApplicationJob
     end
   end
 
-  private
-
-  def reserve_attempt(chat)
+  # Shared with GenerateTitleJob, whose house-key call spends an attempt too.
+  def self.reserve_attempt(chat)
     attempts = chat.title_sweep_attempts
     return false if attempts >= MAX_ATTEMPTS
 
     Chat.where(id: chat.id, title_sweep_attempts: attempts)
         .update_all(title_sweep_attempts: attempts + 1) == 1
   end
+
+  private
+
+  def reserve_attempt(chat) = self.class.reserve_attempt(chat)
 
 end

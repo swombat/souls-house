@@ -16,6 +16,7 @@
     DropboxLogo,
     GoogleLogo,
     Circle,
+    Scales,
     Plugs,
     Receipt,
     HardDrives,
@@ -34,6 +35,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    withings: Scales,
     xero: Receipt,
   };
   function diskSize(bytes) {
@@ -121,6 +123,19 @@
                 · {agent.hosting.vcpus} vCPU · {agent.hosting.ram_gb} GB · {agent.hosting.disk_gb} GB disk{/if}{#if agent.hosting.eur_per_month != null}
                 · €{agent.hosting.eur_per_month.toFixed(2)}/mo{/if}
             </p>
+          {/if}
+          {#if agent.hosting?.kind === 'cloud' && agent.hosting.kernel}
+            <p class="text-xs text-muted-foreground mt-0.5 tabular-nums truncate" data-testid="resident-kernel"
+              title={`Running ${agent.hosting.kernel.running}; installed ${agent.hosting.kernel.installed || 'unknown'}`}>
+              Kernel {agent.hosting.kernel.running}{#if agent.hosting.kernel.installed && agent.hosting.kernel.installed !== agent.hosting.kernel.running}
+                · <span class="font-medium">{agent.hosting.kernel.installed} installed{agent.hosting.kernel.reboot_required ? ', reboot pending' : ''}</span>{/if}
+            </p>
+          {/if}
+          {#if admin && agent.hosting?.kind === 'local' && !agent.deprecated}
+            <a
+              href={`/admin/agents/${agent.id}/migration`}
+              class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              data-testid="resident-migration-link">Move to its own server…</a>
           {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}

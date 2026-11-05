@@ -121,3 +121,100 @@ Tests must use an allowlisted environment, not inherited live resident tokens.
 Merging this feature is not a production rollout. Deployment and a real operator
 migration are separate actions; no live resident should be exported merely to
 exercise the feature's tests.
+
+## Moving a house resident
+
+A site admin can move one named house resident to its own server (#426). There
+is no batch mode. The move uses this page's export path with the resident's own
+home as the archive. Slice 3A built the mechanism (`Agents::VmMigration`); slice
+3B adds the operator's way in.
+
+**Where.** Site Admin → All residents. Each card on the house server has a
+"Move to its own server…" link to `/admin/agents/:id/migration`. The same thing
+from a shell is `REQUESTED_BY=<site admin email> bin/rails "vm:migrate[<agent id>]"`.
+
+**The dry run comes first, and it changes nothing.** It lists every gate with its
+current answer, not only the first refusal:
+
+- resident servers switched on;
+- VM backups available;
+- server ordering configured;
+- below the resident server limit;
+- runs on the house today;
+- has lived on the house;
+- stopped and can be copied, which is this page's export rule: inactive, paused,
+  nothing pending.
+
+When asked (the page's "Measure sizes", or by default in the rake task, unless
+`MEASURE=0`), it measures each role home (identity, repo, work) against the
+runner's seed limits: 64 MB compressed (`Agents::VmSeed::MAX_BYTES`), 256 MB
+unpacked and 20,000 entries (`Agents::Portability::Stage`). The real copy uses
+the same code: `Transport.capture` with the volume mounted read-only,
+`Archive.unpack`, `Stage.check_unpacked!`, and a gzip of the role tar. The work
+happens in a private temporary directory, which is removed afterwards. It also checks the whole archive the
+way Export does: the entry count and the expanded budget across all three roles, counted exactly as
+`Export.call` counts them, the legacy diary's row cap, and the JSON byte caps of the legacy diary and the
+memory graph, serialised the way `Export.add_json` serialises them. Each of these refusals uses the copy's
+own words. Two things are not checked: the compressed size of the whole archive (100 MiB) and the size of
+its manifest. The page shows a compressed estimate (the roles' gzip sizes plus the documents) and labels
+it as an estimate, not a bound, and it lists both under "Not checked". The overall answer is "no refusal
+found", not "ready": every gate passes and nothing measured would be refused, but only the real copy
+decides those two. Measuring is a POST (`/admin/agents/:id/migration/measure`). A GET of the
+page never reads a volume. If the house can't reach the resident's volumes, for example because it is
+already staged elsewhere, the dry run reports and audits the ownership refusal. It does not fail. A running
+resident can be measured. Its numbers come from a home that is still changing,
+so the copy, which is taken with the resident stopped, can differ. Every measurement is
+audited (`vm_migration_dry_run`, with the sizes and who asked).
+
+**Sessions and sign-ins (slice 3C, first checkpoint).** A move has to carry the
+Chaos volume and the state volume too, or the resident wakes on its server with
+no sessions and signed out. The Chaos volume holds `chaos.sqlite`, the shim's
+session map (`helixkit-sessions/`, keyed by the resident's uuid and the chat id,
+which the house already keeps), the second home `oauth-runtime/`, and
+`auth.json`. The state volume holds the subscription CLIs' sign-ins
+(`state/claude`, `state/antigravity`). The dry run now inventories both without
+opening a file: `Transport#inventory` runs a read-only, network-less busybox
+that prints the file count, the logical bytes, which of a fixed list of paths
+exist, and how many entries the session map has. It runs under `set -eo
+pipefail`, so a find or stat that fails (a file that vanished, a directory it
+can't read) fails the inventory, not a smaller count. Each file contributes only
+its size or a literal `x`, never its name. Anything else it prints, or any line
+printed twice, is a refusal ("Resident runtime state cannot be measured"), not a
+guess. It refuses a resident with no session database in either home
+(`chaos.sqlite` or `oauth-runtime/chaos.sqlite`, where the shim runs account
+sign-ins), since a move would start it fresh. That is presence only: this
+checkpoint does not prove the databases are whole. It also refuses one whose two volumes' source bytes exceed the VM backup
+repository's budget (`VM_BACKUP_BUDGET_BYTES`, 20 GiB by default), which is how
+the carry will travel. That size gate is conservative and is about the source.
+It counts logical bytes before compression or deduplication, and it does not
+count what the repository already holds, so the page calls it a gate, not proof
+that the carry fits, and lists repository fit under "Not checked". The carry
+itself (a restic snapshot bound to resident, generation and image, restored and
+verified on the server) and rollback over all five volumes are the next
+checkpoints. Until they land, the move still carries only the three role homes.
+
+Two facts are stated on the page and are not switches:
+
+- No live move happens until rollback after cutover is built (slice 3C). Until
+  then, a move can only be undone before its server takes over.
+- The Chaos and state volumes do not move yet. Until the carry lands, runtime
+  sessions and provider sign-ins would start fresh on the server.
+
+The page's measurement has one deadline, 90 seconds, under the proxy's
+120-second response timeout. Each capture and inventory gets only what is left
+of it, and that covers the whole read: the ownership and volume inspects as well
+as the copy. A docker command still running when its time is up is killed with
+its process group. The page also checks the clock after each local step and at
+the end, so a measurement that finishes late is never reported as a result.
+Running out reports "Measuring took longer than this page can wait" with the
+rake command, which keeps each read's own limit. The 30 seconds left under the
+proxy's timeout cover the audit row, rendering, and removing a timed-out read's
+container (up to 15 seconds).
+
+**The real run** ("Move it now", or `MODE=apply` on the rake task) is
+`VmMigration#move!`. It calls `stage!`, then `activate!`, with their refusals
+unchanged. Nothing is added to the switch, and no gate is relaxed. While placement
+is off, the run refuses with the first gate's answer. If admission refuses right
+after a fresh stage, the stage is returned to the house at once. The resident is
+then local again, with its `runtime_ready_at` restored and no stages, and it stays
+paused.
