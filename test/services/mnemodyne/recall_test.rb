@@ -250,6 +250,18 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     end
   end
 
+  test "a first memory still waiting for its embedding is returned by its exact text" do
+    fresh = @vault.nodes.create!(node_type: "memory", content: "Just saved, not yet embedded", disclosure: "automatic")
+    Mnemodyne::Embeddings.stub(:profile, "synthetic-v1") do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        [ false, true ].each do |automatic|
+          results = Mnemodyne::Recall.new(vault: @vault, query: "just saved, not yet embedded", automatic: automatic, random: Random.new(0)).call[:results]
+          assert_equal fresh.id, results.first[:id]
+        end
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|

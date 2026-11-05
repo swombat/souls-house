@@ -79,7 +79,7 @@ class Mnemodyne::Recall
       seeds = @seed_ids.filter_map { |id| @nodes[id] }
     end
     starts = seeds.sample([ 5, seeds.length ].min, random: @random)
-    starts = [ @nodes.fetch(anchor_id) ] + starts.reject { |node| node.id == anchor_id }.first(starts.length - 1) if anchor_id && starts.none? { |node| node.id == anchor_id }
+    starts = [ @nodes.fetch(anchor_id) ] + starts.reject { |node| node.id == anchor_id }.first([ starts.length - 1, 0 ].max) if anchor_id && starts.none? { |node| node.id == anchor_id }
     visited = starts.map(&:id).to_set
     starts.each do |start|
       current = start.id
