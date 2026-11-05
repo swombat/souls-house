@@ -107,6 +107,19 @@ class GenerateTitleJobTest < ActiveSupport::TestCase
     assert_equal "Q4 campaign plan", chat.reload.title
   end
 
+  test "an account key the provider rejects falls through to the house key" do
+    chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")
+    rejected = ->(**) { raise Faraday::UnauthorizedError.new("the server responded with status 401") }
+    UtilityInference.stub :title, rejected do
+      UtilityInference.stub :house_chat, ->(**) { "Q4 campaign plan" } do
+        HouseInference::Offering.stub(:key, "sk-or-test") { GenerateTitleJob.perform_now(chat) }
+      end
+    end
+
+    assert_equal "Q4 campaign plan", chat.reload.title
+    assert_equal 1, chat.title_sweep_attempts
+  end
+
   test "an account without its own key is titled on the house key straight away" do
     @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
     chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")

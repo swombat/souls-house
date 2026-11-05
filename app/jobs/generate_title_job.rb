@@ -28,7 +28,11 @@ class GenerateTitleJob < ApplicationJob
 
   def account_title(chat)
     GenerateTitlePrompt.new(chat: chat).generate_title.presence
-  rescue UtilityInference::InvalidResponse, UtilityInference::InputTooLong => error
+  # Faraday::Error too: the OpenAI client raises the HTTP error itself, so an
+  # invalid or out-of-credit account key (401/402/403) arrives as
+  # Faraday::UnauthorizedError and the like, not InvalidResponse. Seen in prod
+  # on 4 Nov (job 932215): it failed the job instead of reaching the house key.
+  rescue UtilityInference::InvalidResponse, UtilityInference::InputTooLong, Faraday::Error => error
     Rails.logger.warn("[GenerateTitleJob] chat #{chat.id}: account key gave no title (#{error.class})")
     nil
   end
