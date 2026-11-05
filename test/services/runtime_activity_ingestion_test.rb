@@ -96,10 +96,13 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     turn = ResidentTurn.enqueue!(@run, { session_id: SecureRandom.uuid, request: "prompt" })
     ingest(1, "attempt.started", { "narration_capability" => "unknown" })
     assert_no_enqueued_jobs(only: ResidentTurnPollJob) { ingest(2, "heartbeat") }
-    assert_enqueued_jobs 2, only: ResidentTurnPollJob do
+    freeze_time
+    assert_enqueued_jobs 1, only: ResidentTurnPollJob do
       ingest(3, "supervisor.finished", { "outcome" => "completed" })
     end
-    assert_enqueued_with(job: ResidentTurnPollJob, args: [ turn.id ])
+    assert_enqueued_with(job: ResidentTurnPollJob, at: 1.second.from_now,
+      args: [ turn.id, { prompt_until: 20.seconds.from_now } ])
+    clear_enqueued_jobs
 
     turn.update_columns(finished_at: Time.current)
     assert_no_enqueued_jobs(only: ResidentTurnPollJob) do

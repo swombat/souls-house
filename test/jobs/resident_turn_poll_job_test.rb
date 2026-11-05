@@ -3,6 +3,8 @@ require "webmock/minitest"
 
 class ResidentTurnPollJobTest < ActiveSupport::TestCase
 
+  include ActiveJob::TestHelper
+
   setup do
     @agent = agents(:research_assistant)
     @agent.update!(trigger_bearer_token: "synthetic")
@@ -30,6 +32,44 @@ class ResidentTurnPollJobTest < ActiveSupport::TestCase
     ResidentTurnPollJob.perform_now(@turn.id)
     assert_equal "running", @turn.reload.state
     assert_requested :post, @url, times: 1
+  end
+
+  test "a prompt follow-up keeps looking through a stale running and stops once collected" do
+    freeze_time
+    deadline = 20.seconds.from_now
+    stub_request(:get, @url).to_return(status: 200, body: status("running"))
+    assert_enqueued_with(job: ResidentTurnPollJob, args: [ @turn.id, { prompt_until: deadline } ], at: 2.seconds.from_now) do
+      ResidentTurnPollJob.perform_now(@turn.id, prompt_until: deadline)
+    end
+    assert_equal "running", @turn.reload.state
+
+    clear_enqueued_jobs
+    stub_request(:get, @url).to_return(status: 200, body: status("finished",
+      result: { status: 200, body: { status: "ok", returncode: 0 } }))
+    ResidentTurnPollJob.perform_now(@turn.id, prompt_until: deadline)
+    assert @turn.reload.finished_at?
+    assert_no_enqueued_jobs only: ResidentTurnPollJob
+  end
+
+  test "a prompt follow-up that meets another poll's claim looks again instead of dropping out" do
+    freeze_time
+    deadline = 20.seconds.from_now
+    @turn.update_columns(poll_claimed_until: 45.seconds.from_now)
+    assert_enqueued_with(job: ResidentTurnPollJob, args: [ @turn.id, { prompt_until: deadline } ], at: 2.seconds.from_now) do
+      ResidentTurnPollJob.perform_now(@turn.id, prompt_until: deadline)
+    end
+    assert_not_requested :get, @url
+  end
+
+  test "prompt follow-ups end at their deadline, and sweep polls never schedule them" do
+    freeze_time
+    stub_request(:get, @url).to_return(status: 200, body: status("running"))
+    ResidentTurnPollJob.perform_now(@turn.id, prompt_until: 1.second.from_now)
+    ResidentTurnPollJob.perform_now(@turn.id)
+    @turn.update_columns(poll_claimed_until: 45.seconds.from_now)
+    ResidentTurnPollJob.perform_now(@turn.id)
+    assert_no_enqueued_jobs only: ResidentTurnPollJob
+    assert_requested :get, @url, times: 2
   end
 
   test "lost ledger cannot replay even when acceptance reply was lost" do
