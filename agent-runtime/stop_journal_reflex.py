@@ -43,7 +43,35 @@ def is_subagent(event: dict) -> bool:
     return bool(event.get("is_subagent")) or bool(event.get("parent_session_id"))
 
 
-def append_trace(event: dict, assistant: str, invited: bool) -> None:
+# Routes whose provider refuses a conversation that ends on an assistant
+# message ("does not support assistant message prefill", #725). Chaos records
+# a Stop-hook continuation as a developer item, and its Chat Completions
+# adapter sends that as a system message, so the next request still ends on
+# the resident's reply and is refused. Measured 4 Nov through OpenRouter with
+# an assistant-last conversation: Anthropic's 5.5 generation (Haiku, Sonnet,
+# Opus) refuses; Haiku/Sonnet 4.5, Opus 4.1, DeepSeek and GPT-5 mini accept.
+# Chaos's own Anthropic adapter maps developer to user, so the native
+# `anthropic` provider is not affected and is not gated here.
+CHAT_COMPLETIONS_PROVIDERS = ("house", "openrouter")
+NO_PREFILL_MODEL = re.compile(r"(?:^|/)claude-[a-z]+-5[.-]5(?:$|[^0-9])")
+NO_PREFILL_SKIP = "route_refuses_assistant_last"
+
+
+def no_prefill_route(event: dict) -> bool:
+    """True when this run's route would refuse the continuation request.
+
+    The provider comes from the shim (SOULSHOUSE_ROUTE_PROVIDER, set per
+    invocation); the model from the hook payload, else the shim's value.
+    Unknown provider means not gated: the invitation is the default.
+    """
+    provider = (os.environ.get("SOULSHOUSE_ROUTE_PROVIDER") or "").strip().lower()
+    if provider not in CHAT_COMPLETIONS_PROVIDERS:
+        return False
+    model = str(event.get("model") or os.environ.get("SOULSHOUSE_ROUTE_MODEL") or "").strip().lower()
+    return bool(NO_PREFILL_MODEL.search(model))
+
+
+def append_trace(event: dict, assistant: str, invited: bool, skipped: str | None = None) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     record = {
         "recorded_at": dt.datetime.now().astimezone().isoformat(),
@@ -55,6 +83,8 @@ def append_trace(event: dict, assistant: str, invited: bool) -> None:
         "journal_invited": invited,
         "assistant_excerpt": assistant[:1000],
     }
+    if skipped:
+        record["journal_skipped"] = skipped
     if is_subagent(event):
         record["subagent"] = True
         record["parent_session_id"] = event.get("parent_session_id")
@@ -301,7 +331,19 @@ def main() -> None:
     written = entries_since(now, turn_floor()) if should_invite else []
     if policy and policy["graph"] == "selective" and written:
         should_invite = False  # Already authored: no second invitation for an address.
-    append_trace(event, assistant, should_invite)
+    skipped = None
+    if should_invite and no_prefill_route(event):
+        # Inviting here kills the run: the provider refuses the continuation
+        # and the reply already written is followed by a failed run. Skip the
+        # invitation, keep the trace row (journal_skipped names why), and say
+        # so once on stderr; exit 0, so nothing reaches the model.
+        should_invite = False
+        skipped = NO_PREFILL_SKIP
+        sys.stderr.write(
+            "journal reflex skipped: this route refuses a conversation ending on "
+            "the resident's reply (no assistant prefill, #725)\n"
+        )
+    append_trace(event, assistant, should_invite, skipped)
 
     if should_invite:
         # The resident's own hand on disk decides which invitation this is:

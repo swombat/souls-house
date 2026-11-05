@@ -997,6 +997,10 @@ def run_chaos(
     env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
     if getattr(_activity_context, "memory_aggregation", False):
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
+    # The Stop hook decides whether its journal invitation can be sent on this
+    # route (#725); it only sees the model in its payload, not the provider.
+    env["SOULSHOUSE_ROUTE_PROVIDER"] = str(provider or AGENT_PROVIDER or "")
+    env["SOULSHOUSE_ROUTE_MODEL"] = str(model or "")
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
         reporter.cancel_event = getattr(_activity_context, "cancel_event", None)
