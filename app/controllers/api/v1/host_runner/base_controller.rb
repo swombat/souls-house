@@ -61,6 +61,22 @@ module Api
           result["home_stats"] = home_stats if home_stats.is_a?(Integer) && home_stats.between?(1, 1000)
           bundle = value["runner_bundle_sha256"]
           result["runner_bundle_sha256"] = bundle if bundle.is_a?(String) && RunnerBundle::DIGEST.match?(bundle)
+          result.merge(kernel_facts(value))
+        end
+
+        # What KernelReboot decides from, shape-checked: release strings, a
+        # boolean, an epoch, a capability version.
+        def kernel_facts(value)
+          result = {}
+          %w[kernel_running kernel_installed].each do |key|
+            result[key] = value[key] if value[key].is_a?(String) && KernelReboot::RELEASE.match?(value[key])
+          end
+          required = value["reboot_required"]
+          result["reboot_required"] = required if required == true || required == false
+          since = value["reboot_required_since"]
+          result["reboot_required_since"] = since if since.is_a?(Integer) && since.positive?
+          version = value["reboot_host"]
+          result["reboot_host"] = version if version.is_a?(Integer) && version.between?(1, 1000)
           result
         end
 

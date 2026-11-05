@@ -23,8 +23,15 @@ class ElevenLabsTts
     speed: 1.0
   }.freeze
 
-  def self.synthesize(text, voice_id:)
-    new.synthesize(text, voice_id: voice_id)
+  # api_key: an account's own ElevenLabs key (SpeechEngine: resident speech
+  # never uses the house's). Omitted only by house-paid paths such as the voice
+  # picker's preview, which fall back to the house credential.
+  def initialize(api_key: nil)
+    @api_key = api_key
+  end
+
+  def self.synthesize(text, voice_id:, api_key: nil)
+    new(api_key:).synthesize(text, voice_id: voice_id)
   end
 
   def synthesize(text, voice_id:)
@@ -42,8 +49,8 @@ class ElevenLabsTts
       raise(Error, "ElevenLabs API key not configured")
   end
 
-  def self.stream(text, voice_id:, &block)
-    new.stream(text, voice_id: voice_id, &block)
+  def self.stream(text, voice_id:, api_key: nil, &block)
+    new(api_key:).stream(text, voice_id: voice_id, &block)
   end
 
   # Voice mode: the audio arrives in chunks as ElevenLabs makes it, so playback
@@ -87,7 +94,7 @@ class ElevenLabsTts
   end
 
   def api_key
-    self.class.api_key
+    @api_key.presence || self.class.api_key
   end
 
   def handle_response(response)

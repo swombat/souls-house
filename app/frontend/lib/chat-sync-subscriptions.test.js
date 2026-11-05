@@ -15,6 +15,7 @@ describe('chat sync subscriptions', () => {
     ).toEqual({
       'Chat:34': ['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents'],
       'Chat:34:messages': 'messages',
+      'Account:12': ['voice_mode'],
       'Whiteboard:56': ['chat', 'messages'],
     });
   });

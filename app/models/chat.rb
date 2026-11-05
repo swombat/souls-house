@@ -116,8 +116,11 @@ class Chat < ApplicationRecord
   # nil is Main; :all is every room.
   scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
-  # Pinned conversations lead; chain before `latest` so each group keeps recency order.
-  scope :pinned_first, -> { left_joins(:visual_tag).order(Arel.sql("visual_tags.pinned IS TRUE DESC")) }
+  # Conversations whose tag keeps them on top (the Pin, or any tag set to)
+  # lead; chain before `latest` so each group keeps recency order.
+  scope :pinned_first, -> {
+    left_joins(:visual_tag).order(Arel.sql("(visual_tags.pinned OR visual_tags.pins_to_top) IS TRUE DESC"))
+  }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
@@ -334,7 +337,7 @@ class Chat < ApplicationRecord
   # API tells it apart as a 409 (#94 B, step 4b-iii).
   class AlreadyResponding < ArgumentError; end
 
-  def trigger_agent_response!(agent, wake_source_kinds: [])
+  def trigger_agent_response!(agent, wake_source_kinds: [], requested_by_user: nil)
     raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
@@ -342,7 +345,8 @@ class Chat < ApplicationRecord
     raise AlreadyResponding, "#{agent.name} is already responding" if agent_response_active?(agent)
 
     if AgentRuntimeInteraction.live_activity_enabled?
-      AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true, wake_source_kinds: wake_source_kinds)
+      AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true, wake_source_kinds: wake_source_kinds,
+        requested_by_user: requested_by_user)
     else
       ManualAgentResponseJob.perform_later(self, agent, wake_source_kinds: wake_source_kinds)
     end
@@ -375,7 +379,7 @@ class Chat < ApplicationRecord
   def request_agent_response!(agent, requested_by:, user: nil, requester_agent: nil, wake_source_kinds: nil)
     wake_source_kinds ||= WakeProvenance.for(user: user, requester_agent: requester_agent)
     with_lock do
-      trigger_agent_response!(agent, wake_source_kinds: wake_source_kinds)
+      trigger_agent_response!(agent, wake_source_kinds: wake_source_kinds, requested_by_user: requester_agent ? nil : user)
       :triggered
     rescue AlreadyResponding
       PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent,
@@ -403,8 +407,9 @@ class Chat < ApplicationRecord
         PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent)
       end
       if free.any?
-        AllAgentsResponseJob.perform_later(self, free.map(&:id),
-          wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent))
+        options = { wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent) }
+        options[:requested_by_user] = user if user && !requester_agent
+        AllAgentsResponseJob.perform_later(self, free.map(&:id), **options)
       end
       { triggered: free, queued: busy }
     end

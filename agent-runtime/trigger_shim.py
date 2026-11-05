@@ -391,6 +391,7 @@ def trigger():
         }), 409
 
     reporter = None
+    lock_released = False
     if payload.get("activity"):
         try:
             from runtime_activity import Reporter
@@ -443,6 +444,14 @@ def trigger():
                 subscription_snapshot=subscription_snapshot,
                 **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
+        # Let go of the session before announcing the end. The house marks the
+        # run finished the moment it ingests supervisor.finished, and a person
+        # watching the card taps the button then; a lock still held for the
+        # reporter's flush answered that tap 409 already_running and the
+        # request was lost.
+        _unregister_running_session(session_id)
+        session_lock.release()
+        lock_released = True
         if reporter:
             reporter.finish(response)
         return response
@@ -454,8 +463,9 @@ def trigger():
         _activity_context.inference_run = None
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
-        _unregister_running_session(session_id)
-        session_lock.release()
+        if not lock_released:
+            _unregister_running_session(session_id)
+            session_lock.release()
 
 
 def legacy_trigger(

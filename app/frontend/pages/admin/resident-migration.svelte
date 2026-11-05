@@ -2,9 +2,7 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
 
-  let { resident, report, measured = false, flash = {} } = $props();
-  let moving = $state(false);
-  let confirming = $state(false);
+  let { resident, report, measured = false, apply_command = '', flash = {} } = $props();
 
   const path = $derived(`/admin/agents/${resident.id}/migration`);
   const mb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -12,11 +10,6 @@
 
   function measure() {
     router.post(`${path}/measure`, {}, { preserveScroll: true });
-  }
-
-  function move() {
-    moving = true;
-    router.post(path, {}, { onFinish: () => ((moving = false), (confirming = false)) });
   }
 </script>
 
@@ -27,7 +20,7 @@
     <a href="/admin/residents" class="text-sm text-muted-foreground hover:text-foreground">← All residents</a>
     <h1 class="mt-2 text-2xl font-semibold">Move {resident.name} to its own server</h1>
     <p class="text-sm text-muted-foreground">
-      {resident.account_name} · A dry run first: nothing here changes until “Move it now”.
+      {resident.account_name} · A dry run: nothing here changes the resident.
     </p>
   </div>
 
@@ -104,6 +97,23 @@
             {mb(report.limits.archive_compressed_bytes)}.
           </span>
         </p>
+        {#if report.carry}
+          <div class="space-y-1 text-sm" data-testid="migration-runtime" data-ok={report.carry.ok}>
+            <p>
+              <span class="font-medium">Sessions and sign-ins (Chaos and state volumes):</span>
+              {#each report.runtime as volume, i}{i ? '; ' : ''}{volume.volume}: {mb(volume.bytes)} in
+                {volume.files.toLocaleString()} files{#if volume.sessions !== null}, {volume.sessions} mapped sessions{/if}{/each}.
+              <span class={report.carry.ok ? 'text-green-600' : 'text-red-600'}
+                >{report.carry.ok ? 'No refusal found.' : report.carry.refusal}</span>
+            </p>
+            <p class="text-xs text-muted-foreground">
+              Present: {report.runtime
+                .flatMap((volume) => volume.present.map((path) => `${volume.volume}/${path}`))
+                .join(', ') || 'none of the paths checked'}. Source bytes {mb(report.carry.source_bytes)} against the
+              {mb(report.carry.budget_bytes)} repository budget: a conservative gate, not proof it fits.
+            </p>
+          </div>
+        {/if}
         <div class="text-xs text-muted-foreground" data-testid="migration-unchecked">
           <p class="font-medium">Not checked by this dry run; the real copy decides:</p>
           <ul class="list-disc pl-5">
@@ -129,14 +139,8 @@
       house and gets no turn before its server's first verified backup.
       {#if blocked.length}It will refuse now: {blocked[0].refusal}{/if}
     </p>
-    {#if confirming}
-      <div class="flex gap-2">
-        <Button variant="destructive" size="sm" disabled={moving} onclick={move} data-testid="migration-confirm"
-          >{moving ? 'Moving…' : `Move ${resident.name} now`}</Button>
-        <Button variant="outline" size="sm" onclick={() => (confirming = false)}>Cancel</Button>
-      </div>
-    {:else}
-      <Button size="sm" onclick={() => (confirming = true)} data-testid="migration-move">Move it now…</Button>
-    {/if}
+    <p class="text-sm" data-testid="migration-apply">
+      The move itself isn't run from this page. Not moved: {apply_command}
+    </p>
   </section>
 </div>

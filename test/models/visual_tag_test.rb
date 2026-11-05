@@ -33,7 +33,7 @@ class VisualTagTest < ActiveSupport::TestCase
     id = @tag.to_param
     @tag.update!(label: "Updated")
     assert_equal id, @tag.reload.to_param
-    assert_equal %w[colour icon id label pinned], @tag.as_json.keys.sort
+    assert_equal %w[colour icon id label pinned pins_to_top], @tag.as_json.keys.sort
     assert_equal @tag, VisualTag.resolve_for(@account, id)
     assert_nil VisualTag.resolve_for(@account, nil)
     [ @tag.id, @tag.id.to_s, "", [], {}, "unknown" ].each do |invalid|
@@ -59,8 +59,8 @@ class VisualTagTest < ActiveSupport::TestCase
     palette = VisualTag.palette_with_usage_for(@account)
     assert_equal %w[Zulu alpha Building Empty zebra], palette.pluck("label")
     assert_equal [ 2, 1, 1, 0, 0 ], palette.pluck("conversation_count")
-    assert_equal %w[colour conversation_count icon id label pinned], palette.first.keys.sort
-    assert_equal %w[colour icon id label pinned], popular.as_json.keys.sort
+    assert_equal %w[colour conversation_count icon id label pinned pins_to_top], palette.first.keys.sort
+    assert_equal %w[colour icon id label pinned pins_to_top], popular.as_json.keys.sort
     assert_equal @tag.as_json, @chat.as_json["visual_tag"]
   end
 
@@ -87,6 +87,48 @@ class VisualTagTest < ActiveSupport::TestCase
 
     assert_equal pin.to_param, VisualTag.palette_with_usage_for(@account).first["id"]
     assert_equal pin, @account.visual_tags.palette_order.first
+  end
+
+  test "any tag can keep its conversations on top; the Pin always does and cannot be switched off" do
+    account = Account.create!(name: "Kept on top", account_type: :team)
+    pin = account.pin_tag
+    question = account.visual_tags.create!(label: "?", icon: "Question", colour: "amber")
+    plain = account.visual_tags.find_by!(label: "Research")
+
+    assert pin.pins_to_top?
+    assert_not question.pins_to_top?
+    assert_equal true, pin.as_json["pins_to_top"]
+
+    question.update!(pins_to_top: true)
+    assert question.reload.pins_to_top?
+    assert_equal [ pin, question ], account.visual_tags.keeping_on_top.order(:id).to_a
+    assert_equal [ pin, question ], account.visual_tags.palette_order.first(2)
+    assert_equal [ pin.to_param, question.to_param ], VisualTag.palette_with_usage_for(account).first(2).map { |tag| tag["id"] }
+
+    assert_not pin.update(pins_to_top: false)
+    assert pin.errors[:pins_to_top].any?
+    assert pin.reload.pins_to_top?
+    assert pin.update(pins_to_top: true)
+    assert_not plain.reload.pins_to_top?
+  end
+
+  test "conversations whose tag keeps them on top lead the list with pinned ones, newest first in each group" do
+    account = Account.create!(name: "Sidebar order", account_type: :team)
+    question = account.visual_tags.create!(label: "?", icon: "Question", colour: "amber")
+    plain = account.visual_tags.find_by!(label: "Research")
+    pinned = account.chats.create!(title: "Pinned", model_id: "openrouter/auto", visual_tag: account.pin_tag)
+    asked = account.chats.create!(title: "Asked", model_id: "openrouter/auto", visual_tag: question)
+    ordinary = account.chats.create!(title: "Ordinary", model_id: "openrouter/auto", visual_tag: plain)
+    untagged = account.chats.create!(title: "Untagged", model_id: "openrouter/auto")
+
+    order = -> { account.chats.pinned_first.latest.to_a }
+    assert_equal pinned, order.call.first
+    assert_operator order.call.index(asked), :>, order.call.index(pinned)
+
+    question.update!(pins_to_top: true)
+    top = order.call.first(2)
+    assert_equal [ asked, pinned ].sort_by(&:id), top.sort_by(&:id)
+    assert_equal [ ordinary, untagged ].sort_by(&:id), order.call.last(2).sort_by(&:id)
   end
 
   test "browser palette loads usage in two queries regardless of palette size" do

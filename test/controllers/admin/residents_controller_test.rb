@@ -63,6 +63,23 @@ class Admin::ResidentsControllerTest < ActionDispatch::IntegrationTest
                    "vcpus" => 4, "ram_gb" => 8, "disk_gb" => 80, "eur_per_month" => 6.49 }, card["hosting"])
   end
 
+  test "a cloud resident's card shows its running and installed kernel from the runner" do
+    agent = agents(:research_assistant)
+    AgentPlacement.where(agent: agent).delete_all
+    placement = AgentPlacement.create!(agent: agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4242)
+    enrollment, token = RunnerEnrollment.mint!(placement:)
+    enrollment.confirm_provider_server!(4242)
+    enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4242,
+      facts: { "kernel_running" => "6.12.107+deb13-amd64", "kernel_installed" => "6.12.115+deb13-amd64",
+               "reboot_required" => true }, nonce: SecureRandom.hex(16))
+
+    sign_in users(:site_admin_user)
+    get admin_residents_path
+    card = inertia_props["props"]["residents"].find { |resident| resident["name"] == agent.name && resident["account_name"] == agent.account.name }
+    assert_equal({ "running" => "6.12.107+deb13-amd64", "installed" => "6.12.115+deb13-amd64", "reboot_required" => true },
+      card["hosting"]["kernel"])
+  end
+
   test "a cloud resident with no pricing sample shows its type without a price" do
     agent = agents(:research_assistant)
     AgentPlacement.where(agent: agent).delete_all

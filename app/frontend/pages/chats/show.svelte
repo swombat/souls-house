@@ -9,6 +9,7 @@
   import { createChatRuntimeActivity } from '$lib/chat-runtime-activity.svelte';
   import { createChatResponse } from '$lib/chat-response.svelte';
   import { createChatActions } from '$lib/chat-actions.svelte';
+  import { lastEditableOwnMessage } from '$lib/edit-last-message';
   import ChatList from './ChatList.svelte';
   import ChatHeader from '$lib/components/chat/ChatHeader.svelte';
   import TokenWarningBanner from '$lib/components/chat/TokenWarningBanner.svelte';
@@ -16,6 +17,8 @@
   import ChatInputArea from '$lib/components/chat/ChatInputArea.svelte';
   import TelegramBanner from '$lib/components/chat/TelegramBanner.svelte';
   import ChatDebug from '$lib/components/chat/chat-debug.svelte';
+  import { accountSpeechEngine } from '$lib/speech-source';
+  import { resetListen } from '$lib/listen';
   import ChatOverlays from '$lib/components/chat/ChatOverlays.svelte';
   import ConversationCostDrawer from '$lib/components/chat/ConversationCostDrawer.svelte';
 
@@ -87,6 +90,15 @@
       showMessageTelemetry = false;
     }
   });
+  // The account's voice engine (SpeechEngine) for the voice panel; a change,
+  // or another conversation, stops and forgets what Listen made.
+  let listenKey = null;
+  $effect(() => {
+    const engine = voiceMode?.speech_engine ?? 'phonon';
+    accountSpeechEngine.set(engine);
+    if (listenKey !== null && listenKey !== `${engine}|${chat.id}`) resetListen();
+    listenKey = `${engine}|${chat.id}`;
+  });
 
   function sent(message) {
     history.append(message);
@@ -97,6 +109,14 @@
   function sendFailed(message) {
     actions.notify(message);
     response.clearWaiting();
+  }
+  // Up arrow in the empty composer: open your last message in the edit drawer, as its pencil does.
+  function editLast(composer) {
+    if (actions.ui.editDrawerOpen) return false;
+    const message = lastEditableOwnMessage(history.messages);
+    if (!message) return false;
+    actions.edit(message, { returnFocus: composer });
+    return true;
   }
 </script>
 
@@ -183,7 +203,8 @@
       onSent={sent}
       onWaiting={response.wait}
       onError={sendFailed}
-      onAgentPrompt={response.prompt} />
+      onAgentPrompt={response.prompt}
+      onEditLast={editLast} />
   </main>
 </div>
 
@@ -208,6 +229,7 @@
   bind:lightboxOpen={actions.ui.lightboxOpen}
   lightboxImage={actions.ui.lightboxImage}
   onEditSaved={actions.editSaved}
+  onEditClosed={actions.editClosed}
   onError={actions.notify}
   onAssignAgent={actions.assignToAgent}
   onAddAgent={actions.addAgentToChat} />

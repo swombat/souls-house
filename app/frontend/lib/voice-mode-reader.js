@@ -1,6 +1,7 @@
 import { createPlayer } from '$lib/voice-mode-playback';
 import { createReplyPicker } from '$lib/voice-mode-replies';
-import { messageSpeechPath } from '@/routes';
+import { accountSpeechEngine, createSpeechSource } from '$lib/speech-source';
+import { loadPhonon } from '$lib/phonon-engine';
 
 // The reply side of voice mode (VoiceModePanel): which replies are read
 // (the picker) and the one audio element that reads them (the player), tied
@@ -16,9 +17,23 @@ import { messageSpeechPath } from '@/routes';
 // - End (close) is the only thing that drops it.
 export const RESTART_UNDER = 5;
 
-export function createReplyReader({ messages = [], onchange }) {
+// The audio for each reply comes from the speech source (SpeechEngine): made
+// here by Phonon, or ElevenLabs' stream, as the server says for that resident.
+// A reply that can't be read is reported through onerror and skipped.
+export function createReplyReader({
+  messages = [],
+  onchange,
+  onerror,
+  source = createSpeechSource({ mode: 'voice_mode' }),
+  audio,
+}) {
   const picker = createReplyPicker(messages);
-  const player = createPlayer({ urlFor: (id) => messageSpeechPath(id), onchange });
+  const player = createPlayer({
+    ...(audio ? { audio } : {}),
+    urlFor: (id, { signal } = {}) => source.resolve(id, { signal }).then((answer) => answer.url),
+    onchange,
+    onerror,
+  });
   let interrupted = [];
   const read = (ids) => ids.forEach((id) => player.enqueue(id));
   const resume = (current) => {
@@ -47,6 +62,45 @@ export function createReplyReader({ messages = [], onchange }) {
     close() {
       interrupted = [];
       player.close();
+      source.close();
+    },
+  };
+}
+
+// The panel's reader, bound to the account's engine (SpeechEngine), which it
+// follows from the store the chat page keeps. When the engine changes while
+// the panel is open, what the old one was reading stops (closing drops its
+// queue and audio) and only what arrives from then on is read, with the new
+// one. Under Phonon the model starts loading at once, so the first reply isn't
+// also its start-up; a failure shows in PhononStatus. A reply that can't be
+// read says why through onnote, and turn-taking goes on.
+export function createEngineReader(
+  messages,
+  { onchange, onnote },
+  { create = createReplyReader, preload = loadPhonon, engine = accountSpeechEngine } = {}
+) {
+  let current = null;
+  let reader = null;
+  const options = () => ({
+    messages: messages(),
+    onchange,
+    onerror: (_id, error) => onnote?.(error?.message || 'This reply could not be read aloud.'),
+  });
+  const unsubscribe = engine.subscribe((next) => {
+    if (!next || next === current) return;
+    current = next;
+    reader?.close();
+    reader = create(options());
+    if (next === 'phonon') preload().catch(() => {});
+  });
+  return {
+    take: (list) => reader.take(list),
+    speechStarted: () => reader.speechStarted(),
+    discarded: (list) => reader.discarded(list),
+    committed: (list) => reader.committed(list),
+    close() {
+      unsubscribe();
+      reader.close();
     },
   };
 }

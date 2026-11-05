@@ -280,6 +280,36 @@ class FieldSwarmTest < ActiveSupport::TestCase
     assert_nil @account.field_swarm_monthly_limit
   end
 
+  test "the day's count is today's rows (UTC), including ones written before, and a cache reset gives nothing back" do
+    with_const(:MAX_SEARCHES_PER_ACCOUNT_PER_DAY, 2) do
+      travel_to Time.utc(2026, 11, 5, 23, 30) do
+        FieldSwarmSearch.create!(account: @account, question_chars: 1, model_id: FieldSwarm::MODEL, status: "complete",
+          created_at: Time.utc(2026, 11, 4, 23, 59))
+        FieldSwarmSearch.create!(account: @account, question_chars: 1, model_id: FieldSwarm::MODEL, status: "complete",
+          created_at: Time.utc(2026, 11, 5, 0, 1))
+        with_reader(@reader) { swarm.call }
+
+        ThrottleMachines.reset!
+        Rails.cache.clear
+        assert_raises(FieldSwarm::LimitReached) { with_reader(@reader) { swarm.call } }
+      end
+      travel_to Time.utc(2026, 11, 6, 0, 1) do
+        with_reader(@reader) { swarm.call }
+      end
+    end
+    assert_equal 4, FieldSwarmSearch.where(account: @account).count
+  end
+
+  test "a search the month refuses doesn't use up one of the day's searches" do
+    with_const(:MAX_SEARCHES_PER_ACCOUNT_PER_DAY, 1) do
+      @account.stub(:field_swarm_monthly_limit, 0) do
+        assert_raises(FieldSwarm::LimitReached) { with_reader(@reader) { swarm.call } }
+      end
+      with_reader(@reader) { swarm.call }
+    end
+    assert_equal 1, FieldSwarmSearch.where(account: @account).count
+  end
+
   test "a search refused before any reader is sent doesn't use up one of the day's searches" do
     search = swarm
     search.define_singleton_method(:candidates) { raise FieldSwarm::Invalid, "grep took too long" }

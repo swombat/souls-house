@@ -1,7 +1,10 @@
 <script>
   import { Play, Pause } from 'phosphor-svelte';
 
-  let { src } = $props();
+  // autoplay: start as soon as the audio is ready (Listen with Phonon, where
+  // the tap that asked for it came before the audio was made). A browser that
+  // refuses leaves the play button, as without it.
+  let { src, autoplay = false } = $props();
 
   let audioEl = $state(null);
   let playing = $state(false);
@@ -49,6 +52,13 @@
       audioEl.currentTime = 0;
     }
   }
+
+  let autoplayed = false;
+  $effect(() => {
+    if (!autoplay || autoplayed || !audioEl || !src) return;
+    autoplayed = true;
+    audioEl.play()?.catch?.(() => {});
+  });
 
   function handleEnded() {
     playing = false;

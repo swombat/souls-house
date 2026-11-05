@@ -6,12 +6,16 @@ class Messages::BaseController < ApplicationController
 
   private
 
+  # These routes carry no account in the URL, so the chat is found in any
+  # account the person is a confirmed member of (as MessagesController does),
+  # not only their default one: Listen and voice mode in a second account
+  # used to answer 404.
   def set_message_and_chat
     @message = Message.kept.find(params[:message_id])
     @chat = if Current.user.site_admin
       Chat.kept.find(@message.chat_id)
     else
-      current_account.chats.kept.find(@message.chat_id)
+      Chat.kept.where(id: @message.chat_id, account_id: Current.user.confirmed_account_ids).first!
     end
   end
 

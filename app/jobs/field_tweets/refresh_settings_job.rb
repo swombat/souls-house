@@ -4,7 +4,7 @@ module FieldTweets
   class RefreshSettingsJob < ApplicationJob
 
     def perform
-      return unless Setting.instance.allow_agents?
+      return unless Setting.feature_enabled?(:agents)
 
       Account.enabled.select(:id).find_in_batches do |accounts|
         FieldTweetStream.refresh!(accounts)

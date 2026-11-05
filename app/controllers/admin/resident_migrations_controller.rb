@@ -11,6 +11,11 @@ class Admin::ResidentMigrationsController < ApplicationController
   before_action :require_site_admin
   before_action :set_agent
 
+  # The whole measurement must answer inside the proxy's response timeout
+  # (config/deploy.yml, 120 s), with room for the audit, rendering and a
+  # timed-out read's carrier cleanup (Transport#remove_carrier!, up to 15 s).
+  MEASURE_DEADLINE_SECONDS = 90
+
   # The gates only: reads no volume, so it is safe to reload or prefetch.
   def show
     render_report(measure: false)
@@ -22,21 +27,28 @@ class Admin::ResidentMigrationsController < ApplicationController
     render_report(measure: true)
   end
 
+  # The real run takes the carry snapshot (#426 3C), which can run for up to
+  # an hour (CarrySnapshot::SECONDS): far past the proxy's 120 s, so
+  # a web request would lose its own result. It is refused here, before
+  # anything is read or staged, and the page names the rake door, which
+  # runs it where nothing times it out.
   def create
-    placement = Agents::VmMigration.new(@agent).move!(requested_by: Current.user)
-    redirect_to admin_agent_migration_path(@agent),
-      notice: "#{@agent.name} is staged and admitted for its own server (placement generation #{placement.reload.generation})."
-  rescue Agents::VmMigration::Refused => error
-    redirect_to admin_agent_migration_path(@agent), alert: "Not moved: #{error.message}"
+    redirect_to admin_agent_migration_path(@agent), alert: "Not moved: #{self.class.apply_command(@agent)}"
+  end
+
+  def self.apply_command(agent)
+    "a move takes a carry snapshot that can outlast a web request, so it runs from the console: " \
+      "bin/rails \"vm:migrate[#{agent.id}]\" MODE=apply REQUESTED_BY=<your email>"
   end
 
   private
 
   def render_report(measure:)
-    report = Agents::VmMigration::Plan.new(Agents::VmMigration.new(@agent)).call(measure:, requested_by: Current.user)
+    report = Agents::VmMigration::Plan.new(Agents::VmMigration.new(@agent),
+      deadline_seconds: (MEASURE_DEADLINE_SECONDS if measure)).call(measure:, requested_by: Current.user)
     render inertia: "admin/resident-migration", props: {
       resident: { id: @agent.id, name: @agent.name, account_name: @agent.account.name },
-      report: report.to_h, measured: measure
+      report: report.to_h, measured: measure, apply_command: self.class.apply_command(@agent)
     }
   end
 

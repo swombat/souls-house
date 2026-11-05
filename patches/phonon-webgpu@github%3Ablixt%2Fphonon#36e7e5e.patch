@@ -1,0 +1,13 @@
+diff --git a/dist/phonon.js b/dist/phonon.js
+index 57cd62c69951f8734fb0a62f4dc3c3f136e64e47..3eb225eb5c25f3ec3642e29f56a65d64fea65ecd 100644
+--- a/dist/phonon.js
++++ b/dist/phonon.js
+@@ -140,7 +140,7 @@ function readVoice(buffer) {
+ }
+ 
+ // src/files.ts
+-var hubFile = (repo, revision, path) => `https://huggingface.co/${repo}/resolve/${revision}/${path}`;
++var hubFile = (repo, revision, path) => `/phonon-assets/${repo}/${revision}/${path}`;
+ var MODEL_CACHE = "phonon-webgpu";
+ var DEFAULT_VOICE = { en: "Delia", fr: "Augustin", de: "Mats", es: "Marcos", pt: "Davi" };
+ var FORTY_REPO = "blixt/phonon-40m-webgpu";

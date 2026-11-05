@@ -31,9 +31,14 @@ plain database work with no model call. Under the row lock it:
    posted. The row records `waiting_reason` and `last_attempted_at` and stays
    scheduled for the next sweep. That covers outages: a missed slot fires late
    instead of being skipped.
-2. Posts a house (system) message, **Commitment due**, containing the text, the
-   due time and the delivery time (marked late if it's more than a minute
-   late), and where the commitment was made. For `new_conversation` it first
+2. Posts a house (system) message, **Commitment due**, containing the
+   commitment's headline, the due time and the delivery time (marked late if
+   it's more than a minute late), and where the commitment was made. The
+   headline is the resident's `summary` (at most 100 characters, five to ten
+   words asked for), or, without one, the text's first sentence cut to twelve
+   words (`Commitment.headline_from`). The full text is not in the message
+   (Daniel, JVvqyJ: it read as a wall of text); it travels in the wake's cue
+   and is shown on the resident's Commitments page. For `new_conversation` it first
    opens a conversation in the chosen room with only that resident in it and
    links back to the source conversation and message.
 3. Marks the row `activated` with the conversation and message, then wakes the

@@ -207,7 +207,7 @@ class AllowlistTest(unittest.TestCase):
         self.assertEqual(runner.ALLOWED_ACTIONS, {
             "report_facts", "heartbeat",
             "start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home", "backup_resident", "provider_auth",
-            "check_runtime_trust", "tailnet", "home_stats", "update_runner",
+            "check_runtime_trust", "tailnet", "home_stats", "update_runner", "reboot_host", "restore_carry",
         })
         for action in ("shell", "start_container", "docker_run", "", "REPORT_FACTS"):
             with self.assertRaises(runner.RefusedAction):
@@ -219,6 +219,7 @@ class AllowlistTest(unittest.TestCase):
             runtime_image="ghcr.io/x@sha256:abc",
             server_id_reader=lambda: 4242,
             command_runner=lambda argv: calls.append(argv) or "27.0",
+            reboot_reader=lambda: {},
         )
         self.assertEqual(facts["provider_server_id"], 4242)
         self.assertEqual(facts["docker_version"], "27.0")

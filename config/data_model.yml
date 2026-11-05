@@ -233,11 +233,13 @@ areas:
       seed the home, start a turn, take a backup. Nonces stop a replayed
       request. Backups are restic snapshots, with vm_backups tracking the
       ones taken from a VM. Import stages hold an archived home until a VM is
-      seeded from it.
+      seeded from it. A runner birth bundle is the runner a new VM's
+      first-boot document pins by digest, kept until that VM has fetched it.
     tables:
       - agent_placements
       - cloud_procurement_operations
       - runner_enrollments
+      - runner_birth_bundles
       - runner_commands
       - runner_request_nonces
       - vm_backups

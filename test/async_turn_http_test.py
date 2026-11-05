@@ -97,6 +97,38 @@ class AsyncTurnHTTPTest(unittest.TestCase):
             self.assertEqual("finished", response.json["state"])
             self.assertEqual("ok", response.json["result"]["body"]["status"])
 
+    def test_session_is_free_before_the_run_is_announced_finished(self):
+        # The house marks a run finished when it ingests supervisor.finished;
+        # a person tapping then must not be answered 409 already_running.
+        observed = {}
+        shim = self.shim
+
+        class FakeReporter:
+            def __init__(self, *args, **kwargs):
+                self.disabled = False
+
+            def finish(self, response):
+                lock = shim._lock_for("synthetic")
+                observed["free"] = lock.acquire(blocking=False)
+                if observed["free"]:
+                    lock.release()
+                with shim._session_locks_guard:
+                    observed["registered"] = "synthetic" in shim._running_sessions
+
+        fake = type(sys)("runtime_activity")
+        fake.Reporter = FakeReporter
+        self.shim.turn_store().execute = self.shim.execute_async_turn
+        payload = {**self.payload, "activity": {"run_id": "synthetic"}}
+        with patch.dict(sys.modules, {"runtime_activity": fake}), \
+                patch.object(self.shim, "legacy_trigger",
+                             side_effect=lambda *args, **kwargs: self.shim.jsonify({"status": "ok", "returncode": 0})):
+            self.assertEqual(202, self.client.post(self.url, json=payload, headers=self.headers).status_code)
+            for _ in range(100):
+                if self.client.get(self.url, headers=self.headers).json["state"] == "finished":
+                    break
+                time.sleep(.01)
+        self.assertEqual({"free": True, "registered": False}, observed)
+
     def test_cancel_acknowledges_only_after_execution_returns(self):
         self.client.post(self.url, json=self.payload, headers=self.headers)
         response = self.client.delete(self.url, headers=self.headers)

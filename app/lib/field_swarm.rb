@@ -267,8 +267,10 @@ class FieldSwarm
 
   # Counts today's searches and writes this one's row under a lock on the
   # account row, so concurrent callers are admitted one at a time and the
-  # daily cap can't be overshot. The lock is released before anything is read
-  # or sent.
+  # daily cap can't be overshot. The rows are the count, for the day as for the
+  # month: a cache-backed counter (#680) forgets on a cache reset and would give
+  # the day back, and would also be spent by a search the month then refuses.
+  # The lock is released before anything is read or sent.
   def admit!
     @account.with_lock do
       if FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_day).count >= MAX_SEARCHES_PER_ACCOUNT_PER_DAY

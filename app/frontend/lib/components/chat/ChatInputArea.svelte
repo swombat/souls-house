@@ -22,6 +22,7 @@
     onWaiting = () => {},
     onError = () => {},
     onAgentPrompt = () => {},
+    onEditLast = null,
   } = $props();
 </script>
 
@@ -62,5 +63,6 @@
     onsent={onSent}
     onwaiting={onWaiting}
     onerror={onError}
-    onagentprompt={onAgentPrompt} />
+    onagentprompt={onAgentPrompt}
+    oneditlast={onEditLast} />
 {/key}

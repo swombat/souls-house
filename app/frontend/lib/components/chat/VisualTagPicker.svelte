@@ -4,6 +4,8 @@
   import { reloadProps } from '$lib/cable';
   import { visualTagColour } from '$lib/visual-tags';
   import VisualTagIcon from './VisualTagIcon.svelte';
+  import { onDestroy } from 'svelte';
+  import { HoverMenu } from '$lib/hover-menu.svelte.js';
 
   let { chat, accountId, tags = [] } = $props();
   let error = $state('');
@@ -81,10 +83,17 @@
     // and, after a failure, shows whatever the server really holds.
     reloadProps(['chats', 'visual_tags']);
   }
+  // Desktop: resting the mouse on the button opens the menu (see hover-menu).
+  const menu = new HoverMenu();
+  onDestroy(() => menu.destroy());
 </script>
 
-<DropdownMenu.Root>
+<DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
   <DropdownMenu.Trigger
+    onpointerenter={menu.enter}
+    onpointermove={menu.move}
+    onpointerleave={menu.leave}
+    onpointerdown={menu.pointerdown}
     class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2 {current
       ? visualTagColour(current.colour)
       : 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'}"
@@ -97,7 +106,14 @@
       <Tag size={16} />
     {/if}
   </DropdownMenu.Trigger>
-  <DropdownMenu.Content align="start" class="w-56 max-h-80 overflow-y-auto">
+  <DropdownMenu.Content
+    align="start"
+    class="w-56 max-h-80 overflow-y-auto"
+    onpointerenter={menu.enter}
+    onpointerleave={menu.leave}
+    onOpenAutoFocus={menu.openAutoFocus}
+    onCloseAutoFocus={menu.closeAutoFocus}
+    preventScroll={menu.lockScroll}>
     <DropdownMenu.Label>Visual tag</DropdownMenu.Label>
     <DropdownMenu.Item onclick={() => selectTag(null)}>
       <Tag size={16} class="mr-2 text-muted-foreground" />
