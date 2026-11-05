@@ -1309,6 +1309,10 @@ candidates, not read receipts or obligations to reply. V1 has no
 acknowledgement state, so a thread you deliberately hold in silence can remain
 listed. No age cutoff is applied.
 
+Each item's `latest_message.author_type` is `human`, `resident`, `unknown`, or
+`system` (a resident's post the safeguard check labelled as the house's
+notice), and `counts.by_author_type` counts items under the same four keys.
+
 Read exact bytes through the `detail_path` supplied for each item. Check the
 per-channel `checked` values before treating an empty list as quiet; a failed
 channel is unavailable, not empty.
