@@ -33,7 +33,8 @@
   // (screen off, the system taking the mic), the open turn is closed so what
   // was said goes through that path, the panel says it is paused, and it picks
   // up again when the page is back (voice-mode-lifecycle.js).
-  let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
+  // endDrainMs: how long End waits for turns in flight before closing (tests shorten it).
+  let { accountId, chatId, userId, messages = [], onsent, onerror, onend, endDrainMs = 6000 } = $props();
 
   // starting | listening | hearing | transcribing | sending | failed; mute is separate.
   let phase = $state('starting');
@@ -68,13 +69,14 @@
   let releaseHold = null;
   let queue = Promise.resolve();
   let ended = false;
+  // The house refused voice mode (403): later turns are not sent.
+  let refused = false;
   let lastSampleAt = 0;
   let watchdog = null;
 
   const busy = $derived(!paused && (phase === 'transcribing' || phase === 'sending'));
   const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId, paused }));
 
-  const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
   const STALE_MS = 3000;
 
@@ -254,10 +256,18 @@
   // The clean (recording) text decides the turn; the live caption is shown as
   // provisional meanwhile and sent marked rough only if the clean text is missing
   // (see voice-mode-turn-flow.js).
+  // A turn closed before End (or before leaving the page) is still delivered
+  // after it: End waits a few seconds for the queue, but a slow clean
+  // transcript must not lose the turn (Mira, #797 review). After End nothing
+  // on screen changes; a turn that cannot go is held in sessionStorage, as
+  // its rough caption when it has no clean text, for the next time voice mode
+  // opens in this chat.
   async function handleTurn(transcript, durationMs, clean, { caption: shown = '', samples = null } = {}) {
-    if (ended) return;
-    phase = 'transcribing';
-    note = '';
+    if (refused) return;
+    if (!ended) {
+      phase = 'transcribing';
+      note = '';
+    }
     const turn = await resolveTurn({
       transcript,
       clean,
@@ -267,16 +277,20 @@
         if (!ended) [caption, provisional] = ['', text];
       },
     });
-    caption = '';
-    provisional = '';
-    if (ended) return;
+    if (!ended) {
+      caption = '';
+      provisional = '';
+    }
+    if (refused) return;
     if (turn.failed) {
-      queueOfHeld.hold({ text: '', signedId: turn.signedId, samples, durationMs, error: turn.note });
+      // After End the samples go with the panel: keep what the caption showed.
+      const text = ended ? roughOf(shown) : '';
+      queueOfHeld.hold({ text, signedId: turn.signedId, samples, durationMs, error: turn.note });
       afterTurn();
       return;
     }
     if (!turn.text) {
-      note = turn.note;
+      if (!ended) note = turn.note;
       afterTurn();
       return;
     }
@@ -288,7 +302,7 @@
       return;
     }
     const result = await send(turn.text, turn.signedId);
-    if (!result.ok && !result.fatal && !ended) {
+    if (!result.ok && !result.fatal) {
       queueOfHeld.hold({ text: turn.text, signedId: turn.signedId, durationMs, error: result.error });
     }
     afterTurn();
@@ -301,7 +315,7 @@
   // One post. Resolves { ok, error, fatal }; a 403 (the mode was switched off
   // under us) ends voice mode.
   async function send(text, audioSignedId) {
-    phase = 'sending';
+    if (!ended) phase = 'sending';
     const { ok, status, data } = await postVoiceMessage({
       accountId,
       chatId,
@@ -310,7 +324,6 @@
       audioSignedId,
       timeoutMs: SEND_TIMEOUT_MS,
     });
-    if (ended) return { ok, error: '', fatal: !ok };
     if (!ok) {
       const errors = data?.errors;
       const error = Array.isArray(errors)
@@ -318,16 +331,21 @@
         : errors || (status === null ? 'The house could not be reached.' : 'Could not send what you said.');
       // 403: the mode was switched off (or lost its key) under us. Stop listening.
       if (status === 403) {
-        note = error;
-        onerror?.(note);
-        await end({ drain: false });
+        refused = true;
+        if (!ended) {
+          note = error;
+          onerror?.(note);
+          await end({ drain: false });
+        }
         return { ok: false, error, fatal: true };
       }
       return { ok: false, error, fatal: false };
     }
-    heard = text;
     sent += 1;
-    onsent?.(data);
+    if (!ended) {
+      heard = text;
+      onsent?.(data);
+    }
     return { ok: true, error: '', fatal: false };
   }
 
@@ -338,9 +356,11 @@
     if (!text?.trim()) {
       if (!item.samples?.length) return { ok: false, error: 'The recording was lost when the page reloaded.' };
       const recording = await startCleanTurn({ accountId, chatId, samples: item.samples, sampleRate: TURN_RATE });
-      if (recording.error && !recording.signedId) return { ok: false, error: recording.error };
-      text = stripReleasePhrase(recording.text || '').text;
       signedId = recording.signedId || signedId;
+      // A failed transcript is a failure, kept or not: only a clean answer
+      // with no words lets the turn go (Mira, #797 review).
+      if (recording.error) return { ok: false, error: recording.error, signedId };
+      text = stripReleasePhrase(recording.text || '').text;
       if (!text) return { ok: false, dropped: true, text: '', signedId };
     }
     const result = await send(text, signedId);
@@ -436,7 +456,7 @@
     const open = capture;
     capture = null;
     await open?.stop();
-    if (drain) await Promise.race([queue, new Promise((resolve) => setTimeout(resolve, END_DRAIN_MS))]);
+    if (drain) await Promise.race([queue, new Promise((resolve) => setTimeout(resolve, endDrainMs))]);
     ended = true;
     transcriber?.close();
     releaseHold?.();

@@ -716,3 +716,50 @@ test('changing the voice engine while open stops the old reader and reads on wit
   expect(player.log).not.toContainEqual(['close']);
   accountSpeechEngine.set('elevenlabs');
 });
+
+test('Retry keeps a turn whose recording is kept again but not transcribed (#797 review)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  speak(new Error('socket closed'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  scribe.results.push({ text: '', signedId: 'sig-kept', error: 'Transcription failed.' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('Not sent: Transcription failed.')
+  );
+  expect(posts).toHaveLength(0);
+});
+
+test('End does not lose a closed turn whose clean transcript is still on its way (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Live words');
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  expect(posts).toHaveLength(0);
+  slow.resolve({ text: 'Clean words, late.', signedId: 'sig-late', error: null });
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Clean words, late.', audio: 'sig-late' });
+});
+
+test('after End, a late turn that cannot be sent is kept for next time as its caption', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  callbacks.onspeechstart(new Float32Array(10));
+  transcriber.options.onDelta('five, six, seven, eight');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-caption')).toBeTruthy());
+  transcriber.results.push(new Error('socket closed'));
+  callbacks.onturn(1500);
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  slow.resolve({ text: '', signedId: null, error: 'Failed to fetch' });
+  // Caption fallback: sent as rough rather than held, since the words exist.
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].content).toContain('five, six, seven, eight');
+});
