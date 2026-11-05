@@ -89,3 +89,43 @@ describe('startCapture', () => {
     expect(contexts[0].closed).toBe(true);
   });
 });
+
+// jMapOj: Android mutes the track or suspends the context when the screen goes
+// off or another app takes the mic. The capture reports it; the panel decides.
+describe('startCapture interruptions', () => {
+  test('reports a muted or ended track and a suspended context, and a restore', async () => {
+    const { track, contexts } = fakeBrowser();
+    track.readyState = 'live';
+    const oninterrupt = vi.fn();
+    const onrestore = vi.fn();
+    const handle = await startCapture({ oninterrupt, onrestore });
+    const context = contexts[0];
+
+    track.muted = true;
+    track.onmute();
+    expect(oninterrupt).toHaveBeenLastCalledWith('muted');
+    expect(handle.running).toBe(false);
+    track.muted = false;
+    track.onunmute();
+    expect(onrestore).toHaveBeenCalledTimes(1);
+    expect(handle.running).toBe(true);
+
+    context.state = 'suspended';
+    context.onstatechange();
+    expect(oninterrupt).toHaveBeenLastCalledWith('suspended');
+    context.resume = vi.fn(async () => (context.state = 'running'));
+    await handle.resume();
+    expect(context.resume).toHaveBeenCalled();
+    context.onstatechange();
+    expect(onrestore).toHaveBeenCalledTimes(2);
+
+    track.readyState = 'ended';
+    track.onended();
+    expect(oninterrupt).toHaveBeenLastCalledWith('ended');
+    expect(handle.alive).toBe(false);
+
+    await handle.stop();
+    expect(track.onmute).toBeNull();
+    expect(context.onstatechange).toBeNull();
+  });
+});

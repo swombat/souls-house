@@ -35,6 +35,17 @@ class MessagesController < ApplicationController
       ConversationDraft.for(chat: @chat, user: Current.user)
     end
 
+    # A voice-mode turn carries one submission identity for its whole life
+    # (#797): a retry whose first POST committed but lost its response gets
+    # that first message back, even when a resident has replied since and the
+    # repeat-of-the-last-message guard no longer sees it. Same column and
+    # unique index as the app API's client_message_id.
+    client_message_id = params[:client_message_id].to_s.presence
+    client_message_id = nil unless client_message_id&.match?(Api::App::V1::MessagesController::CLIENT_MESSAGE_ID_FORMAT)
+    if client_message_id && (existing = find_submission(client_message_id))
+      return render_existing_submission(existing)
+    end
+
     # One acceptance transaction: the message, its audit, the draft's clear and
     # any wake. A stale draft raises Conflict before anything is written.
     result = Messages::PostFromHuman.new(
@@ -44,6 +55,7 @@ class MessagesController < ApplicationController
       files: params[:files],
       audio_signed_id: params[:audio_signed_id],
       voice_mode: ActiveModel::Type::Boolean.new.cast(params[:voice_mode]) || false,
+      client_message_id: client_message_id,
       draft: draft,
       draft_revision: params[:draft_revision]
     ).call(on_persisted: ->(message) { audit("create_message", message, **message_params.to_h) })
@@ -82,6 +94,12 @@ class MessagesController < ApplicationController
         format.json { render json: { errors: @message.errors.full_messages }, status: :unprocessable_entity }
       end
     end
+  rescue ActiveRecord::RecordNotUnique
+    # A concurrent twin with the same identity committed first.
+    existing = client_message_id && find_submission(client_message_id)
+    raise unless existing
+
+    render_existing_submission(existing)
   rescue ConversationDraft::Conflict => e
     render json: { errors: [ e.message ], draft: e.draft.as_json }, status: :conflict
   rescue StandardError => e
@@ -132,6 +150,17 @@ class MessagesController < ApplicationController
 
   def message_params
     params.require(:message).permit(:content)
+  end
+
+  def find_submission(client_message_id)
+    Message.uncached { @chat.messages.find_by(user: Current.user, client_message_id: client_message_id) }
+  end
+
+  def render_existing_submission(message)
+    respond_to do |format|
+      format.html { redirect_to account_chat_path(@chat.account, @chat) }
+      format.json { render json: message.as_json.merge(duplicate: true), status: :ok }
+    end
   end
 
   def handoff_receipts_for(ids)

@@ -716,6 +716,38 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, JSON.parse(@response.body).fetch("voice_mode")
   end
 
+  # #797: a held turn is retried with the identity of its first send. If that
+  # first POST committed and only its response was lost, and a resident has
+  # replied since, the repeat-of-the-last-message guard no longer sees it.
+  test "a voice turn retried with its submission identity gets its first message back, even after a reply" do
+    Setting.instance.update!(voice_mode_scope: "account_choice")
+    @account.update!(voice_mode_enabled: true, openai_api_key: "sk-account")
+    send_turn = ->(extra = {}) {
+      post account_chat_messages_path(@account, @chat), params: {
+        message: { content: "Five, six, seven, eight." }, voice_mode: "true"
+      }.merge(extra), as: :json
+    }
+
+    send_turn.call(client_message_id: "turn-abc12345")
+    assert_response :created
+    first = Message.last
+    @chat.messages.create!(role: "assistant", content: "Heard you.", suppress_automatic_dispatch: true)
+
+    assert_no_difference "Message.count" do
+      send_turn.call(client_message_id: "turn-abc12345")
+    end
+    assert_response :ok
+    body = JSON.parse(@response.body)
+    assert_equal true, body["duplicate"]
+    assert_equal first.to_param, body["id"].to_s
+
+    # Negative control: without the identity the same retry posts twice.
+    assert_difference "Message.count", 1 do
+      send_turn.call
+    end
+    assert_response :created
+  end
+
   # #770: since #761 the panel sends every clean turn with its recording, the
   # way a voice note goes; refusing it lost every clean turn.
   test "a voice mode send that carries its recording is created with the recording attached" do

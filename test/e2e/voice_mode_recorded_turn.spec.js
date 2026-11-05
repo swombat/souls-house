@@ -96,7 +96,11 @@ test.describe('voice mode recorded turn', () => {
         const id = `item_${++item}`;
         ws.send(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: id }));
         ws.send(
-          JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', item_id: id, transcript: 'rough words' })
+          JSON.stringify({
+            type: 'conversation.item.input_audio_transcription.completed',
+            item_id: id,
+            transcript: 'rough words',
+          })
         );
       });
     });
@@ -112,7 +116,8 @@ test.describe('voice mode recorded turn', () => {
     });
 
     const sent = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && /\/chats\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
+      (response) =>
+        response.request().method() === 'POST' && /\/chats\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
       { timeout: 20_000 }
     );
     await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
@@ -128,5 +133,68 @@ test.describe('voice mode recorded turn', () => {
 
     await expect(page.getByText('The recorded turn reaches the house').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('voice-mode-panel')).not.toContainText(/keeps no recording/);
+  });
+
+  // jMapOj: Daniel's "five, six, seven, eight" showed on screen and never
+  // arrived; a send that failed went to the console. Now the turn is held in
+  // the panel and Retry delivers it to Rails.
+  test('a turn whose send fails is held with Retry, and Retry delivers it', async ({ page, request }) => {
+    const fixture = await (
+      await request.post('/test/e2e/conversation_fixture', {
+        data: { account_id: setup.account_id, count: 1, prefix: 'Before voice mode', resident_count: 1 },
+      })
+    ).json();
+    const { signed_id: recording } = await (await request.post('/test/e2e/audio_blob')).json();
+    await page.route('**/voice_mode_session', (route) =>
+      route.fulfill({ json: { client_secret: 'ek_e2e', socket_url: 'wss://transcriber.e2e.invalid/realtime' } })
+    );
+    let item = 0;
+    await page.routeWebSocket('wss://transcriber.e2e.invalid/**', (ws) => {
+      ws.onMessage((raw) => {
+        const event = JSON.parse(String(raw));
+        if (event.type !== 'input_audio_buffer.commit') return;
+        const id = `item_${++item}`;
+        ws.send(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: id }));
+        ws.send(
+          JSON.stringify({
+            type: 'conversation.item.input_audio_transcription.completed',
+            item_id: id,
+            transcript: 'rough words',
+          })
+        );
+      });
+    });
+    await page.route('**/chats/*/transcription', (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      return route.fulfill({ json: { text: 'Five, six, seven, eight', audio_signed_id: recording } });
+    });
+    // The first send dies on the way, as it does with the screen off.
+    let failed = 0;
+    await page.route('**/chats/*/messages', (route) => {
+      if (route.request().method() !== 'POST' || failed > 0) return route.fallback();
+      failed += 1;
+      return route.abort('internetdisconnected');
+    });
+    await page.addInitScript(() => {
+      delete BaseAudioContext.prototype.audioWorklet;
+    });
+
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    await page.getByTestId('voice-mode-button').click();
+    const held = page.getByTestId('voice-mode-held-turn');
+    await expect(held).toContainText('Five, six, seven, eight', { timeout: 20_000 });
+    await expect(page.getByTestId('voice-mode-held-reason')).toContainText('Not sent');
+    await page.getByRole('button', { name: 'Mute' }).click();
+
+    const sent = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/chats\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
+      { timeout: 20_000 }
+    );
+    await page.getByRole('button', { name: 'Retry' }).click();
+    const response = await sent;
+    expect(response.status(), await response.text()).toBe(201);
+    await expect(page.getByTestId('voice-mode-held')).toHaveCount(0);
+    await expect(page.getByText('Five, six, seven, eight').first()).toBeVisible({ timeout: 10_000 });
   });
 });

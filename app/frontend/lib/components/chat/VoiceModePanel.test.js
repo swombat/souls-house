@@ -21,19 +21,33 @@ vi.mock('$lib/speech-source', async () => ({
 
 let callbacks;
 let stopped;
+let handles;
 vi.mock('$lib/voice-mode-capture', () => ({
   captureSupported: () => true,
   startCapture: vi.fn(async (options) => {
     callbacks = options;
     let muted = false;
-    return {
+    const handle = {
       get muted() {
         return muted;
       },
       mute: (on) => (muted = on),
-      flush: () => {},
+      // A test sets handle.open to a duration to have flush() close that turn,
+      // as the real detector does.
+      open: null,
+      flush: vi.fn(() => {
+        if (handle.open === null) return;
+        const ms = handle.open;
+        handle.open = null;
+        options.onturn(ms);
+      }),
+      alive: true,
+      running: true,
+      resume: vi.fn(async () => {}),
       stop: vi.fn(async () => (stopped = true)),
     };
+    handles?.push(handle);
+    return handle;
   }),
 }));
 
@@ -106,9 +120,28 @@ let posts;
 beforeEach(() => {
   callbacks = null;
   stopped = false;
+  handles = [];
   transcriber = null;
   posts = [];
   scribe = { calls: [], results: [] };
+  sessionStorage.clear();
+  setVisibility('visible');
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true });
+  wakeLocks = [];
+  Object.defineProperty(navigator, 'wakeLock', {
+    configurable: true,
+    value: {
+      request: vi.fn(async () => {
+        const lock = {
+          listeners: [],
+          release: vi.fn(async () => {}),
+          addEventListener: (type, fn) => lock.listeners.push(fn),
+        };
+        wakeLocks.push(lock);
+        return lock;
+      }),
+    },
+  });
   globalThis.fetch = vi.fn(async (url, options) => {
     const form = options.body;
     posts.push({
@@ -116,6 +149,7 @@ beforeEach(() => {
       content: form.get('message[content]'),
       voiceMode: form.get('voice_mode'),
       audio: form.get('audio_signed_id'),
+      clientId: form.get('client_message_id'),
     });
     const reply = posts.reply ?? { ok: true, status: 201, body: { id: 'm1' } };
     return { ok: reply.ok, status: reply.status, json: async () => reply.body };
@@ -123,6 +157,15 @@ beforeEach(() => {
   document.head.innerHTML = '<meta name="csrf-token" content="token">';
 });
 afterEach(cleanup);
+
+let wakeLocks;
+function setVisibility(state) {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+}
+function showPage(state) {
+  setVisibility(state);
+  document.dispatchEvent(new Event('visibilitychange'));
+}
 
 const props = { accountId: 'acc', chatId: 'chat', userId: 7 };
 function speak(result, ms = 1500) {
@@ -137,7 +180,7 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
   render(VoiceModePanel, { ...props, onsent });
   await waitFor(() => expect(callbacks).not.toBeNull());
   expect(transcriber.connect).toHaveBeenCalled();
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
 
   speak('What is on today? Over to you.');
   await waitFor(() => expect(posts).toHaveLength(1));
@@ -147,11 +190,12 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
     content: 'What is on today?',
     voiceMode: '1',
     audio: 'sig-1',
+    clientId: expect.stringMatching(/^vm-[a-z0-9]+-[a-z0-9]+$/),
   });
   expect(scribe.calls).toEqual([{ length: 7680, sampleRate: 24000 }]);
   await waitFor(() => expect(screen.getByTestId('voice-mode-heard')).toHaveTextContent('What is on today?'));
   expect(onsent).toHaveBeenCalledWith({ id: 'm1' });
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
 });
 
 test('the caption shows the words as they arrive and clears when the turn is sent', async () => {
@@ -185,13 +229,142 @@ test('sound without words is reported and nothing is sent', async () => {
   expect(posts).toHaveLength(0);
 });
 
-test('a transcription failure is reported and listening goes on', async () => {
+test('a turn whose transcripts both fail is held with Retry, and listening goes on (jMapOj)', async () => {
   render(VoiceModePanel, props);
   await waitFor(() => expect(callbacks).not.toBeNull());
   speak(new Error('The connection to the transcriber dropped.'));
-  await waitFor(() => expect(screen.getByTestId('voice-mode-note')).toHaveTextContent('dropped'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('dropped'));
+  expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('not transcribed yet');
   expect(posts).toHaveLength(0);
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
+
+  // Retry asks ElevenLabs again with the kept recording, then sends.
+  scribe.results.push({ text: 'Five, six, seven, eight.', signedId: 'sig-9', error: null });
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Five, six, seven, eight.', audio: 'sig-9' });
+  expect(scribe.calls.at(-1).length).toBe(7680);
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+});
+
+test('a failed post keeps the turn; later turns wait behind it and go in order once it is sent (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 500, body: { errors: ['Something broke'] } };
+  speak('First thing.');
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('Not sent: Something broke')
+  );
+  expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('First thing.');
+  expect(JSON.parse(sessionStorage.getItem('voice-mode-held:chat'))).toEqual([
+    {
+      clientMessageId: posts[0].clientId,
+      text: 'First thing.',
+      signedId: 'sig-1',
+      durationMs: 1500,
+      error: 'Something broke',
+    },
+  ]);
+
+  // The next turn tries the line again; the front fails again, so it waits.
+  speak('Second thing.');
+  await waitFor(() => expect(screen.getAllByTestId('voice-mode-held-turn')).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByTestId('voice-mode-held-reason')[1]).toHaveTextContent('waiting behind'));
+  expect(posts.map((p) => p.content)).toEqual(['First thing.', 'First thing.']);
+
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content).slice(-2)).toEqual(['First thing.', 'Second thing.']);
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
+});
+
+test('Discard drops a held turn and the one behind it goes', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: null, body: {} };
+  globalThis.fetch.mockImplementationOnce(async () => {
+    throw new TypeError('Failed to fetch');
+  });
+  speak('Drop me.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('could not be reached'));
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content)).toEqual([]);
+});
+
+test('a held turn retries itself once when the network comes back, and once after a reload of the tab', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 502, body: {} };
+  speak('While offline.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  posts.reply = null;
+  window.dispatchEvent(new Event('online'));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content)).toEqual(['While offline.', 'While offline.']);
+
+  cleanup();
+  sessionStorage.setItem(
+    'voice-mode-held:chat',
+    JSON.stringify([{ text: 'From before the reload.', signedId: 'sig-r' }])
+  );
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts.at(-1)).toMatchObject({ content: 'From before the reload.', audio: 'sig-r' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+});
+
+test('the system muting the mic closes the open turn, says paused, and unmuting picks up again (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  transcriber.results.push('Said before the lock');
+  callbacks.onspeechstart(new Float32Array(10));
+  handles[0].open = 1200;
+  callbacks.oninterrupt('muted');
+  expect(handles[0].flush).toHaveBeenCalled();
+  await waitFor(() => expect(posts.map((p) => p.content)).toEqual(['Said before the lock']));
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Paused: the system took the microphone')
+  );
+
+  callbacks.onrestore();
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you'));
+  expect(handles[0].resume).toHaveBeenCalled();
+  expect(transcriber.connect.mock.calls.length).toBeGreaterThan(1);
+});
+
+test('the screen going off (pagehide) pauses; coming back reopens a mic whose track ended, with no tap (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  expect(navigator.wakeLock.request).toHaveBeenCalledWith('screen');
+  // The browser lets go of the lock when the page is hidden.
+  setVisibility('hidden');
+  wakeLocks.forEach((lock) => lock.listeners.forEach((fn) => fn()));
+  window.dispatchEvent(new Event('pagehide'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Paused: the screen went off'));
+  expect(screen.queryByTestId('voice-mode-stale')).toBeNull();
+
+  handles[0].alive = false;
+  showPage('visible');
+  await waitFor(() => expect(handles).toHaveLength(2));
+  expect(handles[0].stop).toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you'));
+  expect(navigator.wakeLock.request).toHaveBeenCalledTimes(2);
+
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(wakeLocks.at(-1).release).toHaveBeenCalled());
+});
+
+test('when nothing is being heard the label invites the next thing, not "Listening" (Daniel, jNwAdJ eBVREL)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent(
+    'Waiting for you. Speak again to say something else.'
+  );
+  expect(screen.getByTestId('voice-mode-status')).not.toHaveTextContent('Listening');
+  callbacks.onspeechstart(new Float32Array(10));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Hearing you'));
 });
 
 test('a refusal because the mode is off ends voice mode and says why', async () => {
@@ -256,7 +429,7 @@ test('mute keeps the microphone open but marks the state; End stops the capture'
   await fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
   expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Muted');
   await fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
-  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+  expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Waiting for you');
   await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
   await waitFor(() => expect(onend).toHaveBeenCalledWith({ sent: 0 }));
   expect(stopped).toBe(true);
@@ -550,4 +723,135 @@ test('changing the voice engine while open stops the old reader and reads on wit
   expect(player).not.toBe(first);
   expect(player.log).not.toContainEqual(['close']);
   accountSpeechEngine.set('elevenlabs');
+});
+
+test('Retry keeps a turn whose recording is kept again but not transcribed (#797 review)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  speak(new Error('socket closed'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  scribe.results.push({ text: '', signedId: 'sig-kept', error: 'Transcription failed.' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('Not sent: Transcription failed.')
+  );
+  expect(posts).toHaveLength(0);
+});
+
+test('End does not lose a closed turn whose clean transcript is still on its way (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Live words');
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  expect(posts).toHaveLength(0);
+  slow.resolve({ text: 'Clean words, late.', signedId: 'sig-late', error: null });
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Clean words, late.', audio: 'sig-late' });
+});
+
+test('after End, a late turn that cannot be sent is kept for next time as its caption', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  callbacks.onspeechstart(new Float32Array(10));
+  transcriber.options.onDelta('five, six, seven, eight');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-caption')).toBeTruthy());
+  transcriber.results.push(new Error('socket closed'));
+  callbacks.onturn(1500);
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  slow.resolve({ text: '', signedId: null, error: 'Failed to fetch' });
+  // Caption fallback: sent as rough rather than held, since the words exist.
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].content).toContain('five, six, seven, eight');
+});
+
+test('End with a clean transcript still pending writes the turn down first; a reopened panel sends it, and the late result does not send it again (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  callbacks.onspeechstart(new Float32Array(10));
+  transcriber.options.onDelta('five, six, seven, eight');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-caption')).toBeTruthy());
+  transcriber.results.push(new Promise(() => {}));
+  callbacks.onturn(1500);
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  const stored = JSON.parse(sessionStorage.getItem('voice-mode-held:chat'));
+  expect(stored).toHaveLength(1);
+  expect(stored[0].text).toContain('five, six, seven, eight');
+  const identity = stored[0].clientMessageId;
+  expect(identity).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+
+  cleanup();
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].clientId).toBe(identity);
+
+  slow.resolve({ text: 'Five, six, seven, eight.', signedId: 'sig-late', error: null });
+  await waitFor(() => expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+});
+
+test('End writes down the live text that arrived after the turn closed, not only the caption before it (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Words received after commit.');
+  await waitFor(() => expect(screen.getByText(/Words received after commit/)).toBeTruthy());
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  const stored = JSON.parse(sessionStorage.getItem('voice-mode-held:chat'));
+  expect(stored).toHaveLength(1);
+  expect(stored[0].text).toContain('Words received after commit');
+});
+
+test('Discard in a reopened panel is final: the panel that ended does not send the turn when its late result arrives (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  speak('Do not send this.');
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  expect(JSON.parse(sessionStorage.getItem('voice-mode-held:chat'))).toHaveLength(1);
+
+  cleanup();
+  posts.reply = { ok: false, status: 502, body: {} };
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy());
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
+
+  slow.resolve({ text: 'Do not send this.', signedId: 'sig-late', error: null });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(posts).toHaveLength(1);
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
+});
+
+test('a retried held turn is posted with the identity of its first send (#797 review)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 502, body: {} };
+  speak('Once only.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0].clientId).toBeTruthy();
+  expect(posts[1].clientId).toBe(posts[0].clientId);
 });

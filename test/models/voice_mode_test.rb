@@ -90,4 +90,65 @@ class VoiceModeTest < ActiveSupport::TestCase
     assert_nil VoiceMode.addressee(chat, "Anyone, hello")
   end
 
+  # #747: Daniel in a fresh chat, "So now I'm going to say, hey Lume, what's up?", woke nobody.
+  test "in a fresh chat a resident named mid-sentence is the addressee" do
+    lume, mira, chat = lume_and_mira_chat
+    assert_equal lume, VoiceMode.addressee(chat, "So now I'm going to say, hey Lume, what's up?")
+    assert_equal mira, VoiceMode.addressee(chat, "I think this is one for Mira, really")
+  end
+
+  test "in a fresh chat two different names route nobody, and no name goes to the first listed resident" do
+    lume, _mira, chat = lume_and_mira_chat
+    assert_nil VoiceMode.addressee(chat, "So I was telling Mira that Lume had a point")
+    assert_equal lume, VoiceMode.addressee(chat, "What's on today?")
+  end
+
+  test "a turn that opens with a name still wins, and a name inside a word is not a name" do
+    lume, mira, chat = lume_and_mira_chat
+    reply_from(chat, lume)
+    assert_equal mira, VoiceMode.addressee(chat, "Hey Mira, what do you think Lume meant?")
+    assert_equal lume, VoiceMode.addressee(chat, "Tell me about Miranda"), "Miranda is not Mira: continues with the last speaker"
+  end
+
+  test "after a reply, a short turn naming one resident goes to them; a long one continues with the last speaker" do
+    lume, mira, chat = lume_and_mira_chat
+    reply_from(chat, lume)
+    assert_equal mira, VoiceMode.addressee(chat, "So now I'm going to say, hey Mira, what's up?")
+    assert_equal lume, VoiceMode.addressee(chat, "Thanks, that helps")
+
+    long = "#{'and then we walked a bit further along the beach ' * 4}and Mira said it was cold"
+    assert_operator long.split.size, :>, VoiceMode::SHORT_TURN_WORDS
+    assert_equal lume, VoiceMode.addressee(chat, long)
+  end
+
+  test "two names after a reply do not pick one by guess: the turn continues with the last speaker" do
+    lume, _mira, chat = lume_and_mira_chat
+    reply_from(chat, lume)
+    assert_equal lume, VoiceMode.addressee(chat, "So I told Mira what Lume said")
+  end
+
+  test "a shared name mid-sentence routes nobody, not the last speaker" do
+    lume, _mira, chat = lume_and_mira_chat
+    # Two residents share a name only across accounts (a guest in the room).
+    other = agents(:other_account_agent)
+    other.update_columns(name: "Mira", active: true, account_id: Account.where.not(id: @account.id).pick(:id))
+    ChatAgent.insert_all!([ { chat_id: chat.id, agent_id: other.id, created_at: Time.current } ])
+    chat.reload
+    reply_from(chat, lume)
+    assert_nil VoiceMode.addressee(chat, "So now I'm going to ask Mira about it")
+  end
+
+  def lume_and_mira_chat
+    lume = agents(:research_assistant)
+    mira = agents(:code_reviewer)
+    lume.update_columns(name: "Lume", account_id: @account.id)
+    mira.update_columns(name: "Mira", account_id: @account.id)
+    chat = @account.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ lume, mira ])
+    [ lume, mira, chat ]
+  end
+
+  def reply_from(chat, agent)
+    chat.messages.create!(role: "assistant", agent:, content: "Here.")
+  end
+
 end

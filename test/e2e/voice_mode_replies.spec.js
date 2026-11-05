@@ -102,7 +102,7 @@ test.describe('voice mode replies', () => {
     await page.getByTestId('voice-mode-button').click();
     const panel = page.getByTestId('voice-mode-panel');
     await expect(panel).toBeVisible();
-    await expect(page.getByTestId('voice-mode-status')).toHaveText(/Listening/);
+    await expect(page.getByTestId('voice-mode-status')).toHaveText(/Waiting for you/);
     await page.getByRole('button', { name: 'Mute' }).click();
     await expect(page.getByTestId('voice-mode-status')).toHaveText(/Muted/);
 
