@@ -21,19 +21,33 @@ vi.mock('$lib/speech-source', async () => ({
 
 let callbacks;
 let stopped;
+let handles;
 vi.mock('$lib/voice-mode-capture', () => ({
   captureSupported: () => true,
   startCapture: vi.fn(async (options) => {
     callbacks = options;
     let muted = false;
-    return {
+    const handle = {
       get muted() {
         return muted;
       },
       mute: (on) => (muted = on),
-      flush: () => {},
+      // A test sets handle.open to a duration to have flush() close that turn,
+      // as the real detector does.
+      open: null,
+      flush: vi.fn(() => {
+        if (handle.open === null) return;
+        const ms = handle.open;
+        handle.open = null;
+        options.onturn(ms);
+      }),
+      alive: true,
+      running: true,
+      resume: vi.fn(async () => {}),
       stop: vi.fn(async () => (stopped = true)),
     };
+    handles?.push(handle);
+    return handle;
   }),
 }));
 
@@ -106,9 +120,28 @@ let posts;
 beforeEach(() => {
   callbacks = null;
   stopped = false;
+  handles = [];
   transcriber = null;
   posts = [];
   scribe = { calls: [], results: [] };
+  sessionStorage.clear();
+  setVisibility('visible');
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true });
+  wakeLocks = [];
+  Object.defineProperty(navigator, 'wakeLock', {
+    configurable: true,
+    value: {
+      request: vi.fn(async () => {
+        const lock = {
+          listeners: [],
+          release: vi.fn(async () => {}),
+          addEventListener: (type, fn) => lock.listeners.push(fn),
+        };
+        wakeLocks.push(lock);
+        return lock;
+      }),
+    },
+  });
   globalThis.fetch = vi.fn(async (url, options) => {
     const form = options.body;
     posts.push({
@@ -123,6 +156,15 @@ beforeEach(() => {
   document.head.innerHTML = '<meta name="csrf-token" content="token">';
 });
 afterEach(cleanup);
+
+let wakeLocks;
+function setVisibility(state) {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+}
+function showPage(state) {
+  setVisibility(state);
+  document.dispatchEvent(new Event('visibilitychange'));
+}
 
 const props = { accountId: 'acc', chatId: 'chat', userId: 7 };
 function speak(result, ms = 1500) {
@@ -185,13 +227,135 @@ test('sound without words is reported and nothing is sent', async () => {
   expect(posts).toHaveLength(0);
 });
 
-test('a transcription failure is reported and listening goes on', async () => {
+test('a turn whose transcripts both fail is held with Retry, and listening goes on (jMapOj)', async () => {
   render(VoiceModePanel, props);
   await waitFor(() => expect(callbacks).not.toBeNull());
   speak(new Error('The connection to the transcriber dropped.'));
-  await waitFor(() => expect(screen.getByTestId('voice-mode-note')).toHaveTextContent('dropped'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('dropped'));
+  expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('not transcribed yet');
   expect(posts).toHaveLength(0);
   expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening');
+
+  // Retry asks ElevenLabs again with the kept recording, then sends.
+  scribe.results.push({ text: 'Five, six, seven, eight.', signedId: 'sig-9', error: null });
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]).toMatchObject({ content: 'Five, six, seven, eight.', audio: 'sig-9' });
+  expect(scribe.calls.at(-1).length).toBe(7680);
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+});
+
+test('a failed post keeps the turn; later turns wait behind it and go in order once it is sent (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 500, body: { errors: ['Something broke'] } };
+  speak('First thing.');
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('Not sent: Something broke')
+  );
+  expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('First thing.');
+  expect(JSON.parse(sessionStorage.getItem('voice-mode-held:chat'))).toEqual([
+    { text: 'First thing.', signedId: 'sig-1', durationMs: 1500, error: 'Something broke' },
+  ]);
+
+  // The next turn tries the line again; the front fails again, so it waits.
+  speak('Second thing.');
+  await waitFor(() => expect(screen.getAllByTestId('voice-mode-held-turn')).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByTestId('voice-mode-held-reason')[1]).toHaveTextContent('waiting behind'));
+  expect(posts.map((p) => p.content)).toEqual(['First thing.', 'First thing.']);
+
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content).slice(-2)).toEqual(['First thing.', 'Second thing.']);
+  expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull();
+});
+
+test('Discard drops a held turn and the one behind it goes', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: null, body: {} };
+  globalThis.fetch.mockImplementationOnce(async () => {
+    throw new TypeError('Failed to fetch');
+  });
+  speak('Drop me.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held-reason')).toHaveTextContent('could not be reached'));
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content)).toEqual([]);
+});
+
+test('a held turn retries itself once when the network comes back, and once after a reload of the tab', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 502, body: {} };
+  speak('While offline.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  posts.reply = null;
+  window.dispatchEvent(new Event('online'));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+  expect(posts.map((p) => p.content)).toEqual(['While offline.', 'While offline.']);
+
+  cleanup();
+  sessionStorage.setItem(
+    'voice-mode-held:chat',
+    JSON.stringify([{ text: 'From before the reload.', signedId: 'sig-r' }])
+  );
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts.at(-1)).toMatchObject({ content: 'From before the reload.', audio: 'sig-r' }));
+  await waitFor(() => expect(screen.queryByTestId('voice-mode-held')).toBeNull());
+});
+
+test('the system muting the mic closes the open turn, says paused, and unmuting picks up again (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  transcriber.results.push('Said before the lock');
+  callbacks.onspeechstart(new Float32Array(10));
+  handles[0].open = 1200;
+  callbacks.oninterrupt('muted');
+  expect(handles[0].flush).toHaveBeenCalled();
+  await waitFor(() => expect(posts.map((p) => p.content)).toEqual(['Said before the lock']));
+  await waitFor(() =>
+    expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Paused: the system took the microphone')
+  );
+
+  callbacks.onrestore();
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening'));
+  expect(handles[0].resume).toHaveBeenCalled();
+  expect(transcriber.connect.mock.calls.length).toBeGreaterThan(1);
+});
+
+test('the screen going off (pagehide) pauses; coming back reopens a mic whose track ended, with no tap (jMapOj)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  expect(navigator.wakeLock.request).toHaveBeenCalledWith('screen');
+  // The browser lets go of the lock when the page is hidden.
+  setVisibility('hidden');
+  wakeLocks.forEach((lock) => lock.listeners.forEach((fn) => fn()));
+  window.dispatchEvent(new Event('pagehide'));
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Paused: the screen went off'));
+  expect(screen.queryByTestId('voice-mode-stale')).toBeNull();
+
+  handles[0].alive = false;
+  showPage('visible');
+  await waitFor(() => expect(handles).toHaveLength(2));
+  expect(handles[0].stop).toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Listening'));
+  expect(navigator.wakeLock.request).toHaveBeenCalledTimes(2);
+
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(wakeLocks.at(-1).release).toHaveBeenCalled());
+});
+
+test('a pause inside an open turn says the turn goes on, not that it is listening (Daniel, ezmgrw)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  callbacks.onspeechstart(new Float32Array(10));
+  callbacks.onlevel(0.2, 0.012);
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Hearing you'));
+  callbacks.onlevel(0.001, 0.012);
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('Continuing to speak'));
 });
 
 test('a refusal because the mode is off ends voice mode and says why', async () => {

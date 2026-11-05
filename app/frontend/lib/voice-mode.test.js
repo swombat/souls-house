@@ -7,6 +7,7 @@ import {
   pcm16Base64,
   resample,
   stripReleasePhrase,
+  voiceModeStatus,
 } from './voice-mode';
 
 const RATE = 16_000;
@@ -157,5 +158,25 @@ describe('pcm16Base64', () => {
     const bytes = Uint8Array.from(atob(pcm16Base64(new Float32Array([0, 1, -1, 2]))), (c) => c.charCodeAt(0));
     const view = new DataView(bytes.buffer);
     expect([0, 1, 2, 3].map((i) => view.getInt16(i * 2, true))).toEqual([0, 32767, -32768, 32767]);
+  });
+});
+
+describe('voiceModeStatus', () => {
+  const base = { phase: 'listening', muted: false, note: '', speaking: null };
+
+  test('an open turn the person has paused in says the turn goes on (Daniel, jNwAdJ ezmgrw)', () => {
+    expect(voiceModeStatus({ ...base, phase: 'hearing' })).toBe('Hearing you…');
+    expect(voiceModeStatus({ ...base, phase: 'hearing', quiet: true })).toBe('Continuing to speak… nothing sent yet.');
+    expect(voiceModeStatus({ ...base, quiet: true })).toMatch(/^Listening/);
+  });
+
+  test('a pause outranks every phase but starting and failed, and says why (jMapOj)', () => {
+    expect(voiceModeStatus({ ...base, phase: 'sending', paused: 'hidden' })).toMatch(/^Paused: the screen went off/);
+    expect(voiceModeStatus({ ...base, paused: 'muted' })).toMatch(/^Paused: the system took the microphone/);
+    expect(voiceModeStatus({ ...base, paused: 'suspended', muted: true })).toMatch(
+      /^Paused: the browser stopped the audio/
+    );
+    expect(voiceModeStatus({ ...base, phase: 'starting', paused: 'hidden' })).toBe('Opening the microphone…');
+    expect(voiceModeStatus({ ...base, phase: 'failed', note: 'No mic', paused: 'hidden' })).toBe('No mic');
   });
 });

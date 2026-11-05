@@ -43,7 +43,7 @@ describe('resolveTurn', () => {
       durationMs: 2000,
       onProvisional,
     });
-    expect(turn).toEqual({ text: 'Clean words.', signedId: 'sig1', note: '' });
+    expect(turn).toEqual({ text: 'Clean words.', signedId: 'sig1', note: '', failed: false });
     expect(onProvisional).not.toHaveBeenCalled();
   });
 
@@ -78,12 +78,29 @@ describe('resolveTurn', () => {
       clean: Promise.resolve({ text: '', signedId: null, error: null }),
       durationMs: 3200,
     });
-    expect(silent).toEqual({ text: '', signedId: null, note: 'Heard 3s of sound but no words.' });
+    expect(silent).toEqual({ text: '', signedId: null, note: 'Heard 3s of sound but no words.', failed: false });
     const failed = await resolveTurn({
       transcript: Promise.reject(new Error('socket closed')),
       clean: Promise.resolve({ text: '', signedId: null, error: 'timeout' }),
       durationMs: 3200,
     });
-    expect(failed).toEqual({ text: '', signedId: null, note: 'socket closed' });
+    // Both transcripts failed: a failure to keep, not silence to drop (jMapOj).
+    expect(failed).toEqual({ text: '', signedId: null, note: 'socket closed', failed: true });
+  });
+
+  // Daniel's "five, six, seven, eight" (jNwAdJ YVvdnw): the caption showed the
+  // words, then the socket and the upload died with the screen off.
+  it('sends the caption that was shown, marked rough, when both transcripts are lost', async () => {
+    const onProvisional = vi.fn();
+    const turn = await resolveTurn({
+      transcript: Promise.reject(new Error('socket closed')),
+      clean: Promise.resolve({ text: '', signedId: null, error: 'Failed to fetch' }),
+      durationMs: 2000,
+      caption: 'five, six, seven, eight',
+      onProvisional,
+    });
+    expect(turn.failed).toBe(false);
+    expect(turn.text).toBe(`${ROUGH_MARK} five, six, seven, eight`);
+    expect(onProvisional).toHaveBeenCalledWith('five, six, seven, eight');
   });
 });

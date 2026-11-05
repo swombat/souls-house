@@ -1,17 +1,20 @@
 <script>
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { captureSupported, startCapture } from '$lib/voice-mode-capture';
-  import { voiceModeStatus } from '$lib/voice-mode';
+  import { stripReleasePhrase, voiceModeStatus } from '$lib/voice-mode';
   import { createTranscriber } from '$lib/voice-mode-realtime';
   import { holdForRecording } from '$lib/recording-guard';
   import { micErrorMessage } from '$lib/mic-recorder';
   import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
   import { createEngineReader } from '$lib/voice-mode-reader';
-  import { createTurnRecorder } from '$lib/voice-mode-turn-audio';
+  import { createTurnRecorder, turnContent } from '$lib/voice-mode-turn-audio';
   import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
+  import { createHeldTurns, heldStorageKey } from '$lib/voice-mode-held';
+  import { createWakeLock, online, pageVisible, watchPage } from '$lib/voice-mode-lifecycle';
   import * as logging from '$lib/logging';
   import VoiceModeReadout from './VoiceModeReadout.svelte';
+  import VoiceModeHeld from './VoiceModeHeld.svelte';
 
   // A conversation in voice mode (VoiceMode, YMaddY). Listening starts at
   // once. While the person speaks, the audio streams to OpenAI's realtime
@@ -22,6 +25,14 @@
   // sent with ElevenLabs' text and the recording attached. If that fails, the
   // live text is sent, marked rough. Resident replies that arrive meanwhile are
   // read aloud in their voices; speaking interrupts them.
+  //
+  // No turn is dropped (jMapOj): one that fails anywhere after the detector
+  // closed it is held in the panel with Retry and Discard, later turns wait
+  // behind it, and the queue retries itself once when the page is visible and
+  // online again (voice-mode-held.js). When the browser stops the microphone
+  // (screen off, the system taking the mic), the open turn is closed so what
+  // was said goes through that path, the panel says it is paused, and it picks
+  // up again when the page is back (voice-mode-lifecycle.js).
   let { accountId, chatId, userId, messages = [], onsent, onerror, onend } = $props();
 
   // starting | listening | hearing | transcribing | sending | failed; mute is separate.
@@ -36,6 +47,11 @@
   let note = $state('');
   let sent = $state(0);
   let stale = $state(false);
+  // Why the browser stopped the microphone, or null (voiceModeStatus).
+  let paused = $state(null);
+  // The person has gone quiet inside a turn that is still open.
+  let quiet = $state(false);
+  let held = $state([]);
   let speakingId = $state(null);
   // The reply being read, shown as text too: on a phone the panel is the only
   // evidence that a reply exists while the person is talking.
@@ -57,11 +73,74 @@
   let lastSampleAt = 0;
   let watchdog = null;
 
-  const busy = $derived(phase === 'transcribing' || phase === 'sending');
-  const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId }));
+  const busy = $derived(!paused && (phase === 'transcribing' || phase === 'sending'));
+  const status = $derived(voiceModeStatus({ phase, muted, note, speaking: speakingId, paused, quiet }));
 
   const END_DRAIN_MS = 6000;
   const SEND_TIMEOUT_MS = 20_000;
+  const STALE_MS = 3000;
+
+  const queueOfHeld = createHeldTurns({
+    // One panel per conversation: the key is fixed when it opens.
+    key: heldStorageKey(untrack(() => chatId)),
+    deliver: deliverHeld,
+    onchange: (list) => (held = list),
+  });
+  held = queueOfHeld.list();
+  const wakeLock = createWakeLock();
+  let stopWatching = null;
+
+  // The handlers the microphone feeds; kept so a reopened mic gets the same.
+  const captureHandlers = {
+    outputRate: TURN_RATE,
+    onlevel: (rms, limit) => {
+      level = rms;
+      threshold = limit;
+      lastSampleAt = performance.now();
+      stale = false;
+      quiet = phase === 'hearing' && rms < limit;
+    },
+    onspeechstart: (samples) => {
+      reader.speechStarted();
+      caption = '';
+      recorder.begin(samples);
+      transcriber?.begin(samples);
+      if (phase === 'listening') phase = 'hearing';
+    },
+    onaudio: (samples) => {
+      recorder.append(samples);
+      transcriber?.append(samples);
+    },
+    ondiscard: () => {
+      reader.discarded(messages);
+      recorder.discard();
+      transcriber?.discard();
+      caption = '';
+      quiet = false;
+      if (phase === 'hearing') phase = 'listening';
+    },
+    onturn: (durationMs) => {
+      reader.committed(messages);
+      quiet = false;
+      // The caption as shown: if the transcriber's final answer is lost with
+      // the connection, these are still the person's words (jNwAdJ YVvdnw).
+      const shown = caption;
+      const samples = recorder.take();
+      // Both start now, so a slow turn doesn't delay the next one's upload.
+      const clean = startCleanTurn({ accountId, chatId, samples, sampleRate: TURN_RATE });
+      let transcript;
+      try {
+        transcript = transcriber.commit();
+      } catch (error) {
+        transcript = Promise.reject(error);
+      }
+      enqueue(transcript, durationMs, clean, { caption: shown, samples });
+    },
+    oninterrupt: (reason) => pause(reason === 'ended' ? 'hidden' : reason),
+    onrestore: () => {
+      if (paused && pageVisible()) resume();
+    },
+  };
 
   onMount(async () => {
     if (!captureSupported()) {
@@ -86,51 +165,39 @@
     // here is reported by the first turn that needs the connection.
     transcriber.connect().catch((error) => (note = error.message));
     try {
-      capture = await startCapture({
-        outputRate: TURN_RATE,
-        onlevel: (rms, limit) => {
-          level = rms;
-          threshold = limit;
-          lastSampleAt = performance.now();
-          stale = false;
-        },
-        onspeechstart: (samples) => {
-          reader.speechStarted();
-          caption = '';
-          recorder.begin(samples);
-          transcriber?.begin(samples);
-          if (phase === 'listening') phase = 'hearing';
-        },
-        onaudio: (samples) => {
-          recorder.append(samples);
-          transcriber?.append(samples);
-        },
-        ondiscard: () => {
-          reader.discarded(messages);
-          recorder.discard();
-          transcriber?.discard();
-          caption = '';
-          if (phase === 'hearing') phase = 'listening';
-        },
-        onturn: (durationMs) => {
-          reader.committed(messages);
-          // Both start now, so a slow turn doesn't delay the next one's upload.
-          const clean = startCleanTurn({ accountId, chatId, samples: recorder.take(), sampleRate: TURN_RATE });
-          enqueue(transcriber.commit(), durationMs, clean);
-        },
-      });
+      capture = await startCapture(captureHandlers);
       if (ended) {
         await capture.stop();
         return;
       }
       phase = 'listening';
       lastSampleAt = performance.now();
+      wakeLock.acquire();
+      stopWatching = watchPage({
+        onvisible: () => {
+          wakeLock.reacquire();
+          if (paused || stale || (capture && !capture.running)) resume();
+          else retryHeld();
+        },
+        // Hidden alone is not a pause: Chrome on Android may keep a hidden
+        // page's microphone running. The watchdog pauses once samples stop.
+        onhidden: () => {},
+        onpagehide: () => pause('hidden'),
+        ononline: () => retryHeld(),
+      });
       // Samples stop when the browser suspends the page (a locked phone, a
-      // backgrounded tab). Say so rather than show a listening screen that isn't.
+      // backgrounded tab). When the page is hidden that is a pause: close the
+      // open turn so it is sent (or held). When visible, say so and try to
+      // wake the audio engine.
       watchdog = setInterval(() => {
-        if (muted || phase === 'failed' || phase === 'starting') return;
-        stale = performance.now() - lastSampleAt > 3000;
+        if (muted || paused || phase === 'failed' || phase === 'starting') return;
+        stale = performance.now() - lastSampleAt > STALE_MS;
+        if (!stale) return;
+        if (!pageVisible()) pause('hidden');
+        else capture?.resume();
       }, 1000);
+      // Turns held from before a reload of this tab: try them once.
+      if (queueOfHeld.size) retryHeld();
     } catch (error) {
       phase = 'failed';
       note = micErrorMessage(error);
@@ -145,6 +212,8 @@
     ended = true;
     reader.close();
     clearInterval(watchdog);
+    stopWatching?.();
+    wakeLock.release();
     capture?.stop();
     transcriber?.close();
     releaseHold?.();
@@ -165,18 +234,32 @@
   }
 
   // Turns are sent one at a time, in the order they were spoken; each
-  // transcript is already on its way when the next turn starts.
-  function enqueue(transcript, durationMs, clean) {
+  // transcript is already on its way when the next turn starts. Nothing thrown
+  // in here is only logged: whatever is known of the turn is held.
+  function enqueue(transcript, durationMs, clean, { caption: shown = '', samples = null } = {}) {
     if (phase === 'hearing') phase = 'transcribing';
     queue = queue
-      .then(() => handleTurn(transcript, durationMs, clean))
-      .catch((error) => logging.error('voice turn failed', error));
+      .then(() => handleTurn(transcript, durationMs, clean, { caption: shown, samples }))
+      .catch((error) => {
+        logging.error('voice turn failed', error);
+        if (ended) return;
+        queueOfHeld.hold({
+          text: roughOf(shown),
+          samples,
+          durationMs,
+          error: error?.message || 'Something went wrong with this turn.',
+        });
+        afterTurn();
+      });
   }
+
+  // A caption as the rough text it would be sent as ('' when there is none).
+  const roughOf = (text) => turnContent({ clean: '', live: stripReleasePhrase(text).text }).text;
 
   // The clean (recording) text decides the turn; the live caption is shown as
   // provisional meanwhile and sent marked rough only if the clean text is missing
   // (see voice-mode-turn-flow.js).
-  async function handleTurn(transcript, durationMs, clean) {
+  async function handleTurn(transcript, durationMs, clean, { caption: shown = '', samples = null } = {}) {
     if (ended) return;
     phase = 'transcribing';
     note = '';
@@ -184,6 +267,7 @@
       transcript,
       clean,
       durationMs,
+      caption: shown,
       onProvisional: (text) => {
         if (!ended) [caption, provisional] = ['', text];
       },
@@ -191,14 +275,36 @@
     caption = '';
     provisional = '';
     if (ended) return;
-    if (!turn.text) {
-      note = turn.note;
-      phase = 'listening';
+    if (turn.failed) {
+      queueOfHeld.hold({ text: '', signedId: turn.signedId, samples, durationMs, error: turn.note });
+      afterTurn();
       return;
     }
-    await send(turn.text, turn.signedId);
+    if (!turn.text) {
+      note = turn.note;
+      afterTurn();
+      return;
+    }
+    // Behind a held turn: wait in line, and try the line again now.
+    if (queueOfHeld.size) {
+      queueOfHeld.hold({ text: turn.text, signedId: turn.signedId, durationMs, state: 'waiting' });
+      afterTurn();
+      retryHeld({ auto: false });
+      return;
+    }
+    const result = await send(turn.text, turn.signedId);
+    if (!result.ok && !result.fatal && !ended) {
+      queueOfHeld.hold({ text: turn.text, signedId: turn.signedId, durationMs, error: result.error });
+    }
+    afterTurn();
   }
 
+  function afterTurn() {
+    if (!ended && phase !== 'failed') phase = 'listening';
+  }
+
+  // One post. Resolves { ok, error, fatal }; a 403 (the mode was switched off
+  // under us) ends voice mode.
   async function send(text, audioSignedId) {
     phase = 'sending';
     const { ok, status, data } = await postVoiceMessage({
@@ -209,23 +315,109 @@
       audioSignedId,
       timeoutMs: SEND_TIMEOUT_MS,
     });
-    if (ended) return;
+    if (ended) return { ok, error: '', fatal: !ok };
     if (!ok) {
       const errors = data?.errors;
-      note = Array.isArray(errors) ? errors.join(', ') : errors || 'Could not send what you said.';
+      const error = Array.isArray(errors)
+        ? errors.join(', ')
+        : errors || (status === null ? 'The house could not be reached.' : 'Could not send what you said.');
       // 403: the mode was switched off (or lost its key) under us. Stop listening.
       if (status === 403) {
+        note = error;
         onerror?.(note);
         await end({ drain: false });
-        return;
+        return { ok: false, error, fatal: true };
       }
-      phase = 'listening';
-      return;
+      return { ok: false, error, fatal: false };
     }
     heard = text;
     sent += 1;
     onsent?.(data);
-    phase = 'listening';
+    return { ok: true, error: '', fatal: false };
+  }
+
+  // A held turn, sent again: transcribed again first when it has no text yet.
+  async function deliverHeld(item) {
+    if (ended) return { ok: false, fatal: true, error: item.error };
+    let { text, signedId } = item;
+    if (!text?.trim()) {
+      if (!item.samples?.length) return { ok: false, error: 'The recording was lost when the page reloaded.' };
+      const recording = await startCleanTurn({ accountId, chatId, samples: item.samples, sampleRate: TURN_RATE });
+      if (recording.error && !recording.signedId) return { ok: false, error: recording.error };
+      text = stripReleasePhrase(recording.text || '').text;
+      signedId = recording.signedId || signedId;
+      if (!text) return { ok: false, dropped: true, text: '', signedId };
+    }
+    const result = await send(text, signedId);
+    if (!ended && phase === 'sending') phase = 'listening';
+    return { ...result, text, signedId };
+  }
+
+  function retryHeld({ auto = true } = {}) {
+    if (ended || !queueOfHeld.size) return;
+    if (auto && (!pageVisible() || !online())) return;
+    queueOfHeld.drain({ auto }).catch((error) => logging.error('voice held retry failed', error));
+  }
+
+  // The browser stopped the microphone. Close the open turn now, while its
+  // samples are still here, so what was said is sent or held; then wait for
+  // the page to come back.
+  function pause(reason) {
+    if (ended || paused || !capture) return;
+    paused = reason;
+    quiet = false;
+    try {
+      capture.flush();
+    } catch (error) {
+      logging.error('voice flush on pause failed', error);
+    }
+  }
+
+  // Back: wake the audio engine, reopen the mic if the track ended, reconnect
+  // the transcriber, then retry what is held. No tap needed where the browser
+  // allows it; if it refuses, the panel says so and End still works.
+  let resuming = null;
+  function resume() {
+    if (ended || resuming) return resuming;
+    resuming = (async () => {
+      try {
+        if (stale && !paused) pause('hidden');
+        if (capture && !capture.alive) {
+          const old = capture;
+          capture = null;
+          await old.stop().catch(() => {});
+          capture = await startCapture(captureHandlers);
+          if (ended) {
+            await capture.stop();
+            return;
+          }
+          if (muted) capture.mute(true);
+        } else {
+          await capture?.resume();
+        }
+        transcriber?.connect().catch((error) => (note = error.message));
+        paused = null;
+        stale = false;
+        lastSampleAt = performance.now();
+        retryHeld();
+      } catch (error) {
+        note = `The microphone could not be reopened: ${micErrorMessage(error)}`;
+      } finally {
+        resuming = null;
+      }
+    })();
+    return resuming;
+  }
+
+  function retryFront() {
+    retryHeld({ auto: false });
+  }
+
+  function discardHeld(id) {
+    const front = held[0]?.id === id;
+    queueOfHeld.discard(id);
+    // The front went: the next one may be fine to send.
+    if (front) retryHeld({ auto: false });
   }
 
   // Always available once listening: muting closes any sentence in progress
@@ -245,6 +437,8 @@
     ending = true;
     reader.close();
     clearInterval(watchdog);
+    stopWatching?.();
+    wakeLock.release();
     const open = capture;
     capture = null;
     await open?.stop();
@@ -295,5 +489,6 @@
       <Stop size={16} weight="fill" /> End
     </button>
   </div>
-  <VoiceModeReadout {stale} {note} {speaking} {caption} {provisional} {heard} />
+  <VoiceModeReadout stale={stale && !paused} {note} {speaking} {caption} {provisional} {heard} />
+  <VoiceModeHeld {held} onretry={retryFront} ondiscard={discardHeld} />
 </div>

@@ -54,24 +54,53 @@ module VoiceMode
   SPEECH_TRUNCATION_NOTE = "The rest is on screen."
 
   # Who a spoken turn is for, in a room where an untagged message wakes nobody
-  # (manual responses). Nobody says "@Mira" aloud: a turn that opens with a
-  # resident's name is for that resident ("Mira, what do you think"), and one
-  # that names nobody continues with whoever spoke last here. A name two
-  # residents share picks nobody, as a shared tag does. nil when no one fits.
+  # (manual responses). Nobody says "@Mira" aloud, so, in order:
+  #
+  # 1. A turn that opens with a resident's name is for that resident ("Mira,
+  #    what do you think").
+  # 2. A short turn that names exactly one resident anywhere is for them ("So
+  #    now I'm going to say, hey Lume, what's up?", #747).
+  # 3. Otherwise it continues with whoever spoke last here.
+  # 4. In a chat no resident has answered yet there is no one to continue
+  #    with: the one resident named anywhere in the turn, however long, and
+  #    with no name, the first resident listed on the chat (#747: "Hey Lume"
+  #    in a fresh chat woke nobody).
+  #
+  # A name two residents share picks nobody, as a shared tag does; two
+  # different names in a fresh chat pick nobody rather than guess. nil when no
+  # one fits.
   LEADING_FILLER = /\A[\s"“'‘(]*(?:(?:hey|hi|ok|okay|so|and|right)[\s,]+)?/i
+  SHORT_TURN_WORDS = 25
 
   def self.addressee(chat, content)
     return nil unless chat.manual_responses?
 
-    eligible = chat.agents.select(&:eligible_for_conversation?)
-    opening = content.to_s.sub(LEADING_FILLER, "")
-    named = eligible.select { |agent| opening.match?(/\A#{Regexp.escape(agent.name)}\b/i) }
+    eligible = chat.agents.reorder("chat_agents.id").select(&:eligible_for_conversation?)
+    return nil if eligible.empty?
+
+    text = content.to_s
+    opening = text.sub(LEADING_FILLER, "")
+    named = eligible.select { |agent| opening.match?(/\A#{name_pattern(agent)}/i) }
     return named.first if named.size == 1
     return nil if named.any?
 
+    mentioned = eligible.select { |agent| text.match?(/(?<![[:alnum:]])#{name_pattern(agent)}/i) }
     last_id = chat.messages.kept.where(role: "assistant").where.not(agent_id: nil).reorder(id: :desc).pick(:agent_id)
+    if last_id.nil?
+      return mentioned.first if mentioned.size == 1
+      return nil if mentioned.any?
+      return eligible.first
+    end
+
+    return mentioned.first if mentioned.size == 1 && text.split.size <= SHORT_TURN_WORDS
+
     eligible.find { |agent| agent.id == last_id }
   end
+
+  def self.name_pattern(agent)
+    "#{Regexp.escape(agent.name)}(?![[:alnum:]])"
+  end
+  private_class_method :name_pattern
 
   def self.speech_text(message)
     text = message.content_for_speech

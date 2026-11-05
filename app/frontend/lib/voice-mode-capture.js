@@ -32,22 +32,32 @@ export function captureSupported(win = globalThis) {
 //   onaudio(samples)              a frame of the open utterance
 //   onturn(durationMs)            the utterance ended
 //   ondiscard(durationMs)         the burst was too short to be speech
+//   oninterrupt(reason)           the browser stopped the audio: 'muted' (the
+//                                 system took the mic track), 'ended' (the track
+//                                 is gone and the mic must be reopened),
+//                                 'suspended' (the audio context stopped)
+//   onrestore()                   the track was unmuted or the context runs again
 // All samples are mono Float32 at `outputRate`.
 // The handle: mute(on) keeps the mic open but feeds silence to the detector
 // (nothing is sent while muted); flush() ends the current utterance now;
-// stop() ends any open utterance and closes everything.
+// resume() asks a suspended context to run again; `alive` is false once the
+// track has ended (reopen with a new capture); stop() ends any open utterance
+// and closes everything.
 export async function startCapture({
   onlevel,
   onspeechstart,
   onaudio,
   onturn,
   ondiscard,
+  oninterrupt,
+  onrestore,
   outputRate = DEFAULT_OUTPUT_RATE,
   detectorOptions = {},
 } = {}) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
   });
+  const track = stream.getAudioTracks?.()[0] ?? stream.getTracks()[0];
   // From here the microphone is ours. Anything below that fails must give it
   // back: the caller never receives a handle it could stop.
   let context = null;
@@ -59,6 +69,8 @@ export async function startCapture({
       source?.disconnect();
       node?.disconnect();
       if (node?.port) node.port.onmessage = null;
+      if (track) track.onmute = track.onunmute = track.onended = null;
+      if (context) context.onstatechange = null;
     } catch {
       // already gone
     }
@@ -107,6 +119,19 @@ export async function startCapture({
     detector = createTurnDetector({ sampleRate: context.sampleRate, ...detectorOptions, streamFrames: true });
     out = (samples) => resample(samples, context.sampleRate, outputRate);
 
+    // Android mutes the track or suspends the context when the screen goes off
+    // or another app takes the mic (jMapOj). Say so; the panel decides.
+    if (track) {
+      track.onmute = () => !stopped && oninterrupt?.('muted');
+      track.onunmute = () => !stopped && onrestore?.();
+      track.onended = () => !stopped && oninterrupt?.('ended');
+    }
+    context.onstatechange = () => {
+      if (stopped) return;
+      if (context.state === 'running') onrestore?.();
+      else if (context.state !== 'closed') oninterrupt?.('suspended');
+    };
+
     source = context.createMediaStreamSource(stream);
     if (context.audioWorklet) {
       workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: 'application/javascript' }));
@@ -137,6 +162,16 @@ export async function startCapture({
     },
     flush() {
       emit(detector.flush());
+    },
+    get alive() {
+      return !stopped && (!track || track.readyState !== 'ended');
+    },
+    get running() {
+      return !stopped && context?.state === 'running' && !track?.muted;
+    },
+    async resume() {
+      if (stopped || !context || context.state === 'running') return;
+      await context.resume().catch(() => {});
     },
     async stop() {
       if (stopped) return;
