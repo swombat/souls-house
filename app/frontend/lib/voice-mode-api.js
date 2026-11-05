@@ -23,12 +23,22 @@ export async function requestVoiceSession(accountId, chatId) {
 // Posts one spoken turn as a voice_mode message, with its recording when kept. A send that hangs must not
 // hold every later turn behind it, so it aborts after timeoutMs. Resolves
 // { ok, status, data }; status is null when the request never completed.
-export async function postVoiceMessage({ accountId, chatId, userId, text, audioSignedId = null, timeoutMs }) {
+export async function postVoiceMessage({
+  accountId,
+  chatId,
+  userId,
+  text,
+  audioSignedId = null,
+  clientMessageId = null,
+  timeoutMs,
+}) {
   const form = new FormData();
   form.append('message[content]', text);
   form.append('voice_mode', '1');
   // The turn's recording, kept like a voice note's (#756).
   if (audioSignedId) form.append('audio_signed_id', audioSignedId);
+  // The turn's identity for its whole life, so a retry is never a second post (#797).
+  if (clientMessageId) form.append('client_message_id', clientMessageId);
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);
   let response = null;

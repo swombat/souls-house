@@ -85,6 +85,10 @@ module VoiceMode
     return nil if named.any?
 
     mentioned = eligible.select { |agent| text.match?(/(?<![[:alnum:]])#{name_pattern(agent)}/i) }
+    # A mentioned name two residents share is nobody's: never the last
+    # speaker either, as if the name had not been said (Tom/Mira, #797 review).
+    return nil if mentioned.group_by { |agent| agent.name.downcase }.any? { |_, same| same.size > 1 }
+
     last_id = chat.messages.kept.where(role: "assistant").where.not(agent_id: nil).reorder(id: :desc).pick(:agent_id)
     if last_id.nil?
       return mentioned.first if mentioned.size == 1

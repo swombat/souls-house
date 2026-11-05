@@ -10,7 +10,7 @@
   import { createEngineReader } from '$lib/voice-mode-reader';
   import { createTurnRecorder, turnContent } from '$lib/voice-mode-turn-audio';
   import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
-  import { createHeldTurns, heldStorageKey } from '$lib/voice-mode-held';
+  import { createHeldTurns, heldStorageKey, newTurnIdentity } from '$lib/voice-mode-held';
   import { createWakeLock, online, pageVisible, watchPage } from '$lib/voice-mode-lifecycle';
   import * as logging from '$lib/logging';
   import VoiceModeReadout from './VoiceModeReadout.svelte';
@@ -131,7 +131,7 @@
       } catch (error) {
         transcript = Promise.reject(error);
       }
-      enqueue(transcript, durationMs, clean, { caption: shown, samples });
+      enqueue(transcript, durationMs, clean, { caption: shown, samples, clientMessageId: newTurnIdentity() });
     },
     oninterrupt: (reason) => pause(reason === 'ended' ? 'hidden' : reason),
     onrestore: () => {
@@ -233,36 +233,65 @@
   // Turns are sent one at a time, in the order they were spoken; each
   // transcript is already on its way when the next turn starts. Nothing thrown
   // in here is only logged: whatever is known of the turn is held.
-  function enqueue(transcript, durationMs, clean, { caption: shown = '', samples = null } = {}) {
+  // Turns closed and not yet settled, by identity. End writes each one still
+  // here to the held queue (and so to sessionStorage) before it closes, and
+  // the turn's late result then settles that same record (#797 review).
+  const inFlight = new Map();
+
+  // Turns are sent one at a time, in the order they were spoken; each
+  // transcript is already on its way when the next turn starts. Nothing thrown
+  // in here is only logged: whatever is known of the turn is held.
+  function enqueue(transcript, durationMs, clean, { caption: shown = '', samples = null, clientMessageId } = {}) {
     if (phase === 'hearing') phase = 'transcribing';
+    const meta = { clientMessageId, caption: shown, durationMs, heldId: null };
+    inFlight.set(clientMessageId, meta);
     queue = queue
-      .then(() => handleTurn(transcript, durationMs, clean, { caption: shown, samples }))
+      .then(() => handleTurn(transcript, durationMs, clean, { samples, meta }))
       .catch((error) => {
         logging.error('voice turn failed', error);
-        if (ended) return;
-        queueOfHeld.hold({
-          text: roughOf(shown),
-          samples,
-          durationMs,
-          error: error?.message || 'Something went wrong with this turn.',
-        });
+        keep(meta, { text: roughOf(shown), samples, error: error?.message || 'Something went wrong with this turn.' });
         afterTurn();
-      });
+      })
+      .finally(() => inFlight.delete(clientMessageId));
   }
 
-  // A caption as the rough text it would be sent as ('' when there is none).
+  // Holds a turn, or fills in the record End already made for it.
+  function keep(meta, { text = '', signedId = null, samples = null, error = '', state = 'failed' }) {
+    if (meta.heldId) {
+      const fields = { error, state };
+      if (text) fields.text = text;
+      if (signedId) fields.signedId = signedId;
+      queueOfHeld.update(meta.heldId, fields);
+      return;
+    }
+    meta.heldId = queueOfHeld.hold({
+      text,
+      signedId,
+      samples,
+      durationMs: meta.durationMs,
+      error,
+      state,
+      clientMessageId: meta.clientMessageId,
+    });
+  }
+
+  // A turn End held that has now been sent: its record goes.
+  function settled(meta) {
+    if (meta.heldId) queueOfHeld.discard(meta.heldId);
+    meta.heldId = null;
+  }
+
   const roughOf = (text) => turnContent({ clean: '', live: stripReleasePhrase(text).text }).text;
 
   // The clean (recording) text decides the turn; the live caption is shown as
   // provisional meanwhile and sent marked rough only if the clean text is missing
   // (see voice-mode-turn-flow.js).
+  //
   // A turn closed before End (or before leaving the page) is still delivered
-  // after it: End waits a few seconds for the queue, but a slow clean
-  // transcript must not lose the turn (Mira, #797 review). After End nothing
-  // on screen changes; a turn that cannot go is held in sessionStorage, as
-  // its rough caption when it has no clean text, for the next time voice mode
-  // opens in this chat.
-  async function handleTurn(transcript, durationMs, clean, { caption: shown = '', samples = null } = {}) {
+  // after it: End waits a few seconds, writes what it has of each unsettled
+  // turn to the held queue, and closes; the turn's late result then sends and
+  // settles that record, or fills it in (Mira, #797 review).
+  async function handleTurn(transcript, durationMs, clean, { samples = null, meta }) {
     if (refused) return;
     if (!ended) {
       phase = 'transcribing';
@@ -272,7 +301,7 @@
       transcript,
       clean,
       durationMs,
-      caption: shown,
+      caption: meta.caption,
       onProvisional: (text) => {
         if (!ended) [caption, provisional] = ['', text];
       },
@@ -283,28 +312,27 @@
     }
     if (refused) return;
     if (turn.failed) {
-      // After End the samples go with the panel: keep what the caption showed.
-      const text = ended ? roughOf(shown) : '';
-      queueOfHeld.hold({ text, signedId: turn.signedId, samples, durationMs, error: turn.note });
+      keep(meta, { text: ended ? roughOf(meta.caption) : '', signedId: turn.signedId, samples, error: turn.note });
       afterTurn();
       return;
     }
     if (!turn.text) {
       if (!ended) note = turn.note;
+      settled(meta);
       afterTurn();
       return;
     }
-    // Behind a held turn: wait in line, and try the line again now.
-    if (queueOfHeld.size) {
-      queueOfHeld.hold({ text: turn.text, signedId: turn.signedId, durationMs, state: 'waiting' });
+    // Behind another held turn: wait in line, and try the line again now.
+    const ahead = held.some((item) => item.id !== meta.heldId);
+    if (ahead) {
+      keep(meta, { text: turn.text, signedId: turn.signedId, state: 'waiting' });
       afterTurn();
       retryHeld({ auto: false });
       return;
     }
-    const result = await send(turn.text, turn.signedId);
-    if (!result.ok && !result.fatal) {
-      queueOfHeld.hold({ text: turn.text, signedId: turn.signedId, durationMs, error: result.error });
-    }
+    const result = await send(turn.text, turn.signedId, meta.clientMessageId);
+    if (result.ok) settled(meta);
+    else if (!result.fatal) keep(meta, { text: turn.text, signedId: turn.signedId, error: result.error });
     afterTurn();
   }
 
@@ -314,7 +342,7 @@
 
   // One post. Resolves { ok, error, fatal }; a 403 (the mode was switched off
   // under us) ends voice mode.
-  async function send(text, audioSignedId) {
+  async function send(text, audioSignedId, clientMessageId = null) {
     if (!ended) phase = 'sending';
     const { ok, status, data } = await postVoiceMessage({
       accountId,
@@ -322,6 +350,7 @@
       userId,
       text,
       audioSignedId,
+      clientMessageId,
       timeoutMs: SEND_TIMEOUT_MS,
     });
     if (!ok) {
@@ -363,7 +392,7 @@
       text = stripReleasePhrase(recording.text || '').text;
       if (!text) return { ok: false, dropped: true, text: '', signedId };
     }
-    const result = await send(text, signedId);
+    const result = await send(text, signedId, item.clientMessageId);
     if (!ended && phase === 'sending') phase = 'listening';
     return { ...result, text, signedId };
   }
@@ -457,6 +486,14 @@
     capture = null;
     await open?.stop();
     if (drain) await Promise.race([queue, new Promise((resolve) => setTimeout(resolve, endDrainMs))]);
+    // What is still on its way is written down now, before the panel goes:
+    // its caption as rough text and its identity, so a reopened panel can send
+    // it and the late result can settle the same record.
+    for (const meta of inFlight.values()) {
+      if (!meta.heldId) {
+        keep(meta, { text: roughOf(meta.caption), error: 'Voice mode ended before this turn was sent.' });
+      }
+    }
     ended = true;
     transcriber?.close();
     releaseHold?.();

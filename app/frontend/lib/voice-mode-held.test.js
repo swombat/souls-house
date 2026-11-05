@@ -69,7 +69,13 @@ describe('createHeldTurns', () => {
     first.hold({ text: 'kept', signedId: 'sig', durationMs: 1200, error: 'offline' });
     first.hold({ samples: new Float32Array(4), durationMs: 900, error: 'upload failed' });
     expect(JSON.parse(storage.data[key])).toEqual([
-      { text: 'kept', signedId: 'sig', durationMs: 1200, error: 'offline' },
+      {
+        clientMessageId: expect.stringMatching(/^vm-/),
+        text: 'kept',
+        signedId: 'sig',
+        durationMs: 1200,
+        error: 'offline',
+      },
     ]);
 
     const reloaded = createHeldTurns({ storage, key, deliver: async () => ({ ok: true }) });
@@ -92,5 +98,28 @@ describe('createHeldTurns', () => {
     finish({ ok: false, error: 'late' });
     await run;
     expect(held.size).toBe(0);
+  });
+
+  test('a fatal answer still keeps what the attempt recovered (#797 review)', async () => {
+    const held = createHeldTurns({
+      storage: memoryStorage(),
+      key: 'k',
+      deliver: async () => ({ ok: false, fatal: true, error: 'mode off', text: 'Recovered words.', signedId: 'sig-r' }),
+    });
+    held.hold({ samples: new Float32Array(4), error: 'upload failed' });
+    await held.drain();
+    expect(held.list()).toMatchObject([{ text: 'Recovered words.', transcribed: true, error: 'mode off' }]);
+    expect(held.item(held.list()[0].id).signedId).toBe('sig-r');
+  });
+
+  test("saving keeps another panel's records under the same key, and carries each identity", () => {
+    const storage = memoryStorage();
+    const a = createHeldTurns({ storage, key: 'k', deliver: async () => ({ ok: true }) });
+    const b = createHeldTurns({ storage, key: 'k', deliver: async () => ({ ok: true }) });
+    const first = a.hold({ text: 'from a', clientMessageId: 'vm-aaaaaaaa' });
+    b.hold({ text: 'from b', clientMessageId: 'vm-bbbbbbbb' });
+    expect(JSON.parse(storage.data.k).map((t) => t.clientMessageId)).toEqual(['vm-aaaaaaaa', 'vm-bbbbbbbb']);
+    a.discard(first);
+    expect(JSON.parse(storage.data.k).map((t) => t.text)).toEqual(['from b']);
   });
 });

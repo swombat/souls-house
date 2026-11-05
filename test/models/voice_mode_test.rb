@@ -127,6 +127,17 @@ class VoiceModeTest < ActiveSupport::TestCase
     assert_equal lume, VoiceMode.addressee(chat, "So I told Mira what Lume said")
   end
 
+  test "a shared name mid-sentence routes nobody, not the last speaker" do
+    lume, _mira, chat = lume_and_mira_chat
+    # Two residents share a name only across accounts (a guest in the room).
+    other = agents(:other_account_agent)
+    other.update_columns(name: "Mira", active: true, account_id: Account.where.not(id: @account.id).pick(:id))
+    ChatAgent.insert_all!([ { chat_id: chat.id, agent_id: other.id, created_at: Time.current } ])
+    chat.reload
+    reply_from(chat, lume)
+    assert_nil VoiceMode.addressee(chat, "So now I'm going to ask Mira about it")
+  end
+
   def lume_and_mira_chat
     lume = agents(:research_assistant)
     mira = agents(:code_reviewer)

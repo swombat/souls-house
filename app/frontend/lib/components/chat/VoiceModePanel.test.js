@@ -149,6 +149,7 @@ beforeEach(() => {
       content: form.get('message[content]'),
       voiceMode: form.get('voice_mode'),
       audio: form.get('audio_signed_id'),
+      clientId: form.get('client_message_id'),
     });
     const reply = posts.reply ?? { ok: true, status: 201, body: { id: 'm1' } };
     return { ok: reply.ok, status: reply.status, json: async () => reply.body };
@@ -189,6 +190,7 @@ test('an utterance streams to the transcriber and its text, cleaned of the hand-
     content: 'What is on today?',
     voiceMode: '1',
     audio: 'sig-1',
+    clientId: expect.stringMatching(/^vm-[a-z0-9]+-[a-z0-9]+$/),
   });
   expect(scribe.calls).toEqual([{ length: 7680, sampleRate: 24000 }]);
   await waitFor(() => expect(screen.getByTestId('voice-mode-heard')).toHaveTextContent('What is on today?'));
@@ -255,7 +257,13 @@ test('a failed post keeps the turn; later turns wait behind it and go in order o
   );
   expect(screen.getByTestId('voice-mode-held-turn')).toHaveTextContent('First thing.');
   expect(JSON.parse(sessionStorage.getItem('voice-mode-held:chat'))).toEqual([
-    { text: 'First thing.', signedId: 'sig-1', durationMs: 1500, error: 'Something broke' },
+    {
+      clientMessageId: posts[0].clientId,
+      text: 'First thing.',
+      signedId: 'sig-1',
+      durationMs: 1500,
+      error: 'Something broke',
+    },
   ]);
 
   // The next turn tries the line again; the front fails again, so it waits.
@@ -762,4 +770,47 @@ test('after End, a late turn that cannot be sent is kept for next time as its ca
   // Caption fallback: sent as rough rather than held, since the words exist.
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0].content).toContain('five, six, seven, eight');
+});
+
+test('End with a clean transcript still pending writes the turn down first; a reopened panel and the late result send it under one identity (#797 review)', async () => {
+  const onend = vi.fn();
+  render(VoiceModePanel, { ...props, onend, endDrainMs: 20 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  const slow = deferred();
+  scribe.results.push(slow.promise);
+  callbacks.onspeechstart(new Float32Array(10));
+  transcriber.options.onDelta('five, six, seven, eight');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-caption')).toBeTruthy());
+  transcriber.results.push(new Promise(() => {}));
+  callbacks.onturn(1500);
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  await waitFor(() => expect(onend).toHaveBeenCalled());
+  const stored = JSON.parse(sessionStorage.getItem('voice-mode-held:chat'));
+  expect(stored).toHaveLength(1);
+  expect(stored[0].text).toContain('five, six, seven, eight');
+  const identity = stored[0].clientMessageId;
+  expect(identity).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+
+  cleanup();
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].clientId).toBe(identity);
+
+  slow.resolve({ text: 'Five, six, seven, eight.', signedId: 'sig-late', error: null });
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[1]).toMatchObject({ content: 'Five, six, seven, eight.', clientId: identity });
+  await waitFor(() => expect(sessionStorage.getItem('voice-mode-held:chat')).toBeNull());
+});
+
+test('a retried held turn is posted with the identity of its first send (#797 review)', async () => {
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  posts.reply = { ok: false, status: 502, body: {} };
+  speak('Once only.');
+  await waitFor(() => expect(screen.getByTestId('voice-mode-held')).toBeTruthy());
+  posts.reply = null;
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0].clientId).toBeTruthy();
+  expect(posts[1].clientId).toBe(posts[0].clientId);
 });

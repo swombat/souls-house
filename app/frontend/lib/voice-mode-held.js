@@ -16,6 +16,15 @@
 
 let nextId = 0;
 
+// One submission identity per spoken turn, for its whole life (#797): the
+// house returns the first message to a retry that carries it, so a POST that
+// committed but lost its response is never posted twice. The format matches
+// Message#client_message_id (8-64 of A-Z a-z 0-9 _ -).
+export function newTurnIdentity() {
+  const random = Math.random().toString(36).slice(2, 12);
+  return `vm-${Date.now().toString(36)}-${random}`;
+}
+
 export function heldStorageKey(chatId) {
   return `voice-mode-held:${chatId}`;
 }
@@ -34,8 +43,13 @@ function readStored(storage, key) {
 // fatal stops the whole queue without marking the turn (the mode was switched
 // off). onchange(list) fires with a fresh copy after every change.
 export function createHeldTurns({ storage = globalThis.sessionStorage, key, deliver, onchange } = {}) {
+  // Every identity this panel has held, so saving merges with what another
+  // panel (an earlier one, still finishing after End) keeps under the same key
+  // rather than overwriting it.
+  const seen = new Set();
   let items = readStored(storage, key).map((item) => ({
     id: `held-${(nextId += 1)}`,
+    clientMessageId: item.clientMessageId || newTurnIdentity(),
     text: item.text,
     signedId: item.signedId || null,
     samples: null,
@@ -46,11 +60,21 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
   }));
   let draining = null;
 
+  items.forEach((item) => seen.add(item.clientMessageId));
+
   function persist() {
     try {
-      const stored = items
+      const others = readStored(storage, key).filter((item) => !seen.has(item.clientMessageId));
+      const mine = items
         .filter((item) => item.text?.trim())
-        .map(({ text, signedId, durationMs, error }) => ({ text, signedId, durationMs, error }));
+        .map(({ clientMessageId, text, signedId, durationMs, error }) => ({
+          clientMessageId,
+          text,
+          signedId,
+          durationMs,
+          error,
+        }));
+      const stored = [...others, ...mine];
       if (stored.length) storage?.setItem(key, JSON.stringify(stored));
       else storage?.removeItem(key);
     } catch {
@@ -76,11 +100,38 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
 
   // Keeps a turn. state 'failed' carries why; 'waiting' means it was fine but
   // arrived behind a held turn.
-  function hold({ text = '', signedId = null, samples = null, durationMs = 0, error = '', state = 'failed' }) {
-    const item = { id: `held-${(nextId += 1)}`, text, signedId, samples, durationMs, error, state, autoRetried: false };
+  function hold({
+    text = '',
+    signedId = null,
+    samples = null,
+    durationMs = 0,
+    error = '',
+    state = 'failed',
+    clientMessageId = newTurnIdentity(),
+  }) {
+    const item = {
+      id: `held-${(nextId += 1)}`,
+      clientMessageId,
+      text,
+      signedId,
+      samples,
+      durationMs,
+      error,
+      state,
+      autoRetried: false,
+    };
+    seen.add(clientMessageId);
     items.push(item);
     changed();
     return item.id;
+  }
+
+  // Fills in what a turn held at End learned afterwards (its clean text).
+  function update(id, fields) {
+    const item = items.find((other) => other.id === id);
+    if (!item) return;
+    Object.assign(item, fields);
+    changed();
   }
 
   function discard(id) {
@@ -113,14 +164,16 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
           changed();
           continue;
         }
+        // What the attempt recovered (a clean transcript, a kept recording) is
+        // kept whatever happened next (Tom/Mira, #797 review).
+        if (result?.text) item.text = result.text;
+        if (result?.signedId) item.signedId = result.signedId;
         if (result?.fatal) {
           item.state = 'failed';
           item.error = result.error || item.error;
           changed();
           break;
         }
-        if (result?.text !== undefined) item.text = result.text;
-        if (result?.signedId) item.signedId = result.signedId;
         if (result?.dropped) {
           // Transcribed again and there were no words after all.
           items = items.filter((other) => other !== item);
@@ -145,6 +198,7 @@ export function createHeldTurns({ storage = globalThis.sessionStorage, key, deli
     },
     list,
     hold,
+    update,
     discard,
     drain,
     // The live turn object, for deliver() to read samples from.
