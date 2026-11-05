@@ -293,6 +293,29 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     assert_enqueued_email_with ResidentHealthMailer, :scheduled_runs_completing, args: [ failing_streaks.sole, recoveries.sole ]
   end
 
+  test "the email is enqueued only once the streak's row commits, and never after a rollback" do
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+
+    assert_no_enqueued_emails do
+      ActiveRecord::Base.transaction(requires_new: true) do
+        ScheduledRunFailureNotice.new(second).observe!
+        assert_equal 1, failing_streaks.count
+        raise ActiveRecord::Rollback
+      end
+    end
+    assert_empty failing_streaks
+
+    enqueued_inside = nil
+    assert_enqueued_emails 1 do
+      ActiveRecord::Base.transaction(requires_new: true) do
+        ScheduledRunFailureNotice.new(AgentRuntimeInteraction.find(second.id)).observe!
+        enqueued_inside = enqueued_jobs.count { |job| job["job_class"] == "ActionMailer::MailDeliveryJob" }
+      end
+    end
+    assert_equal 0, enqueued_inside, "nothing is enqueued before the row commits"
+  end
+
   test "a streak opened before emails existed closes without a recovery email" do
     scheduled_run("wake", "failed", at: 3.hours.ago)
     second = scheduled_run("wake", "failed", at: 2.hours.ago)

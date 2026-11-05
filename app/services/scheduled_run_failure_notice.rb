@@ -93,7 +93,7 @@ class ScheduledRunFailureNotice
       data: { run_id: @run.id, first_run_id: streak.first_run_id,
               anchor_run_id: streak.first_run_id || streak.oldest_seen_id, since: streak.since&.iso8601,
               count: streak.count, category: streak.categories.first || "unknown", emailed: emailed })
-    ResidentHealthMailer.scheduled_runs_failing(row).deliver_later if emailed
+    after_commit { ResidentHealthMailer.scheduled_runs_failing(row).deliver_later } if emailed
     refresh_owner_count!
   end
 
@@ -102,7 +102,7 @@ class ScheduledRunFailureNotice
       data: { streak_id: streak.id, run_id: success.id, at: success.finished_at.iso8601 })
     # Only where the opening was emailed, and only while there is an owner to tell.
     if streak.data&.dig("emailed") == true && @agent.account.owner
-      ResidentHealthMailer.scheduled_runs_completing(streak, row).deliver_later
+      after_commit { ResidentHealthMailer.scheduled_runs_completing(streak, row).deliver_later }
     end
     refresh_owner_count!
   end
@@ -140,6 +140,15 @@ class ScheduledRunFailureNotice
 
   def worth_saying?
     @agent.active? && !@agent.billing_held? && !ResidentSwitchedOffNotice.open_holds(@agent).exists?
+  end
+
+  # Solid Queue writes to its own database and, on Rails 8.1, MailDeliveryJob
+  # doesn't defer enqueueing to commit, so a job enqueued inside with_lock
+  # could reach a worker before its audit row exists, or outlive a rollback
+  # (Mira, #799 review). Enqueue once the outermost transaction commits, and
+  # never if it rolls back.
+  def after_commit(&block)
+    ActiveRecord.after_all_transactions_commit(&block)
   end
 
   # The navbar count is read from the audit rows on each page load; touching

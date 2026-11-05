@@ -33,10 +33,29 @@ class ResidentHealthMailerTest < ActionMailer::TestCase
     end
   end
 
-  test "a category nobody explained reads as the house's and an unknown cause" do
+  test "runtime errors, timeouts and unknown causes claim no diagnosis: investigating is ours" do
+    %w[runtime_error timed_out unknown].each do |category|
+      text = ResidentHealthMailer.scheduled_runs_failing(streak(category)).text_part.body.to_s
+      assert_includes text, "We have not identified the cause yet", category
+      assert_includes text, "investigating these failures is ours", category
+      assert_not_includes text, "on the house's side", category
+      assert_not_includes text, "Settings tab", category
+    end
     text = ResidentHealthMailer.scheduled_runs_failing(streak(nil, since: nil)).text_part.body.to_s
     assert_includes text, "#{@agent.name}'s scheduled runs are failing: #{RunFailureNotice::NO_REPLY_CAUSES.fetch('unknown')}"
-    assert_includes text, "on the house's side"
+    assert_includes text, "We have not identified the cause yet"
+  end
+
+  test "house faults the record establishes say so" do
+    %w[house_provider_refused runtime_unavailable].each do |category|
+      assert_includes ResidentHealthMailer.scheduled_runs_failing(streak(category)).text_part.body.to_s, "on the house's side, not yours", category
+    end
+  end
+
+  test "the email promises no more about the resident's data than the notice knows" do
+    text = ResidentHealthMailer.scheduled_runs_failing(streak("runtime_error")).text_part.body.to_s
+    assert_includes text, "This notice doesn't delete or change anything of theirs."
+    assert_not_includes text, "untouched"
   end
 
   test "the recovery email names the resident and when it completed" do

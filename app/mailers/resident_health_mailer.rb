@@ -12,7 +12,9 @@
 #
 # When the cause is on the house's side, the email says so and asks nothing
 # of the owner (Mira's amendment in eKnXDY): a step for the owner is offered
-# only when the owner can actually take it.
+# only when the owner can actually take it. When the record doesn't say
+# whose side it is (runtime_error, timed_out, unknown), it says the cause
+# isn't identified yet and that investigating is ours.
 class ResidentHealthMailer < ApplicationMailer
 
   # What the owner can do, per owner-side category: one sentence and where
@@ -26,6 +28,11 @@ class ResidentHealthMailer < ApplicationMailer
     "model_unavailable" => [ "Choose a model their subscription includes in %{name}'s Settings tab.", :settings ]
   }.freeze
 
+  # Failures whose recorded fields don't say whose side they are on: the
+  # email says the cause isn't identified yet and that looking is ours,
+  # without claiming a house fault (Mira, #799 review).
+  UNDIAGNOSED = %w[runtime_error timed_out unknown].freeze
+
   def self.owner_side?(category) = OWNER_STEPS.key?(category)
 
   def scheduled_runs_failing(streak)
@@ -35,6 +42,7 @@ class ResidentHealthMailer < ApplicationMailer
     @cause = RunFailureNotice::NO_REPLY_CAUSES.fetch(@category, RunFailureNotice::NO_REPLY_CAUSES.fetch("unknown"))
     @since = format_time(data["since"])
     @count = data["count"].to_i
+    @undiagnosed = !OWNER_STEPS.key?(@category) && (UNDIAGNOSED.include?(@category) || !RunFailureNotice::NO_REPLY_CAUSES.key?(@category))
     if (step = OWNER_STEPS[@category])
       @step = step.first % { name: @agent.name }
       @step_url = step.last == :billing ? account_billing_url(@account) : edit_account_agent_url(@account, @agent, tab: "settings")
