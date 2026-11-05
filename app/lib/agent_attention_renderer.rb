@@ -58,6 +58,7 @@ class AgentAttentionRenderer
       parts << thread_phrase(counts[:human], "a human message") if counts[:human].positive?
       parts << thread_phrase(counts[:resident], "another resident's message") if counts[:resident].positive?
       parts << thread_phrase(counts[:unknown], "a message of unknown authorship") if counts[:unknown].positive?
+      parts << thread_phrase(counts[:system], "a safeguard notice") if counts[:system].to_i.positive?
       parts.to_sentence.capitalize
     end
 

@@ -1,7 +1,8 @@
 class AgentAttentionFeed
 
   CHANNELS = %i[helixkit telegram].freeze
-  AUTHOR_TYPES = %i[human resident unknown].freeze
+  # system: a resident's post the safeguard check labelled as the house's.
+  AUTHOR_TYPES = %i[human resident unknown system].freeze
   PREVIEW_LENGTH = 240
 
   def initialize(agent)

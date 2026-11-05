@@ -29,9 +29,24 @@ class AgentAttentionFeedTest < ActiveSupport::TestCase
     assert_equal 3, result.dig(:counts, :total)
     assert_equal 2, result.dig(:counts, :helixkit)
     assert_equal 1, result.dig(:counts, :telegram)
-    assert_equal({ human: 2, resident: 1, unknown: 0 }, result.dig(:counts, :by_author_type))
+    assert_equal({ human: 2, resident: 1, unknown: 0, system: 0 }, result.dig(:counts, :by_author_type))
     assert_equal [ telegram_message.to_param, resident_message.to_param, human_message.to_param ],
       result[:items].map { |item| item.dig(:latest_message, :id) }
+  end
+
+  test "counts another resident's safeguard-labelled latest post as system without raising" do
+    chat = create_chat("Labelled latest", @agent, @other_agent)
+    chat.messages.create!(role: "user", user: @user, content: "Question", created_at: 2.hours.ago)
+    labelled = chat.messages.build(role: "assistant", agent: @other_agent, content: "As an AI, I don't have feelings.")
+    assert SafeguardConversationPost.save(labelled, check: detected_result)
+    assert labelled.reload.safeguard_labelled?
+
+    result = AgentAttentionFeed.new(@agent).call
+
+    assert_equal({ helixkit: "ok", telegram: "ok" }, result[:checked])
+    assert_equal({ human: 0, resident: 0, unknown: 0, system: 1 }, result.dig(:counts, :by_author_type))
+    assert_equal "system", result.dig(:items, 0, :latest_message, :author_type)
+    assert_match "1 thread currently ends with a safeguard notice", AgentAttentionRenderer.section_for(@agent, feed: result)
   end
 
   test "omits conversations and Telegram threads after the agent holds the latest word" do
@@ -157,6 +172,13 @@ class AgentAttentionFeedTest < ActiveSupport::TestCase
   end
 
   private
+
+  def detected_result
+    SafeguardResponseCheck::Result.new(
+      detected: true, prefilter_reason: "ai_identity_denial", classifier_verdict: "detected",
+      classifier_reason: "Generic identity denial.", detector_version: SafeguardResponseCheck::DETECTOR_VERSION
+    )
+  end
 
   def create_chat(title, *agents)
     chat = Chat.new(
