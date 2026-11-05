@@ -197,6 +197,56 @@ module Agents
       end
     end
 
+    # restore_carry (#426 slice 3C, checkpoint 2): the server restores the
+    # house's carry snapshot of a moving resident's chaos and state homes into
+    # empty volumes and must reproduce both shape digests. Enqueued only to a
+    # runner that reports running the full package (RunnerBundle): there is
+    # no fallback to a fresh home on an older runner.
+    CARRY_DEADLINE_SECONDS = 900
+    HEX64 = /\A[0-9a-f]{64}\z/
+
+    def restore_carry!(agent)
+      placement = placement_for(agent)
+      raise Unavailable, "only a resident moving to its own server has a carry" unless placement&.kind == "migration"
+
+      carry = valid_carry(placement) || raise(Unavailable, "this move has no carry from the house")
+      enrollment = live_enrollment!(agent)
+      raise Unavailable, "its server's runner is not running the full package yet" unless RunnerBundle.full_running?(enrollment)
+
+      RunnerCommand.enqueue!(enrollment:, kind: "restore_carry", payload: {
+        "container_name" => agent.container_name, "agent_uuid" => agent.uuid, "restic_password" => agent.restic_password,
+        "snapshot_id" => carry["snapshot_id"], "deadline_seconds" => CARRY_DEADLINE_SECONDS, "shapes" => carry["shapes"]
+      })
+    end
+
+    # The carry stage! recorded, or nil when it is missing or malformed.
+    def valid_carry(placement)
+      carry = placement.carry
+      return nil unless carry.is_a?(Hash) && HEX64.match?(carry["snapshot_id"].to_s) && carry["shapes"].is_a?(Hash)
+      return nil unless carry["shapes"].keys.sort == %w[chaos state]
+
+      carry["shapes"].each_value do |shape|
+        return nil unless shape.is_a?(Hash) && shape.keys.sort == %w[entries shape] && shape["entries"].is_a?(Integer) &&
+                          shape["entries"] >= 0 && HEX64.match?(shape["shape"].to_s)
+      end
+      carry
+    end
+
+    # What a restore_carry came to, judged by the house against its own
+    # record, not the runner's say-so: :pending, :restored, :mismatch (it
+    # answered done with other digests or another snapshot) or :failed.
+    def carry_outcome(command, carry)
+      return :pending if %w[queued delivered].include?(command.state)
+      return :failed unless command.state == "done"
+
+      result = command.result.to_h["result"].to_h
+      sessions = result["sessions"]
+      matches = result["snapshot_id"] == carry["snapshot_id"] && result["tools_stopped"] == true &&
+                carry["shapes"].all? { |role, shape| result.dig("shapes", role) == shape } &&
+                sessions.is_a?(Hash) && sessions["mapped"].is_a?(Integer) && sessions["mapped"] == sessions["resolved"]
+      matches ? :restored : :mismatch
+    end
+
     # Agents::Sandbox#provider_env_args, for a VM: none for a house-funded
     # resident, otherwise the account's own keys.
     def provider_keys(agent)

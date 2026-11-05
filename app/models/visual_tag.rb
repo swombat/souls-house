@@ -28,12 +28,16 @@ class VisualTag < ApplicationRecord
   validates :colour, inclusion: { in: COLOUR_OPTIONS }
   validate :account_cannot_change, on: :update
   validate :pin_label_is_fixed, if: :pinned?
+  validate :pin_stays_on_top
   before_validation -> { self.label = label.strip if label.is_a?(String) }
   before_destroy :keep_pin, prepend: true
   before_destroy :clear_chat_selections
 
-  scope :palette_order, -> { order(pinned: :desc, id: :asc) }
+  scope :palette_order, -> { order(pinned: :desc, pins_to_top: :desc, id: :asc) }
   scope :pinned, -> { where(pinned: true) }
+  # Tags whose conversations lead the list: the built-in Pin, and any tag the
+  # account has set to keep its conversations on top.
+  scope :keeping_on_top, -> { where(pinned: true).or(where(pins_to_top: true)) }
 
   # Browser-only account aggregate. Keep as_json and the resident API palette
   # presentation-only: guests must not learn usage in rooms they cannot see.
@@ -43,7 +47,7 @@ class VisualTag < ApplicationRecord
     account.visual_tags.map do |tag|
       tag.as_json.merge("conversation_count" => counts.fetch(tag.id, 0))
     end.sort_by do |tag|
-      [ tag["pinned"] ? 0 : 1, -tag["conversation_count"], tag["label"].downcase, tag["label"], tag["id"] ]
+      [ tag["pinned"] ? 0 : 1, tag["pins_to_top"] ? 0 : 1, -tag["conversation_count"], tag["label"].downcase, tag["label"], tag["id"] ]
     end
   end
 
@@ -59,8 +63,22 @@ class VisualTag < ApplicationRecord
     account.visual_tags.find(id)
   end
 
+  # The built-in Pin always keeps its conversations on top; any other tag
+  # does when the account says so.
+  def pins_to_top?
+    pinned? || super
+  end
+
+  # Switching the Pin tag off is refused rather than ignored, so a caller
+  # learns it still pins.
+  def pins_to_top=(value)
+    @pin_switched_off = pinned? && ActiveModel::Type::Boolean.new.cast(value) == false
+    super
+  end
+
   def as_json(_options = nil)
-    { "id" => to_param, "label" => label, "icon" => icon, "colour" => colour, "pinned" => pinned? }
+    { "id" => to_param, "label" => label, "icon" => icon, "colour" => colour, "pinned" => pinned?,
+      "pins_to_top" => pins_to_top? }
   end
 
   private
@@ -74,6 +92,10 @@ class VisualTag < ApplicationRecord
   # the account's to choose, but it keeps its name and cannot be removed.
   def pin_label_is_fixed
     errors.add(:label, "of the Pin tag cannot be changed") unless label == PIN[:label]
+  end
+
+  def pin_stays_on_top
+    errors.add(:pins_to_top, "is always on for the Pin tag") if @pin_switched_off
   end
 
   def keep_pin

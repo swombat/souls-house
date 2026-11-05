@@ -1,13 +1,18 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { ConversationDraft, DRAFT_LOGOUT } from '$lib/conversation-draft';
+  import { ConversationDraft, watchDraftPage } from '$lib/conversation-draft';
   import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import { fileDropZone } from '$lib/file-drop-zone';
   import { filesFromPaste } from '$lib/file-upload-rules';
   import MicButton from '$lib/components/chat/MicButton.svelte';
+  import VoiceModePanel from '$lib/components/chat/VoiceModePanel.svelte';
+  import VoiceModeButton from '$lib/components/chat/VoiceModeButton.svelte';
+  import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
+  import { takeVoiceStart } from '$lib/voice-mode-start';
+  import { wantsEditLast } from '$lib/edit-last-message';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -18,10 +23,18 @@
     disabled = false,
     manualResponses = false,
     fileUploadConfig = {},
+    // VoiceMode.status_for the account: offered (the wave button is shown in
+    // place of Send while the composer is empty), available (it can be
+    // pressed), and the reason when it cannot.
+    voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onsent,
     onwaiting,
     onerror,
     onagentprompt,
+    // Up arrow in an empty box (desktop): asks the page to edit your last
+    // message, passing the textarea to refocus afterwards. Returns true when it did.
+    oneditlast,
   } = $props();
 
   let selectedFiles = $state([]);
@@ -31,6 +44,13 @@
   let textareaRef = $state(null);
   let draft;
   let draftState = $state({ content: '', status: 'Loading draft…', recoveries: [] });
+  let voiceOpen = $state(false);
+  let voiceNotice = $state('');
+
+  const composerEmpty = $derived(!draftState.content.trim() && selectedFiles.length === 0);
+  const showWave = $derived(
+    Boolean(voiceMode?.offered) && composerEmpty && !submitting && !disabled && !draftState.locked
+  );
 
   // A transcribed voice note's audio is attached only in memory until its message is sent; keep
   // background refreshes (and the reload a deploy turns them into) off until then. Taken before
@@ -46,6 +66,7 @@
   }
 
   onMount(() => {
+    if (takeVoiceStart() && voiceMode?.available && !disabled) voiceOpen = true; // New Chat's wave, taken once
     draft = new ConversationDraft({
       userId,
       accountId,
@@ -58,33 +79,15 @@
     });
     draftState = draft.snapshot();
     draft.refresh();
-    const refresh = () => {
-      if (document.visibilityState === 'visible') draft.refresh();
-    };
-    const logout = (event) => {
-      if (event.key !== `${DRAFT_LOGOUT}${userId}`) return;
-      draft.suppressPersistence = true;
-      draft.dispose();
-      draftState = {
-        ...draftState,
-        content: '',
-        status: 'Signed out—reload before editing',
-        recoveries: [],
-        conflict: null,
-        locked: true,
-      };
-    };
-    window.addEventListener('storage', logout);
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    const poll = setInterval(refresh, 15_000);
+    const unwatch = watchDraftPage(draft, {
+      userId,
+      onlogout: () => {
+        const signedOut = { content: '', status: 'Signed out—reload before editing', recoveries: [], conflict: null };
+        draftState = { ...draftState, ...signedOut, locked: true };
+      },
+    });
     return () => {
-      clearInterval(poll);
-      window.removeEventListener('storage', logout);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      unwatch();
       draft.dispose();
       setPendingAudio(null);
     };
@@ -185,6 +188,14 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
+      return;
+    }
+    const busy = submitting || disabled || draftState.locked || !!draftState.conflict;
+    // Strictly empty: blank lines are still lines the arrow moves through, and a
+    // transcribed voice note waiting to send is not nothing.
+    const empty = draftState.content === '' && selectedFiles.length === 0 && !pendingAudioSignedId;
+    if (oneditlast && wantsEditLast(event, { empty, busy })) {
+      if (oneditlast(textareaRef)) event.preventDefault();
     }
   }
 
@@ -209,84 +220,75 @@
   class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
   data-testid="message-composer"
   use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: submitting || disabled }}>
-  <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
-    <FileUploadInput
-      bind:this={uploader}
-      bind:files={selectedFiles}
-      disabled={submitting || disabled}
-      maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
+  {#if voiceOpen}
+    <VoiceModePanel
+      {accountId}
+      {chatId}
+      {userId}
+      {messages}
+      onsent={(data) => onsent?.(data)}
+      onerror={(message) => onerror?.(message)}
+      onend={() => (voiceOpen = false)} />
+  {:else}
+    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
+      <FileUploadInput
+        bind:this={uploader}
+        bind:files={selectedFiles}
+        disabled={submitting || disabled}
+        maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
 
-    <div class="min-w-0 col-start-2 row-start-1">
-      <textarea
-        bind:this={textareaRef}
-        value={draftState.content}
-        onpaste={handlePaste}
-        onkeydown={handleKeydown}
-        oninput={(event) => {
-          draft?.edit(event.currentTarget.value);
-          autoResize();
-        }}
-        {placeholder}
-        disabled={disabled || draftState.locked}
-        class="w-full resize-none border border-input rounded-md px-3 py-2 text-sm bg-background
+      <div class="min-w-0 col-start-2 row-start-1">
+        <textarea
+          bind:this={textareaRef}
+          value={draftState.content}
+          onpaste={handlePaste}
+          onkeydown={handleKeydown}
+          oninput={(event) => {
+            draft?.edit(event.currentTarget.value);
+            autoResize();
+          }}
+          {placeholder}
+          disabled={disabled || draftState.locked}
+          class="w-full resize-none border border-input rounded-md px-3 py-2 text-sm bg-background
                focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent
                min-h-[40px] max-h-[min(240px,35dvh)] overflow-y-auto disabled:opacity-50 disabled:cursor-not-allowed"
-        style:max-height="min(240px, calc(var(--chat-viewport-height, 100dvh) * 0.35))"
-        rows="1"></textarea>
-    </div>
-    <div class="col-start-3 row-start-1">
-      <MicButton
-        disabled={submitting || disabled}
-        {accountId}
-        {chatId}
-        {userId}
-        onsuccess={handleTranscription}
-        onerror={handleTranscriptionError} />
-    </div>
-    <button
-      onclick={sendMessage}
-      disabled={(!draftState.content.trim() && selectedFiles.length === 0) ||
-        submitting ||
-        disabled ||
-        !!draftState.conflict}
-      aria-label="Send message"
-      class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
-      {#if submitting}
-        <Spinner size={16} class="animate-spin" />
+          style:max-height="min(240px, calc(var(--chat-viewport-height, 100dvh) * 0.35))"
+          rows="1"></textarea>
+      </div>
+      <div class="col-start-3 row-start-1">
+        <MicButton
+          disabled={submitting || disabled}
+          {accountId}
+          {chatId}
+          {userId}
+          onsuccess={handleTranscription}
+          onerror={handleTranscriptionError} />
+      </div>
+      {#if showWave}
+        <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => (voiceOpen = true)} />
       {:else}
-        <ArrowUp size={16} />
+        <button
+          onclick={sendMessage}
+          disabled={(!draftState.content.trim() && selectedFiles.length === 0) ||
+            submitting ||
+            disabled ||
+            !!draftState.conflict}
+          aria-label="Send message"
+          class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+          {#if submitting}
+            <Spinner size={16} class="animate-spin" />
+          {:else}
+            <ArrowUp size={16} />
+          {/if}
+        </button>
       {/if}
-    </button>
-  </div>
-  <div
-    role="status"
-    class={draftState.storageError || draftState.locked || draftState.status.startsWith('Not synced')
-      ? 'mt-1 text-xs text-muted-foreground'
-      : 'sr-only'}>
-    {draftState.status}
-    {#if draftState.storageError}
-      <span class="text-destructive"> Local recovery unavailable—keep this page open until saved.</span>
-    {:else if draftState.localSaved && draftState.status.startsWith('Not synced')}
-      <span> Saved on this device.</span>
-    {/if}
-  </div>
-  {#if draftState.conflict}
-    <div class="mt-2 text-sm border border-amber-500 rounded p-2" role="alert">
-      <p>Another client changed this draft. Your text is still in the editor.</p>
-      <pre class="whitespace-pre-wrap max-h-32 overflow-auto my-2">{draftState.conflict.content ||
-          '(Empty draft)'}</pre>
-      <button class="underline mr-3" onclick={() => draft.resolve(true).catch((e) => onerror?.(e.message))}
-        >Keep my text</button>
-      <button class="underline" onclick={() => draft.resolve(false)}>Use other draft</button>
     </div>
-  {/if}
-  {#each draftState.recoveries as copy (copy.key)}
-    {#if copy.content !== draftState.content}
-      <details class="mt-2 text-sm">
-        <summary>Unsynced local draft available</summary>
-        <pre class="whitespace-pre-wrap max-h-32 overflow-auto">{copy.content || '(Empty draft)'}</pre>
-        <button class="underline" onclick={() => draft.recover(copy)}>Recover this text</button>
-      </details>
+    {#if voiceNotice}
+      <p class="mt-2 text-sm text-muted-foreground" role="status" data-testid="voice-mode-notice">{voiceNotice}</p>
     {/if}
-  {/each}
+  {/if}
+  <DraftNotices
+    {draftState}
+    onresolve={(keep) => draft.resolve(keep).catch((e) => onerror?.(e.message))}
+    onrecover={(copy) => draft.recover(copy)} />
 </div>

@@ -35,7 +35,7 @@ class ReflexCheck
   # (possibly none); never raises for the classifier.
   def self.after_post(message)
     return [] unless checkable?(message)
-    reflexes = message.agent.reflexes.kept.to_a
+    reflexes = message.agent.reflexes.live.to_a
     return [] if reflexes.empty?
 
     new(message, reflexes).call
@@ -49,7 +49,7 @@ class ReflexCheck
 
   def initialize(message, reflexes = nil)
     @message = message
-    @reflexes = reflexes || message.agent.reflexes.kept.to_a
+    @reflexes = reflexes || message.agent.reflexes.live.to_a
   end
 
   # Judges and records; returns the cues for reflexes at or above the

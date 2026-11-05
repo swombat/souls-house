@@ -44,6 +44,13 @@ class Agent < ApplicationRecord
   has_many :agent_backup_snapshots, dependent: :destroy
   has_many :agent_runtime_interactions, dependent: :destroy
   has_many :reflexes, dependent: :destroy
+  # Announcements this resident posted. Deleting the resident ends the live
+  # ones first, so an unsigned one is never shown as the house speaking; the
+  # rows are kept, unsigned.
+  has_many :posted_notices, class_name: "Notice", foreign_key: :created_by_agent_id,
+    inverse_of: :created_by_agent, dependent: :nullify
+  before_destroy :end_posted_announcements, prepend: true
+  has_many :commitments, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :safeguard_detections, dependent: :destroy
   has_many :safeguard_classifier_failures, dependent: :destroy
@@ -126,6 +133,7 @@ class Agent < ApplicationRecord
              numericality: { greater_than_or_equal_to: 1000, less_than_or_equal_to: 50000 },
              allow_nil: true
   validates :reasoning_effort, inclusion: { in: REASONING_EFFORTS }
+  validate :kimi_code_reasoning_effort_is_supported
   validates :refinement_threshold,
              numericality: { greater_than: 0, less_than_or_equal_to: 1 },
              allow_nil: true
@@ -140,6 +148,11 @@ class Agent < ApplicationRecord
   # (including older non-standard ones) and predecessor copies are kept.
   normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
   validate :voice_is_standard, if: -> { persisted? && will_save_change_to_voice_id? && voice_id.present? }
+  # Its Phonon voice (SpeechEngine): one of the catalogue's English voices, or
+  # nil for the catalogue default. Kept beside voice_id, so switching engine
+  # keeps each engine's choice.
+  normalizes :phonon_voice, with: ->(value) { value.to_s.strip.presence }
+  validate :phonon_voice_is_standard, if: -> { will_save_change_to_phonon_voice? && phonon_voice.present? }
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -269,7 +282,7 @@ class Agent < ApplicationRecord
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
-                   :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
+                   :voiced?, :voice_id, :phonon_voice, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
                    :last_health_check_at, :health_state, :consecutive_health_failures,
                    :health_failing_since, :health_failure_kind, :runtime_restart_count,
                    :github_repo_url, :github_repo_owner, :github_repo_name,
@@ -334,8 +347,11 @@ class Agent < ApplicationRecord
     thinking_enabled? && Chat.supports_thinking?(model_id)
   end
 
+  # Every resident can be read aloud: with Phonon (the default engine) a
+  # resident with no voice of its own uses the catalogue's default one. Under
+  # ElevenLabs a missing voice is a reason SpeechEngine gives, not silence.
   def voiced?
-    voice_id.present?
+    true
   end
 
   def inline? = runtime == "inline"
@@ -484,6 +500,16 @@ class Agent < ApplicationRecord
 
   private
 
+  def kimi_code_reasoning_effort_is_supported
+    return unless model_id.to_s.start_with?("kimi-code/")
+
+    profile = Chat.reasoning_effort_config(model_id)
+    allowed = [ "default", *profile&.dig(:options)&.pluck(:value) ]
+    unless profile && allowed.include?(reasoning_effort)
+      errors.add(:reasoning_effort, "must be a supported Kimi Code effort: #{allowed.join(', ')}")
+    end
+  end
+
   # Retired records remain editable before the explicit data transition, but
   # neither new records nor runtime changes may introduce a legacy value.
   def unchanged_legacy_runtime?
@@ -533,6 +559,10 @@ class Agent < ApplicationRecord
     errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
   end
 
+  def phonon_voice_is_standard
+    errors.add(:phonon_voice, "is not one of the Phonon voices") unless PhononVoices.standard?(phonon_voice)
+  end
+
   def identity_fields_are_read_only_when_external
     return unless persisted? && identity_owned_by_agent?
 
@@ -545,6 +575,10 @@ class Agent < ApplicationRecord
     ResidentSwitchedOffNotice.close_open_holds!(self)
   rescue StandardError => error
     Rails.logger.warn "[RollHold] agent #{id}: #{error.class}: #{error.message}"
+  end
+
+  def end_posted_announcements
+    Notice.active.where(created_by_agent_id: id).update_all(expires_at: Time.current, updated_at: Time.current)
   end
 
 end

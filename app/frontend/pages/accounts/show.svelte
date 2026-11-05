@@ -11,6 +11,8 @@
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
+  import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
+  import SpeechEngineCard from '$lib/components/accounts/SpeechEngineCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
@@ -25,6 +27,12 @@
     resident_handoff_cap = 6,
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
+    voice_mode_enabled = false,
+    voice_mode_site_scope = 'account_choice',
+    voice_mode_transcription_key = false,
+    speech_engine = 'phonon',
+    speech_engine_site_scope = 'disabled',
+    eleven_labs_key_present = false,
   } = $props();
 
   const updateSync = createDynamicSync();
@@ -38,6 +46,9 @@
         'can_invite_owner',
         'resident_handoff_cap',
         'reflexes_enabled',
+        'voice_mode_enabled',
+        'speech_engine',
+        'eleven_labs_key_present',
       ],
     });
   });
@@ -140,6 +151,20 @@
     enabled={reflexes_enabled}
     canManage={can_manage}
     siteScope={reflexes_site_scope} />
+
+  <VoiceModeCard
+    accountId={account.id}
+    enabled={voice_mode_enabled}
+    canManage={can_manage}
+    siteScope={voice_mode_site_scope}
+    transcriptionKey={voice_mode_transcription_key} />
+
+  <SpeechEngineCard
+    accountId={account.id}
+    engine={speech_engine}
+    canManage={can_manage}
+    siteScope={speech_engine_site_scope}
+    keyPresent={eleven_labs_key_present} />
 
   <AccountTypeCard
     {account}

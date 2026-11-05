@@ -19,12 +19,14 @@ spec.loader.exec_module(settings)
 class HouseRuntimeTest(unittest.TestCase):
     def test_real_runtime_sends_scoped_bearer_to_house_chat_completions(self):
         received = []
+        runs = []
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 received.append((self.path, self.headers.get('Authorization'), payload))
+                runs.append(self.headers.get('X-Soulshouse-Run'))
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
@@ -48,10 +50,19 @@ class HouseRuntimeTest(unittest.TestCase):
                        SOULSHOUSE_BEARER_TOKEN='synthetic-resident-bearer')
             with patch.dict(os.environ, env, clear=True):
                 settings.prepare(home)
-                result = subprocess.run([binary, 'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
-                                         '--provider', 'house', '-m', 'house/deepseek-v4.1-flash',
-                                         '-C', td, '--json', 'Reply with the synthetic marker. Do not use tools.'],
-                                        env=env, capture_output=True, text=True, timeout=90)
+                def run(extra):
+                    return subprocess.run([binary, 'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+                                           '--provider', 'house', '-m', 'house/deepseek-v4.1-flash',
+                                           '-C', td, '--json', 'Reply with the synthetic marker. Do not use tools.'],
+                                          env={**env, **extra}, capture_output=True, text=True, timeout=90)
+                # The shim sets the run identity per invocation (#678); the
+                # provider config turns it into a header, and omits it unset.
+                result = run({'SOULSHOUSE_INFERENCE_RUN': '4242'})
+                self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+                self.assertEqual(set(runs), {'4242'})
+                runs.clear()
+                result = run({})
+                self.assertEqual(set(runs), {None})
             self.assertEqual(result.returncode, 0, result.stderr[-2000:])
             self.assertIn('house-runtime-ok', result.stdout)
             self.assertTrue(received)

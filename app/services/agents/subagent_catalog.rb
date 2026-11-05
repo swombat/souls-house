@@ -10,14 +10,16 @@ module Agents
       "openai" => "OpenAI",
       "gemini" => "Google AI",
       "xai" => "xAI",
-      "openrouter" => "OpenRouter"
+      "openrouter" => "OpenRouter",
+      "kimi" => "Kimi Code"
     }.freeze
 
     DIRECT_MODEL_PREFIXES = {
       "anthropic" => "anthropic/",
       "openai" => "openai/",
       "gemini" => "google/",
-      "xai" => "x-ai/"
+      "xai" => "x-ai/",
+      "kimi" => "kimi-code/"
     }.freeze
 
     # On a Claude subscription Chaos runs Claude Code (clamp), and spawn_agent
@@ -64,6 +66,8 @@ module Agents
       provider, model = key.to_s.split(":", 2)
       entry = providers.find { |candidate| candidate[:provider] == provider }
       return unless entry && model.present?
+      # Kimi silently substitutes another model for an unknown ID.
+      return if provider == "kimi" || model.start_with?("kimi-code/")
 
       entry.merge(key: key, model: model, label: model, custom: true)
     end
@@ -88,7 +92,7 @@ module Agents
 
       catalogue_models.filter_map do |config|
         model = if provider == "openrouter"
-          config[:model_id]
+          config[:model_id] unless config[:model_id].start_with?("kimi-code/")
         elsif config[:model_id].start_with?(DIRECT_MODEL_PREFIXES.fetch(provider))
           config[:provider_model_id]
         end
@@ -134,7 +138,7 @@ module Agents
     def api_key?(provider)
       return false if house_funded?
 
-      key = agent.account.ai_api_key(provider)
+      key = agent.account.ai_api_key(provider == "kimi" ? "moonshot" : provider)
       key.present? && !key.start_with?("<")
     end
 

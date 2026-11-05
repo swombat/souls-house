@@ -5,7 +5,7 @@
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Plus, PencilSimple } from 'phosphor-svelte';
+  import { Plus, PencilSimple, PushPin } from 'phosphor-svelte';
   import VisualTagIcon from '$lib/components/chat/VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { createDynamicSync } from '$lib/use-sync';
@@ -93,6 +93,12 @@
           <span class="min-w-0 flex-1 break-words text-sm font-medium">
             {tag.label} <span class="text-muted-foreground">({tag.conversation_count})</span>
           </span>
+          {#if tag.pins_to_top}<PushPin
+              size={14}
+              weight="fill"
+              aria-label="Kept at the top"
+              data-testid="visual-tag-kept-on-top"
+              class="shrink-0 text-muted-foreground" />{/if}
           {#if can_manage}<PencilSimple
               size={16}
               class="shrink-0 text-muted-foreground/50 group-hover:text-foreground" />{/if}
@@ -110,10 +116,13 @@
 </AccountSettingsLayout>
 
 <Dialog.Root bind:open>
-  <Dialog.Content class="flex h-[min(760px,90dvh)] max-w-[calc(100%-1rem)] flex-col sm:max-w-3xl">
+  <!-- On phones the dialog scrolls as one page: with the keyboard open (interactive-widget=resizes-content)
+       a fixed-height layout left the icon grid zero rows tall. Desktop keeps the side-by-side, inner-scroll grid. -->
+  <Dialog.Content
+    class="flex h-[min(760px,90dvh)] max-w-[calc(100%-1rem)] flex-col overflow-y-auto overscroll-contain p-4 pb-0 sm:max-w-3xl sm:overflow-hidden sm:p-6">
     <Dialog.Header>
       <Dialog.Title>{editing ? 'Edit visual tag' : 'Create a visual tag'}</Dialog.Title>
-      <Dialog.Description
+      <Dialog.Description class="hidden sm:block"
         >Pick an icon by sight. Search the full Phosphor library, then make it yours.</Dialog.Description>
     </Dialog.Header>
     {#if open}

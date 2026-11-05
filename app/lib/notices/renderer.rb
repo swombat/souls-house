@@ -33,7 +33,7 @@ module Notices
         when "site_renamed"
           "This platform, formerly HelixKit, is now called souls.house."
         when "announcement"
-          notice.body.presence
+          announcement_text(notice)
         else
           Rails.logger.warn "[Notices::Renderer] Skipping unknown notice type #{notice.notice_type.inspect} (notice #{notice.id})"
           return
@@ -44,6 +44,15 @@ module Notices
       rescue KeyError, ArgumentError, TypeError => e
         Rails.logger.warn "[Notices::Renderer] Skipping malformed notice #{notice.id}: #{e.class}: #{e.message}"
         nil
+      end
+
+      # A resident's announcement names it, so it is not read as the house
+      # speaking. A person's reads as it always has.
+      def announcement_text(notice)
+        body = notice.body.presence
+        return body if body.nil? || notice.created_by_agent.nil?
+
+        "From #{notice.created_by_agent.name} (a resident): #{body}"
       end
 
       def model_changed_text(notice, agent)

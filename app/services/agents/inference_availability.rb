@@ -20,7 +20,11 @@ module Agents
       message = setup_message(agent)
       return unless message
 
-      { "status" => "error", "error_kind" => NEEDS_SETUP, "error" => message }
+      refusal = { "status" => "error", "error_kind" => NEEDS_SETUP, "error" => message }
+      # Which house allowance refused it, when that was the reason (#678).
+      code = (house_error(agent)&.code if HouseInference::Offering.find(agent.model_id))
+      refusal["refusal_code"] = code if code.in?(AgentRuntimeInteraction::FailureReport::ALLOWANCE_REFUSALS)
+      refusal
     end
 
     def self.setup_message(agent)
@@ -33,7 +37,13 @@ module Agents
         return nil
       end
 
-      MISSING_CREDENTIALS_MESSAGE unless available?(agent)
+      return if available?(agent)
+
+      if agent.model_id.to_s.start_with?("kimi-code/")
+        "Add a Kimi Code Console subscription key in Account settings → Agent API keys. A standard Moonshot platform key or an OpenRouter key cannot fund a Kimi Code selection."
+      else
+        MISSING_CREDENTIALS_MESSAGE
+      end
     end
 
     def self.dispatchable?(agent)

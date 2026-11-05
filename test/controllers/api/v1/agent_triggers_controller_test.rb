@@ -104,7 +104,7 @@ module Api
         AgentRuntimeInteraction.reserve!(agent: @agent1, chat: @group_chat)
 
         assert_enqueued_with(job: AllAgentsResponseJob,
-          args: [ @group_chat, [ @agent2.id ], { wake_source_kinds: [ "human" ] } ]) do
+          args: [ @group_chat, [ @agent2.id ], { wake_source_kinds: [ "human" ], requested_by_user: @user } ]) do
           post api_v1_conversation_agent_trigger_url(@group_chat),
                headers: { "Authorization" => "Bearer #{@token}" }, as: :json
         end

@@ -61,6 +61,8 @@ class Account < ApplicationRecord
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
+  has_many :account_exports, dependent: :destroy
+  has_many :account_imports, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
   has_many :billing_code_redemptions, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
@@ -185,6 +187,15 @@ class Account < ApplicationRecord
   encrypts :zai_api_key
   encrypts :moonshot_api_key
   encrypts :minimax_api_key
+  # The account's own ElevenLabs key, used only for resident speech when the
+  # account is on ElevenLabs (SpeechEngine). Deliberately not an AI_PROVIDERS
+  # entry: it never reaches a resident's environment, and the house's own
+  # ElevenLabs credential is never substituted for it.
+  encrypts :eleven_labs_api_key
+  normalizes :eleven_labs_api_key, with: ->(value) { value.to_s.strip.presence }
+
+  SPEECH_ENGINES = %w[phonon elevenlabs].freeze
+  validates :speech_engine, inclusion: { in: SPEECH_ENGINES }
 
   # Authorization scope for SyncChannel - Account is special, it IS the account
   def self.accessible_by(user)
@@ -195,7 +206,7 @@ class Account < ApplicationRecord
 
   json_attributes :personal?, :team?, :active?, :disabled, :is_site_admin, :name, :github_login,
                   :use_system_ai_credentials,
-                  except: [ :github_pat, *AI_PROVIDERS.keys.map { |provider| "#{provider}_api_key" } ]
+                  except: [ :github_pat, :eleven_labs_api_key, *AI_PROVIDERS.keys.map { |provider| "#{provider}_api_key" } ]
 
   # Business Logic Methods
   def add_user!(user, role: "member", skip_confirmation: false)

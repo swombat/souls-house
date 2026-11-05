@@ -117,4 +117,79 @@ class Api::V1::HostRunner::RunnerBundlesControllerTest < ActionDispatch::Integra
     assert_not_equal 200, response.status
   end
 
+  # #426 3C: two packages from one tree.
+  def finish(command, installed)
+    command.deliver!(now: Time.current)
+    command.record_result!({ "outcome" => "done", "result" => { "state" => "installed", "sha256" => installed } }, now: Time.current)
+  end
+
+  test "the birth package is the two files; the full one adds the carry modules" do
+    names = ->(bundle) { IO.popen(%w[tar -tJf -], "r+b") { |io| io.write(bundle.bytes); io.close_write; io.read.split } }
+    assert_equal %w[souls_house_runner.py backup_proxy.py], names.(@bundle)
+    assert_equal %w[souls_house_runner.py backup_proxy.py carry_restore.py carry_shape.sh], names.(RunnerBundle.full)
+    assert_not_equal @bundle.sha256, RunnerBundle.full.sha256
+  end
+
+  test "a moving resident's runner reaches the full package in two legs, without waiting an hour" do
+    @placement.update_columns(state: "pending", kind: "migration")
+    full = RunnerBundle.full
+
+    beat({}) # a fresh birth reports no digest: birth first, the two-file bridge
+    assert_equal @bundle.sha256, JSON.parse(updates.last.payload_json)["sha256"]
+    assert_not RunnerBundle.full_running?(@enrollment.reload)
+    finish(updates.last, @bundle.sha256)
+    assert_not RunnerBundle.full_running?(@enrollment.reload), "an update's success is not the receipt"
+
+    beat("runner_bundle_sha256" => @bundle.sha256)
+    assert_equal 2, updates.count
+    assert_equal full.sha256, JSON.parse(updates.last.payload_json)["sha256"]
+    updates.last.deliver!(now: Time.current)
+    fetch(full.sha256)
+    assert_response :ok
+    assert_equal full.bytes, response.body.b
+    fetch(@bundle.sha256)
+    assert_response :not_found, "only the package the delivered command names"
+    finish(updates.last, full.sha256)
+
+    beat("runner_bundle_sha256" => full.sha256)
+    assert_equal 2, updates.count
+    assert RunnerBundle.full_running?(@enrollment.reload)
+  end
+
+  test "an old runner on another digest is sent birth, never full" do
+    @placement.update_columns(state: "pending", kind: "migration")
+    beat("runner_bundle_sha256" => "0" * 64)
+    assert_equal @bundle.sha256, JSON.parse(updates.last.payload_json)["sha256"]
+  end
+
+  test "a failed full leg waits the hour" do
+    @placement.update_columns(state: "pending", kind: "migration")
+    beat("runner_bundle_sha256" => @bundle.sha256)
+    command = updates.last
+    command.deliver!(now: Time.current)
+    command.record_result!({ "outcome" => "failed", "error" => "self-check" }, now: Time.current)
+    beat("runner_bundle_sha256" => @bundle.sha256)
+    assert_equal 1, updates.count
+    travel 61.minutes do
+      beat("runner_bundle_sha256" => @bundle.sha256)
+    end
+    assert_equal 2, updates.count
+  end
+
+  test "an install the runner doesn't then report waits the hour" do
+    @placement.update_columns(state: "pending", kind: "migration")
+    beat("runner_bundle_sha256" => @bundle.sha256)
+    finish(updates.last, RunnerBundle.full.sha256)
+    beat("runner_bundle_sha256" => @bundle.sha256)
+    assert_equal 1, updates.count
+  end
+
+  test "a ready runner on the full package is current; other placements get nothing" do
+    beat("runner_bundle_sha256" => RunnerBundle.full.sha256)
+    assert_equal 0, updates.count
+    @placement.update_columns(state: "pending", kind: "birth")
+    beat({})
+    assert_equal 0, updates.count
+  end
+
 end

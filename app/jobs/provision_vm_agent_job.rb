@@ -22,6 +22,7 @@ class ProvisionVmAgentJob < ApplicationJob
   SEED_ATTEMPTS = 3
   BACKUP_ATTEMPTS = 3
   TRUST_CHECK_ATTEMPTS = 3
+  CARRY_ATTEMPTS = 3
   TRUST_RELEASED = "Its server was released after waiting #{Agents::VmBirthPolicy::BIRTH_DEADLINE.in_minutes.to_i} minutes " \
                    "for runtime trust. Its reviewed home is kept: Retry activation orders a new server, and trust " \
                    "must be granted on that one.".freeze
@@ -91,6 +92,7 @@ class ProvisionVmAgentJob < ApplicationJob
     return :wait unless server_ready?(placement)
     return :wait unless enrolled?(placement)
     return :wait unless seeded?(agent)
+    return :wait unless migration?(placement) ? carried?(agent, placement) : true
     return :wait unless github_import?(placement) ? trusted?(agent, placement) : true
     return :wait unless started?(agent, placement)
     return :wait unless backed_up?(placement)
@@ -137,6 +139,40 @@ class ProvisionVmAgentJob < ApplicationJob
       raise Failed, "the home could not be seeded (#{status.error})"
     end
     false
+  end
+
+  # A moving resident starts only with its own chaos and state homes (#426
+  # slice 3C): the server restores the house's carry snapshot into empty
+  # volumes and reproduces both shape digests, which the house checks
+  # against its own record. Before start_resident, which would create those
+  # volumes empty. It waits for its runner to report the full package
+  # (RunnerBundle offers it to a moving resident); the birth deadline bounds
+  # that wait. A missing carry or a mismatch fails the move; it is never
+  # started fresh.
+  def carried?(agent, placement)
+    carry = Agents::RemoteRuntime.valid_carry(placement)
+    raise Failed, "this move has no carry from the house; stage it again" unless carry
+
+    commands = RunnerCommand.where(agent_placement_id: placement.id, kind: "restore_carry", generation: placement.generation)
+    last = commands.order(:id).last
+    if last.nil?
+      enrollment = Agents::RemoteRuntime.live_enrollment!(agent)
+      return false unless RunnerBundle.full_running?(enrollment)
+
+      Agents::RemoteRuntime.restore_carry!(agent)
+      return false
+    end
+
+    case Agents::RemoteRuntime.carry_outcome(last, carry)
+    when :restored then true
+    when :pending then false
+    when :mismatch then raise Failed, "its carried home did not come back as it left the house"
+    else
+      raise Failed, "its carried home could not be restored (#{last.result&.dig('error') || last.state})" if commands.count >= CARRY_ATTEMPTS
+
+      Agents::RemoteRuntime.restore_carry!(agent)
+      false
+    end
   end
 
   # A GitHub import starts only once Chaos in its own runtime home trusts it

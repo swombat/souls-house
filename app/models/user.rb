@@ -12,6 +12,8 @@ class User < ApplicationRecord
            :first_name, :last_name, :chat_colour, :theme_hue, to: :profile, allow_nil: true
 
   # Account associations through memberships
+  has_many :account_exports, dependent: :destroy
+  has_many :account_imports, dependent: :destroy
   has_many :memberships, dependent: :destroy
   has_many :confirmed_memberships, -> { confirmed }, class_name: "Membership"
   has_many :accounts, through: :memberships

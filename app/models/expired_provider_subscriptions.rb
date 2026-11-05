@@ -108,7 +108,7 @@ class ExpiredProviderSubscriptions
   end
 
   def failing_item_for(agent, streak)
-    category = streak.data&.dig("category").presence || "unknown"
+    category = latest_failure_category(agent) || streak.data&.dig("category").presence || "unknown"
     {
       account_id: agent.account.to_param,
       account_name: agent.account.name,
@@ -117,6 +117,16 @@ class ExpiredProviderSubscriptions
       cause: RunFailureNotice::NO_REPLY_CAUSES.fetch(category, RunFailureNotice::NO_REPLY_CAUSES.fetch("unknown")),
       url: Rails.application.routes.url_helpers.edit_account_agent_path(agent.account, agent, tab: "interactions")
     }
+  end
+
+  # The cause of the newest failed scheduled run, not the one stored when
+  # the streak opened: a streak that opened as a plain runtime error and is
+  # now failing on a classified refusal says so (#678). Nil when the newest
+  # finished scheduled run didn't fail (its recovery row is on its way).
+  def latest_failure_category(agent)
+    latest = Agents::RunFailureStreak.scheduled_scope(agent.agent_runtime_interactions.where.not(finished_at: nil))
+      .order(finished_at: :desc, id: :desc).first
+    latest&.failure_category
   end
 
   def owned_account_ids

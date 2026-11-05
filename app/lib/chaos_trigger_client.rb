@@ -36,6 +36,11 @@ class ChaosTriggerClient
       body[:session_policy] = session_policy if session_policy.present?
     end
     body[:activity] = activity if activity
+    # The run's identity for house inference calls (#678): the runtime sends
+    # it back on each call so the gateway can record a refusal against this
+    # run and no other. The gateway accepts it only for an unfinished run of
+    # the resident whose bearer made the call.
+    body[:inference_run] = interaction.id.to_s if interaction&.id
     if ResidentTurn.enabled?
       raise ArgumentError, "asynchronous turns require an interaction" unless interaction
       turn = ResidentTurn.enqueue!(interaction, body, completion_context: completion_context)

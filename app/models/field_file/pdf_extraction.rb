@@ -37,8 +37,8 @@ module FieldFile::PdfExtraction
 
     validates :pdf_status, inclusion: { in: STATUSES }, allow_nil: true
 
-    before_create { self.pdf_status = "pending" if pdf? }
-    after_create_commit -> { FieldFiles::ExtractPdfJob.perform_later(id) }, if: :pdf?
+    before_create { self.pdf_status = "pending" if pdf? && !import_held? }
+    after_create_commit -> { FieldFiles::ExtractPdfJob.perform_later(id) }, if: -> { pdf? && !import_held? }
   end
 
   def pdf?
@@ -64,7 +64,7 @@ module FieldFile::PdfExtraction
   # an edit. Then summarised if there is text (which leaves the house; see
   # FieldSummaries).
   def extract_pdf!(clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
-    return false unless kept? && pdf?
+    return false unless kept? && pdf? && !import_held?
 
     deadline = Deadline.new(clock, TIME_BUDGET)
     result = file.open { |tempfile| read_pdf(tempfile.path, deadline) }

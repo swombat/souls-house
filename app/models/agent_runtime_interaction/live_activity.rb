@@ -24,7 +24,7 @@ module AgentRuntimeInteraction::LiveActivity
     # A deadline (a message dispatch's expiry) caps the preparation window, so
     # a run reserved late cannot start later than its request allowed.
     def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil,
-      stalled_thread_sweep: nil, wake_source_kinds: [])
+      stalled_thread_sweep: nil, wake_source_kinds: [], requested_by_user: nil)
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
@@ -45,6 +45,7 @@ module AgentRuntimeInteraction::LiveActivity
             follow_through_of: follow_through_of,
             stalled_thread_sweep: stalled_thread_sweep,
             wake_source_kinds: wake_source_kinds,
+            requested_by_user: requested_by_user,
             enqueue_dispatch: enqueue
           )
         end
@@ -68,6 +69,9 @@ module AgentRuntimeInteraction::LiveActivity
     return claim_handoff! if message_handoffs.exists?
     return claim_stalled_sweep! if stalled_thread_sweep_id
     return claim_first_conversation! if Agent.exists?(first_conversation_interaction_id: id)
+    if (commitment = Commitment.find_by(wake_interaction_id: id))
+      return claim_commitment!(commitment)
+    end
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
@@ -98,6 +102,30 @@ module AgentRuntimeInteraction::LiveActivity
         true
       end
       wake.update!(dropped_at: Time.current, drop_reason: "claim_refused:#{reason}") if refused
+      false
+    end
+  end
+
+  # A run a due commitment woke (Commitment#wake!) starts only while the
+  # commitment could still be delivered: still activated, resident not
+  # paused or held, still in the room (Commitment#claim_refusal_reason).
+  # Checked under the commitment's lock, then this interaction's. Refused,
+  # the commitment goes back to retrying with the reason; it is a scheduled
+  # wake, never a person's deliberate override.
+  def claim_commitment!(commitment)
+    commitment.with_lock do
+      reason = commitment.claim_refusal_reason
+      next claim_dispatch_unchecked! unless reason
+
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      if refused && commitment.activated? && commitment.wake_interaction_id == id
+        commitment.update!(wake_state: "retrying", wake_reason: "claim_refused:#{reason}")
+      end
       false
     end
   end

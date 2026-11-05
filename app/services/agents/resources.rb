@@ -58,13 +58,15 @@ module Agents
 
     # Called immediately before real Docker IO (not merely when constructing a
     # service). Verify existing resources, but permit absent ones to be created.
-    def verify_existing!
+    # deadline (a BoundedCommand clock reading) bounds every inspect; past it
+    # BoundedCommand::TimedOut is raised and the inspect is killed.
+    def verify_existing!(deadline: nil)
       validate!
-      DockerLocalGuard.check!
+      DockerLocalGuard.check!(deadline:)
       return unless instance.namespace
       ([ [ :container, container ] ] + volumes.values.map { |name| [ :volume, name ] }).each do |kind, name|
         format = kind == :container ? '{{ index .Config.Labels "house.souls.checkout" }}' : '{{ index .Labels "house.souls.checkout" }}'
-        stdout, stderr, status = Open3.capture3("docker", kind.to_s, "inspect", "--format", format, name)
+        stdout, stderr, status = BoundedCommand.capture3("docker", kind.to_s, "inspect", "--format", format, name, deadline:)
         if status.success?
           raise OwnershipError, "Docker #{kind} #{name} has foreign or missing ownership labels" unless stdout.strip == instance.fingerprint
         elsif !stderr.match?(/No such (?:object|container|volume)/i)

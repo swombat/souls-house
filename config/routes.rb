@@ -11,6 +11,7 @@ Rails.application.routes.draw do
         post :setup, to: "/test_support/e2e#setup"
         post :conversation_fixture, to: "/test_support/e2e#conversation_fixture"
         post :append_messages, to: "/test_support/e2e#append_messages"
+        post :title_chat, to: "/test_support/e2e#title_chat"
         post :assistant_message, to: "/test_support/e2e#assistant_message"
         post :runtime_activity, to: "/test_support/e2e#runtime_activity"
         post :invitation_url, to: "/test_support/e2e#invitation_url"
@@ -32,6 +33,7 @@ Rails.application.routes.draw do
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
+        post :voice_mode_fixture, to: "/test_support/e2e#voice_mode_fixture"
       end
     end
   end
@@ -130,6 +132,16 @@ Rails.application.routes.draw do
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
+    # Account export and import (docs/features/account-portability.md).
+    resource :portability, only: :show, module: :accounts, controller: "portability" do
+      post :release_field
+    end
+    resources :exports, only: [ :create ], module: :accounts, controller: "account_exports" do
+      get :download, on: :member
+    end
+    resources :imports, only: [ :create ], module: :accounts, controller: "account_imports" do
+      post :confirm, on: :member
+    end
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
@@ -205,6 +217,7 @@ Rails.application.routes.draw do
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]
+        resource :voice_mode_session, only: :create
       end
       resources :messages, only: [ :index, :create ]
     end
@@ -233,6 +246,8 @@ Rails.application.routes.draw do
       end
 
       scope module: :agents do
+        resources :reflex_releases, only: :create, path: "reflexes/:reflex_id/release"
+        resources :commitments, only: %i[index update destroy]
         resource :provisioning_retry, only: :create
         resource :orientation_retry, only: :create
         resource :hosting_diagnostics, only: :show do
@@ -317,6 +332,8 @@ Rails.application.routes.draw do
     scope module: :messages do
       resource :retry, only: :create
       resource :voice, only: :create
+      resource :speech, only: :show
+      resource :speech_text, only: :show
       resource :safeguard_reset, only: :create
     end
   end
@@ -335,6 +352,10 @@ Rails.application.routes.draw do
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
       resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
+      resource :migration, only: %i[show create], controller: "resident_migrations" do
+        post :measure
+        get :measure, action: :show
+      end
     end
     resources :accounts, only: [ :index ] do
       member do
@@ -417,6 +438,7 @@ Rails.application.routes.draw do
         resources :images, only: :show, constraints: { id: /sha256:[0-9a-f]{64}/ }
         resources :seeds, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :runner_bundles, only: :show, constraints: { id: /[0-9a-f]{64}/ }
+        resources :birth_bundles, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :commands, only: [] do
           post :next, on: :collection
           post :result, on: :member
@@ -433,7 +455,7 @@ Rails.application.routes.draw do
         resource :avatar, only: %i[update destroy], controller: "me/avatars"
       end
       resources :accounts, only: :index
-      resources :visual_tags, only: :index
+      resources :visual_tags, only: %i[index update]
       resources :rooms, only: %i[index create update destroy] do
         collection do
           patch :main
@@ -480,9 +502,12 @@ Rails.application.routes.draw do
       get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
+      # A resident's announcements: home account, or site-wide once granted.
+      resources :announcements, only: %i[index create destroy]
       resources :reflexes, only: %i[index create destroy] do
         resources :judgments, only: :index, module: :reflexes
       end
+      resources :commitments, only: %i[index show create update destroy]
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"

@@ -663,6 +663,16 @@ export const accountAgentMemoryProtectionPath = /*#__PURE__*/ __route({"account_
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/residents/:agent_id/commitments(.:format)
+ * @param {any} accountId
+ * @param {any} agentId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountAgentCommitmentsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"residents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"commitments"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/residents/:agent_id/orientation_retry(.:format)
  * @param {any} accountId
  * @param {any} agentId
@@ -919,6 +929,16 @@ export const accountChatReplyDismissalPath = /*#__PURE__*/ __route({"account_id"
  * @returns {string} route path
  */
 export const accountChatTranscriptionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"transcription"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/chats/:chat_id/voice_mode_session(.:format)
+ * @param {any} accountId
+ * @param {any} chatId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountChatVoiceModeSessionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"voice_mode_session"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
 
 /**
  * Generates rails route to
@@ -3098,6 +3118,24 @@ export const messageRetryPath = /*#__PURE__*/ __route({"message_id":{"r":true},"
  * @returns {string} route path
  */
 export const messageSafeguardResetPath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"safeguard_reset"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+
+/**
+ * Generates rails route to
+ * /messages/:message_id/speech(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechPath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"speech"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+
+/**
+ * Generates rails route to
+ * /messages/:message_id/speech_text(.:format)
+ * @param {any} messageId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const messageSpeechTextPath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"speech_text"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
 
 /**
  * Generates rails route to

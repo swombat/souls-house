@@ -16,6 +16,7 @@ class Message < ApplicationRecord
   include Message::ReplyAttention
   include Message::SafeguardLabel
   include Message::TweetEmbeds
+  include Message::TitleRequest
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -231,7 +232,7 @@ class Message < ApplicationRecord
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,
                   :editable, :deletable, :controls_admin_only,
                   :moderation_flagged, :moderation_severity, :moderation_scores,
-                  :audio_source, :audio_url,
+                  :audio_source, :audio_url, :voice_mode,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
                   :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link,

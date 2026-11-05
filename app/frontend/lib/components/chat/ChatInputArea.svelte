@@ -15,11 +15,14 @@
     runtimeInteractions = [],
     latestReplies = {},
     fileUploadConfig = {},
+    voiceMode = { offered: false, available: false, reason: null },
+    messages = [],
     onAgentTrigger = () => {},
     onSent = () => {},
     onWaiting = () => {},
     onError = () => {},
     onAgentPrompt = () => {},
+    onEditLast = null,
   } = $props();
 </script>
 
@@ -55,8 +58,11 @@
     disabled={!chat?.respondable}
     manualResponses={chat?.manual_responses}
     {fileUploadConfig}
+    {voiceMode}
+    {messages}
     onsent={onSent}
     onwaiting={onWaiting}
     onerror={onError}
-    onagentprompt={onAgentPrompt} />
+    onagentprompt={onAgentPrompt}
+    oneditlast={onEditLast} />
 {/key}

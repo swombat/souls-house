@@ -329,6 +329,27 @@ module TestSupport
     # What the transcription endpoint returns besides the text: the recording, stored and signed.
     # Browser tests stub transcription itself (no speech-to-text provider in test) but send a
     # real signed id, so the composers keep their audio hold until the send has gone through.
+    # Voice mode on for one account (#748): the account's own switch, a
+    # placeholder transcription key so the mode counts as available, and a
+    # standard voice on its residents so their replies are speakable. The e2e
+    # refuses the voice session request and stubs speech audio in the browser,
+    # so neither OpenAI nor ElevenLabs is reached.
+    # speech_engine: "elevenlabs" puts the account on ElevenLabs (the site
+    # offering the choice, a placeholder account key) so the stream path is
+    # exercised; otherwise the account stays on Phonon, the default.
+    def voice_mode_fixture
+      account = Account.find(params.fetch(:account_id))
+      account.update!(voice_mode_enabled: true, openai_api_key: "sk-e2e-voice-mode")
+      if params[:speech_engine] == "elevenlabs"
+        Setting.instance.update!(speech_engine_scope: "account_choice")
+        account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "xi-e2e-placeholder")
+      end
+      # update_column: the voice_id validation asks ElevenLabs for its voice list
+      # over the network, which CI has no key for and a test must not depend on.
+      account.agents.active.find_each { |agent| agent.update_column(:voice_id, "TX3LPaxmHKxFdv7VOQHJ") }
+      render json: { voice_mode: VoiceMode.status_for(account).to_h }
+    end
+
     def audio_blob
       blob = ActiveStorage::Blob.create_and_upload!(
         io: Rails.root.join("test/fixtures/files/test_audio.webm").open,
@@ -731,7 +752,7 @@ module TestSupport
       chat = account.chats.new(
         model_id: "openrouter/auto",
         manual_responses: true,
-        title: "E2E long conversation"
+        title: params.key?(:title) ? params[:title].presence : "E2E long conversation"
       )
       chat.agents = agents
       chat.save!
@@ -786,6 +807,14 @@ module TestSupport
       render json: {
         messages: messages.map { |message| { id: message.to_param, content: message.content } }
       }
+    end
+
+    # The write GenerateTitleJob makes, through the normal broadcast path, so a
+    # test can watch an open conversation's header pick up a title.
+    def title_chat
+      chat = Chat.find(params.fetch(:chat_id))
+      chat.update!(title: params.fetch(:title).to_s.first(80))
+      render json: { chat_id: chat.to_param, title: chat.title }
     end
 
     def invitation_url

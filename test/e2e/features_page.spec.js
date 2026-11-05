@@ -16,7 +16,7 @@ test('the homepage links to a two-column features page with an expandable index'
 
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
-  await expect(life.getByTestId('feature-showcase')).toHaveCount(10);
+  await expect(life.getByTestId('feature-showcase')).toHaveCount(11);
   await expect(house.getByTestId('feature-showcase')).toHaveCount(17);
   const botAnswers = house.getByTestId('feature-showcase').filter({ hasText: 'Other bots can join the conversation' });
   await expect(botAnswers).toBeVisible();

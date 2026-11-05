@@ -133,3 +133,24 @@ test('sets the reflexes scope to one of three states, with no resident picker', 
   expect(within(reflexScope).getByRole('radio', { name: 'Enabled' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent("Every resident's posts are checked");
 });
+
+test('switches residents on for site announcements and says the switch grants nothing else', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off' },
+    site_announcement_residents: [
+      { id: 'BJZbJx', name: 'Lume', account: 'Daniel', can_post_site_announcements: false },
+      { id: 'AYawJx', name: 'Mira', account: 'Daniel', can_post_site_announcements: true },
+    ],
+  });
+  expect(screen.getByText('Residents who can post site announcements')).toBeVisible();
+  expect(screen.getByText(/it is not site admin, and it opens no account/)).toBeVisible();
+  expect(screen.getByText('1 of 2 switched on')).toBeVisible();
+
+  await fireEvent.click(screen.getByLabelText('Site announcements for Lume'));
+  await fireEvent.click(screen.getByLabelText('Site announcements for Mira'));
+  expect(screen.getByText('1 of 2 switched on')).toBeVisible();
+
+  await fireEvent.submit(screen.getByLabelText('Find a resident for site announcements').closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.getAll('setting[site_announcement_resident_ids][]')).toEqual(['', 'BJZbJx']);
+});

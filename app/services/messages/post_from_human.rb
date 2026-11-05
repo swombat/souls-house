@@ -10,6 +10,7 @@ class Messages::PostFromHuman
     def invalid? = status == :invalid
     def dispatch_unavailable? = status == :dispatch_unavailable
     def attachment_claimed? = status == :attachment_claimed
+    def voice_mode_unavailable? = status == :voice_mode_unavailable
   end
 
   # What a retry is compared against (ADR 0004): written at create and never
@@ -30,7 +31,11 @@ class Messages::PostFromHuman
 
   # draft: the author's ConversationDraft and the revision the client sent.
   # The web and general API can send one; a native send never clears a web draft.
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [])
+  # voice_mode: the text was spoken in the conversation's voice mode and the
+  # reply will be read aloud. Refused before anything is written when the mode
+  # is not available to the account (VoiceMode), so the switch is enforced here
+  # and not only by the composer hiding its button.
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [], voice_mode: false)
     @chat = chat
     @draft = draft
     @draft_revision = draft_revision
@@ -40,6 +45,7 @@ class Messages::PostFromHuman
     @audio_signed_id = audio_signed_id
     @client_message_id = client_message_id
     @stone_revisions = stone_revisions
+    @voice_mode = voice_mode
   end
 
   # Acceptance is one primary transaction: the message, the caller's audit
@@ -59,6 +65,17 @@ class Messages::PostFromHuman
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     message.stone_revisions = @stone_revisions
+    if @voice_mode
+      unless VoiceMode.available_for?(@chat.account)
+        return Result.new(status: :voice_mode_unavailable, message: message, sole_resident: @chat.sole_resident.present?)
+      end
+      message.voice_mode = true
+      # Spoken. Since #761 the panel sends each turn's recording with its
+      # ElevenLabs text, and it is attached below exactly as a voice note's is
+      # (#770). A turn sent without one (the rough live-transcript fallback
+      # when the recording wasn't kept) is still spoken.
+      message.audio_source = true
+    end
     if @client_message_id
       message.client_message_id = @client_message_id
       message.submission_digest = self.class.submission_digest(content: @content, blobs: app_blobs)
@@ -73,6 +90,13 @@ class Messages::PostFromHuman
     # dispatch), so a mention there would be a second wake.
     sole_resident = @chat.sole_resident.present?
     target_ids = sole_resident ? [] : @chat.mentioned_agent_ids(@content.to_s)
+    busy_mentioned = sole_resident ? [] : @chat.busy_mentioned_agents(@content.to_s)
+    # A spoken turn carries no tag; VoiceMode.addressee says who it is for. A
+    # mention of a busy resident is still an explicit recipient: no fallback.
+    voice_busy = []
+    if @voice_mode && !sole_resident && target_ids.empty? && busy_mentioned.empty? && (addressee = VoiceMode.addressee(@chat, @content))
+      @chat.agent_response_active?(addressee) ? voice_busy << addressee : target_ids = [ addressee.id ]
+    end
     if target_ids.any? && !AgentRuntimeInteraction.live_activity_enabled?
       return Result.new(status: :dispatch_unavailable, message: message, sole_resident: sole_resident)
     end
@@ -92,7 +116,8 @@ class Messages::PostFromHuman
         dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
         # A mention of a resident already responding here waits for that run.
         unless sole_resident
-          @chat.queue_wakes_for_busy!(@chat.busy_mentioned_agents(@content.to_s), requested_by: "a mention from #{message.author_name}", message: message)
+          @chat.queue_wakes_for_busy!(busy_mentioned, requested_by: "a mention from #{message.author_name}", message: message)
+          @chat.queue_wakes_for_busy!(voice_busy, requested_by: "a spoken turn from #{message.author_name}", message: message)
         end
         saved_id = message.id
         true

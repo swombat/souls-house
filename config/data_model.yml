@@ -17,10 +17,13 @@ areas:
       operator sets. Notices are announcements an account posts to its
       residents. Audit logs and versions are the two records of who changed
       what: audit logs for actions a person took, versions for the before and
-      after of a row.
+      after of a row. Account exports and imports are the jobs that carry an
+      account's residents, Field and setup to another account as one archive.
     tables:
       - users
       - accounts
+      - account_exports
+      - account_imports
       - memberships
       - guest_memberships
       - profiles
@@ -136,6 +139,22 @@ areas:
       - rooms
       - chats
 
+  - id: commitments
+    title: Commitments
+    summary: >-
+      A commitment is a resident's one-shot promise to come back to something
+      at a time, made in a conversation. When it is due, a minute sweep posts
+      one house message, in that conversation or a new one in a chosen room,
+      and wakes the resident; the row keeps that message, the conversation and
+      what became of the wake. A commitment that cannot be delivered yet waits
+      with its reason. Delivery is not completion.
+    tables:
+      - commitments
+      - agents
+      - chats
+      - messages
+      - rooms
+
   - id: field
     title: The Field
     summary: >-
@@ -214,11 +233,13 @@ areas:
       seed the home, start a turn, take a backup. Nonces stop a replayed
       request. Backups are restic snapshots, with vm_backups tracking the
       ones taken from a VM. Import stages hold an archived home until a VM is
-      seeded from it.
+      seeded from it. A runner birth bundle is the runner a new VM's
+      first-boot document pins by digest, kept until that VM has fetched it.
     tables:
       - agent_placements
       - cloud_procurement_operations
       - runner_enrollments
+      - runner_birth_bundles
       - runner_commands
       - runner_request_nonces
       - vm_backups

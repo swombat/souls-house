@@ -7,6 +7,10 @@ class RunFailureNotice
 
   NO_REPLY_CAUSES = {
     "needs_setup" => "it has no usable credential or allowance for its model",
+    "house_allowance_exhausted" => "its house allowance is used up for this month",
+    "house_allowance_none" => "its plan includes no house-model allowance",
+    "house_provider_refused" => "the house's model provider refused a request it made",
+    "subscription_limit" => "the run's output looked like its subscription's usage limit",
     "runtime_unavailable" => "its runtime couldn't be reached",
     "model_unavailable" => "its model isn't available on its subscription",
     "runtime_error" => "the run ended in an error",

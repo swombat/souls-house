@@ -1,3 +1,6 @@
+# Listen's stored audio, made by ElevenLabs with the account's own key, only
+# while SpeechEngine still says this resident speaks through ElevenLabs (the
+# account may have switched to Phonon since the request).
 class GenerateVoiceJob < ApplicationJob
 
   queue_as :default
@@ -9,10 +12,14 @@ class GenerateVoiceJob < ApplicationJob
     return if message.voice_audio.attached?
     return unless message.voice_available
 
+    account = message.chat.account
+    engine = SpeechEngine.for(account, message.agent)
+    return unless engine.elevenlabs? && engine.available
+
     text = message.content_for_speech
     return if text.blank?
 
-    audio_data = ElevenLabsTts.synthesize(text, voice_id: message.agent.voice_id)
+    audio_data = ElevenLabsTts.synthesize(text, voice_id: message.agent.voice_id, api_key: account.eleven_labs_api_key)
 
     message.voice_audio.attach(
       io: StringIO.new(audio_data),

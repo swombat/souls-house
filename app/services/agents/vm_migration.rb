@@ -25,6 +25,11 @@ module Agents
   #   because, before cutover, the house home is the only home it has lived
   #   in. After cutover the move is undone by a later slice (copy-back).
   #
+  # - stage! also takes the carry (slice 3C): one restic snapshot of the
+  #   stopped house chaos and state homes into the resident's own repository,
+  #   with a shape digest per volume (CarrySnapshot). A carry that fails
+  #   refuses the stage; nothing is staged without one.
+  #
   # This class never starts a resident anywhere and never deletes a house
   # volume.
   class VmMigration
@@ -43,26 +48,37 @@ module Agents
     STILL_RUNNING = "Its move can only be undone once nothing of it can be running on a server. Wait for its server " \
                     "to be released.".freeze
 
-    def initialize(agent, policy: VmBirthPolicy.current)
+    # One check a move must pass, and its current answer: nil when it passes.
+    Gate = Data.define(:name, :refusal) do
+      def ok? = refusal.nil?
+    end
+
+    # carry: (agent, generation) -> CarrySnapshot::Result. The house half of
+    # the carry (checkpoint 2), taken inside stage!'s stopped window.
+    CARRY = ->(agent, generation) { CarrySnapshot.new(agent, generation:).call }
+
+    def initialize(agent, policy: VmBirthPolicy.current, carry: CARRY)
       @agent = agent
       @policy = policy
+      @carry = carry
     end
 
     attr_reader :agent
 
     # nil means it may be staged now. Checked in the order a person can act
-    # on: the house first, then the resident.
+    # on: the house first, then the resident. Stops at the first refusal.
     def refusal
-      return SWITCHED_OFF unless @policy.enabled?
-      return NO_BACKUPS unless @policy.vm_backups_available?
-      return NOT_CONFIGURED unless @policy.procurement_configured?
-      return AT_LIMIT if @policy.remaining <= 0
+      gate_checks.each_value do |check|
+        reason = check.call
+        return reason if reason
+      end
+      nil
+    end
 
-      placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
-      return ALREADY_PLACED unless placement.nil? || (placement.backend == "local" && placement.state == "ready")
-      return NEVER_LIVED if agent.runtime_ready_at.nil?
-
-      Portability::Export.unavailable_reason(agent)
+    # Every gate with its current answer, in the same order, for a dry run
+    # (slice 3B). Reads only.
+    def gates
+      gate_checks.map { |name, check| Gate.new(name:, refusal: check.call) }
     end
 
     # Copies the stopped resident's home into stages and marks it as moving.
@@ -87,13 +103,23 @@ module Agents
           end
         end
         placement = AgentPlacement.find_or_initialize_by(agent:)
+        generation = placement.persisted? ? placement.generation + 1 : 1
+        # Still stopped and still under the row lock: the chaos and state
+        # homes go into its own repository, bound to this generation.
+        carry = begin
+          @carry.call(agent, generation)
+        rescue CarrySnapshot::Failed => error
+          raise Refused, error.message
+        end
         house_ready_at = agent.runtime_ready_at
-        placement.update!(backend: "hetzner_cloud", kind: "migration", state: "staged",
-          generation: placement.persisted? ? placement.generation + 1 : 1, house_runtime_ready_at: house_ready_at)
+        placement.update!(backend: "hetzner_cloud", kind: "migration", state: "staged", generation:,
+          house_runtime_ready_at: house_ready_at,
+          carry: { "snapshot_id" => carry.snapshot_id, "generation" => generation, "tags" => carry.tags, "shapes" => carry.shapes })
         agent.update_columns(runtime_ready_at: nil, runtime: "offline", updated_at: Time.current)
         AuditLog.create!(action: "vm_migration_staged", user: requested_by, account: agent.account, auditable: agent,
           data: { "placement_id" => placement.id, "generation" => placement.generation,
-                  "roles" => agent.import_stages.order(:role).map { |stage| { stage.role => stage.sha256 } } })
+                  "roles" => agent.import_stages.order(:role).map { |stage| { stage.role => stage.sha256 } },
+                  "carry_snapshot_id" => carry.snapshot_id })
       end
       placement
     rescue Portability::Error => error
@@ -119,6 +145,20 @@ module Agents
       placement
     end
 
+    # The operator's one call (slice 3B, rake and Site Admin): stage, then
+    # admit. If admission refuses right after a fresh stage, the stage is
+    # returned to the house at once, so a refused move leaves the resident as
+    # it was (local, its runtime_ready_at back, no stages), still paused.
+    def move!(requested_by:, transport: Portability::Transport.new(agent))
+      stage!(requested_by:, transport:)
+      begin
+        activate!(requested_by:)
+      rescue Refused
+        return_to_house!(requested_by:)
+        raise
+      end
+    end
+
     # Puts a move that never finished back as it was: local placement (at the
     # next generation, which fences anything the server was sent), the
     # resident's runtime_ready_at, and no stages. It stays inactive and
@@ -135,7 +175,7 @@ module Agents
         placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
           house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
           cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
-          location: nil, runtime_endpoint: nil, seeded_at: nil)
+          location: nil, runtime_endpoint: nil, seeded_at: nil, carry: nil)
         agent.import_stages.delete_all
         agent.update_columns(runtime_ready_at: house_ready_at, active: false, paused: true, runtime: "offline",
           health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil, updated_at: Time.current)
@@ -146,6 +186,21 @@ module Agents
     end
 
     private
+
+    def gate_checks
+      {
+        "Resident servers switched on" => -> { SWITCHED_OFF unless @policy.enabled? },
+        "VM backups available" => -> { NO_BACKUPS unless @policy.vm_backups_available? },
+        "Server ordering configured" => -> { NOT_CONFIGURED unless @policy.procurement_configured? },
+        "Below the resident server limit" => -> { AT_LIMIT if @policy.remaining <= 0 },
+        "Runs on the house today" => lambda do
+          placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
+          ALREADY_PLACED unless placement.nil? || (placement.backend == "local" && placement.state == "ready")
+        end,
+        "Has lived on the house" => -> { NEVER_LIVED if agent.runtime_ready_at.nil? },
+        "Stopped and can be copied" => -> { Portability::Export.unavailable_reason(agent) }
+      }
+    end
 
     def migration_placement!
       placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }

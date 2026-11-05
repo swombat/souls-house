@@ -73,6 +73,11 @@
           <span class="text-muted-foreground"> · {interaction.requested_by}</span>
         {/if}
       </div>
+      {#if interaction.failure_reason}
+        <div class="mt-1 text-sm text-destructive" data-testid="failure-reason">
+          Failed: {interaction.failure_reason}
+        </div>
+      {/if}
     </div>
     <div class="text-right text-xs text-muted-foreground">
       <div

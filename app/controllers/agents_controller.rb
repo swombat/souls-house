@@ -23,7 +23,10 @@ class AgentsController < ApplicationController
       can_manage_provider_subscription: current_account.owned_by?(Current.user),
       # Each seat carries what the account it sits in has shared with it.
       guest_memberships: Agents::GuestSharedIntegrations.new(current_account.guest_memberships.includes(:account, agent: :account).order(:created_at)).as_json,
-      away_memberships: Agents::GuestSharedIntegrations.new(GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at)).as_json,
+      former_guests_with_commitments: -> { CommitmentPresentation.former_guests(account: current_account, routes: helpers) },
+      away_memberships: -> { away_seats.with_rhythms(Agents::GuestSharedIntegrations.new(away_memberships).as_json) },
+      # The away seats' spinners, reloaded with active_sessions (ResidentSessions).
+      away_sessions: -> { away_seats.sessions },
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
         .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
       grouped_models: -> { grouped_models },
@@ -86,6 +89,7 @@ class AgentsController < ApplicationController
       subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
       subagents_available: -> { @agent.subagents_available? },
       reflexes: -> { reflexes_props },
+      commitments: -> { commitments_props },
       # Count/provider partials must not mint another registration token.
       telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
       telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username, reads_all_group_messages: @agent.telegram_reads_all_group_messages } },
@@ -147,6 +151,14 @@ class AgentsController < ApplicationController
 
   private
 
+  def away_memberships
+    @away_memberships ||= GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).to_a
+  end
+
+  def away_seats
+    @away_seats ||= Agents::AwaySeats.new(away_memberships, user: Current.user, routes: helpers)
+  end
+
   # Sessions with the reflexes their posts were judged against: the ones
   # offered (name, score, the post) and a count of the rest. Whether the
   # resident then acted on an offer is not recorded, so it is not shown.
@@ -186,12 +198,20 @@ class AgentsController < ApplicationController
       items: reflexes.map do |reflex|
         offered = counts.fetch([ reflex.id, true ], 0)
         reflex.as_json.merge(
+          release_url: reflex.held? && !reflex.discarded? && current_account.owned_by?(Current.user) ?
+            account_agent_reflex_releases_path(current_account, @agent, reflex_id: reflex.to_param) : nil,
           judged_count: offered + counts.fetch([ reflex.id, false ], 0),
           offered_count: offered,
           last_offered_at: last_offered[reflex.id]&.iso8601
         )
       end
     }
+  end
+
+  # The resident's commitments (Commitment): made and managed by the
+  # resident; a person who may manage one can reschedule or cancel it here.
+  def commitments_props
+    CommitmentPresentation.new(agent: @agent, account: current_account, viewer: Current.user, routes: helpers).as_props
   end
 
   # Asleep because its plan lapsed; the Billing tab is where it is paid
@@ -202,6 +222,12 @@ class AgentsController < ApplicationController
   def voice_props
     {
       current_voice_id: @agent.voice_id,
+      current_phonon_voice: @agent.phonon_voice,
+      default_phonon_voice: PhononVoices.default.id,
+      # The engine this resident speaks with now (SpeechEngine), and whether
+      # the account is on ElevenLabs at all: the ElevenLabs list is shown then.
+      speech_engine: SpeechEngine.for(current_account, @agent).engine,
+      account_speech_engine: SpeechEngine.account_engine(current_account),
       voices_path: voices_account_agent_path(current_account, @agent),
       update_path: voice_account_agent_path(current_account, @agent),
       preview_path_template: voice_preview_account_agent_path(current_account, @agent, voice_id: "VOICE_ID")

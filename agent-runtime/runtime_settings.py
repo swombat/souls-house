@@ -25,6 +25,8 @@ DEFAULTS = {
                    "env_key": "GEMINI_API_KEY", "wire_api": "chat_completions"},
         "openrouter": {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
                        "env_key": "OPENROUTER_API_KEY", "wire_api": "chat_completions"},
+        "kimi": {"name": "Kimi Code", "base_url": "https://api.kimi.ai/coding/v1",
+                 "env_key": "MOONSHOT_API_KEY", "wire_api": "responses"},
     },
 }
 
@@ -178,6 +180,10 @@ def prepare(home, run=command):
         run(home, "set", "model_providers.house", json.dumps({
             "name": "On the house", "base_url": app_url.rstrip("/") + "/api/v1/house_inference",
             "env_key": "SOULSHOUSE_BEARER_TOKEN", "wire_api": "chat_completions",
+            # The run this call belongs to, so a refused call is recorded on
+            # that run (#678). Chaos omits the header when the env var is
+            # unset (an interactive session, an older house).
+            "env_http_headers": {"X-Soulshouse-Run": "SOULSHOUSE_INFERENCE_RUN"},
         }))
     run(home, "doctor")
 

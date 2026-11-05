@@ -10,6 +10,8 @@ class AgentRuntimeInteractionCost
   OCTOBER_MODELS = %w[
     qwen/qwen3.8-max qwen/qwen3.8-max-prime z-ai/glm-5.3 z-ai/glm-5.3-prime
   ].freeze
+  NOVEMBER_PRICING_AS_OF = Date.new(2026, 11, 3)
+  NOVEMBER_MODELS = %w[z-ai/glm-5.3-flashx-legal].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -93,6 +95,7 @@ class AgentRuntimeInteractionCost
     [ /qwen\/qwen3\.7-max\z/, "qwen/qwen3.7-max", 1.475, 4.425 ],
     [ /qwen\/qwen3\.8-omni-flash\z/, "qwen/qwen3.8-omni-flash", 0.15, 0.47 ],
     [ /\A(?:z-ai\/)?glm-5\.3-prime\z/, "z-ai/glm-5.3-prime", 2.8, 8.8 ],
+    [ /\A(?:z-ai\/)?glm-5\.3-flashx-legal\z/, "z-ai/glm-5.3-flashx-legal", 0.37, 1.25 ],
     [ /\A(?:z-ai\/)?glm-5\.3\z/, "z-ai/glm-5.3", 0.0699, 1.4 ],
     [ /z-ai\/glm-5\.2\z/, "z-ai/glm-5.2", 0.8218, 2.5828 ]
   ].map do |pattern, model, input, output|
@@ -137,6 +140,7 @@ class AgentRuntimeInteractionCost
     "qwen/qwen3.8-max-prime" => 0.5,
     "qwen/qwen3.8-max" => 0.25,
     "z-ai/glm-5.3-prime" => 0.56,
+    "z-ai/glm-5.3-flashx-legal" => 0.075,
     "z-ai/glm-5.3" => 0.0689,
     "z-ai/glm-5.2" => 0.15262,
     "x-ai/grok-4.6" => 0.5
@@ -163,6 +167,17 @@ class AgentRuntimeInteractionCost
   end
 
   def call
+    # Code Console keys draw on a prepaid allowance. API list prices do not
+    # describe either its marginal charge or the amount of quota consumed.
+    if interaction.provider == "kimi"
+      return {
+        status: "estimated", amount_usd: "0.0", currency: "USD",
+        pricing_source: "subscription", pricing_model: interaction.model,
+        pricing_as_of: nil, components_usd: nil,
+        note: "Kimi Code subscription allowance; no metered API charge. This is not a quota or subscription-price estimate."
+      }
+    end
+
     return unavailable("usage telemetry is not trigger-local") unless interaction.local_usage?
 
     price = price_for(interaction.model)
@@ -211,7 +226,8 @@ class AgentRuntimeInteractionCost
 
   def pricing_as_of(price)
     model = price&.dig(:model)
-    date = if OCTOBER_MODELS.include?(model) then OCTOBER_PRICING_AS_OF
+    date = if NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF
+    elsif OCTOBER_MODELS.include?(model) then OCTOBER_PRICING_AS_OF
     elsif UPDATED_MODELS.include?(model) then UPDATED_PRICING_AS_OF
     else PRICING_AS_OF
     end

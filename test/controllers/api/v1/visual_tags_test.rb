@@ -69,7 +69,7 @@ module Api
         get api_v1_visual_tags_path, params: { account_id: destination.to_param }, headers: @resident_headers
         assert_response :success
         assert_equal [ unused.as_json, used.as_json ], response.parsed_body.fetch("visual_tags")
-        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned] }
+        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned pins_to_top] }
       end
 
       test "a resident's tag change is written into the room under the resident's name; other edits are not" do
@@ -233,10 +233,78 @@ module Api
         assert_equal guest_tag, guest_room.reload.visual_tag
       end
 
+      test "a resident switches pins_to_top on a home tag, and only that, with an audit row" do
+        assert_difference -> { AuditLog.where(action: "update_visual_tag").count }, 1 do
+          pin_tag(@tag, true)
+        end
+        assert_response :success
+        assert_equal true, response.parsed_body.dig("visual_tag", "pins_to_top")
+        assert @tag.reload.pins_to_top?
+        audit = AuditLog.where(action: "update_visual_tag").last
+        assert_equal @agent.id, audit.data["agent_id"]
+        assert_equal "resident", audit.data["by"]
+
+        patch api_v1_visual_tag_path(@tag), params: { pins_to_top: false, label: "Renamed" }, as: :json,
+          headers: @resident_headers
+        assert_response :success
+        assert_not @tag.reload.pins_to_top?
+        assert_equal "Research", @tag.label
+      end
+
+      test "pins_to_top must be a real boolean and the Pin cannot be switched off" do
+        [ {}, { pins_to_top: "yes" }, { pins_to_top: nil }, { pins_to_top: 1 } ].each do |payload|
+          patch api_v1_visual_tag_path(@tag), params: payload, as: :json, headers: @resident_headers
+          assert_response :unprocessable_entity
+        end
+        assert_not @tag.reload.pins_to_top?
+
+        pin = @account.pin_tag || @account.visual_tags.create!(**VisualTag::PIN, pinned: true)
+        pin_tag(pin, false)
+        assert_response :unprocessable_entity
+        assert pin.reload.pins_to_top?
+      end
+
+      test "a resident cannot switch tags where it is a guest or in another account" do
+        destination = accounts(:team_account)
+        destination.guest_memberships.create!(agent: @agent, added_by: @user)
+        guest_tag = destination.visual_tags.create!(label: "?", icon: "Question", colour: "amber")
+
+        pin_tag(guest_tag, true)
+        assert_response :not_found
+        pin_tag(guest_tag, true, account_id: destination.to_param)
+        assert_response :not_found
+        assert_not guest_tag.reload.pins_to_top?
+      end
+
+      test "a person's account key switches pins_to_top in its account and finds no tag elsewhere" do
+        pin_tag(@tag, true, headers: @human_headers)
+        assert_response :success
+        assert @tag.reload.pins_to_top?
+
+        elsewhere = accounts(:team_account).visual_tags.create!(label: "?", icon: "Question", colour: "amber")
+        pin_tag(elsewhere, true, headers: @human_headers)
+        assert_response :not_found
+        pin_tag(elsewhere, true, headers: @human_headers, account_id: accounts(:team_account).to_param)
+        assert_response :not_found
+        assert_not elsewhere.reload.pins_to_top?
+      end
+
+      test "the human account API accepts pins_to_top beside the look" do
+        patch api_v1_account_visual_tag_path(@tag), params: { pins_to_top: true, colour: "rose" }, as: :json,
+          headers: @human_headers
+        assert_response :success
+        assert @tag.reload.pins_to_top?
+        assert_equal "rose", @tag.colour
+      end
+
       private
 
       def headers_for(key)
         { "Authorization" => "Bearer #{key.raw_token}" }
+      end
+
+      def pin_tag(tag, value, headers: @resident_headers, **params)
+        patch api_v1_visual_tag_path(tag), params: { pins_to_top: value, **params }, as: :json, headers: headers
       end
 
       def update_room(payload, room: @room, headers: @resident_headers)

@@ -5,6 +5,8 @@ class Setting < ApplicationRecord
 
   FOLLOW_THROUGH_SCOPES = %w[off selected all].freeze
   REFLEXES_SCOPES = %w[disabled account_choice enabled].freeze
+  VOICE_MODE_SCOPES = %w[disabled account_choice enabled].freeze
+  SPEECH_ENGINE_SCOPES = %w[disabled account_choice enabled].freeze
   TWEET_STREAM_COLUMNS = %w[
     field_tweets_enabled field_tweets_daily_import_cap
     field_tweets_account_monthly_usd_ceiling field_tweets_poll_minutes
@@ -21,6 +23,7 @@ class Setting < ApplicationRecord
   before_save { self.billing_enabled_at = Time.current if billing_enabled_changed?(to: true) }
   after_save :refresh_tweet_streams, if: :tweet_stream_changed?
   after_save :refresh_glossaries, if: :saved_change_to_site_name?
+  after_save :invalidate_voice_mode, if: :voice_scope_changed?
 
   validates :max_accounts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :voice_embedding_profile, inclusion: { in: FieldVoiceprints::Profiles::RECIPES.keys }
@@ -33,6 +36,8 @@ class Setting < ApplicationRecord
   validates :vm_resident_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
   validates :reflexes_scope, inclusion: { in: REFLEXES_SCOPES }
+  validates :voice_mode_scope, inclusion: { in: VOICE_MODE_SCOPES }
+  validates :speech_engine_scope, inclusion: { in: SPEECH_ENGINE_SCOPES }
   validates :stalled_sweep_minutes, inclusion: { in: StalledThreadSweeper::INTERVALS }
   validates :site_name, presence: true, length: { maximum: 100 }
   validates :safeguard_owner_notice_threshold,
@@ -71,6 +76,33 @@ class Setting < ApplicationRecord
     end
   end
 
+  # Voice mode in conversations (VoiceMode) follows the same three states:
+  # disabled is off for every account, enabled is on for every account, and
+  # under account_choice (the default) the account's own switch
+  # (accounts.voice_mode_enabled) decides. An account's switch is kept while
+  # the site overrides it.
+  def voice_mode_enabled_for?(account)
+    return false if account.nil?
+    case voice_mode_scope
+    when "enabled" then true
+    when "account_choice" then account.voice_mode_enabled? || false
+    else false
+    end
+  end
+
+  # The ElevenLabs option for resident speech (SpeechEngine), in the same three
+  # states: disabled (the default) is Phonon for every account, enabled is
+  # ElevenLabs for every account, and under account_choice the account's own
+  # choice (accounts.speech_engine) decides. Returns the engine the site asks
+  # for; SpeechEngine then checks the key and the resident's plan.
+  def speech_engine_for(account)
+    case speech_engine_scope
+    when "enabled" then "elevenlabs"
+    when "account_choice" then account&.speech_engine.presence || "phonon"
+    else "phonon"
+    end
+  end
+
   def self.instance
     first_or_create!(site_name: ENV.fetch("SOULSHOUSE_SITE_NAME", "souls.house"))
   end
@@ -105,6 +137,14 @@ class Setting < ApplicationRecord
 
   def refresh_tweet_streams
     self.class.current_transaction.after_commit { FieldTweets::RefreshSettingsJob.perform_later }
+  end
+
+  def voice_scope_changed?
+    saved_change_to_speech_engine_scope? || saved_change_to_voice_mode_scope?
+  end
+
+  def invalidate_voice_mode
+    self.class.current_transaction.after_commit { VoiceModeInvalidationJob.perform_later }
   end
 
 end
