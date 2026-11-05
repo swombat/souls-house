@@ -213,7 +213,7 @@ Rails.application.routes.draw do
         resource :fork, only: :create
         resource :moderation, only: :create
         resource :agent_assignment, only: :create
-        resource :participant, only: :create
+        resource :participant, only: [ :create, :destroy ]
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]
@@ -545,6 +545,7 @@ Rails.application.routes.draw do
         resource :quiet_reason, only: :create
         resource :model, only: [ :show, :create ], controller: "conversation_models"
         resources :participants, only: :create
+        resource :participant, only: :destroy
         resource :archive, only: [ :create, :destroy ], controller: "conversation_archives"
         resource :discard, only: [ :create, :destroy ], controller: "conversation_discards"
         resource :fork, only: :create, controller: "conversation_forks"

@@ -126,30 +126,40 @@ class AgentRuntimeInteraction < ApplicationRecord
     active.where("agent_runtime_interactions.execution_state IS NULL OR agent_runtime_interactions.execution_state NOT IN (?)", TERMINAL_STATES)
   }
 
-  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil, wake_source_kinds: [])
-    interaction = agent.with_lock do
-      raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
-      if Agents::RemoteRuntime.refresh_pending?(agent)
-        raise Agent::RuntimeAvailability::Unavailable, "Resident is restarting with new credentials"
+  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil, wake_source_kinds: [], requested_at: nil)
+    interaction = transaction do
+      # Legacy conversation transport still admits under the same room lock as
+      # live reservations and seat removal; never hold it across the network.
+      if trigger_kind == "conversation" && requested_at
+        chat.lock!
+        raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses?
+        raise Chat::ParticipantChanged, "Resident's conversation seat has changed" unless chat.agent_seated_for_request?(agent.id, requested_at)
+        raise Chat::AlreadyResponding, "#{agent.name} is already responding" if chat.agent_response_active?(agent)
       end
-      raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
-      create!(
-        agent: agent,
-        chat: chat,
-        trigger_kind: trigger_kind,
-        conversation_obfuscated_id: conversation_id,
-        requested_by: requested_by,
-        wake_source_kinds: wake_source_kinds,
-        session_id: session_id,
-        endpoint_url: endpoint_url,
-        request_text: request_text,
-        last_included_message_id: last_included_message_id,
-        run_id: (SecureRandom.uuid if trigger_kind == "telegram"),
-        provider_auth_mode: provider_auth_mode,
-        provider: provider,
-        model: model,
-        started_at: Time.current
-      )
+      agent.with_lock do
+        raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
+        if Agents::RemoteRuntime.refresh_pending?(agent)
+          raise Agent::RuntimeAvailability::Unavailable, "Resident is restarting with new credentials"
+        end
+        raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
+        create!(
+          agent: agent,
+          chat: chat,
+          trigger_kind: trigger_kind,
+          conversation_obfuscated_id: conversation_id,
+          requested_by: requested_by,
+          wake_source_kinds: wake_source_kinds,
+          session_id: session_id,
+          endpoint_url: endpoint_url,
+          request_text: request_text,
+          last_included_message_id: last_included_message_id,
+          run_id: (SecureRandom.uuid if trigger_kind == "telegram"),
+          provider_auth_mode: provider_auth_mode,
+          provider: provider,
+          model: model,
+          started_at: Time.current
+        )
+      end
     end
 
     result = yield interaction

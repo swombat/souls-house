@@ -23,7 +23,7 @@ class FollowThroughCheckJob < ApplicationJob
 
     chat, agent = interaction.chat, interaction.agent
     return unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
-    return unless agent.active? && chat.agents.exists?(agent.id)
+    return unless agent.active? && chat.agent_seated_for_request?(agent.id, interaction.response_requested_at || interaction.created_at)
     # Busy in this room, or a later run here that lost contact and may still
     # be working: wait rather than judge or discard. Other rooms don't count.
     # A later run that finished does not settle this one: the check still
@@ -50,6 +50,7 @@ class FollowThroughCheckJob < ApplicationJob
       chat.lock!
       interaction.lock!
       next if interaction.follow_through_checked_at?
+      next unless chat.agent_seated_for_request?(interaction.agent_id, interaction.response_requested_at || interaction.created_at)
       raise StaleEvidence unless check.evidence_boundary == boundary
 
       if verdict == :unfinished
@@ -80,7 +81,8 @@ class FollowThroughCheckJob < ApplicationJob
       .where("created_at > ?", interaction.started_at).exists?
 
     # Reserve first: if the resident can't be woken, no notice claims it was.
-    AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, follow_through_of: interaction)
+    AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, follow_through_of: interaction,
+      requested_at: interaction.response_requested_at || interaction.created_at)
     chat.messages.create!(role: "user", content: check.nudge_notice)
   rescue Agent::RuntimeAvailability::Unavailable => error
     # Paused or unavailable: the check is done, and there is no one to wake.

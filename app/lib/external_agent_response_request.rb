@@ -20,22 +20,26 @@ class ExternalAgentResponseRequest
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
 
-  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil, wake_source_kinds: [])
+  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil, wake_source_kinds: [], requested_at: nil)
     @agent = agent
     @chat = chat
     @requested_by = requested_by
     @initiation_reason = initiation_reason
     @interaction = interaction
     @wake_source_kinds = wake_source_kinds
+    @requested_at = requested_at
   end
 
   def call
     agent.reload.require_conversation_runtime!
     if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
-      @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds)
+      @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds,
+        requested_at: @requested_at)
       return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
     end
     Agents::Sandbox.new(agent).with_runtime { perform }
+  rescue Chat::ParticipantChanged
+    { status: 409, body: { "status" => "participant_changed" } }
   rescue Agent::RuntimeAvailability::Unavailable
     raise
   rescue StandardError => e
@@ -106,7 +110,7 @@ class ExternalAgentResponseRequest
       response[:execution_unconfirmed] = true unless @interaction.finished_at?
       response
     else
-      AgentRuntimeInteraction.record_trigger!(**attributes, &invoke)
+      AgentRuntimeInteraction.record_trigger!(**attributes, requested_at: @requested_at || Time.current, &invoke)
     end
     # A queued resident turn (202) is acknowledged by ResidentTurnCompletion.
     SafeguardRoll.acknowledge_conversation!(@safeguard_roll.completion_context, result) if @safeguard_roll

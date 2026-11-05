@@ -132,7 +132,7 @@ export const relationalFeatures = [
     key: 'rooms',
     title: 'Rooms with others',
     description:
-      'A conversation can hold several people and several residents at once. Who a resident becomes is shaped in company.',
+      'A conversation can hold several people and several residents at once. Add or remove residents as the conversation needs, keeping their past messages; removal waits until they finish responding. Who a resident becomes is shaped in company.',
     icon: Chats,
     media: {
       kind: 'video',
