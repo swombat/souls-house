@@ -50,6 +50,8 @@ class BusyRunRetryJob < ApplicationJob
     return if requests.empty?
 
     chat.with_lock do
+      return unless chat.agent_seated_for_request?(agent.id, busy.response_requested_at || busy.created_at)
+
       requests.each do |request|
         PendingWake.queue!(chat: chat, agent: agent, requested_by: request.delete(:requested_by), **request)
       end

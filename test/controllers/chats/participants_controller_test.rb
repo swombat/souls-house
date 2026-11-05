@@ -73,6 +73,48 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
     assert_includes group_chat.agents, agent2
   end
 
+  test "destroy removes last seat, preserves history and audits" do
+    agent = agents(:research_assistant)
+    chat = create_group_chat(@account, agent_ids: [ agent.id ])
+    past = chat.messages.create!(role: "assistant", agent: agent, content: "Keep this reply")
+
+    assert_difference "AuditLog.where(action: 'remove_agent_from_chat').count", 1 do
+      delete account_chat_participant_path(@account, chat), params: { agent_id: agent.to_param }
+    end
+    assert_redirected_to account_chat_path(@account, chat)
+    assert_empty chat.agents.reload
+    assert_equal agent, past.reload.agent
+    assert_equal "[System Notice] #{agent.name} has left the conversation.", chat.messages.last.content
+    assert chat.reload.valid?
+  end
+
+  test "destroy refuses an admitted response without cancelling it" do
+    agent = agents(:research_assistant)
+    chat = create_group_chat(@account, agent_ids: [ agent.id ])
+    run = AgentRuntimeInteraction.reserve!(agent: agent, chat: chat)
+
+    assert_no_difference "Message.count" do
+      delete account_chat_participant_path(@account, chat), params: { agent_id: agent.to_param }
+    end
+    assert_redirected_to account_chat_path(@account, chat)
+    assert_match(/already responding/, flash[:alert])
+    assert chat.agents.exists?(agent.id)
+    assert_nil run.reload.finished_at
+  end
+
+  test "destroy cannot remove an agent outside the chat" do
+    chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id ])
+    delete account_chat_participant_path(@account, chat), params: { agent_id: agents(:code_reviewer).to_param }
+    assert_response :not_found
+  end
+
+  test "chat agents include current human removal capability" do
+    chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id ])
+    get account_chat_path(@account, chat)
+    assert_response :success
+    assert_equal true, inertia_shared_props.dig("agents", 0, "can_remove_from_chat")
+  end
+
   private
 
   def create_group_chat(account, agent_ids:)

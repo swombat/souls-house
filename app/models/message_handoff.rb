@@ -233,8 +233,8 @@ class MessageHandoff < ApplicationRecord
 
     return "discarded" if message.reload.discarded?
     return "conversation_unavailable" unless chat.respondable? && chat.manual_responses? && !chat.account.reload.disabled?
-    return "author_not_in_room" unless requester_agent_id && chat.agents.exists?(requester_agent_id)
-    return "not_in_room" unless chat.agents.exists?(recipient_agent_id)
+    return "author_not_in_room" unless requester_agent_id && chat.agent_seated_for_request?(requester_agent_id, created_at)
+    return "not_in_room" unless chat.agent_seated_for_request?(recipient_agent_id, created_at)
     return "paused" if recipient_agent.reload.paused?
 
     nil
@@ -324,8 +324,8 @@ class MessageHandoff < ApplicationRecord
     return "not_started_in_time" if created_at <= EXPIRY.ago
     return "discarded" if message.reload.discarded?
     return "conversation_unavailable" unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
-    return "author_not_in_room" unless requester_agent && chat.agents.exists?(requester_agent.id)
-    return "not_in_room" unless chat.agents.exists?(recipient_agent.id)
+    return "author_not_in_room" unless requester_agent && chat.agent_seated_for_request?(requester_agent.id, created_at)
+    return "not_in_room" unless chat.agent_seated_for_request?(recipient_agent.id, created_at)
     return "paused" if recipient_agent.reload.paused?
     return "unavailable" unless recipient_agent.eligible_for_conversation?
 

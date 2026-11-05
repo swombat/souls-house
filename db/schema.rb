@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_103100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -207,11 +207,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
   end
 
   create_table "agent_bookmarks", force: :cascade do |t|
-    t.bigint "chat_agent_id", null: false
+    t.bigint "chat_agent_id"
     t.datetime "created_at", null: false
     t.text "note", null: false
     t.datetime "updated_at", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "chat_id", null: false
+    t.index ["agent_id", "chat_id"], name: "index_agent_bookmarks_on_agent_id_and_chat_id", unique: true
+    t.index ["agent_id"], name: "index_agent_bookmarks_on_agent_id"
     t.index ["chat_agent_id"], name: "index_agent_bookmarks_on_chat_agent_id", unique: true
+    t.index ["chat_id"], name: "index_agent_bookmarks_on_chat_id"
   end
 
   create_table "agent_import_stages", force: :cascade do |t|
@@ -386,6 +391,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
     t.string "inference_refusal"
     t.string "inference_refusal_reason"
     t.bigint "requested_by_user_id"
+    t.datetime "response_requested_at"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -3046,7 +3052,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_223000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "agent_backup_snapshots", "agents"
-  add_foreign_key "agent_bookmarks", "chat_agents", on_delete: :cascade
+  add_foreign_key "agent_bookmarks", "agents", on_delete: :cascade
+  add_foreign_key "agent_bookmarks", "chat_agents", on_delete: :nullify
+  add_foreign_key "agent_bookmarks", "chats", on_delete: :cascade
   add_foreign_key "agent_import_stages", "agents"
   add_foreign_key "agent_memories", "agents"
   add_foreign_key "agent_placements", "agents"

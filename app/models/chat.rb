@@ -10,6 +10,7 @@ class Chat < ApplicationRecord
   include Chat::AgentAssignable
   include Chat::Initiable
   include Chat::QuietRhythmRun
+  include Chat::ParticipantRemoval
 
   belongs_to :ai_model, optional: true
   has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
@@ -336,6 +337,7 @@ class Chat < ApplicationRecord
   # An ArgumentError, so the web still treats it as a refused trigger; the app
   # API tells it apart as a 409 (#94 B, step 4b-iii).
   class AlreadyResponding < ArgumentError; end
+  class ParticipantChanged < ArgumentError; end
 
   def trigger_agent_response!(agent, wake_source_kinds: [], requested_by_user: nil)
     raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)

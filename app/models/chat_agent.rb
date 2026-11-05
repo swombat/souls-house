@@ -6,7 +6,8 @@ class ChatAgent < ApplicationRecord
 
   belongs_to :chat
   belongs_to :agent
-  has_one :agent_bookmark, dependent: :destroy
+  has_one :agent_bookmark, dependent: :nullify
+  after_create :reattach_bookmark
 
   validates :agent_id, uniqueness: { scope: :chat_id }
   validate :agent_takes_part_in_account, on: :create
@@ -64,6 +65,10 @@ class ChatAgent < ApplicationRecord
   end
 
   private
+
+  def reattach_bookmark
+    AgentBookmark.where(agent_id: agent_id, chat_id: chat_id, chat_agent_id: nil).update_all(chat_agent_id: id)
+  end
 
   def seed_model_from_room
     return if model_id.present? || chat.nil? || agent.nil?

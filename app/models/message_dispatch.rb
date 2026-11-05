@@ -152,6 +152,7 @@ class MessageDispatch < ApplicationRecord
         begin
           interaction = AgentRuntimeInteraction.reserve!(
             agent: agent, chat: chat, enqueue: true, message_dispatch: self, deadline: expires_at,
+            requested_at: accepted_at,
             wake_source_kinds: rhythm? ? [ "scheduled" ] : WakeProvenance.for(user: user)
           )
           update!(status: "reserved", runtime_interaction: interaction) if pending?

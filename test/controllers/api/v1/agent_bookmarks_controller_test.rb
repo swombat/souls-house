@@ -105,17 +105,25 @@ module Api
         assert_response :unprocessable_entity
       end
 
-      test "membership deletion erases the bookmark and rejoining does not restore it" do
-        put @path, params: { note: "Temporary membership" }, headers: @headers, as: :json
+      test "seat removal preserves a private note and rejoining restores it" do
+        put @path, params: { note: "My return note" }, headers: @headers, as: :json
         membership = @chat.chat_agents.find_by!(agent: @agent)
-        assert_difference "AgentBookmark.count", -1 do
-          membership.destroy!
+        bookmark = membership.agent_bookmark
+        assert_no_difference "AgentBookmark.count" do
+          @chat.remove_participant!(@agent, by: users(:user_1))
         end
-        @chat.agents << @agent
+        assert_nil bookmark.reload.chat_agent_id
+        assert_equal @agent, bookmark.agent
+        assert_equal @chat, bookmark.chat
         get @path, headers: @headers
         assert_response :not_found
         get api_v1_agent_bookmarks_url, headers: @headers
         assert_empty response.parsed_body["bookmarks"]
+        @chat.agents << @agent
+        get @path, headers: @headers
+        assert_response :ok
+        assert_equal "My return note", response.parsed_body.dig("bookmark", "note")
+        assert_equal bookmark, @chat.chat_agents.find_by!(agent: @agent).agent_bookmark
       end
 
       test "notes do not appear in transcripts conversation listings or attention" do

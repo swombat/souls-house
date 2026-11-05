@@ -1,6 +1,7 @@
 class AllAgentsResponseJob < ApplicationJob
 
-  def perform(chat, agent_ids, after_interaction_id: nil, wake_source_kinds: [], requested_by_user: nil)
+  def perform(chat, agent_ids, after_interaction_id: nil, wake_source_kinds: [], requested_by_user: nil, requested_at: nil)
+    @requested_at = requested_at || enqueued_at || Time.current
     return if agent_ids.empty? || !chat.respondable? || !chat.manual_responses?
 
     if after_interaction_id
@@ -32,15 +33,19 @@ class AllAgentsResponseJob < ApplicationJob
     reserved = live_reservations?
     busy = []
     chat.agents.where(id: agent_ids).sort_by { |agent| agent_ids.index(agent.id) }.each do |agent|
+      next unless chat.agent_seated_for_request?(agent.id, @requested_at)
+
       unless reserved
-        ManualAgentResponseJob.perform_later(chat, agent, wake_source_kinds: wake_source_kinds)
+        ManualAgentResponseJob.perform_later(chat, agent, wake_source_kinds: wake_source_kinds, requested_at: @requested_at)
         next
       end
       begin
         AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, wake_source_kinds: wake_source_kinds,
-          requested_by_user: requested_by_user)
+          requested_by_user: requested_by_user, requested_at: @requested_at)
       rescue Agent::RuntimeAvailability::Unavailable
         # Removed/disabled residents do not hold up the others.
+        next
+      rescue Chat::ParticipantChanged
         next
       rescue ArgumentError
         busy << agent.name
@@ -65,20 +70,25 @@ class AllAgentsResponseJob < ApplicationJob
       return unless previous.response_chain_ready? && previous.response_chain_agent_ids == agent_ids
       # Reserve the next run and consume the continuation in the same primary
       # DB transaction. Duplicate queue deliveries cannot start another run.
-      dispatch_next(chat, agent_ids, dispatch, previous.wake_source_kinds)
+      dispatch_next(chat, agent_ids, dispatch, previous.wake_source_kinds,
+        dispatch&.accepted_at || previous.response_requested_at || previous.created_at)
       previous.update!(response_chain_advanced_at: Time.current)
     end
   end
 
-  def dispatch_next(chat, agent_ids, dispatch = nil, wake_source_kinds = [])
+  def dispatch_next(chat, agent_ids, dispatch = nil, wake_source_kinds = [], requested_at = @requested_at)
     agent = chat.agents.find_by(id: agent_ids.first)
+    agent = nil if agent && !chat.agent_seated_for_request?(agent.id, requested_at)
     if agent && live_reservations?
       begin
         AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true,
-          response_chain_agent_ids: agent_ids.drop(1), message_dispatch: dispatch, wake_source_kinds: wake_source_kinds)
+          response_chain_agent_ids: agent_ids.drop(1), message_dispatch: dispatch, wake_source_kinds: wake_source_kinds,
+          requested_at: requested_at)
         return
       rescue Agent::RuntimeAvailability::Unavailable
         # Removed/disabled residents do not stall a requested round.
+        agent = nil
+      rescue Chat::ParticipantChanged
         agent = nil
       rescue ArgumentError
         ActionCable.server.broadcast("Chat:#{chat.to_param}", {
@@ -89,10 +99,10 @@ class AllAgentsResponseJob < ApplicationJob
     end
     # A dispatch's chain never leaves the reserved path: skip to the next
     # resident here, keeping the link, rather than as an unlinked new job.
-    return dispatch_next(chat, agent_ids.drop(1), dispatch, wake_source_kinds) if dispatch && agent_ids.many?
+    return dispatch_next(chat, agent_ids.drop(1), dispatch, wake_source_kinds, requested_at) if dispatch && agent_ids.many?
     return if dispatch
 
-    result = ManualAgentResponseJob.perform_now(chat, agent, wake_source_kinds: wake_source_kinds) if agent
+    result = ManualAgentResponseJob.perform_now(chat, agent, wake_source_kinds: wake_source_kinds, requested_at: requested_at) if agent
     if result.is_a?(Hash) && (result[:status] == 0 || result[:status] == 409 || result[:execution_unconfirmed])
       ActionCable.server.broadcast("Chat:#{chat.to_param}", {
         action: "error",
@@ -101,7 +111,7 @@ class AllAgentsResponseJob < ApplicationJob
       return
     end
     remaining = agent_ids.drop(1)
-    self.class.perform_later(chat, remaining, wake_source_kinds: wake_source_kinds) if remaining.any?
+    self.class.perform_later(chat, remaining, wake_source_kinds: wake_source_kinds, requested_at: requested_at) if remaining.any?
   end
 
 end
