@@ -4,6 +4,14 @@ class Mnemodyne::Recall
   MAX_NODES = 5_000
   MAX_EDGES = 20_000
   SYMMETRIC_TYPES = %w[theme feeling reminds_of co_retrieved knows family colleague friend relates_to].freeze
+  HUB_TYPES = %w[need person].freeze
+  # Lexical channel: a query term found as a whole word in at most
+  # LEXICAL_MAX_DF returnable memories reserves up to LEXICAL_SLOTS places
+  # after the anchor. An embedding of one name doesn't single out the one
+  # memory that contains it; a word match does.
+  LEXICAL_SLOTS = 2
+  LEXICAL_MAX_DF = 3
+  LEXICAL_MAX_TERMS = 24
   class CapacityExceeded < StandardError; end
 
   def initialize(vault:, query: nil, seed_node_ids: [], node_activations: {}, automatic: false, limit: 5, random: Random.new)
@@ -88,9 +96,14 @@ class Mnemodyne::Recall
     end.sort_by { |row| -row[:score] }
     scored.select! { |row| row[:node].disclosure == "automatic" } if @automatic
     anchor_row = anchor_id && scored.find { |row| row[:node].id == anchor_id }
-    rest = anchor_row ? scored.reject { |row| row.equal?(anchor_row) } : scored
+    reserved = [ anchor_row ].compact
+    lexical_matches(except: reserved.map { |row| row[:node].id }).first(@limit - reserved.length).each do |node|
+      reserved << (scored.find { |row| row[:node].id == node.id } || score_row(node, vector))
+    end
+    reserved_ids = reserved.map { |row| row[:node].id }.to_set
+    rest = scored.reject { |row| reserved_ids.include?(row[:node].id) }
     # One sample per relevance band, preserving the standalone walk's diversity.
-    selected = [ anchor_row ].compact + band_sample(rest, anchor_row ? @limit - 1 : @limit)
+    selected = reserved + band_sample(rest, @limit - reserved.length)
     intensity = Math.sqrt(@activations.values.sum { |value| value * value }).clamp(0, 1)
     max_alignment = selected.map { |row| row[:alignment] }.max.to_f
     deltas = selected.to_h { |row| [ row[:node].id, max_alignment.positive? ? 0.02 * intensity * row[:alignment] / max_alignment : 0.0 ] }
@@ -103,6 +116,34 @@ class Mnemodyne::Recall
   end
 
   private
+
+  def score_row(node, vector)
+    alignment = alignment(node.id)
+    similarity = vector && current_embedding?(node, vector) ? Mnemodyne::Embeddings.cosine(vector, node.embedding) : 0.0
+    { node: node, alignment: alignment, score: 0.4 * similarity + 0.3 * alignment + 0.3 * node.charge }
+  end
+
+  # Returnable nodes containing the query's rarest whole-word terms, rarest
+  # first. Hubs are never returned; automatic recall only returns automatic nodes.
+  def lexical_matches(except: [])
+    return [] if @query.blank?
+    terms = @query.scan(/[[:alnum:]][[:alnum:]_'-]{3,}/).map(&:downcase).uniq.max_by(LEXICAL_MAX_TERMS, &:length)
+    return [] if terms.empty?
+    pool = @nodes.values.reject { |node| HUB_TYPES.include?(node.node_type) || except.include?(node.id) }
+    pool = pool.select { |node| node.disclosure == "automatic" } if @automatic
+    texts = pool.to_h { |node| [ node.id, node.content.to_s.downcase ] }
+    rare = terms.filter_map do |term|
+      pattern = /(?<![[:alnum:]])#{Regexp.escape(term)}(?![[:alnum:]])/
+      hits = pool.select { |node| texts[node.id].match?(pattern) }
+      [ hits, hits.length ] if hits.length.between?(1, LEXICAL_MAX_DF)
+    end.sort_by(&:last)
+    picked = []
+    rare.each do |hits, _|
+      hits.sort_by { |node| -node.charge }.each { |node| picked << node unless picked.include?(node) }
+      break if picked.length >= LEXICAL_SLOTS
+    end
+    picked.first(LEXICAL_SLOTS)
+  end
 
   def band_sample(rows, count)
     return rows if rows.length <= count

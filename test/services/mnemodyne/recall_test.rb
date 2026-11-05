@@ -175,6 +175,39 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     end
   end
 
+  test "a rare whole-word term returns the memory containing it, within disclosure" do
+    profile = "synthetic-v1"
+    needle = @vault.nodes.create!(node_type: "memory", content: "Playa found the Physarum on the sill", disclosure: "automatic", charge: 0.05)
+    secret = @vault.nodes.create!(node_type: "memory", content: "Physarum notes kept private", disclosure: "never_automatic", charge: 0.9)
+    hub = @vault.nodes.create!(node_type: "person", content: "Physarum", disclosure: "automatic")
+    filler = Array.new(12) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.9) }
+    filler.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.01 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    [ needle, secret, hub ].each do |node|
+      node.update_columns(embedding: [ 0.0, 1.0 ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        5.times do |seed|
+          auto = Mnemodyne::Recall.new(vault: @vault, query: "what about physarum", automatic: true, random: Random.new(seed)).call[:results].map { |row| row[:id] }
+          assert_includes auto, needle.id
+          assert_not_includes auto, secret.id
+          manual = Mnemodyne::Recall.new(vault: @vault, query: "what about physarum", random: Random.new(seed)).call[:results].map { |row| row[:id] }
+          assert_includes manual, needle.id
+          assert_includes manual, secret.id
+        end
+        recall = Mnemodyne::Recall.new(vault: @vault, query: "physarum", random: Random.new(0))
+        recall.call
+        assert_not_includes recall.send(:lexical_matches), hub, "hubs are walked, never reserved lexically"
+        common = Mnemodyne::Recall.new(vault: @vault, query: "filler", random: Random.new(0)).call[:results]
+        assert_equal 5, common.length
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|
