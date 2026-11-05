@@ -335,14 +335,11 @@ def main() -> None:
     if should_invite and no_prefill_route(event):
         # Inviting here kills the run: the provider refuses the continuation
         # and the reply already written is followed by a failed run. Skip the
-        # invitation, keep the trace row (journal_skipped names why), and say
-        # so once on stderr; exit 0, so nothing reaches the model.
+        # invitation (exit 0, nothing reaches the model) and keep the trace
+        # row; journal_skipped names why. Chaos drops an exit-0 hook's
+        # stderr, so the shim reads this row and logs the skip (#725).
         should_invite = False
         skipped = NO_PREFILL_SKIP
-        sys.stderr.write(
-            "journal reflex skipped: this route refuses a conversation ending on "
-            "the resident's reply (no assistant prefill, #725)\n"
-        )
     append_trace(event, assistant, should_invite, skipped)
 
     if should_invite:

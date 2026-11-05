@@ -10,7 +10,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,8 +43,7 @@ class ReflexNoPrefillTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, f"{provider} {model} should not invite")
         self.assertFalse(row["journal_invited"])
         self.assertEqual(row["journal_skipped"], "route_refuses_assistant_last")
-        self.assertIn("journal reflex skipped", result.stderr)
-        self.assertNotIn("REFLECTION CONTINUATION", result.stderr)
+        self.assertEqual(result.stderr, "")
 
     def assert_invited(self, provider, model):
         result, row = self.run_hook(provider, model)
@@ -77,6 +78,71 @@ class ReflexNoPrefillTest(unittest.TestCase):
 
 
 class ShimPassesRouteTest(unittest.TestCase):
+    def load_shim(self, root, extra=None):
+        environment = {
+            "HOME": str(root), "PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1",
+            "TRIGGER_BEARER_TOKEN": "synthetic-trigger-token", "CHAOS_BIN": "/bin/true",
+            "CHAOS_HOME": str(root / "chaos"), "AGENT_IDENTITY_PATH": str(root / "identity"),
+            "AGENT_REPO_PATH": str(root), **(extra or {}),
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            spec = importlib.util.spec_from_file_location("reflex_route_shim", ROOT / "agent-runtime" / "trigger_shim.py")
+            shim = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(shim)
+        return shim
+
+    def test_the_runtime_log_says_when_the_reflex_skipped(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        shim = self.load_shim(Path(temporary.name))
+        trace = Path(temporary.name) / "stop-events.jsonl"
+        since = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
+        rows = [
+            {"recorded_at": "2026-11-05T09:59:00+00:00", "journal_skipped": "route_refuses_assistant_last"},
+            {"recorded_at": "2026-11-05T11:00:01+01:00", "journal_invited": True},
+            "not json",
+        ]
+        trace.write_text("\n".join(r if isinstance(r, str) else json.dumps(r) for r in rows) + "\n")
+        with self.assertNoLogs(shim.log, level="WARNING"):
+            self.assertEqual(shim.log_reflex_skips(since, trace), 0)
+        with trace.open("a") as fh:
+            fh.write(json.dumps({"recorded_at": "2026-11-05T11:00:02+01:00", "journal_invited": False,
+                                 "journal_skipped": "route_refuses_assistant_last"}) + "\n")
+        with self.assertLogs(shim.log, level="WARNING") as logs:
+            self.assertEqual(shim.log_reflex_skips(since, trace), 1)
+        self.assertIn("route_refuses_assistant_last", logs.output[0])
+        self.assertEqual(shim.log_reflex_skips(since, Path(temporary.name) / "missing.jsonl"), 0)
+
+    def test_a_run_whose_hook_skipped_is_logged_by_the_trigger(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        shim = self.load_shim(root)
+        trace = root / "stop-events.jsonl"
+        trace.write_text(json.dumps({"recorded_at": "2026-01-01T00:00:00+00:00",
+                                     "journal_skipped": "route_refuses_assistant_last"}) + "\n")
+        patch.object(shim, "REFLEX_TRACE_PATH", trace).start()
+        patch.object(shim, "jsonify", side_effect=lambda body: body).start()
+        patch.object(shim, "graph_memory_notice", return_value=None).start()
+        self.addCleanup(patch.stopall)
+
+        def hook_skips(*args, **kwargs):  # what the Stop hook writes during the run
+            with trace.open("a") as fh:
+                fh.write(json.dumps({"recorded_at": datetime.now(timezone.utc).isoformat(),
+                                     "journal_skipped": "route_refuses_assistant_last"}) + "\n")
+            return {"status": "ok"}
+
+        patch.object(shim, "legacy_trigger", side_effect=hook_skips).start()
+        payload = {"session_id": "synthetic-session", "request": "synthetic request", "trigger_kind": "wake"}
+        with patch.dict(os.environ, {"TRIGGER_BEARER_TOKEN": "synthetic-trigger-token"}), \
+             patch.object(shim, "request", types.SimpleNamespace(
+                 headers={"Authorization": "Bearer synthetic-trigger-token"},
+                 get_json=lambda silent=True: payload)):
+            with self.assertLogs(shim.log, level="WARNING") as logs:
+                shim.trigger()
+        skipped = [line for line in logs.output if "journal reflex skipped" in line]
+        self.assertEqual(len(skipped), 1, logs.output)
+
     def test_run_chaos_hands_provider_and_model_to_the_hook_environment(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
