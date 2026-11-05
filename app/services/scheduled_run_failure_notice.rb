@@ -27,6 +27,14 @@
 #
 # Nothing is recorded for a resident asleep for billing, switched off, or
 # under a failed-roll hold: each already has its own notice.
+#
+# The count only reaches an owner who signs in, so the owner is also emailed
+# once when a streak opens and once when it closes (ResidentHealthMailer,
+# #754). Sent from failing! and completing_again! only, after the row: the
+# row is the latch, so a streak that stays open never sends twice. Not gated
+# on the owner's absence: the house has no last-seen (a session row is
+# written at sign-in and never touched), and one email per streak to an
+# owner who was here anyway is the smaller wrong.
 class ScheduledRunFailureNotice
 
   FAILING = "scheduled_runs_failing".freeze
@@ -80,16 +88,22 @@ class ScheduledRunFailureNotice
     # A truncated streak has no known start: no time is stored, and the
     # anchor for finding its recovery is the oldest failure the scan saw in
     # it, never the run whose job happened to ask (which may be old).
-    AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
+    emailed = @agent.account.owner.present?
+    row = AuditLog.create!(user: nil, account: @agent.account, action: FAILING, auditable: @agent,
       data: { run_id: @run.id, first_run_id: streak.first_run_id,
               anchor_run_id: streak.first_run_id || streak.oldest_seen_id, since: streak.since&.iso8601,
-              count: streak.count, category: streak.categories.first || "unknown" })
+              count: streak.count, category: streak.categories.first || "unknown", emailed: emailed })
+    after_commit { ResidentHealthMailer.scheduled_runs_failing(row).deliver_later } if emailed
     refresh_owner_count!
   end
 
   def completing_again!(streak, success)
-    AuditLog.create!(user: nil, account: @agent.account, action: RECOVERED, auditable: @agent,
+    row = AuditLog.create!(user: nil, account: @agent.account, action: RECOVERED, auditable: @agent,
       data: { streak_id: streak.id, run_id: success.id, at: success.finished_at.iso8601 })
+    # Only where the opening was emailed, and only while there is an owner to tell.
+    if streak.data&.dig("emailed") == true && @agent.account.owner
+      after_commit { ResidentHealthMailer.scheduled_runs_completing(streak, row).deliver_later }
+    end
     refresh_owner_count!
   end
 
@@ -126,6 +140,15 @@ class ScheduledRunFailureNotice
 
   def worth_saying?
     @agent.active? && !@agent.billing_held? && !ResidentSwitchedOffNotice.open_holds(@agent).exists?
+  end
+
+  # Solid Queue writes to its own database and, on Rails 8.1, MailDeliveryJob
+  # doesn't defer enqueueing to commit, so a job enqueued inside with_lock
+  # could reach a worker before its audit row exists, or outlive a rollback
+  # (Mira, #799 review). Enqueue once the outermost transaction commits, and
+  # never if it rolls back.
+  def after_commit(&block)
+    ActiveRecord.after_all_transactions_commit(&block)
   end
 
   # The navbar count is read from the audit rows on each page load; touching
