@@ -12,6 +12,9 @@
 # as the record; and once more, in the same conversation, when the probe passes
 # again. The audit rows are the latch: an outage with no "reachable again" row
 # is open, and an open outage is never announced twice however long it lasts.
+# The latch and the failure count (consecutive_health_failures) are both rows,
+# so a restarted process and every worker see the same outage; an in-memory
+# breaker (#680) would forget it on restart and announce it again.
 #
 # Nothing is said about a resident asleep for billing (its container is stopped
 # on purpose, and the asleep banner already says so), a resident switched off

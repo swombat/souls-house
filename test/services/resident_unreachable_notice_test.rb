@@ -144,4 +144,35 @@ class ResidentUnreachableNoticeTest < ActiveJob::TestCase
     assert_empty outages
   end
 
+
+  # A deploy or a crash starts a fresh process with empty memory and, often, an
+  # empty cache. Nothing the latch or the count depends on may live there.
+  def restart_process!
+    BreakerMachines::Registry.instance.clear
+    ThrottleMachines.reset!
+    Rails.cache.clear
+  end
+
+  test "an open outage survives a process restart and is not announced again" do
+    probe(3)
+    outage = outages.sole
+    restart_process!
+    probe(2)
+    assert_equal [ outage ], outages.to_a
+    assert_equal 1, Chat.find(outage.data.fetch("chat_id")).messages.count
+
+    up!
+    restart_process!
+    probe
+    assert_equal outage.id, recoveries.sole.data["outage_id"]
+  end
+
+  test "the failure count is read from the row, so a restart mid-count still reaches the threshold" do
+    probe(2)
+    restart_process!
+    assert_empty outages
+    probe
+    assert_equal 3, outages.sole.data["failures"]
+  end
+
 end
