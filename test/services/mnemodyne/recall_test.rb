@@ -116,6 +116,152 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     assert_nil @memory.reload.embedding
   end
 
+  test "an exact query returns its match first even against heavier gravity" do
+    profile = "synthetic-v1"
+    heavy = Array.new(8) do |i|
+      @vault.nodes.create!(node_type: "memory", content: "Constitutional #{i}", disclosure: "automatic", charge: 0.95).tap do |node|
+        @vault.edges.create!(source: node, target: @need, edge_type: "surfaced_need", weight: 1.0)
+      end
+    end
+    filler = Array.new(30) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.4) }
+    target = @vault.nodes.create!(node_type: "memory", content: "The paperclip on the windowsill", disclosure: "automatic", charge: 0.05)
+    (heavy + filler).each_with_index do |node, i|
+      node.update_columns(embedding: [ 0.6 + i * 0.001, 0.8 ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    target.update_columns(embedding: [ 1.0, 0.0 ], embedding_profile: profile,
+      embedding_digest: Digest::SHA256.hexdigest(target.embedding_text))
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        20.times do |seed|
+          [ false, true ].each do |automatic|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "paperclip", automatic: automatic, random: Random.new(seed)).call[:results]
+            assert_equal target.id, results.first[:id]
+            assert_equal 1, results.count { |row| row[:id] == target.id }
+            assert_operator results.length, :<=, 5
+          end
+        end
+      end
+    end
+  end
+
+  test "automatic recall anchors on the closest returnable node even past thirty private ones" do
+    profile = "synthetic-v1"
+    private_near = Array.new(31) do |i|
+      @vault.nodes.create!(node_type: "memory", content: "Private near #{i}", disclosure: "never_automatic", charge: 0.5)
+    end
+    target = @vault.nodes.create!(node_type: "memory", content: "Eligible target", disclosure: "automatic", charge: 0.05)
+    distractor = @vault.nodes.create!(node_type: "memory", content: "Heavy distractor", disclosure: "automatic", charge: 0.95)
+    @vault.edges.create!(source: distractor, target: @need, edge_type: "surfaced_need", weight: 1.0)
+    private_near.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.001 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+      @vault.edges.create!(source: node, target: distractor, edge_type: "theme", weight: 1.0)
+    end
+    { target => [ 0.9, 0.1 ], distractor => [ 0.7, 0.7 ], @memory => [ 0.0, 1.0 ] }.each do |node, vector|
+      node.update_columns(embedding: vector, embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        20.times do |seed|
+          [ 1, 5 ].each do |limit|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "near", automatic: true, limit: limit, random: Random.new(seed)).call[:results]
+            assert_equal target.id, results.first[:id]
+            assert results.all? { |row| row[:id] != private_near.first.id }
+          end
+        end
+      end
+    end
+  end
+
+  test "a rare whole-word term returns the memory containing it, within disclosure" do
+    profile = "synthetic-v1"
+    needle = @vault.nodes.create!(node_type: "memory", content: "Playa found the Physarum on the sill", disclosure: "automatic", charge: 0.05)
+    secret = @vault.nodes.create!(node_type: "memory", content: "Physarum notes kept private", disclosure: "never_automatic", charge: 0.9)
+    hub = @vault.nodes.create!(node_type: "person", content: "Physarum", disclosure: "automatic")
+    filler = Array.new(12) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.9) }
+    filler.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.01 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    [ needle, secret, hub ].each do |node|
+      node.update_columns(embedding: [ 0.0, 1.0 ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        5.times do |seed|
+          auto = Mnemodyne::Recall.new(vault: @vault, query: "what about physarum", automatic: true, random: Random.new(seed)).call[:results].map { |row| row[:id] }
+          assert_includes auto, needle.id
+          assert_not_includes auto, secret.id
+          manual = Mnemodyne::Recall.new(vault: @vault, query: "what about physarum", random: Random.new(seed)).call[:results].map { |row| row[:id] }
+          assert_includes manual, needle.id
+          assert_includes manual, secret.id
+        end
+        recall = Mnemodyne::Recall.new(vault: @vault, query: "physarum", random: Random.new(0))
+        recall.call
+        assert_not_includes recall.send(:lexical_matches), hub, "hubs are walked, never reserved lexically"
+        common = Mnemodyne::Recall.new(vault: @vault, query: "filler", random: Random.new(0)).call[:results]
+        assert_equal 5, common.length
+      end
+    end
+  end
+
+  test "a node whose text is the query wins the anchor over a closer vector, duplicates deterministically" do
+    profile = "synthetic-v1"
+    closer = @vault.nodes.create!(node_type: "memory", content: "Something else entirely", disclosure: "automatic", charge: 0.9)
+    exact = @vault.nodes.create!(node_type: "memory", content: "The  kettle on the table", disclosure: "automatic", charge: 0.05)
+    twin = @vault.nodes.create!(node_type: "memory", content: "the kettle on the TABLE", disclosure: "automatic", charge: 0.05)
+    { closer => [ 1.0, 0.0 ], exact => [ 0.6, 0.8 ], twin => [ 0.0, 1.0 ] }.each do |node, vector|
+      node.update_columns(embedding: vector, embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        10.times do |seed|
+          [ false, true ].each do |automatic|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "the kettle on the table ", automatic: automatic, random: Random.new(seed)).call[:results]
+            assert_equal exact.id, results.first[:id]
+          end
+        end
+      end
+    end
+  end
+
+  test "a short query treats a two- or three-letter name as a lexical term" do
+    profile = "synthetic-v1"
+    ada = @vault.nodes.create!(node_type: "memory", content: "Lunch with Ada on Thursday", disclosure: "automatic", charge: 0.05)
+    filler = Array.new(32) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.9) }
+    filler.each_with_index do |node, i|
+      node.update_columns(embedding: [ 1.0, 0.001 * i ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    ada.update_columns(embedding: [ 0.0, 1.0 ], embedding_profile: profile,
+      embedding_digest: Digest::SHA256.hexdigest(ada.embedding_text))
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        ids = Mnemodyne::Recall.new(vault: @vault, query: "Ada", automatic: true, random: Random.new(0)).call[:results].map { |row| row[:id] }
+        assert_includes ids, ada.id
+        long = Mnemodyne::Recall.new(vault: @vault, query: "tell me ada stuff from the past year or so", random: Random.new(0))
+        long.call
+        assert_empty long.send(:lexical_matches).select { |node| node.id == ada.id }, "short words in a long prompt are not lexical terms"
+      end
+    end
+  end
+
+  test "a first memory still waiting for its embedding is returned by its exact text" do
+    fresh = @vault.nodes.create!(node_type: "memory", content: "Just saved, not yet embedded", disclosure: "automatic")
+    Mnemodyne::Embeddings.stub(:profile, "synthetic-v1") do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        [ false, true ].each do |automatic|
+          results = Mnemodyne::Recall.new(vault: @vault, query: "just saved, not yet embedded", automatic: automatic, random: Random.new(0)).call[:results]
+          assert_equal fresh.id, results.first[:id]
+        end
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|
