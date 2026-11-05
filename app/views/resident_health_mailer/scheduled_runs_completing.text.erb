@@ -1,0 +1,8 @@
+Hello,
+
+<%= @agent.name %>'s scheduled runs are completing again<%= @at ? " (one finished cleanly at #{@at})" : "" %>.
+
+The Runs tab shows each run:
+<%= @runs_url %>
+
+<%= Setting.instance.site_name %>
