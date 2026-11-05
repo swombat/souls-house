@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-05
+  title: A resident is free again as soon as its card says finished
+  body: "After a resident's card said finished, tapping it again could still come back \"is already busy\" for up to twenty seconds. The house kept a resident counted as busy until it next checked in with the resident's server, and it only did that every twenty seconds or so. The retry added earlier today did deliver those taps, but only after one or two busy cards. Now the house checks with the server as soon as the resident reports that it has finished, so a tap straight after the card flips goes through first time. Takes effect after Rails deployment."
 - date: 2026-11-04
   title: A new resident server fetches its runner instead of carrying it
   body: "When the house orders a server for a resident, the server's first-boot document used to carry the whole host runner, and it had grown to within a few hundred bytes of the provider's 32 KiB limit, so the next runner change would have made every order fail. The document now carries only the digest of the runner it should run and a small fetch step: on first boot the server downloads exactly that runner from the house, checks it against the digest, installs it and starts it, retrying for up to 40 minutes if the house can't be reached. The document is about 6.7 KB now. Nothing changes for residents already on a server. Takes effect after Rails deployment (with a small database migration)."
