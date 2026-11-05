@@ -6,6 +6,7 @@ require "test_helper"
 class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
 
   include ActionCable::TestHelper
+  include ActionMailer::TestHelper
 
   setup do
     @agent = agents(:research_assistant)
@@ -268,6 +269,58 @@ class ScheduledRunFailureNoticeTest < ActiveJob::TestCase
     hooks_failed = scheduled_run("wake", "completed", at: 1.hour.ago, response_body: { "status" => "ok", "hook_errors" => [ "stop" ] })
     ScheduledRunFailureNoticeJob.perform_now(hooks_failed.id)
     assert_equal 1, recoveries.count, "hook health inside a run is not what this notice claims to know"
+  end
+
+  test "the owner is emailed once when a streak opens, not again while it stays open, and once when it closes (#754)" do
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+    assert_enqueued_email_with ResidentHealthMailer, :scheduled_runs_failing, args: ->(args) { args.first.action == ScheduledRunFailureNotice::FAILING } do
+      ScheduledRunFailureNoticeJob.perform_now(second.id)
+    end
+    assert_equal true, failing_streaks.sole.data["emailed"]
+
+    third = scheduled_run("wake", "failed", at: 90.minutes.ago)
+    assert_no_enqueued_emails do
+      ScheduledRunFailureNoticeJob.perform_now(third.id)
+      ScheduledRunFailureNoticeJob.perform_now(second.id)
+    end
+
+    recovered = scheduled_run("wake", "completed", at: 1.hour.ago)
+    assert_enqueued_emails 1 do
+      ScheduledRunFailureNoticeJob.perform_now(recovered.id)
+      ScheduledRunFailureNoticeJob.perform_now(recovered.id)
+    end
+    assert_enqueued_email_with ResidentHealthMailer, :scheduled_runs_completing, args: [ failing_streaks.sole, recoveries.sole ]
+  end
+
+  test "a streak opened before emails existed closes without a recovery email" do
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+    ScheduledRunFailureNoticeJob.perform_now(second.id)
+    streak = failing_streaks.sole
+    streak.update!(data: streak.data.except("emailed"))
+
+    recovered = scheduled_run("wake", "completed", at: 1.hour.ago)
+    assert_no_enqueued_emails { ScheduledRunFailureNoticeJob.perform_now(recovered.id) }
+    assert_equal 1, recoveries.count
+  end
+
+  test "an account with no owner records the streak, emails nobody, and sends no recovery" do
+    @agent.account.memberships.where(role: "owner").delete_all
+    scheduled_run("wake", "failed", at: 3.hours.ago)
+    second = scheduled_run("wake", "failed", at: 2.hours.ago)
+    assert_no_enqueued_emails { ScheduledRunFailureNoticeJob.perform_now(second.id) }
+    assert_equal false, failing_streaks.sole.data["emailed"]
+
+    recovered = scheduled_run("wake", "completed", at: 1.hour.ago)
+    assert_no_enqueued_emails { ScheduledRunFailureNoticeJob.perform_now(recovered.id) }
+  end
+
+  test "nobody is emailed for a resident switched off, asleep for billing, or under a roll hold" do
+    scheduled_run("wake", "failed", at: 2.hours.ago)
+    run = scheduled_run("wake", "failed", at: 1.hour.ago)
+    @agent.update!(active: false)
+    assert_no_enqueued_emails { ScheduledRunFailureNoticeJob.perform_now(run.id) }
   end
 
   private

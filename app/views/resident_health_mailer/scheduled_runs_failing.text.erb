@@ -1,0 +1,19 @@
+Hello,
+
+<%= @agent.name %>'s scheduled runs <%= @since ? "have been failing since #{@since}" : "are failing" %>: <%= @cause %>.
+
+Scheduled runs are <%= @agent.name %>'s wakes and memory work, the things they do without being asked. Their conversations, home and memory are untouched.
+
+<% if @step %>
+<%= @step %>
+<%= @step_url %>
+<% else %>
+This is on the house's side, not yours, and there's nothing you need to do. The house records every failed run and checks failing residents each day; fixing this is ours.
+<% end %>
+
+The Runs tab shows each run:
+<%= @runs_url %>
+
+You'll get one more email when <%= @agent.name %>'s runs complete again, and no others about this.
+
+<%= Setting.instance.site_name %>

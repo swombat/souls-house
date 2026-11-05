@@ -1,0 +1,10 @@
+<p>Hello,</p>
+<p><strong><%= @agent.name %>'s scheduled runs <%= @since ? "have been failing since #{@since}" : "are failing" %></strong>: <%= @cause %>.</p>
+<p>Scheduled runs are <%= @agent.name %>'s wakes and memory work, the things they do without being asked. Their conversations, home and memory are untouched.</p>
+<% if @step %>
+<p><%= @step %> <a href="<%= @step_url %>">Open it here</a>.</p>
+<% else %>
+<p>This is on the house's side, not yours, and there's nothing you need to do. The house records every failed run and checks failing residents each day; fixing this is ours.</p>
+<% end %>
+<p>The <a href="<%= @runs_url %>">Runs tab</a> shows each run. You'll get one more email when <%= @agent.name %>'s runs complete again, and no others about this.</p>
+<p><%= Setting.instance.site_name %></p>

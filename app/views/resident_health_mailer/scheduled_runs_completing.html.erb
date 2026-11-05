@@ -1,0 +1,4 @@
+<p>Hello,</p>
+<p><strong><%= @agent.name %>'s scheduled runs are completing again</strong><%= @at ? " (one finished cleanly at #{@at})" : "" %>.</p>
+<p>The <a href="<%= @runs_url %>">Runs tab</a> shows each run.</p>
+<p><%= Setting.instance.site_name %></p>
