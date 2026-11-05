@@ -6,6 +6,7 @@
   import ChatActionsMenu from '$lib/components/chat/ChatActionsMenu.svelte';
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
+  import ChatParticipants from '$lib/components/chat/ChatParticipants.svelte';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -188,6 +189,7 @@
       <ChatTokenStatus {chat} {agents} {allMessages} {contextTokens} {costTokens} {costBreakdown} {tokenWarningLevel} />
     </div>
 
+    <ChatParticipants {chat} {account} {agents} {onerror} />
     <ChatActionsMenu
       replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
       onDismissReply={dismissReplyRequest}

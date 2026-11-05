@@ -125,7 +125,7 @@ class PendingWake < ApplicationRecord
   def lapse_reason
     return "expired" if last_requested_at < EXPIRY.ago
     return "not_respondable" unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
-    return "not_in_room" unless chat.agents.exists?(agent.id)
+    return "not_in_room" unless chat.agent_seated_for_request?(agent.id, created_at)
     return "paused" if agent.paused?
     return "sources_withdrawn" unless standing_source?
     return "nothing_new" unless unseen_messages?
@@ -163,7 +163,7 @@ class PendingWake < ApplicationRecord
     lock_revocation_rows!
     return "paused" if agent.paused?
     return "not_respondable" unless chat.respondable? && chat.manual_responses? && !chat.account.reload.disabled?
-    return "not_in_room" unless chat.agents.exists?(agent.id)
+    return "not_in_room" unless chat.agent_seated_for_request?(agent.id, created_at)
     return "sources_withdrawn" unless standing_source?
 
     nil

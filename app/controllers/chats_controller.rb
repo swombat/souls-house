@@ -232,6 +232,8 @@ class ChatsController < ApplicationController
       json = json.merge("provider_subscription" => subscription) if subscription
       # Which model this resident will run on here next, and what it may choose.
       json = json.merge("model_selection" => Agents::ModelSelection.for(agent, chat: @chat).as_json) if @chat&.persisted?
+      json["can_remove_from_chat"] = @chat&.persisted? &&
+        @chat.agents.exists?(agent.id) && @chat.participant_removable_by?(agent, Current.user)
       json
     end
   end

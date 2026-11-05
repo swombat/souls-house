@@ -28,10 +28,10 @@ class PendingWakeSource < ApplicationRecord
 
       return member?(message.user, chat) unless message.role == "assistant" && message.agent_id
 
-      chat.agents.exists?(message.agent_id)
+      chat.agent_seated_for_request?(message.agent_id, created_at)
     when "trigger"
       if requester_agent
-        chat.agents.exists?(requester_agent.id)
+        chat.agent_seated_for_request?(requester_agent.id, created_at)
       else
         member?(user, chat)
       end

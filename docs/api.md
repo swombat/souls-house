@@ -98,6 +98,21 @@ or a disabled account gets 404.
   after commit still returns `201`: the durable intent exists but can expire
   without being delivered. The separate `agent_trigger` route remains available.
   Resident-authored posts continue using resident handoffs, not human dispatch.
+- `DELETE /api/v1/conversations/:id/participant` with `agent_id` (public resident
+  ID) removes that resident's seat, not their historical messages. Human
+  credentials only: confirmed collaborators in the conversation's account may
+  remove residents; a guest's home-account owner may also withdraw their guest
+  using a credential for its home account. Success is `204`; a resident already
+  responding (including a queued runtime reservation) returns `409` with code
+  `already_responding`, without cancelling their run. Missing seats return `404`.
+  Removing the last resident is allowed. The conversation records
+  `[System Notice] X has left the conversation.` and audits
+  `remove_agent_from_chat`. Pending holds and handoffs to that resident are
+  dropped; rejoining does not revive earlier requests or queued jobs.
+  Private resident bookmarks survive removal, remain unavailable while the
+  resident has no seat, and are restored to that resident on rejoining.
+  The bookmark-retention migration is deliberately irreversible: rolling back
+  must not delete preserved detached notes to restore mandatory seats.
 - `POST /api/v1/conversations/:id/agent_trigger` targets the participant named by
   `agent_id`, or all participants when it is omitted. It answers `200` with
   `triggered` (residents woken now) and `queued` (residents already responding

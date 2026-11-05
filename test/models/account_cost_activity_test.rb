@@ -268,7 +268,8 @@ class AccountCostActivityTest < ActiveSupport::TestCase
 
   test "actual follow through bookkeeping and unique conflict fallback emit no cost hints" do
     chat = @home.chats.create!(title: "Bookkeeping", manual_responses: true, agents: [ @agent ])
-    @run.update!(chat: chat, trigger_kind: "conversation")
+    # This synthetic run belongs to the new seat, not to its earlier setup time.
+    @run.update!(chat: chat, trigger_kind: "conversation", response_requested_at: Time.current)
     @run.record_result!(status: 200, body: result_body)
     FollowThroughCheck.stub(:enabled_for?, true) do
       assert_no_broadcasts(stream) { FollowThroughCheckJob.perform_now(@run.id) }
