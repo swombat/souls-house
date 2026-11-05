@@ -69,9 +69,10 @@ export async function resolveTurn({
   const { text } = turnContent({ clean: cleanText, live: liveText });
   const signedId = recording?.signedId || null;
   if (text) return { text, signedId, note: '', failed: false };
-  // Silence is a clean answer with no words. A failed upload with no live
-  // answer either is a failure: the words may be in the recording.
-  const failed = Boolean(recording?.error) && !signedId;
+  // Silence is a clean answer with no words. A failed clean transcript with
+  // no live answer either is a failure, whether or not the house kept the
+  // recording: the words may be in it (Mira, #797 review).
+  const failed = Boolean(recording?.error);
   if (failed) {
     const reason = liveError?.message || recording.error || 'Transcription failed.';
     return { text: '', signedId, note: reason, failed: true };

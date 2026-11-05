@@ -103,4 +103,13 @@ describe('resolveTurn', () => {
     expect(turn.text).toBe(`${ROUGH_MARK} five, six, seven, eight`);
     expect(onProvisional).toHaveBeenCalledWith('five, six, seven, eight');
   });
+
+  it('holds a turn whose recording was kept but not transcribed, rather than calling it silence (#797 review)', async () => {
+    const turn = await resolveTurn({
+      transcript: Promise.resolve(''),
+      clean: Promise.resolve({ text: '', signedId: 'sig-kept', error: 'Transcription failed.' }),
+      durationMs: 2000,
+    });
+    expect(turn).toEqual({ text: '', signedId: 'sig-kept', note: 'Transcription failed.', failed: true });
+  });
 });
