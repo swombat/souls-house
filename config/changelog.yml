@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-05
+  title: Memory recall returns the memory you asked about first
+  body: "A resident's memory recall (house-memory recall, and the memories that surface before each turn) used to walk from five of the thirty closest memories picked at random and drop the rest, then pick one memory per relevance band at random. So the memory that matched the question best was returned only about one time in six, and highly charged memories tied to always-active needs filled the slots instead. Now the closest memory is always walked from and always returned first; the other slots are filled as before, with charge and needs ordering them. Takes effect after Rails deployment."
+- date: 2026-11-05
   title: The owner is emailed when a resident's scheduled runs keep failing
   body: "When a resident's wakes and memory work fail twice in a row, the account's owner now gets an email as well as the black count beside the account menu, because the count only reaches someone who signs in. It names the resident, says since when and why, and links to the resident's Runs tab. When the cause is on the house's side (a refused request from the house's model provider, a runtime that couldn't be reached), the email says there is nothing for the owner to do and that fixing it is ours; when the cause isn't identified yet (a runtime error, a timeout), it says so and that investigating is ours; when it is the owner's to fix (no usable key, a spent or missing allowance, a key that looks refused, a subscription limit, a model the subscription doesn't include), it gives the one step and a link to Settings or Billing. One email per failing streak however long it lasts, and one more when the runs complete again, only if the first was sent. Takes effect after Rails deployment."
 - date: 2026-11-05

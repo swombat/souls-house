@@ -52,7 +52,13 @@ class Mnemodyne::Recall
     else
       seeds = @seed_ids.filter_map { |id| @nodes[id] }
     end
+    # With a query, the closest seed is the match and is returned first; gravity
+    # (charge, need alignment) orders and samples the rest but must not displace
+    # it. Before this an exact-content query returned its own node about one
+    # time in six, because only five random seeds were walked and scored.
+    anchor_id = seeds.first&.id if vector
     starts = seeds.sample([ 5, seeds.length ].min, random: @random)
+    starts = [ @nodes.fetch(anchor_id) ] + starts.reject { |node| node.id == anchor_id }.first(starts.length - 1) if anchor_id && starts.none? { |node| node.id == anchor_id }
     visited = starts.map(&:id).to_set
     starts.each do |start|
       current = start.id
@@ -76,12 +82,10 @@ class Mnemodyne::Recall
       { node: node, alignment: alignment, score: 0.4 * similarity + 0.3 * alignment + 0.3 * node.charge }
     end.sort_by { |row| -row[:score] }
     scored.select! { |row| row[:node].disclosure == "automatic" } if @automatic
+    anchor_row = anchor_id && scored.find { |row| row[:node].id == anchor_id }
+    rest = anchor_row ? scored.reject { |row| row.equal?(anchor_row) } : scored
     # One sample per relevance band, preserving the standalone walk's diversity.
-    selected = if scored.length <= @limit
-      scored
-    else
-      (0...@limit).map { |i| scored[(i * scored.length / @limit)...((i + 1) * scored.length / @limit)].sample(random: @random) }
-    end
+    selected = [ anchor_row ].compact + band_sample(rest, anchor_row ? @limit - 1 : @limit)
     intensity = Math.sqrt(@activations.values.sum { |value| value * value }).clamp(0, 1)
     max_alignment = selected.map { |row| row[:alignment] }.max.to_f
     deltas = selected.to_h { |row| [ row[:node].id, max_alignment.positive? ? 0.02 * intensity * row[:alignment] / max_alignment : 0.0 ] }
@@ -94,6 +98,11 @@ class Mnemodyne::Recall
   end
 
   private
+
+  def band_sample(rows, count)
+    return rows if rows.length <= count
+    (0...count).map { |i| rows[(i * rows.length / count)...((i + 1) * rows.length / count)].sample(random: @random) }
+  end
 
   def verifier
     Rails.application.message_verifier("mnemodyne-recall")

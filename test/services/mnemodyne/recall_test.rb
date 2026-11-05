@@ -116,6 +116,35 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     assert_nil @memory.reload.embedding
   end
 
+  test "an exact query returns its match first even against heavier gravity" do
+    profile = "synthetic-v1"
+    heavy = Array.new(8) do |i|
+      @vault.nodes.create!(node_type: "memory", content: "Constitutional #{i}", disclosure: "automatic", charge: 0.95).tap do |node|
+        @vault.edges.create!(source: node, target: @need, edge_type: "surfaced_need", weight: 1.0)
+      end
+    end
+    filler = Array.new(30) { |i| @vault.nodes.create!(node_type: "memory", content: "Filler #{i}", disclosure: "automatic", charge: 0.4) }
+    target = @vault.nodes.create!(node_type: "memory", content: "The paperclip on the windowsill", disclosure: "automatic", charge: 0.05)
+    (heavy + filler).each_with_index do |node, i|
+      node.update_columns(embedding: [ 0.6 + i * 0.001, 0.8 ], embedding_profile: profile,
+        embedding_digest: Digest::SHA256.hexdigest(node.embedding_text))
+    end
+    target.update_columns(embedding: [ 1.0, 0.0 ], embedding_profile: profile,
+      embedding_digest: Digest::SHA256.hexdigest(target.embedding_text))
+    Mnemodyne::Embeddings.stub(:profile, profile) do
+      Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
+        20.times do |seed|
+          [ false, true ].each do |automatic|
+            results = Mnemodyne::Recall.new(vault: @vault, query: "paperclip", automatic: automatic, random: Random.new(seed)).call[:results]
+            assert_equal target.id, results.first[:id]
+            assert_equal 1, results.count { |row| row[:id] == target.id }
+            assert_operator results.length, :<=, 5
+          end
+        end
+      end
+    end
+  end
+
   test "bounded inputs reject malformed requests" do
     [ { limit: 0 }, { limit: 6 }, { limit: "5" }, { automatic: "false" }, { query: "x" * 2001 },
       { seed_node_ids: [ {} ] }, { node_activations: { @need.id => -1 } } ].each do |options|

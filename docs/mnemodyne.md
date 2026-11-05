@@ -104,6 +104,9 @@ that the platform will infer an appropriate room.
 
 Private active needs still influence traversal and reinforcement; their content
 is filtered from the returned set. Dormant nodes are excluded from the walk itself.
+With a query, the closest eligible seed by cosine is always a walk start and is
+returned first; the remaining slots are one sample per relevance band, so charge
+and need alignment order the rest but cannot displace the match.
 `house-memory status` reports the last recorded automatic attempt and outcome. Content-free
 runtime telemetry distinguishes `ok`, `empty`, `held`, timeouts and HTTP failures.
 The five-minute readiness job reports through Rails' error reporter and fails
