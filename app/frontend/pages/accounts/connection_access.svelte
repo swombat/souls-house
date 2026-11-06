@@ -14,6 +14,8 @@
 
   let title = $derived(connectionTitle(connection));
   let granted = $derived((connection.residents || []).filter(residentHasAccess));
+  // A switch's save in flight holds the exit, so leaving cannot cancel it.
+  let saving = $state(false);
 </script>
 
 <svelte:head><title>Choose residents</title></svelte:head>
@@ -36,13 +38,17 @@
     {/if}
 
     <section class="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
-      <ConnectionResidentAccess {connection} />
+      <ConnectionResidentAccess {connection} bind:busy={saving} />
     </section>
 
     <div class="flex items-center gap-3">
-      <Button href={integrations_url} size="sm" data-testid="connection-access-done">
-        {granted.length === 0 ? 'Skip for now' : 'Done'}
-      </Button>
+      {#if saving}
+        <Button size="sm" disabled data-testid="connection-access-done">Saving…</Button>
+      {:else}
+        <Button href={integrations_url} size="sm" data-testid="connection-access-done">
+          {granted.length === 0 ? 'Skip for now' : 'Done'}
+        </Button>
+      {/if}
       <p class="text-sm text-muted-foreground">You can change this later on the Integrations page.</p>
     </div>
   </div>

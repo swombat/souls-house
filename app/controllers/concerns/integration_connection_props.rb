@@ -10,11 +10,12 @@ module IntegrationConnectionProps
 
   # Where a freshly made connection should land: the access step while no
   # resident can use it and there is someone to switch on; otherwise the
-  # Integrations page.
+  # Integrations page. "Can use" is effective access, as on the card: a
+  # guest still awaiting its home's approval is nobody yet.
   def after_connect_path(connection, fallback)
     account = connection.account
     return fallback unless connection.status == "connected"
-    return fallback if connection.agent_service_accesses.where(enabled: true).exists?
+    return fallback if connection.agent_service_accesses.effective.exists?
     return fallback unless account.agents.exists? || account.guest_agents.exists?
 
     account_service_connection_access_path(account, connection.public_id)

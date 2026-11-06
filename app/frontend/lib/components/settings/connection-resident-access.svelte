@@ -2,12 +2,17 @@
   import { router } from '@inertiajs/svelte';
   import { Switch } from '$lib/components/shadcn/switch';
   import TailnetAccess from '$lib/components/agents/tailnet-access.svelte';
-  let { connection } = $props();
+  // busy: true while any switch's save is in flight, so a page that offers
+  // its own exit (the access step) can hold it until the save lands.
+  let { connection, busy = $bindable(false) } = $props();
   // Tailscale: every granted resident is its own node and signs in once, here.
   let tailnetResidents = $derived(
     connection.provider === 'tailscale' ? connection.residents.filter((resident) => resident.tailnet_url) : []
   );
   let residentAccessUpdating = $state({});
+  $effect(() => {
+    busy = Object.values(residentAccessUpdating).some(Boolean);
+  });
   function residentTransition(resident) {
     if (resident.guest && !resident.effective) return null;
     if (resident.provisioning_status === 'pending') return 'Adding…';

@@ -63,6 +63,34 @@ class Accounts::ServiceConnectionAccessesControllerTest < ActionDispatch::Integr
     assert_equal "/fallback", probe.after_connect_path(connection, "/fallback")
   end
 
+  # Mira's round 1 (#811): a guest awaiting its home's approval cannot use the
+  # connection yet, so the step still shows; once approved, it is shared.
+  test "a guest awaiting its home's approval is still nobody; approved is shared" do
+    Setting.instance.update!(allow_agents: true)
+    sharing = accounts(:team_account)
+    lume = agents(:research_assistant)
+    sharing.guest_memberships.create!(agent: lume, added_by: @user)
+    connection = sharing.service_connections.create!(
+      connected_by_user: @user, provider: "tailscale", external_subject_id: "ts-guest", management_scope: "personal",
+      credential_kind: "none", credential_payload_hash: {}, credential_metadata: { "join" => "sign_in" }
+    )
+    sharing.agents.each { |agent| agent.agent_service_accesses.where(service_connection: connection).delete_all }
+    access = lume.agent_service_accesses.create!(service_connection: connection, enabled: true, home_approval: "pending")
+    probe = Class.new do
+      include Rails.application.routes.url_helpers
+      include IntegrationConnectionProps
+      public :after_connect_path
+    end.new
+
+    assert_not access.effective?
+    assert_equal account_service_connection_access_path(sharing, connection.public_id),
+                 probe.after_connect_path(connection, "/fallback")
+
+    access.approve_home!(actor: @user, generation: access.home_approval_generation)
+    assert access.reload.effective?
+    assert_equal "/fallback", probe.after_connect_path(connection, "/fallback")
+  end
+
   test "another member's personal connection is not shown" do
     connection = tailscale
     connection.update!(connected_by_user: users(:existing_user))
