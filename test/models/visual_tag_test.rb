@@ -57,8 +57,8 @@ class VisualTagTest < ActiveSupport::TestCase
     accounts(:other).chats.create!(title: "Foreign", model_id: "openrouter/auto", visual_tag: foreign)
 
     palette = VisualTag.palette_with_usage_for(@account)
-    assert_equal %w[Zulu alpha Building Empty zebra], palette.pluck("label")
-    assert_equal [ 2, 1, 1, 0, 0 ], palette.pluck("conversation_count")
+    assert_equal %w[alpha Building Zulu Empty zebra], palette.pluck("label")
+    assert_equal [ 1, 1, 1, 0, 0 ], palette.pluck("conversation_count")
     assert_equal %w[colour conversation_count icon id label pinned pins_to_top], palette.first.keys.sort
     assert_equal %w[colour icon id label pinned pins_to_top], popular.as_json.keys.sort
     assert_equal @tag.as_json, @chat.as_json["visual_tag"]
@@ -75,7 +75,8 @@ class VisualTagTest < ActiveSupport::TestCase
     assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
     @chat.undiscard!
     @chat.archive!
-    assert_equal [ 1, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
+    assert_nil @chat.reload.visual_tag_id
+    assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
     @chat.update!(visual_tag: nil)
     assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
   end
@@ -87,6 +88,16 @@ class VisualTagTest < ActiveSupport::TestCase
 
     assert_equal pin.to_param, VisualTag.palette_with_usage_for(@account).first["id"]
     assert_equal pin, @account.visual_tags.palette_order.first
+  end
+
+  test "archiving clears the tag permanently and archived chats cannot be retagged" do
+    @chat.archive!
+    assert_nil @chat.reload.visual_tag
+    @chat.update!(visual_tag: @tag)
+    assert_nil @chat.reload.visual_tag
+    @chat.unarchive!
+    assert_nil @chat.reload.visual_tag
+    assert @tag.reload
   end
 
   test "any tag can keep its conversations on top; the Pin always does and cannot be switched off" do
@@ -260,6 +271,7 @@ class VisualTagTest < ActiveSupport::TestCase
   test "deleting a tag clears kept archived and discarded chats and refreshes caches" do
     archived = @account.chats.create!(title: "Archived", model_id: "openrouter/auto", visual_tag: @tag)
     archived.archive!
+    archived.update_column(:visual_tag_id, @tag.id) # Historical data predating archive cleanup.
     discarded = @account.chats.create!(title: "Deleted", model_id: "openrouter/auto", visual_tag: @tag)
     discarded.discard!
     @chat.cached_sidebar_json

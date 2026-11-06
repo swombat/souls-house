@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-06
+  title: Archiving clears conversation tags and reply flags
+  body: "Archived conversations no longer keep their visual tag or count towards the red-eye reply badges. Restoring a conversation does not restore its old tags or flags. Existing archived conversations are cleared after Rails deployment."
+- date: 2026-11-06
   title: The house film on the home page is narrated by Daniel
   body: "The film at the top of the home page now has Daniel's own voice in place of the synthetic one, with the captions re-timed to his reading. The pictures and the words are unchanged."
 - date: 2026-11-06

@@ -27,7 +27,7 @@ class ReplyExpectation < ApplicationRecord
 
   scope :visible_to, ->(user) {
     joins(message: :chat).where(user: user, messages: { discarded_at: nil },
-      chats: { discarded_at: nil, account_id: user.confirmed_accounts.select(:id) })
+      chats: { discarded_at: nil, archived_at: nil, account_id: user.confirmed_accounts.select(:id) })
   }
 
   after_commit -> { self.class.refresh_for(user_id) }
@@ -88,7 +88,7 @@ class ReplyExpectation < ApplicationRecord
     reply = message.chat.messages.kept.where(user: user, role: "user")
       .where("messages.id > ?", message.id).order(:id).first
     expectation.assign_attributes(score: score, classifier_version: classifier_version)
-    if cutoff && message.id <= cutoff
+    if message.chat.archived? || (cutoff && message.id <= cutoff)
       expectation.dismiss!
     elsif reply
       expectation.answer!(reply)

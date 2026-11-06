@@ -79,8 +79,8 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     @account.chats.create!(title: "Popular", model_id: "openrouter/auto", visual_tag: popular)
     @account.chats.create!(title: "Archived", model_id: "openrouter/auto", visual_tag: popular).archive!
     @account.chats.create!(title: "Deleted", model_id: "openrouter/auto", visual_tag: @tag).discard!
-    expected = [ popular.as_json.merge("conversation_count" => 2),
-      alpha.as_json.merge("conversation_count" => 1), @tag.as_json.merge("conversation_count" => 0) ]
+    expected = [ alpha.as_json.merge("conversation_count" => 1),
+      popular.as_json.merge("conversation_count" => 1), @tag.as_json.merge("conversation_count" => 0) ]
     headers = { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
 
     get account_interface_path(@account), headers: headers
