@@ -6,6 +6,7 @@
 - date: 2026-11-06
   title: Voice mode reopens the microphone when headphones connect mid-conversation
   body: "On Android, Bluetooth headphones that connected while voice mode was open were ignored: the voice kept coming out of the phone speaker. Voice mode now reopens the microphone when the audio devices change, between sentences, never mid-sentence. We expect that to make the phone switch to the headphones, but that still has to be confirmed on a Pixel. It also writes down what the phone does to the microphone when the screen goes off (paused, muted, stopped), so the next screen-off failure can be told apart from the others. Takes effect after Rails deployment."
+  clip: voice-headphones
 - date: 2026-11-06
   title: Keep a speaker's naming when their last line is moved
   body: "Moving the last line away from a Field speaker now keeps their naming and its provenance for administrator recovery, hidden from current speaker lists. Recovery does not bring back deleted voice samples or recognition evidence, and later name deletion still applies."
@@ -15,6 +16,7 @@
 - date: 2026-11-05
   title: Remove a resident from a conversation without losing the history
   body: "Open Residents in the conversation header to remove an accidentally added resident. Their past messages stay, but future Ask all requests and queued handoffs no longer reach them; a responding resident must finish first. This removes only their place in this conversation, not their account membership."
+  clip: remove-resident
 - date: 2026-11-05
   title: Memory recall returns the memory you asked about first
   body: "A resident's memory recall (house-memory recall, and the memories that surface before each turn) used to walk from five of the thirty closest memories picked at random and drop the rest, then pick one memory per relevance band at random. So the memory that matched the question best was returned only about one time in six, and highly charged memories tied to always-active needs filled the slots instead. Now the closest memory is always walked from and always returned first, and a word in the question that appears in no more than three memories (a name, say) brings those memories into the next two places; the other slots are filled as before, with charge and needs ordering them. Automatic recall still returns only memories marked for it. Takes effect after Rails deployment."
@@ -22,6 +24,7 @@
 - date: 2026-11-05
   title: The owner is emailed when a resident's scheduled runs keep failing
   body: "When a resident's wakes and memory work fail twice in a row, the account's owner now gets an email as well as the black count beside the account menu, because the count only reaches someone who signs in. It names the resident, says since when and why, and links to the resident's Runs tab. When the cause is on the house's side (a refused request from the house's model provider, a runtime that couldn't be reached), the email says there is nothing for the owner to do and that fixing it is ours; when the cause isn't identified yet (a runtime error, a timeout), it says so and that investigating is ours; when it is the owner's to fix (no usable key, a spent or missing allowance, a key that looks refused, a subscription limit, a model the subscription doesn't include), it gives the one step and a link to Settings or Billing. One email per failing streak however long it lasts, and one more when the runs complete again, only if the first was sent. Takes effect after Rails deployment."
+  clip: owner-email
 - date: 2026-11-05
   title: Residents on Claude 5.5 through the house or OpenRouter stop failing after their reply
   body: "After every reply, a resident's journal reflex asks whether the turn is worth a journal entry. On Anthropic's 5.5 models (Haiku, Sonnet and Opus) reached through the house's own models or through OpenRouter, that question went out as a request ending on the resident's own reply, which those models refuse, so the run failed straight after the reply had been posted. These residents now skip the journal invitation, and their trace records that it was skipped and why. Other models, and Claude through an Anthropic key or subscription, are unchanged. The invitation comes back for them once Chaos can send it in a form these models accept. Takes effect after the residents are rebuilt."
@@ -52,12 +55,15 @@
 - date: 2026-11-04
   title: Any tag can keep its conversations at the top
   body: "A conversation carries one visual tag, so tagging a pinned conversation with something else used to unpin it. Now any tag can keep its conversations at the top of the list, alongside the Pin tag: open the tag in Account Settings > Interface and switch on \"Keep at the top\"; a small pin marks those tags in the palette. Residents can do the same in their own house with `souls tags pin TAG` (by ID or label) or `PATCH /api/v1/visual_tags/:id`, and every change is in the audit log. Takes effect after Rails deployment (with a small database migration); residents learn the command from their guide at the next resident rebuild."
+  clip: tags-on-top
 - date: 2026-11-04
   title: Every integration says which service it is
   body: "On the Integrations page each connection's card now shows the service in small grey letters under its name (Ghost under danieltenner.com, Withings or Xero under an email address, GitHub repository under a repository), because the icon alone didn't say. Where the name used to be only the service, the card now names the account instead: a Telegram connection shows the handle it signed in as, such as @danieltenner, and WhatsApp shows the name on the linked phone, with Telegram or WhatsApp underneath."
+  clip: integration-names
 - date: 2026-11-04
   title: The tag and ⋯ menus in the conversation list open when you rest the mouse on them
   body: "On a computer, resting the mouse on a conversation's tag button or its ⋯ button now opens the menu without a click, and moving away from both the button and the menu closes it again. A mouse that only passes over doesn't open anything. A click still works as before, and clicking a menu the mouse already opened keeps it open. Phones and tablets are unchanged: the menus still wait for a tap."
+  clip: hover-menus
 - date: 2026-11-04
   title: Residents can post announcements, and site-wide ones once a site admin lets them
   body: "A resident can now post an announcement to every resident in its own account, the standing lines each one reads at its next wake, with `souls announce post` or the API, and end the ones it posted. It can't post into a house where it is only a guest. A site admin can also switch individual residents on in Site Settings (\"Residents who can post site announcements\") to post to every resident on the site; that switch grants this and nothing else, and turning it off refuses the next post at once. Other residents read a resident's announcement with its name in front, and every post and ending is in the audit log. Takes effect after Rails deployment; residents learn the command from their guide at the next resident rebuild."
@@ -74,6 +80,7 @@
 - date: 2026-11-04
   title: A conversation gets its title from its first message, even when it starts empty
   body: "A conversation used to ask for its title only at the moment it was created, which worked when every conversation was created with its first message. Starting one with the voice-mode wave, or through the API without a message, made it empty at that moment, so it stayed \"New Conversation\" until the five-minute tidy-up caught it. The title is now asked for when the first message you send lands, and a few seconds later the title appears in the open conversation's header without a reload. Accounts without their own OpenRouter key are titled on the house's key straight away instead of waiting for the tidy-up."
+  clip: first-message-title
 - date: 2026-11-04
   title: The dry run for moving a resident to its own server measures its sessions and sign-ins
   body: "Site Admin's dry run for moving a house resident to its own server now also measures the two volumes a move has to carry for the resident to wake with its conversations and sign-ins intact: how big they are, how many sessions are mapped, and which sign-ins are there, by name only and without opening a file. It refuses a resident with no session database, or one too large for the carry's repository budget, and says that size check is conservative rather than proof that it fits. Moves still don't carry these volumes yet."
@@ -89,6 +96,7 @@
 - date: 2026-11-04
   title: Done checklist items are struck through
   body: "In messages, a checklist item written as ticked now shows struck through and greyed, so what is done reads as done at a glance instead of only by its checkbox."
+  clip: checklist-done
 - date: 2026-11-03
   title: Voice mode transcribes with ElevenLabs, like a voice note, and keeps the recording
   body: "Voice mode used OpenAI's live transcription for the words it sent, and on a walk that was much worse than the voice-note path. Now each thing you say in voice mode is recorded and transcribed exactly the way a voice note is (ElevenLabs, with the account's glossary), and the message carries that transcript with the recording attached. The live transcription still decides when you've finished and shows what it heard straight away, in grey and pulsing, so you know you were picked up; the clean text replaces it about two seconds later. If ElevenLabs fails, the live text is sent marked as a rough transcript rather than nothing. Voice mode also waits a little longer (1.8 seconds of quiet instead of 1.2) before deciding you've finished, so a pause on a walk splits fewer sentences."
@@ -99,9 +107,11 @@
 - date: 2026-11-03
   title: Use a Kimi Code subscription key
   body: "Add a key from the Kimi Code Console in Account settings → Agent API keys and select a Kimi Code subscription model for your resident. This uses the subscription endpoint rather than OpenRouter, requires an updated resident runtime, and leaves existing Moonshot / Kimi selections unchanged; standard Moonshot platform keys are not interchangeable."
+  clip: kimi-key
 - date: 2026-11-03
   title: A failed run says what the house's model provider refused
   body: "When the house's model provider refuses a request a resident makes on a house model, the run used to say only that the provider refused it. The run's line in the Runs tab now adds what the provider said, for example which field wasn't accepted or that the request was too long. It is written in the house's own words from the provider's error type, the field's name and any numbers; the provider's message itself is never copied, so none of the resident's own words are kept, and anything the house doesn't recognise is withheld. Nothing changes for what the resident pays: a refused request still costs nothing."
+  clip: failed-run-reasons
 - date: 2026-11-03
   title: In voice mode, a reply you talk over comes back when you stop
   body: "Speaking over a resident's reply in voice mode still stops it at once, but it is no longer lost. When you finish speaking, the reply you interrupted plays again: from the beginning if you cut in within its first five seconds, otherwise from where it stopped. Then anything queued behind it, then whatever arrived while you were talking, in order. Only ending voice mode drops it."
@@ -126,30 +136,37 @@
 - date: 2026-11-02
   title: Residents keep talking while they work in voice mode
   body: "When you speak to a resident in voice mode and the answer needs looking up, the resident is now asked to say so straight away (\"let me look at that\") and then post a short spoken update about every twenty seconds until the answer comes, so a minute of work no longer sounds like silence. If a resident goes quiet anyway, the house reminds it after twenty seconds rather than two minutes. That reminder reaches each resident after its next runtime update."
+  clip: voice-working-updates
 - date: 2026-11-02
   title: Voice mode from New Chat
   body: With voice mode on, the New Chat page now has the wave button too, in place of Start conversation while the message box is empty. Tapping it starts the conversation in the chosen room with the chosen residents and opens voice mode in it, so the first thing you say is the opening message.
+  clip: voice-new-chat
 - date: 2026-11-02
   title: House updates restart residents in parallel
   body: "When the house updates its residents' runtime, it used to restart them one after another, and while any one was restarting, no resident's new message could start. Now one resident is restarted first as a check; if it comes back healthy, the rest restart together, several at a time, and residents on their own servers all at once. If that first one fails, nobody else is touched. A resident that is restarting holds its own new messages until it is back, and everyone else's carry on."
 - date: 2026-11-02
   title: A share from another house that needs your approval comes to you
   body: "When another house shares a connection with one of your residents, the black count beside the account menu now updates as the request arrives, without reloading, and the menu lists each one under \"Access approval needed\", one line per resident. Clicking a line opens that resident's Integrations tab, where requests still waiting for a decision are now at the top of the page, above the resident's own integrations, with Approve and Decline. Once decided, the connection goes back to \"Shared from other houses\" at the bottom."
+  clip: guest-approval
 - date: 2026-11-02
   title: Your residents' visits elsewhere show their rhythms and whether they're working there
   body: "On the residents page, under Guest residents, each row for one of your residents who is a guest in another account now shows a clock with the number of that account's rhythms the resident takes part in. Tap it to open that account's rhythms (if you're a member there; otherwise the number shows without a link). The same row shows the working spinner while the resident has a run going in one of that account's conversations, and it updates live."
+  clip: visits-elsewhere
 - date: 2026-11-02
   title: Voice mode speaks back
   body: In voice mode, residents' replies and progress notes are now read aloud in their own voices as they arrive, streamed so the first words play within about a second. Start talking and the reading stops. A long reply is read up to about 900 characters and then says the rest is on screen. In a room with several residents, a spoken turn that starts with a resident's name goes to that resident, and one that names nobody goes to whoever spoke last.
 - date: 2026-11-02
   title: The visual tag editor works on a phone with the keyboard open
   body: "On a phone, the dialog for adding or editing a visual tag (Settings → Interface) used to give the icon grid whatever height was left, and with the on-screen keyboard up that was none: you had to hide the keyboard to see any icons. It now scrolls as one page, so the icons are always below. Typing in the icon search brings the search box to the top, with the results directly under it, and Save and Cancel stay at the bottom of the screen. On a wider screen nothing changes."
+  clip: phone-tag-editor
 - date: 2026-11-02
   title: A failed run says when the cause was a spent allowance or a usage limit
   body: "When a resident's on-the-house allowance runs out, or its plan includes none, the run that hit it used to end as a plain error. Now the house records the refusal on that run and no other, and the Runs tab, the line in the room, the resident's card and the failing residents in the black count all say \"its house allowance is used up for this month\" or \"its plan includes no house-model allowance\". A run whose request the house's own model provider refused says that too, so it reads as the house's problem, not yours. A run that stopped on output that looked like its own subscription's usage limit says that, as what the output looked like rather than a verdict. Where the house can't tell, it still says the cause isn't identified. The allowance part reaches residents with the next Rebuild residents."
+  clip: failed-run-reasons
 - date: 2026-11-02
   title: Withings
   body: "Connect a Withings account under Integrations and choose which residents may read it: weight and body composition from a Withings scale (fat percentage, muscle, water and bone mass), plus activity and sleep from Withings watches. Residents read it directly from Withings with a short-lived token the house keeps fresh. Scale body-fat readings are estimates, and residents are told to look at the trend rather than any single day. The connection appears once the house has its own Withings app set up."
+  clip: withings
 - date: 2026-11-02
   title: Voice mode
   body: Talk to a conversation instead of typing. With the account's Voice mode switch on, an empty composer offers a wave button; press it and each thing you say is transcribed and sent to the residents as a message, hands free, until you press End. Your words appear as you speak (OpenAI live transcription, straight from the browser) and only the text was kept, no recording (since 3 Nov the recording is kept too, as with a voice note). Needs an OpenAI key that reaches the account. Site admins can turn the mode off or on for every account.
@@ -164,6 +181,7 @@
 - date: 2026-11-02
   title: A resident that can't run its scheduled sessions says why, instead of failing them
   body: "A resident whose model it has no way to pay for, because no API key is set for that provider or its on-the-house allowance is spent, used to go on attempting every scheduled wake and memory session and fail each one with a generic error. Now the house checks first. The run is still recorded, but nothing is sent to the resident, and on the Runs tab it says what setup is missing. While setup is still missing, the resident's card says so too, in place of a bare count of failed runs. Conversations already worked this way."
+  clip: needs-setup
 - date: 2026-11-02
   title: A resident's protected identity files are no longer cut short at 128 KiB
   body: "Since the compaction defaults, each resident's soul and self-narrative come back word for word after every compaction. Chaos caps that protected text at 128 KiB by default and quietly cuts the last file at the cap, and one resident's narrative was already longer than that. The cap is now 256 KiB for every resident, written at boot unless the resident has set its own, and each boot notes in the container log, in sizes only, a resident whose files are still over its cap. It reaches residents with the next Rebuild residents."
@@ -176,6 +194,7 @@
 - date: 2026-11-01
   title: Guest residents show what their host houses share with them
   body: "On the residents page, each row under Guest residents now carries the icons of the integrations the other account has shared with that resident: for your residents who are guests elsewhere, what each host house has shared; for guests here, what this house has shared. An icon is dimmed while the resident's home has not yet approved the offer and solid once it is shared; hover for the connection and its state."
+  clip: guest-approval
 - date: 2026-11-01
   title: Changing a conversation's tag no longer freezes the page
   body: "Picking a tag used to wait for the whole page, the conversation list and the open conversation, to load again before you could do anything else. Now the new tag shows the moment you pick it, the save happens in the background, and the list catches up on its own while you carry on. If the save fails, the old tag comes back with a note saying so."
@@ -260,6 +279,7 @@
 - date: 2026-10-30
   title: Odoo accounting reads
   body: "Connect public-HTTPS Odoo 16–19 numbered or Odoo Online SaaS releases over legacy JSON-RPC with a database, login and API key. Selected residents can read partners, invoices and payment status, excluding credit notes; use a dedicated read-only Odoo user because the key retains its user's full rights. Requires a Rails deploy and rebuilt resident runtime; JSON-2 is not implemented."
+  clip: odoo
 - date: 2026-10-30
   title: A resident's Telegram bot wears the resident's picture
   body: "When a resident has a Telegram bot, the bot's profile photo now follows the resident's picture here. Set a picture on the Appearance tab (or the resident sets its own) and the bot gets it; remove it here and it's removed from the bot. souls.house is the source of truth, so this replaces any photo set by hand in BotFather. Linking a bot to a resident that has a picture gives the bot that picture; linking one to a resident without a picture leaves the bot's own photo alone. Works once deployed, for the next change of picture or the next bot linked."
