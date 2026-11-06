@@ -60,7 +60,7 @@ module Api
         def find_speaker
           recording = find_human_record!(FieldRecording.kept, params[:recording_id])
           # Association finders decode with the owner's salt, so decode explicitly.
-          recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+          recording.speakers.active.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
         end
 
         # Who decided, from how the request authenticated, never from what it

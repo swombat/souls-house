@@ -136,7 +136,7 @@ module FieldVoiceprints::Identification
   end
 
   def undecided?(speaker)
-    speaker.decision_generation.zero? && !speaker.field_voice&.kept? && !speaker.ignored?
+    speaker.active? && speaker.decision_generation.zero? && !speaker.field_voice&.kept? && !speaker.ignored?
   end
 
   def embed(speaker, recording, client, profile)
@@ -160,7 +160,7 @@ module FieldVoiceprints::Identification
   # again is cheap once their probes are kept.
   def recordings_to_match(account)
     FieldRecording.kept.where(account:, status: "ready")
-      .where(id: FieldRecordingSpeaker.where(decision_generation: 0, field_voice_id: nil, ignored_at: nil).select(:field_recording_id))
+      .where(id: FieldRecordingSpeaker.active.where(decision_generation: 0, field_voice_id: nil, ignored_at: nil).select(:field_recording_id))
   end
 
 end

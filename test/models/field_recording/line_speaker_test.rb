@@ -45,15 +45,13 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
 
     @recording.reload
     assert_equal "speaker_2", new_speaker.label
-    assert_equal [ [ "speaker_0", 0 ], [ "speaker_2", 2 ] ], @recording.speakers.in_order.map { |s| [ s.label, s.position ] }
+    assert_equal [ [ "speaker_0", 0 ], [ "speaker_2", 2 ] ], @recording.speakers.active.in_order.map { |s| [ s.label, s.position ] }
     assert new_speaker.reload.unnamed?
     assert_equal 1000, new_speaker.talk_ms
     assert_includes @recording.transcript_text, "Speaker 3: reply"
   end
 
-  # Voice samples no longer hold a speaker back: one left with no lines goes,
-  # and its samples with it.
-  test "a speaker left with no lines goes, even one a voice sample was learned from" do
+  test "a speaker left with no lines retires and its voice samples are deleted" do
     voice = @account.field_voices.create!(name: "Tomás")
     FieldVoiceSample.create!(account: @account, field_voice: voice, field_recording_speaker: speaker("speaker_1"),
       field_recording_id: @recording.id, speech_ms: 1000, profile: "ecapa-test", label_origin: "human", eligible: true,
@@ -62,7 +60,7 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
     @recording.reassign_line!({ first: 2, last: 2 }, to: speaker("speaker_0"), was: "reply",
       revision: @recording.transcript_revision)
 
-    assert_nil @recording.reload.speakers.find_by(label: "speaker_1")
+    assert @recording.reload.speakers.find_by!(label: "speaker_1").retired?
     assert_equal 0, FieldVoiceSample.where(field_voice: voice).count
   end
 
@@ -128,7 +126,7 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
     recording.reassign_line!({ first: 1, last: 1 }, to: recording.speakers.find_by(label: "speaker_0"), was: "two",
       revision: recording.transcript_revision)
 
-    left = recording.reload.speakers.index_by(&:label)
+    left = recording.reload.speakers.active.index_by(&:label)
     assert_equal %w[speaker_0 speaker_2], left.keys.sort
     assert_nil left["speaker_0"].suggested_name
     assert_equal 1, left["speaker_0"].decision_generation
@@ -174,7 +172,7 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
 
     recording.reassign_line!({ index: 0 }, to: :new, was: "Hi Dad.", revision: recording.transcript_revision)
     recording.reload
-    assert_equal %w[Daniel speaker_0], recording.speakers.in_order.map(&:label)
+    assert_equal %w[Daniel speaker_0], recording.speakers.active.in_order.map(&:label)
     assert_match(/Speaker 3: Hi Dad\./, recording.transcript_text)
   end
 

@@ -56,7 +56,7 @@ module FieldRecordingSpeakerSampleReview
     FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording, voices:) do |_account, recording, locked|
       reload
       needed = [ field_voice_id, *voice_samples.pluck(:field_voice_id) ].compact.uniq
-      next false unless (needed - locked.map(&:id)).empty?
+      next false unless active? && (needed - locked.map(&:id)).empty?
 
       yield recording, locked
     end

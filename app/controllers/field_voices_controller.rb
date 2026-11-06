@@ -7,7 +7,7 @@ class FieldVoicesController < ApplicationController
 
   def index
     voices = current_account.field_voices.kept.includes(:user, :voiceprint).order(Arel.sql("lower(name)"))
-    used = FieldRecordingSpeaker.where(field_voice_id: voices.map(&:id)).group(:field_voice_id).count
+    used = FieldRecordingSpeaker.active.where(field_voice_id: voices.map(&:id)).group(:field_voice_id).count
     active_ids = FieldVoiceprints::Identification.active_prints(current_account).map(&:id)
     samples = FieldVoiceSample.where(field_voice_id: voices.map(&:id), removed_at: nil).includes(:field_recording_speaker).group_by(&:field_voice_id)
     render inertia: "field/voices", props: {

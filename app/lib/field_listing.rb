@@ -18,7 +18,7 @@ class FieldListing
       SELECT 1 FROM field_recording_speakers s
       LEFT JOIN field_voices v ON v.id = s.field_voice_id AND v.discarded_at IS NULL
       WHERE s.field_recording_id = field_recordings.id AND v.id IS NULL
-        AND s.ignored_at IS NULL
+        AND s.ignored_at IS NULL AND s.retired_at IS NULL
         AND (field_recordings.transcript_source <> 'supplied'
              OR s.label ~ '#{FieldRecordingSpeaker::GENERIC_LABEL_SQL}'))
   SQL

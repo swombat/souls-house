@@ -182,7 +182,7 @@ module Api
           to = if fields["speaker"] == "new"
             :new
           else
-            @recording.speakers.find_by(id: FieldRecordingSpeaker.decode_id(fields["speaker"]))
+            @recording.speakers.active.find_by(id: FieldRecordingSpeaker.decode_id(fields["speaker"]))
           end
           return render json: { error: "No such speaker in this recording." }, status: :unprocessable_entity unless to
 
@@ -323,7 +323,7 @@ module Api
             # One entry per person: diarized speakers a human linked to the
             # same voice are one speaker here, with the labels they were
             # heard as in diarized_as.
-            speakers: FieldRecordingSpeaker.grouped(recording.speakers.includes(:field_voice)).map do |group|
+            speakers: FieldRecordingSpeaker.grouped(recording.speakers.active.includes(:field_voice)).map do |group|
               talk = group.map(&:known_talk_ms)
               { label: group.first.default_name, name: group.first.display_name,
                 talk_ms: (talk.sum if talk.all?), diarized_as: group.map(&:default_name) }
@@ -348,7 +348,7 @@ module Api
             transcript_text: (recording.transcript_text if recording.ready?),
             words: recording.ready? ? recording.transcript_words : [],
             turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
-            speakers: recording.speakers.includes(:field_voice).map { |speaker| FieldItems.plain_speaker_json(speaker) },
+            speakers: recording.speakers.active.includes(:field_voice).map { |speaker| FieldItems.plain_speaker_json(speaker) },
             show_you_hint: show_you_hint?(recording)
           )
         end

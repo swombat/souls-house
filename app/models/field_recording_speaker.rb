@@ -48,13 +48,13 @@ class FieldRecordingSpeaker < ApplicationRecord
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze
   RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil,
-                         recognition_cohort: nil, recognition_checked: nil }.freeze
+                         recognition_cohort: nil, recognition_checked: nil, recognition_decision_generation: nil }.freeze
   NOT_IGNORED = { ignored_at: nil, ignored_by: nil }.freeze
 
   # Fields read by FieldItems.speaker_json (including the displayed decision
   # tokens). Bookkeeping such as decision_generation alone is not a refresh.
   PRESENTATION_FIELDS = %w[
-    label position field_voice_id naming_source auto_named_confidence ignored_at ignored_as
+    label position retired_at field_voice_id naming_source auto_named_confidence ignored_at ignored_as
     talk_ms clip_start_ms clip_end_ms
     suggested_name suggestion_quote suggestion_quote_ms suggestion_generation
     recognised_voice_id recognition_confidence recognition_print_generation recognition_decision_generation
@@ -68,6 +68,30 @@ class FieldRecordingSpeaker < ApplicationRecord
   validates :ignored_as, inclusion: { in: IGNORED_AS }
 
   scope :in_order, -> { order(:position) }
+  scope :active, -> { where(retired_at: nil) }
+  scope :retired, -> { where.not(retired_at: nil) }
+
+  def retired? = retired_at.present?
+  def active? = !retired?
+
+  # Administrative/model-only recovery. A zero-line speaker can be restored,
+  # but the next remeasurement retires it again unless a line was assigned.
+  # No samples, inference or listening receipts are restored or queued here.
+  def restore!
+    with_decision_locks do |recording|
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
+
+      reload
+      next self unless retired?
+
+      cap = recording.supplied? ? FieldRecording::SuppliedTranscript::MAX_SPEAKERS : FieldRecording::MAX_SPEAKERS
+      if recording.speakers.active.count >= cap
+        raise FieldRecording::LineCorrection::Invalid, "This recording already has #{cap} speakers."
+      end
+      update!(retired_at: nil, decision_generation: decision_generation + 1)
+      self
+    end
+  end
 
   after_save :touch_recording_for_presentation_changes
   after_destroy :touch_recording_for_presentation_changes
@@ -79,8 +103,8 @@ class FieldRecordingSpeaker < ApplicationRecord
   # (the Kelvin sign as K, long s as s) and PostgreSQL's ~* under a C locale
   # doesn't, and FieldListing's "Needs you" tab repeats this test in SQL as
   # GENERIC_LABEL_SQL. The two must agree.
-  GENERIC_LABEL = /\A[Ss][Pp][Ee][Aa][Kk][Ee][Rr][\s_-]*[A-Za-z0-9]{1,3}\z/
-  GENERIC_LABEL_SQL = "^[Ss][Pp][Ee][Aa][Kk][Ee][Rr][[:space:]_-]*[A-Za-z0-9]{1,3}$"
+  GENERIC_LABEL = /\A[Ss][Pp][Ee][Aa][Kk][Ee][Rr][\s_-]*([A-Za-z0-9]{1,3}|[0-9]+)\z/
+  GENERIC_LABEL_SQL = "^[Ss][Pp][Ee][Aa][Kk][Ee][Rr][[:space:]_-]*([A-Za-z0-9]{1,3}|[0-9]+)$"
 
   def default_name
     return label if field_recording.supplied? && !label.match?(GENERIC_LABEL)
@@ -97,7 +121,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   # A label a voice print may learn from: a person's decision, or an
   # automatic naming whose sample a person still has to accept. Fails closed
   # on anything else.
-  def training_label? = field_voice&.kept? == true && TRAINING_SOURCES.include?(naming_source)
+  def training_label? = active? && field_voice&.kept? == true && TRAINING_SOURCES.include?(naming_source)
 
   # Named by a clear voice match, nobody having tapped. Shown as such, with
   # the match score it was named on, until a person un-names or renames it.
@@ -124,6 +148,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   # transcript, and not set aside as noise. A pending suggestion doesn't count
   # until someone confirms it.
   def unnamed?
+    return false if retired?
     return false if field_voice&.kept?
     return false if ignored?
 
@@ -157,6 +182,8 @@ class FieldRecordingSpeaker < ApplicationRecord
       raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready? && target&.kept?
 
       reload
+      raise ActiveRecord::RecordNotFound if retired?
+
       update!(field_voice: target, naming_source: source, named_by: by, named_at: Time.current,
         auto_named_confidence: confidence, sample_excluded: field_voice_id == target.id ? sample_excluded? : false,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED, **NO_PROBE)
@@ -179,7 +206,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     end
   end
 
-  def suggestion? = suggested_name.present? && !field_voice&.kept? && !ignored?
+  def suggestion? = active? && suggested_name.present? && !field_voice&.kept? && !ignored?
 
   # The chip the person saw is still the live suggestion: same generation, no
   # decision since, still unnamed. Checked under the recording lock.
@@ -198,7 +225,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     end
   end
 
-  def recognition? = recognised_voice_id.present? && !field_voice&.kept? && !ignored? && recognised_voice&.kept?
+  def recognition? = active? && recognised_voice_id.present? && !field_voice&.kept? && !ignored? && recognised_voice&.kept?
 
   # The guess a chip showed: which voice, from which print, against which
   # decision generation. Confirm and dismiss must send it back unchanged.
@@ -251,7 +278,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     FieldVoiceprints::Locks.with(account: recording.account, recording:, voices:) do |account, locked_recording, locked|
       reload
       live_voice = locked.find { |candidate| candidate.id == voice&.id }
-      current = locked_recording.kept? && locked_recording.ready? && live_voice && !field_voice&.kept? &&
+      current = active? && locked_recording.kept? && locked_recording.ready? && live_voice && !field_voice&.kept? &&
         recognised_voice_id == live_voice.id &&
         recognition_print_generation.to_s == shown[:print_generation].to_s &&
         recognition_decision_generation.to_s == shown[:decision_generation].to_s &&
@@ -272,7 +299,7 @@ class FieldRecordingSpeaker < ApplicationRecord
 
       reload
       update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil, auto_named_confidence: nil,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NOT_IGNORED, **NO_PROBE)
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED, **NO_PROBE)
       FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)
       recording.schedule_summary_refresh if recording.saved_change_to_transcript_text?
@@ -322,7 +349,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     # Counts read the links themselves; picker ordering reads max(named_at).
     # Resolve ownership now, including the old voice, before deletion can
     # remove it. Do not couple roster reloads to other speaker/detail traffic.
-    if destroyed? || saved_change_to_field_voice_id? || saved_change_to_named_at?
+    if destroyed? || saved_change_to_retired_at? || saved_change_to_field_voice_id? || saved_change_to_named_at?
       voice_ids = destroyed? ? [ field_voice_id ] : [ field_voice_id, field_voice_id_before_last_save ]
       FieldVoiceActivity.refresh!(FieldVoice.where(id: voice_ids).distinct.pluck(:account_id))
     end

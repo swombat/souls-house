@@ -114,7 +114,7 @@ module FieldRecording::Transcription
   end
 
   def render_transcript_text
-    list = speakers.includes(:field_voice).to_a
+    list = speakers.active.includes(:field_voice).to_a
     names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
     if supplied?
       FieldRecording::SuppliedTranscript.render(transcript_turns || [], names)
@@ -127,7 +127,7 @@ module FieldRecording::Transcription
   # [{clock:, speaker:, text:}], speaker nil where none was given. For the
   # shared page, which must never guess a speaker from the text.
   def transcript_display_lines
-    list = speakers.includes(:field_voice).to_a
+    list = speakers.active.includes(:field_voice).to_a
     names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
     if supplied?
       FieldRecording::SuppliedTranscript.lines(transcript_turns || [], names)

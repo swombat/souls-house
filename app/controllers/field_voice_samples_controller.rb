@@ -140,7 +140,7 @@ class FieldVoiceSamplesController < ApplicationController
   end
 
   def kept_speakers
-    @voice.speakers.joins(:field_recording).merge(FieldRecording.kept)
+    @voice.speakers.active.joins(:field_recording).merge(FieldRecording.kept)
   end
 
   def sampled_speaker_ids

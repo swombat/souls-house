@@ -69,7 +69,7 @@ class FieldRecordingSpeakersController < ApplicationController
   def set_speaker
     recording = current_account.field_recordings.kept.find(params[:field_recording_id])
     # Association finders decode with the owner's salt, so decode explicitly.
-    @speaker = recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+    @speaker = recording.speakers.active.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
   end
 
   STALE_GROUP = "This person changed since the page loaded. Please look again."
@@ -96,7 +96,7 @@ class FieldRecordingSpeakersController < ApplicationController
       @speaker.reload
       next @stale_group = true unless @speaker.field_voice_id == shown_voice_id
 
-      yield recording.speakers.where(id: ids, field_voice_id: shown_voice_id).where.not(id: @speaker.id).order(:id).to_a
+      yield recording.speakers.active.where(id: ids, field_voice_id: shown_voice_id).where.not(id: @speaker.id).order(:id).to_a
     end
   end
 
