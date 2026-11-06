@@ -5,6 +5,8 @@ import { createTranscriber } from '$lib/voice-mode-realtime';
 import { holdForRecording } from '$lib/recording-guard';
 import { micErrorMessage } from '$lib/mic-recorder';
 import { postVoiceMessage, requestVoiceSession } from '$lib/voice-mode-api';
+import { createVoiceTrace } from '$lib/voice-mode-trace';
+import { watchDevices } from '$lib/voice-mode-devices';
 import { createEngineReader } from '$lib/voice-mode-reader';
 import { createTurnRecorder, turnContent } from '$lib/voice-mode-turn-audio';
 import { resolveTurn, startCleanTurn } from '$lib/voice-mode-turn-flow';
@@ -84,6 +86,10 @@ export function createVoiceModeSession(props) {
   held = queueOfHeld.list();
   const wakeLock = createWakeLock();
   let stopWatching = null;
+  let stopDevices = null;
+  const trace = createVoiceTrace();
+  // Audio devices changed mid-turn: reopen the mic once the turn closes.
+  let rerouteWanted = false;
 
   // The handlers the microphone feeds; kept so a reopened mic gets the same.
   const captureHandlers = {
@@ -111,8 +117,10 @@ export function createVoiceModeSession(props) {
       transcriber?.discard();
       caption = '';
       if (phase === 'hearing') phase = 'listening';
+      if (rerouteWanted) reroute();
     },
     onturn: (durationMs) => {
+      trace.note(`turn:${(durationMs / 1000).toFixed(1)}s`);
       reader.committed(props.messages || []);
       // The caption as shown: if the transcriber's final answer is lost with
       // the connection, these are still the person's words (jNwAdJ YVvdnw).
@@ -132,9 +140,14 @@ export function createVoiceModeSession(props) {
         transcript = Promise.reject(error);
       }
       enqueue(transcript, durationMs, clean, { caption: shown, samples, clientMessageId: newTurnIdentity() });
+      if (rerouteWanted) reroute();
     },
-    oninterrupt: (reason) => pause(reason === 'ended' ? 'hidden' : reason),
+    oninterrupt: (reason) => {
+      trace.note(`int:${reason}`);
+      pause(reason === 'ended' ? 'hidden' : reason);
+    },
     onrestore: () => {
+      trace.note('restore');
       if (paused && pageVisible()) resume();
     },
   };
@@ -172,14 +185,18 @@ export function createVoiceModeSession(props) {
       wakeLock.acquire();
       stopWatching = watchPage({
         onvisible: () => {
+          trace.note('visible');
           wakeLock.reacquire();
           if (paused || stale || (capture && !capture.running)) resume();
           else retryHeld();
         },
         // Hidden alone is not a pause: Chrome on Android may keep a hidden
         // page's microphone running. The watchdog pauses once samples stop.
-        onhidden: () => {},
-        onpagehide: () => pause('hidden'),
+        onhidden: () => trace.note('hidden'),
+        onpagehide: () => {
+          trace.note('pagehide');
+          pause('hidden');
+        },
         ononline: () => retryHeld(),
       });
       // Samples stop when the browser suspends the page (a locked phone, a
@@ -190,9 +207,17 @@ export function createVoiceModeSession(props) {
         if (muted || paused || phase === 'failed' || phase === 'starting') return;
         stale = performance.now() - lastSampleAt > STALE_MS;
         if (!stale) return;
+        trace.note(pageVisible() ? 'stale:visible' : 'stale:hidden');
         if (!pageVisible()) pause('hidden');
         else capture?.resume();
       }, 1000);
+      stopDevices = watchDevices({
+        onchange: () => {
+          trace.note('devices');
+          rerouteWanted = true;
+          if (phase !== 'hearing') reroute();
+        },
+      });
       // Turns held from before a reload of this tab: try them once.
       if (queueOfHeld.size) retryHeld();
     } catch (error) {
@@ -210,6 +235,7 @@ export function createVoiceModeSession(props) {
     reader.close();
     clearInterval(watchdog);
     stopWatching?.();
+    stopDevices?.();
     wakeLock.release();
     capture?.stop();
     transcriber?.close();
@@ -218,7 +244,7 @@ export function createVoiceModeSession(props) {
 
   // A fresh short-lived secret for each (re)connection.
   async function fetchSession() {
-    const { ok, status, data } = await requestVoiceSession(props.accountId, props.chatId);
+    const { ok, status, data } = await requestVoiceSession(props.accountId, props.chatId, { trace: trace.take() });
     if (!ok) {
       const message = data?.error || 'Transcription could not start.';
       if (status === 403) {
@@ -423,6 +449,7 @@ export function createVoiceModeSession(props) {
   // the page to come back.
   function pause(reason) {
     if (ended || paused || !capture) return;
+    trace.note(`pause:${reason}`);
     paused = reason;
     try {
       capture.flush();
@@ -440,7 +467,8 @@ export function createVoiceModeSession(props) {
     resuming = (async () => {
       try {
         if (stale && !paused) pause('hidden');
-        if (capture && !capture.alive) {
+        if (capture && (!capture.alive || rerouteWanted)) {
+          rerouteWanted = false;
           const old = capture;
           capture = null;
           await old.stop().catch(() => {});
@@ -458,6 +486,35 @@ export function createVoiceModeSession(props) {
         stale = false;
         lastSampleAt = performance.now();
         retryHeld();
+      } catch (error) {
+        note = `The microphone could not be reopened: ${micErrorMessage(error)}`;
+      } finally {
+        resuming = null;
+      }
+    })();
+    return resuming;
+  }
+
+  // The audio devices changed (a headset joined or left): reopen the mic so
+  // the phone picks its route again (voice-mode-devices.js). Between turns
+  // only; a paused panel reopens on resume anyway.
+  function reroute() {
+    if (ended || !capture) return null;
+    // Paused or already reopening: resume reopens the mic while this is set.
+    if (paused || resuming) return resuming;
+    rerouteWanted = false;
+    resuming = (async () => {
+      try {
+        const old = capture;
+        capture = null;
+        await old.stop().catch(() => {});
+        capture = await startCapture(captureHandlers);
+        if (ended) {
+          await capture.stop();
+          return;
+        }
+        if (muted) capture.mute(true);
+        lastSampleAt = performance.now();
       } catch (error) {
         note = `The microphone could not be reopened: ${micErrorMessage(error)}`;
       } finally {
@@ -496,6 +553,7 @@ export function createVoiceModeSession(props) {
     reader.close();
     clearInterval(watchdog);
     stopWatching?.();
+    stopDevices?.();
     wakeLock.release();
     const open = capture;
     capture = null;

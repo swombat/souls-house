@@ -4,11 +4,14 @@ import { accountChatMessagesPath, accountChatVoiceModeSessionPath } from '@/rout
 const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
 
 // A fresh short-lived transcription secret. Resolves { ok, status, data };
-// throws only when the house cannot be reached.
-export async function requestVoiceSession(accountId, chatId) {
+// throws only when the house cannot be reached. `trace` is the panel's line of
+// what the phone did to the microphone since the last request
+// (voice-mode-trace.js); it rides in the query string so the web log shows it.
+export async function requestVoiceSession(accountId, chatId, { trace = '' } = {}) {
   let response;
+  const path = accountChatVoiceModeSessionPath(accountId, chatId);
   try {
-    response = await fetch(accountChatVoiceModeSessionPath(accountId, chatId), {
+    response = await fetch(trace ? `${path}?trace=${encodeURIComponent(trace)}` : path, {
       method: 'POST',
       headers: { Accept: 'application/json', 'X-CSRF-Token': csrf() },
       credentials: 'same-origin',
