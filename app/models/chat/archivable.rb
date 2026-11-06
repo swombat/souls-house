@@ -6,10 +6,14 @@ module Chat::Archivable
     scope :kept, -> { undiscarded }
     scope :archived, -> { where.not(archived_at: nil) }
     scope :active, -> { where(archived_at: nil) }
+    before_validation -> { self.visual_tag = nil if archived? }
   end
 
   def archive!
-    update!(archived_at: Time.current)
+    with_lock do
+      update!(archived_at: Time.current, visual_tag: nil)
+      ReplyExpectation.joins(:message).state_open.where(messages: { chat_id: id }).find_each(&:dismiss!)
+    end
   end
 
   def unarchive!

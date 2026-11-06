@@ -108,7 +108,7 @@ class Chat < ApplicationRecord
   # The title is asked for when the first person's message lands
   # (Message::TitleRequest), not here: a chat can be born empty.
   # A room move changes which room's "waiting on you" count a flag belongs to.
-  after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? }
+  after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? || saved_change_to_archived_at? }
   # ...and which room a working resident's spinner turns in. A rhythm run's
   # update may also be a listing change (a person's reply, or one discarded,
   # touches it; Chat::QuietRhythmRun), and only listed conversations spin.
