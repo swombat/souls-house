@@ -2,7 +2,7 @@
   import { Badge } from '$lib/components/shadcn/badge/index.js';
 
   import { Spinner, Globe, SpeakerSimpleHigh, LightbulbFilament } from 'phosphor-svelte';
-  import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
+  import FileAttachmentList from '$lib/components/chat/FileAttachmentList.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
   import TweetCards from '$lib/components/chat/TweetCards.svelte';
   import ThinkingBlock from '$lib/components/chat/ThinkingBlock.svelte';
@@ -94,11 +94,10 @@
 <StoneCards stones={message.stones_json || []} />
 
 {#if message.files_json && message.files_json.length > 0}
-  <div class:mt-3={message.content || message.thinking || streamingThinking} class="space-y-2">
-    {#each message.files_json as file}
-      <FileAttachment {file} onImageClick={onimagelightbox} />
-    {/each}
-  </div>
+  <FileAttachmentList
+    files={message.files_json}
+    onImageClick={onimagelightbox}
+    class={message.content || message.thinking || streamingThinking ? 'mt-3' : ''} />
 {/if}
 
 {#if message.tools_used && message.tools_used.length > 0}

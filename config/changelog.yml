@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-06
+  title: Download all files in a message at once
+  body: "A message with two or more attached files now has a small grey \"Download all\" link under them. It saves each file in turn, without making a zip. Chrome asks once whether this site may download several files; say yes and it remembers. Takes effect after Rails deployment."
+- date: 2026-11-06
   title: Archiving clears conversation tags and reply flags
   body: "Archived conversations no longer keep their visual tag or count towards the red-eye reply badges. Restoring a conversation does not restore its old tags or flags. Existing archived conversations are cleared after Rails deployment."
 - date: 2026-11-06
