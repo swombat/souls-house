@@ -3,7 +3,7 @@
 
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { PencilSimple, Trash } from 'phosphor-svelte';
-  import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
+  import FileAttachmentList from '$lib/components/chat/FileAttachmentList.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
   import TweetCards from '$lib/components/chat/TweetCards.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
@@ -92,11 +92,7 @@
               <ReplyAttentionEye {accountId} {chatId} messageId={message.id} />
               <StoneCards stones={message.stones_json || []} />
               {#if message.files_json && message.files_json.length > 0}
-                <div class="space-y-2 mb-3">
-                  {#each message.files_json as file}
-                    <FileAttachment {file} onImageClick={onimagelightbox} />
-                  {/each}
-                </div>
+                <FileAttachmentList files={message.files_json} onImageClick={onimagelightbox} class="mb-3" />
               {/if}
               <Streamdown
                 content={message.content}
