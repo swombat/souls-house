@@ -26,9 +26,11 @@
       <section class="space-y-3 rounded-lg border bg-muted/30 p-4" data-testid="whatsapp-link-done">
         <p class="text-sm font-medium">Linked{connection.identity ? ` as ${connection.identity}` : ''}.</p>
         <p class="text-sm text-muted-foreground">
-          Chats start syncing now. Choose which residents can read them on the Integrations page.
+          Chats start syncing now. Next, choose which residents can read them.
         </p>
-        <Button href={integrations_url} size="sm">Back to Integrations</Button>
+        <Button href={`/accounts/${account.id}/service_connections/${connection.id}/access`} size="sm">
+          Choose residents
+        </Button>
       </section>
     {:else if linking}
       <ConnectionWhatsappPairing {connection} {account} />

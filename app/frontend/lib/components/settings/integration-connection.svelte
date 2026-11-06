@@ -52,7 +52,10 @@
 </script>
 
 <article
-  class="overflow-hidden rounded-xl border bg-card shadow-sm"
+  class={`overflow-hidden rounded-xl border shadow-sm ${
+    summary.unshared ? 'border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40' : 'bg-card'
+  }`}
+  data-unshared={summary.unshared ? 'true' : undefined}
   data-provider={connection.provider}
   data-status={connection.status}>
   <div class="relative flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
@@ -92,7 +95,13 @@
           </span>
         {/if}
         <span
-          class={`inline-flex min-w-0 items-center gap-1.5 ${summary.none ? 'italic text-muted-foreground/80' : 'text-muted-foreground'}`}
+          class={`inline-flex min-w-0 items-center gap-1.5 ${
+            summary.unshared
+              ? 'font-medium text-red-700 dark:text-red-300'
+              : summary.none
+                ? 'italic text-muted-foreground/80'
+                : 'text-muted-foreground'
+          }`}
           data-testid="connection-access-summary">
           <UsersThree size={16} class="shrink-0" />
           <span class="break-words">{summary.text}</span>

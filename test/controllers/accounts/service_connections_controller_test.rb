@@ -56,7 +56,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     assert_equal [ "dad/first-site", "dad/second-site" ], connections.pluck(:label)
     assert_equal "github_pat_first", connections.first.credential_payload_hash["token"]
     assert_equal "github_pat_second", connections.second.credential_payload_hash["token"]
-    assert_redirected_to account_integrations_path(@account)
+    assert_redirected_to account_service_connection_access_path(@account, connections.second.public_id)
   end
 
   test "does not accept GitHub repository credentials as account managed" do
@@ -81,7 +81,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
         credentials: { auth_key: "tskey-auth-kTest-secret", token: "not-a-tailscale-field" }
       }
     end
-    assert_redirected_to account_integrations_path(@account)
+    assert_redirected_to account_service_connection_access_path(@account, ServiceConnection.where(provider: "tailscale").sole.public_id)
 
     connection = @account.service_connections.find_by!(provider: "tailscale")
     assert_equal({}, connection.credential_payload_hash, "the form has no fields, so nothing pasted is stored")
@@ -95,7 +95,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
 
   test "connects Tailscale without any credentials param at all, once per account" do
     post account_service_connections_path(@account), params: { provider: "tailscale", management_scope: "personal" }
-    assert_redirected_to account_integrations_path(@account)
+    assert_redirected_to account_service_connection_access_path(@account, ServiceConnection.where(provider: "tailscale").sole.public_id)
     assert_equal 1, @account.service_connections.where(provider: "tailscale").count
 
     assert_no_difference "ServiceConnection.count" do

@@ -312,6 +312,8 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     connection = @account.service_connections.find_by!(provider: "oura")
+    # A new connection nobody can use yet lands on choosing residents (YgDZGe).
+    assert_redirected_to account_service_connection_access_path(@account, connection.public_id)
     assert_equal "oura-refresh", connection.credential_payload_hash["refresh_token"]
     assert_nil @user.oura_integration
   end

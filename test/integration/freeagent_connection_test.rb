@@ -34,9 +34,9 @@ class FreeagentConnectionTest < ActionDispatch::IntegrationTest
         get service_authorization_callback_path, params: { state: query.fetch("state"), code: "approved-code" }
       end
     end
-    assert_redirected_to account_integrations_path(@account)
     assert attempt.reload.consumed_at.present?
     connection = @account.service_connections.find_by!(provider: "freeagent")
+    assert_redirected_to account_service_connection_access_path(@account, connection.public_id)
     assert_equal "connected", connection.status
     assert_equal "refresh_broker", connection.credential_strategy
     assert_includes connection.external_identity, "Example Ltd"

@@ -171,6 +171,8 @@ Rails.application.routes.draw do
     resource :room_model_default, only: :update, module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
+      # Where a new connection lands: choose which residents can use it.
+      resource :access, only: :show, controller: "service_connection_accesses"
       resource :pairing, only: :show, controller: "service_connection_pairings" do
         get :link
         post :restart

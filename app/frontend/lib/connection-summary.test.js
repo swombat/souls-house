@@ -18,8 +18,11 @@ describe('accessSummary', () => {
     expect(accessSummary({ residents: [resident('Lume', false)] })).toEqual({
       text: 'No residents have access',
       none: true,
+      unshared: true,
     });
     expect(accessSummary({ residents: [] }).none).toBe(true);
+    // An account with no residents yet has nobody to switch on: not red.
+    expect(accessSummary({ residents: [] }).unshared).toBeUndefined();
   });
 });
 

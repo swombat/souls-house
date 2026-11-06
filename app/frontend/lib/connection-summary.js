@@ -47,7 +47,8 @@ export function accessSummary(connection) {
   const residents = connection.residents || [];
   if (residents.length === 0) return { text: 'No residents in this account yet', none: true };
   const enabled = residents.filter(residentHasAccess);
-  if (enabled.length === 0) return { text: 'No residents have access', none: true };
+  // Connected but nobody can use it yet: the card shows this in red (YgDZGe).
+  if (enabled.length === 0) return { text: 'No residents have access', none: true, unshared: true };
   if (enabled.length <= MAX_NAMES) return { text: enabled.map((resident) => resident.name).join(', '), none: false };
   return { text: `${enabled.length} of ${residents.length} residents`, none: false };
 }

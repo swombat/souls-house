@@ -1,5 +1,7 @@
 class Accounts::ServiceConnectionsController < ApplicationController
 
+  include IntegrationConnectionProps
+
   before_action :set_connection, only: [ :update, :destroy ]
 
   def create
@@ -31,7 +33,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
       return redirect_to link_account_service_connection_pairing_path(current_account, connection.public_id)
     end
 
-    redirect_to account_integrations_path(current_account),
+    redirect_to after_connect_path(connection, account_integrations_path(current_account)),
                 notice: connection.status == "pairing" ? "Scan the pairing code to link #{definition.name}" : "#{definition.name} connected"
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, ArgumentError, ActiveRecord::RecordInvalid => e
     redirect_back_or_to account_integrations_path(current_account), alert: e.message

@@ -43,9 +43,9 @@ describe('the focused WhatsApp pairing page', () => {
       integrations_url: '/accounts/house/integrations',
     });
     expect(screen.getByTestId('whatsapp-link-done')).toHaveTextContent('Linked as +34 600 000 000.');
-    expect(screen.getByRole('link', { name: 'Back to Integrations' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choose residents' })).toHaveAttribute(
       'href',
-      '/accounts/house/integrations'
+      `/accounts/${account.id}/service_connections/svc_9/access`
     );
     expect(screen.queryByTestId('whatsapp-pairing')).not.toBeInTheDocument();
     expect(globalThis.fetch).not.toHaveBeenCalled();
