@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-06
+  title: Voice mode reopens the microphone when headphones connect mid-conversation
+  body: "On Android, Bluetooth headphones that connected while voice mode was open were ignored: the voice kept coming out of the phone speaker. Voice mode now reopens the microphone when the audio devices change, between sentences, never mid-sentence. We expect that to make the phone switch to the headphones, but that still has to be confirmed on a Pixel. It also writes down what the phone does to the microphone when the screen goes off (paused, muted, stopped), so the next screen-off failure can be told apart from the others. Takes effect after Rails deployment."
+- date: 2026-11-06
   title: Keep a speaker's naming when their last line is moved
   body: "Moving the last line away from a Field speaker now keeps their naming and its provenance for administrator recovery, hidden from current speaker lists. Recovery does not bring back deleted voice samples or recognition evidence, and later name deletion still applies."
 - date: 2026-11-05

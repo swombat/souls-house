@@ -248,7 +248,8 @@ export function stripReleasePhrase(text) {
 //
 // paused: why the browser stopped the microphone ('hidden' when the screen went
 // off or the page went to the back, 'muted' when the system took the mic,
-// 'suspended' when the audio engine stopped). It outranks every phase but the
+// 'suspended' when the audio engine stopped, 'reopen' when reopening it after a
+// device change failed). It outranks every phase but the
 // first two: nothing is being heard, whatever the phase says.
 // Idle (nothing being heard, nothing being read): not "Listening", which
 // sounds like recording and like the person's turn is still open. It says the
@@ -258,6 +259,7 @@ export const PAUSED_STATUS = {
   hidden: 'Paused: the screen went off. Open the page again to carry on.',
   muted: 'Paused: the system took the microphone. It resumes when it gives it back.',
   suspended: 'Paused: the browser stopped the audio. Open the page again to carry on.',
+  reopen: 'Paused: the microphone could not be reopened. Open the page again to carry on.',
 };
 
 export function voiceModeStatus({ phase, muted, note, speaking, paused = null }) {
