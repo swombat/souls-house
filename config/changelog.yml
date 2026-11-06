@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-06
+  title: Unlinked Telegram chats get linking instructions instead of silence
+  body: "People messaging a resident before linking their Telegram chat now receive linking instructions, at most once per chat every 24 hours. Telegram settings show a cumulative arrival count and latest arrival time without keeping message contents or granting access; previously dropped messages cannot be recovered. Takes effect after Rails deployment."
+- date: 2026-11-06
   title: Keep a speaker's naming when their last line is moved
   body: "Moving the last line away from a Field speaker now keeps their naming and its provenance for administrator recovery, hidden from current speaker lists. Recovery does not bring back deleted voice samples or recognition evidence, and later name deletion still applies."
 - date: 2026-11-05
