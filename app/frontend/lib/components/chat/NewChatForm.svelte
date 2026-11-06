@@ -38,7 +38,7 @@
   let title = $state(restored.title);
   let sidebarOpen = $state(false);
   // A new conversation starts in the room being viewed; from All chats, Main.
-  let roomId = $state($page.props.current_room === 'all' ? 'main' : $page.props.current_room || 'main');
+  const roomId = $derived($page.props.current_room === 'all' ? 'main' : $page.props.current_room || 'main');
   let textareaRef = $state(null);
   const placeholder =
     Math.random() < 0.1
@@ -170,7 +170,7 @@
         }
         onMenuOpen={() => (sidebarOpen = true)}>
         {#snippet actions()}
-          <NewChatRoomPicker bind:roomId />
+          <NewChatRoomPicker accountId={account.id} />
         {/snippet}
       </NewChatHeader>
       <GroupChatAgentPicker
