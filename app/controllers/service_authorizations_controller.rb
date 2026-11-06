@@ -1,5 +1,7 @@
 class ServiceAuthorizationsController < ApplicationController
 
+  include IntegrationConnectionProps
+
   skip_before_action :set_current_account, only: :callback
 
   def create
@@ -55,13 +57,15 @@ class ServiceAuthorizationsController < ApplicationController
       redirect_uri: service_authorization_callback_url
     )
 
+    reauthorizing = attempt.service_connection.present?
     connection = persist_connection!(attempt, result)
     attempt.consume!
     audit(:connect_service, connection,
           provider: connection.provider,
           management_scope: connection.management_scope,
           granted_scopes: connection.granted_scopes)
-    redirect_to attempt.return_path, notice: "#{attempt.definition.name} connected"
+    destination = reauthorizing ? attempt.return_path : after_connect_path(connection, attempt.return_path)
+    redirect_to destination, notice: "#{attempt.definition.name} connected"
   rescue ActiveRecord::RecordNotFound, ActionController::ParameterMissing
     redirect_to root_path, alert: "Invalid or expired authorization"
   rescue Services::AdapterError => e

@@ -35,7 +35,7 @@ describe('the focused Telegram sign-in page', () => {
     );
   });
 
-  it('ends with Connected and a way back to Integrations', () => {
+  it('ends with Connected and the step to choose residents', () => {
     globalThis.fetch = vi.fn();
     render(TelegramSignIn, {
       account,
@@ -43,9 +43,9 @@ describe('the focused Telegram sign-in page', () => {
       integrations_url: '/accounts/house/integrations',
     });
     expect(screen.getByTestId('telegram-sign-in-done')).toHaveTextContent('Connected as Daniel (@daniel).');
-    expect(screen.getByRole('link', { name: 'Back to Integrations' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choose residents' })).toHaveAttribute(
       'href',
-      '/accounts/house/integrations'
+      `/accounts/${account.id}/service_connections/svc_9/access`
     );
     expect(screen.queryByTestId('telegram-login')).not.toBeInTheDocument();
     expect(globalThis.fetch).not.toHaveBeenCalled();

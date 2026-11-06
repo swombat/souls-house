@@ -500,7 +500,7 @@ test('on a phone, the pairing opens on its own page, number first, and ends link
     });
     expect(linked.status()).toBe(200);
     await expect(page.getByTestId('whatsapp-link-done')).toContainText('Linked');
-    await expect(page.getByRole('link', { name: 'Back to Integrations' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Choose residents' })).toBeVisible();
     await expect(page.getByTestId('whatsapp-pairing')).toHaveCount(0);
   } finally {
     await context.close();
