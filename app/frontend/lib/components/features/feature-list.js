@@ -197,6 +197,13 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'speaker-naming-recovery',
+    title: 'Recover a retired speaker naming',
+    description:
+      'Moving a Field speaker’s last line keeps their naming and provenance hidden for explicit administrator recovery. Recovery never restores voice samples or recognition evidence, and later name deletion still clears the retained naming. Recovery is an operator procedure, not a picker or endpoint.',
+    icon: ArrowsClockwise,
+  },
+  {
     key: 'message-recovery',
     title: 'Recover a discarded message',
     description:

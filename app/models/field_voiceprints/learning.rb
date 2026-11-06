@@ -242,7 +242,7 @@ module FieldVoiceprints::Learning
   # Learning from every eligible naming in an account whose sample is
   # missing (field:learn_voices, "Remember again", after a restore).
   def queue_account!(account, voice: nil)
-    scope = FieldRecordingSpeaker.joins(:field_recording).merge(FieldRecording.kept)
+    scope = FieldRecordingSpeaker.active.joins(:field_recording).merge(FieldRecording.kept)
       .where(field_recordings: { account_id: account.id }, naming_source: FieldRecordingSpeaker::TRAINING_SOURCES)
       .where.not(field_voice_id: nil)
     scope = scope.where(field_voice_id: voice.id) if voice

@@ -51,7 +51,7 @@ class FieldVoice < ApplicationRecord
 
   # Where this voice was last named, for "Same Priya as in Board call?".
   def last_named_in
-    speakers.joins(:field_recording).merge(FieldRecording.kept).order(named_at: :desc).first&.field_recording
+    speakers.active.joins(:field_recording).merge(FieldRecording.kept).order(named_at: :desc).first&.field_recording
   end
 
   # The print exists and is the one this voice currently stands behind.

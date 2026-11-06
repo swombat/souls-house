@@ -252,7 +252,8 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_field_recording_path(@account, recording)
     recording.reload
     assert_equal %w[speaker_0 speaker_0], recording.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["spk"] }
-    assert_equal [ "Anna" ], recording.speakers.map(&:display_name)
+    assert_equal [ "Anna" ], recording.speakers.active.map(&:display_name)
+    assert recording.speakers.find_by!(label: "speaker_1").retired?
     assert_match(/Anna: hello\n\[00:02\] Anna: there|Anna: hello there/, recording.transcript_text)
   end
 
@@ -262,8 +263,9 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     patch line_speaker_account_field_recording_path(@account, recording),
       params: { line: { first: 0, last: 0, was: "hello", revision: recording.transcript_revision, speaker: "new" } }
     recording.reload
-    assert_equal %w[speaker_1 speaker_2], recording.speakers.in_order.map(&:label)
-    assert_equal [ "Speaker 2", "Speaker 3" ], recording.speakers.in_order.map(&:display_name), "nobody is renumbered"
+    assert_equal %w[speaker_1 speaker_2], recording.speakers.active.in_order.map(&:label)
+    assert_equal [ "Speaker 2", "Speaker 3" ], recording.speakers.active.in_order.map(&:display_name), "nobody is renumbered"
+    assert recording.speakers.find_by!(label: "speaker_0").retired?
     seen = recording.transcript_revision
 
     [ { speaker: "new", was: "hello", revision: "0000000000000000" },
@@ -284,6 +286,28 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
     assert_equal %w[speaker_0 speaker_1], recording.reload.speakers.map(&:label).sort
+  end
+
+  test "retired speakers are absent from the page and direct naming or unname requests are refused" do
+    recording = ready_recording(account: @account, user: @user)
+    active, retired = recording.speakers.to_a
+    retired.name_as!(@account.field_voices.create!(name: "Retained identity"), by: @user)
+    recording.reload.reassign_line!({ first: 1, last: 1 }, to: active, was: "there",
+      revision: recording.transcript_revision)
+    assert retired.reload.retired?
+    before = retired.attributes
+
+    get account_field_recording_path(@account, recording)
+    assert_response :success
+    assert_equal [ active.to_param ], inertia_props.dig("props", "speakers").map { |speaker| speaker["id"] }
+
+    [ { name: "Replacement identity" }, { unname: true } ].each do |attributes|
+      assert_no_difference -> { FieldVoice.count } do
+        patch account_field_recording_speaker_path(@account, recording, retired), params: { speaker: attributes }
+        assert_response :not_found
+      end
+      assert_equal before, retired.reload.attributes, "a rejected action must preserve the retained naming and provenance"
+    end
   end
 
   test "a correction to a line that changed meanwhile is refused" do

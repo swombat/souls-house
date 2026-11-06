@@ -202,7 +202,7 @@ module Accounts::Portability
       common(recording, recording.title).merge(recording.attributes.slice(*RECORDING_FIELDS)).merge(
         "author" => author(recording.uploaded_by), "recorded_at" => recording.recorded_at&.iso8601,
         "ready_at" => recording.ready_at&.iso8601, "summarized_at" => recording.summarized_at&.iso8601,
-        "speakers" => recording.speakers.includes(:field_voice).map { |speaker| speaker_doc(speaker) }
+        "speakers" => recording.speakers.active.includes(:field_voice).map { |speaker| speaker_doc(speaker) }
       )
     end
 

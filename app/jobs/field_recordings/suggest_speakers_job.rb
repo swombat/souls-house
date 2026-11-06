@@ -71,7 +71,7 @@ module FieldRecordings
 
         # Only speakers no person has made any decision about. A dismissal, a
         # name or a correction back to "Speaker N" is final for suggestions.
-        unnamed = recording.speakers.select { |speaker| !speaker.field_voice&.kept? && speaker.decision_generation.zero? }
+        unnamed = recording.speakers.active.select { |speaker| !speaker.field_voice&.kept? && speaker.decision_generation.zero? }
         if unnamed.empty?
           recording.update_columns(suggestions_state: "done")
           next nil
@@ -92,7 +92,7 @@ module FieldRecordings
     end
 
     def labelled_transcript(recording)
-      labels = recording.speakers.to_h { |speaker| [ speaker.label, "S#{speaker.position + 1}" ] }
+      labels = recording.speakers.active.to_h { |speaker| [ speaker.label, "S#{speaker.position + 1}" ] }
       FieldRecording::Transcript.render(recording.transcript_words || [], labels)
     end
 
@@ -107,7 +107,7 @@ module FieldRecordings
 
     def validated(recording, answer)
       suggestions = answer.is_a?(Hash) ? Array(answer["suggestions"]) : []
-      by_tag = recording.speakers.index_by { |speaker| "S#{speaker.position + 1}" }
+      by_tag = recording.speakers.active.index_by { |speaker| "S#{speaker.position + 1}" }
       known = known_names(recording).map { |name| tokens(name) }
       haystack = tokens([ recording.title, recording.note, recording.transcript_text ].join(" "))
 

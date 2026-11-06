@@ -43,11 +43,12 @@ module FieldRecording::LineSpeaker
   # supplied transcript as well (FieldRecordingSpeaker::GENERIC_LABEL).
   def new_label(taken)
     taken = taken.to_set
-    (0..999).each do |n|
+    # With N reserved labels, at least one of the first N+1 is free.
+    # Retirement reserves labels for the recording's lifetime, not just its cap.
+    (0..taken.size).each do |n|
       label = "speaker_#{n}"
       return label unless taken.include?(label)
     end
-    raise Invalid, "This recording has too many speakers."
   end
 
   def normalise(text) = FieldRecording::LineCorrection.normalise(text)

@@ -160,7 +160,7 @@ class FieldRecording < ApplicationRecord
   def transcript_lines
     return [] unless ready?
 
-    list = speakers.includes(:field_voice).to_a
+    list = speakers.active.includes(:field_voice).to_a
     names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
     ids = list.to_h { |speaker| [ speaker.label, speaker.to_param ] }
     if supplied?
@@ -210,19 +210,19 @@ class FieldRecording < ApplicationRecord
   # a speaker of this recording, or :new for someone the transcriber didn't
   # separate; :new makes an unnamed speaker, which the page then asks a name
   # for. Speakers' talk time and clips are measured again. A speaker left
-  # with no lines goes. Positions of the others don't change, so nobody's
+  # with no lines retires. Positions of the others don't change, so nobody's
   # "Speaker N" is renumbered under them.
   #
   # Takes the naming lock order, account → recording, so it is serialized with
   # every speaker decision. Raises LineCorrection::Stale as correct_line!
   # does, and when `to` has gone meanwhile; returns the line's speaker.
-  def reassign_line!(line, to:, was:, revision:)
+  def reassign_line!(line, to:, was:, revision:, learn: true)
     FieldVoiceprints::Locks.with(account:, recording: self) do
       raise FieldRecording::LineCorrection::Stale unless kept? && ready?
       raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
 
       list = speakers.to_a
-      target = to == :new ? nil : list.find { |speaker| speaker.id == to&.id }
+      target = to == :new ? nil : list.find { |speaker| speaker.active? && speaker.id == to&.id }
       raise FieldRecording::LineCorrection::Stale unless to == :new || target
 
       label = target&.label || FieldRecording::LineSpeaker.new_label(list.map(&:label))
@@ -239,18 +239,29 @@ class FieldRecording < ApplicationRecord
 
       target ||= begin
         cap = supplied? ? FieldRecording::SuppliedTranscript::MAX_SPEAKERS : MAX_SPEAKERS
-        raise FieldRecording::LineCorrection::Invalid, "This recording already has #{cap} speakers." if list.size >= cap
+        raise FieldRecording::LineCorrection::Invalid, "This recording already has #{cap} speakers." if list.count(&:active?) >= cap
 
         speakers.create!(label:, position: (list.map(&:position).max || -1) + 1)
       end
       after = supplied? ? transcript_turns : transcript_words
       moved_from = before.zip(after).filter_map { |was_entry, now| was_entry["spk"] if was_entry["spk"] != now["spk"] }
-      invalidate_speaker_evidence!((moved_from + [ label ]).uniq) if moved_from.any?
+      invalidate_speaker_evidence!((moved_from + [ label ]).uniq, learn:) if moved_from.any?
       remeasure_speakers!
       self.transcript_text = render_transcript_text
       save!
       schedule_summary_refresh if saved_change_to_transcript_text?
       target
+    end
+  end
+
+  # Explicit administrative recovery with line assignment, not an ordinary
+  # reassign target or endpoint. The outer transaction rolls restoration back
+  # if the locator, text or revision no longer stands.
+  def restore_speaker_line!(speaker, line:, was:, revision:)
+    FieldVoiceprints::Locks.with(account:, recording: self) do
+      target = speakers.retired.find(speaker.id)
+      target.restore!
+      reassign_line!(line, to: target, was:, revision:, learn: false)
     end
   end
 
@@ -365,7 +376,7 @@ class FieldRecording < ApplicationRecord
   # speaker is learned again from the lines they have now. The caller holds
   # account → recording (reassign_line!); the voices holding their samples
   # are locked here.
-  def invalidate_speaker_evidence!(labels)
+  def invalidate_speaker_evidence!(labels, learn: true)
     affected = speakers.where(label: labels).to_a
     # account and recording are already held, and this recording has unsaved
     # changes, so only the voices are locked here, in id order.
@@ -376,12 +387,12 @@ class FieldRecording < ApplicationRecord
       speaker.update!(decision_generation: speaker.decision_generation + 1,
         **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS,
         **FieldRecordingSpeaker::NO_PROBE)
-      FieldVoiceprints::Learning.queue!(speaker) if speaker.training_label?
+      FieldVoiceprints::Learning.queue!(speaker) if learn && speaker.training_label?
     end
   end
 
   # After a line moved: talk time and clips from the words as they now are,
-  # and speakers with nothing left to say removed. A supplied
+  # and speakers with nothing left to say retired. A supplied
   # transcript has no timings, only labels to count.
   def remeasure_speakers!
     speakers.reset
@@ -392,9 +403,9 @@ class FieldRecording < ApplicationRecord
       (transcript_words || []).filter_map { |word| word["spk"] if word["k"] != "s" }.to_set
     end
 
-    speakers.each do |speaker|
+    speakers.active.each do |speaker|
       if !present.include?(speaker.label)
-        speaker.destroy!
+        retire_speaker!(speaker)
       elsif measured
         entry = measured[speaker.label]
         speaker.update!(talk_ms: entry&.dig(:talk_ms) || 0, clip_start_ms: entry&.dig(:clip_start_ms),
@@ -402,6 +413,20 @@ class FieldRecording < ApplicationRecord
       end
     end
     speakers.reset
+  end
+
+  # Internal only: reassign holds account → recording. Do not reacquire the
+  # recording lock here: its reassigned transcript is still unsaved.
+  def retire_speaker!(speaker)
+    voices = FieldVoiceprints::Learning.sample_voices([ speaker.id ])
+    FieldVoice.where(id: voices.map(&:id)).order(:id).lock.to_a
+    FieldVoiceprints::Learning.drop_samples!([ speaker.id ])
+    speaker.reload
+    speaker.update!(retired_at: Time.current, talk_ms: 0, clip_start_ms: nil, clip_end_ms: nil,
+      auto_named_confidence: nil, sample_confirmed_digest: nil, sample_confirmed_by_id: nil,
+      sample_confirmed_at: nil, decision_generation: speaker.decision_generation + 1,
+      **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS,
+      **FieldRecordingSpeaker::NO_PROBE, **FieldRecordingSpeaker::NOT_IGNORED)
   end
 
   def normalise_provenance

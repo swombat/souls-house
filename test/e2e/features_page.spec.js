@@ -17,7 +17,11 @@ test('the homepage links to a two-column features page with an expandable index'
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
   await expect(life.getByTestId('feature-showcase')).toHaveCount(11);
-  await expect(house.getByTestId('feature-showcase')).toHaveCount(17);
+  await expect(house.getByTestId('feature-showcase')).toHaveCount(18);
+  const speakerRecovery = house.getByTestId('feature-showcase').filter({ hasText: 'Recover a retired speaker naming' });
+  await expect(speakerRecovery).toBeVisible();
+  await expect(speakerRecovery).toContainText('never restores voice samples or recognition evidence');
+  await expect(speakerRecovery).toContainText('not a picker or endpoint');
   const botAnswers = house.getByTestId('feature-showcase').filter({ hasText: 'Other bots can join the conversation' });
   await expect(botAnswers).toBeVisible();
   await expect(botAnswers).toContainText('Off by default');

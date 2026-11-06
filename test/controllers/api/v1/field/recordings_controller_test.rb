@@ -1,9 +1,11 @@
 require "test_helper"
 require "support/field_recording_helpers"
+require "support/api_human_key_helpers"
 
 class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
 
   include FieldRecordingHelpers
+  include ApiHumanKeyHelpers
 
   setup do
     Setting.instance.update!(allow_agents: true)
@@ -130,7 +132,8 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
       params: { speaker: "new", was: "there", revision: body["revision"] }, as: :json
     assert_response :success
     @recording.reload
-    assert_equal [ "speaker_0", "speaker_2" ], @recording.speakers.in_order.map(&:label), "the emptied speaker goes"
+    assert_equal [ "speaker_0", "speaker_2" ], @recording.speakers.active.in_order.map(&:label)
+    assert @recording.speakers.find_by!(label: "speaker_1").retired?, "the emptied speaker is retained"
     assert_includes @recording.transcript_text, "Speaker 3: there"
     assert_equal first, response.parsed_body["lines"].first["speaker_id"]
     assert_not_equal second, response.parsed_body["line"]["speaker_id"]
@@ -140,7 +143,8 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal 1, response.parsed_body["lines"].size, "one speaker's words are one line"
     assert_equal response.parsed_body["lines"].first, response.parsed_body["line"], "the line the moved words are in now"
-    assert_equal [ "speaker_0" ], @recording.reload.speakers.map(&:label)
+    assert_equal [ "speaker_0" ], @recording.reload.speakers.active.map(&:label)
+    assert_equal %w[speaker_1 speaker_2], @recording.speakers.retired.in_order.map(&:label)
 
     patch line_api_v1_field_recording_path(@recording, line: 1), headers: @headers,
       params: { speaker: "nobody", was: "hello there", revision: @recording.transcript_revision }, as: :json
@@ -148,7 +152,33 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     patch line_api_v1_field_recording_path(@recording, line: 1), headers: @headers,
       params: { speaker: "new", was: "hello there", revision: "0000000000000000" }, as: :json
     assert_response :conflict
-    assert_equal [ "speaker_0" ], @recording.reload.speakers.map(&:label)
+    assert_equal [ "speaker_0" ], @recording.reload.speakers.active.map(&:label)
+    assert_equal %w[speaker_1 speaker_2], @recording.speakers.retired.in_order.map(&:label)
+  end
+
+  test "retired speakers are absent from resident and human payloads and human direct actions are refused" do
+    active, retired = @recording.speakers.to_a
+    retired.name_as!(@account.field_voices.create!(name: "Retained identity"), by: @user)
+    @recording.reload.reassign_line!({ first: 1, last: 1 }, to: active, was: "there",
+      revision: @recording.transcript_revision)
+    assert retired.reload.retired?
+    before = retired.attributes
+    human = human_headers(@user, @account)
+
+    [ @headers, human ].each do |headers|
+      get api_v1_field_recording_path(@recording), headers: headers
+      assert_response :success
+      assert_equal [ active.display_name ], response.parsed_body.dig("recording", "speakers").map { |speaker| speaker["name"] }
+      assert_not_includes response.parsed_body.dig("recording", "transcript_text"), "Retained identity"
+    end
+
+    [ { name: "Replacement identity" }, { unname: true } ].each do |attributes|
+      assert_no_difference -> { FieldVoice.count } do
+        patch api_v1_field_recording_speaker_path(@recording, retired), params: attributes, headers: human, as: :json
+        assert_response :not_found
+      end
+      assert_equal before, retired.reload.attributes, "a rejected action must preserve the retained naming and provenance"
+    end
   end
 
   test "a correction against an old revision, a moved line or a missing line is refused and changes nothing" do

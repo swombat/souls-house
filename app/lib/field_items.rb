@@ -254,7 +254,7 @@ module FieldItems
   end
 
   def speakers_of(recording)
-    recording.speakers.loaded? ? recording.speakers.sort_by(&:position) : recording.speakers.includes(:field_voice)
+    recording.speakers.loaded? ? recording.speakers.select(&:active?).sort_by(&:position) : recording.speakers.active.includes(:field_voice)
   end
 
   def speaker_json(speaker)
@@ -328,7 +328,7 @@ module FieldItems
 
   # Voices for the "Who's this?" chip, most recently named first.
   def voices_json(account)
-    last_named = FieldRecordingSpeaker.where(field_voice_id: account.field_voices.kept.select(:id))
+    last_named = FieldRecordingSpeaker.active.where(field_voice_id: account.field_voices.kept.select(:id))
       .group(:field_voice_id).maximum(:named_at)
     account.field_voices.kept.includes(:user)
       .sort_by { |voice| [ -(last_named[voice.id]&.to_f || 0), voice.name.downcase ] }

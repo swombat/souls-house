@@ -21,7 +21,7 @@ module FieldVoiceprints::Sample
     end
 
     words = recording.transcript_words || []
-    if recording.expected_speakers && recording.speakers.size < recording.expected_speakers
+    if recording.expected_speakers && recording.speakers.active.size < recording.expected_speakers
       raise Refused, "Fewer voices were found than expected, so #{speaker.display_name} may be merged with someone."
     end
 

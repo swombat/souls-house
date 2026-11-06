@@ -33,7 +33,7 @@ class FieldRecordingsController < ApplicationController
       shares: -> { recording.shares.active.includes(:created_by).order(created_at: :desc).map(&:as_list_json) },
       # The recordings either side, for previous/next at the top of the page.
       neighbours: -> { FieldRecordingNeighbours.new(recording).as_json },
-      speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
+      speakers: -> { recording.speakers.active.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
       recognition_enabled: recognition,
       voices: -> { FieldItems.voices_json(current_account) },
       members_without_voice: -> { FieldItems.members_without_voice_json(current_account, except: Current.user) },
@@ -142,7 +142,7 @@ class FieldRecordingsController < ApplicationController
     to = if attributes[:speaker] == "new"
       :new
     else
-      @field_recording.speakers.find_by(id: FieldRecordingSpeaker.decode_id(attributes[:speaker].to_s))
+      @field_recording.speakers.active.find_by(id: FieldRecordingSpeaker.decode_id(attributes[:speaker].to_s))
     end
     raise FieldRecording::LineCorrection::Stale unless to
 

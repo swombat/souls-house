@@ -77,7 +77,7 @@ class FieldVoiceSample < ApplicationRecord
     return false if source_digest.blank? || !source_segments.is_a?(Array) || source_segments.empty?
 
     speaker ||= FieldRecordingSpeaker.find_by(id: field_recording_speaker_id)
-    speaker.present? && speaker.id == field_recording_speaker_id && speaker.field_voice_id == field_voice_id &&
+    speaker.present? && speaker.active? && speaker.id == field_recording_speaker_id && speaker.field_voice_id == field_voice_id &&
       source_digest == self.class.source_digest_for(speaker, source_segments, preloaded:)
   end
 
