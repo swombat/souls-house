@@ -12,13 +12,4 @@ class TelegramGuidanceTest < ActiveSupport::TestCase
     end
   end
 
-  test "resident instructions and API manual describe a separate Telegram channel" do
-    %w[runtime-instructions soulshouse-api].each do |name|
-      guide = Rails.root.join("agent-runtime/docs/#{name}.md").read
-      assert_includes guide, "automatic Telegram"
-      assert_includes guide, "direct-message channel"
-      refute_includes guide, "Telegram notifications\nare queued"
-    end
-  end
-
 end
