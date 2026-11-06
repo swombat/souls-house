@@ -115,6 +115,7 @@ vi.mock('$lib/voice-mode-turn-audio', async (importOriginal) => {
 });
 
 import VoiceModePanel from './VoiceModePanel.svelte';
+import { startCapture } from '$lib/voice-mode-capture';
 
 let posts;
 beforeEach(() => {
@@ -912,4 +913,53 @@ test('the next transcription session carries a trace of what the phone did to th
   // Taken once: the next request carries nothing new.
   await transcriber.options.fetchSession();
   expect(urls[1]).toBe('/accounts/acc/chats/chat/voice_mode_session');
+});
+
+test('a device change while an earlier turn is still transcribing does not cut the next utterance (#808 review)', async () => {
+  const devices = fakeMediaDevices();
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  speak(new Promise(() => {}));
+  callbacks.onspeechstart(new Float32Array(10));
+  devices.change();
+  await new Promise((resolve) => setTimeout(resolve, 950));
+  expect(handles).toHaveLength(1);
+  expect(handles[0].stop).not.toHaveBeenCalled();
+  transcriber.results.push('Second');
+  callbacks.onaudio(new Float32Array(480));
+  callbacks.onturn(1500);
+  await waitFor(() => expect(handles).toHaveLength(2));
+});
+
+test('End while a device reopen is under way leaves no microphone open (#808 review)', async () => {
+  const devices = fakeMediaDevices();
+  render(VoiceModePanel, { ...props, endDrainMs: 500 });
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  // An earlier turn still transcribing, so End is draining when the stop lands.
+  speak(new Promise(() => {}));
+  let releaseStop;
+  handles[0].stop = vi.fn(() => new Promise((resolve) => (releaseStop = resolve)));
+  devices.change();
+  await waitFor(() => expect(handles[0].stop).toHaveBeenCalled(), { timeout: 2000 });
+  await fireEvent.click(screen.getByRole('button', { name: 'End voice mode' }));
+  releaseStop();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(handles).toHaveLength(1);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(handles).toHaveLength(1);
+});
+
+test('a reopen that fails is tried again when the page comes back (#808 review)', async () => {
+  const devices = fakeMediaDevices();
+  render(VoiceModePanel, props);
+  await waitFor(() => expect(callbacks).not.toBeNull());
+  startCapture.mockImplementationOnce(async () => {
+    throw Object.assign(new Error('busy'), { name: 'NotReadableError' });
+  });
+  devices.change();
+  await waitFor(() => expect(handles[0].stop).toHaveBeenCalled(), { timeout: 2000 });
+  await waitFor(() => expect(screen.getByTestId('voice-mode-status')).toHaveTextContent('could not be reopened'));
+  showPage('hidden');
+  showPage('visible');
+  await waitFor(() => expect(handles).toHaveLength(2));
 });

@@ -90,6 +90,9 @@ export function createVoiceModeSession(props) {
   const trace = createVoiceTrace();
   // Audio devices changed mid-turn: reopen the mic once the turn closes.
   let rerouteWanted = false;
+  // The capture has an utterance open. Not the UI phase: a second utterance
+  // can be recording while the first is still transcribing (#808 review).
+  let utteranceOpen = false;
 
   // The handlers the microphone feeds; kept so a reopened mic gets the same.
   const captureHandlers = {
@@ -101,6 +104,7 @@ export function createVoiceModeSession(props) {
       stale = false;
     },
     onspeechstart: (samples) => {
+      utteranceOpen = true;
       reader.speechStarted();
       caption = '';
       recorder.begin(samples);
@@ -117,9 +121,11 @@ export function createVoiceModeSession(props) {
       transcriber?.discard();
       caption = '';
       if (phase === 'hearing') phase = 'listening';
+      utteranceOpen = false;
       if (rerouteWanted) reroute();
     },
     onturn: (durationMs) => {
+      utteranceOpen = false;
       trace.note(`turn:${(durationMs / 1000).toFixed(1)}s`);
       reader.committed(props.messages || []);
       // The caption as shown: if the transcriber's final answer is lost with
@@ -187,7 +193,7 @@ export function createVoiceModeSession(props) {
         onvisible: () => {
           trace.note('visible');
           wakeLock.reacquire();
-          if (paused || stale || (capture && !capture.running)) resume();
+          if (paused || stale || !capture || !capture.running) resume();
           else retryHeld();
         },
         // Hidden alone is not a pause: Chrome on Android may keep a hidden
@@ -215,7 +221,7 @@ export function createVoiceModeSession(props) {
         onchange: () => {
           trace.note('devices');
           rerouteWanted = true;
-          if (phase !== 'hearing') reroute();
+          reroute();
         },
       });
       // Turns held from before a reload of this tab: try them once.
@@ -463,21 +469,16 @@ export function createVoiceModeSession(props) {
   // allows it; if it refuses, the panel says so and End still works.
   let resuming = null;
   function resume() {
-    if (ended || resuming) return resuming;
+    if (closing() || resuming) return resuming;
     resuming = (async () => {
       try {
         if (stale && !paused) pause('hidden');
-        if (capture && (!capture.alive || rerouteWanted)) {
+        if (!capture || !capture.alive || rerouteWanted) {
           rerouteWanted = false;
           const old = capture;
           capture = null;
-          await old.stop().catch(() => {});
-          capture = await startCapture(captureHandlers);
-          if (ended) {
-            await capture.stop();
-            return;
-          }
-          if (muted) capture.mute(true);
+          await old?.stop().catch(() => {});
+          if (!(await reopen())) return;
         } else {
           await capture?.resume();
         }
@@ -495,28 +496,46 @@ export function createVoiceModeSession(props) {
     return resuming;
   }
 
+  function closing() {
+    return ended || ending;
+  }
+
+  // Opens a fresh capture unless End has begun, before or during the wait;
+  // a capture opened under End is stopped here, never left for End to miss
+  // (#808 review). Returns whether the panel now has a microphone.
+  async function reopen() {
+    if (closing()) return false;
+    const next = await startCapture(captureHandlers);
+    if (closing()) {
+      await next.stop().catch(() => {});
+      return false;
+    }
+    utteranceOpen = false;
+    capture = next;
+    if (muted) capture.mute(true);
+    return true;
+  }
+
   // The audio devices changed (a headset joined or left): reopen the mic so
   // the phone picks its route again (voice-mode-devices.js). Between turns
   // only; a paused panel reopens on resume anyway.
   function reroute() {
-    if (ended || !capture) return null;
+    if (closing() || !capture) return null;
     // Paused or already reopening: resume reopens the mic while this is set.
-    if (paused || resuming) return resuming;
+    // Mid-utterance: the turn's close calls back here.
+    if (paused || resuming || utteranceOpen) return resuming;
     rerouteWanted = false;
     resuming = (async () => {
       try {
         const old = capture;
         capture = null;
         await old.stop().catch(() => {});
-        capture = await startCapture(captureHandlers);
-        if (ended) {
-          await capture.stop();
-          return;
-        }
-        if (muted) capture.mute(true);
-        lastSampleAt = performance.now();
+        if (await reopen()) lastSampleAt = performance.now();
       } catch (error) {
+        // No microphone now: say paused, and the page coming back to the
+        // front tries again (resume opens a capture when there is none).
         note = `The microphone could not be reopened: ${micErrorMessage(error)}`;
+        if (!closing()) paused = 'reopen';
       } finally {
         resuming = null;
       }
