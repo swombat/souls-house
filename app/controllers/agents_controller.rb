@@ -92,7 +92,15 @@ class AgentsController < ApplicationController
       commitments: -> { commitments_props },
       # Count/provider partials must not mint another registration token.
       telegram_deep_link: InertiaRails.optional { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
-      telegram_configuration: -> { { configured: @agent.telegram_configured?, username: @agent.telegram_bot_username, reads_all_group_messages: @agent.telegram_reads_all_group_messages } },
+      telegram_configuration: -> {
+        {
+          configured: @agent.telegram_configured?,
+          username: @agent.telegram_bot_username,
+          reads_all_group_messages: @agent.telegram_reads_all_group_messages,
+          unlinked_messages_count: @agent.telegram_unlinked_messages_count,
+          unlinked_last_received_at: @agent.telegram_unlinked_last_received_at
+        }
+      },
       telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
       telegram_groups: -> { TelegramGroupPresentation.list(@agent, account: current_account) },
       can_manage_telegram_groups: -> { current_account.owned_by?(Current.user) },

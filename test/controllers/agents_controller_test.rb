@@ -19,6 +19,28 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "Telegram settings expose only aggregate unlinked arrival information" do
+    received_at = Time.utc(2026, 11, 6, 11, 0)
+    @agent.update_columns(telegram_unlinked_messages_count: 7, telegram_unlinked_last_received_at: received_at)
+    get edit_account_agent_path(@account, @agent), headers: {
+      "X-Inertia" => "true",
+      "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "agents/edit",
+      "X-Inertia-Partial-Data" => "telegram_configuration"
+    }
+    assert_response :success
+    configuration = response.parsed_body.dig("props", "telegram_configuration")
+    assert_equal 7, configuration.fetch("unlinked_messages_count")
+    assert_equal received_at, Time.iso8601(configuration.fetch("unlinked_last_received_at"))
+    assert_equal %w[configured reads_all_group_messages unlinked_last_received_at unlinked_messages_count username], configuration.keys.sort
+    assert_not response.parsed_body.fetch("props").key?("telegram_deep_link")
+  end
+
+  test "unlinked arrival settings cannot be read through another account" do
+    get edit_account_agent_path(@account, agents(:other_account_agent))
+    assert_response :not_found
+  end
+
   test "guest-only partial skips resident cards catalog and journal-stat jobs" do
     Agents::ResidentDirectory.stub :new, ->(*) { flunk "guest-only refresh built resident cards" } do
       Agents::ModelCatalogue.stub :grouped, -> { flunk "guest-only refresh built model catalog" } do

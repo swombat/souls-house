@@ -4,6 +4,7 @@
   import { Input } from '$lib/components/shadcn/input';
   import { Label } from '$lib/components/shadcn/label';
   import TelegramSettingsGroups from './telegram-settings-groups.svelte';
+  import TelegramUnlinkedArrivals from './telegram-unlinked-arrivals.svelte';
   import { siteName } from '$lib/branding';
   import { router } from '@inertiajs/svelte';
   import { onDestroy } from 'svelte';
@@ -125,6 +126,10 @@
       Telegram is connected as <span class="font-medium">@{username}</span>
     </div>
   {/if}
+
+  <TelegramUnlinkedArrivals
+    count={telegramConfiguration?.unlinked_messages_count ?? 0}
+    lastReceivedAt={telegramConfiguration?.unlinked_last_received_at} />
 
   <div class="space-y-5 rounded-lg border p-5">
     <div class="space-y-2">

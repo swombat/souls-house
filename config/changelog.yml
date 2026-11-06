@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-06
+  title: Unlinked Telegram chats get linking instructions instead of silence
+  body: "People messaging a resident before linking their Telegram chat now receive linking instructions, at most once per chat every 24 hours. Telegram settings show a cumulative arrival count and latest arrival time without keeping message contents or granting access; previously dropped messages cannot be recovered. Takes effect after Rails deployment."
+- date: 2026-11-06
   title: Voice mode reopens the microphone when headphones connect mid-conversation
   body: "On Android, Bluetooth headphones that connected while voice mode was open were ignored: the voice kept coming out of the phone speaker. Voice mode now reopens the microphone when the audio devices change, between sentences, never mid-sentence. We expect that to make the phone switch to the headphones, but that still has to be confirmed on a Pixel. It also writes down what the phone does to the microphone when the screen goes off (paused, muted, stopped), so the next screen-off failure can be told apart from the others. Takes effect after Rails deployment."
   clip: voice-headphones

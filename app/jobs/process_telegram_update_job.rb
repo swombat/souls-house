@@ -1,3 +1,5 @@
+require "digest"
+
 class ProcessTelegramUpdateJob < ApplicationJob
 
   self.log_arguments = false
@@ -16,7 +18,10 @@ class ProcessTelegramUpdateJob < ApplicationJob
 
     text = message.dig("text")
     chat_id = message.dig("chat", "id")
+    return if chat_id.blank?
+
     return process_start(agent, message, text, chat_id) if text&.start_with?("/start")
+    return process_unlinked_message(agent, chat_id) unless agent.telegram_subscriptions.exists?(telegram_chat_id: chat_id)
     return process_reset(agent, chat_id) if reset_command?(text)
 
     content = supported_content(message)
@@ -45,7 +50,11 @@ class ProcessTelegramUpdateJob < ApplicationJob
     deep_link_param = text.split(" ", 2)[1]
 
     user = verify_deep_link(agent, deep_link_param)
-    return send_unknown_user_message(agent, chat_id) unless user
+    unless user
+      return send_unknown_user_message(agent, chat_id) if agent.telegram_subscriptions.exists?(telegram_chat_id: chat_id)
+
+      return process_unlinked_message(agent, chat_id)
+    end
 
     subscription = agent.telegram_subscriptions.find_or_initialize_by(user: user)
     subscription.update!(
@@ -412,6 +421,30 @@ class ProcessTelegramUpdateJob < ApplicationJob
       chat_id,
       "I couldn't identify your account. Please use the registration link from the app."
     )
+  end
+
+  def process_unlinked_message(agent, chat_id)
+    # Keep only aggregate arrivals, even when instructions are throttled or cannot be sent.
+    Agent.where(id: agent.id).update_all([
+      "telegram_unlinked_messages_count = telegram_unlinked_messages_count + 1, " \
+        "telegram_unlinked_last_received_at = GREATEST(telegram_unlinked_last_received_at, ?)",
+      Time.current
+    ])
+
+    chat_digest = Digest::SHA256.hexdigest(chat_id.to_s)
+    cache_key = "telegram_unlinked_instructions:#{agent.id}:#{chat_digest}"
+    return unless Rails.cache.write(cache_key, true, unless_exist: true, expires_in: 24.hours)
+
+    text = "This Telegram chat isn't linked to <b>#{ERB::Util.html_escape(agent.name)}</b>. " \
+      "Your message wasn't delivered. Open souls.house and use the Telegram registration link " \
+      "for this agent to connect your account. If you don't have access, ask the agent's owner for help."
+
+    begin
+      agent.telegram_send_message(chat_id, text)
+    rescue StandardError => error
+      # This is a best-effort reply, not a reason to retry and recount the arrival.
+      Rails.logger.warn("[Telegram] Unlinked instructions failed for agent #{agent.id}: #{error.class}")
+    end
   end
 
 end

@@ -37,6 +37,8 @@ class ProcessTelegramUpdateJobTest < ActiveSupport::TestCase
     assert_equal @user, sub.user
     assert_equal 456, sub.telegram_chat_id
     assert_not sub.blocked?
+    assert_equal 0, @agent.reload.telegram_unlinked_messages_count
+    assert_nil @agent.telegram_unlinked_last_received_at
   end
 
   test "updates existing subscription and unblocks" do
@@ -88,10 +90,182 @@ class ProcessTelegramUpdateJobTest < ActiveSupport::TestCase
     end
   end
 
-  test "ignores non-start messages" do
-    assert_no_difference [ "TelegramSubscription.count", "TelegramMessage.count" ] do
+  test "unlinked arrivals receive instructions and retain only agent aggregates" do
+    @agent.update!(runtime: "external", endpoint_url: "https://agent.example.com", trigger_bearer_token: "tr_valid")
+    sent = []
+    responder = lambda do |_uri, body, _headers|
+      sent << JSON.parse(body)
+      @fake_ok
+    end
+
+    freeze_time do
+      assert_no_difference [ "TelegramSubscription.count", "TelegramMessage.count", "AgentRuntimeInteraction.count", "ActiveStorage::Attachment.count" ] do
+        assert_no_enqueued_jobs do
+          Net::HTTP.stub :post, responder do
+            ProcessTelegramUpdateJob.perform_now(@agent, build_update("private inbound text", username: "private_username"))
+            ProcessTelegramUpdateJob.perform_now(@agent, build_media_update("photo" => [ { "file_id" => "private-file" } ], "caption" => "private caption"))
+          end
+        end
+      end
+
+      assert_equal 2, @agent.reload.telegram_unlinked_messages_count
+      assert_equal Time.current, @agent.telegram_unlinked_last_received_at
+    end
+    assert_equal 1, sent.size
+    assert_equal 456, sent.first.fetch("chat_id")
+    assert_includes sent.first.fetch("text"), "registration link"
+    assert_includes sent.first.fetch("text"), "wasn't delivered"
+    refute_includes sent.to_json, "private inbound text"
+    refute_includes sent.to_json, "private_username"
+    refute_includes sent.to_json, "private caption"
+  end
+
+  test "unlinked instructions expire after 24 hours without extending the throttle" do
+    sent = []
+    responder = ->(*args) { sent << args; @fake_ok }
+
+    freeze_time do
+      Net::HTTP.stub :post, responder do
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("first"))
+        travel 23.hours
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("second"))
+        assert_equal 1, sent.size
+        travel 1.hour + 1.second
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("third"))
+        assert_equal 2, sent.size
+      end
+      assert_equal 3, @agent.reload.telegram_unlinked_messages_count
+      assert_equal Time.current, @agent.telegram_unlinked_last_received_at
+    end
+  end
+
+  test "unlinked instructions have independent agent and chat throttles" do
+    other_agent = @account.agents.create!(name: "Other Agent")
+    sent = []
+    responder = ->(*args) { sent << args; @fake_ok }
+    other_chat = build_update("other chat")
+    other_chat["message"]["chat"]["id"] = 987654321
+
+    Net::HTTP.stub :post, responder do
+      ProcessTelegramUpdateJob.perform_now(@agent, build_update("first"))
+      ProcessTelegramUpdateJob.perform_now(@agent, other_chat)
+      ProcessTelegramUpdateJob.perform_now(other_agent, build_update("other agent"))
+      ProcessTelegramUpdateJob.perform_now(@agent, other_chat)
+    end
+    assert_equal 3, sent.size
+    assert_equal 3, @agent.reload.telegram_unlinked_messages_count
+    assert_equal 1, other_agent.reload.telegram_unlinked_messages_count
+  end
+
+  test "unlinked throttle atomically writes only a hashed chat key and boolean" do
+    cache = Minitest::Mock.new
+    cache_key = "telegram_unlinked_instructions:#{@agent.id}:#{Digest::SHA256.hexdigest('456')}"
+    cache.expect :write, false, [ cache_key, true ], unless_exist: true, expires_in: 24.hours
+
+    Rails.stub :cache, cache do
+      @agent.stub :telegram_send_message, ->(*) { flunk "Throttled instructions must not be sent" } do
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("secret", username: "secret_username"))
+      end
+    end
+    cache.verify
+    assert_equal 1, @agent.reload.telegram_unlinked_messages_count
+  end
+
+  test "unlinked aggregates increment from database state and never move latest time backwards" do
+    freeze_time do
+      latest = 1.hour.from_now
+      Agent.where(id: @agent.id).update_all(telegram_unlinked_messages_count: 40, telegram_unlinked_last_received_at: latest)
+
+      Net::HTTP.stub :post, @fake_ok do
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("hello"))
+      end
+      assert_equal 41, @agent.reload.telegram_unlinked_messages_count
+      assert_equal latest, @agent.telegram_unlinked_last_received_at
+    end
+  end
+
+  test "valid start still links a chat while unlinked instructions are throttled" do
+    token = "test_token_#{SecureRandom.hex(8)}"
+    Rails.cache.write("telegram_deep_link:#{token}", { user_id: @user.id, agent_id: @agent.id }, expires_in: 7.days)
+
+    Net::HTTP.stub :post, @fake_ok do
+      ProcessTelegramUpdateJob.perform_now(@agent, build_update("hello"))
+      assert_difference "TelegramSubscription.count", 1 do
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("/start #{token}"))
+      end
+    end
+    assert_equal 456, @agent.telegram_subscriptions.last.telegram_chat_id
+    assert_equal 1, @agent.reload.telegram_unlinked_messages_count
+  end
+
+  test "unlinked reset unsupported content and invalid start are counted and receive instructions" do
+    updates = [
+      build_update("/reset"),
+      build_media_update("document" => { "file_id" => "doc" }),
+      build_media_update("sticker" => { "file_id" => "sticker" }),
+      build_update("/start invalid")
+    ]
+    sent = []
+    responder = ->(*args) { sent << args; @fake_ok }
+
+    assert_no_difference [ "TelegramSubscription.count", "TelegramMessage.count", "AgentRuntimeInteraction.count" ] do
+      assert_no_enqueued_jobs do
+        Net::HTTP.stub :post, responder do
+          updates.each_with_index do |update, index|
+            update["message"]["chat"]["id"] = 1000 + index
+            ProcessTelegramUpdateJob.perform_now(@agent, update)
+          end
+        end
+      end
+    end
+    assert_equal 4, sent.size
+    assert_equal 4, @agent.reload.telegram_unlinked_messages_count
+  end
+
+  test "unlinked instructions escape the agent name for Telegram HTML" do
+    @agent.update!(name: "A <b>name</b> & friend")
+    sent = []
+    responder = ->(_uri, body, _headers) { sent << JSON.parse(body); @fake_ok }
+
+    Net::HTTP.stub :post, responder do
       ProcessTelegramUpdateJob.perform_now(@agent, build_update("hello"))
     end
+    assert_equal "HTML", sent.first.fetch("parse_mode")
+    assert_includes sent.first.fetch("text"), "<b>A &lt;b&gt;name&lt;/b&gt; &amp; friend</b>"
+    refute_includes sent.first.fetch("text"), "<b>name</b>"
+  end
+
+  test "failed unlinked replies still leave owner aggregates and remain throttled" do
+    calls = 0
+    responder = lambda do |*|
+      calls += 1
+      raise TelegramNotifiable::TelegramError, "Forbidden"
+    end
+
+    freeze_time do
+      Net::HTTP.stub :post, responder do
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("hello"))
+        ProcessTelegramUpdateJob.perform_now(@agent, build_update("again"))
+      end
+      assert_equal 2, @agent.reload.telegram_unlinked_messages_count
+      assert_equal Time.current, @agent.telegram_unlinked_last_received_at
+    end
+    assert_equal 1, calls
+  end
+
+  test "group messages do not receive unlinked DM instructions or affect aggregates" do
+    %w[group supergroup channel].each do |chat_type|
+      update = build_update("hello")
+      update["message"]["chat"] = { "id" => -456, "type" => chat_type, "title" => "Group" }
+
+      @agent.stub :telegram_send_message, ->(*) { flunk "No DM linking reply in groups" } do
+        assert_no_difference "TelegramMessage.count" do
+          ProcessTelegramUpdateJob.perform_now(@agent, update)
+        end
+      end
+    end
+    assert_equal 0, @agent.reload.telegram_unlinked_messages_count
+    assert_nil @agent.telegram_unlinked_last_received_at
   end
 
   test "stores a direct message from a subscribed user" do
@@ -108,6 +282,8 @@ class ProcessTelegramUpdateJobTest < ActiveSupport::TestCase
     assert_equal "hello", telegram_message.text
     assert_equal "daniel_t", telegram_message.sender_username
     assert_equal "daniel_t", subscription.reload.telegram_username
+    assert_equal 0, @agent.reload.telegram_unlinked_messages_count
+    assert_nil @agent.telegram_unlinked_last_received_at
   end
 
   test "triggers an external agent for a subscribed direct message" do
