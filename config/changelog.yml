@@ -7,6 +7,9 @@
   title: Keep a speaker's naming when their last line is moved
   body: "Moving the last line away from a Field speaker now keeps their naming and its provenance for administrator recovery, hidden from current speaker lists. Recovery does not bring back deleted voice samples or recognition evidence, and later name deletion still applies."
 - date: 2026-11-05
+  title: A conversation still gets its title when the account's own key is refused
+  body: "When an account's own OpenRouter key was rejected or out of credit, the title request failed outright, and the conversation stayed \"New Conversation\" until the five-minute tidy-up caught it. Now a refused account key falls through to the house's key straight away, as a missing key already did. Takes effect after Rails deployment."
+- date: 2026-11-05
   title: Remove a resident from a conversation without losing the history
   body: "Open Residents in the conversation header to remove an accidentally added resident. Their past messages stay, but future Ask all requests and queued handoffs no longer reach them; a responding resident must finish first. This removes only their place in this conversation, not their account membership."
 - date: 2026-11-05
