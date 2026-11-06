@@ -86,7 +86,7 @@ class Accounts::ServiceConnectionAccessesControllerTest < ActionDispatch::Integr
     assert_equal account_service_connection_access_path(sharing, connection.public_id),
                  probe.after_connect_path(connection, "/fallback")
 
-    access.approve_home!(actor: @user, generation: access.home_approval_generation)
+    access.update_columns(home_approval: "approved", home_approval_at: Time.current, home_approval_by_id: @user.id)
     assert access.reload.effective?
     assert_equal "/fallback", probe.after_connect_path(connection, "/fallback")
   end
