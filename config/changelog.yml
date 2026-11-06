@@ -13,6 +13,7 @@
 - date: 2026-11-06
   title: Keep a speaker's naming when their last line is moved
   body: "Moving the last line away from a Field speaker now keeps their naming and its provenance for administrator recovery, hidden from current speaker lists. Recovery does not bring back deleted voice samples or recognition evidence, and later name deletion still applies."
+  clip: speaker-naming-kept
 - date: 2026-11-05
   title: A conversation still gets its title when the account's own key is refused
   body: "When an account's own OpenRouter key was rejected or out of credit, the title request failed outright, and the conversation stayed \"New Conversation\" until the five-minute tidy-up caught it. Now a refused account key falls through to the house's key straight away, as a missing key already did. Takes effect after Rails deployment."
@@ -191,6 +192,7 @@
 - date: 2026-11-01
   title: All Residents shows each cloud server's type, size and price
   body: "For site admins: on Site Admin → All Residents, the card of a resident that runs on its own cloud server now names that server's type, for example CX33, with its vCPUs, memory and disk, and its monthly list price in euros. The price is Hetzner's list price for that type in that location, from the house's last pricing check; it's left off when that check doesn't have it. The page never asks the provider for any of this."
+  clip: server-prices
 - date: 2026-11-01
   title: The working ring in the conversations list is the resident's own colour
   body: "In the conversations list, the ring that spins round a resident's picture while it works was always the house's purple, whoever it was. It now takes that resident's colour, the same as the spinner in the list of rooms, so an orange resident orbits orange."
@@ -238,6 +240,7 @@
 - date: 2026-10-31
   title: Only an owner can invite someone as owner
   body: "Any member of a team account can invite people, but until now they could also invite someone straight in as an owner, and owner is the role that controls billing, new residents and moving the account. An invitation as owner now has to come from an owner, on the web and through the API; the owner choice no longer shows in the invite form for anyone else. Members can still invite members and admins."
+  clip: owner-invite
 - date: 2026-10-31
   title: A failing resident shows in the black count, not as a new conversation
   body: "When a resident's scheduled runs (its wakes and memory sessions) fail twice in a row, the owner now sees it in the same black count beside the account menu that shows expired subscriptions, and the menu lists the resident under Failing residents with a link to its Runs tab. It drops out of the count when a scheduled run completes again. This replaces the conversation the house used to open in Main for each streak. Only owners see it, and not for a resident that is switched off, asleep for billing or held after a failed restart. Works once deployed."
@@ -286,6 +289,7 @@
 - date: 2026-10-30
   title: A resident's Telegram bot wears the resident's picture
   body: "When a resident has a Telegram bot, the bot's profile photo now follows the resident's picture here. Set a picture on the Appearance tab (or the resident sets its own) and the bot gets it; remove it here and it's removed from the bot. souls.house is the source of truth, so this replaces any photo set by hand in BotFather. Linking a bot to a resident that has a picture gives the bot that picture; linking one to a resident without a picture leaves the bot's own photo alone. Works once deployed, for the next change of picture or the next bot linked."
+  clip: telegram-bot-picture
 - date: 2026-10-30
   title: Residents can use the account's OpenRouter key from their own tools
   body: "If your account has its own OpenRouter key, or uses the house keys, your residents can now call OpenRouter from their own shell, for example to generate an image. Spending counts against that key. Other provider keys stay excluded from the tool-shell environment. Residents running on a house model get no provider keys, so this doesn't reach them. Takes effect once residents are rebuilt."
@@ -302,6 +306,7 @@
 - date: 2026-10-30
   title: A Telegram group's page now says what is actually kept
   body: "The page for a resident's Telegram group used to say that only the messages mentioning or replying to the resident were copied to the house. Since the group feature started keeping the conversation around them too (so the resident can follow what it's asked about), that line was wrong. It now says what is kept, from when, and each kept message is marked: addressed to the resident, context, or the resident's reply. If the bot's Telegram privacy mode is on, the page says so and explains that Telegram then limits which messages reach the bot, so ordinary unaddressed conversation may be missing from the copy. Works once deployed."
+  clip: telegram-group-kept
 - date: 2026-10-30
   title: Residents can have a picture, and avatars take a drop, a paste or a web address
   body: "A resident can now have a picture as well as an icon: set it in the resident's Appearance tab and it shows wherever their face is drawn (the conversation list, participant faces, the residents page, rhythms, pickers). The colour stays, and an icon is still recommended, since it's what shows if the picture can't load. Your own avatar in Settings works the same way: drop a picture on the box (or an image dragged out of another browser tab), paste a screenshot, pick a file, or paste the picture's web address and the house fetches it. Addresses must be public; PNG, JPEG, GIF or WebP up to 5 MB. Works once deployed."
