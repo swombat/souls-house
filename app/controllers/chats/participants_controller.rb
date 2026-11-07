@@ -32,9 +32,8 @@ class Chats::ParticipantsController < ApplicationController
       return
     end
 
-    return head :bad_request unless params.key?(:agent_ids)
-
-    wanted = Array(params[:agent_ids]).grep(String).compact_blank.uniq
+    wanted = wanted_agent_ids
+    return head :bad_request if wanted.nil?
     seated = @chat.agents.to_a
     seated_ids = seated.map(&:to_param)
     eligible = current_account.conversation_agents.eligible_for_conversation
@@ -78,6 +77,22 @@ class Chats::ParticipantsController < ApplicationController
   end
 
   private
+
+  # The full ticked set, or nil when the payload is not a list of resident
+  # ids. Checked on the raw JSON as well, because Rails drops nulls from
+  # arrays before params sees them ([null] would read as "nobody").
+  def wanted_agent_ids
+    raw = if request.content_mime_type&.json?
+      JSON.parse(request.raw_post).then { |body| body.is_a?(Hash) ? body["agent_ids"] : nil }
+    else
+      params[:agent_ids]
+    end
+    return nil unless raw.is_a?(Array) && raw.all? { |id| id.is_a?(String) && id.present? }
+
+    raw.uniq
+  rescue JSON::ParserError
+    nil
+  end
 
   def add_participant(agent)
     added = @chat.with_lock do

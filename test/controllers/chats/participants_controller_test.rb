@@ -130,7 +130,7 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
     chat = create_group_chat(@account, agent_ids: [ busy.id, other.id ])
     AgentRuntimeInteraction.reserve!(agent: busy, chat: chat)
 
-    patch account_chat_participant_path(@account, chat), params: { agent_ids: [ "" ] }
+    patch account_chat_participant_path(@account, chat), params: { agent_ids: [] }, as: :json
 
     assert_match(/#{busy.name} is already responding/, flash[:alert])
     assert_equal [ busy.id ], chat.agents.reload.pluck(:id)
@@ -145,6 +145,61 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
 
     assert_match(/no longer available/, flash[:alert])
     assert_not chat.agents.reload.exists?(stranger.id)
+  end
+
+  test "update with an explicit empty list removes every removable seat" do
+    chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id, agents(:code_reviewer).id ])
+
+    patch account_chat_participant_path(@account, chat), params: { agent_ids: [] }, as: :json
+
+    assert_redirected_to account_chat_path(@account, chat)
+    assert_empty chat.agents.reload
+  end
+
+  test "update rejects malformed agent_ids before changing anything" do
+    chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id, agents(:code_reviewer).id ])
+    keep = agents(:research_assistant).to_param
+
+    [ nil, false, "x", { "a" => keep }, [ nil ], [ false ], [ 1 ], [ "" ], [ keep, nil ], [ [ keep ] ] ].each do |bad|
+      assert_no_difference -> { chat.messages.count } do
+        patch account_chat_participant_path(@account, chat), params: { agent_ids: bad }, as: :json
+      end
+      assert_response :bad_request, "accepted #{bad.inspect}"
+    end
+
+    patch account_chat_participant_path(@account, chat), params: { other: 1 }, as: :json
+    assert_response :bad_request
+    assert_equal 2, chat.agents.reload.count
+  end
+
+  test "update treats a seat removed mid-batch as already done and finishes the rest" do
+    first = agents(:research_assistant)
+    second = agents(:code_reviewer)
+    chat = create_group_chat(@account, agent_ids: [ first.id, second.id ])
+    # A concurrent removal of `second` lands after this request read the seats.
+    race = ->(seat) { ChatAgent.where(chat_id: seat.chat_id, agent_id: second.id).delete_all if seat.agent_id == first.id }
+    ChatAgent.before_destroy(race)
+    begin
+      patch account_chat_participant_path(@account, chat), params: { agent_ids: [] }, as: :json
+    ensure
+      ChatAgent.skip_callback(:destroy, :before, race)
+    end
+
+    assert_redirected_to account_chat_path(@account, chat)
+    assert_nil flash[:alert]
+    assert_empty chat.agents.reload
+    left = chat.messages.where("content LIKE ?", "%has left the conversation.").pluck(:content)
+    assert_equal [ "[System Notice] #{first.name} has left the conversation." ], left
+  end
+
+  test "remove_participant! is a no-op for a seat that is already gone" do
+    agent = agents(:research_assistant)
+    chat = create_group_chat(@account, agent_ids: [ agent.id ])
+    chat.chat_agents.delete_all
+
+    assert_no_difference -> { chat.messages.count } do
+      assert_equal false, chat.remove_participant!(agent, by: @user)
+    end
   end
 
   test "chat agents include current human removal capability" do

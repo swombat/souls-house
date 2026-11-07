@@ -748,6 +748,12 @@ module TestSupport
       prefix = params.fetch(:prefix, "History message").to_s.first(80)
       user = account.users.order(:id).first!
       agents = account.agents.active.order(:id).first(params.fetch(:resident_count, 2).to_i.clamp(1, 2))
+      # Unseated residents for lists that must scroll (Manage residents on a phone).
+      if account.name.start_with?("E2E ")
+        params.fetch(:extra_residents, 0).to_i.clamp(0, 20).times do |index|
+          create_agent!(account, "E2E Extra #{index.to_s.rjust(2, "0")}", "blue")
+        end
+      end
 
       chat = account.chats.new(
         model_id: "openrouter/auto",
