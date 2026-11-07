@@ -106,7 +106,7 @@ class Admin::DeploysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "fffffff", alarm["deployed_short"]
 
     get root_path
-    assert_nil inertia_shared_props_fresh["deploy_alarm"] if response.body.include?("data-page")
+    assert_nil inertia_shared_props_fresh["deploy_alarm"]
   end
 
   private
