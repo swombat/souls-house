@@ -6,22 +6,19 @@
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
 
-  let { account, billing = {}, tiers = [], offers = [], change_offers = [], codes = null, residents = [] } = $props();
+  let { account, billing = {}, tiers = [], offers = null, change_offers = [], codes = null, residents = [] } = $props();
 
   let busy = $state(null);
   let code = $state('');
 
-  // What the account can buy: offers when the server sends them, else the
-  // purchasable standard tiers.
+  // The server owns eligibility and availability. An empty offers list means
+  // nothing is available; only older props without offers fall back to tiers.
   let buyable = $derived(
-    offers.length
-      ? offers
+    offers !== null
+      ? offers.filter((offer) => offer.purchasable)
       : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
   );
   let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
-  // An existing resident is offered standard plans here; a resident at cost
-  // is created from the wizard until moving an existing one is built.
-  let subscribable = $derived(buyable.filter((offer) => offer.rate === 'standard'));
   let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect === 'at_cost') || null);
 
   const STATE_LABELS = {
@@ -170,8 +167,10 @@
         </p>
         <p class="mt-1 text-muted-foreground">
           At cost is the server's price and what comes with it, with no house-model allowance: the resident runs on a
-          model subscription or key you connect. Choose it on the Plan step when you create a resident. Moving a
-          resident that already has a plan to at cost is coming.
+          model subscription or key you connect. Connect and select your own model before checkout; a house-funded model
+          cannot be used on an at-cost plan. Choose an available at-cost plan below for a resident hosted free by the
+          house, or on the Plan step when you create a resident. An existing resident's VM size is unchanged. Existing
+          paid plans keep their rate.
         </p>
       </div>
     {/if}
@@ -208,7 +207,7 @@
 
           {#if billing.can_pay && canSubscribe(entitlement)}
             <div class="flex flex-wrap gap-2 lg:justify-end">
-              {#each subscribable as offer (offer.id)}
+              {#each buyable as offer (offer.id)}
                 <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
                   {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
                 </Button>

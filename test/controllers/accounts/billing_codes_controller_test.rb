@@ -50,16 +50,25 @@ class Accounts::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, BillingCodeRedemption.count
   end
 
-  test "checkout at cost for an existing resident is refused for now, grant or no grant" do
+  test "checkout at cost requires a grant then sends the owner to Stripe" do
     sign_in(@owner)
     agent = agents(:research_assistant)
     @stripe = FakeStripe.new
-    Billing.stub(:client, @stripe) do
-      post checkout_account_billing_path(@account), params: { agent_id: agent.to_param, tier: "conversation", rate: "at_cost" },
-        headers: { "X-Inertia" => "true" }
+    Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }) do
+      Billing.stub(:client, @stripe) do
+        post checkout_account_billing_path(@account), params: { agent_id: agent.to_param, tier: "conversation", rate: "at_cost" },
+          headers: { "X-Inertia" => "true" }
+        assert_redirected_to account_billing_path(@account)
+        assert_match(/Redeem your billing code/, flash[:alert])
+        assert_empty @stripe.checkout_sessions
+
+        post account_billing_codes_path(@account), params: { code: "PEPE-AT-COST" }
+        post checkout_account_billing_path(@account), params: { agent_id: agent.to_param, tier: "conversation", rate: "at_cost" },
+          headers: { "X-Inertia" => "true" }
+      end
     end
-    assert_redirected_to account_billing_path(@account)
-    assert_match(/is coming/, flash[:alert])
+    assert_response :conflict
+    assert_equal "at_cost", @stripe.checkout_sessions.sole.first.dig(:metadata, :rate)
   end
 
 end

@@ -17,7 +17,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "the owner moves a paid resident to another plan from the Billing tab" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "active")
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       Billing::SubscriptionSync.new("sub_1", client: @stripe).call
       post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "life" }
     end
@@ -32,7 +32,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       inertia_shared_props["change_offers"].map { |offer| offer["id"] }
 
     sign_in(users(:regular_user))
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "work" }
     end
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier, "only the owner changes plans"
@@ -63,7 +63,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_nil inertia_shared_props["residents"].find { |row| row["id"] == @agent.to_param }
 
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "conversation" },
         headers: { "X-Inertia" => "true" }
     end
@@ -72,7 +72,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "checkout sends the owner to Stripe with tax, VAT ID collection and the resident in metadata" do
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "conversation" },
         headers: { "X-Inertia" => "true" }
     end
@@ -85,13 +85,13 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @agent.id.to_s, params.dig(:subscription_data, :metadata, :agent_id)
     assert params.dig(:automatic_tax, :enabled)
     assert params.dig(:tax_id_collection, :enabled)
-    assert_equal "souls-house-checkout-#{@agent.id}-first-conversation", opts[:idempotency_key]
+    assert_equal BillingCheckoutAttempt.find_by!(agent: @agent).idempotency_key, opts[:idempotency_key]
     assert_equal "cus_test_1", BillingCustomer.find_by!(account: @account).stripe_customer_id
     assert ResidentEntitlement.find_by!(agent: @agent).pending?
   end
 
   def start_checkout(tier)
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: tier },
         headers: { "X-Inertia" => "true" }
     end
@@ -107,7 +107,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "expired", @stripe.session_states.dig("cs_test_1", :status)
     assert_equal "open", @stripe.session_states.dig("cs_test_2", :status)
     assert_equal "cs_test_2", ResidentEntitlement.find_by!(agent: @agent).checkout_session_id
-    assert_equal "souls-house-checkout-#{@agent.id}-cs_test_1-life", @stripe.checkout_sessions.last[1][:idempotency_key]
+    assert_equal 2, @stripe.checkout_sessions.map { |_params, options| options[:idempotency_key] }.uniq.size
   end
 
   test "a paid checkout the webhook hasn't confirmed yet blocks a new one" do
@@ -139,7 +139,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     ResidentSubscription.create!(agent: @agent, account: @account, stripe_subscription_id: "sub_1",
       tier: "conversation", stripe_status: "active")
 
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post checkout_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "life" }
     end
 
@@ -151,7 +151,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "the portal opens for the account's Stripe customer" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
 
-    Billing.stub(:client, @stripe) do
+    with_stripe do
       post portal_account_billing_path(@account), headers: { "X-Inertia" => "true" }
     end
 
@@ -163,6 +163,16 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "another account's residents and billing are out of reach" do
     get account_billing_path(accounts(:other))
     assert_response :not_found
+  end
+
+  private
+
+  # Controller contract tests keep fixture transactions; actual committed-intent
+  # and PostgreSQL lock behavior is exercised in CheckoutLifecycleTest.
+  def with_stripe(&block)
+    Billing.stub(:client, @stripe) do
+      Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }, &block)
+    end
   end
 
 end
