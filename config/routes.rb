@@ -10,6 +10,7 @@ Rails.application.routes.draw do
       namespace :e2e do
         post :setup, to: "/test_support/e2e#setup"
         post :conversation_fixture, to: "/test_support/e2e#conversation_fixture"
+        post :commitment_fixture, to: "/test_support/e2e#commitment_fixture"
         post :append_messages, to: "/test_support/e2e#append_messages"
         post :title_chat, to: "/test_support/e2e#title_chat"
         post :assistant_message, to: "/test_support/e2e#assistant_message"
