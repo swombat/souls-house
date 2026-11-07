@@ -236,15 +236,36 @@ class Chat < ApplicationRecord
   end
 
   # Run state must not be cached with chat content or touch/reorder the chat.
+  # Nor must a waiting commitment: it changes without the chat changing.
   def self.sidebar_json_for(chats)
     chats = chats.to_a
     working = AgentRuntimeInteraction.working
       .where(chat_id: chats.map(&:id))
       .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
+    waiting = waiting_commitments_for(chats)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
       ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
-      json.merge("working_agent_ids" => ids)
+      json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id])
+    end
+  end
+
+  # A resident's scheduled promise to come back to this conversation
+  # (Daniel, 7 Nov, JdwZaj JnwgVy): the sidebar marks the thread so that
+  # scrolling the list shows where something will wake. Only commitments
+  # due in the conversation they were made in count; one that opens a new
+  # conversation wakes nothing here. The earliest one is named, with how
+  # many are waiting. One query for the whole list.
+  def self.waiting_commitments_for(chats)
+    rows = Commitment.scheduled
+      .where(destination: "same_conversation", source_chat_id: chats.map(&:id))
+      .joins(:agent)
+      .order(:due_at, :id)
+      .pluck(:source_chat_id, :due_at, "agents.name")
+
+    rows.group_by(&:first).transform_values do |list|
+      _, due_at, name = list.first
+      { "due_at" => due_at.iso8601, "resident_name" => name, "count" => list.size }
     end
   end
 

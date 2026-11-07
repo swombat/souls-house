@@ -93,6 +93,10 @@ class Commitment < ApplicationRecord
   # Also on save, so the unique index sees a digest even when validation is
   # skipped.
   before_save :set_account, :set_text_digest
+  # The sidebar marks a conversation with a commitment waiting in it
+  # (Chat.waiting_commitments_for); making, moving, cancelling or
+  # delivering one changes that mark without touching the chat.
+  after_commit :refresh_sidebar_mark, if: :sidebar_mark_changed?
 
   scope :scheduled, -> { where(status: "scheduled") }
   scope :due, ->(now = Time.current) { scheduled.where(due_at: ..now) }
@@ -291,6 +295,20 @@ class Commitment < ApplicationRecord
   end
 
   private
+
+  def sidebar_mark_changed?
+    return false unless destination == "same_conversation" || saved_change_to_destination?
+    return true if destroyed? || previously_new_record?
+
+    saved_change_to_status? || saved_change_to_due_at? || saved_change_to_source_chat_id?
+  end
+
+  def refresh_sidebar_mark
+    chat_account = source_chat&.account
+    return unless chat_account
+
+    ActionCable.server.broadcast("Account:#{chat_account.obfuscated_id}", { action: "refresh", prop: "chats" })
+  end
 
   def set_account
     self.account ||= source_chat&.account

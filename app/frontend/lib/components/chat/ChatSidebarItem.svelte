@@ -1,9 +1,9 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import { shortDate } from '$lib/chat-display';
+  import { commitmentMarkLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
+  import { Alarm, Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
@@ -15,6 +15,7 @@
       show_archived: showArchived ? true : undefined,
     })
   );
+  const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
 </script>
 
 <div class="relative group/card">
@@ -46,6 +47,16 @@
           <Archive size={12} class="text-muted-foreground flex-shrink-0" />
         {/if}
         <span class="truncate">{chat.title_or_default || chat.title || 'New Chat'}</span>
+        {#if commitmentLabel}
+          <span
+            data-testid="commitment-mark"
+            role="img"
+            aria-label={commitmentLabel}
+            title={commitmentLabel}
+            class="flex-shrink-0 text-muted-foreground">
+            <Alarm size={12} weight="bold" />
+          </span>
+        {/if}
         {#if !chat.title && chat.message_count > 0}
           <Spinner size={12} class="animate-spin text-muted-foreground flex-shrink-0" />
         {/if}

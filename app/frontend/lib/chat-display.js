@@ -19,3 +19,24 @@ export function shortDate(dateString) {
     day: 'numeric',
   });
 }
+
+// The hover line for the sidebar's waiting-commitment mark: who comes back,
+// and when, in the viewer's own clock. The commitment's text stays on the
+// resident's page; the list only says that something will wake here.
+export function commitmentMarkLabel(commitment, locale = undefined) {
+  if (!commitment?.due_at) return '';
+
+  const date = new Date(commitment.due_at);
+  if (isNaN(date.getTime())) return '';
+
+  const when = date.toLocaleString(locale, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const who = commitment.resident_name || 'A resident';
+  const more = commitment.count > 1 ? ` (${commitment.count} waiting)` : '';
+  return `${who} will come back here ${when}${more}`;
+}

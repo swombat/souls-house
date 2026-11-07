@@ -784,6 +784,32 @@ module TestSupport
       }
     end
 
+    # A resident's commitment in a conversation, through the model's own
+    # callbacks so the sidebar hears about it the way it does in production.
+    # "deliver" writes the end state the sweep leaves when the wake's run
+    # ended ok; the sweep itself (message, wake) is covered by its own tests.
+    def commitment_fixture
+      case params.fetch(:op)
+      when "create"
+        chat = Chat.find(params.fetch(:chat_id))
+        agent = chat.agents.order(:id).first!
+        commitment = Commitment.create!(agent: agent, source_chat: chat, text: "E2E come back #{SecureRandom.hex(4)}",
+          summary: "Come back to this", due_at: 2.days.from_now)
+        render json: { commitment_id: commitment.id, resident_name: agent.name }
+      when "cancel"
+        commitment = Commitment.find(params.fetch(:commitment_id))
+        commitment.cancel!(by: commitment.account.users.order(:id).first!)
+        head :no_content
+      when "deliver"
+        commitment = Commitment.find(params.fetch(:commitment_id))
+        now = Time.current
+        commitment.update!(status: "activated", activated_at: now, wake_state: "delivered", delivered_at: now)
+        head :no_content
+      else
+        head :unprocessable_entity
+      end
+    end
+
     # Append a burst through the normal persistence/broadcast path. A small
     # optional delay lets tests overlap broadcasts with Inertia reloads and
     # ActionCable resubscriptions instead of only testing a single quiet update.
@@ -1054,6 +1080,7 @@ module TestSupport
       connections = ServiceConnection.where(account_id: accounts.select(:id))
       CommsMessage.where(service_connection: connections).delete_all
       CommsChat.where(service_connection: connections).delete_all
+      Commitment.where(account_id: accounts.select(:id)).delete_all
       accounts.find_each(&:destroy!)
       users.find_each(&:destroy!)
     end
