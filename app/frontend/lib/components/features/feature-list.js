@@ -732,7 +732,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. A plan pays for the resident's home and its own monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
+      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. Standard plans include a monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. Eligible accounts can optionally buy available at-cost hosting for existing complimentary residents in Billing: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
     icon: CreditCard,
   },
   {

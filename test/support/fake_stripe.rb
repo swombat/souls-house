@@ -197,7 +197,7 @@ class FakeStripe
             raise Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters they " \
                                                "were first used with. #{params} vs #{state[:create_params]}")
           end
-          next Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
+          next construct({ id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret" }.merge(state))
         end
         fault = @checkout_fault
         @checkout_fault = nil
@@ -205,6 +205,9 @@ class FakeStripe
         @checkout_sessions << [ params, opts ]
         id = "cs_test_#{@checkout_sessions.size}"
         @session_states[id] = { status: "open", subscription: nil, mode: params[:mode] || "subscription", customer: params[:customer],
+                                client_reference_id: params[:client_reference_id],
+                                metadata: params[:metadata]&.transform_keys(&:to_s) || {},
+                                url: "https://checkout.stripe.com/c/pay/#{id}",
                                 idempotency_key: opts[:idempotency_key], create_params: params.deep_dup }
         raise fault[0] if fault
         Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}", client_secret: "#{id}_secret")
@@ -217,6 +220,14 @@ class FakeStripe
 
         @expired_sessions << id
         @session_states[id][:status] = "expired"
+        construct({ id: id }.merge(@session_states[id]))
+      },
+      list: lambda { |params|
+        all = @session_states.select { |_id, state| state[:customer] == params[:customer] }.to_a
+        from = params[:starting_after] ? all.index { |id, _state| id == params[:starting_after] } + 1 : 0
+        size = params[:limit] || 100
+        page = all[from, size] || []
+        construct(object: "list", data: page.map { |id, state| { id: id }.merge(state) }, has_more: from + size < all.size)
       }
     )
     Struct.new(:sessions).new(sessions)

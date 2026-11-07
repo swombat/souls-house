@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_143000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_035500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -650,6 +650,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_143000) do
     t.index ["auditable_type", "auditable_id"], name: "index_audit_logs_on_auditable_type_and_auditable_id"
     t.index ["created_at"], name: "index_audit_logs_on_created_at"
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
+  end
+
+  create_table "billing_checkout_attempts", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "billing_code_redemption_id"
+    t.string "tier", null: false
+    t.string "rate", null: false
+    t.string "stripe_price_id", null: false
+    t.string "idempotency_key", null: false
+    t.jsonb "create_params", null: false
+    t.string "stripe_session_id"
+    t.datetime "resolved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_billing_checkout_attempts_on_account_id"
+    t.index ["agent_id"], name: "index_billing_checkout_attempts_on_agent_id"
+    t.index ["agent_id"], name: "one_unresolved_checkout_per_resident", unique: true, where: "(resolved_at IS NULL)"
+    t.index ["billing_code_redemption_id"], name: "index_billing_checkout_attempts_on_billing_code_redemption_id"
+    t.index ["idempotency_key"], name: "index_billing_checkout_attempts_on_idempotency_key", unique: true
+    t.index ["stripe_session_id"], name: "index_billing_checkout_attempts_on_stripe_session_id", unique: true
   end
 
   create_table "billing_code_redemptions", force: :cascade do |t|
@@ -3088,6 +3109,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_143000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "billing_checkout_attempts", "accounts"
+  add_foreign_key "billing_checkout_attempts", "agents"
+  add_foreign_key "billing_checkout_attempts", "billing_code_redemptions"
   add_foreign_key "billing_code_redemptions", "accounts"
   add_foreign_key "billing_code_redemptions", "billing_codes"
   add_foreign_key "billing_code_redemptions", "users", column: "redeemed_by_id"

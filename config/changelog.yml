@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-07
+  title: At-cost hosting for existing residents
+  body: "Eligible accounts can now choose an available at-cost plan in Billing for a resident hosted free by the house: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate when changing plans. Takes effect after Rails deployment."
 - date: 2026-11-06
   title: Switch rooms from New Chat on mobile
   body: "The room dropdown on mobile now switches the active room and its conversation shortcuts instead of only choosing where the next chat will go. New chats on both mobile and desktop start in the active room (Main when viewing All chats); the dropdown is hidden on desktop."

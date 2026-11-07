@@ -210,10 +210,13 @@ areas:
       webhooks, kept so a replay is harmless. A billing code is an invitation
       to a billing arrangement, made in Site Admin; an account's redemption of
       one is its grant, and decides which plans it may buy at which rate.
+      Checkout attempts keep the authorised payment intent before Stripe is
+      called, so an uncertain answer cannot create a second payable checkout.
     tables:
       - billing_customers
       - billing_codes
       - billing_code_redemptions
+      - billing_checkout_attempts
       - resident_birth_orders
       - resident_subscriptions
       - resident_entitlements
