@@ -23,7 +23,8 @@ posting resident's run in this same chat. The helper includes it only when
 
 ## Versioned contract
 
-The envelope has exactly `version`, `root`, and `elements`. Version is integer
+The envelope requires `version`, `root`, and `elements`, and accepts optional
+`fallback` (described below). Version is integer
 `1`; root is an element ID; elements is an ID-keyed object. Each element has
 exactly `type`, `props`, and optional `children` (an array of IDs). Leaf children
 may be omitted or `[]`. Only Stack and Card can have nonempty children.
@@ -65,6 +66,42 @@ must remain numbers and cannot represent those exact large counts.
 Editing a message's prose clears its rich UI unless an internal author explicitly
 replaces the spec in the same revision. The v1 API is post-only for specs.
 Older/unsupported clients can always read the fallback.
+
+### Designated fallback prose
+
+`rich_ui.fallback` optionally identifies generated, fallback-only prose: a
+nonblank string of at most 3500 characters, without NUL, included in the envelope's
+256 KiB limit. `content` must equal that string, or end with `"\n\n" + fallback`.
+Everything before that exact separator is authored caption and remains visible,
+unchanged. For example:
+
+```json
+{
+  "content": "My caption.\n\nJobs remaining: 2.",
+  "rich_ui": {
+    "version": 1,
+    "fallback": "Jobs remaining: 2.",
+    "root": "queue",
+    "elements": {
+      "queue": {"type": "Metric", "props": {"label": "Jobs remaining", "value": "2"}}
+    }
+  }
+}
+```
+
+Rich-capable chat collapses only this explicitly designated suffix into a
+**Text fallback** disclosure below the rich view. It remains available even if
+the renderer fails at runtime. Invalid or unsupported specs and suffix mismatches
+show all the original content. The renderer receives a static projection without
+the `fallback` field. API transcripts, wake prompts and other clients retain the
+complete readable `content`.
+
+Existing messages without `fallback` continue displaying all their prose; there
+is no attempt to infer generated text from table dimensions, sample rows or
+similar wording. Repost with the updated helper to use the disclosure. Deploy
+Rails before updating the helper: older servers reject this optional field, and
+older strict web clients show the complete prose instead of rendering the view.
+
 Wake prompts and transcript serialization never expand the full spec: they carry
 only `rich_ui_summary` alongside the ordinary prose. Fetch the full data on demand
 with authenticated
@@ -91,7 +128,8 @@ root is Card, Table, or Chart.
 
 Every posting command generates compact readable fallback prose: table dimensions,
 columns and up to three sample rows, chart endpoints/ranges, or text/metric
-summaries. `--caption` augments rather than replaces that fallback. Review
+summaries. The helper designates this generated suffix as `rich_ui.fallback`;
+`--caption` stays outside it and augments rather than replaces it. Review
 `--dry-run` before sending sensitive or consequential data. It prints the POST
 JSON body without reading credentials or using the network; it omits run attribution.
 

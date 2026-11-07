@@ -58,6 +58,11 @@ class ValidationTest(unittest.TestCase):
             with self.subTest(field=field, value=value):
                 self.reject(value, field)
 
+    def test_optional_fallback_contract(self):
+        share.validate(dict(ui(), fallback="Readable generated summary"))
+        for fallback in (None, {}, 12, "", " ", "bad\0text", "x" * 3501):
+            self.reject(dict(ui(), fallback=fallback), "fallback")
+
     def test_table_bounds_and_cells(self):
         for props, field in [
             ({"columns": [], "rows": []}, "columns"),
@@ -175,6 +180,8 @@ class CliTest(unittest.TestCase):
         body = json.loads(result.stdout)
         self.assertIn("Caption\n\nResults", body["content"])
         self.assertIn("Code: 001", body["content"])
+        self.assertEqual("Caption\n\n" + body["rich_ui"]["fallback"], body["content"])
+        self.assertNotIn("Caption", body["rich_ui"]["fallback"])
         self.assertEqual("=SUM(A1)", body["rich_ui"]["elements"]["main"]["props"]["rows"][1][1])
         self.path.write_text(json.dumps(body["rich_ui"]))
         self.assertEqual(0, self.run_cli("validate", "--file", str(self.path)).returncode)
@@ -185,9 +192,18 @@ class CliTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         body = json.loads(result.stdout)
         self.assertIn("2 → 5", body["content"])
+        self.assertEqual(body["content"], body["rich_ui"]["fallback"])
         self.assertEqual("line", body["rich_ui"]["elements"]["main"]["props"]["kind"])
         result = self.run_cli("chart", "chat", "--file", str(self.path), "--kind", "bar", "--dry-run")
         self.assertEqual("bar", json.loads(result.stdout)["rich_ui"]["elements"]["main"]["props"]["kind"])
+
+    def test_ui_replaces_incoming_marker_and_blank_caption_is_not_a_caption(self):
+        self.path.write_text(json.dumps(dict(ui(), fallback="Stale fallback")))
+        result = self.run_cli("ui", "chat", "--file", str(self.path), "--caption", " \n ", "--dry-run")
+        self.assertEqual(0, result.returncode, result.stderr)
+        body = json.loads(result.stdout)
+        self.assertEqual("Hello", body["content"])
+        self.assertEqual(body["content"], body["rich_ui"]["fallback"])
 
     def test_invalid_files_no_post(self):
         for text in ('{"version":1,"version":1}', "{", "[]"):

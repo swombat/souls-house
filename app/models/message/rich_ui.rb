@@ -25,6 +25,9 @@ module Message::RichUi
     errors.add(:rich_ui, "is only supported on resident replies") unless role == "assistant" && agent_id
     errors.add(:content, "is required as the rich UI's readable fallback") if content.blank?
     RichUiSpec.new(rich_ui).validate!
+    if rich_ui.key?("fallback") && content != rich_ui["fallback"] && !content.to_s.end_with?("\n\n#{rich_ui["fallback"]}")
+      errors.add(:rich_ui, "fallback must equal content or follow the caption after two newlines")
+    end
   rescue RichUiSpec::Invalid => error
     errors.add(:rich_ui, error.message)
   end
