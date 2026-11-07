@@ -377,6 +377,25 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes request.send(:request_text), line
   end
 
+  test "rich UI contributes only a compact summary to full and delta transcripts" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Rich transcript")
+    chat.agents << agent
+    spec = { "version" => 1, "root" => "table", "elements" => {
+      "table" => { "type" => "Table", "props" => {
+        "title" => "Large result", "columns" => [ "Value" ], "rows" => Array.new(200) { [ "secret-cell-" * 80 ] }
+      } }
+    } }
+    message = chat.messages.create!(role: "assistant", agent: agent, content: "Here is the result.", rich_ui: spec)
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    line = request.send(:format_transcript_line, message)
+    assert_includes line, "1 cols × 200 rows"
+    assert_includes line, "soulshouse-share show #{chat.to_param} #{message.to_param}"
+    assert_not_includes line, "secret-cell"
+    assert_operator line.bytesize, :<, 500
+    assert_includes request.send(:request_text), line
+  end
+
   test "full transcript keeps recent messages within the runtime byte budget" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Long transcript")

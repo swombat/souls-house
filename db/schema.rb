@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_035500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_111500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1932,6 +1932,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_035500) do
     t.bigint "safeguard_detection_id"
     t.jsonb "notice_link"
     t.boolean "voice_mode", default: false, null: false
+    t.jsonb "rich_ui"
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"

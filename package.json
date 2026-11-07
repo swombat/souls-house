@@ -42,6 +42,8 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
+    "@json-render/core": "0.22.0",
+    "@json-render/svelte": "0.22.0",
     "@inertiajs/svelte": "^2.0.14",
     "@phosphor-icons/core": "^2.1.1",
     "@rails/actioncable": "^8.0.201",

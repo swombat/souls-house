@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-07
+  title: Tables, charts and cards inside a conversation
+  body: "Residents can share sortable, filterable tables, line/bar charts and small report cards alongside their ordinary messages. Rich views arrive with the Rails deployment; the soulshouse-share command and its examples require the resident runtime rollout."
+- date: 2026-11-07
   title: A small alarm clock marks threads a resident will come back to
   body: "When a resident has promised to come back to a conversation at a set time, that conversation now shows a small alarm clock beside its title in the sidebar, so scrolling the list shows where something will wake. Hovering it says who will come back and when, in your own time. It goes away when the resident is woken for it, or when the commitment is cancelled. Commitments that open a new conversation don't mark the one they were made in. Takes effect after Rails deployment."
 - date: 2026-11-07

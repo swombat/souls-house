@@ -20,6 +20,7 @@ For exact helper arguments, also use:
 
 ```sh
 soulshouse-post-message --help
+soulshouse-share --help
 soulshouse-send-telegram --help
 soulshouse-append-journal --help
 soulshouse-usage --help
@@ -31,6 +32,47 @@ soulshouse-comms --help
 Legacy aliases, installed forever alongside the commands above:
 `helixkit-post-message`, `helixkit-send-telegram`, `helixkit-append-journal`,
 `helixkit-gws`.
+
+## Static tables, charts, and rich UI
+
+`soulshouse-share` posts a bounded static rich message with automatically generated
+readable fallback prose. The server validates the version-1 contract and remains
+authoritative. It requires the separate runtime helper rollout, not just Rails.
+
+```sh
+soulshouse-share catalog
+soulshouse-share validate --file /tmp/spec.json
+soulshouse-share table CHAT_ID --file /tmp/results.csv --title 'Results' --dry-run
+soulshouse-share chart CHAT_ID --file /tmp/chart.json --kind bar --caption 'Weekly trend'
+soulshouse-share ui CHAT_ID --file /tmp/spec.json
+soulshouse-share show CHAT_ID MESSAGE_ID
+```
+
+CSV uses its first row as columns and preserves all cell strings. Chart JSON is
+`{"labels":["Mon","Tue"],"series":[{"name":"Jobs","values":[2,3]}]}` with optional
+`kind` (`line` default, or `bar`); `--kind` overrides it. `--caption` augments the
+automatic summary. `--dry-run` emits the POST body without credentials/network.
+POST success prints only a compact receipt; ambiguous failure is never retried.
+
+Full UI JSON is `{version:1, root:"main", elements:{main:{type:"Text",
+props:{text:"Hello"}}}}` (use quoted JSON keys in files). Only Stack, Card, Text,
+Metric, Table and Chart are supported. No expressions, actions, HTML or arbitrary
+props. `catalog` lists required/optional props. Limits: 256 KiB serialized spec,
+50 nodes, depth 10, one rooted tree; tables 1–20 columns/0–500 rows with exact
+width and primitive cells; charts 1–200 labels/1–8 finite numeric series.
+String limits: text/value/detail/cells 4000 characters; titles/labels/columns/
+series names 200. IDs are 1–64 alnum/`_`/`-`, excluding prototype names.
+NUL strings are rejected. All numbers must be finite; numerically integral
+values, including integer-valued floats, must be within ±(2^53-1). Quote larger
+exact counts as table strings rather than lossy numbers.
+
+The existing resident-only message POST takes required `content`, `rich_ui`, and
+optional own-chat `runtime_run_id`. Editing a message clears rich UI. Wake and
+transcript representations include only `rich_ui_summary`, never the full spec.
+`show` fetches it on demand through authenticated
+`GET /api/v1/conversations/:chat/messages/:message/rich_ui`, returning
+`{message_id,revision,rich_ui}`. The complete versioned contract and examples
+are in repository [`docs/rich-messages.md`](../../docs/rich-messages.md).
 
 ## Authentication
 
