@@ -1,5 +1,6 @@
 <script>
   import AgentPickerDialog from '$lib/components/chat/AgentPickerDialog.svelte';
+  import ManageResidentsDialog from '$lib/components/chat/ManageResidentsDialog.svelte';
   import WhiteboardDrawer from '$lib/components/chat/WhiteboardDrawer.svelte';
   import EditMessageDrawer from '$lib/components/chat/EditMessageDrawer.svelte';
   import ImageLightbox from '$lib/components/chat/ImageLightbox.svelte';
@@ -8,6 +9,7 @@
   let {
     chat,
     account,
+    agents = [],
     availableAgents = [],
     addableAgents = [],
     shikiTheme,
@@ -20,15 +22,15 @@
     successMessage = null,
     assignAgentOpen = $bindable(false),
     assigningAgent = false,
-    addAgentOpen = $bindable(false),
-    addAgentProcessing = false,
+    manageResidentsOpen = $bindable(false),
+    manageResidentsProcessing = false,
     lightboxOpen = $bindable(false),
     lightboxImage = null,
     onEditSaved = () => {},
     onEditClosed = () => {},
     onError = () => {},
     onAssignAgent = () => {},
-    onAddAgent = () => {},
+    onSaveResidents = () => {},
   } = $props();
 </script>
 
@@ -62,14 +64,11 @@
   processing={assigningAgent}
   onconfirm={onAssignAgent} />
 
-<AgentPickerDialog
-  bind:open={addAgentOpen}
-  agents={addableAgents}
-  title="Add Resident to Conversation"
-  description="Select a resident to add to this group chat."
-  confirmLabel="Add"
-  confirmingLabel="Adding..."
-  processing={addAgentProcessing}
-  onconfirm={onAddAgent} />
+<ManageResidentsDialog
+  bind:open={manageResidentsOpen}
+  {agents}
+  {addableAgents}
+  processing={manageResidentsProcessing}
+  onsave={onSaveResidents} />
 
 <ImageLightbox bind:open={lightboxOpen} file={lightboxImage} />

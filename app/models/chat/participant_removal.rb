@@ -15,11 +15,14 @@ module Chat::ParticipantRemoval
     seats.exists?
   end
 
+  # Returns false, changing nothing, when the seat is already gone (a
+  # concurrent removal won the lock first).
   def remove_participant!(agent, by:)
     with_lock do
       raise Account::NotAuthorized unless participant_removable_by?(agent, by)
 
-      seat = chat_agents.find_by!(agent: agent)
+      seat = chat_agents.find_by(agent: agent)
+      next false unless seat
       raise Chat::AlreadyResponding, "#{agent.name} is already responding; try again when they are idle" if agent_response_active?(agent)
 
       # reserve! holds this same chat lock. Either it wins and removal refuses,
@@ -31,6 +34,7 @@ module Chat::ParticipantRemoval
       end
       messages.create!(role: "user", content: "[System Notice] #{agent.name} has left the conversation.")
       yield if block_given?
+      true
     end
   end
 

@@ -8,8 +8,8 @@ export function createChatActions(context, history) {
     whiteboardOpen: false,
     assignAgentOpen: false,
     assigningAgent: false,
-    addAgentOpen: false,
-    addAgentProcessing: false,
+    manageResidentsOpen: false,
+    manageResidentsProcessing: false,
     lightboxOpen: false,
     lightboxImage: null,
     editDrawerOpen: false,
@@ -47,17 +47,19 @@ export function createChatActions(context, history) {
       }
     );
   }
-  function addAgentToChat(agentId) {
+  // Sends the whole ticked set; the server adds and removes the difference.
+  function saveResidents(agentIds) {
     const { chat, account } = context();
-    if (!chat || !agentId) return;
-    ui.addAgentProcessing = true;
-    router.post(
+    if (!chat) return;
+    ui.manageResidentsProcessing = true;
+    router.patch(
       accountChatParticipantPath(account.id, chat.id),
-      { agent_id: agentId },
+      { agent_ids: agentIds },
       {
+        preserveScroll: true,
         onFinish: () => {
-          ui.addAgentProcessing = false;
-          ui.addAgentOpen = false;
+          ui.manageResidentsProcessing = false;
+          ui.manageResidentsOpen = false;
         },
       }
     );
@@ -98,7 +100,7 @@ export function createChatActions(context, history) {
     ui,
     notify,
     assignToAgent,
-    addAgentToChat,
+    saveResidents,
     deleteMessage,
     requestVoice,
     openImage(file) {

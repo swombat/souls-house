@@ -13,13 +13,18 @@
     ChartBar,
     EyeSlash,
     DoorOpen,
+    UsersThree,
+    CaretRight,
+    ArrowLeft,
   } from 'phosphor-svelte';
+  import { tick } from 'svelte';
   import { page } from '@inertiajs/svelte';
   import { destinations, MAIN } from '$lib/rooms';
   import { ADMIN_ONLY_FOCUS, ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
 
   let {
     chat,
+    agents = [],
     availableAgents = [],
     addableAgents = [],
     canDeleteChat = false,
@@ -30,7 +35,7 @@
     showMessageTelemetry = $bindable(false),
     onToggleWebAccess = () => {},
     onAssignAgent = () => {},
-    onAddAgent = () => {},
+    onManageResidents = () => {},
     onFork = () => {},
     onWhiteboardOpen = () => {},
     onArchive = () => {},
@@ -41,123 +46,151 @@
     onDismissReply = () => {},
     replyRequested = false,
   } = $props();
+
+  // "Move to room" drills down inside the same menu (like the Site Admin and
+  // account menus) instead of opening a side flyout, which runs off a phone.
+  let panel = $state('main');
+  let content = $state(null);
+
+  async function showPanel(event, nextPanel) {
+    event.preventDefault();
+    panel = nextPanel;
+    await tick();
+    content?.querySelector('[role="menuitem"]')?.focus();
+  }
+
+  const canManageResidents = $derived(
+    chat?.manual_responses && (addableAgents.length > 0 || agents.some((agent) => agent.can_remove_from_chat))
+  );
 </script>
 
 {#if chat}
-  <DropdownMenu.Root>
+  <DropdownMenu.Root
+    onOpenChange={(open) => {
+      if (!open) panel = 'main';
+    }}>
     <DropdownMenu.Trigger
       aria-label="Conversation actions"
       class="inline-flex items-center justify-center h-8 w-8 rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
       <DotsThreeVertical size={20} weight="bold" />
     </DropdownMenu.Trigger>
-    <DropdownMenu.Content align="end" class="w-48">
-      {#if replyRequested}
-        <DropdownMenu.Item onclick={onDismissReply}>
-          <EyeSlash size={16} class="mr-2" />
-          Dismiss request to respond
+    <DropdownMenu.Content
+      bind:ref={content}
+      align="end"
+      class="w-56 max-w-[calc(100vw-1rem)] max-h-[var(--bits-dropdown-menu-content-available-height)] overflow-y-auto">
+      {#if panel === 'rooms'}
+        <DropdownMenu.Item onSelect={(event) => showPanel(event, 'main')}>
+          <ArrowLeft size={16} class="mr-2" />
+          Back
         </DropdownMenu.Item>
         <DropdownMenu.Separator />
-      {/if}
-      {#if !chat.manual_responses}
-        <DropdownMenu.CheckboxItem checked={chat.web_access} onCheckedChange={onToggleWebAccess}>
-          <Globe size={16} class="mr-2" weight="duotone" />
-          Allow web access
-        </DropdownMenu.CheckboxItem>
-        {#if availableAgents.length > 0}
-          <DropdownMenu.Item onclick={onAssignAgent}>
-            <Robot size={16} class="mr-2" weight="duotone" />
-            Assign to Resident
+        <DropdownMenu.Label class="text-xs font-medium text-muted-foreground">Move to room</DropdownMenu.Label>
+        {#each destinations(rooms, $page.props.main_room_name) as option (option.id)}
+          {@const here = (chat.room_id || MAIN) === option.id}
+          <DropdownMenu.Item disabled={here} onclick={() => onMoveToRoom(option.id)}>
+            {option.name}{here ? ' (here)' : ''}
+          </DropdownMenu.Item>
+        {/each}
+      {:else}
+        {#if replyRequested}
+          <DropdownMenu.Item onclick={onDismissReply}>
+            <EyeSlash size={16} class="mr-2" />
+            Dismiss request to respond
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+        {/if}
+        {#if !chat.manual_responses}
+          <DropdownMenu.CheckboxItem checked={chat.web_access} onCheckedChange={onToggleWebAccess}>
+            <Globe size={16} class="mr-2" weight="duotone" />
+            Allow web access
+          </DropdownMenu.CheckboxItem>
+          {#if availableAgents.length > 0}
+            <DropdownMenu.Item onclick={onAssignAgent}>
+              <Robot size={16} class="mr-2" weight="duotone" />
+              Assign to Resident
+            </DropdownMenu.Item>
+          {/if}
+          <DropdownMenu.Separator />
+        {/if}
+        {#if canManageResidents}
+          <DropdownMenu.Item onclick={onManageResidents}>
+            <UsersThree size={16} class="mr-2" weight="duotone" />
+            Manage residents
           </DropdownMenu.Item>
         {/if}
+
+        <DropdownMenu.Item onclick={onFork}>
+          <GitFork size={16} class="mr-2" weight="duotone" />
+          Fork
+        </DropdownMenu.Item>
+
+        <DropdownMenu.CheckboxItem checked={showCosts} onCheckedChange={(checked) => (showCosts = checked)}>
+          <ChartBar size={16} class="mr-2" weight="duotone" />
+          View costs
+        </DropdownMenu.CheckboxItem>
+
+        {#if chat?.active_whiteboard}
+          <DropdownMenu.Item onclick={onWhiteboardOpen}>
+            <Notepad size={16} class="mr-2" weight="duotone" />
+            Whiteboard
+          </DropdownMenu.Item>
+        {/if}
+
         <DropdownMenu.Separator />
-      {/if}
-      {#if chat.manual_responses && addableAgents.length > 0}
-        <DropdownMenu.Item onclick={onAddAgent}>
-          <Robot size={16} class="mr-2" weight="duotone" />
-          Add Resident
-        </DropdownMenu.Item>
-      {/if}
 
-      <DropdownMenu.Item onclick={onFork}>
-        <GitFork size={16} class="mr-2" weight="duotone" />
-        Fork
-      </DropdownMenu.Item>
-
-      <DropdownMenu.CheckboxItem checked={showCosts} onCheckedChange={(checked) => (showCosts = checked)}>
-        <ChartBar size={16} class="mr-2" weight="duotone" />
-        View costs
-      </DropdownMenu.CheckboxItem>
-
-      {#if chat?.active_whiteboard}
-        <DropdownMenu.Item onclick={onWhiteboardOpen}>
-          <Notepad size={16} class="mr-2" weight="duotone" />
-          Whiteboard
-        </DropdownMenu.Item>
-      {/if}
-
-      <DropdownMenu.Separator />
-
-      {#if rooms.length > 0}
-        <DropdownMenu.Sub>
-          <DropdownMenu.SubTrigger>
+        {#if rooms.length > 0}
+          <DropdownMenu.Item onSelect={(event) => showPanel(event, 'rooms')} data-testid="move-to-room">
             <DoorOpen size={16} class="mr-2" weight="duotone" />
-            Move to room…
-          </DropdownMenu.SubTrigger>
-          <DropdownMenu.SubContent class="w-44">
-            {#each destinations(rooms, $page.props.main_room_name) as option (option.id)}
-              {@const here = (chat.room_id || MAIN) === option.id}
-              <DropdownMenu.Item disabled={here} onclick={() => onMoveToRoom(option.id)}>
-                {option.name}{here ? ' (here)' : ''}
-              </DropdownMenu.Item>
-            {/each}
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Sub>
-      {/if}
+            Move to room
+            <CaretRight size={16} class="ml-auto" />
+          </DropdownMenu.Item>
+        {/if}
 
-      <DropdownMenu.Item onclick={onArchive}>
-        <Archive size={16} class="mr-2" weight="duotone" />
-        {chat.archived ? 'Unarchive' : 'Archive'}
-      </DropdownMenu.Item>
-
-      {#if canDeleteChat}
-        <DropdownMenu.Item
-          onclick={onDelete}
-          class={chat.discarded ? '' : 'text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400'}>
-          {#if chat.discarded}
-            <ArrowCounterClockwise size={16} class="mr-2" weight="duotone" />
-            Restore
-          {:else}
-            <Trash size={16} class="mr-2" weight="duotone" />
-            Delete
-          {/if}
+        <DropdownMenu.Item onclick={onArchive}>
+          <Archive size={16} class="mr-2" weight="duotone" />
+          {chat.archived ? 'Unarchive' : 'Archive'}
         </DropdownMenu.Item>
-      {/if}
 
-      {#if isSiteAdmin}
-        <DropdownMenu.Separator />
-        <DropdownMenu.Label class={`text-xs font-medium ${ADMIN_ONLY_TEXT}`}>Site admins only</DropdownMenu.Label>
-        <DropdownMenu.Item onclick={onModerateAll} class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
-          <ShieldCheck size={16} class="mr-2" weight="duotone" />
-          Moderate All Messages
-        </DropdownMenu.Item>
-        <DropdownMenu.CheckboxItem
-          checked={showAllMessages}
-          onCheckedChange={(checked) => (showAllMessages = checked)}
-          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
-          Show all messages
-        </DropdownMenu.CheckboxItem>
-        <DropdownMenu.CheckboxItem
-          checked={showMessageTelemetry}
-          onCheckedChange={(checked) => (showMessageTelemetry = checked)}
-          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
-          View telemetry
-        </DropdownMenu.CheckboxItem>
-        <DropdownMenu.CheckboxItem
-          checked={debugMode}
-          onCheckedChange={(checked) => (debugMode = checked)}
-          class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
-          Debug mode
-        </DropdownMenu.CheckboxItem>
+        {#if canDeleteChat}
+          <DropdownMenu.Item
+            onclick={onDelete}
+            class={chat.discarded ? '' : 'text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400'}>
+            {#if chat.discarded}
+              <ArrowCounterClockwise size={16} class="mr-2" weight="duotone" />
+              Restore
+            {:else}
+              <Trash size={16} class="mr-2" weight="duotone" />
+              Delete
+            {/if}
+          </DropdownMenu.Item>
+        {/if}
+
+        {#if isSiteAdmin}
+          <DropdownMenu.Separator />
+          <DropdownMenu.Label class={`text-xs font-medium ${ADMIN_ONLY_TEXT}`}>Site admins only</DropdownMenu.Label>
+          <DropdownMenu.Item onclick={onModerateAll} class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
+            <ShieldCheck size={16} class="mr-2" weight="duotone" />
+            Moderate All Messages
+          </DropdownMenu.Item>
+          <DropdownMenu.CheckboxItem
+            checked={showAllMessages}
+            onCheckedChange={(checked) => (showAllMessages = checked)}
+            class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
+            Show all messages
+          </DropdownMenu.CheckboxItem>
+          <DropdownMenu.CheckboxItem
+            checked={showMessageTelemetry}
+            onCheckedChange={(checked) => (showMessageTelemetry = checked)}
+            class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
+            View telemetry
+          </DropdownMenu.CheckboxItem>
+          <DropdownMenu.CheckboxItem
+            checked={debugMode}
+            onCheckedChange={(checked) => (debugMode = checked)}
+            class={`${ADMIN_ONLY_TEXT} ${ADMIN_ONLY_FOCUS}`}>
+            Debug mode
+          </DropdownMenu.CheckboxItem>
+        {/if}
       {/if}
     </DropdownMenu.Content>
   </DropdownMenu.Root>
