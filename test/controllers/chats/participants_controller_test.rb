@@ -108,6 +108,45 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "update sets the seated residents from the ticked list" do
+    stay = agents(:research_assistant)
+    leave = agents(:code_reviewer)
+    join = @account.agents.create!(name: "Joiner", system_prompt: "You join", runtime: "external")
+    chat = create_group_chat(@account, agent_ids: [ stay.id, leave.id ])
+
+    patch account_chat_participant_path(@account, chat), params: { agent_ids: [ stay.to_param, join.to_param ] }
+
+    assert_redirected_to account_chat_path(@account, chat)
+    assert_nil flash[:alert]
+    assert_equal [ join.id, stay.id ].sort, chat.agents.reload.pluck(:id).sort
+    notices = chat.messages.order(:id).last(2).map(&:content)
+    assert_includes notices, "[System Notice] Joiner has joined the conversation."
+    assert_includes notices, "[System Notice] #{leave.name} has left the conversation."
+  end
+
+  test "update keeps a responding resident, names it, and applies the rest" do
+    busy = agents(:research_assistant)
+    other = agents(:code_reviewer)
+    chat = create_group_chat(@account, agent_ids: [ busy.id, other.id ])
+    AgentRuntimeInteraction.reserve!(agent: busy, chat: chat)
+
+    patch account_chat_participant_path(@account, chat), params: { agent_ids: [ "" ] }
+
+    assert_match(/#{busy.name} is already responding/, flash[:alert])
+    assert_equal [ busy.id ], chat.agents.reload.pluck(:id)
+  end
+
+  test "update refuses a resident from outside the account" do
+    chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id ])
+    stranger = Account.where.not(id: @account.id).first.agents.create!(name: "Stranger", system_prompt: "x")
+
+    patch account_chat_participant_path(@account, chat),
+      params: { agent_ids: [ agents(:research_assistant).to_param, stranger.to_param ] }
+
+    assert_match(/no longer available/, flash[:alert])
+    assert_not chat.agents.reload.exists?(stranger.id)
+  end
+
   test "chat agents include current human removal capability" do
     chat = create_group_chat(@account, agent_ids: [ agents(:research_assistant).id ])
     get account_chat_path(@account, chat)

@@ -216,7 +216,7 @@ Rails.application.routes.draw do
         resource :fork, only: :create
         resource :moderation, only: :create
         resource :agent_assignment, only: :create
-        resource :participant, only: [ :create, :destroy ]
+        resource :participant, only: [ :create, :update, :destroy ]
         resource :agent_trigger, only: :create
         resource :model_selection, only: :update
         resource :transcription, only: [ :create, :destroy ]

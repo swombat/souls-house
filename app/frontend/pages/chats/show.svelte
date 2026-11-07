@@ -151,7 +151,7 @@
         bind:showMessageTelemetry
         onsidebaropen={() => (sidebarOpen = true)}
         onassignagent={() => (actions.ui.assignAgentOpen = true)}
-        onaddagent={() => (actions.ui.addAgentOpen = true)}
+        onmanageresidents={() => (actions.ui.manageResidentsOpen = true)}
         onwhiteboardopen={() => (actions.ui.whiteboardOpen = true)}
         onerror={actions.notify}
         onsuccess={(message) => actions.notify(message, 'successMessage')} />
@@ -224,12 +224,13 @@
   successMessage={actions.ui.successMessage}
   bind:assignAgentOpen={actions.ui.assignAgentOpen}
   assigningAgent={actions.ui.assigningAgent}
-  bind:addAgentOpen={actions.ui.addAgentOpen}
-  addAgentProcessing={actions.ui.addAgentProcessing}
+  {agents}
+  bind:manageResidentsOpen={actions.ui.manageResidentsOpen}
+  manageResidentsProcessing={actions.ui.manageResidentsProcessing}
   bind:lightboxOpen={actions.ui.lightboxOpen}
   lightboxImage={actions.ui.lightboxImage}
   onEditSaved={actions.editSaved}
   onEditClosed={actions.editClosed}
   onError={actions.notify}
   onAssignAgent={actions.assignToAgent}
-  onAddAgent={actions.addAgentToChat} />
+  onSaveResidents={actions.saveResidents} />
