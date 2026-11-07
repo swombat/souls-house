@@ -70,8 +70,12 @@ function validProps(type, props) {
 /** Return an owned static projection, or null; unknown/future fields fail closed. */
 export function staticRichUi(value) {
   try {
-    if (!keys(value, ['version', 'root', 'elements'], ['version', 'root', 'elements']) || value.version !== 1)
+    if (
+      !keys(value, ['version', 'root', 'elements', 'fallback'], ['version', 'root', 'elements']) ||
+      value.version !== 1
+    )
       return null;
+    if (own(value, 'fallback') && !nonblank(value.fallback, 3500)) return null;
     if (!string(value.root, 200) || !object(value.elements)) return null;
     const ids = Object.keys(value.elements);
     if (ids.length === 0 || ids.length > 50 || !own(value.elements, value.root)) return null;
@@ -103,11 +107,25 @@ export function staticRichUi(value) {
     if (new TextEncoder().encode(json).length > LIMIT_BYTES) return null;
     // No caller-owned objects (or inherited fields) reach json-render.
     const result = JSON.parse(json);
+    delete result.fallback;
     for (const node of Object.values(result.elements)) node.children ??= [];
     return result;
   } catch {
     return null;
   }
+}
+
+// Only explicitly designated fallback prose may be collapsed. Legacy messages,
+// mismatches and unsupported views retain their complete authored content.
+export function richMessageProse(content, value) {
+  if (typeof content !== 'string' || !staticRichUi(value) || !own(value, 'fallback'))
+    return { content, fallback: null };
+  const fallback = value.fallback;
+  if (content === fallback) return { content: '', fallback };
+  const suffix = `\n\n${fallback}`;
+  return content.endsWith(suffix)
+    ? { content: content.slice(0, -suffix.length), fallback }
+    : { content, fallback: null };
 }
 
 export function displayRichValue(value) {

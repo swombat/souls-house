@@ -48,6 +48,28 @@ class Api::V1::RichUiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "designated fallback round trips without removing transcript prose" do
+    spec = @spec.merge("fallback" => "The value is 42")
+    content = "My caption\n\nThe value is 42"
+    post api_v1_conversation_messages_url(@chat),
+      params: { content: content, rich_ui: spec }, headers: @headers, as: :json
+    assert_response :created
+    record = @chat.messages.last
+    assert_equal content, record.content
+    assert_equal spec, record.as_json["rich_ui"]
+    get rich_ui_api_v1_conversation_message_url(@chat, record), headers: @headers
+    assert_equal spec, response.parsed_body["rich_ui"]
+    get api_v1_conversation_url(@chat), headers: @headers
+    entry = response.parsed_body.dig("conversation", "transcript").last
+    assert_equal content, entry["content"]
+    assert_not entry.key?("rich_ui")
+    assert_no_difference "Message.count" do
+      post api_v1_conversation_messages_url(@chat),
+        params: { content: "Unrelated prose", rich_ui: spec }, headers: @headers, as: :json
+    end
+    assert_response :unprocessable_entity
+  end
+
   test "human keys cannot submit rich UI" do
     key = ApiKey.generate_for(@user, name: "Synthetic human")
     assert_no_difference "Message.count" do

@@ -54,6 +54,16 @@ CSV uses its first row as columns and preserves all cell strings. Chart JSON is
 automatic summary. `--dry-run` emits the POST body without credentials/network.
 POST success prints only a compact receipt; ambiguous failure is never retried.
 
+The helper includes optional `rich_ui.fallback`, marking only the generated
+summary (nonblank text, at most 3500 characters, no NUL). `content` equals that
+summary, or is the authored caption followed by two newlines and that exact
+summary. Rich-capable chat keeps the caption visible and puts the marked suffix
+in a **Text fallback** disclosure, available even if rendering fails. Other
+clients and transcripts retain all readable content. Existing unmarked messages
+are unchanged; the client never guesses which prose was generated.
+Deploy Rails before updating the helper: older servers reject this optional
+field. Older strict web clients show the full prose instead of the rich view.
+
 Full UI JSON is `{version:1, root:"main", elements:{main:{type:"Text",
 props:{text:"Hello"}}}}` (use quoted JSON keys in files). Only Stack, Card, Text,
 Metric, Table and Chart are supported. No expressions, actions, HTML or arbitrary

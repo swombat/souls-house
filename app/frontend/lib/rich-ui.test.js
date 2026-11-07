@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareRichValues, richTableRows, staticRichUi } from './rich-ui.js';
+import { compareRichValues, richMessageProse, richTableRows, staticRichUi } from './rich-ui.js';
 
 const leaf = (type = 'Text', props = { text: 'Hello' }) => ({
   version: 1,
@@ -18,6 +18,28 @@ const chain = (length) => ({
 });
 
 describe('static rich UI contract', () => {
+  it('collapses only an explicitly designated exact fallback and preserves captions verbatim', () => {
+    const fallback = 'Table: 1 rows; columns: Value.\nValue: 42.';
+    const value = { ...leaf(), fallback };
+    const caption = 'Authored **caption**.\n\nIncluding another paragraph.  ';
+    expect(richMessageProse(`${caption}\n\n${fallback}`, value)).toEqual({ content: caption, fallback });
+    expect(richMessageProse(fallback, value)).toEqual({ content: '', fallback });
+    expect(staticRichUi(value)).not.toHaveProperty('fallback');
+    expect(value.fallback).toBe(fallback);
+    for (const content of [`${fallback}\n\nAuthored afterword`, `Caption\n${fallback}`, `${fallback}\n`]) {
+      expect(richMessageProse(content, value)).toEqual({ content, fallback: null });
+    }
+    for (const spec of [leaf(), null, { ...value, version: 2 }, { ...value, fallback: '' }]) {
+      expect(richMessageProse(fallback, spec)).toEqual({ content: fallback, fallback: null });
+    }
+  });
+
+  it('validates fallback type, nonblank text, NUL and character bounds', () => {
+    for (const fallback of [null, {}, 42, '', ' ', 'bad\0text', 'x'.repeat(3501)])
+      expect(staticRichUi({ ...leaf(), fallback })).toBeNull();
+    expect(staticRichUi({ ...leaf(), fallback: '😀'.repeat(3500) })).not.toBeNull();
+  });
+
   it('rejects NUL strings and unsafe integral numbers, but preserves quoted large numbers', () => {
     expect(staticRichUi(leaf('Text', { text: 'Hello\0world' }))).toBeNull();
     expect(staticRichUi(leaf('Table', { columns: ['X'], rows: [['\0']] }))).toBeNull();

@@ -58,7 +58,9 @@ def identifier(value, field):
 
 
 def validate(spec):
-    keys(spec, {"version", "root", "elements"}, set(), "rich_ui")
+    keys(spec, {"version", "root", "elements"}, {"fallback"}, "rich_ui")
+    if "fallback" in spec:
+        string(spec["fallback"], "rich_ui.fallback", 3500)
     require(type(spec["version"]) is int and spec["version"] == 1, "version", "must be 1")
     identifier(spec["root"], "root")
     elements = spec["elements"]
@@ -322,7 +324,11 @@ def main():
         if args.command == "show":
             return request("GET", args.chat_id, args.message_id)
         spec = build_spec(args)
-        payload = {"content": fallback(spec, args.caption), "rich_ui": spec}
+        summary = fallback(spec)
+        spec["fallback"] = summary
+        validate(spec)
+        payload = {"content": (args.caption.strip() + "\n\n" if args.caption and args.caption.strip() else "") + summary,
+                   "rich_ui": spec}
         # Dry-run intentionally does not read any credential or runtime environment.
         if args.dry_run:
             print(encode(payload).decode("utf-8"))

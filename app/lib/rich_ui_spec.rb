@@ -20,7 +20,8 @@ class RichUiSpec
   end
 
   def validate!
-    object!(@spec, "rich_ui", %w[version root elements], %w[version root elements])
+    object!(@spec, "rich_ui", %w[version root elements fallback], %w[version root elements])
+    text!(@spec["fallback"], "fallback", 3500) if @spec.key?("fallback")
     fail!("version must be 1") unless @spec["version"].is_a?(Integer) && @spec["version"] == 1
     fail!("must be at most #{MAX_BYTES} bytes") if JSON.generate(@spec).bytesize > MAX_BYTES
     id!(@spec["root"], "root")

@@ -29,6 +29,33 @@ class Message::RichUiTest < ActiveSupport::TestCase
     assert_not build_message(rich_ui: {}).valid?
   end
 
+  test "designated fallback must be complete content or its exact separated suffix" do
+    spec = @spec.merge("fallback" => "Generated summary")
+    [ "Generated summary", "Authored caption\n\nGenerated summary" ].each do |content|
+      assert build_message(content: content, rich_ui: spec).valid?
+    end
+    [ "No summary", "Caption\nGenerated summary", "Generated summary\n\nAfterword" ].each do |content|
+      record = build_message(content: content, rich_ui: spec)
+      assert_not record.valid?
+      assert_includes record.errors[:rich_ui].join, "fallback must equal content"
+    end
+    [ nil, "", " ", {}, "bad\0text", "x" * 3501 ].each do |fallback|
+      assert_not build_message(rich_ui: @spec.merge("fallback" => fallback)).valid?
+    end
+  end
+
+  test "designated fallback persists while transcript retains the full readable content" do
+    spec = @spec.merge("fallback" => "Generated summary")
+    content = "Authored caption\n\nGenerated summary"
+    record = build_message(content: content, rich_ui: spec)
+    record.save!
+    assert_equal spec, record.reload.as_json["rich_ui"]
+    entry = @chat.transcript_for_api.find { |item| item[:id] == record.to_param }
+    assert_equal content, entry[:content]
+    assert record.update_as_author(content: "Revised prose")
+    assert_nil record.reload.rich_ui
+  end
+
   test "changed content clears stale rich UI in the same revision" do
     record = build_message
     record.save!
