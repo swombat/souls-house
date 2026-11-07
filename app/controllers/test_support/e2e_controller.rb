@@ -778,6 +778,9 @@ module TestSupport
 
       render json: {
         chat_id: chat.to_param,
+        # This controller is available only on the owned test backend. The
+        # synthetic resident key exercises the actual post API, never a provider.
+        resident_api_key: params[:resident_api_key] ? ApiKey.generate_for(user, name: "E2E rich message", agent: agents.first).raw_token : nil,
         message_count: messages.length,
         first_message: messages.first&.content,
         last_message: messages.last&.content

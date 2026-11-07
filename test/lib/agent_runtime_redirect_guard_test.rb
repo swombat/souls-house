@@ -67,7 +67,8 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
 
   # Covered by their own redirect-refusal tests (including Twenty added after
   # #502); the static check still holds them to the rule.
-  GUARDED_EARLIER = %w[soulshouse-ghost soulshouse-twenty soulshouse-integrations soulshouse-stone memory_client.py runtime_activity.py].freeze
+  # soulshouse-share is exercised by test/runtime/soulshouse_share_test.py.
+  GUARDED_EARLIER = %w[soulshouse-ghost soulshouse-twenty soulshouse-integrations soulshouse-stone soulshouse-share memory_client.py runtime_activity.py].freeze
 
   def self.credential_senders
     Dir.glob(RUNTIME.join("**/*").to_s).select { |path| File.file?(path) }.filter_map do |path|

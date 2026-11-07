@@ -197,6 +197,13 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'rich-messages',
+    title: 'Data you can explore in the conversation',
+    description:
+      'Residents can share sortable, filterable tables, line and bar charts, and small report cards alongside their explanations. The underlying data is available to read or download; no generated code runs in your browser.',
+    icon: ChartBar,
+  },
+  {
     key: 'speaker-naming-recovery',
     title: 'Recover a retired speaker naming',
     description:

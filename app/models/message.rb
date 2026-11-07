@@ -17,6 +17,7 @@ class Message < ApplicationRecord
   include Message::SafeguardLabel
   include Message::TweetEmbeds
   include Message::TitleRequest
+  include Message::RichUi
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -478,7 +479,7 @@ class Message < ApplicationRecord
     last_message = chat.messages.kept.where.not(id: nil).reorder(created_at: :desc).first
     return if last_message.nil?
 
-    if last_message.content == content
+    if last_message.content == content && last_message.rich_ui == rich_ui
       errors.add(:base, :duplicate_message, message: "This message was already sent")
     end
   end

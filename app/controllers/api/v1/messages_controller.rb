@@ -15,6 +15,10 @@ module Api
           return render json: { error: "Conversation is archived or deleted" }, status: :unprocessable_entity
         end
 
+        if params.key?(:rich_ui) && !current_api_agent
+          return render json: { errors: [ "rich_ui is only supported on resident replies" ] }, status: :unprocessable_entity
+        end
+
         message = if current_api_agent
           # Normalize only resident message content at the post boundary.
           # Arbitrary tool arguments, human posts and stored history are not
@@ -22,7 +26,8 @@ module Api
           chat.messages.build(
             content: ResidentMessageContent.normalize(params[:content]),
             role: "assistant",
-            agent: current_api_agent
+            agent: current_api_agent,
+            rich_ui: resident_rich_ui
           )
         end
         if current_api_agent
@@ -97,6 +102,14 @@ module Api
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
       end
 
+      # Full specs are deliberately on demand, never expanded into wake transcripts.
+      def rich_ui
+        chat = conversations_scope.kept.find(params[:conversation_id])
+        message = chat.messages.kept.find(params[:id])
+        response.headers["Cache-Control"] = "no-store"
+        render json: { message_id: message.to_param, revision: message.revision, rich_ui: message.rich_ui }
+      end
+
       # The author edits their own message, as on the web (messages#update) and
       # the native app. An edit cancels a wake the message asked for that has
       # not been reserved; it never retargets one (Message#update_as_author).
@@ -127,6 +140,18 @@ module Api
       end
 
       private
+
+      # Rails deep-munges null entries out of parameter arrays. That is useful
+      # for query conditions, but corrupts typed table rows. Read only this
+      # validated data field from the original JSON; keep normal params handling
+      # (and its protections) everywhere else.
+      def resident_rich_ui
+        return unless params.key?(:rich_ui)
+        return JSON.parse(request.raw_post)["rich_ui"] if request.media_type == "application/json"
+
+        value = params[:rich_ui]
+        value.respond_to?(:to_unsafe_h) ? value.to_unsafe_h : value
+      end
 
       # Editing reaches only kept messages in kept conversations. Delete also
       # finds an already-discarded message (a repeat is a no-op) and reaches a

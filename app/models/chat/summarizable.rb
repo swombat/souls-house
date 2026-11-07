@@ -33,6 +33,7 @@ module Chat::Summarizable
       id: message.to_param,
       role: message.role,
       content: message.content,
+      rich_ui_summary: message.rich_ui_summary,
       author: api_author_name(message),
       timestamp: message.created_at.iso8601,
       # false while a reply is still being written; a reader that waits for

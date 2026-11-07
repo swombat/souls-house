@@ -491,6 +491,9 @@ class ExternalAgentResponseRequest
     # IDs distinguish stored turns from ordinary "Name:" addresses in a body
     # and let residents verify attribution through the conversation API.
     line = "#{speaker} [#{message.obfuscated_id}]: #{message.content.to_s.strip}"
+    if (summary = message.rich_ui_summary)
+      line += "\n#{summary.gsub("CHAT_ID MESSAGE_ID", "#{chat.to_param} #{message.to_param}")}"
+    end
     if (occurrence = message.rhythm_occurrence)
       line = "[Scheduled rhythm opening: #{occurrence.rhythm_title.to_json}; #{occurrence.scheduled_for.iso8601}; manual=#{occurrence.manual}]\n#{line}"
     end

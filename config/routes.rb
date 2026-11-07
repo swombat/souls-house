@@ -540,6 +540,7 @@ Rails.application.routes.draw do
         get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
         resources :messages, only: [ :create, :update, :destroy ] do
+          get :rich_ui, on: :member
           resources :attachments, only: :show
           resource :safeguard_reset, only: :create
           resource :restore, only: :create, controller: "message_restores"

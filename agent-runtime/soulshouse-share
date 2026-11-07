@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""Share bounded, static rich messages. The server remains authoritative."""
+
+import argparse
+import csv
+import json
+import math
+import os
+from pathlib import Path
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+MAX_BYTES = 256 * 1024
+PROPS = {
+    "Stack": (set(), set()),
+    "Card": (set(), {"title"}),
+    "Text": ({"text"}, set()),
+    "Metric": ({"label", "value"}, {"detail"}),
+    "Table": ({"columns", "rows"}, {"title"}),
+    "Chart": ({"kind", "labels", "series"}, {"title"}),
+}
+UNSAFE_IDS = {"__proto__", "prototype", "constructor"}
+
+
+def require(condition, field, message):
+    if not condition:
+        raise ValueError(f"{field}: {message}")
+
+
+def keys(value, required, optional, field):
+    require(isinstance(value, dict), field, "must be an object")
+    require(required <= value.keys(), field, "missing keys: " + ", ".join(sorted(required - value.keys())))
+    require(value.keys() <= required | optional, field,
+            "unknown keys: " + ", ".join(sorted(value.keys() - required - optional)))
+
+
+def string(value, field, maximum=200):
+    require(isinstance(value, str) and bool(value.strip()), field, "must be a nonempty string")
+    require(len(value) <= maximum, field, f"must be at most {maximum} characters")
+    require("\0" not in value, field, "must not contain NUL")
+
+
+def number(value):
+    if type(value) not in (int, float):
+        return False
+    if type(value) is float and not math.isfinite(value):
+        return False
+    return value % 1 != 0 or abs(value) <= 9_007_199_254_740_991
+
+
+def identifier(value, field):
+    require(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value)
+            and value not in UNSAFE_IDS, field, "must be a safe ID (1..64 alnum, _ or -)")
+
+
+def validate(spec):
+    keys(spec, {"version", "root", "elements"}, set(), "rich_ui")
+    require(type(spec["version"]) is int and spec["version"] == 1, "version", "must be 1")
+    identifier(spec["root"], "root")
+    elements = spec["elements"]
+    require(isinstance(elements, dict) and 1 <= len(elements) <= 50, "elements", "must contain 1..50 nodes")
+    for node_id, node in elements.items():
+        identifier(node_id, "elements ID")
+        field = f"elements.{node_id}"
+        keys(node, {"type", "props"}, {"children"}, field)
+        kind = node["type"]
+        require(isinstance(kind, str) and kind in PROPS, field + ".type", "unknown component")
+        props = node["props"]
+        required, optional = PROPS[kind]
+        keys(props, required, optional, field + ".props")
+        for name in ("title", "text", "label", "value", "detail"):
+            if name in props:
+                string(props[name], field + ".props." + name, 4000 if name in ("text", "value", "detail") else 200)
+        if kind == "Table":
+            columns, rows = props["columns"], props["rows"]
+            require(isinstance(columns, list) and 1 <= len(columns) <= 20, field + ".props.columns", "must have 1..20 columns")
+            for index, column in enumerate(columns):
+                string(column, f"{field}.props.columns[{index}]")
+            require(isinstance(rows, list) and len(rows) <= 500, field + ".props.rows", "must have 0..500 rows")
+            for i, row in enumerate(rows):
+                row_field = f"{field}.props.rows[{i}]"
+                require(isinstance(row, list) and len(row) == len(columns), row_field, "width must match columns")
+                for j, cell in enumerate(row):
+                    cell_field = f"{row_field}[{j}]"
+                    require(cell is None or type(cell) in (bool, str) or number(cell),
+                            cell_field, "must be primitive and finite; integral numbers must be within ±(2^53-1), otherwise quote as strings")
+                    if isinstance(cell, str):
+                        require(len(cell) <= 4000, cell_field, "must be at most 4000 characters")
+                        require("\0" not in cell, cell_field, "must not contain NUL")
+        if kind == "Chart":
+            require(props["kind"] in ("line", "bar"), field + ".props.kind", "must be line or bar")
+            labels, series = props["labels"], props["series"]
+            require(isinstance(labels, list) and 1 <= len(labels) <= 200, field + ".props.labels", "must have 1..200 labels")
+            for i, label in enumerate(labels):
+                string(label, f"{field}.props.labels[{i}]")
+            require(isinstance(series, list) and 1 <= len(series) <= 8, field + ".props.series", "must have 1..8 series")
+            for i, item in enumerate(series):
+                series_field = f"{field}.props.series[{i}]"
+                keys(item, {"name", "values"}, set(), series_field)
+                string(item["name"], series_field + ".name")
+                values = item["values"]
+                require(isinstance(values, list) and len(values) == len(labels), series_field + ".values", "length must match labels")
+                for j, value in enumerate(values):
+                    require(number(value), f"{series_field}.values[{j}]", "must be finite; integral numbers must be within ±(2^53-1)")
+        if "children" in node:
+            require(isinstance(node["children"], list), field + ".children", "must be an array of IDs")
+            require(len(node["children"]) <= 50, field + ".children", "must have at most 50 children")
+            require(not node["children"] or kind in ("Stack", "Card"), field + ".children", "only Stack/Card accept children")
+            for child in node["children"]:
+                identifier(child, field + ".children")
+    seen = set()
+
+    def visit(node_id, depth):
+        require(node_id in elements, "children/root", f"dangling ID {node_id}")
+        require(node_id not in seen, f"elements.{node_id}", "cycle or shared node")
+        require(depth <= 10, f"elements.{node_id}", "depth exceeds 10")
+        seen.add(node_id)
+        for child in elements[node_id].get("children", []):
+            visit(child, depth + 1)
+
+    visit(spec["root"], 1)
+    require(len(seen) == len(elements), "elements", "contains unreachable nodes")
+    require(len(encode(spec)) <= MAX_BYTES, "rich_ui", "serialized spec exceeds 256 KiB")
+    return spec
+
+
+def encode(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def load_json(path):
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, key, "duplicate JSON key")
+            result[key] = value
+        return result
+    with Path(path).expanduser().open(encoding="utf-8") as source:
+        return json.load(source, object_pairs_hook=unique_pairs)
+
+
+def build_spec(args):
+    if args.command == "ui":
+        spec = validate(load_json(args.file))
+        if args.title is not None:
+            root = spec.get("elements", {}).get(spec.get("root"), {})
+            require(root.get("type") in ("Card", "Table", "Chart"), "--title", "UI root must support title")
+            root.setdefault("props", {})["title"] = args.title
+        return validate(spec)
+    if args.command == "table":
+        with Path(args.file).expanduser().open(encoding="utf-8-sig", newline="") as source:
+            rows = list(csv.reader(source, strict=True))
+        require(bool(rows), "CSV.columns", "header row is required")
+        props = {"columns": rows[0], "rows": rows[1:]}
+    else:
+        props = load_json(args.file)
+        keys(props, {"labels", "series"}, {"kind"}, "chart")
+        props["kind"] = args.kind or props.get("kind", "line")
+    if args.title is not None:
+        props["title"] = args.title
+    return validate({"version": 1, "root": "main", "elements": {
+        "main": {"type": args.command.title(), "props": props}
+    }})
+
+
+def fallback(spec, caption=None):
+    parts = []
+
+    def short(value, limit=120):
+        text = str(value) if value is not None else "null"
+        return text if len(text) <= limit else text[:limit - 1] + "…"
+
+    def visit(node_id):
+        node = spec["elements"][node_id]
+        kind, p = node["type"], node["props"]
+        title = p.get("title")
+        if title:
+            parts.append(title + ".")
+        if kind == "Text":
+            parts.append(short(p["text"], 300))
+        elif kind == "Metric":
+            parts.append(f"{p['label']}: {p['value']}." + (" " + short(p["detail"]) if p.get("detail") else ""))
+        elif kind == "Table":
+            parts.append(f"Table: {len(p['rows'])} rows; columns: {', '.join(p['columns'])}.")
+            for row in p["rows"][:3]:
+                parts.append("; ".join(f"{short(c, 40)}: {short(v, 60)}" for c, v in zip(p["columns"], row)) + ".")
+        elif kind == "Chart":
+            parts.append(f"{p['kind'].title()} chart: {len(p['labels'])} labels ({short(p['labels'][0])} to {short(p['labels'][-1])}).")
+            for series in p["series"]:
+                values = series["values"]
+                parts.append(f"{series['name']}: {values[0]} → {values[-1]} (min {min(values)}, max {max(values)}).")
+        for child in node.get("children", []):
+            visit(child)
+
+    visit(spec["root"])
+    summary = "\n".join(parts) or "Static rich message (empty layout)."
+    # Keep the fallback useful without copying the entire spec into transcripts.
+    if len(summary) > 3500:
+        summary = summary[:3499] + "…"
+    return (caption.strip() + "\n\n" if caption and caption.strip() else "") + summary
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Do not print the Location: it too could contain a credential.
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, None)
+
+
+def report_http_errors(error, token):
+    """Reconstruct bounded diagnostics, never dump an untrusted response."""
+    try:
+        result = json.loads(error.read(64 * 1024).decode("utf-8"))
+        if not isinstance(result, dict):
+            return
+        messages = []
+        for key in ("error", "errors"):
+            value = result.get(key)
+            if isinstance(value, str):
+                messages.append(value)
+            elif isinstance(value, list):
+                messages.extend(item for item in value if isinstance(item, str))
+        remaining = 1600
+        for message in messages[:8]:
+            # Normalize control characters and redact before truncation so a
+            # clipped credential cannot become an unredacted token prefix.
+            message = " ".join(message.replace(token, "[REDACTED]").split())
+            if message and remaining:
+                line = message[:remaining]
+                print(line, file=sys.stderr)
+                remaining -= len(line)
+    except Exception:
+        # A malformed/truncated error response must not obscure the HTTP status.
+        pass
+
+
+def request(method, chat_id, message_id=None, payload=None):
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    require(bool(app_url), "SOULSHOUSE_APP_URL", "is missing")
+    require(bool(token), "SOULSHOUSE_BEARER_TOKEN", "is missing")
+    parsed = urllib.parse.urlsplit(app_url)
+    require(parsed.scheme in ("http", "https") and bool(parsed.netloc)
+            and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment,
+            "SOULSHOUSE_APP_URL", "must be an http(s) base URL without credentials/query/fragment")
+    path = f"/api/v1/conversations/{urllib.parse.quote(chat_id, safe='')}/messages"
+    if message_id is not None:
+        path += f"/{urllib.parse.quote(message_id, safe='')}/rich_ui"
+    req = urllib.request.Request(app_url.rstrip("/") + path,
+                                 data=encode(payload) if payload is not None else None,
+                                 headers={"Authorization": f"Bearer {token}", "Accept": "application/json",
+                                          "Content-Type": "application/json"}, method=method)
+    try:
+        with urllib.request.build_opener(RefuseRedirects).open(req, timeout=120) as response:
+            text = response.read().decode("utf-8")
+            text = text.replace(token, "[REDACTED]")
+            if method == "GET":
+                print(text)
+            else:
+                # A completed POST is success even if its response isn't JSON.
+                # Never turn receipt formatting into an invitation to duplicate it.
+                try:
+                    result = json.loads(text)
+                    message = result.get("message", result)
+                    receipt = {key: result[key] for key in
+                               ("handoffs", "reflexes", "ai_response_triggered")
+                               if key in result}
+                    for key in ("message_id", "id", "revision", "rich_ui_summary"):
+                        if key in message:
+                            receipt[key] = message[key]
+                    receipt["posted"] = True
+                    print(json.dumps(receipt, ensure_ascii=False))
+                    for reflex in result.get("reflexes") or []:
+                        if isinstance(reflex, dict) and reflex.get("reminder"):
+                            print(f"reflex {reflex.get('name') or reflex.get('id') or 'reflex'}: {reflex['reminder']}", file=sys.stderr)
+                except (ValueError, TypeError, AttributeError):
+                    print('{"posted":true,"receipt":"unavailable; inspect conversation, do not repost"}')
+        return 0
+    except urllib.error.HTTPError as error:
+        print(f"souls.house returned HTTP {error.code}; redirects are never followed.", file=sys.stderr)
+        if not 300 <= error.code < 400:
+            report_http_errors(error, token)
+    except Exception:
+        print("souls.house request failed; delivery may be ambiguous. Inspect the conversation before retrying a post.", file=sys.stderr)
+    return 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, epilog="Manual: /usr/local/share/helixkit-agent/soulshouse-api.md")
+    sub = parser.add_subparsers(dest="command", required=True)
+    for command in ("table", "chart", "ui"):
+        child = sub.add_parser(command, help=f"share a {command} (or preview with --dry-run)")
+        child.add_argument("chat_id")
+        child.add_argument("--file", required=True)
+        child.add_argument("--title")
+        child.add_argument("--caption", help="augment the automatic readable fallback")
+        child.add_argument("--dry-run", action="store_true", help="emit POST JSON; no credentials or network")
+        if command == "chart":
+            child.add_argument("--kind", choices=("line", "bar"))
+    child = sub.add_parser("validate", help="validate a full version-1 spec locally")
+    child.add_argument("--file", required=True)
+    sub.add_parser("catalog", help="list the static version-1 component contract")
+    child = sub.add_parser("show", help="fetch a message's full spec on demand")
+    child.add_argument("chat_id")
+    child.add_argument("message_id")
+    args = parser.parse_args()
+    try:
+        if args.command == "catalog":
+            print(json.dumps({"version": 1, "components": {
+                kind: {"required": sorted(required), "optional": sorted(optional),
+                       "children": kind in ("Stack", "Card")}
+                for kind, (required, optional) in PROPS.items()
+            }}, indent=2))
+            return 0
+        if args.command == "validate":
+            validate(load_json(args.file))
+            print("Valid rich_ui version 1 (server validation remains authoritative).")
+            return 0
+        if args.command == "show":
+            return request("GET", args.chat_id, args.message_id)
+        spec = build_spec(args)
+        payload = {"content": fallback(spec, args.caption), "rich_ui": spec}
+        # Dry-run intentionally does not read any credential or runtime environment.
+        if args.dry_run:
+            print(encode(payload).decode("utf-8"))
+            return 0
+        run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID") if os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") == args.chat_id else None
+        if run_id:
+            payload["runtime_run_id"] = run_id
+        return request("POST", args.chat_id, payload=payload)
+    except (ValueError, OSError, csv.Error, RecursionError, OverflowError) as error:
+        # File/validation errors precede credential loading; do not expose network exceptions.
+        print(f"soulshouse-share: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
