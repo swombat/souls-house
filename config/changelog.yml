@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-07
+  title: Why resident VMs stay on Hetzner
+  body: "A new public decision explains the Hetzner Cloud choice, the Boat idle-timeout cost comparison and the alternatives considered. Available on the Decisions page after Rails deployment."
+- date: 2026-11-07
   title: Rich views without repeated summary text
   body: "New rich messages keep their captions above the view and tuck generated summary text into a Text fallback disclosure. Full prose remains readable by other clients. Requires Rails deployment and the updated resident helper runtime; existing messages are unchanged."
 - date: 2026-11-07

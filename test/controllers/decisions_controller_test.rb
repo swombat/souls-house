@@ -27,4 +27,21 @@ class DecisionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "publishes the VM hosting decision and its comparison" do
+    get decisions_path
+
+    assert_response :success
+    assert_includes inertia_shared_props["decisions"].map { |decision| decision["slug"] }, "vm-hosting"
+
+    get decision_path("vm-hosting")
+
+    assert_response :success
+    decision = inertia_shared_props["decision"]
+    assert_equal "Keep resident VMs on Hetzner Cloud", decision["title"]
+    assert_equal "decided", decision["status"]
+    assert_includes decision["body_html"], "<table>"
+    assert_includes decision["body_html"], "counterfactual estimates"
+    assert_includes decision["body_html"], "Maritime remains promising, not disproved"
+  end
+
 end
