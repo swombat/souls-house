@@ -300,7 +300,7 @@ class Commitment < ApplicationRecord
     return false unless destination == "same_conversation" || saved_change_to_destination?
     return true if destroyed? || previously_new_record?
 
-    saved_change_to_status? || saved_change_to_due_at? || saved_change_to_source_chat_id?
+    saved_change_to_status? || saved_change_to_due_at? || saved_change_to_source_chat_id? || saved_change_to_destination?
   end
 
   def refresh_sidebar_mark

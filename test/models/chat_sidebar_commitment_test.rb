@@ -69,6 +69,16 @@ class ChatSidebarCommitmentTest < ActiveSupport::TestCase
     assert_broadcast_on(channel, marker) { commitment.cancel!(by: @user) }
   end
 
+  test "moving a commitment between destinations refreshes the list both ways" do
+    channel = "Account:#{@account.obfuscated_id}"
+    marker = { action: "refresh", prop: "chats" }
+    commitment = commit(@lume, "Elsewhere later", at: @now + 1.hour)
+    assert_broadcast_on(channel, marker) { commitment.update!(destination: "new_conversation") }
+    assert_nil sidebar(@chat)["next_commitment"]
+    assert_broadcast_on(channel, marker) { commitment.update!(destination: "same_conversation") }
+    assert_equal 1, sidebar(@chat)["next_commitment"]["count"]
+  end
+
   test "the list costs one commitment query however many conversations it shows" do
     chats = 5.times.map do |i|
       chat = @account.chats.new(title: "Thread #{i}", manual_responses: true)
