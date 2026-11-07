@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 
-SCRIPT = Path(__file__).with_name("soulshouse-share")
+SCRIPT = Path(__file__).resolve().parents[2] / "agent-runtime" / "soulshouse-share"
 loader = importlib.machinery.SourceFileLoader("share", str(SCRIPT))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 share = importlib.util.module_from_spec(spec)
