@@ -1,13 +1,16 @@
 <script>
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
-  import { Tag, Check } from 'phosphor-svelte';
+  import { Alarm, Tag, Check } from 'phosphor-svelte';
   import { reloadProps } from '$lib/cable';
   import { visualTagColour } from '$lib/visual-tags';
   import VisualTagIcon from './VisualTagIcon.svelte';
   import { onDestroy } from 'svelte';
   import { HoverMenu } from '$lib/hover-menu.svelte.js';
 
-  let { chat, accountId, tags = [] } = $props();
+  // commitmentLabel: set when a resident has promised to come back to this conversation.
+  // The clock then sits faint behind the tag, its right third hidden under it, or in the
+  // tag's place when there is no tag. It is absolutely placed, so nothing else in the row moves.
+  let { chat, accountId, tags = [], commitmentLabel = '' } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -36,6 +39,7 @@
     optimistic !== undefined ? optimistic : confirmed && !supersedes(chat, confirmed) ? confirmed.tag : chat.visual_tag
   );
   const label = $derived(current?.label || 'No tag');
+  const title = $derived(commitmentLabel ? `${label} · ${commitmentLabel}` : label);
 
   $effect(() => {
     if (confirmed && supersedes(chat, confirmed)) confirmed = null;
@@ -88,6 +92,24 @@
   onDestroy(() => menu.destroy());
 </script>
 
+<span class="group/tag relative inline-block align-top">
+{#if commitmentLabel}
+  <!-- The trigger is h-8 w-8 with a 16px icon centred, so the icon box starts at 8px.
+       Behind a tag: 10px to the left with the right 6px clipped, so 10 of 16px show
+       and the clipped edge meets the tag. With no tag: in the tag's place, giving way
+       to the tag outline on hover so the picker still reads as a picker. -->
+  <span
+    data-testid="commitment-mark"
+    data-placement={current ? 'behind-tag' : 'in-place'}
+    role="img"
+    aria-label={commitmentLabel}
+    title={commitmentLabel}
+    class="pointer-events-none absolute top-2 inline-flex text-muted-foreground/40 {current
+      ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
+      : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
+    <Alarm size={16} weight="bold" />
+  </span>
+{/if}
 <DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
   <DropdownMenu.Trigger
     onpointerenter={menu.enter}
@@ -98,10 +120,12 @@
       ? visualTagColour(current.colour)
       : 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'}"
     aria-label={`Change visual tag: ${label}`}
-    title={label}
+    {title}
     disabled={chat.discarded}>
     {#if current}
       <VisualTagIcon icon={current.icon} size={16} />
+    {:else if commitmentLabel}
+      <Tag size={16} class="opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-within/tag:opacity-100" />
     {:else}
       <Tag size={16} />
     {/if}
@@ -130,6 +154,7 @@
     {/each}
   </DropdownMenu.Content>
 </DropdownMenu.Root>
+</span>
 {#if error}
   <span role="alert" class="absolute left-2 top-full z-50 rounded border bg-background p-2 text-xs text-destructive">
     {error}

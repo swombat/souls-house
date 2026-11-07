@@ -45,12 +45,36 @@ test('the sidebar marks a thread with a waiting commitment until it is delivered
     const quietRow = sidebar.getByRole('link', { name: /E2E quiet thread/ });
     await expect(parkedRow).toBeVisible();
     await expect(quietRow).toBeVisible();
+    // The mark sits with the tag picker, beside the row link rather than inside it.
+    const parkedCard = parkedRow.locator('xpath=..');
+    const quietCard = quietRow.locator('xpath=..');
 
-    const mark = parkedRow.getByTestId('commitment-mark');
+    const mark = parkedCard.getByTestId('commitment-mark');
     await expect(mark).toBeVisible();
     await expect(mark).toHaveAttribute('title', new RegExp(`^${first.resident_name} will come back here `));
-    await expect(quietRow.getByTestId('commitment-mark')).toHaveCount(0);
+    await parkedCard.screenshot({ path: testInfo.outputPath('commitment-mark-in-place.png') });
+    await expect(quietCard.getByTestId('commitment-mark')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('commitment-mark.png') });
+
+    // Daniel, 7 Nov (JwMZPe): with no tag the clock takes the tag's place; with a
+    // tag it sits faint behind it, two thirds showing. Neither moves the title.
+    const title = parkedRow.getByText('E2E parked thread', { exact: true });
+    const titleX = async () => (await title.boundingBox()).x;
+    await expect(mark).toHaveAttribute('data-placement', 'in-place');
+    const titleStart = await titleX();
+    const trigger = parkedCard.getByRole('button', { name: /^Change visual tag: / });
+    await expect(trigger).toHaveAttribute('title', new RegExp(`^No tag · ${first.resident_name} will come back here `));
+
+    await trigger.click();
+    await page.getByRole('menuitem', { name: 'Help', exact: true }).click();
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(mark).toHaveAttribute('data-placement', 'behind-tag');
+    expect(await titleX()).toBe(titleStart);
+    const markBox = await mark.boundingBox();
+    const triggerBox = await trigger.boundingBox();
+    // The icon box starts 8px into the trigger; the mark starts 10px before it.
+    expect(Math.round(markBox.x - triggerBox.x)).toBe(-2);
+    await parkedCard.screenshot({ path: testInfo.outputPath('commitment-mark-behind-tag.png') });
 
     // Cancelled: the mark goes without a reload.
     await commitment('cancel', { commitment_id: first.commitment_id });
@@ -58,9 +82,9 @@ test('the sidebar marks a thread with a waiting commitment until it is delivered
 
     // A new one brings it back; delivering it takes it away again.
     const second = await commitment('create', { chat_id: parked.chat_id });
-    await expect(parkedRow.getByTestId('commitment-mark')).toBeVisible();
+    await expect(parkedCard.getByTestId('commitment-mark')).toBeVisible();
     await commitment('deliver', { commitment_id: second.commitment_id });
-    await expect(parkedRow.getByTestId('commitment-mark')).toHaveCount(0);
+    await expect(parkedCard.getByTestId('commitment-mark')).toHaveCount(0);
 
     // And it stays gone after a reload.
     await page.reload();
