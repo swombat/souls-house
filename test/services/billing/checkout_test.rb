@@ -37,7 +37,7 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_equal pin.idempotency_key, params.dig(:metadata, :checkout_attempt)
     assert_nil params.dig(:metadata, :rate)
     assert_equal "Life hosting for #{@agent.name}", params.dig(:subscription_data, :description)
-    assert_in_delta 1.hour.from_now.to_i, params[:expires_at], 2
+    assert_not params.key?(:expires_at), "Expiry must be relative to Stripe execution, not the intent commit"
     assert_equal JSON.parse(params.to_json), pin.create_params
   end
 
@@ -102,6 +102,22 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_raises(Billing::AlreadySubscribed) { checkout }
     assert_empty @stripe.checkout_sessions
     assert_empty BillingCheckoutAttempt.where(agent: @agent)
+  end
+
+  test "a create lost before acceptance can first execute two hours later" do
+    @stripe.fail_next_checkout_create(created: false)
+    assert_raises(Stripe::APIConnectionError) { checkout }
+    pin = BillingCheckoutAttempt.find_by!(agent: @agent)
+    original = pin.create_params.deep_dup
+    assert_empty @stripe.session_states
+
+    travel 2.hours do
+      assert_match %r{https://}, checkout
+      assert_equal original, pin.reload.create_params
+      assert_not original.key?("expires_at")
+      assert_equal 1, BillingCheckoutAttempt.where(agent: @agent).count
+      assert_equal "open", @stripe.session_states.fetch(pin.stripe_session_id)[:status]
+    end
   end
 
   test "an expired cached create response is not published as an open link" do

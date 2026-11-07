@@ -33,6 +33,8 @@ Before creating an attempt, settle every unresolved attempt for this resident:
 
 - Unknown id: replay its **stored** payload/key, never recompute grant, price,
   URLs, name or customer. Persist the returned id before doing anything else.
+  Omit explicit `expires_at`: Stripe's default is relative to first execution;
+  an absolute expiry pinned before a lost create would invalidate later replay.
 - An unknown attempt more than 23 hours old is not replayed: Stripe can prune
   idempotency keys after 24 hours. It blocks for operator reconciliation.
 - Refused replay, timeout, failed local save, unreadable state or failed expiry

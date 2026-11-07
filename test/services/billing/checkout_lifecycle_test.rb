@@ -354,7 +354,9 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
     end
   end
 
-  def await(queue) = Timeout.timeout(10) { queue.pop }
+  # The worker gate must outlive the observer's 10s assertion deadline, so a
+  # failed observation is reported rather than masked by a worker timeout.
+  def await(queue) = Timeout.timeout(20) { queue.pop }
 
   def result(thread)
     assert thread.join(10), "billing worker did not finish"
@@ -373,12 +375,16 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
   def assert_advisory_wait(pid)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
     loop do
-      waiting = ApplicationRecord.connection.select_value(<<~SQL).to_i
-        SELECT count(*) FROM pg_locks
-        WHERE pid = #{Integer(pid)} AND locktype = 'advisory' AND NOT granted
-          AND classid = #{Billing::SubscriptionSync::LOCK_NAMESPACE}
-          AND objid = #{@agent.id} AND objsubid = 2
-      SQL
+      # A query-cached zero would hide the subsequent real lock wait when this
+      # class runs after tests that enabled the connection's query cache.
+      waiting = ApplicationRecord.uncached do
+        ApplicationRecord.connection.select_value(<<~SQL).to_i
+          SELECT count(*) FROM pg_locks
+          WHERE pid = #{Integer(pid)} AND locktype = 'advisory' AND NOT granted
+            AND classid = #{Billing::SubscriptionSync::LOCK_NAMESPACE}
+            AND objid = #{@agent.id} AND objsubid = 2
+        SQL
+      end
       return assert_equal(1, waiting) if waiting.positive?
 
       flunk "worker #{pid} never waited on this resident's billing advisory lock" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline

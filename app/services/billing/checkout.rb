@@ -135,7 +135,7 @@ module Billing
         subscription_data: { metadata: metadata, description: "#{@offer.name} hosting for #{@agent.name}" },
         metadata: metadata, automatic_tax: { enabled: true }, tax_id_collection: { enabled: true },
         billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
-        success_url: @success_url, cancel_url: @cancel_url, expires_at: 1.hour.from_now.to_i
+        success_url: @success_url, cancel_url: @cancel_url
       }
     end
 
