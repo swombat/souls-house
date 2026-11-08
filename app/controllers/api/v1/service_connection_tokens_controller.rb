@@ -14,6 +14,8 @@ class Api::V1::ServiceConnectionTokensController < ActionController::API
       return
     end
     unless connection.status == "connected"
+      return render_google_reauthorization(connection) if connection.provider == "google_workspace" && connection.status == "reauthorizing"
+
       render json: { error: "This service connection is not currently connected" }, status: :conflict
       return
     end
@@ -24,8 +26,21 @@ class Api::V1::ServiceConnectionTokensController < ActionController::API
       access_token: access_token,
       expires_at: payload["expires_at"]
     }
+  rescue Services::GoogleWorkspaceAdapter::ReauthorizationRequired
+    render_google_reauthorization(connection)
   rescue Services::AdapterError => e
     render json: { error: e.message }, status: :bad_gateway
+  end
+
+  private
+
+  def render_google_reauthorization(connection)
+    render json: {
+      error: "provider_reauth_required",
+      message: Services::GoogleWorkspaceAdapter::REAUTHORIZATION_MESSAGE,
+      connection_id: connection.public_id,
+      last_good_refresh: connection.last_refreshed_at&.utc&.iso8601
+    }, status: :conflict
   end
 
 end

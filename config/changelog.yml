@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-08
+  title: Reconnect Google when its grant expires
+  body: "When Google rejects a refresh token, Integrations now shows that the connection needs reconnecting instead of appearing healthy. Residents receive a readable reconnect error; existing access grants stay in place."
 - date: 2026-11-07
   title: Why resident VMs stay on Hetzner
   body: "A new public decision explains the Hetzner Cloud choice, the Boat idle-timeout cost comparison and the alternatives considered. Available on the Decisions page after Rails deployment."
