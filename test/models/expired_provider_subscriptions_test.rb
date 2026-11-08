@@ -50,14 +50,14 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     assert_equal 0, ExpiredProviderSubscriptions.summary_for(users(:unconfirmed_user))[:total]
   end
 
-  test "members and admins of an account do not see its expired subscriptions, only owners" do
+  test "plain members of an account do not see its expired subscriptions, owners and admins do" do
     expire!(agents(:other_account_agent), "gemini")
     member = users(:existing_user) # confirmed member of the team account
     assert_equal "member", memberships(:team_member).role
     assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
 
     memberships(:team_member).update_columns(role: "admin")
-    assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
+    assert_equal 1, ExpiredProviderSubscriptions.summary_for(member)[:total]
 
     memberships(:team_member).update_columns(role: "owner")
     assert_equal 1, ExpiredProviderSubscriptions.summary_for(member)[:total]
@@ -145,12 +145,15 @@ class ExpiredProviderSubscriptionsTest < ActiveSupport::TestCase
     assert_equal 1, summary[:total]
   end
 
-  test "failing residents are shown to owners only, and not while switched off, retired or asleep for billing" do
+  test "failing residents are not shown to plain members, and not while switched off, retired or asleep for billing" do
     agent = agents(:other_account_agent)
     fail_streak!(agent)
     member = users(:existing_user)
     assert_equal 0, ExpiredProviderSubscriptions.summary_for(member)[:total]
     assert_equal 1, ExpiredProviderSubscriptions.summary_for(@user)[:failing].size
+    memberships(:team_member).update_columns(role: "admin")
+    assert_equal 1, ExpiredProviderSubscriptions.summary_for(member)[:failing].size
+    memberships(:team_member).update_columns(role: "member")
 
     agent.update_columns(active: false)
     assert_empty ExpiredProviderSubscriptions.summary_for(@user)[:failing]
