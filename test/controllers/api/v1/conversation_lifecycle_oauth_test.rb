@@ -141,16 +141,16 @@ class Api::V1::ConversationLifecycleOauthTest < ActionDispatch::IntegrationTest
 
   # (d) a resident key --------------------------------------------------------
 
-  test "a resident key is refused" do
+  test "a resident key may archive a room it sits in (#813) but not list archived conversations" do
     agent = agents(:research_assistant)
     resident = { "Authorization" => "Bearer #{ApiKey.generate_for(users(:user_1), name: "Resident", agent: agent).raw_token}" }
     room = agent.account.chats.create!(model_id: "openrouter/auto", title: "Resident room")
     room.agents << agent
     post api_v1_conversation_archive_path(room), headers: resident, as: :json
-    assert_response :forbidden
+    assert_response :success
+    assert room.reload.archived?
     get api_v1_conversations_path, params: { filter: "archived" }, headers: resident
     assert_response :forbidden
-    assert_not room.reload.archived?
   end
 
 end
