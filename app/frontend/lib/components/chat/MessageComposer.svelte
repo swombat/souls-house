@@ -9,6 +9,7 @@
   import VoiceModePanel from '$lib/components/chat/VoiceModePanel.svelte';
   import VoiceModeButton from '$lib/components/chat/VoiceModeButton.svelte';
   import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
+  import TypingIndicator from '$lib/components/chat/TypingIndicator.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { takeVoiceStart } from '$lib/voice-mode-start';
@@ -46,6 +47,7 @@
   let draftState = $state({ content: '', status: 'Loading draft…', recoveries: [] });
   let voiceOpen = $state(false);
   let voiceNotice = $state('');
+  let micDictating = $state(false);
 
   const composerEmpty = $derived(!draftState.content.trim() && selectedFiles.length === 0);
   const showWave = $derived(
@@ -220,6 +222,7 @@
   class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
   data-testid="message-composer"
   use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: submitting || disabled }}>
+  <TypingIndicator {chatId} {userId} content={draftState.content} dictating={micDictating} />
   {#if voiceOpen}
     <VoiceModePanel
       {accountId}
@@ -262,7 +265,8 @@
           {chatId}
           {userId}
           onsuccess={handleTranscription}
-          onerror={handleTranscriptionError} />
+          onerror={handleTranscriptionError}
+          onrecordingchange={(active) => (micDictating = active)} />
       </div>
       {#if showWave}
         <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => (voiceOpen = true)} />

@@ -16,7 +16,7 @@
 
   const MIN_AUDIO_BYTES = 1000;
 
-  let { disabled = false, accountId, chatId, userId, onsuccess, onerror } = $props();
+  let { disabled = false, accountId, chatId, userId, onsuccess, onerror, onrecordingchange } = $props();
 
   let state = $state('idle');
 
@@ -78,6 +78,7 @@
   const isStarting = $derived(state === 'starting');
   const isTranscribing = $derived(state === 'transcribing');
   const isFailed = $derived(state === 'failed');
+  $effect(() => (onrecordingchange?.(isRecording || isTranscribing), () => onrecordingchange?.(false)));
 
   async function toggleRecording() {
     if (isRecording) {
