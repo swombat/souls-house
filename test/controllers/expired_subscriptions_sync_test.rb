@@ -33,11 +33,18 @@ class ExpiredSubscriptionsSyncTest < ActionDispatch::IntegrationTest
     assert_equal [ @personal.to_param ], summary.fetch("items").pluck("agent_id")
   end
 
-  test "partial refetch follows the owner role during the signed in session" do
+  test "partial refetch follows the owner or admin role during the signed in session" do
     third = expired_agent(accounts(:another_team))
     sign_in(@user)
-    # An admin of an account is not shown its expired subscriptions; only owners are.
+    # A plain member of an account is not shown its expired subscriptions;
+    # owners and admins are.
+    memberships(:team_admin).update_columns(role: "member")
     assert_equal 2, refetch_summary.fetch("total")
+
+    memberships(:team_admin).update_columns(role: "admin")
+    summary = refetch_summary
+    assert_equal 3, summary.fetch("total")
+    assert_includes summary.fetch("items").pluck("agent_id"), third.to_param
 
     memberships(:team_admin).update_columns(role: "owner")
     summary = refetch_summary

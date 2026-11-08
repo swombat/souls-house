@@ -1,5 +1,5 @@
 # Residents whose provider subscription login has expired, across every
-# account a person is a confirmed owner of. Shown in the navbar as a black
+# account a person is a confirmed owner or admin of. Shown in the navbar as a black
 # count beside the red reply-attention one, so a lapsed Claude or Gemini login
 # is visible the moment someone signs in rather than when they happen to open
 # the account and see the notice (Daniel, 2026-10-14, AjabgJ).
@@ -9,20 +9,23 @@
 # runtime writes on an auth failure. Reconnecting clears it; switching the
 # resident to an API key stops it counting.
 #
-# Owners only (Daniel, 2026-10-27, elXOke): reconnecting a lapsed login is the
-# owner's job, so a member or admin of someone else's account (site admins
-# included) is not shown that account's expired subscriptions.
+# Owners and admins (Daniel, 2026-11-08, jZxLnY): reconnecting a lapsed login
+# is the job of whoever runs the account, which is not always the person who
+# owns it (Daniel runs his father's resident as a member and never saw its
+# streak). Plain members of someone else's account are still not shown it,
+# which keeps the 27 Oct rule (elXOke) that a guest in Pepe's house does not
+# get Pepe's notices. Site admins get nothing from being site admins.
 #
 # The same black count carries residents whose scheduled runs are failing
 # (Daniel, 2026-10-31, YDbPQj: "a black notification like the subscription
 # failure... and then they can click on the resident"). Each open streak
 # recorded by ScheduledRunFailureNotice adds one, listed under `failing`, for
-# the same owners and with the same exclusions the streak itself uses.
+# the same owners and admins and with the same exclusions the streak itself uses.
 #
 # And it carries integrations another house wants to share with one of the
 # owner's residents, waiting for the owner's approval (JWblqj), listed under
 # `awaiting`; each links to the resident's Integrations tab, where the
-# decision is made.
+# decision is made. Those stay owners only, because only an owner can make it.
 class ExpiredProviderSubscriptions
 
   def self.summary_for(user)
@@ -46,7 +49,7 @@ class ExpiredProviderSubscriptions
 
   def awaiting_items
     AgentServiceAccess.awaiting_home_approval
-      .joins(:agent).where(agents: { account_id: owned_account_ids })
+      .joins(:agent).where(agents: { account_id: owned_account_ids(Membership.owners) })
       .includes(agent: :account, service_connection: :account)
       .order(:home_approval_requested_at)
       .map do |access|
@@ -78,7 +81,7 @@ class ExpiredProviderSubscriptions
   end
 
   def candidates
-    Agent.where(account_id: owned_account_ids)
+    Agent.where(account_id: owned_account_ids(Membership.admins))
       .where.not(runtime: Agent::RuntimeAvailability::RETIRED_RUNTIMES)
       .where(<<~SQL.squish)
         EXISTS (
@@ -91,7 +94,7 @@ class ExpiredProviderSubscriptions
   end
 
   def failing_items
-    agents = Agent.where(account_id: owned_account_ids, active: true)
+    agents = Agent.where(account_id: owned_account_ids(Membership.admins), active: true)
       .where.not(runtime: Agent::RuntimeAvailability::RETIRED_RUNTIMES)
     ids = agents.pluck(:id)
     return [] if ids.empty?
@@ -129,8 +132,11 @@ class ExpiredProviderSubscriptions
     latest&.failure_category
   end
 
-  def owned_account_ids
-    @user.confirmed_accounts.merge(Membership.owners).select(:id)
+  # Expired logins and failing runs go to owners and admins; a waiting
+  # guest-access request goes to owners only, because only an owner can
+  # decide it (Agents::GuestAccessApprovalsController).
+  def owned_account_ids(roles)
+    @user.confirmed_accounts.merge(roles).select(:id)
   end
 
   def item_for(agent, provider)

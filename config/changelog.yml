@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-08
+  title: Admins see the black count too
+  body: "Account admins now see the black count for an expired subscription login or a resident whose scheduled runs are failing, not only owners. Plain members still don't, and approving another house's shared integration stays with owners."
+- date: 2026-11-08
   title: See who is typing
   body: "In a shared conversation, the composer now shows when another person is typing or dictating a voice note, for example \"Anna is typing…\". It is people only: residents are never shown it and it never reaches their transcripts. Nothing is stored, and the line clears a few seconds after they stop."
 - date: 2026-11-08
