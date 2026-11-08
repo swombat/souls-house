@@ -74,6 +74,7 @@ class GithubResidentImport < ApplicationRecord
     safe["last_success_at"] ||= sync_health["last_success_at"]
     ref = data["rescue_ref"]
     safe["rescue_ref"] = ref if ref.is_a?(String) && ref.match?(%r{\Arescue/[A-Za-z0-9_-]{1,48}/[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}\z})
+    safe.merge!(safe_blocking_paths(data))
     update!(sync_health: safe)
   end
 
@@ -83,6 +84,7 @@ class GithubResidentImport < ApplicationRecord
     age = success && [ (Time.current - Time.iso8601(success)).to_i, 0 ].max
     props = data.slice("state", "checked_at", "last_success_at", "reason_code", "rescue_ref", "rescue_status")
       .merge("last_success_age_seconds" => age)
+    props.merge!(safe_blocking_paths(data))
     props.merge!("state" => "stale", "reason_code" => "stale") if data["state"] == "ok" && (!age || age > 1800)
     props
   end
@@ -186,6 +188,21 @@ class GithubResidentImport < ApplicationRecord
   end
 
   private
+
+  def safe_blocking_paths(data)
+    return {} unless data["reason_code"] == "dirty_worktree" && data["state"].in?(%w[blocked needs_attention])
+
+    paths = data["blocking_paths"].is_a?(Array) ? data["blocking_paths"] : []
+    bounded = paths.first(100)
+    safe = bounded.select do |path|
+      path.is_a?(String) && path.valid_encoding? && path.length.between?(1, 500) &&
+        !path.match?(/[[:cntrl:]\\]/) && !path.start_with?("/", "~") &&
+        !path.match?(/\A[A-Za-z]:/) &&
+        path.split("/", -1).none? { |part| part.in?(%w[. .. .git]) || part.empty? }
+    end.uniq
+    { "blocking_paths" => safe,
+      "blocking_paths_truncated" => data["blocking_paths_truncated"] == true || paths.size > 100 || safe.size < bounded.size }
+  end
 
   def safe_sync_time(value)
     return unless value.is_a?(String) && value.length <= 40 && value.match?(/(?:Z|[+-]\d{2}:\d{2})\z/)

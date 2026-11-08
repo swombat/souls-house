@@ -206,6 +206,126 @@ class StandardHomeSyncTest(unittest.TestCase):
         self.assertEqual(head, self.git(self.home, 'rev-parse', 'HEAD'))
         self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
         self.assertEqual(self.git(self.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/rescue'), '')
+        self.assertEqual(status['blocking_paths'], ['private.txt'])
+        self.assertFalse(status['blocking_paths_truncated'])
+
+    def test_blocking_names_preserve_tracked_untracked_spaces_and_unicode_without_contents(self):
+        tracked = 'notes/ résumé tracked.txt '
+        untracked = 'notes/日本語 new.txt'
+        (self.home / 'notes').mkdir()
+        (self.home / tracked).write_text('original\n')
+        self.git(self.home, 'add', '--', tracked)
+        self.git(self.home, 'commit', '-m', 'tracked fixture')
+        (self.home / tracked).write_text('PRIVATE CONTENT TRACKED\n')
+        (self.home / untracked).write_text('PRIVATE CONTENT UNTRACKED\n')
+        (self.home / 'journal.txt').write_text('base\napproved but pending\n')
+        head = self.git(self.home, 'rev-parse', 'HEAD')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], sorted([tracked, untracked]))
+        self.assertFalse(status['blocking_paths_truncated'])
+        encoded = json.dumps(status)
+        self.assertNotIn('PRIVATE CONTENT', encoded)
+        self.assertNotIn(str(self.home), encoded)
+        self.assertEqual(head, self.git(self.home, 'rev-parse', 'HEAD'))
+        self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
+        saved = json.loads((self.home / '.git/standard-home-sync-status.json').read_text())
+        self.assertEqual(saved, status)
+
+    def test_blocking_list_is_bounded_and_does_not_allow_any_pending_edits(self):
+        names = [f'outside-{i:03}.txt' for i in range(105)]
+        for name in names:
+            (self.home / name).write_text('private\n')
+        (self.home / 'journal.txt').write_text('base\npending\n')
+        head = self.git(self.home, 'rev-parse', 'HEAD')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], names[:100])
+        self.assertTrue(status['blocking_paths_truncated'])
+        self.assertEqual(self.git(self.home, 'rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
+        for name in names[100:]:
+            (self.home / name).unlink()
+        status, _code = self.run_sync()
+        self.assertEqual(status['blocking_paths'], names[:100])
+        self.assertFalse(status['blocking_paths_truncated'])
+
+    def test_invalid_or_overlong_names_are_omitted_not_shortened_and_still_block(self):
+        long_name = '/'.join(['a' * 180] * 3)
+        names = [long_name, 'line\nbreak', 'back\\slash', os.fsdecode(b'invalid-\xff'),
+                 '~private', 'C:private', 'control-\u0085']
+        for name in names:
+            target = self.home / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('private\n')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], [])
+        self.assertTrue(status['blocking_paths_truncated'])
+        sync = standard.Sync(self.home, 'main', self.config)
+        details = sync.blocking_details(['/absolute', '../escape', 'a/./b', '.git/config', ''])
+        self.assertEqual(details, {'blocking_paths': [], 'blocking_paths_truncated': True})
+
+    def test_unstaged_rename_reports_out_of_scope_side_without_saving_either_side(self):
+        head = self.git(self.home, 'rev-parse', 'HEAD')
+        (self.home / 'identity.txt').rename(self.home / 'renamed identity.txt')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], ['renamed identity.txt'])
+        self.assertEqual(self.git(self.home, 'rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
+
+    def test_rename_into_allowed_scope_does_not_hide_out_of_scope_source(self):
+        (self.home / 'outside.txt').write_text('original\n')
+        self.git(self.home, 'add', '--', 'outside.txt')
+        self.git(self.home, 'commit', '-m', 'tracked outside fixture')
+        (self.home / 'outside.txt').rename(self.home / 'allowed.txt')
+        config = dict(self.config, auto_commit_paths=['journal.txt', 'identity.txt', 'allowed.txt'])
+        status, code = self.run_sync(config)
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], ['outside.txt'])
+        self.assertEqual(self.git(self.home, 'diff', '--cached', '--name-only'), '')
+        self.assertTrue((self.home / 'allowed.txt').exists())
+
+    def test_blocking_path_length_boundary_preserves_whole_name(self):
+        name = '/'.join(['a' * 180, 'b' * 180, 'c' * 138])
+        self.assertEqual(len(name), 500)
+        target = self.home / name
+        target.parent.mkdir(parents=True)
+        target.write_text('private\n')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(status['blocking_paths'], [name])
+        self.assertFalse(status['blocking_paths_truncated'])
+
+    def test_staged_rename_has_precedence_and_clears_previous_details(self):
+        (self.home / 'private.txt').write_text('private\n')
+        self.assertEqual(self.run_sync()[0]['blocking_paths'], ['private.txt'])
+        self.git(self.home, 'mv', 'identity.txt', 'renamed identity.txt')
+        before = self.git(self.home, 'diff', '--cached')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['reason_code']), (1, 'staged_changes'))
+        self.assertEqual(status['blocking_paths'], [])
+        self.assertFalse(status['blocking_paths_truncated'])
+        self.assertEqual(self.git(self.home, 'diff', '--cached'), before)
+        self.assertEqual(json.loads((self.home / '.git/standard-home-sync-status.json').read_text()), status)
+
+    def test_success_and_busy_status_do_not_reuse_blocking_details(self):
+        private = self.home / 'private.txt'
+        private.write_text('private\n')
+        self.assertEqual(self.run_sync()[0]['blocking_paths'], ['private.txt'])
+        with (self.home / '.git/standard-home-sync.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            status, code = self.run_sync()
+        self.assertEqual(code, 75)
+        self.assertEqual(status['blocking_paths'], [])
+        self.assertFalse(status['blocking_paths_truncated'])
+        private.unlink()
+        status, code = self.run_sync()
+        self.assertEqual(code, 0)
+        self.assertEqual(status['blocking_paths'], [])
+        self.assertFalse(status['blocking_paths_truncated'])
+        self.assertEqual(json.loads((self.home / '.git/standard-home-sync-status.json').read_text()), status)
 
     def test_house_seed_marker_at_root_is_not_dirt_but_nested_copy_is(self):
         # The runner leaves .souls-house-seed untracked at the volume root.
@@ -507,6 +627,8 @@ class StandardHomeSyncTest(unittest.TestCase):
         self.assertEqual(status['last_success_at'], confirmed['last_success_at'])
         self.assertEqual(status['rescue_status'], 'pushed')
         self.assertEqual(self.git(self.remote, 'rev-parse', status['rescue_ref']), head)
+        self.assertEqual(status['blocking_paths'], [local_path])
+        self.assertFalse(status['blocking_paths_truncated'])
         self.assertNotIn(local_path, self.git(self.remote, 'ls-tree', '-r', '--name-only', status['rescue_ref']))
         self.assertEqual(self.git(self.remote, 'show', 'main:' + remote_path), 'REMOTE TRACKED CONTENT')
         self.assertEqual(self.git(self.home, 'status', '--porcelain'), '')

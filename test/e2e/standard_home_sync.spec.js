@@ -57,6 +57,19 @@ test('standard home sync exposes reviewed policy and honest cached outcomes', as
     await expect(page.getByText(/None — committed changes only/)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Last sync check succeeded' })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('07-stale-mobile.png'), fullPage: true });
+
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(setup.standard_sync_dirty_url);
+      const health = page.getByRole('region', { name: 'Home sync health' });
+      await expect(health.getByRole('heading', { name: 'Sync blocked', exact: true })).toBeVisible();
+      await expect(health.getByText('memory/weekly journals/été.md')).toBeVisible();
+      await expect(health.getByText('<img src=x onerror=alert(1)>.md')).toBeVisible();
+      await expect(health.locator('img')).toHaveCount(0);
+      await expect(health.getByText(/Some filenames are omitted/)).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`08-blocking-paths-${width}.png`), fullPage: true });
+    }
   } finally {
     expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);
   }

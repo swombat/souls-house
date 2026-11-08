@@ -5,6 +5,27 @@ class GithubResidentImportTest < ActiveSupport::TestCase
 
   include GithubImportFixtures
 
+  test "blocking filenames are bounded relative names and clear on the next report" do
+    request = import_request(sync_strategy: "standard")
+    paths = [ "memory/weekly journals/été.md", "<script>alert(1)</script>.md", "/private/file",
+      "../secret", "a/../b", ".git/config", "C:/secret", "a\\b", "bad\nname", "a" * 501, nil ]
+    request.record_sync_health!({ "state" => "blocked", "reason_code" => "dirty_worktree",
+      "blocking_paths" => paths, "private_output" => "file contents" })
+    assert_equal paths.first(2), request.reload.sync_health_props["blocking_paths"]
+    assert_equal true, request.sync_health_props["blocking_paths_truncated"]
+    assert_not_includes request.sync_health.to_json, "file contents"
+
+    request.record_sync_health!({ "state" => "blocked", "reason_code" => "dirty_worktree",
+      "blocking_paths" => (1..101).map { |i| "memory/#{i}.md" } })
+    assert_equal 100, request.sync_health_props["blocking_paths"].size
+    assert_equal true, request.sync_health_props["blocking_paths_truncated"]
+    request.record_sync_health!({ "state" => "ok", "reason_code" => "synced",
+      "blocking_paths" => [ "stale.md" ], "last_success_at" => Time.current.iso8601 })
+    assert_not request.reload.sync_health_props.key?("blocking_paths")
+    request.record_sync_health!({ "state" => "blocked", "reason_code" => "dirty_worktree" })
+    assert_equal [], request.sync_health_props["blocking_paths"]
+  end
+
   test "sync selection and policies are immutable reviewed configuration" do
     request = import_request(sync_strategy: "standard", sync_configuration: {
       "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ] })

@@ -56,6 +56,26 @@
 <section class="space-y-3 rounded-lg border p-5" aria-label="Home sync health">
   <h2 class="text-lg font-semibold">{states[state]}</h2>
   <p class="text-sm">{reason}</p>
+  {#if health?.reason_code === 'dirty_worktree' && ['blocked', 'needs_attention'].includes(health?.state)}
+    {#if health?.blocking_paths?.length || health?.blocking_paths_truncated}
+      <div class="space-y-2 text-sm">
+        <h3 class="font-medium">Files outside the approved sync scope</h3>
+        <ul class="list-inside list-disc">
+          {#each health.blocking_paths || [] as path}
+            <li class="break-all"><code>{path}</code></li>
+          {/each}
+        </ul>
+        {#if health.blocking_paths_truncated}
+          <p>Some filenames are omitted. Inspect the resident's own checkout for the full list.</p>
+        {/if}
+        <p>Review these edits in the resident's checkout. This report does not change which files sync may commit.</p>
+      </div>
+    {:else}
+      <p class="text-sm">
+        Blocking filenames were not reported. Inspect the resident's own checkout; older runtimes do not list them.
+      </p>
+    {/if}
+  {/if}
   <dl class="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
     <dt class="text-muted-foreground">Last confirmed sync</dt>
     <dd>

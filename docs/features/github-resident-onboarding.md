@@ -250,6 +250,15 @@ refusals and conflicts need attention; rescue success and rescue failure are
 reported separately, neither as branch-sync success. Even a successful check
 does not prove every other host has synchronized or that external memory works.
 No raw Git output, private contents or arbitrary runner error is displayed.
+For `dirty_worktree`, updated runtimes also report `blocking_paths`: at most 100
+out-of-scope relative filenames, each at most 500 characters. Unsafe or overlong
+names are omitted, not shortened; `blocking_paths_truncated` marks an incomplete
+list. The resident can read these fields in its own sync status; authorised
+account managers see them on the import page. Older runtimes may provide only the
+reason. Each new report clears previous blocking details. These names do not
+widen commit permissions: review the edits locally and use the reviewed policy
+change process above if appropriate. Import-time writer-path warnings remain a
+separate follow-up.
 Age is calculated when the page is presented, not a ticking browser clock.
 A formerly successful report becomes stale after 30 minutes without confirmed
 success, or when its success timestamp is missing.
