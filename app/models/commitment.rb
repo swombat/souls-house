@@ -301,12 +301,14 @@ class Commitment < ApplicationRecord
   # carries no handoff. A commitment that opens a new conversation is still
   # announced here, where it was made: that conversation does not exist until
   # it is due. Posted once, by the resident API's create; rescheduling and
-  # cancelling post nothing. A failure to post never undoes the commitment.
+  # cancelling post nothing. A failure to post (the save, or a callback such
+  # as a broadcast) never undoes the commitment or fails the create; it is
+  # logged and not retried.
   def announce!
     return unless scheduled? && persisted?
 
     source_chat.messages.create!(role: "system", content: announcement_text, suppress_automatic_dispatch: true)
-  rescue ActiveRecord::ActiveRecordError => error
+  rescue StandardError => error
     Rails.logger.warn("[Commitment#announce!] #{to_param}: #{error.class}: #{error.message}")
     nil
   end

@@ -25,6 +25,19 @@ class CommitmentTest < ActiveSupport::TestCase
     assert_match(/scheduled for .* in this conversation\./, commitment.receipt)
   end
 
+  test "a failed announcement, persistence or callback, leaves the commitment scheduled" do
+    [ ActiveRecord::RecordInvalid.new(Message.new), RuntimeError.new("broadcast refused") ].each_with_index do |failure, i|
+      commitment = commit("Announce attempt #{i}", at: @now + 10.minutes)
+      failing = Object.new
+      failing.define_singleton_method(:create!) { |**| raise failure }
+      commitment.source_chat.stub(:messages, failing) do
+        assert_nil commitment.announce!
+      end
+      assert_equal "scheduled", commitment.reload.status
+    end
+    assert_equal 0, @chat.messages.where(role: "system").count
+  end
+
   test "due_at must be in the future and text is required" do
     late = build("Check it", at: @now - 1.minute)
     assert_not late.valid?
