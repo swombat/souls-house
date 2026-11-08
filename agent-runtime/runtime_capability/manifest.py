@@ -128,5 +128,8 @@ def validate(raw: bytes) -> tuple[Declaration, ...]:
                 seen.add(key)
                 declarations.append(Declaration(channel, name, key in REVIEWED))
         return tuple(declarations)
-    except (yaml.YAMLError, UnicodeError, RecursionError, InvalidManifest):
+    # SafeLoader's timestamp constructor raises ValueError for invalid dates,
+    # not YAMLError. Keep those malformed scalars in the invalid-manifest lane.
+    # ValueError also covers UnicodeError and our own InvalidManifest.
+    except (yaml.YAMLError, ValueError, RecursionError):
         raise InvalidManifest("Invalid manifest") from None

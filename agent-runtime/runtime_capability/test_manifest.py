@@ -44,6 +44,14 @@ pip:
     def test_explicit_empty_lists_valid(self):
         self.assertEqual(validate(b"apt: []\npip: []"), ())
 
+    def test_invalid_yaml_dates_are_generic_manifest_errors(self):
+        for date in ("2026-99-99", "2026-02-30"):
+            with self.subTest(date=date):
+                raw = f"pip: [{{name: numpy, reason: {date}}}]".encode()
+                with self.assertRaises(InvalidManifest) as caught:
+                    validate(raw)
+                self.assertEqual(str(caught.exception), "Invalid manifest")
+
     def test_pip_names_normalized_before_review_and_duplicate_check(self):
         result = validate(b"pip: [{name: NumPy, reason: PRIVATE}, {name: PyYAML, reason: PRIVATE}, {name: Some_Package.name, reason: PRIVATE}]")
         self.assertEqual([d.name for d in result], ["numpy", "pyyaml", "some-package-name"])
