@@ -1033,6 +1033,14 @@ module TestSupport
           name: "Example rescue failure", portable_home_id: "example-rescue-failed-#{run_id}",
           sync_health: conflict_health.merge("rescue_status" => "failed")
         ))
+        dirty = GithubResidentImport.create!(ready_attributes.merge(
+          name: "Example blocked sync", portable_home_id: "example-dirty-#{run_id}"
+        ))
+        dirty.record_sync_health!({
+          "state" => "blocked", "reason_code" => "dirty_worktree", "checked_at" => Time.current.iso8601,
+          "blocking_paths" => [ "memory/weekly journals/été.md", "<img src=x onerror=alert(1)>.md", "memory/#{"long-" * 70}.md" ],
+          "blocking_paths_truncated" => true
+        })
         stale = GithubResidentImport.create!(ready_attributes.merge(
           name: "Example stale sync", portable_home_id: "example-stale-#{run_id}",
           sync_configuration: {},
@@ -1050,6 +1058,7 @@ module TestSupport
           standard_sync_review_url: "#{base}/#{standard.to_param}",
           standard_sync_conflict_url: "#{base}/#{conflict.to_param}",
           standard_sync_rescue_failed_url: "#{base}/#{rescue_failed.to_param}",
+          standard_sync_dirty_url: "#{base}/#{dirty.to_param}",
           standard_sync_stale_url: "#{base}/#{stale.to_param}"
         } : {}) }
     end

@@ -25,6 +25,8 @@ import time
 import uuid
 
 CONFIG_KEYS = ('auto_commit_paths', 'append_only_paths', 'allow_destructive_paths')
+MAX_BLOCKING_PATHS = 100
+MAX_BLOCKING_PATH_LENGTH = 500
 # Root-anchored names the host runner writes while seeding a home volume
 # (host-runner SEED_MARKER and friends; app/services/agents/vm_seed.rb
 # RESERVED_TOP_LEVEL). Packages may not contain them.
@@ -40,8 +42,9 @@ REASONS = {
 
 
 class Refused(Exception):
-    def __init__(self, reason, state='blocked'):
+    def __init__(self, reason, state='blocked', blocking_paths=()):
         self.reason, self.state = reason, state
+        self.blocking_paths = blocking_paths
 
 
 def contains(scope, path):
@@ -121,6 +124,24 @@ class Sync:
     def matches(self, key, path):
         return any(contains(scope, path) for scope in self.config[key])
 
+    def blocking_details(self, paths):
+        # Names only: never read files, resolve symlinks or shorten a name into
+        # a different filename. Omitted unsafe/oversize names count as truncated.
+        result, truncated = [], False
+        for path in sorted(set(paths)):
+            if self.matches('auto_commit_paths', path):
+                continue
+            if (len(result) >= MAX_BLOCKING_PATHS or not path or
+                    len(path) > MAX_BLOCKING_PATH_LENGTH or path.startswith(('/', '~')) or
+                    re.match(r'^[A-Za-z]:', path) or
+                    '\\' in path or any(p in ('', '.', '..', '.git') for p in path.split('/')) or
+                    any(ord(c) < 32 or 127 <= ord(c) <= 159 or
+                        0xD800 <= ord(c) <= 0xDFFF for c in path)):
+                truncated = True
+                continue
+            result.append(path)
+        return dict(blocking_paths=result, blocking_paths_truncated=truncated)
+
     def blob(self, revision, path):
         out, code = self.git('cat-file', 'blob', revision + ':' + path, acceptable=(0, 128))
         return out if code == 0 else None
@@ -162,7 +183,7 @@ class Sync:
         dirty = sorted(set(self.paths('diff', '--name-only', '--no-renames', '-z') +
                            self.untracked()))
         if any(not self.matches('auto_commit_paths', path) for path in dirty):
-            raise Refused('dirty_worktree')
+            raise Refused('dirty_worktree', blocking_paths=dirty)
         for path in dirty:
             target = self.root / path
             if target.is_symlink() or not target.resolve().is_relative_to(self.root):
@@ -176,8 +197,9 @@ class Sync:
             self.git('commit', '--only', '-m', 'Save approved home changes', '--', *dirty,
                      reason='commit_failed')
         self.clean_preflight()
-        if self.paths('diff', '--name-only', '-z') or self.untracked():
-            raise Refused('dirty_worktree')
+        dirty = self.paths('diff', '--name-only', '--no-renames', '-z') + self.untracked()
+        if dirty:
+            raise Refused('dirty_worktree', blocking_paths=dirty)
 
     def append_merges(self, base, local, remote):
         changed = set(self.paths('diff', '--name-only', '--no-renames', '-z', base, local) +
@@ -220,12 +242,15 @@ class Sync:
                                  *HOUSE_EXCLUDES, '-z')
             incoming = sorted(self.paths('ls-tree', '-r', '--name-only', '-z', remote))
             tracked_paths = set(incoming)
+            collisions = []
             for private in ignored:
                 parts = private.split('/')
                 descendant = bisect_left(incoming, private + '/')
                 if (any('/'.join(parts[:end]) in tracked_paths for end in range(1, len(parts) + 1)) or
                         (descendant < len(incoming) and incoming[descendant].startswith(private + '/'))):
-                    raise Refused('dirty_worktree', 'needs_attention')
+                    collisions.append(private)
+            if collisions:
+                raise Refused('dirty_worktree', 'needs_attention', blocking_paths=collisions)
             append = self.append_merges(base, local, remote)
         except Refused as failure:
             # No merge has started; local commits already remain intact.
@@ -258,8 +283,9 @@ class Sync:
                 self.git('add', '--', path, reason='integration_failed')
             if set(self.paths('diff', '--cached', '--name-only', '-z')) - merge_paths:
                 raise Refused('staged_changes', 'needs_attention')
-            if self.paths('diff', '--name-only', '-z'):
-                raise Refused('dirty_worktree', 'needs_attention')
+            dirty = self.paths('diff', '--name-only', '--no-renames', '-z')
+            if dirty:
+                raise Refused('dirty_worktree', 'needs_attention', blocking_paths=dirty)
             self.git('commit', '-m', 'Integrate home changes', reason='integration_failed')
         except Refused as failure:
             # Never reset/stash; Git abort restores the pre-merge local commits.
@@ -322,7 +348,8 @@ class Sync:
                 previous = {}
             status = dict(state='unknown', checked_at=now(), last_success_at=previous.get('last_success_at'),
                           reason_code='not_recorded', rescue_ref=None, rescue_status='not_needed',
-                          rescued_sha=None, rescued_ref=None)
+                          rescued_sha=None, rescued_ref=None,
+                          blocking_paths=[], blocking_paths_truncated=False)
             saved_sha, saved_ref = previous.get('rescued_sha'), previous.get('rescued_ref')
             if (isinstance(saved_sha, str) and re.fullmatch(r'[0-9a-f]{40}', saved_sha) and
                     isinstance(saved_ref, str) and
@@ -335,13 +362,16 @@ class Sync:
                 self.save_allowed_edits()
                 self.integrate()
                 self.clean_preflight()
-                if self.paths('diff', '--name-only', '-z'):
-                    raise Refused('dirty_worktree')
+                dirty = self.paths('diff', '--name-only', '--no-renames', '-z')
+                if dirty:
+                    raise Refused('dirty_worktree', blocking_paths=dirty)
                 self.git('push', '--no-verify', 'origin', 'HEAD:refs/heads/' + self.branch, reason='push_failed')
                 status.update(state='ok', reason_code='synced', last_success_at=now())
                 code = 0
             except Refused as failure:
                 status.update(state=failure.state, reason_code=failure.reason)
+                if failure.reason == 'dirty_worktree':
+                    status.update(self.blocking_details(failure.blocking_paths))
                 if getattr(failure, 'rescue', False):
                     status['rescue_ref'], status['rescue_status'] = self.rescue(status)
                 code = 1
@@ -366,7 +396,8 @@ def main():
         status, code = Sync(root, branch, args).run()
     except (ValueError, OSError, Refused):
         status = dict(state='failed', checked_at=now(), last_success_at=None,
-                      reason_code='invalid_configuration', rescue_ref=None, rescue_status='not_needed')
+                      reason_code='invalid_configuration', rescue_ref=None, rescue_status='not_needed',
+                      blocking_paths=[], blocking_paths_truncated=False)
         code = 1
     print(json.dumps(status, sort_keys=True))
     return code

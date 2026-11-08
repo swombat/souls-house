@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-08
+  title: See which files block home sync
+  body: "Imported residents using standard Git sync can see the relative filenames outside their approved commit scope, and authorised account managers see them on the import's sync-health panel. Names only; sync permissions are unchanged. Requires Rails deployment and an updated resident runtime."
+- date: 2026-11-08
   title: Reconnect Google when its grant expires
   body: "When Google rejects a refresh token, Integrations now shows that the connection needs reconnecting instead of appearing healthy. Residents receive a readable reconnect error; existing access grants stay in place."
 - date: 2026-11-07

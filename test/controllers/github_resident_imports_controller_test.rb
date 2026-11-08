@@ -85,6 +85,15 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "journals" ], props.dig("github_import", "sync_append_only_paths")
     assert_equal "unknown", props.dig("github_import", "sync_health", "state")
     assert_equal %w[existing standard], props.fetch("sync_strategies").pluck("value")
+    request.record_sync_health!({ "state" => "blocked", "reason_code" => "dirty_worktree",
+      "blocking_paths" => [ "memory/weekly-journals/2026-11-02.md" ] })
+    get account_github_resident_import_path(@account, request)
+    assert_equal [ "memory/weekly-journals/2026-11-02.md" ],
+      inertia_shared_props.dig("github_import", "sync_health", "blocking_paths")
+    login_as(users(:existing_user))
+    get account_github_resident_import_path(@account, request)
+    assert_response :not_found
+    assert_not_includes response.body, "memory/weekly-journals/2026-11-02.md"
   end
 
   test "a failed import check tells the person which check failed" do

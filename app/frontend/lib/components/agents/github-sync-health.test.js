@@ -1,6 +1,32 @@
 import { render, screen } from '@testing-library/svelte';
 import SyncHealth from './github-sync-health.svelte';
 
+test('blocking paths render as literal filenames, with bounded-report warning', () => {
+  const { container } = render(SyncHealth, {
+    health: {
+      state: 'blocked',
+      reason_code: 'dirty_worktree',
+      blocking_paths: ['memory/weekly journals/été.md', '<img src=x onerror=alert(1)>.md'],
+      blocking_paths_truncated: true,
+    },
+  });
+  expect(screen.getByText('memory/weekly journals/été.md')).toBeVisible();
+  expect(screen.getByText('<img src=x onerror=alert(1)>.md')).toBeVisible();
+  expect(container.querySelector('img')).toBeNull();
+  expect(screen.getByText(/Some filenames are omitted/)).toBeVisible();
+  expect(screen.getByText(/does not change which files sync may commit/)).toBeVisible();
+});
+
+test('older runtimes explicitly lack filename details', () => {
+  render(SyncHealth, { health: { state: 'blocked', reason_code: 'dirty_worktree' } });
+  expect(screen.getByText(/Blocking filenames were not reported/)).toBeVisible();
+});
+
+test('irrelevant stale filenames do not appear on successful reports', () => {
+  render(SyncHealth, { health: { state: 'ok', reason_code: 'synced', blocking_paths: ['stale.md'] } });
+  expect(screen.queryByText('stale.md')).not.toBeInTheDocument();
+});
+
 test.each(['unknown', 'stale', 'blocked', 'busy', 'failed', 'needs_attention'])(
   '%s never claims successful sync',
   (state) => {

@@ -354,6 +354,22 @@ class SyncLoopTest(HomeFixture):
         self.assertNotIn(str(self.lume / 'automation/scripts/home_sync.py'), calls[0])
         self.assertEqual(calls[0][-2:], ['--auto-commit-path', 'notes'])
 
+    def test_standard_blocking_names_reach_cached_status_and_health_then_clear(self):
+        from types import SimpleNamespace
+        report = {'state': 'blocked', 'checked_at': local_now(), 'reason_code': 'dirty_worktree',
+                  'blocking_paths': ['memory/weekly journals/été.md'], 'blocking_paths_truncated': True}
+        with self.lume_env(SOULSHOUSE_HOME_SYNC_STRATEGY='standard', SOULSHOUSE_GITHUB_IMPORT_BRANCH='main'):
+            result = SimpleNamespace(returncode=1, stdout=json.dumps(report))
+            home_sync_loop.run_once(runner=lambda *a, **k: result, path=self.status)
+            for status in (home_sync_loop.read_status(self.status), home_sync_loop.health(self.status)):
+                self.assertEqual(status['blocking_paths'], report['blocking_paths'])
+                self.assertTrue(status['blocking_paths_truncated'])
+            result = SimpleNamespace(returncode=0, stdout=json.dumps({
+                'state': 'ok', 'checked_at': local_now(), 'last_success_at': local_now(), 'reason_code': 'synced',
+                'blocking_paths': [], 'blocking_paths_truncated': False}))
+            home_sync_loop.run_once(runner=lambda *a, **k: result, path=self.status)
+            self.assertEqual(home_sync_loop.health(self.status)['blocking_paths'], [])
+
     def test_standard_partial_rescue_never_confirms_success(self):
         from types import SimpleNamespace
         previous = {'state': 'ok', 'last_success_at': '2026-10-01T00:00:00+00:00'}
