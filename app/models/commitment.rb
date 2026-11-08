@@ -294,6 +294,32 @@ class Commitment < ApplicationRecord
       "(#{due_at.utc.iso8601}), in #{where}."
   end
 
+  # A house line in the conversation the commitment was made in, so the
+  # people there see the promise when it is made, not only when it comes due
+  # (Daniel, YnwNve JbakNy). Headline only, as with "Commitment due": the
+  # full text can be private. A system message, so it wakes nobody and
+  # carries no handoff. A commitment that opens a new conversation is still
+  # announced here, where it was made: that conversation does not exist until
+  # it is due. Posted once, by the resident API's create; rescheduling and
+  # cancelling post nothing. A failure to post (the save, or a callback such
+  # as a broadcast) never undoes the commitment or fails the create; it is
+  # logged and not retried.
+  def announce!
+    return unless scheduled? && persisted?
+
+    source_chat.messages.create!(role: "system", content: announcement_text, suppress_automatic_dispatch: true)
+  rescue StandardError => error
+    Rails.logger.warn("[Commitment#announce!] #{to_param}: #{error.class}: #{error.message}")
+    nil
+  end
+
+  def announcement_text
+    local = due_at.in_time_zone(timezone)
+    line = "due #{local.strftime('%a %-d %b %H:%M')} #{timezone}"
+    line += " · will open a new conversation in #{destination_room&.name || 'Main'}" if new_conversation?
+    "**#{agent.name} made a commitment:** #{headline}\n\n#{line}"
+  end
+
   private
 
   def sidebar_mark_changed?

@@ -41,6 +41,7 @@ module Api
 
         commitment = Commitment.new(attributes)
         if save_commitment(commitment)
+          commitment.announce!
           render json: { commitment: commitment.as_json, receipt: commitment.receipt }, status: :created
         else
           render json: { errors: commitment.errors.full_messages }, status: :unprocessable_entity
