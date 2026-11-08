@@ -16,6 +16,7 @@
   import HandoffReceipts from '$lib/components/chat/HandoffReceipts.svelte';
   import SongReferenceParagraph from './SongReferenceParagraph.svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import CommitRef from '$lib/components/chat/CommitRef.svelte';
   import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
@@ -81,6 +82,7 @@
   {/if}
 
   <Streamdown
+    allowedLinkPrefixes={LINK_PREFIXES}
     content={prose.content}
     parseIncompleteMarkdown={message.streaming === true}
     inlineCitation={expressionTag}

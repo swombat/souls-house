@@ -4,6 +4,7 @@
   import * as Drawer from '$lib/components/shadcn/drawer/index.js';
   import { Spinner, PencilSimple, FloppyDisk, X, WarningCircle } from 'phosphor-svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
 
   let {
     open = $bindable(false),
@@ -165,6 +166,7 @@
         {:else if whiteboard?.content?.trim()}
           <div class="prose dark:prose-invert max-w-none">
             <Streamdown
+              allowedLinkPrefixes={LINK_PREFIXES}
               content={whiteboard.content}
               parseIncompleteMarkdown={false}
               baseTheme="shadcn"

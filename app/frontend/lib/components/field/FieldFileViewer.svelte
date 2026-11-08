@@ -6,6 +6,7 @@
   import { formatBytes, formatWhen } from '$lib/field';
   import PdfText from '$lib/components/field/PdfText.svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
 
   let { file, link, onDelete } = $props();
   let copied = $state(false);
@@ -68,6 +69,7 @@
       <div class="border-t pt-4" data-testid="field-file-text" data-text-kind={file.text_kind}>
         {#if file.text_kind === 'markdown'}
           <Streamdown
+            allowedLinkPrefixes={LINK_PREFIXES}
             content={file.text}
             parseIncompleteMarkdown={false}
             baseTheme="shadcn"

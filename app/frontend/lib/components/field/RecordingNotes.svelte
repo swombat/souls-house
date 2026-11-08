@@ -5,6 +5,7 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import { mode } from 'mode-watcher';
   import { PencilSimple, Plus } from 'phosphor-svelte';
 
@@ -67,6 +68,7 @@
       </div>
       <div class="prose dark:prose-invert max-w-none">
         <Streamdown
+          allowedLinkPrefixes={LINK_PREFIXES}
           content={recording.notes}
           parseIncompleteMarkdown={false}
           baseTheme="shadcn"

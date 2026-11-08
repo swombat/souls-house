@@ -14,6 +14,7 @@
   import SafeguardNoticeBand from '$lib/components/chat/SafeguardNoticeBand.svelte';
 
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import CommitRef from '$lib/components/chat/CommitRef.svelte';
   import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
@@ -95,6 +96,7 @@
                 <FileAttachmentList files={message.files_json} onImageClick={onimagelightbox} class="mb-3" />
               {/if}
               <Streamdown
+                allowedLinkPrefixes={LINK_PREFIXES}
                 content={message.content}
                 parseIncompleteMarkdown={message.streaming === true}
                 inlineCitation={expressionTag}

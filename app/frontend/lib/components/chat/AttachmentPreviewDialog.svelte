@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { DownloadSimple } from 'phosphor-svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import { readTextPreview } from '$lib/attachment-preview.js';
 
   let { file, kind, open = $bindable(false) } = $props();
@@ -52,6 +53,7 @@
           {#if kind === 'markdown'}
             <div data-testid="attachment-preview-markdown">
               <Streamdown
+                allowedLinkPrefixes={LINK_PREFIXES}
                 content={text}
                 parseIncompleteMarkdown={false}
                 baseTheme="shadcn"

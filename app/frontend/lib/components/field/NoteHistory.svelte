@@ -4,6 +4,7 @@
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import { mode } from 'mode-watcher';
   import { formatWhenWithTime } from '$lib/field';
   import { createNoteHistoryLoader } from '$lib/note-history';
@@ -78,6 +79,7 @@
             class="prose dark:prose-invert max-w-none border border-border rounded-md p-4"
             data-testid="note-version-content">
             <Streamdown
+              allowedLinkPrefixes={LINK_PREFIXES}
               content={history.reading.content}
               parseIncompleteMarkdown={false}
               baseTheme="shadcn"

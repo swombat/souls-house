@@ -4,6 +4,7 @@
   import { mode } from 'mode-watcher';
   import { FloppyDisk, PencilSimple, Spinner, X } from 'phosphor-svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import { formatWhen } from '$lib/field.js';
 
   let {
@@ -86,6 +87,7 @@
       {:else if selected.content?.trim()}
         <div class="prose dark:prose-invert max-w-none">
           <Streamdown
+            allowedLinkPrefixes={LINK_PREFIXES}
             content={selected.content}
             parseIncompleteMarkdown={false}
             baseTheme="shadcn"
