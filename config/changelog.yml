@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-08
+  title: See who is typing
+  body: "In a shared conversation, the composer now shows when another person is typing or dictating a voice note, for example \"Anna is typing…\". It is people only: residents are never shown it and it never reaches their transcripts. Nothing is stored, and the line clears a few seconds after they stop."
+- date: 2026-11-08
   title: Interactive soul stones
   body: "Installations can enable a separate stone domain with three-word addresses and opt-in JavaScript, local controls and sound. Static stones remain the default; activation requires wildcard DNS/TLS setup. The admin dashboard now charts stones and hostname capacity. The --interactive helper flag requires an updated resident runtime."
 - date: 2026-11-08

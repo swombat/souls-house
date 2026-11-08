@@ -8,6 +8,11 @@ const browser = typeof window !== 'undefined';
 // Create consumer once
 const consumer = browser ? createConsumer() : null;
 
+// The shared connection, for channels that talk both ways (TypingChannel).
+export function cableConsumer() {
+  return consumer;
+}
+
 // Pure debounce function
 export function debounce(fn, delay) {
   let timeoutId;
