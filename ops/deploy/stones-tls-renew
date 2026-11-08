@@ -1,0 +1,82 @@
+#!/bin/bash
+# Review and install as root; the operator-owned notifier must be verified first.
+set +x
+set -euo pipefail
+umask 077
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+config=/etc/house-deploy
+state=/var/lib/house-deploy
+script=/opt/house-deploy/stones-tls.rb
+acme_image=neilpang/acme.sh@sha256:92b201ade090fb8551e221fba553fd7d7167628284cb28fe73bd64ec4a7f3a2b
+domain=soulstones.fyi
+probe=tls-check.soulstones.fyi
+
+[[ $(id -u) = 0 ]] || exit 1
+# A separate lock prevents overlapping renewals; deployments may proceed during
+# DNS/network work. Ruby takes deployment.lock only around validation/install.
+exec 9>"$state/stones-tls-renew.lock"
+flock -n 9 || exit 0
+notifier=$(<"$config/stones-tls/notify-command")
+# One absolute executable path, never eval/shell words. No token handling here.
+[[ "$notifier" =~ ^/[a-zA-Z0-9/_.-]+$ && -f "$notifier" && -x "$notifier" && ! -L "$notifier" ]] || exit 1
+notify() {
+  # Fixed messages only: never include command output, paths with credentials,
+  # certificate content, environment, or ACME logs.
+  "$notifier" "$1" "$2" >/dev/null 2>&1
+}
+failed() {
+  trap - ERR
+  notify "Stone TLS: renewal/monitor FAILED" \
+    "Host TLS maintenance failed. Inspect root-only ACME state privately. Check DNS/issuance, installer, deployment contention, live expiry and notifier transport. No application was deployed or shared proxy restarted." || true
+  exit 1
+}
+trap failed ERR
+tools_image=$(python3 -c 'import json; print(json.load(open("/etc/house-deploy/settings.json"))["tools_image"])' 2>/dev/null)
+[[ -n "$tools_image" && "$tools_image" != *$'\n'* ]]
+# Bind the directory, not the secrets inode: atomic rename must replace the host
+# file. No Docker socket, SSH keys mount, checkout, or Kamal command is supplied.
+# The trusted tools image sees root-owned config; do not run an unreviewed image.
+touch "$state/deployment.lock"
+tls() {
+  docker run --rm --network host --entrypoint ruby \
+    -v "$config:$config" \
+    -v "$state/deployment.lock:$state/deployment.lock" \
+    -v "$script:$script:ro" \
+    "$tools_image" "$script" "$@" 2>/dev/null
+}
+
+renew_failed=0
+docker run --rm --entrypoint /bin/sh \
+  -v "$config/stones-tls/porkbun.env:/run/porkbun.env:ro" \
+  -v "$config/stones-tls/production:/acme.sh" \
+  "$acme_image" -c 'set -a; . /run/porkbun.env; set +a; export AUTO_UPGRADE=0; exec /acmebin/acme.sh --config-home /acme.sh "$@"' \
+  sh --cron >/dev/null 2>&1 || renew_failed=1
+
+# acme --cron may succeed without renewing. Always compare/install and check the
+# served certificate, even when renewal failed, so expiry monitoring still runs.
+fullchain="$config/stones-tls/production/*.$domain"_ecc/fullchain.cer
+key="$config/stones-tls/production/*.$domain"_ecc/"*.$domain.key"
+# acme.sh may recreate fullchain as 0644 on every renewal. Harden these exact
+# regular root-owned inputs in trusted tools Ruby, without following symlinks.
+tls prepare "$fullchain" "$key" >/dev/null || failed
+result=$(tls install "$domain" "$fullchain" "$key")
+case "$result" in
+  installed)
+    printf '%s\n' 'Stone TLS: installed; manual Deploy Rails required (not refreshed).'
+    notify "Stone TLS: renewal READY - approve Deploy Rails" \
+      "A validated TLS pair is installed in Kamal secrets but NOT active in the shared proxy. Approve and run the existing Deploy Rails workflow / Site Admin action promptly, then verify live TLS. This releases current master; it is an explicit release decision. No deployment or proxy restart was triggered by renewal."
+    ;;
+  unchanged) printf '%s\n' 'Stone TLS: unchanged.' ;;
+  *) failed ;;
+esac
+monitor_failed=0
+tls check "$domain" "$probe" >/dev/null || monitor_failed=1
+if (( monitor_failed )); then
+  notify "Stone TLS: live certificate/expiry CHECK FAILED" \
+    "Installed/served TLS validation failed, certificate differs, connection failed, or fewer than 21 days remain. If renewal is ready, approve manual Deploy Rails promptly; otherwise investigate issuance. Repeat checks continue daily until resolved."
+fi
+if (( renew_failed )); then
+  notify "Stone TLS: ACME renewal FAILED" \
+    "The pinned ACME renewal command failed. Inspect root-only ACME state privately and verify DNS/API access. Existing secrets were validated and live TLS checked separately."
+fi
+if (( renew_failed || monitor_failed )); then exit 1; fi
