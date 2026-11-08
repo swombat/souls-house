@@ -10,29 +10,16 @@ import threading
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-from fastembed import TextEmbedding
 
 PROFILE = "bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1"
+# One inference at a time. A wake burst (several residents recalling in the
+# same second) queues for the slot instead of bouncing; the wait stays under
+# the Rails client's overall 2 s budget so a waiter that cannot be served
+# still gets a 503 it can read, not a dropped connection (#804).
+GATE_WAIT_SECONDS = 1.5
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model-dir", required=True)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--ready-file")
-    args = parser.parse_args()
-    token = os.environ.get("MNEMODYNE_EMBEDDING_TOKEN")
-    if not token or len(token) < 24:
-        raise SystemExit("A private embedding token of at least 24 characters is required")
-    manifest = json.loads(Path(__file__).with_name("model-sha256.json").read_text())
-    for name, expected in manifest.items():
-        if hashlib.sha256((Path(args.model_dir) / name).read_bytes()).hexdigest() != expected:
-            raise SystemExit("Model integrity check failed")
-    model = TextEmbedding("BAAI/bge-small-en-v1.5", specific_model_path=args.model_dir,
-                          local_files_only=True, threads=2)
-    # Warm inference before publishing readiness.
-    list(model.embed(["Synthetic readiness probe"]))
+def build_server(model, token, host, port, gate_wait=GATE_WAIT_SECONDS):
     gate = threading.BoundedSemaphore(1)
 
     class Handler(BaseHTTPRequestHandler):
@@ -63,7 +50,7 @@ def main():
                 return self.reply(404, {"error": "Not found"})
             if not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {token}"):
                 return self.reply(401, {"error": "Unauthorized"})
-            if not gate.acquire(timeout=0.5):
+            if not gate.acquire(timeout=gate_wait):
                 return self.reply(503, {"error": "Busy"})
             try:
                 size = int(self.headers.get("Content-Length", "0"))
@@ -82,8 +69,32 @@ def main():
             finally:
                 gate.release()
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True
+    return server
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--ready-file")
+    args = parser.parse_args()
+    token = os.environ.get("MNEMODYNE_EMBEDDING_TOKEN")
+    if not token or len(token) < 24:
+        raise SystemExit("A private embedding token of at least 24 characters is required")
+    manifest = json.loads(Path(__file__).with_name("model-sha256.json").read_text())
+    for name, expected in manifest.items():
+        if hashlib.sha256((Path(args.model_dir) / name).read_bytes()).hexdigest() != expected:
+            raise SystemExit("Model integrity check failed")
+    from fastembed import TextEmbedding
+
+    model = TextEmbedding("BAAI/bge-small-en-v1.5", specific_model_path=args.model_dir,
+                          local_files_only=True, threads=2)
+    # Warm inference before publishing readiness.
+    list(model.embed(["Synthetic readiness probe"]))
+    server = build_server(model, token, args.host, args.port)
     if args.ready_file:
         path = Path(args.ready_file)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
