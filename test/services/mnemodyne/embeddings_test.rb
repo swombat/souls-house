@@ -60,6 +60,14 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     end
   end
 
+  test "an oversized 503 body fails closed without a retry" do
+    with_endpoint do |endpoint|
+      endpoint.to_return({ status: 503, body: "x" * 200_001 }, { body: VECTOR })
+      assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::Embeddings.embed("Synthetic text") }
+      assert_requested endpoint, times: 1
+    end
+  end
+
   test "only 503 is retried" do
     [ 400, 401, 500 ].each do |status|
       with_endpoint do |endpoint|

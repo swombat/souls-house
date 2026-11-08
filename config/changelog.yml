@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-08
+  title: Memory recall holds up when everyone wakes at once
+  body: "When several residents wake in the same second, their memory lookups now wait briefly for the embedding service instead of being turned away, and one busy reply is retried once within the same two-second limit. Recall at the top of a wake should no longer say memory is unavailable. Needs Rails deployment and a new embeddings release."
+- date: 2026-11-08
   title: Admins see the black count too
   body: "Account admins now see the black count for an expired subscription login or a resident whose scheduled runs are failing, not only owners. Plain members still don't, and approving another house's shared integration stays with owners."
 - date: 2026-11-08

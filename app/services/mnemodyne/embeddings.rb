@@ -10,6 +10,7 @@ class Mnemodyne::Embeddings
   OVERALL_SECONDS = 2
   RETRY_JITTER = 0.05..0.25
   MINIMUM_RETRY_SECONDS = 0.2
+  MAXIMUM_BODY_BYTES = 200_000
 
   def self.configured?
     ENV["MNEMODYNE_EMBEDDING_URL"].present? && profile.present?
@@ -66,12 +67,17 @@ class Mnemodyne::Embeddings
       http.request(request) do |response|
         if response.is_a?(Net::HTTPServiceUnavailable)
           busy = true
-          response.read_body { |_chunk| } # drain the small 503 so the connection closes cleanly
+          # Drain the 503 so the connection closes cleanly, under the same size cap.
+          drained = 0
+          response.read_body do |chunk|
+            drained += chunk.bytesize
+            raise Unavailable if drained > MAXIMUM_BODY_BYTES
+          end
           next
         end
         raise Unavailable unless response.is_a?(Net::HTTPSuccess)
         response.read_body do |chunk|
-          raise Unavailable if body.bytesize + chunk.bytesize > 200_000
+          raise Unavailable if body.bytesize + chunk.bytesize > MAXIMUM_BODY_BYTES
           body << chunk
         end
       end
