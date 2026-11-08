@@ -84,6 +84,24 @@ test('unmounting mid-recording stops the microphone and releases the hold', asyn
   expect(isRecordingHeld()).toBe(false);
 });
 
+test('reports dictating while recording, and its end when unmounted mid-recording', async () => {
+  const changes = [];
+  const { unmount } = render(MicButton, {
+    accountId: 'a',
+    chatId: 'c',
+    userId: 'u',
+    onrecordingchange: (active) => changes.push(active),
+  });
+  await fireEvent.click(document.querySelector('button'));
+  pendingMic[0]();
+  await tick();
+  await tick();
+  expect(changes.at(-1)).toBe(true);
+
+  unmount();
+  expect(changes.at(-1)).toBe(false);
+});
+
 test('leaving while the microphone prompt is open, then granting it, starts nothing and holds nothing', async () => {
   const { unmount } = render(MicButton, { accountId: 'a', chatId: 'c', userId: 'u' });
   const button = document.querySelector('button');

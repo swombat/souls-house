@@ -68,6 +68,9 @@
 
   onDestroy(() => {
     destroyed = true;
+    // The parent outlives this button (the wave panel replaces it): tell it dictation ended,
+    // or it keeps announcing "dictating" to the others in the conversation.
+    if (dictating) onrecordingchange?.(false);
     if (mediaRecorder?.state === 'recording') abandonRecorder(mediaRecorder);
     release();
     failureHold?.();
