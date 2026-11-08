@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 class GoogleReconnectTest < ActionDispatch::IntegrationTest
 
@@ -33,6 +34,36 @@ class GoogleReconnectTest < ActionDispatch::IntegrationTest
     assert_not connection.enabled_for_new_agents?
     assert_not connection.freely_provisionable?
     assert ServiceAuthorizationAttempt.order(:id).last.consumed_at?
+  end
+
+  test "explicit reconnect after rejected refresh restores the same row and preserves grants" do
+    connection = google_connection(status: "connected", credential_payload_hash: {
+      "refresh_token" => "rejected-refresh", "access_token" => "expired",
+      "expires_at" => 1.minute.ago.iso8601
+    })
+    connection.agent_service_accesses.create!(agent: agents(:research_assistant), enabled: true)
+    connection.agent_service_accesses.create!(agent: agents(:code_reviewer), enabled: false)
+    grants = connection.agent_service_accesses.order(:id).pluck(:id, :enabled)
+    definition = Services::Definition.fetch("google_workspace")
+    adapter = definition.adapter
+    credentials = Object.new
+    credentials.define_singleton_method(:dig) { |*| "synthetic-credential" }
+    stub_request(:post, Services::GoogleWorkspaceAdapter::TOKEN_URL)
+      .to_return(status: 400, body: { error: "invalid_grant" }.to_json)
+    Rails.application.stub(:credentials, credentials) do
+      assert_raises(Services::GoogleWorkspaceAdapter::ReauthorizationRequired) { adapter.current_access_token(connection) }
+    end
+    assert_equal "reauthorizing", connection.reload.status
+
+    assert_no_difference [ "ServiceConnection.count", "AgentServiceAccess.count" ] do
+      complete_connect(service_connection: connection)
+    end
+    assert_redirected_to account_integrations_path(@account)
+    assert_equal "connected", connection.reload.status
+    assert_equal "replacement-refresh", connection.credential_payload_hash["refresh_token"]
+    assert_equal grants, connection.agent_service_accesses.order(:id).pluck(:id, :enabled)
+    assert_requested :post, Services::GoogleWorkspaceAdapter::TOKEN_URL, times: 1
+    assert_not_requested :post, Services::GoogleWorkspaceAdapter::REVOKE_URL
   end
 
   test "fresh Connect also restores account-managed ownership without changing it" do
@@ -155,7 +186,7 @@ class GoogleReconnectTest < ActionDispatch::IntegrationTest
     }.merge(attributes))
   end
 
-  def complete_connect(management_scope: "personal")
+  def complete_connect(management_scope: "personal", service_connection: nil)
     definition = Services::Definition.fetch("google_workspace")
     adapter = definition.adapter
     adapter.stub(:authorization_url, ->(_attempt, state:, redirect_uri:) {
@@ -163,13 +194,19 @@ class GoogleReconnectTest < ActionDispatch::IntegrationTest
     }) do
       definition.stub(:adapter, adapter) do
         post account_service_authorizations_path(@account), params: {
-          provider: "google_workspace", management_scope: management_scope, access_profile: "read_only"
+          provider: "google_workspace", management_scope: management_scope, access_profile: "read_only",
+          service_connection_id: service_connection&.public_id
         }
       end
     end
     assert_response :redirect
     state = Rack::Utils.parse_query(URI(response.location).query).fetch("state")
-    assert_nil ServiceAuthorizationAttempt.order(:id).last.service_connection_id
+    attempt = ServiceAuthorizationAttempt.order(:id).last
+    if service_connection
+      assert_equal service_connection.id, attempt.service_connection_id
+    else
+      assert_nil attempt.service_connection_id
+    end
     yield if block_given?
     result = {
       external_subject_id: "google-subject",

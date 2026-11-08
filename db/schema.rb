@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_111500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_083000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2681,6 +2681,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111500) do
     t.datetime "pairing_phone_code_issued_at"
     t.datetime "pairing_phone_code_expires_at"
     t.bigint "connected_by_agent_id"
+    t.datetime "last_refreshed_at"
     t.index ["account_id", "provider", "credential_fingerprint"], name: "index_service_connections_on_account_provider_credential", unique: true, where: "(credential_fingerprint IS NOT NULL)"
     t.index ["account_id", "provider", "external_subject_id"], name: "index_service_connections_on_account_provider_subject", unique: true, where: "((external_subject_id IS NOT NULL) AND (credential_fingerprint IS NULL))"
     t.index ["account_id"], name: "index_service_connections_on_account_id"
