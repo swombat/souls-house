@@ -152,6 +152,11 @@ class StoneDeployTest < Minitest::Test
         assert_equal "env -u SOLID_QUEUE_IN_PUMA bundle exec puma -C config/puma.rb", role.cmd
         assert_equal "0", role.env(role.primary_host).clear.fetch("WEB_CONCURRENCY")
         assert_equal "5", role.env(role.primary_host).clear.fetch("RAILS_MAX_THREADS")
+        assert_equal "1", role.env(role.primary_host).clear.fetch("SOULSHOUSE_STONES_ONLY")
+        %w[web jobs].each do |name|
+          other = kamal.role(name)
+          refute other.env(other.primary_host).clear.key?("SOULSHOUSE_STONES_ONLY")
+        end
         assert_equal "./bin/rails solid_queue:start", kamal.role("jobs").cmd
         refute_includes role.option_args.join(" "), "docker.sock"
         assert_includes role.option_args.join(" "), "souls_house_storage:/rails/storage:ro"

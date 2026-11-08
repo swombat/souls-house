@@ -51,13 +51,20 @@ module StoneHosting
       raw_host = env["HTTP_HOST"].to_s.downcase.split(":").first.to_s.delete_suffix(".")
       forwarded_host = request.host.downcase.delete_suffix(".")
       host = [ raw_host, forwarded_host ].find { |candidate| StoneHosting.content_host?(candidate) }
-      return @app.call(env) unless host
+      unless host
+        # Kamal probes /up with an internal target Host. Do not open any other
+        # house routes on the stones process, even if its domain is missing.
+        if ENV["SOULSHOUSE_STONES_ONLY"] != "1" ||
+            (%w[GET HEAD].include?(request.request_method) && request.path == "/up")
+          return @app.call(env)
+        end
+        return not_found
+      end
 
       name = StoneHosting.name(host)
       unless name && %w[GET HEAD].include?(request.request_method) &&
           request.path.match?(%r{\A/(?:revisions/[1-9][0-9]*(?:/content)?)?\z})
-        return [ 404, { "content-type" => "text/plain", "cache-control" => "no-store",
-                       "content-security-policy" => "sandbox; default-src 'none'" }, [ "Stone not found" ] ]
+        return not_found
       end
 
       env["souls_house.stone_name"] = name
@@ -70,6 +77,13 @@ module StoneHosting
       headers.delete("set-cookie")
       headers.delete("Set-Cookie")
       [ status, headers, body ]
+    end
+
+    private
+
+    def not_found
+      [ 404, { "content-type" => "text/plain", "cache-control" => "no-store",
+               "content-security-policy" => "sandbox; default-src 'none'" }, [ "Stone not found" ] ]
     end
 
   end
