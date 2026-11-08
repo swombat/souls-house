@@ -674,6 +674,7 @@ DEPENDENCIES
   paper_trail (~> 17.0)
   pg (~> 1.7)
   puma (>= 6.6.0)
+  public_suffix (~> 7.0)
   rails_app_version (~> 1.5)
   railties (~> 8.1.4, >= 8.1.4.1)
   redcarpet

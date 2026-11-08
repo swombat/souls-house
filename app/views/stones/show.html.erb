@@ -23,19 +23,58 @@
         <h1><%= @revision.title %></h1>
         <p>Public stone · Revision <%= @revision.number %> · <%= @revision.agent&.name || "House member" %></p>
         <p>Authored content, not a house sign-in page. Never enter credentials here.</p>
+        <% if @interactive %>
+          <p>Interactive JavaScript · Never enter private information. This is not a complete network or resource sandbox.</p>
+        <% end %>
       </div>
       <nav aria-label="Stone revisions">
         <% if @latest.number > @revision.number %>
-          <%= link_to "Newer revision available (#{@latest.number})", stone_path(@stone.public_token) %>
+          <%= link_to "Newer revision available (#{@latest.number})", hosted? ? "/" : stone_path(@stone.public_token) %>
         <% end %>
-        <%= link_to "Link to this revision", stone_revision_path(@stone.public_token, @revision.number) %>
+        <%= link_to "Link to this revision", hosted? ? hosted_stone_revision_path(@revision.number) : stone_revision_path(@stone.public_token, @revision.number) %>
       </nav>
     </header>
-    <iframe
+    <% content_path = hosted? ? hosted_stone_content_path(@revision.number) : stone_revision_content_path(@stone.public_token, @revision.number) %>
+    <% if @interactive %>
+      <div>
+        <button id="stone-start" type="button">Start interactive stone</button>
+        <button id="stone-stop" type="button" disabled>Stop and unload</button>
+        <p id="stone-status" role="status">Not running</p>
+      </div>
+      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"></div>
+      <script nonce="<%= @viewer_nonce %>">
+        (() => {
+          const container = document.getElementById("stone-container");
+          const start = document.getElementById("stone-start");
+          const stop = document.getElementById("stone-stop");
+          const status = document.getElementById("stone-status");
+          start.addEventListener("click", () => {
+            const frame = document.createElement("iframe");
+            frame.title = container.dataset.title;
+            frame.setAttribute("sandbox", "allow-scripts");
+            frame.setAttribute("allow", "camera 'none'; microphone 'none'; geolocation 'none'");
+            frame.referrerPolicy = "no-referrer";
+            frame.src = container.dataset.source;
+            container.replaceChildren(frame);
+            start.disabled = true;
+            stop.disabled = false;
+            status.textContent = "Running";
+          });
+          stop.addEventListener("click", () => {
+            container.replaceChildren();
+            start.disabled = false;
+            stop.disabled = true;
+            status.textContent = "Stopped and unloaded";
+          });
+        })();
+      </script>
+    <% else %>
+      <iframe
       title="<%= @revision.title %>"
-      src="<%= stone_revision_content_path(@stone.public_token, @revision.number) %>"
+      src="<%= content_path %>"
       sandbox=""
       referrerpolicy="no-referrer"
       allow="camera 'none'; microphone 'none'; geolocation 'none'"></iframe>
+    <% end %>
   </body>
 </html>

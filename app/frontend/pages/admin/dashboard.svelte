@@ -10,6 +10,7 @@
   import InfraPanel from '$lib/components/admin/dashboard/InfraPanel.svelte';
   import StoragePanel from '$lib/components/admin/dashboard/StoragePanel.svelte';
   import LatestSignups from '$lib/components/admin/dashboard/LatestSignups.svelte';
+  import StonesPanel from '$lib/components/admin/dashboard/StonesPanel.svelte';
   import { TEAL, CORAL, VIOLET, SLATE, AMBER } from '$lib/components/admin/dashboard/palette.js';
   import {
     formatCount,
@@ -385,4 +386,7 @@
       </ul>
     </div>
   </section>
+  {#if dashboard.stones}
+    <StonesPanel stones={dashboard.stones} />
+  {/if}
 </div>

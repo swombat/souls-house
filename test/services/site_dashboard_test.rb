@@ -14,6 +14,35 @@ class SiteDashboardTest < ActiveSupport::TestCase
 
   teardown { travel_back }
 
+  test "stones count all accounts and withdrawn publications while retired names still consume capacity" do
+    chat = @public_agent.account.chats.create!(title: "Stone stats", model_id: "openrouter/auto")
+    old = Stone.create!(chat: chat, created_at: 30.weeks.ago)
+    recent = Stone.create!(chat: @founding_agent.account.chats.create!(title: "Stones", model_id: "openrouter/auto"),
+      created_at: 1.hour.ago, withdrawn_at: Time.current)
+    deleted = Stone.create!(chat: old.chat)
+    [ old, recent, deleted ].each { |stone| StoneAddress.reserve!(stone: stone) }
+    deleted.delete
+
+    data = SiteDashboard.new.call[:stones]
+    assert_equal Stone.unscoped.count, data[:total]
+    assert_equal 26, data[:weeks].size
+    assert_equal 1, data[:created].first
+    assert_equal 2, data[:created].last
+    assert_equal 2, data[:namespace][:used]
+    assert_equal 1, data[:namespace][:retired]
+    assert_equal 3, data[:namespace][:reserved]
+    assert_equal 16_777_216, data[:namespace][:capacity]
+    assert_in_delta 3.fdiv(16_777_216) * 100, data[:namespace][:percent], 1e-10
+  end
+
+  test "empty stone namespace reports zero usage" do
+    data = SiteDashboard.new.call[:stones]
+    assert_equal 0, data[:namespace][:used]
+    assert_equal 0, data[:namespace][:reserved]
+    assert_equal 0, data[:namespace][:retired]
+    assert_equal 0.0, data[:namespace][:percent]
+  end
+
   def interaction(agent, kind: "conversation", status: "ok", at: 1.hour.ago, **attributes)
     AgentRuntimeInteraction.create!(
       agent:, trigger_kind: kind, started_at: at, finished_at: at + 5.seconds, runtime_status: status,

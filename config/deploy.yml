@@ -37,6 +37,16 @@
   house_optional = lambda { |key| ENV[key].to_s.strip.empty? ? nil : ENV[key].strip }
 
   house_domain = house.call("HOUSE_DOMAIN")
+  stones_domain = house_optional.call("SOULSHOUSE_STONES_DOMAIN")&.downcase
+  if stones_domain
+    require "kamal"
+    require File.join(House::ROOT, "lib/house/stone_tls")
+    House::StoneTls.validate!(
+      secrets: Kamal::Secrets.new(destination: ENV["KAMAL_DESTINATION"]),
+      house_hosts: [ house_domain ],
+      stones_domain: stones_domain
+    )
+  end
   house_host = house.call("HOUSE_HOST")
   house_ssh_user = house.call("HOUSE_SSH_USER")
   house_ssh_port = house.call("HOUSE_SSH_PORT")
@@ -138,6 +148,9 @@ env:
     SOULSHOUSE_ACTIVITY_ORIGIN: https://<%= house_domain %> # Purpose-limited lifecycle callbacks use TLS.
     SOULSHOUSE_PUBLIC_URL: https://<%= house_domain %>
     SOULSHOUSE_DOMAIN: <%= house_domain %> # Mailer confirmation, invitation, and password-reset links.
+<% if stones_domain %>
+    SOULSHOUSE_STONES_DOMAIN: <%= stones_domain.inspect %>
+<% end %>
     SOULSHOUSE_SANDBOX_HOST: <%= house_host %> # Stored on promoted agents for operator diagnostics.
     SOULSHOUSE_AGENT_BACKUPS_ENABLED: true # Back up all hosted-agent persistent volumes during the nightly full backup.
     SOULSHOUSE_SITE_NAME: <%= house_site_name %>
@@ -210,9 +223,21 @@ servers:
 <% end %>
 
 proxy:
+<% if stones_domain %>
+  # One proxy service: this certificate must cover HOUSE_DOMAIN AND the wildcard.
+  # Missing secrets fail through Kamal; never fall back to automatic wildcard TLS.
+  # See docs/operations/stone-hosting.md for server-side DNS-01 and renewal.
+  ssl:
+    certificate_pem: HOUSE_TLS_CERTIFICATE_PEM
+    private_key_pem: HOUSE_TLS_PRIVATE_KEY_PEM
+<% else %>
   ssl: true
+<% end %>
   hosts:
     - <%= house_domain %>
+<% if stones_domain %>
+    - <%= "*.#{stones_domain}".inspect %>
+<% end %>
   app_port: 3000
   response_timeout: 120
 

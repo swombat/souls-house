@@ -63,6 +63,7 @@ class Admin::DashboardsControllerTest < ActionDispatch::IntegrationTest
       payload = store.read(SiteDashboard::CACHE_KEY)
       assert payload.key?(:server)
       assert payload.key?(:storage)
+      assert payload.key?(:stones)
     end
   end
 

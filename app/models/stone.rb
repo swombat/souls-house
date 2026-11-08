@@ -11,13 +11,16 @@ class Stone < ApplicationRecord
   has_secure_token :public_token, length: 32
   has_many :stone_revisions, dependent: :destroy
   has_many :message_stone_revisions, through: :stone_revisions
+  # Reservations survive physical deletion and are never recycled.
+  has_one :stone_address
 
   scope :available, -> { where(withdrawn_at: nil) }
 
-  def self.publish!(chat:, title:, html:, author:, public:)
+  def self.publish!(chat:, title:, html:, author:, public:, interactive: false)
     chat.account.with_lock do
       stone = create!(chat: chat)
-      stone.revise!(title: title, html: html, author: author, public: public, base_revision_id: nil)
+      stone.revise!(title: title, html: html, author: author, public: public, base_revision_id: nil, interactive: interactive)
+      StoneAddress.reserve!(stone: stone) if StoneHosting.domain
       stone
     end
   end
@@ -34,12 +37,24 @@ class Stone < ApplicationRecord
     public_token
   end
 
+  def public_url(number: nil)
+    if StoneHosting.domain
+      address = with_lock { stone_address || StoneAddress.reserve!(stone: self) }
+      path = number ? "/revisions/#{number}" : "/"
+      "https://#{address.name}.#{StoneHosting.domain}#{path}"
+    else
+      "/stones/#{public_token}#{"/revisions/#{number}" if number}"
+    end
+  end
+
   # The row lock serializes the base check and next number, including first
   # publication. The unique index is a second guard against duplicate numbers.
-  def revise!(title:, html:, author:, public:, base_revision_id:)
+  def revise!(title:, html:, author:, public:, base_revision_id:, interactive: false)
     raise InvalidInput, "Explicit public: true acknowledgement is required" unless public == true
     raise InvalidInput, "title must be nonblank text of at most 255 characters" unless title.is_a?(String) && title.strip.present? && title.length <= 255
     raise InvalidInput, "Author must be a user or resident" unless author.is_a?(User) || author.is_a?(Agent)
+    raise InvalidInput, "interactive must be true or false" unless [ true, false ].include?(interactive)
+    raise InvalidInput, "Interactive stones require a configured separate domain" if interactive && !StoneHosting.domain
 
     chat.account.with_lock do
       raise InvalidInput, "Conversation is archived or discarded" unless chat.reload.respondable?
@@ -55,7 +70,7 @@ class Stone < ApplicationRecord
         end
         raise InvalidInput, "Account HTML storage quota exceeded" if account_html_bytes + html.bytesize > ACCOUNT_HTML_QUOTA
 
-        revision = stone_revisions.build(number: (latest&.number || 0) + 1, title: title)
+        revision = stone_revisions.build(number: (latest&.number || 0) + 1, title: title, interactive: interactive)
         revision.author = author
         revision.html_document = html
         revision.save!

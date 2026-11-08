@@ -16,7 +16,7 @@ class SiteDashboard
   DISK_FRESH_FOR = 6.hours
   # Bump the version whenever the payload shape changes: Solid Cache
   # survives a deploy, and the page must never read an older shape.
-  CACHE_KEY = "admin/site_dashboard/v3".freeze
+  CACHE_KEY = "admin/site_dashboard/v4".freeze
   # A finished turn failed if the runtime said error or timeout, if the live
   # activity path finished it as failed or timed out, or if the house
   # recorded an error and the runtime never reported a status (a refused or
@@ -69,7 +69,8 @@ class SiteDashboard
       backups: backups,
       server: server,
       storage: storage,
-      founding: founding_accounts
+      founding: founding_accounts,
+      stones: stones
     }
   end
 
@@ -251,6 +252,30 @@ class SiteDashboard
       running += per_week.fetch(week, 0)
       running
     end
+  end
+
+  # --- soul stones ----------------------------------------------------------
+
+  # Unlike the growth cohorts, stones include every account and withdrawn
+  # publications. Reservations outlive even physical stone deletion.
+  def stones
+    start = (WEEKS - 1).weeks.ago(now).beginning_of_week
+    weeks = (0...WEEKS).map { |i| (start + i.weeks).to_date }
+    reservations = StoneAddress.group(Arel.sql("stone_id IS NULL")).count
+    retired = reservations.fetch(true, 0)
+    reserved = reservations.values.sum
+    {
+      total: Stone.unscoped.count,
+      weeks: weeks.map(&:iso8601),
+      created: cumulative(Stone.unscoped, weeks, start),
+      namespace: {
+        used: reserved - retired,
+        retired: retired,
+        reserved: reserved,
+        capacity: StoneAddress::CAPACITY,
+        percent: reserved.fdiv(StoneAddress::CAPACITY) * 100
+      }
+    }
   end
 
   # --- funnel ---------------------------------------------------------------

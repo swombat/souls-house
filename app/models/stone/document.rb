@@ -164,7 +164,7 @@ class Stone
         allowed_elements = SVG_ELEMENTS
       elsif namespace.nil? || namespace == HTML_NAMESPACE
         svg = false
-        allowed_elements = HTML_ELEMENTS
+        allowed_elements = self.class::HTML_ELEMENTS
       else
         return add_error("Unsupported namespace on #{node.name}")
       end
@@ -182,8 +182,8 @@ class Stone
           add_error("Namespaced attributes are unsupported: #{node.name}.#{name}")
           next
         end
-        global = svg ? SVG_GLOBAL_ATTRIBUTES : HTML_GLOBAL_ATTRIBUTES
-        specific = (svg ? SVG_ATTRIBUTES : HTML_ATTRIBUTES).fetch(node.name, [])
+        global = svg ? SVG_GLOBAL_ATTRIBUTES : self.class::HTML_GLOBAL_ATTRIBUTES
+        specific = (svg ? SVG_ATTRIBUTES : self.class::HTML_ATTRIBUTES).fetch(node.name, [])
         aria = name.match?(/\Aaria-[a-z-]+\z/)
         unless global.include?(name) || specific.include?(name) || aria
           add_error("Unsupported attribute: #{node.name}.#{name}")
