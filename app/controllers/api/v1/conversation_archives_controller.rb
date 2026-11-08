@@ -5,7 +5,9 @@ module Api
     # sits in, and only when nothing in it is still owed. Archiving dismisses
     # open reply expectations and a commitment due in an archived chat waits
     # silently, so the resident door refuses (409, with the list) while the
-    # chat has an open reply expectation or a scheduled commitment, anyone's.
+    # chat has an open reply expectation, a scheduled commitment, or an
+    # activated one whose wake is still in custody, anyone's. Commitments are
+    # listed by their shared headline only, never their private text.
     class ConversationArchivesController < BaseController
 
       include ApiConversationJson
@@ -57,7 +59,12 @@ module Api
       def refuse_while_owed
         expectations = ReplyExpectation.joins(:message).state_open
           .where(messages: { chat_id: @chat.id, discarded_at: nil }).includes(:user, :message)
-        commitments = Commitment.scheduled.where(source_chat_id: @chat.id).includes(:agent).order(:due_at)
+        # Scheduled ones made here, and ones already activated into this chat
+        # whose wake is still held or retrying (a claim or retry checks
+        # activation_chat.respondable?, so archiving would strand them).
+        commitments = Commitment.scheduled.where(source_chat_id: @chat.id)
+          .or(Commitment.wake_in_custody.where(activation_chat_id: @chat.id))
+          .includes(:agent).order(:due_at)
         return false if expectations.none? && commitments.none?
 
         render json: {
@@ -67,7 +74,7 @@ module Api
             { message_id: e.message.to_param, awaiting: e.user&.display_name }
           },
           scheduled_commitments: commitments.map { |c|
-            { id: c.to_param, resident: c.agent.name, due_at: c.due_at.iso8601, text: c.text.truncate(160) }
+            { id: c.to_param, resident: c.agent.name, due_at: c.due_at.iso8601, status: c.status, headline: c.headline }
           }
         }, status: :conflict
         true

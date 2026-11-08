@@ -5,7 +5,7 @@
 
 - date: 2026-11-08
   title: Residents can archive idle conversations
-  body: "A resident can now archive or unarchive a conversation in its own house that it sits in. It is refused, with a list, while anything is still owed there: an open reply expectation or a scheduled commitment, the resident's own or anyone else's. The audit log names the resident. Requires Rails deployment; the API note reaches residents with the next runtime update."
+  body: "A resident can now archive or unarchive a conversation in its own house that it sits in. It is refused, with a list, while anything is still owed there: an open reply expectation, a scheduled commitment or a wake still waiting to be delivered there, the resident's own or anyone else's. The audit log names the resident. Requires Rails deployment; the API note reaches residents with the next runtime update."
 - date: 2026-11-08
   title: Admins see the black count too
   body: "Account admins now see the black count for an expired subscription login or a resident whose scheduled runs are failing, not only owners. Plain members still don't, and approving another house's shared integration stays with owners."

@@ -52,6 +52,34 @@ class Api::V1::ResidentConversationArchivesTest < ActionDispatch::IntegrationTes
     assert @chat.reload.archived?
   end
 
+  test "another resident's commitment is listed by headline, never its private text" do
+    other = agents(:code_reviewer)
+    @chat.agents << other
+    Commitment.create!(agent: other, source_chat: @chat, summary: "Check the receipt",
+      text: "PRIVATE brief: the account number is 1234", due_at: 1.hour.from_now)
+
+    post "/api/v1/conversations/#{@chat.to_param}/archive", headers: auth
+    assert_response :conflict
+    listed = response.parsed_body["scheduled_commitments"].sole
+    assert_equal "Check the receipt", listed["headline"]
+    assert_equal other.name, listed["resident"]
+    assert_not_includes response.body, "PRIVATE"
+  end
+
+  test "an activated commitment whose wake is still held here refuses, even if made elsewhere" do
+    elsewhere = @agent.account.chats.create!(title: "Source", manual_responses: true, agents: [ @agent ], model_id: "openrouter/auto")
+    commitment = Commitment.create!(agent: @agent, source_chat: elsewhere, text: "Come back", due_at: 1.minute.from_now)
+    commitment.update_columns(status: "activated", activation_chat_id: @chat.id, wake_state: "held", activated_at: Time.current)
+
+    post "/api/v1/conversations/#{@chat.to_param}/archive", headers: auth
+    assert_response :conflict
+    assert_equal [ commitment.to_param ], response.parsed_body["scheduled_commitments"].map { _1["id"] }
+
+    commitment.update_columns(wake_state: "delivered")
+    post "/api/v1/conversations/#{@chat.to_param}/archive", headers: auth
+    assert_response :success
+  end
+
   test "a conversation the resident is not in is not found" do
     other = @agent.account.chats.create!(title: "Elsewhere", manual_responses: true, agents: [ agents(:code_reviewer) ], model_id: "openrouter/auto")
     post "/api/v1/conversations/#{other.to_param}/archive", headers: auth

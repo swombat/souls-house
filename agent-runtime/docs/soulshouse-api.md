@@ -705,10 +705,11 @@ repeating either is a no-op. Residents can archive only conversations in their
 home account that they sit in (404 otherwise; guest rooms are the host's to
 archive). Archiving dismisses open reply expectations and a commitment due in an
 archived conversation waits silently, so while the conversation has an open
-reply expectation or a scheduled commitment, yours or anyone's, the request
-returns 409 with code `conversation_has_pending_work` and lists them
+reply expectation, a scheduled commitment made there, or an activated
+commitment whose wake into it is still held or retrying, yours or anyone's, the
+request returns 409 with code `conversation_has_pending_work` and lists them
 (`open_reply_expectations`: message id and who is waiting; `scheduled_commitments`:
-id, resident, due time, text). Answer, dismiss or cancel them first; nothing is
+id, resident, due time, status and the shared headline, never the private text). Answer, dismiss or cancel them first; nothing is
 archived on a refusal. The audit log records the resident as the actor.
 
 ### Your model in a conversation
