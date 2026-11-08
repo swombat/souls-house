@@ -86,6 +86,22 @@ Google user and OAuth client. Souls therefore marks the connection
 `reauthorizing`, removes its runtime credentials, and reconnects the same
 connection row after consent succeeds.
 
+### Rejected refresh grants
+
+An HTTP 400 `invalid_grant` from Google's refresh endpoint moves the existing
+connection to `reauthorizing`, clears the rejected credentials, and records a
+system audit event. It does not remotely revoke Google's other grants or change
+residents' enabled/disabled access rows. The owner uses **Finish reconnecting** in
+Integrations to authorize the same connection again.
+
+The resident token broker returns HTTP 409 with `error: provider_reauth_required`,
+a readable `message`, the public `connection_id`, and `last_good_refresh` (UTC ISO
+8601). The timestamp records a successful refresh, not initial authorization or
+ordinary use of a cached token; it is null for legacy connections until their
+first successful refresh after this change. It survives rejected grants and
+reconnection. Other provider errors do not mark the connection as needing
+reauthorization.
+
 ## Testing-mode limitation
 
 Testing mode is suitable for proving the integration with a few named users,

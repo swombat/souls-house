@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+import { submitNativePost } from '$lib/integration-forms';
 import GoogleAuthority from './connection-google-authority.svelte';
+
+vi.mock('$lib/integration-forms', () => ({ submitNativePost: vi.fn() }));
 
 const service = {
   key: 'google_workspace',
@@ -46,4 +49,21 @@ test('read-only connection metadata does not expose authority-edit controls', ()
   });
   expect(screen.getByText('gmail.readonly')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Edit access' })).not.toBeInTheDocument();
+});
+
+test('reauthorizing shows the existing reconnect action and submits the same connection', async () => {
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(GoogleAuthority, {
+    account: { id: 'account' },
+    connection: { ...connection, status: 'reauthorizing', management_scope: 'personal' },
+    services: [service],
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Finish reconnecting' }));
+  expect(submitNativePost).toHaveBeenCalledWith('/accounts/account/service_authorizations', {
+    provider: 'google_workspace',
+    management_scope: 'personal',
+    service_connection_id: connection.id,
+    authority_selection: JSON.stringify(connection.effective_authority),
+  });
+  confirm.mockRestore();
 });

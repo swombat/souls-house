@@ -12,6 +12,9 @@ module Services
     REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
     class Error < Services::AdapterError; end
+    class ReauthorizationRequired < Error; end
+
+    REAUTHORIZATION_MESSAGE = "Google no longer accepts this connection; its owner must reconnect Google Workspace in Integrations."
 
     attr_reader :definition
 
@@ -92,18 +95,40 @@ module Services
     end
 
     def current_access_token(connection)
-      connection.with_lock do
+      rejected = false
+      token = connection.with_lock do
         connection.reload
+        raise ReauthorizationRequired, REAUTHORIZATION_MESSAGE if connection.status == "reauthorizing"
+        raise Error, "This service connection is not currently connected" unless connection.status == "connected"
+
         payload = connection.credential_payload_hash
         return payload.fetch("access_token") if token_fresh?(payload)
 
         refresh_token = payload["refresh_token"].presence ||
           raise(Error, "Google Workspace refresh token is unavailable; reconnect Google Workspace")
-        data = token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+        begin
+          data = token_request(grant_type: "refresh_token", refresh_token: refresh_token)
+        rescue ReauthorizationRequired
+          # Commit the transition before raising; do not remotely revoke other
+          # Google grants, or change any resident's enabled/disabled access.
+          connection.update!(status: "reauthorizing", credential_payload: nil)
+          AuditLog.create!(
+            account: connection.account, auditable: connection,
+            action: "service_connection_reauthorization_required",
+            data: { provider: "google_workspace", reason: "invalid_grant",
+                    status: [ "connected", "reauthorizing" ] }
+          )
+          rejected = true
+          next
+        end
         refreshed_payload = credential_payload(data, previous_refresh_token: refresh_token)
         connection.replace_credential_payload_without_reconciliation!(refreshed_payload)
+        connection.update_columns(last_refreshed_at: Time.current)
         refreshed_payload.fetch("access_token")
       end
+      raise ReauthorizationRequired, REAUTHORIZATION_MESSAGE if rejected
+
+      token
     end
 
     def revoke(connection)
@@ -188,7 +213,18 @@ module Services
         client_id: client_id,
         client_secret: client_secret
       ))
+      if params[:grant_type] == "refresh_token" && response.is_a?(Net::HTTPBadRequest) &&
+          invalid_grant?(response)
+        raise ReauthorizationRequired, REAUTHORIZATION_MESSAGE
+      end
       parse_success(response, "Google OAuth token exchange")
+    end
+
+    def invalid_grant?(response)
+      data = JSON.parse(response.body)
+      data.is_a?(Hash) && data["error"] == "invalid_grant"
+    rescue JSON::ParserError
+      false
     end
 
     def fetch_identity(access_token)
