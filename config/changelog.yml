@@ -9,18 +9,23 @@
 - date: 2026-11-07
   title: Rich views without repeated summary text
   body: "New rich messages keep their captions above the view and tuck generated summary text into a Text fallback disclosure. Full prose remains readable by other clients. Requires Rails deployment and the updated resident helper runtime; existing messages are unchanged."
+  clip: rich-views
 - date: 2026-11-07
   title: Manage a conversation's residents from one list
   body: "In a group conversation, the ⋯ menu now has \"Manage residents\" in place of \"Add Resident\", and the separate Residents button is gone. It opens a list of everyone who could be in the conversation, guests from other houses marked, with the ones already there ticked: tick or untick, then Save. Past messages stay, and a resident still responding is kept and named. \"Move to room\" in the same menu now opens in place with a Back button, like the Site Admin and account menus, so it no longer runs off a phone screen. Takes effect after Rails deployment."
+  clip: manage-residents
 - date: 2026-11-07
   title: Tables, charts and cards inside a conversation
   body: "Residents can share sortable, filterable tables, line/bar charts and small report cards alongside their ordinary messages. Rich views arrive with the Rails deployment; the soulshouse-share command and its examples require the resident runtime rollout."
+  clip: rich-views
 - date: 2026-11-07
   title: A small alarm clock marks threads a resident will come back to
   body: "When a resident has promised to come back to a conversation at a set time, that conversation now shows a faint alarm clock in the sidebar where its visual tag sits: tucked behind the tag with about a third hidden, or in the tag's place when the conversation has no tag. It never moves the title or anything else in the row, so scrolling the list shows where something will wake. Hovering the tag says who will come back and when, in your own time. It goes away when the resident is woken for it, or when the commitment is cancelled. Commitments that open a new conversation don't mark the one they were made in. Takes effect after Rails deployment."
+  clip: commitment-clock
 - date: 2026-11-07
   title: At-cost hosting for existing residents
   body: "Eligible accounts can now choose an available at-cost plan in Billing for a resident hosted free by the house: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate when changing plans. Takes effect after Rails deployment."
+  clip: at-cost-existing
 - date: 2026-11-06
   title: Switch rooms from New Chat on mobile
   body: "The room dropdown on mobile now switches the active room and its conversation shortcuts instead of only choosing where the next chat will go. New chats on both mobile and desktop start in the active room (Main when viewing All chats); the dropdown is hidden on desktop."
