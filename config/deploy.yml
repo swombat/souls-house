@@ -43,7 +43,6 @@
     require File.join(House::ROOT, "lib/house/stone_tls")
     House::StoneTls.validate!(
       secrets: Kamal::Secrets.new(destination: ENV["KAMAL_DESTINATION"]),
-      house_hosts: [ house_domain ],
       stones_domain: stones_domain
     )
   end
@@ -209,6 +208,30 @@ servers:
 <% transition_aliases.each do |alias_name| %>
         - <%= alias_name %> # transition alias (HOUSE_TRANSITION_ALIASES); remove once nothing depends on the old callback URL
 <% end %>
+<% if stones_domain %>
+  stones:
+    hosts:
+      - <%= house_host %>
+    # Same release image; no inline queue supervisor or second db:prepare.
+    cmd: "env -u SOLID_QUEUE_IN_PUMA bundle exec puma -C config/puma.rb"
+    env:
+      clear:
+        WEB_CONCURRENCY: "0"
+        RAILS_MAX_THREADS: "5"
+    proxy:
+      hosts:
+        - <%= "*.#{stones_domain}".inspect %>
+      ssl:
+        certificate_pem: STONES_TLS_CERTIFICATE_PEM
+        private_key_pem: STONES_TLS_PRIVATE_KEY_PEM
+    options:
+      memory: 768m
+      cpus: 1
+<% if house_storage == "local" %>
+      volume:
+        - souls_house_storage:/rails/storage:ro
+<% end %>
+<% end %>
   jobs:
     hosts:
       - <%= house_host %>
@@ -223,21 +246,10 @@ servers:
 <% end %>
 
 proxy:
-<% if stones_domain %>
-  # One proxy service: this certificate must cover HOUSE_DOMAIN AND the wildcard.
-  # Missing secrets fail through Kamal; never fall back to automatic wildcard TLS.
-  # See docs/operations/stone-hosting.md for server-side DNS-01 and renewal.
-  ssl:
-    certificate_pem: HOUSE_TLS_CERTIFICATE_PEM
-    private_key_pem: HOUSE_TLS_PRIVATE_KEY_PEM
-<% else %>
+  # The stones role overrides hosts/ssl, never the house's automatic TLS.
   ssl: true
-<% end %>
   hosts:
     - <%= house_domain %>
-<% if stones_domain %>
-    - <%= "*.#{stones_domain}".inspect %>
-<% end %>
   app_port: 3000
   response_timeout: 120
 

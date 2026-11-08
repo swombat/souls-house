@@ -8,10 +8,10 @@ module House
 
     class InvalidCertificate < StandardError; end
 
-    def self.validate!(secrets:, house_hosts:, stones_domain:, now: Time.now)
-      certificate = OpenSSL::X509::Certificate.new(secrets["HOUSE_TLS_CERTIFICATE_PEM"])
+    def self.validate!(secrets:, stones_domain:, now: Time.now)
+      certificate = OpenSSL::X509::Certificate.new(secrets["STONES_TLS_CERTIFICATE_PEM"])
       # An explicit password prevents OpenSSL prompting for encrypted keys.
-      key = OpenSSL::PKey.read(secrets["HOUSE_TLS_PRIVATE_KEY_PEM"], "")
+      key = OpenSSL::PKey.read(secrets["STONES_TLS_PRIVATE_KEY_PEM"], "")
       key.private_to_der # Reject a public key, even if its public component matches.
 
       unless certificate.check_private_key(key)
@@ -23,9 +23,8 @@ module House
       unless dns_names(certificate).include?("*.#{stones_domain}")
         raise InvalidCertificate, "Stone TLS certificate requires an explicit wildcard DNS SAN"
       end
-      hosts = house_hosts + [ "stone-tls-preflight.#{stones_domain}" ]
-      unless hosts.all? { |host| OpenSSL::SSL.verify_certificate_identity(certificate, host) }
-        raise InvalidCertificate, "Stone TLS certificate must cover every house host and the stone wildcard"
+      unless OpenSSL::SSL.verify_certificate_identity(certificate, "stone-tls-preflight.#{stones_domain}")
+        raise InvalidCertificate, "Stone TLS certificate must cover the stone wildcard"
       end
       true
     rescue OpenSSL::OpenSSLError, ArgumentError, TypeError

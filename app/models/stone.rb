@@ -39,7 +39,7 @@ class Stone < ApplicationRecord
 
   def public_url(number: nil)
     if StoneHosting.domain
-      address = with_lock { stone_address || StoneAddress.reserve!(stone: self) }
+      address = stone_address || with_lock { stone_address || StoneAddress.reserve!(stone: self) }
       path = number ? "/revisions/#{number}" : "/"
       "https://#{address.name}.#{StoneHosting.domain}#{path}"
     else

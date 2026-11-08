@@ -143,7 +143,8 @@ and anonymous viewing without conversation access.
 
 Set `SOULSHOUSE_STONES_DOMAIN` only after provisioning a separate registrable
 domain, wildcard DNS and wildcard TLS. See
-[deployment and renewal](operations/stone-hosting.md). It defaults to unset;
+[deployment and renewal](operations/stone-hosting.md). A separate proxied Rails
+role serves stones; the main house keeps independent automatic TLS. It defaults to unset;
 existing installation behavior and static publication validation remain unchanged.
 When enabled, public viewer URLs use one persistent random three-word hostname per
 stone. Legacy house viewer links redirect there. Names are public addresses,

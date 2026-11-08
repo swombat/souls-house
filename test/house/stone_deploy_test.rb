@@ -18,6 +18,7 @@ class StoneDeployTest < Minitest::Test
       with_deploy({ "SOULSHOUSE_STONES_DOMAIN" => domain }, "") do |config|
         assert_equal [ "house.example.org" ], config.dig("proxy", "hosts")
         assert_equal true, config.dig("proxy", "ssl")
+        refute config.fetch("servers").key?("stones")
         refute config.dig("env", "clear").key?("SOULSHOUSE_STONES_DOMAIN")
       end
     end
@@ -25,17 +26,19 @@ class StoneDeployTest < Minitest::Test
 
   def test_configured_domain_adds_only_the_wildcard_and_preserves_house_identity
     with_deploy("SOULSHOUSE_STONES_DOMAIN" => " EXAMPLE.NET ") do |config|
-      assert_equal [ "house.example.org", "*.example.net" ], config.dig("proxy", "hosts")
+      assert_equal [ "house.example.org" ], config.dig("proxy", "hosts")
+      assert_equal true, config.dig("proxy", "ssl")
+      assert_equal [ "*.example.net" ], config.dig("servers", "stones", "proxy", "hosts")
       assert_equal "example.net", config.dig("env", "clear", "SOULSHOUSE_STONES_DOMAIN")
       assert_equal "https://house.example.org", config.dig("env", "clear", "SOULSHOUSE_PUBLIC_URL")
       assert_equal 3000, config.dig("proxy", "app_port")
       assert_equal 120, config.dig("proxy", "response_timeout")
       assert_equal({
-        "certificate_pem" => "HOUSE_TLS_CERTIFICATE_PEM",
-        "private_key_pem" => "HOUSE_TLS_PRIVATE_KEY_PEM"
-      }, config.dig("proxy", "ssl"))
-      refute_includes config.dig("env", "secret"), "HOUSE_TLS_PRIVATE_KEY_PEM"
-      refute_includes config.dig("env", "secret"), "HOUSE_TLS_CERTIFICATE_PEM"
+        "certificate_pem" => "STONES_TLS_CERTIFICATE_PEM",
+        "private_key_pem" => "STONES_TLS_PRIVATE_KEY_PEM"
+      }, config.dig("servers", "stones", "proxy", "ssl"))
+      refute_includes config.dig("env", "secret"), "STONES_TLS_PRIVATE_KEY_PEM"
+      refute_includes config.dig("env", "secret"), "STONES_TLS_CERTIFICATE_PEM"
       refute_includes config.to_s, "PORKBUN"
     end
   end
@@ -44,15 +47,39 @@ class StoneDeployTest < Minitest::Test
     with_deploy("SOULSHOUSE_STONES_DOMAIN" => "example.net") do |config|
       with_kamal(config, certificate_secrets) do |kamal|
         assert_equal "2.12.0", Gem.loaded_specs.fetch("kamal").version.to_s
-        proxy = kamal.role("web").proxy
+        web = kamal.role("web")
+        stones = kamal.role("stones")
+        assert_equal web.hosts, stones.hosts
+        assert_equal "souls-house-web", web.container_prefix
+        assert_equal "souls-house-stones", stones.container_prefix
+        selected = Kamal::Commander::Specifics.new(kamal, nil, nil)
+        assert_equal %w[jobs stones web], selected.roles_on(stones.primary_host).map(&:name).sort
+        web_run = Kamal::Commands::App.new(kamal, role: web, host: web.primary_host).run
+        stones_run = Kamal::Commands::App.new(kamal, role: stones, host: stones.primary_host).run
+        assert_includes web_run, kamal.absolute_image
+        assert_includes stones_run, kamal.absolute_image
+        assert_includes Kamal::Commands::App.new(kamal, role: stones).deploy(target: "test").join(" "),
+          "deploy souls-house-stones"
+        assert web.proxy.ssl?
+        refute web.proxy.custom_ssl_certificate?
+        assert_nil web.proxy.host_tls_cert
+        assert_nil web.proxy.host_tls_key
+        refute web.proxy.deploy_options.key?(:"tls-certificate-path")
+        refute web.proxy.deploy_options.key?(:"tls-private-key-path")
+        assert_equal [ "house.example.org" ], web.proxy.deploy_options.fetch(:host)
+        proxy = stones.proxy
         assert proxy.custom_ssl_certificate?
         assert_equal test_certificate.to_pem, proxy.certificate_pem_content
         assert_equal test_key.private_to_pem, proxy.private_key_pem_content
         options = proxy.deploy_options
-        assert_equal [ "house.example.org", "*.example.net" ], options.fetch(:host)
+        assert_equal [ "*.example.net" ], options.fetch(:host)
         assert_equal true, options.fetch(:tls)
-        assert_equal "/home/kamal-proxy/.apps-config/souls-house/tls/web/cert.pem", options.fetch(:"tls-certificate-path")
-        assert_equal "/home/kamal-proxy/.apps-config/souls-house/tls/web/key.pem", options.fetch(:"tls-private-key-path")
+        assert_equal "/home/kamal-proxy/.apps-config/souls-house/tls/stones/cert.pem", options.fetch(:"tls-certificate-path")
+        assert_equal "/home/kamal-proxy/.apps-config/souls-house/tls/stones/key.pem", options.fetch(:"tls-private-key-path")
+        assert_match %r{/tls/stones/cert\.pem\z}, proxy.host_tls_cert
+        assert_match %r{/tls/stones/key\.pem\z}, proxy.host_tls_key
+        assert_equal 3000, proxy.app_port
+        assert_equal "120s", options.fetch(:"target-timeout")
         assert_includes proxy.deploy_command_args(target: "app"), '--host="*.example.net"'
         refute kamal.role("jobs").running_proxy?
       end
@@ -60,17 +87,17 @@ class StoneDeployTest < Minitest::Test
   end
 
   def test_missing_certificate_secret_raises_without_automatic_tls_fallback
-    assert_missing_secret "HOUSE_TLS_CERTIFICATE_PEM", certificate_secrets(certificate: nil)
+    assert_missing_secret "STONES_TLS_CERTIFICATE_PEM", certificate_secrets(certificate: nil)
   end
 
   def test_missing_private_key_secret_raises_without_automatic_tls_fallback
-    assert_missing_secret "HOUSE_TLS_PRIVATE_KEY_PEM", certificate_secrets(private_key: nil)
+    assert_missing_secret "STONES_TLS_PRIVATE_KEY_PEM", certificate_secrets(private_key: nil)
   end
 
   def test_pinned_kamal_resolves_multiline_pem_from_its_secrets_file
     with_deploy("SOULSHOUSE_STONES_DOMAIN" => "example.net") do |config|
       with_kamal(config, certificate_secrets) do |kamal|
-        proxy = kamal.role("web").proxy
+        proxy = kamal.role("stones").proxy
         assert_equal test_certificate.to_pem, proxy.certificate_pem_content
         assert_equal test_key.private_to_pem, proxy.private_key_pem_content
       end
@@ -86,9 +113,10 @@ class StoneDeployTest < Minitest::Test
     end
   end
 
-  def test_template_rejects_wrong_house_identity
-    certificate = build_certificate(names: [ "DNS:other.example.org", "DNS:*.example.net" ])
-    assert_preflight_rejects certificate_secrets(certificate: certificate.to_pem), "every house host"
+  def test_wildcard_only_certificate_does_not_need_house_identity
+    with_deploy("SOULSHOUSE_STONES_DOMAIN" => "example.net") do |config|
+      assert_equal true, config.dig("proxy", "ssl")
+    end
   end
 
   def test_template_requires_a_wildcard_san_not_just_the_probe_hostname
@@ -117,14 +145,22 @@ class StoneDeployTest < Minitest::Test
     assert_preflight_rejects certificate_secrets(certificate: "certificate-do-not-echo"), "invalid, or encrypted"
   end
 
-  def test_preflight_checks_every_house_hostname
-    secrets = {
-      "HOUSE_TLS_CERTIFICATE_PEM" => test_certificate.to_pem,
-      "HOUSE_TLS_PRIVATE_KEY_PEM" => test_key.private_to_pem
-    }
-    assert_raises(House::StoneTls::InvalidCertificate) do
-      House::StoneTls.validate!(secrets: secrets,
-        house_hosts: [ "house.example.org", "other.example.org" ], stones_domain: "example.net")
+  def test_stones_role_is_small_and_cannot_start_inline_jobs_or_prepare_database
+    with_deploy("SOULSHOUSE_STONES_DOMAIN" => "example.net", "HOUSE_STORAGE" => "local") do |config|
+      with_kamal(config, certificate_secrets) do |kamal|
+        role = kamal.role("stones")
+        assert_equal "env -u SOLID_QUEUE_IN_PUMA bundle exec puma -C config/puma.rb", role.cmd
+        assert_equal "0", role.env(role.primary_host).clear.fetch("WEB_CONCURRENCY")
+        assert_equal "5", role.env(role.primary_host).clear.fetch("RAILS_MAX_THREADS")
+        assert_equal "./bin/rails solid_queue:start", kamal.role("jobs").cmd
+        refute_includes role.option_args.join(" "), "docker.sock"
+        assert_includes role.option_args.join(" "), "souls_house_storage:/rails/storage:ro"
+        assert_equal "768m", config.dig("servers", "stones", "options", "memory")
+        assert_equal 1, config.dig("servers", "stones", "options", "cpus")
+      end
+    end
+    with_deploy("SOULSHOUSE_STONES_DOMAIN" => "example.net") do |config|
+      refute config.dig("servers", "stones", "options").key?("volume")
     end
   end
 
@@ -154,7 +190,7 @@ class StoneDeployTest < Minitest::Test
     @test_certificate ||= build_certificate
   end
 
-  def build_certificate(names: [ "DNS:house.example.org", "DNS:*.example.net" ],
+  def build_certificate(names: [ "DNS:*.example.net" ],
     not_before: Time.now - 60, not_after: Time.now + 86_400)
     certificate = OpenSSL::X509::Certificate.new
     certificate.version = 2
@@ -169,7 +205,7 @@ class StoneDeployTest < Minitest::Test
   end
 
   def certificate_secrets(certificate: test_certificate.to_pem, private_key: test_key.private_to_pem)
-    { "HOUSE_TLS_CERTIFICATE_PEM" => certificate, "HOUSE_TLS_PRIVATE_KEY_PEM" => private_key }.compact.map do |name, value|
+    { "STONES_TLS_CERTIFICATE_PEM" => certificate, "STONES_TLS_PRIVATE_KEY_PEM" => private_key }.compact.map do |name, value|
       "#{name}=\"#{value}\"\n"
     end.join
   end

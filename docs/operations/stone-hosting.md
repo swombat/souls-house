@@ -1,7 +1,8 @@
 # Isolated stone hosting
 
-Issue #828. This is an optional deployment on the existing Rails web service,
-not another resident runtime or a per-stone certificate service. Application
+Issue #828. This is an optional extra Rails `stones` role on the existing host,
+using the same release image, not another resident runtime or a per-stone
+certificate service. Application
 host validation and the stone-only request boundary remain application concerns.
 It is **not activated by this code change**: the example setting stays blank.
 Production DNS, issuance and renewal have not been provisioned or verified.
@@ -18,37 +19,49 @@ could use `example.net` for stone addresses such as
 is not an isolated domain. Supply only the domain, without scheme, port or `*.`.
 
 `config/deploy.yml` forwards the setting to Rails and adds the quoted wildcard
-host to the existing proxy's hosts; the house hostname stays in place. The stone
+host to a separate `souls-house-stones` proxy service. `souls-house-web` keeps
+only the house hostname and automatic TLS, even with stones enabled. The stone
 apex is not added as a proxy host. This wildcard matches one label, not nested
 labels. No new DNS record or certificate is issued when a stone gets its name.
 
-**One proxy service has one certificate manager.** With stones enabled the
-deployment switches that service from automatic TLS to these Kamal secrets:
+**Each proxy service has its own certificate manager.** Only the stones role
+uses these Kamal secrets:
 
 | Secret | Contents, not a filename |
 | --- | --- |
-| `HOUSE_TLS_CERTIFICATE_PEM` | PEM full chain, leaf first |
-| `HOUSE_TLS_PRIVATE_KEY_PEM` | Matching PEM private key |
+| `STONES_TLS_CERTIFICATE_PEM` | PEM full chain, leaf first |
+| `STONES_TLS_PRIVATE_KEY_PEM` | Matching PEM private key |
 
-The certificate must have SANs for **every house proxy hostname** (currently
-`HOUSE_DOMAIN`) **and** `*.SOULSHOUSE_STONES_DOMAIN`. The wildcard does not cover
-the house hostname, or the stone apex. An apex SAN is only needed if that apex
+The certificate must have an explicit DNS SAN for
+`*.SOULSHOUSE_STONES_DOMAIN`; it does **not** need `HOUSE_DOMAIN`.
+The wildcard does not cover the stone apex. An apex SAN is only needed if that apex
 will separately serve HTTPS; the supplied proxy does not serve it.
 
-There is no automatic-TLS fallback when stones are enabled. Before deployment
+There is no automatic-TLS fallback for stones. Before deployment
 can upload or replace certificates, template rendering reads the two Kamal
 secrets and runs `House::StoneTls` preflight. Missing secrets, malformed PEM,
 public/encrypted/mismatched keys, expired/not-yet-valid leaf certificates,
-missing explicit wildcard DNS SANs, or failure to cover any house hostname or
+missing explicit wildcard DNS SANs, or failure to cover
 a representative stone hostname abort rendering. Error messages never contain
 PEM or OpenSSL parser input. With stones disabled this preflight does not run
 and no TLS secrets are required.
 
 Preflight checks the leaf's identity, dates and private-key pairing, **not**
 CA trust, revocation or the full certificate chain; those still need external
-TLS verification. A bad certificate can affect **the main house too**. A
-separate role/service would decouple certificate lifecycle, but adds another
-container and is deliberately not part of this minimal configuration.
+TLS verification. Stone certificate renewal cannot replace the main house's
+certificate: the custom pair lives under the role-specific `tls/stones/`
+directory (inside the proxy: `/home/kamal-proxy/.apps-config/souls-house/tls/stones/`).
+Web has no custom certificate paths. Both services still share a host, proxy
+process, database and application image; this is certificate-lifecycle isolation,
+not a separate security sandbox.
+
+The extra container has a 768 MiB memory / 1 CPU limit, one Puma process and five
+threads. It does not mount the Docker socket; local Active Storage is mounted
+read-only when selected. The existing `jobs` role still owns Solid Queue.
+`config/puma.rb` enables inline jobs for *any* present `SOLID_QUEUE_IN_PUMA`
+value (even `"false"`); the stones command explicitly unsets it before starting
+Puma. Running Puma directly also avoids the entrypoint's second `db:prepare`.
+The primary web role prepares the database before Kamal admits secondary roles.
 
 ## DNS-01 with Porkbun (host-side only)
 
@@ -60,18 +73,17 @@ container and is deliberately not part of this minimal configuration.
    `PORKBUN_API_KEY` and `PORKBUN_SECRET_API_KEY` through a root-only server-side
    secret store, restricted to the required domains/DNS operations where
    supported. Enable API access for the applicable Porkbun domains.
-3. Issue a **single SAN certificate**, not one certificate per stone. If both
-   example domains use Porkbun DNS, the issuance shape is:
+3. Issue a **single wildcard certificate**, not one certificate per stone.
+   For a stone domain using Porkbun DNS, the issuance shape is:
 
    ```sh
    # On the deployment host, with credentials supplied privately; no shell tracing.
    acme.sh --issue --server letsencrypt --dns dns_porkbun \
-     -d house.example.org -d '*.example.net'
+      -d '*.example.net'
    ```
 
-   The client must be able to satisfy challenges for both names. If the house
-   domain uses another DNS provider, agree that provider/delegation integration
-   first; this command is not a generic mixed-provider recipe.
+   Only the stone domain needs DNS-01 credentials. The house's existing
+   automatic TLS remains independent, including its DNS provider.
 4. Install the renewed full chain/key to protected server paths using acme.sh's
    `--install-cert --fullchain-file ... --key-file ... --reloadcmd ...`.
    Configure daily renewal checks and failure/expiry alerts. Its Porkbun plugin
@@ -95,7 +107,7 @@ the previous pair for rollback. Never echo values into logs.
 **Integration still to provision:** no ACME job, secret-file updater or refresh
 script is installed by this feature. Do not enable until that host-local
 integration is reviewed and exercised. Specifically missing: restricted Porkbun
-credentials/API access, DNS records and initial SAN issuance; a scheduled renewal
+credentials/API access, DNS records and initial wildcard issuance; a scheduled renewal
 client; an atomic two-secret installer serialized with the deployment lock; and
 a success-hook notification/manual Deploy Rails response (or a separately
 reviewed certificate-only refresh), with failure/expiry alerts and an externally
@@ -107,7 +119,7 @@ inside the tools container.
 
 After installing fresh PEM values, run the existing **Deploy Rails** workflow
 or Site Admin → Deploy Rails. Normal Kamal app boot uploads the PEM and
-redeploys the proxy service, loading the new certificate; no shared proxy
+redeploys the stones proxy service, loading the new certificate; no shared proxy
 restart or resident rebuild is required. This uses the ordinary deployment
 queue/lock and verification. It also deploys current master, so it is a release
 decision, **not** a certificate-only timer command.
@@ -116,7 +128,7 @@ For unattended renewal, the ACME success hook must therefore either notify an
 operator to run Deploy Rails promptly, with retries/expiry monitoring, or use
 a separately reviewed certificate-only refresh wrapper. Such a wrapper must
 serialize with deployments, install the pair, and reapply the existing proxy
-service target/options without selecting a new application revision. That
+stones service target/options without selecting a new application revision. That
 privileged integration is intentionally not invented here. Do not call the
 shared proxy reboot as a substitute, and do not let a renewal timer implicitly
 approve a new application release.
@@ -133,6 +145,24 @@ Important pinned behavior:
 
 ## Verification and recovery
 
+The host worker runs `kamal deploy --skip-hooks --version …` without a role
+filter (`ops/deploy/worker.py:243–258`), so ordinary deploys include `stones`
+when configured. Kamal uploads custom certificates for each proxied role and
+boots all configured roles. Each proxied role must pass its own HTTP `/up`
+health check on container port 3000 before its target is switched. The check
+uses the internal target Host, not a stone domain, so the host-based stone
+boundary does not reject `/up`. It does not verify public SNI or document serving.
+The worker's extra revision checks currently enumerate only `web` and `jobs`;
+verify the stones container revision separately before declaring activation
+complete. Extending that receipt check is a separate worker change.
+
+The application boundary is Host-based, not a stones-role-only application
+mode. Public wildcard requests are limited before cookies/sessions/routes, but
+a direct internal request with a house Host can still reach house routes on
+the stones container. No role-only guard is introduced here. If process-level
+route isolation is required, add and test that separately, preserving internal
+`/up` checks; this split alone must not be described as that guarantee.
+
 Before enabling, check the actual running proxy image/version and certificate
 SANs, validity, full chain and key pairing. Keep the previous PEM pair.
 
@@ -146,8 +176,11 @@ After deployment (and every renewal), verify externally:
 
 If certificate refresh fails, restore the previous pair and rerun the ordinary
 Rails deploy; do not erase proxy state or rebuild residents. Removing
-`SOULSHOUSE_STONES_DOMAIN` and deploying disables the wildcard and restores
-automatic house TLS (verify issuance rather than assuming it succeeded).
+`SOULSHOUSE_STONES_DOMAIN` removes the role from future deploys but Kamal does
+not automatically retire a removed role's existing service/container. Before
+clearing it, use the ordinary deployment lock and reviewed role-targeted Kamal
+app stop/remove operations to retire `stones`, then clear and deploy. Do not
+remove the shared proxy. Main-house automatic TLS does not change either way.
 
 ## Pinned upstream evidence
 
@@ -156,6 +189,10 @@ Its proxy default/minimum is **v0.9.2**, not proof of the live host's version.
 
 - [Kamal proxy version](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/configuration/proxy/run.rb): lines 2, 56–69.
 - [Kamal custom SSL configuration](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/configuration/docs/proxy.yml): lines 50–64.
+- [Role proxy opt-in and specialization](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/configuration/role.rb): lines 70–71, 93–95, 124–130, 167–186.
+- [Per-role merge and TLS paths](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/configuration/proxy.rb): lines 112–118; [distinct service IDs and directories](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/commands/app/proxy.rb): lines 4–9, 24–25.
+- [All roles selected without a filter](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/commander/specifics.rb): lines 44–46; [same image for each role](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/commands/app.rb): lines 16–34.
+- [Boot and proxy health gate](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/cli/app/boot.rb): lines 46–59, 76–88; [default health path](https://github.com/basecamp/kamal-proxy/blob/v0.9.2/internal/server/service.go): lines 37–40.
 - [PEM secret resolution and flags](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/configuration/proxy.rb): lines 32–80.
 - [Upload during app boot](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/cli/app.rb): lines 9–16; [upload permissions](https://github.com/basecamp/kamal/blob/v2.12.0/lib/kamal/cli/app/ssl_certificates.rb): lines 11–20.
 - [Wildcard routing tests](https://github.com/basecamp/kamal-proxy/blob/v0.9.2/internal/server/router_test.go): lines 648–683.
