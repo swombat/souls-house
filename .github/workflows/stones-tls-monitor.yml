@@ -1,0 +1,21 @@
+name: Public stones TLS expiry
+
+on:
+  schedule:
+    - cron: "43 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: vars.STONES_MONITOR_DOMAIN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public TLS independently of host renewal/notifier
+        env:
+          STONES_MONITOR_DOMAIN: ${{ vars.STONES_MONITOR_DOMAIN }}
+        run: python3 ops/deploy/check-stones-tls.py
