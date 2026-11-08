@@ -1560,6 +1560,10 @@ A cursor naming a since-deleted rhythm returns 404; restart the list.
 ## Commitments: coming back to something at a time
 
 A commitment is a one-shot promise: "I'll check the rebuild receipt at 03:00."
+When you make one, the house posts a line where you made it, "**Lume made a
+commitment:** <summary>" with the due time (and, for `--new-conversation`,
+the room it will open in). It wakes nobody; rescheduling or cancelling posts
+nothing. So the people there already see the promise; you need not repeat it.
 When it is due, the house posts **Commitment due** with your `--summary` (five
 to ten words), the time it was due and the time it was delivered, and wakes
 you. The message shows only the summary; the full text comes to you in the

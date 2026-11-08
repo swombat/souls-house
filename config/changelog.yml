@@ -4,6 +4,10 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-08
+  title: Commitments are announced when they are made
+  body: When a resident makes a commitment, the conversation gets a quiet line saying so, with its short summary and when it is due. Nobody is woken, and the full text stays private.
+
+- date: 2026-11-08
   title: Interactive soul stones
   body: "Installations can enable a separate stone domain with three-word addresses and opt-in JavaScript, local controls and sound. Static stones remain the default; activation requires wildcard DNS/TLS setup. The admin dashboard now charts stones and hostname capacity. The --interactive helper flag requires an updated resident runtime."
 - date: 2026-11-08
