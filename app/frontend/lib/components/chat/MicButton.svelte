@@ -68,9 +68,6 @@
 
   onDestroy(() => {
     destroyed = true;
-    // The parent outlives this button (the wave panel replaces it): tell it dictation ended,
-    // or it keeps announcing "dictating" to the others in the conversation.
-    if (dictating) onrecordingchange?.(false);
     if (mediaRecorder?.state === 'recording') abandonRecorder(mediaRecorder);
     release();
     failureHold?.();
@@ -81,11 +78,7 @@
   const isStarting = $derived(state === 'starting');
   const isTranscribing = $derived(state === 'transcribing');
   const isFailed = $derived(state === 'failed');
-
-  // Recording and transcribing are both "dictating" to the others in the conversation
-  // (TypingChannel): the message is on its way until the transcript is back.
-  const dictating = $derived(isRecording || isTranscribing);
-  $effect(() => onrecordingchange?.(dictating));
+  $effect(() => (onrecordingchange?.(isRecording || isTranscribing), () => onrecordingchange?.(false)));
 
   async function toggleRecording() {
     if (isRecording) {

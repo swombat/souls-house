@@ -9,13 +9,12 @@
   import VoiceModePanel from '$lib/components/chat/VoiceModePanel.svelte';
   import VoiceModeButton from '$lib/components/chat/VoiceModeButton.svelte';
   import DraftNotices from '$lib/components/chat/DraftNotices.svelte';
+  import TypingIndicator from '$lib/components/chat/TypingIndicator.svelte';
   import { holdForRecording } from '$lib/recording-guard';
   import { withTranscript } from '$lib/voice-note-recovery';
   import { takeVoiceStart } from '$lib/voice-mode-start';
   import { wantsEditLast } from '$lib/edit-last-message';
   import { accountChatMessagesPath } from '@/routes';
-  import { cableConsumer } from '$lib/cable';
-  import { TypingPresence, cableTypingSubscriber, SEND_EVERY_MS } from '$lib/typing-presence';
   import * as logging from '$lib/logging';
 
   let {
@@ -48,30 +47,7 @@
   let draftState = $state({ content: '', status: 'Loading draft…', recoveries: [] });
   let voiceOpen = $state(false);
   let voiceNotice = $state('');
-  // Who else is typing or dictating here (people only; TypingChannel).
-  let typingLine = $state('');
-  let presence = null;
-  let dictating = false;
-  let dictationPing = null;
-
-  function noteTyping(value) {
-    if (dictating) return;
-    presence?.set(value.trim() ? 'typing' : 'idle');
-  }
-
-  function noteDictating(active) {
-    if (active === dictating) return;
-    dictating = active;
-    clearInterval(dictationPing);
-    dictationPing = null;
-    if (active) {
-      presence?.set('dictating');
-      // Recording makes no keystrokes; keep the others' line up until it ends.
-      dictationPing = setInterval(() => presence?.set('dictating'), SEND_EVERY_MS);
-    } else {
-      presence?.set('idle');
-    }
-  }
+  let micDictating = $state(false);
 
   const composerEmpty = $derived(!draftState.content.trim() && selectedFiles.length === 0);
   const showWave = $derived(
@@ -105,11 +81,6 @@
     });
     draftState = draft.snapshot();
     draft.refresh();
-    presence = new TypingPresence({
-      selfUserId: userId,
-      subscribe: cableTypingSubscriber(cableConsumer(), chatId),
-      onchange: (line) => (typingLine = line),
-    });
     const unwatch = watchDraftPage(draft, {
       userId,
       onlogout: () => {
@@ -119,9 +90,6 @@
     });
     return () => {
       unwatch();
-      clearInterval(dictationPing);
-      presence?.dispose();
-      presence = null;
       draft.dispose();
       setPendingAudio(null);
     };
@@ -182,7 +150,6 @@
       submitting = false;
       selectedFiles = [];
       setPendingAudio(null);
-      if (!dictating) presence?.set('idle');
       // Reset textarea height
       autoResize();
 
@@ -255,11 +222,7 @@
   class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4 data-[file-drag]:bg-primary/10 data-[file-drag]:ring-2 data-[file-drag]:ring-inset data-[file-drag]:ring-primary"
   data-testid="message-composer"
   use:fileDropZone={{ onfiles: (files) => uploader?.addFiles(files), disabled: submitting || disabled }}>
-  {#if typingLine}
-    <p class="mb-1.5 text-xs italic text-muted-foreground" aria-live="polite" data-testid="typing-indicator">
-      {typingLine}
-    </p>
-  {/if}
+  <TypingIndicator {chatId} {userId} content={draftState.content} dictating={micDictating} />
   {#if voiceOpen}
     <VoiceModePanel
       {accountId}
@@ -285,11 +248,7 @@
           onkeydown={handleKeydown}
           oninput={(event) => {
             draft?.edit(event.currentTarget.value);
-            noteTyping(event.currentTarget.value);
             autoResize();
-          }}
-          onblur={() => {
-            if (!dictating) presence?.set('idle');
           }}
           {placeholder}
           disabled={disabled || draftState.locked}
@@ -307,7 +266,7 @@
           {userId}
           onsuccess={handleTranscription}
           onerror={handleTranscriptionError}
-          onrecordingchange={noteDictating} />
+          onrecordingchange={(active) => (micDictating = active)} />
       </div>
       {#if showWave}
         <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => (voiceOpen = true)} />
