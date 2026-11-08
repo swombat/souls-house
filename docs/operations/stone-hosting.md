@@ -150,18 +150,21 @@ filter (`ops/deploy/worker.py:243–258`), so ordinary deploys include `stones`
 when configured. Kamal uploads custom certificates for each proxied role and
 boots all configured roles. Each proxied role must pass its own HTTP `/up`
 health check on container port 3000 before its target is switched. The check
-uses the internal target Host, not a stone domain, so the host-based stone
-boundary does not reject `/up`. It does not verify public SNI or document serving.
+uses the internal target Host, not a stone domain. The stones-only boundary
+permits GET/HEAD of exactly `/up` on non-stone hosts for that Rails health check;
+it does not verify public SNI or document serving.
 The worker's extra revision checks currently enumerate only `web` and `jobs`;
 verify the stones container revision separately before declaring activation
 complete. Extending that receipt check is a separate worker change.
 
-The application boundary is Host-based, not a stones-role-only application
-mode. Public wildcard requests are limited before cookies/sessions/routes, but
-a direct internal request with a house Host can still reach house routes on
-the stones container. No role-only guard is introduced here. If process-level
-route isolation is required, add and test that separately, preserving internal
-`/up` checks; this split alone must not be described as that guarantee.
+Only the `stones` role sets `SOULSHOUSE_STONES_ONLY=1`. Its application boundary
+rejects non-stone hosts before cookies/sessions/static files/routes, except for
+the exact read-only health check above. This fails closed even when
+`SOULSHOUSE_STONES_DOMAIN` is unset. Stone hosts retain the document-only path
+and method allowlist, credential stripping and cookie suppression. The `web`
+and `jobs` roles do not enable stones-only mode; ordinary house behavior is
+unchanged. This is request-route isolation, not removal of house code or
+database access from the shared image.
 
 Before enabling, check the actual running proxy image/version and certificate
 SANs, validity, full chain and key pairing. Keep the previous PEM pair.

@@ -216,6 +216,7 @@ servers:
     cmd: "env -u SOLID_QUEUE_IN_PUMA bundle exec puma -C config/puma.rb"
     env:
       clear:
+        SOULSHOUSE_STONES_ONLY: "1"
         WEB_CONCURRENCY: "0"
         RAILS_MAX_THREADS: "5"
     proxy:
