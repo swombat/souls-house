@@ -57,9 +57,36 @@ module Api
       test "a duplicate scheduled text is refused with the reason" do
         post api_v1_commitments_url, params: attrs, headers: @headers, as: :json
         assert_response :created
+        announced = @chat.messages.where(role: "system").count
         post api_v1_commitments_url, params: attrs(due_at: (@due + 10.minutes).iso8601), headers: @headers, as: :json
         assert_response :unprocessable_entity
         assert_match(/same as scheduled commitment/, response.parsed_body["errors"].join)
+        assert_equal announced, @chat.messages.where(role: "system").count, "a refused commitment announces nothing"
+      end
+
+      test "making a commitment posts one house line where it was made, waking nobody" do
+        @account.owner.profile.update!(timezone: "Madrid")
+        @account.reload
+        due = Time.zone.parse("2030-11-09T11:33:00Z")
+        assert_no_difference -> { AgentRuntimeInteraction.count } do
+          post api_v1_commitments_url, params: attrs(summary: "Hetzner refund check 1 of 5", due_at: due.iso8601, text: "Secret details here"),
+            headers: @headers, as: :json
+        end
+        assert_response :created
+        commitment = Commitment.find(response.parsed_body.dig("commitment", "id"))
+        lines = @chat.messages.where(role: "system").pluck(:content)
+        assert_equal [ "**#{@agent.name} made a commitment:** Hetzner refund check 1 of 5\n\ndue Sat 9 Nov 12:33 Europe/Madrid" ], lines
+        assert_no_match(/Secret/, lines.join)
+
+        patch api_v1_commitment_url(commitment), params: { due_at: (due + 1.hour).iso8601 }, headers: @headers, as: :json
+        delete api_v1_commitment_url(commitment), headers: @headers
+        assert_equal 1, @chat.messages.where(role: "system").count, "rescheduling and cancelling post nothing"
+
+        @account.rooms.create!(name: "Ops")
+        post api_v1_commitments_url, params: attrs(text: "Elsewhere", destination: "new_conversation", room: "Ops", due_at: due.iso8601),
+          headers: @headers, as: :json
+        assert_response :created
+        assert_match(/· will open a new conversation in Ops\z/, @chat.messages.where(role: "system").order(:id).last.content)
       end
 
       test "due_at needs a zone and the future" do
