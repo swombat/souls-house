@@ -279,7 +279,7 @@ class Message < ApplicationRecord
       stone = revision.stone
       {
         id: revision.to_param, title: revision.title, number: revision.number,
-        url: "/stones/#{stone.public_token}/revisions/#{revision.number}",
+        url: stone.public_url(number: revision.number),
         latest_url: "/stones/#{stone.public_token}",
         newer_revision_available: stone.latest_revision.number > revision.number,
         withdrawn: stone.withdrawn?

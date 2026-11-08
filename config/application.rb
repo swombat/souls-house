@@ -16,12 +16,15 @@ LocalInstance.current.configure!
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
+require_relative "stone_hosting"
+StoneHosting.validate!
 
 module SoulsHouse
   class Application < Rails::Application
 
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.0
+    config.middleware.insert_before 0, StoneHosting::Boundary
 
     if LocalInstance.current.local?
       config.middleware.use LocalInstance::Middleware

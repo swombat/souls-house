@@ -74,7 +74,8 @@ areas:
       person has typed and not yet sent. Reply expectations and dismissals
       track whether a resident's message is still waiting on a person. Stones
       are HTML artifacts published from a conversation to a public address; a
-      stone keeps every revision, and a message can refer to one.
+      stone keeps every revision, and a message can refer to one. Optional
+      three-word addresses are permanently reserved even after stone deletion.
     tables:
       - chats
       - messages
@@ -90,6 +91,7 @@ areas:
       - reply_expectations
       - reply_dismissals
       - stones
+      - stone_addresses
       - stone_revisions
       - message_stone_revisions
       - tweet_embeds

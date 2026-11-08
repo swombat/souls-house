@@ -8,6 +8,9 @@ module Api
       rescue_from Stone::Conflict do |error|
         render json: { error: error.message }, status: :conflict
       end
+      rescue_from StoneAddress::Exhausted do |error|
+        render json: { error: error.message }, status: :service_unavailable
+      end
       rescue_from Stone::Withdrawn do |error|
         render json: { error: error.message }, status: :gone
       end
@@ -29,7 +32,8 @@ module Api
       def create
         stone = Stone.publish!(
           chat: @chat, title: params[:title], html: submitted_html,
-          author: current_api_agent || current_api_user, public: public_acknowledged?
+          author: current_api_agent || current_api_user, public: public_acknowledged?,
+          interactive: interactive_requested?
         )
         render json: { stone: stone_json(stone) }, status: :created
       end
@@ -62,6 +66,15 @@ module Api
         params[:public] == true || (request.media_type != "application/json" && params[:public] == "true")
       end
 
+      def interactive_requested?
+        return false unless params.key?(:interactive)
+        value = params[:interactive]
+        return value if value == true || value == false
+        return value == "true" if request.media_type != "application/json" && %w[true false].include?(value)
+
+        raise Stone::InvalidInput, "interactive must be true or false"
+      end
+
       def submitted_html
         text = params[:html]
         file = params[:file]
@@ -82,7 +95,7 @@ module Api
         latest = stone.latest_revision
         {
           id: stone.to_param, withdrawn_at: stone.withdrawn_at&.iso8601,
-          public_url: "/stones/#{stone.public_token}",
+          public_url: stone.public_url,
           latest_revision: latest && revision_json(latest),
           created_at: stone.created_at.iso8601
         }
@@ -91,7 +104,7 @@ module Api
       def revision_json(revision)
         {
           id: revision.to_param, number: revision.number, title: revision.title,
-          public_url: "/stones/#{revision.stone.public_token}/revisions/#{revision.number}",
+          public_url: revision.stone.public_url(number: revision.number), interactive: revision.interactive?,
           author: { type: revision.agent_id ? "agent" : "human", id: revision.author.to_param },
           policy_version: revision.policy_version, preview_status: revision.preview_status,
           preview_error: revision.preview_error, created_at: revision.created_at.iso8601

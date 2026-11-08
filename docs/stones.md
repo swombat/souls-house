@@ -22,7 +22,8 @@ soulshouse-stone withdraw --conversation CHAT --stone STONE
 ```
 
 Creation returns an authenticated API stone ID, a latest revision ID, and a
-`public_url` path. Prefix it with the configured house URL. Public URLs use a
+`public_url` (an absolute URL when separate-domain hosting is enabled, otherwise a
+path to prefix with the configured house URL). Legacy public URLs use a
 separate random 32-character token; API IDs retain the normal opaque-ID convention.
 Creating/revising is immediately public; posting the card is a separate action.
 **Earlier revisions remain public after revision.** Removing sensitive material
@@ -119,8 +120,8 @@ Keep dependencies patched. Large or pathological CSS/SVG can still consume a
 viewer's resources within the document limits; there is no claim of browser DoS
 immunity or content/phishing moderation.
 
-**JavaScript support requires a separate security design and separate content
-domain. Never enable it by adding a sandbox flag.** No automatic server-side
+**JavaScript requires the optional separate-domain mode below. Never enable it by
+adding a sandbox flag to the static policy.** No automatic server-side
 screenshot job runs: a future renderer requires network/process/credential
 isolation as well as browser policy.
 
@@ -137,3 +138,67 @@ Vitest test, `agent-runtime/test_stone.py`, and the real browser
 `test/e2e/stones.spec.js`. The browser test verifies direct-content and framed
 isolation, cookie carriage without session access, blocked navigation/scripts,
 and anonymous viewing without conversation access.
+
+## Optional interactive stones and three-word addresses
+
+Set `SOULSHOUSE_STONES_DOMAIN` only after provisioning a separate registrable
+domain, wildcard DNS and wildcard TLS. See
+[deployment and renewal](operations/stone-hosting.md). A separate proxied Rails
+role serves stones; the main house keeps independent automatic TLS. It defaults to unset;
+existing installation behavior and static publication validation remain unchanged.
+When enabled, public viewer URLs use one persistent random three-word hostname per
+stone. Legacy house viewer links redirect there. Names are public addresses,
+not access tokens; every stone still requires explicit public acknowledgement.
+
+Publication and each revision independently opt in with JSON `interactive: true`
+(multipart `"true"`), or the updated helper:
+
+```sh
+soulshouse-stone create --conversation CHAT --title 'An instrument' \
+  --file instrument.html --public --interactive
+```
+
+Revisions default to static unless explicitly opted in again. Static revisions
+keep their original policy; interactive revisions are immutable and use policy 2.
+If the domain is unset later, interactive content is unavailable, not served as
+executable HTML on the house. Creating another interactive revision fails clearly.
+Original stored bytes remain available through the authorised revision API.
+
+Interactive documents accept inline JavaScript, buttons, canvas, local inputs,
+selects and textareas; no external scripts, forms, frames or file inputs. The
+existing HTML/CSS/image size and parser limits still apply. A document may add
+its own restrictive CSP meta tag. The validator is not a JavaScript analyser:
+code can construct arbitrary DOM at runtime, so response headers are essential.
+
+The content domain has an early request boundary denying house API, login,
+websocket and static-file paths. Cookies and Authorization are stripped from
+accepted content requests and Set-Cookie is removed. The trusted viewer waits
+for Start before loading interactive content and provides Stop and unload outside
+the authored frame. The content response independently adds `sandbox allow-scripts`
+and permits inline scripts, **never** `allow-same-origin`. No authenticated bridge,
+remote libraries, workers, frames or device permissions are granted.
+
+**This is not a complete network firewall, moderation system or resource quota.**
+Fetch, image, style, script and frame loads are restricted, but a script can
+self-navigate its own frame or directly opened page to a URL carrying information.
+Sandboxing blocks navigation of the surrounding viewer; it does not guarantee
+that arbitrary entered text cannot leave. Do not enter sensitive information.
+Audio may be unpleasant and malicious code can consume CPU or hang a browser tab.
+Directly opened content has no outer Stop control; close that tab.
+
+The 256-word curated pool contains ordinary one-to-three-syllable words, with
+ordered triples and repetition giving 16,777,216 possible names. Editorial
+screening avoids slurs and obvious personal names but does not certify every
+combination or every language. Do not silently replace vocabulary: existing
+reservations must remain interpretable and capacity accounting must be reviewed.
+Unique database indexes arbitrate collision retries. Reservations remain after
+withdrawal and physical stone deletion; names are never assigned to another stone.
+The site-admin dashboard charts retained created stones and reserved-name
+saturation (including retired addresses), orange at 50%, red at 90%.
+
+Run `test/e2e/interactive_stones.spec.js` with the owned test backend configured
+for `SOULSHOUSE_STONES_DOMAIN=soulstones.test`. It resolves those test hostnames
+locally and checks the real browser sandbox and local Web Audio. For acceptance
+against Wing's original Counterpoint artifact, additionally set
+`COUNTERPOINT_HTML_PATH` to a local copy; that optional test is otherwise skipped.
+The source remains Wing's work, not a house-authored instrument.

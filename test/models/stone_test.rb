@@ -2,7 +2,7 @@ require "test_helper"
 
 class StoneTest < ActiveSupport::TestCase
 
-  HTML = '<!doctype html><html><head><title>A stone</title></head><body><p>Hello</p></body></html>'
+  HTML = "<!doctype html><html><head><title>A stone</title></head><body><p>Hello</p></body></html>"
 
   setup do
     @user = users(:confirmed_user)
@@ -33,6 +33,37 @@ class StoneTest < ActiveSupport::TestCase
     stone.revise!(title: "Second", html: HTML, author: @user, public: true, base_revision_id: first.to_param)
     stone.withdraw!
     assert_equal token, stone.reload.public_token
+  end
+
+  test "existing addresses render without acquiring a stone row lock" do
+    old_domain = ENV["SOULSHOUSE_STONES_DOMAIN"]
+    stone = publish
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = "soulstones.test"
+    address = StoneAddress.reserve!(stone: stone)
+    stone.reload
+    stone.stub(:with_lock, ->(*) { flunk "Rendering an existing address must not acquire a row lock" }) do
+      assert_equal "https://#{address.name}.soulstones.test/", stone.public_url
+      assert_equal "https://#{address.name}.soulstones.test/revisions/1", stone.public_url(number: 1)
+    end
+  ensure
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = old_domain
+  end
+
+  test "lazy address allocation locks once and subsequent rendering does not lock" do
+    old_domain = ENV["SOULSHOUSE_STONES_DOMAIN"]
+    ENV.delete("SOULSHOUSE_STONES_DOMAIN")
+    stone = publish
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = "soulstones.test"
+    queries = []
+    subscriber = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] }
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      first = stone.public_url
+      assert_equal first, stone.public_url
+    end
+    assert_equal 1, queries.count { |sql| sql.include?('FROM "stones"') && sql.include?("FOR UPDATE") }
+    assert_equal 1, StoneAddress.where(stone: stone).count
+  ensure
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = old_domain
   end
 
   test "quota accounts for prior revisions but not other accounts" do

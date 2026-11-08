@@ -31,7 +31,19 @@ class StoneTests(unittest.TestCase):
         self.assertEqual("/api/v1/conversations/chat/stones/stone/revisions", path)
         self.assertEqual("<!doctype html><h1>$100 `literal`</h1>", payload["html"])
         self.assertTrue(payload["public"])
+        self.assertNotIn("interactive", payload)
         self.assertEqual("revision", payload["base_revision_id"])
+
+    def test_interactive_requires_explicit_cli_flag(self):
+        with tempfile.NamedTemporaryFile(suffix=".html") as file:
+            file.write(b"<!doctype html><script>1</script>")
+            file.flush()
+            args = stone.parser().parse_args([
+                "create", "--conversation", "chat", "--title", "Sound",
+                "--file", file.name, "--public", "--interactive",
+            ])
+            _, _, payload = stone.request_spec(args)
+        self.assertIs(True, payload["interactive"])
 
     def test_ids_cannot_escape_the_endpoint(self):
         with self.assertRaises(ValueError):

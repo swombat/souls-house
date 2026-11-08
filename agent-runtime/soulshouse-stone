@@ -31,6 +31,7 @@ def parser():
             command.add_argument("--title", required=True)
             command.add_argument("--file", required=True, help="UTF-8 HTML document, or - for stdin")
             command.add_argument("--public", action="store_true", required=True, help="acknowledge public publication")
+            command.add_argument("--interactive", action="store_true", help="opt in to inline JavaScript on the configured isolated domain")
         if name == "revise":
             command.add_argument("--base-revision", required=True)
         if name == "post":
@@ -63,6 +64,8 @@ def request_spec(args):
     if args.operation in ("create", "revise"):
         method = "POST"
         payload = {"title": args.title, "html": read_file(args.file), "public": True}
+        if args.interactive:
+            payload["interactive"] = True
         if args.operation == "revise":
             path += "/revisions"
             payload["base_revision_id"] = args.base_revision

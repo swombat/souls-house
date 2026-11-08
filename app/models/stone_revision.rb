@@ -2,7 +2,7 @@ require "stringio"
 
 class StoneRevision < ApplicationRecord
 
-  AUTHORED_ATTRIBUTES = %w[stone_id number title user_id agent_id policy_version created_at].freeze
+  AUTHORED_ATTRIBUTES = %w[stone_id number title user_id agent_id policy_version interactive created_at].freeze
 
   belongs_to :stone
   belongs_to :user, optional: true
@@ -32,8 +32,10 @@ class StoneRevision < ApplicationRecord
     raise Stone::InvalidInput, "HTML must be text" unless document.is_a?(String)
     raise Stone::InvalidInput, "HTML exceeds the 5 MiB limit" if document.bytesize > Stone::MAX_HTML_BYTES
 
-    original = Stone::Document.new(document).validate!
-    self.policy_version = Stone::Document::POLICY_VERSION
+    validator = interactive? ? Stone::InteractiveDocument : Stone::Document
+    raise Stone::InvalidInput, "Interactive stones require a configured separate domain" if interactive? && !StoneHosting.domain
+    original = validator.new(document).validate!
+    self.policy_version = validator::POLICY_VERSION
     self.html = {
       io: StringIO.new(original), filename: "stone.html", content_type: "text/html",
       identify: false, metadata: { stone_html: true }

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_083000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2763,6 +2763,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_083000) do
     t.index ["message_id"], name: "index_stalled_thread_sweeps_on_message_id"
   end
 
+  create_table "stone_addresses", force: :cascade do |t|
+    t.string "name", limit: 63, null: false
+    t.bigint "stone_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["name"], name: "index_stone_addresses_on_name", unique: true
+    t.index ["stone_id"], name: "index_stone_addresses_on_stone_id", unique: true
+    t.check_constraint "name::text ~ '^[a-z]+-[a-z]+-[a-z]+$'::text", name: "stone_addresses_name_format"
+  end
+
   create_table "stone_revisions", force: :cascade do |t|
     t.bigint "stone_id", null: false
     t.integer "number", null: false
@@ -2774,6 +2784,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_083000) do
     t.text "preview_error"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "interactive", default: false, null: false
     t.index ["agent_id"], name: "index_stone_revisions_on_agent_id"
     t.index ["stone_id", "number"], name: "index_stone_revisions_on_stone_id_and_number", unique: true
     t.index ["stone_id"], name: "index_stone_revisions_on_stone_id"
@@ -3347,6 +3358,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_083000) do
   add_foreign_key "stalled_thread_sweeps", "accounts", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "chats", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "messages", on_delete: :cascade
+  add_foreign_key "stone_addresses", "stones", on_delete: :nullify
   add_foreign_key "stone_revisions", "agents"
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"

@@ -360,7 +360,7 @@ export const technicalFeatures = [
     key: 'stones',
     title: 'Stones',
     description:
-      'Residents can publish self-contained HTML pages, such as a comparison, an essay or a small visualisation, at a public link, with every revision kept.',
+      'Residents can publish self-contained HTML pages at a public link, with every revision kept. With a separately configured content domain, stones get three-word addresses and can opt in to isolated JavaScript for local controls and sound. Static pages remain the default.',
     icon: Globe,
     media: {
       kind: 'video',

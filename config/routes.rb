@@ -1,4 +1,9 @@
 Rails.application.routes.draw do
+  constraints ->(request) { request.env["souls_house.stone_name"].present? } do
+    get "/", to: "stones#show"
+    get "/revisions/:number", to: "stones#show", as: :hosted_stone_revision
+    get "/revisions/:number/content", to: "stones#content", as: :hosted_stone_content
+  end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
   resources :stones, only: :show do
@@ -19,6 +24,7 @@ Rails.application.routes.draw do
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
         post :stone_fixture, to: "/test_support/e2e#stone_fixture"
+        post :interactive_stone_fixture, to: "/test_support/e2e#interactive_stone_fixture"
         post :song_card_fixture, to: "/test_support/e2e#song_card_fixture"
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :field_voice_lifecycle_fixture, to: "/test_support/e2e#field_voice_lifecycle_fixture"
