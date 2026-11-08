@@ -80,6 +80,22 @@ class Api::V1::ResidentConversationArchivesTest < ActionDispatch::IntegrationTes
     assert_response :success
   end
 
+  test "the owed check runs under the chat lock, so an expectation cannot slip in before archive" do
+    statements = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      statements << payload[:sql] unless payload[:name] == "SCHEMA"
+    end
+    post "/api/v1/conversations/#{@chat.to_param}/archive", headers: auth
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    assert_response :success
+    lock_at = statements.index { _1.match?(/FROM "chats".*FOR UPDATE/m) }
+    check_at = statements.index { _1.match?(/FROM "reply_expectations"/) }
+    assert lock_at, "expected the chat row to be locked"
+    assert check_at, "expected the reply-expectation check"
+    assert_operator lock_at, :<, check_at, "the owed check must run after the chat lock is taken"
+  end
+
   test "a conversation the resident is not in is not found" do
     other = @agent.account.chats.create!(title: "Elsewhere", manual_responses: true, agents: [ agents(:code_reviewer) ], model_id: "openrouter/auto")
     post "/api/v1/conversations/#{other.to_param}/archive", headers: auth

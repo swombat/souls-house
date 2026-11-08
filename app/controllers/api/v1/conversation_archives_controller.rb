@@ -19,11 +19,19 @@ module Api
       # POST /api/v1/conversations/:conversation_id/archive
       def create
         if current_api_agent
-          return if refuse_while_owed
-          return render(json: { conversation: conversation_json(@chat) }) if @chat.archived?
+          # The check and the archive share the chat lock: the reply
+          # classifier records expectations under it, so nothing can be
+          # added between the check and archive! dismissing it. Commitments
+          # are only read here (their own lock order is commitment → chat).
+          refusal = nil
+          @chat.with_lock do
+            refusal = owed_refusal
+            next if refusal || @chat.archived?
 
-          @chat.archive!
-          audit_resident_action("archive_chat")
+            @chat.archive!
+            audit_resident_action("archive_chat")
+          end
+          return render(json: refusal, status: :conflict) if refusal
         else
           @chat.archive!
           audit_human_action("archive_chat", @chat, account: @chat.account)
@@ -56,7 +64,7 @@ module Api
         current_api_agent.chats.kept.where(account_id: current_api_agent.account_id).find(params[:conversation_id])
       end
 
-      def refuse_while_owed
+      def owed_refusal
         expectations = ReplyExpectation.joins(:message).state_open
           .where(messages: { chat_id: @chat.id, discarded_at: nil }).includes(:user, :message)
         # Scheduled ones made here, and ones already activated into this chat
@@ -65,9 +73,9 @@ module Api
         commitments = Commitment.scheduled.where(source_chat_id: @chat.id)
           .or(Commitment.wake_in_custody.where(activation_chat_id: @chat.id))
           .includes(:agent).order(:due_at)
-        return false if expectations.none? && commitments.none?
+        return nil if expectations.none? && commitments.none?
 
-        render json: {
+        {
           error: "This conversation still has something owed in it; archiving would dismiss or silence it. Answer, dismiss or cancel these first.",
           code: "conversation_has_pending_work",
           open_reply_expectations: expectations.map { |e|
@@ -76,8 +84,7 @@ module Api
           scheduled_commitments: commitments.map { |c|
             { id: c.to_param, resident: c.agent.name, due_at: c.due_at.iso8601, status: c.status, headline: c.headline }
           }
-        }, status: :conflict
-        true
+        }
       end
 
       def audit_resident_action(action)
