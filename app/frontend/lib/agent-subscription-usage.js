@@ -1,7 +1,9 @@
 import { accountAgentProviderSubscriptionUsagePath } from '@/routes';
 import { allowanceRemainingPercent } from '$lib/subscription-usage';
 
-const CACHE_TTL_MS = 60_000;
+// Same rhythm as the resident card's poll. The house serves this from its own
+// kept reading, so asking more often in each tab only adds requests (#845).
+export const CACHE_TTL_MS = 5 * 60_000;
 const usageCache = new Map();
 
 export async function loadAgentRemaining(accountId, agent) {
