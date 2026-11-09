@@ -99,7 +99,7 @@
   class="flex flex-col gap-4 sm:min-h-0 sm:flex-1"
   aria-label={tag ? `Edit ${tag.label}` : 'Add visual tag'}>
   <div class="flex flex-col gap-5 sm:grid sm:min-h-0 sm:flex-1 sm:grid-cols-[220px_1fr] sm:grid-rows-1">
-    <div class="space-y-4">
+    <div class="space-y-4 sm:min-h-0 sm:overflow-y-auto sm:pr-1">
       <div class="hidden rounded-xl border bg-muted/20 p-3 sm:block" aria-label="Tag preview">
         <p class="mb-3 text-xs text-muted-foreground">In the discussion list</p>
         <div class="flex items-center gap-2 rounded-md bg-background px-2 py-3 text-sm">
