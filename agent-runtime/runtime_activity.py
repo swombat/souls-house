@@ -232,8 +232,12 @@ class Reporter:
         process_started = b""
         stderr = bytearray()
         work_seen = False
+        gap_seen = False
 
         def source_gap():
+            nonlocal gap_seen
+            # Whatever was in a dropped line is unknown, so a retry is unsafe.
+            gap_seen = True
             with self.lock:
                 if self.attempt_id == reader_attempt_id:
                     self.stream_gap()
@@ -338,6 +342,7 @@ class Reporter:
                                                 (process_started + b"".join(retained)).decode(errors="replace"),
                                                 stderr.decode(errors="replace"))
         completed.work_seen = work_seen
+        completed.source_gap = gap_seen
         return completed
 
     def finish(self, response):

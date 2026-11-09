@@ -3399,22 +3399,26 @@ def clamp_auth_failed_before_work(result):
     the model did anything: Chaos's clamp reported clamp_auth_unavailable and
     no work event was seen. The activity reporter drops tool events from the
     stdout it returns, so it carries its own `work_seen`, read before that
-    filtering; a run it saw act is never retried."""
+    filtering; a run it saw act is never retried. A gap in what was read (a
+    line dropped as oversized, unparsable or not an event) is treated as work
+    that might have happened, on both routes (Mira, #849 round 2)."""
     from runtime_activity import is_work_event
 
     if result is None or result.returncode == 0:
         return False
-    if getattr(result, "work_seen", False):
+    if getattr(result, "work_seen", False) or getattr(result, "source_gap", False):
         return False
     stdout = result.stdout or ""
     if "clamp_auth_unavailable" not in stdout:
         return False
     for line in stdout.splitlines():
+        if not line.strip():
+            continue
         try:
             event = json.loads(line)
         except ValueError:
-            continue
-        if is_work_event(event):
+            return False
+        if not isinstance(event, dict) or is_work_event(event):
             return False
     return True
 

@@ -241,6 +241,35 @@ class ClaudeRefreshLockTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(len(self.invocations()), 2)
 
+    def test_reporter_route_never_retries_after_a_dropped_line(self):
+        # Mira's round-2 case: file-change events too big to read are dropped
+        # before anything can see them, so the run might have acted.
+        self.use_reporter()
+        diff = "x" * (1024 * 1024 + 10)
+        oversized = "\n".join([
+            json.dumps({"type": "process.started", "process_id": "p4"}),
+            json.dumps({"type": "item.started", "item": {"id": "item_3", "type": "file_change", "diff": diff}}),
+            json.dumps({"type": "item.completed", "item": {"id": "item_3", "type": "file_change", "diff": diff}}),
+        ]) + "\n" + AUTH_FAILURE
+        self.script_runs([oversized, 1], [SUCCESS, 0])
+        result = self.run_subscription()
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(result.source_gap)
+        self.assertNotIn("file_change", result.stdout)  # still discarded: the flag is all that is kept
+        self.assertEqual(len(self.invocations()), 1)
+
+    def test_reporter_route_never_retries_after_an_unreadable_line(self):
+        self.use_reporter()
+        self.script_runs(["{not json\n" + AUTH_FAILURE, 1], [SUCCESS, 0])
+        result = self.run_subscription()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(self.invocations()), 1)
+
+    def test_plain_route_never_retries_after_an_unreadable_line(self):
+        self.script_runs(["{not json\n" + AUTH_FAILURE, 1], [SUCCESS, 0])
+        self.assertEqual(self.run_subscription().returncode, 1)
+        self.assertEqual(len(self.invocations()), 1)
+
     # Cancellation is never held behind the lock.
 
     def test_a_cancelled_turn_does_not_wait_for_the_lock(self):
