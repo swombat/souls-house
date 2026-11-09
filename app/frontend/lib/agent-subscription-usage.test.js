@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { agentNameWithUsage, sortAgentsByAvailability, loadAgentRemaining } from './agent-subscription-usage';
+import {
+  agentNameWithUsage,
+  sortAgentsByAvailability,
+  loadAgentRemaining,
+  CACHE_TTL_MS,
+} from './agent-subscription-usage';
 
 describe('agent subscription usage labels', () => {
   it('keeps a low OpenAI warning and availability ordering using both supplied windows', async () => {
@@ -80,5 +85,37 @@ describe('sortAgentsByAvailability', () => {
     const copy = [...agents];
     sortAgentsByAvailability(agents, { z: 90 });
     expect(agents).toEqual(copy);
+  });
+
+  it('asks the house at most once per resident every five minutes in a tab', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ windows: [{ id: 'weekly', remaining_percent: 70 }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const agent = {
+      id: 'ttl-five-minutes',
+      name: 'Lume',
+      provider_subscription: {
+        available: true,
+        auth_mode: 'oauth_account',
+        provider: 'anthropic',
+        connection: { status: 'connected' },
+      },
+    };
+    try {
+      expect(CACHE_TTL_MS).toBe(5 * 60_000);
+      await loadAgentRemaining('ttl-account', agent);
+      vi.advanceTimersByTime(4 * 60_000);
+      await loadAgentRemaining('ttl-account', agent);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(60_000 + 1);
+      await loadAgentRemaining('ttl-account', agent);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });

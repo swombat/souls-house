@@ -97,7 +97,7 @@ for (const width of [390, 1280]) {
     const other = component.getByRole('button', { name: 'API resident', exact: true });
     const otherBounds = await other.boundingBox();
     await button.evaluate((node) => (window.originalResidentButton = node));
-    await page.clock.fastForward(61_000);
+    await page.clock.fastForward(5 * 60_000 + 1_000); // past CACHE_TTL_MS (3790937e)
     await component.update({ props: { ...props, agents: props.agents.map((agent) => ({ ...agent })) } });
     await expect.poll(() => requests).toBe(2);
     await expect(button).toHaveAccessibleName('Resident (80% left)');
