@@ -175,4 +175,19 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     end
   end
 
+  test "cosine matches the textbook formula and its edges" do
+    random = Random.new(7)
+    20.times do
+      a = Array.new(1024) { random.rand(-1.0..1.0) }
+      b = Array.new(1024) { random.rand(-1.0..1.0) }
+      expected = a.zip(b).sum { |x, y| x * y } / Math.sqrt(a.sum { |x| x * x } * b.sum { |x| x * x })
+      assert_in_delta expected, Mnemodyne::Embeddings.cosine(a, b), 1e-12
+    end
+    assert_in_delta 1.0, Mnemodyne::Embeddings.cosine([ 1.0, 2.0 ], [ 2.0, 4.0 ]), 1e-12
+    assert_equal 0.0, Mnemodyne::Embeddings.cosine([ 0.0, 0.0 ], [ 1.0, 1.0 ])
+    assert_equal 0.0, Mnemodyne::Embeddings.cosine([ 1.0 ], [ 1.0, 2.0 ])
+    assert_equal 0.0, Mnemodyne::Embeddings.cosine(nil, [ 1.0 ])
+    assert_equal 0.0, Mnemodyne::Embeddings.cosine([], [])
+  end
+
 end
