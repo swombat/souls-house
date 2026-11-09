@@ -196,6 +196,29 @@ test('says how old a stale reading is', async () => {
   expect(await screen.findByText('Checked 4 min ago')).toBeVisible();
 });
 
+test('labels a reading that arrived fresh once it is older than a minute, between polls', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'available',
+        stale: false,
+        checked_at: new Date().toISOString(),
+        windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+      }),
+    })
+  );
+  render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(screen.queryByTestId('usage-checked-at')).not.toBeInTheDocument();
+  await vi.advanceTimersByTimeAsync(120_000);
+  await tick();
+  expect(screen.getByText('Checked 2 min ago')).toBeVisible();
+});
+
 test('says nothing about age when the reading is fresh', async () => {
   vi.stubGlobal(
     'fetch',

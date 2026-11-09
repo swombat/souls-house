@@ -19,14 +19,18 @@
   let windows = $derived(displayUsageWindows(usage, subscription?.provider, modelId));
   let now = $state(Date.now());
 
-  function checkedAgo(checkedAt, at) {
-    const minutes = Math.max(0, Math.round((at - new Date(checkedAt).getTime()) / 60_000));
-    return minutes < 1 ? 'just now' : `${minutes} min ago`;
-  }
+  // The reading's age comes from when the house checked it and this card's
+  // own clock, so a reading that was fresh when it arrived is labelled once it
+  // is a minute old, without waiting for the next poll.
+  let checkedMinutes = $derived.by(() => {
+    const checkedAt = usage?.checked_at ? new Date(usage.checked_at).getTime() : NaN;
+    if (Number.isNaN(checkedAt)) return null;
+    return Math.max(0, Math.floor((now - checkedAt) / 60_000));
+  });
   $effect(() => {
     const timer = setInterval(() => {
       now = Date.now();
-    }, 60_000);
+    }, 15_000);
     return () => clearInterval(timer);
   });
 
@@ -65,6 +69,7 @@
         if (!response.ok) throw new Error('Usage unavailable');
         const snapshot = await response.json();
         if (!controller.signal.aborted) {
+          now = Date.now();
           usage = snapshot;
           error = false;
         }
@@ -125,9 +130,9 @@
       Usage unavailable
     {:else}
       {#if usage?.status === 'limited'}<div class="mb-2">Subscription limit reached</div>{/if}
-      {#if usage?.stale && usage.checked_at}
+      {#if checkedMinutes !== null && checkedMinutes >= 1}
         <div class="mb-2 text-[10px]" data-testid="usage-checked-at">
-          Checked {checkedAgo(usage.checked_at, now)}
+          Checked {checkedMinutes} min ago
         </div>
       {/if}
       <div class="space-y-3">
