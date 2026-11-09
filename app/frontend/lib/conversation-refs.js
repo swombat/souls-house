@@ -12,19 +12,34 @@
 // reader can open (ConversationTitles on the server); everything else
 // renders exactly as written. Fenced code is never inline-lexed, link text is
 // skipped, and IDs inside URLs, paths and longer tokens are left alone.
+//
+// Not every real ID links: one with no uppercase letter after the first, or
+// no lowercase letter (about one in eight), has the shape of a word and is
+// never looked up. That is the price of not looking up every capitalised word.
 
 const ID = '[A-Za-z]{6}';
 // Not continuing another token: not after a word character, a path, a query
 // or fragment, a dot, a hyphen or a backtick; not followed by more of one.
-const BEFORE = '(?<![\\w/@#.\\-`?=&:%+~])';
-const AFTER = '(?![\\w/@]|[.\\-][\\w])';
+const BEFORE = '(?<![\\w/@#.\\-`?=&:%+~\\\\])';
+const AFTER = '(?![\\w/@\\\\]|[.\\-][\\w])';
 const BARE = new RegExp(`^(${ID})${AFTER}`);
 const CODE = new RegExp(`^\`(${ID})\`(?!\`)`);
 const START = new RegExp(`${BEFORE}${ID}${AFTER}|(?<!\`)\`${ID}\`(?!\`)`, 'g');
 // marked asks start() about src.slice(1), so the lookbehind cannot see the
 // character just before a match at index 0; the tokenizer checks it again
 // against the text already lexed.
-const CONTINUES = /[\w/@#.\-`?=&:%+~]$/;
+const CONTINUES = /[\w/@#.\-`?=&:%+~\\]$/;
+// The whitespace-delimited run around an ID: if it holds a path or URL
+// separator anywhere (C:\foo\eqRAMj\bar, /tmp/(eqRAMj)/foo,
+// ssh://host/(eqRAMj)), the ID belongs to that path and is left alone.
+// Prose brackets and punctuation, as in "(eqRAMj)," or "eqRAMj:", are fine.
+const IN_PATH = /[/\\]/;
+
+function insidePath(src, tokens) {
+  const before = (tokens?.at(-1)?.raw ?? '').match(/\S*$/)[0];
+  const after = src.match(/^\S*/)[0];
+  return IN_PATH.test(before + after);
+}
 
 export function looksLikeConversationId(text) {
   return /^[A-Za-z]{6}$/.test(text) && /[A-Z]/.test(text.slice(1)) && /[a-z]/.test(text);
@@ -48,6 +63,7 @@ export const conversationRefExtension = {
   tokenizer(src, tokens) {
     if (this.lexer?.state?.inLink) return undefined;
     if (CONTINUES.test(tokens?.at(-1)?.raw ?? '')) return undefined;
+    if (insidePath(src, tokens)) return undefined;
 
     let match = CODE.exec(src);
     if (match && looksLikeConversationId(match[1]))

@@ -35,6 +35,16 @@ class Accounts::ConversationTitlesControllerTest < ActionDispatch::IntegrationTe
     assert_equal({}, titles([ foreign.to_param, own_elsewhere.to_param ]))
   end
 
+  test "a conversation a resident joined as a guest stays absent from its home account" do
+    resident = agents(:research_assistant) # home: personal_account
+    host = accounts(:team_account)
+    host.guest_memberships.create!(agent: resident, added_by: users(:user_1))
+    guest_room_chat = host.chats.create!(title: "Hosted elsewhere", model_id: "openrouter/auto", agents: [ resident ])
+
+    assert_equal({}, titles(guest_room_chat.to_param))
+    assert_equal({ guest_room_chat.to_param => "Hosted elsewhere" }, titles(guest_room_chat.to_param, account: host))
+  end
+
   test "a discarded conversation stays absent; an archived one still answers" do
     discarded = @account.chats.create!(title: "Binned", model_id: "openrouter/auto")
     discarded.update_column(:discarded_at, Time.current)

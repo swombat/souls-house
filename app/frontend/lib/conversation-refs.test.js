@@ -42,6 +42,14 @@ describe('conversation references', () => {
     expect(refs('eqRAMjx xeqRAMj eqRAMj_1')).toEqual([]);
   });
 
+  it('leaves IDs inside paths and non-autolinked URLs alone, but keeps prose brackets', () => {
+    expect(refs('C:\\foo\\eqRAMj\\bar')).toEqual([]);
+    expect(refs('/tmp/(eqRAMj)/foo')).toEqual([]);
+    expect(refs('ssh://example.com/(eqRAMj)')).toEqual([]);
+    expect(refs('see ~/work/(eqRAMj) and \\\\host\\share\\eqRAMj')).toEqual([]);
+    expect(refs('(eqRAMj), [YZxGbj] and "YNwXwe": all three')).toEqual(['text:eqRAMj', 'text:YZxGbj', 'text:YNwXwe']);
+  });
+
   it('leaves commit shas to the commit extension', () => {
     const types = [];
     marked.walkTokens(marked.lexer('51625a7 in eqRAMj'), (token) => types.push(token.type));
