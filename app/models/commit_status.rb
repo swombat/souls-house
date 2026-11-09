@@ -91,7 +91,9 @@ class CommitStatus
   # items.map(&block), with up to PARALLEL items in flight at once. The block
   # must be safe to run on another thread; each worker runs inside the Rails
   # executor, so it gets (and returns) its own database connection for the
-  # cache. An exception in the block is raised here.
+  # cache. An exception in the block is raised here, but only after every
+  # worker has stopped: none outlives the call. Once one item fails, the
+  # items not yet started are dropped.
   def self.parallel_map(items, &block)
     items = items.to_a
     return items.map(&block) if items.size <= 1
@@ -108,9 +110,21 @@ class CommitStatus
             results[job.last] = block.call(job.first)
           end
         end
+      rescue Exception # rubocop:disable Lint/RescueException -- re-raised by join below
+        queue.clear
+        raise
       end
     end
-    ActiveSupport::Dependencies.interlock.permit_concurrent_loads { workers.each(&:join) }
+    failure = nil
+    ActiveSupport::Dependencies.interlock.permit_concurrent_loads do
+      workers.each do |worker|
+        worker.join
+      rescue Exception => e # rubocop:disable Lint/RescueException -- every worker is joined before it is raised
+        failure ||= e
+      end
+    end
+    raise failure if failure
+
     results
   end
 

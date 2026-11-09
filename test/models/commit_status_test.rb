@@ -320,4 +320,33 @@ class CommitStatusTest < ActiveSupport::TestCase
     assert_operator widest.value, :<=, CommitStatus::PARALLEL
   end
 
+  test "a failing item is raised only after every worker has stopped, and items not yet started are dropped" do
+    finished = Concurrent::AtomicBoolean.new(false)
+    started = Concurrent::AtomicFixnum.new(0)
+    slow_started = Concurrent::CountDownLatch.new(1)
+    items = [ :fail, :slow ] + Array.new(20, :later)
+    threads_before = Thread.list.size
+
+    error = assert_raises(RuntimeError) do
+      CommitStatus.parallel_map(items) do |item|
+        started.increment
+        case item
+        when :fail
+          slow_started.wait(1)
+          raise "boom"
+        when :slow
+          slow_started.count_down
+          sleep 0.2
+          finished.make_true
+        else sleep 0.05
+        end
+      end
+    end
+
+    assert_equal "boom", error.message
+    assert finished.true?, "the slower sibling was still running when the error was raised"
+    assert_equal threads_before, Thread.list.size
+    assert_operator started.value, :<, items.size
+  end
+
 end
