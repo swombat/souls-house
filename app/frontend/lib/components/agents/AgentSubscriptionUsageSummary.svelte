@@ -9,6 +9,8 @@
     resetDescription,
   } from '$lib/subscription-usage';
 
+  const USAGE_POLL_MS = 5 * 60_000;
+
   let { accountId, agentId, modelId, subscription, usageUrl, canReconnect = false } = $props();
 
   let usage = $state(null);
@@ -16,6 +18,11 @@
   let error = $state(false);
   let windows = $derived(displayUsageWindows(usage, subscription?.provider, modelId));
   let now = $state(Date.now());
+
+  function checkedAgo(checkedAt, at) {
+    const minutes = Math.max(0, Math.round((at - new Date(checkedAt).getTime()) / 60_000));
+    return minutes < 1 ? 'just now' : `${minutes} min ago`;
+  }
   $effect(() => {
     const timer = setInterval(() => {
       now = Date.now();
@@ -69,10 +76,27 @@
       }
     }
 
-    refresh();
-    const timer = setInterval(refresh, 60_000);
+    // The house keeps the last reading and refreshes it in the background, so
+    // a slow poll is enough; a hidden tab doesn't ask at all, and catches up
+    // when it is shown again.
+    let lastAsked = 0;
+    function ask() {
+      lastAsked = Date.now();
+      refresh();
+    }
+    function tickPoll() {
+      if (!document.hidden) ask();
+    }
+    function onVisible() {
+      if (!document.hidden && Date.now() - lastAsked >= USAGE_POLL_MS) ask();
+    }
+
+    ask();
+    const timer = setInterval(tickPoll, USAGE_POLL_MS);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
   });
@@ -101,6 +125,11 @@
       Usage unavailable
     {:else}
       {#if usage?.status === 'limited'}<div class="mb-2">Subscription limit reached</div>{/if}
+      {#if usage?.stale && usage.checked_at}
+        <div class="mb-2 text-[10px]" data-testid="usage-checked-at">
+          Checked {checkedAgo(usage.checked_at, now)}
+        </div>
+      {/if}
       <div class="space-y-3">
         {#each windows as window}
           {@const used = usedPercent(window)}
