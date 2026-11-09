@@ -53,6 +53,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-usage" => { args: [] },
     "soulshouse-send-telegram" => { args: %w[alice hello] },
     "soulshouse-x" => { args: %w[search redirect guards] },
+    "soulshouse-linkedin" => { args: %w[status abc] },
     "soulshouse-youtube" => { args: %w[ask https://www.youtube.com/watch?v=dQw4w9WgXcQ what] },
     "soulshouse-reflex" => { args: %w[list] },
     "soulshouse-commitment" => { args: %w[list] },

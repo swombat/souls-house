@@ -51,8 +51,7 @@ test('local sound, manual score exchange and trusted unload', async ({ page, req
   const { setup, fixture } = await setupStone(request);
   try {
     await page.goto(localUrl(fixture.url, baseURL));
-    await expect(page.locator('iframe')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Start interactive stone' }).click();
+    await expect(page.locator('iframe')).toHaveCount(1);
     const frame = page.frameLocator('iframe');
     await frame.getByRole('button', { name: 'Play tone' }).click();
     await expect(frame.locator('#status')).toHaveText('running');
@@ -65,6 +64,10 @@ test('local sound, manual score exchange and trusted unload', async ({ page, req
     await page.getByRole('button', { name: 'Stop and unload' }).click();
     await expect(page.locator('iframe')).toHaveCount(0);
     await expect(page.getByRole('status')).toHaveText('Stopped and unloaded');
+    await page.getByRole('button', { name: 'Run again' }).click();
+    await expect(page.locator('iframe')).toHaveCount(1);
+    await expect(page.frameLocator('iframe').getByRole('button', { name: 'Play tone' })).toBeVisible();
+    await expect(page.getByRole('status')).toHaveText('Running');
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }
@@ -98,7 +101,6 @@ test('hostile executable storage remains opaque and cannot escape or acquire per
     await context.addCookies([{ name: 'house_secret', value: 'synthetic-private', url: baseURL }]);
     const url = localUrl(fixture.url, baseURL);
     await page.goto(url);
-    await page.getByRole('button', { name: 'Start interactive stone' }).click();
     const frame = page.frameLocator('#stone-container > iframe');
     await expect(frame.locator('body')).toHaveAttribute('data-ran', 'yes');
     for (const key of ['cookie', 'storage', 'parent', 'domain']) {
@@ -151,7 +153,6 @@ test('Wing Counterpoint original plays and exchanges scores', async ({ page, req
   const { setup, fixture } = await setupStone(request, { html });
   try {
     await page.goto(localUrl(fixture.url, baseURL));
-    await page.getByRole('button', { name: 'Start interactive stone' }).click();
     const frame = page.frameLocator('iframe');
     await expect(frame.getByRole('heading', { name: 'Counterpoint', exact: true })).toBeVisible();
     await frame.getByRole('button', { name: 'Listen', exact: true }).click();

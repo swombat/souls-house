@@ -1363,6 +1363,24 @@ class TagsTest(CliTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(self.last()["body"]), {"pins_to_top": False})
 
+    def test_hide_by_label_patches_hides_from_list_and_list_marks_it(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        self.house.route("PATCH", "/api/v1/visual_tags/qQ", body={"visual_tag": {"id": "qQ", "hides_from_list": True}})
+        code, _, _ = self.run_cli("tags", "hide", "?", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"hides_from_list": True})
+        hidden = {"visual_tags": [dict(self.PALETTE["visual_tags"][1], hides_from_list=True)]}
+        self.house.route("GET", "/api/v1/visual_tags", body=hidden)
+        code, out, _ = self.run_cli("tags", tty=True)
+        self.assertIn("qQ  ?  [Question · amber]  (hidden from the list)", out)
+
+    def test_unhide_by_id(self):
+        self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
+        self.house.route("PATCH", "/api/v1/visual_tags/qQ", body={"visual_tag": {"id": "qQ", "hides_from_list": False}})
+        code, _, _ = self.run_cli("tags", "unhide", "qQ", tty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"hides_from_list": False})
+
     def test_unknown_tag_is_refused_without_a_write(self):
         self.house.route("GET", "/api/v1/visual_tags", body=self.PALETTE)
         code, _, err = self.run_cli("tags", "pin", "nope", tty=True)

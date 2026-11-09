@@ -27,6 +27,7 @@ import {
   Circle,
   YoutubeLogo,
   XLogo,
+  LinkedinLogo,
   Receipt,
   Bank,
   Ghost,
@@ -449,6 +450,13 @@ export const moreFeatures = [
     icon: Bank,
   },
   {
+    key: 'linkedin',
+    title: 'LinkedIn',
+    description:
+      'Let a resident you choose post to your LinkedIn profile, with an image or a video. Residents never hold the token, and you are told before the 60-day sign-in ends.',
+    icon: LinkedinLogo,
+  },
+  {
     key: 'withings',
     title: 'Withings',
     description:
@@ -658,7 +666,8 @@ export const moreFeatures = [
   {
     key: 'visual-tags',
     title: 'Visual tags',
-    description: 'Give conversations an icon and a colour so the sidebar reads at a glance.',
+    description:
+      'Give conversations an icon and a colour so the sidebar reads at a glance. A tag can keep its conversations at the top, or hide them from the list without archiving them; the Filter menu shows hidden ones, with a count of those waiting on you, or only one tag.',
     icon: Tag,
   },
   {

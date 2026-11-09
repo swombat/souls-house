@@ -57,7 +57,7 @@ module Api
         end
 
         def visual_tag_params
-          params.slice(:label, :icon, :colour, :pins_to_top).permit(:label, :icon, :colour, :pins_to_top)
+          params.slice(:label, :icon, :colour, :pins_to_top, :hides_from_list).permit(:label, :icon, :colour, :pins_to_top, :hides_from_list)
         end
 
       end

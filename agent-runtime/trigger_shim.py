@@ -414,7 +414,6 @@ def trigger():
     inference_run = str(payload.get("inference_run") or "")
     _activity_context.inference_run = inference_run if inference_run.isdigit() else None
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
-    run_started_at = datetime.now(timezone.utc)
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
         _activity_context.memory_aggregation = bool(aggregation_context(payload))
@@ -453,7 +452,6 @@ def trigger():
         _unregister_running_session(session_id)
         session_lock.release()
         lock_released = True
-        log_reflex_skips(run_started_at)
         if reporter:
             reporter.finish(response)
         return response
@@ -870,48 +868,6 @@ def require_house_trust(cwd, chaos_home):
 SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
 
 
-REFLEX_TRACE_PATH = AGENT_IDENTITY_PATH / "memory" / "automation" / "state" / "stop-events.jsonl"
-REFLEX_TRACE_TAIL_BYTES = 64 * 1024
-
-
-def log_reflex_skips(since, trace_path=None):
-    """Say in the runtime log when the journal reflex skipped its invitation.
-
-    Chaos drops an exit-0 Stop hook's stderr, and neither persists nor emits
-    HookCompleted in --json output, so the hook can't reach this log itself.
-    It records `journal_skipped` on its trace row; this reads rows written
-    since the run started and logs one warning per run (#725). The trace is
-    the resident's own file, shared by concurrent sessions, so this is a
-    diagnostic, not an exact per-run count. Never raises.
-    """
-    path = Path(trace_path) if trace_path else REFLEX_TRACE_PATH
-    try:
-        with path.open("rb") as fh:
-            fh.seek(0, os.SEEK_END)
-            size = fh.tell()
-            fh.seek(max(0, size - REFLEX_TRACE_TAIL_BYTES))
-            tail = fh.read()
-    except OSError:
-        return 0
-    lines = tail.decode("utf-8", errors="replace").splitlines()
-    if size > REFLEX_TRACE_TAIL_BYTES:
-        lines = lines[1:]  # first line is probably cut mid-row
-    reasons = []
-    for line in lines:
-        try:
-            row = json.loads(line)
-            if row.get("journal_skipped") and datetime.fromisoformat(row["recorded_at"]) >= since:
-                reasons.append(str(row["journal_skipped"]))
-        except (ValueError, KeyError, TypeError, AttributeError):
-            continue
-    if reasons:
-        log.warning(
-            f"journal reflex skipped its invitation ({', '.join(sorted(set(reasons)))}): "
-            "this route refuses a conversation ending on the resident's reply (#725)"
-        )
-    return len(reasons)
-
-
 def shell_env_excludes(env):
     """The tool shell's exclude list, as a TOML array literal.
 
@@ -1096,10 +1052,6 @@ def _run_chaos_once(
     env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
     if getattr(_activity_context, "memory_aggregation", False):
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
-    # The Stop hook decides whether its journal invitation can be sent on this
-    # route (#725); it only sees the model in its payload, not the provider.
-    env["SOULSHOUSE_ROUTE_PROVIDER"] = str(provider or AGENT_PROVIDER or "")
-    env["SOULSHOUSE_ROUTE_MODEL"] = str(model or "")
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
         reporter.cancel_event = getattr(_activity_context, "cancel_event", None)
@@ -1362,6 +1314,14 @@ def instrumented_response(
         response["telegram_delivery_run_id"] = telegram_run[0]
     if roll:
         response["session_roll_reason"] = roll
+    if result.returncode != 0:
+        failure = runtime_failure(events["errors"], result.stderr)
+        if failure:
+            response["runtime_failure"] = failure
+            log.warning(
+                f"trigger failed session_id={session_id} rc={result.returncode} "
+                f"runtime_failure={failure['code']}: {failure['message']}"
+            )
     error_kind = classify_provider_error(response, runtime.get("provider"))
     if error_kind:
         response["error_kind"] = error_kind
@@ -2690,6 +2650,70 @@ def _parse_timestamp(value):
 def _iso_timestamp(value):
     parsed = _parse_timestamp(value)
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if parsed else None
+
+
+RUNTIME_FAILURE_LIMIT = 600
+_RUNTIME_FAILURE_REDACTIONS = (
+    # Authorization headers and bearer tokens.
+    (re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 [redacted]"),
+    # key=value / "key": "value" secrets: the whole value, quoted or not,
+    # including spaces and escapes inside the quotes.
+    (re.compile(
+        r"""(?ix)
+        (?P<key>["']?[\w-]*(?:token|secret|password|passwd|api[_-]?key|apikey|authorization|
+                              credential|cookie|session|private[_-]?key)[\w-]*["']?)
+        (?P<sep>\s*[:=]\s*)
+        (?P<value>"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s,;}\]]+)
+        """),
+     lambda m: m.group("key") + m.group("sep") + (
+         m.group("value")[0] + "[redacted]" + m.group("value")[0]
+         if m.group("value")[:1] in ("\"", "'") else "[redacted]")),
+    # Provider key shapes (OpenAI/Anthropic sk-, Google AIza/ya29, GitHub gh*_).
+    (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_.-]+|gh[pousr]_[A-Za-z0-9]{20,})"),
+     "[redacted]"),
+    # Query strings carry signed URLs and keys; keep the path.
+    (re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*"), r"\1?[redacted]"),
+    (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), "[email]"),
+    # Any other long opaque run (keys, signatures, JWT segments).
+    (re.compile(r"[A-Za-z0-9_\-+=]{40,}"), "[redacted]"),
+)
+
+
+def runtime_failure(errors, stderr):
+    """Why a failed run failed, as a bounded, redacted field (#843).
+
+    Chaos reports a failed turn as an error event ("antigravity_runtime_failed:
+    Antigravity invocation failed with status ERROR; ..."), and writes to
+    stderr only when something below it does. The event wins; stderr is the
+    fallback. The text is the runtime's diagnosis, not the conversation, but it
+    can quote paths and provider responses, so known secret shapes are
+    redacted before it leaves the container."""
+    text = ""
+    for raw in reversed(errors or []):
+        try:
+            event = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        error = event.get("error")
+        text = event.get("message") or (error.get("message") if isinstance(error, dict) else error) or ""
+        if text:
+            break
+    if not text:
+        lines = [line for line in (stderr or "").splitlines() if line.strip()]
+        text = "\n".join(lines[-5:])
+    text = str(text).strip()
+    if not text:
+        return None
+    code = "runtime_error"
+    match = re.match(r"([a-z][a-z0-9_]{2,63}):\s*", text)
+    if match:
+        code, text = match.group(1), text[match.end():]
+    for pattern, replacement in _RUNTIME_FAILURE_REDACTIONS:
+        text = pattern.sub(replacement, text)
+    text = " ".join(text.split())
+    if len(text) > RUNTIME_FAILURE_LIMIT:
+        text = text[:RUNTIME_FAILURE_LIMIT - 1] + "…"
+    return {"code": code, "message": text}
 
 
 def classify_provider_error(response, provider):

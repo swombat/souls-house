@@ -2,10 +2,13 @@ module Api
   module V1
     # The account's visual tag palette. GET lists it (a resident may name an
     # account where it is a guest). PATCH /api/v1/visual_tags/:id switches
-    # one tag's pins_to_top, the only thing it changes: a resident in its
+    # one tag's pins_to_top and/or hides_from_list, the only things it
+    # changes: a resident in its
     # home account only, a person where they may manage the account. Label,
     # icon and colour stay with /api/v1/account/visual_tags (people only).
     class VisualTagsController < BaseController
+
+      SWITCHES = %i[pins_to_top hides_from_list].freeze
 
       before_action :set_tag, only: :update
 
@@ -14,11 +17,13 @@ module Api
       end
 
       def update
-        unless params.key?(:pins_to_top) && [ true, false ].include?(params[:pins_to_top])
-          return render json: { error: "Provide pins_to_top (true or false)" }, status: :unprocessable_entity
+        switches = SWITCHES.select { |key| params.key?(key) }
+        if switches.empty? || switches.any? { |key| ![ true, false ].include?(params[key]) }
+          return render json: { error: "Provide pins_to_top and/or hides_from_list (true or false)" },
+                        status: :unprocessable_entity
         end
 
-        @tag.update!(pins_to_top: params[:pins_to_top])
+        @tag.update!(switches.to_h { |key| [ key, params[key] ] })
         audit(@tag)
         render json: { visual_tag: @tag.as_json }
       rescue ActiveRecord::RecordInvalid => error
@@ -53,7 +58,7 @@ module Api
           account: tag.account,
           action: "update_visual_tag",
           auditable: tag,
-          data: { label: tag.label, pins_to_top: tag.pins_to_top?, **by },
+          data: { label: tag.label, pins_to_top: tag.pins_to_top?, hides_from_list: tag.hides_from_list?, **by },
           ip_address: request.remote_ip,
           user_agent: request.user_agent
         )

@@ -26,6 +26,7 @@ soulshouse-append-journal --help
 soulshouse-usage --help
 soulshouse-youtube --help
 soulshouse-x --help
+soulshouse-linkedin --help
 soulshouse-comms --help
 ```
 
@@ -313,6 +314,83 @@ still unknown or still pending. `PATCH /api/v1/x_posts/POST_ID` with
 `{"resolution":"posted","tweet_url":"…"}` or `{"resolution":"not_posted"}`
 resolves an unknown post.
 
+## Posting to LinkedIn
+
+If the account owner has connected a LinkedIn profile (Integrations →
+LinkedIn) and switched you on for that connection, you can publish to it. A
+post is **public, under that person's own name**: do it only when they have
+asked for it. Personal profiles only; company Pages are not supported.
+
+```sh
+soulshouse-linkedin post "Text of the post"
+printf '%s\n' "$TEXT" | soulshouse-linkedin post --text-file -
+soulshouse-linkedin post --image chart.png "Text to go with it"
+soulshouse-linkedin post --video clip.mp4 "Text to go with it"
+soulshouse-linkedin status POST_ID
+```
+
+On success the post's linkedin.com URL is printed. You never hold the LinkedIn
+token; the house posts for you and keeps the record.
+
+- **Text**: up to 3,000 characters, sent exactly as written. Characters
+  LinkedIn treats as markup (`( ) [ ] { } < > @ # | * _ ~ \`) are escaped, so
+  hashtags and mentions are plain text, not links.
+- **Media**: one image (JPEG, PNG or GIF, up to 10 MB) or one MP4 video
+  (75 KB to 200 MB, 3 seconds to 30 minutes). A media post is uploaded in the
+  background: the API answers `202` with the post's `id` and status `pending`,
+  and the helper waits (polling `GET /api/v1/linkedin_posts/POST_ID`) until it
+  is posted or failed; `--no-wait` returns at once. Video processing at
+  LinkedIn can take a few minutes.
+- **Status**: `soulshouse-linkedin status POST_ID` prints the URL and exits 0
+  only for a post that is on LinkedIn; a failed post (with its reason), one
+  resolved as not posted, or an unknown outcome exits 1 with a sentence.
+- **Switching off works mid-upload**: the owner's switch, the connection and
+  the sign-in are checked again just before the post is published, so a
+  switch-off, disconnect or ended sign-in during a long upload means nothing
+  is posted (status `failed`).
+- **Several connections**: if more than one LinkedIn connection is shared with
+  you, choose with `--connection svc_N` (the id in your service manifest).
+- **No house limit**: LinkedIn's own daily limit for a member still applies
+  (`429`).
+- **Sign-in ends after 60 days**: LinkedIn member sign-ins cannot be renewed by
+  the house. The owner is emailed a week before and when it ends; after that a
+  post is refused with `409` and a sentence saying so. Tell the person; the
+  owner reconnects LinkedIn from Integrations.
+- **Idempotency**: as for X. The helper prints its random key to stderr before
+  sending; rerun with `--key <the same key>` to retry safely. A new key is a
+  new post.
+- **Outcome unknown**: if LinkedIn may have published the post but souls.house
+  could not confirm it, the post is stored as `outcome_unknown` and never
+  retried automatically. A post left `pending` with no activity for 20
+  minutes is treated the same way. Check the profile, then record what
+  happened (nothing is posted):
+
+```sh
+soulshouse-linkedin resolve POST_ID --posted https://www.linkedin.com/feed/update/urn:li:share:7123456789012345678/
+soulshouse-linkedin resolve POST_ID --not-posted
+```
+
+Direct API equivalent (multipart form; `media` is optional):
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -F text='Text of the post' -F media=@clip.mp4 \
+  "$SOULSHOUSE_APP_URL/api/v1/linkedin_posts"
+```
+
+Responses: `201` posted (`post_urn`, `url`); `200` a repeated key whose post was
+published; `202` a media post queued; `403` no LinkedIn connection shared with
+you; `409` the sign-in has ended, or a repeated key whose post is unknown or
+was resolved as not posted; `422` empty, over-long text, an unsupported or
+oversized file, a key reused for a different post, or LinkedIn rejecting the
+post (for example as a duplicate); `429` LinkedIn's limit; `502` LinkedIn
+refused (missing permission); `504` outcome unknown on the first attempt.
+`PATCH /api/v1/linkedin_posts/POST_ID` with
+`{"resolution":"posted","post_url":"…"}` or `{"resolution":"not_posted"}`
+resolves an unknown post.
+
 ## Public HTML stones
 
 Stones publish a single self-contained HTML page for **anyone with its public
@@ -542,7 +620,7 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 Response:
 
 ```json
-{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false}]}
+{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false,"hides_from_list":false}]}
 ```
 
 The palette defaults to the key's home account. A resident can pass `account_id`
@@ -568,6 +646,13 @@ curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 It returns `{"visual_tag":{...}}` and changes nothing else about the tag;
 `pins_to_top` must be `true` or `false`, and switching the Pin tag off is 422.
 The CLI equivalent is `souls tags pin TAG` / `souls tags unpin TAG` (ID or label).
+
+A tag can instead hide its conversations from the sidebar: `"hides_from_list": true`
+(same PATCH, alone or with `pins_to_top`). They are not archived; taking the tag
+off brings a conversation back, and the sidebar's Filter menu shows hidden ones
+or one tag's conversations. A tag can't both keep its conversations at the top
+and hide them (422), and the Pin tag never hides. CLI: `souls tags hide TAG` /
+`souls tags unhide TAG`.
 
 Humans edit the palette in Account Settings > Interface using colour swatches
 and a searchable visual browser of all 1,512 Phosphor icons. Icon keys are the

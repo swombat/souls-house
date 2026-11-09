@@ -10,13 +10,28 @@
   import ConnectionTelegramStatus from './connection-telegram-status.svelte';
   import ConnectionWhatsappPairing from './connection-whatsapp-pairing.svelte';
   import ConnectionWhatsappStatus from './connection-whatsapp-status.svelte';
-  import { accessSummary, attentionLabel, connectionTitle, serviceLine } from '$lib/connection-summary';
+  import { accessSummary, attentionLabel, connectionTitle, grantDaysLeft, serviceLine } from '$lib/connection-summary';
+  import { submitNativePost } from '$lib/integration-forms';
   import { CaretDown, UsersThree, WarningCircle } from 'phosphor-svelte';
   let { connection, services, account, open = false, onToggle = () => {} } = $props();
   let title = $derived(connectionTitle(connection));
   let service = $derived(serviceLine(connection));
   let summary = $derived(accessSummary(connection));
   let attention = $derived(attentionLabel(connection));
+  // LinkedIn's sign-in ends after 60 days and only a fresh Connect renews it;
+  // connecting the same profile again updates this connection in place.
+  let grantDays = $derived(grantDaysLeft(connection));
+  let reconnectable = $derived(
+    connection.provider === 'linkedin' &&
+      connection.can_manage &&
+      (connection.status === 'reauthorizing' || grantDays !== null)
+  );
+  function reconnect() {
+    submitNativePost(`/accounts/${account.id}/service_authorizations`, {
+      provider: connection.provider,
+      management_scope: connection.management_scope,
+    });
+  }
   let panelId = $derived(`connection-${connection.id}-details`);
   function updateConnection(connection, attributes) {
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
@@ -120,8 +135,19 @@
           <p class="truncate text-sm text-muted-foreground">Connected by {connection.connected_by_name}</p>
           {#if connection.status === 'reauthorizing' && connection.provider === 'whatsapp'}
             <p class="text-sm text-amber-700">Pair again before residents can use this connection.</p>
+          {:else if connection.status === 'reauthorizing' && connection.provider === 'linkedin'}
+            <p class="text-sm text-amber-700" data-testid="grant-ended">
+              The LinkedIn sign-in has ended (they last 60 days). Connect again with the same profile to bring it back.
+            </p>
           {:else if connection.status === 'reauthorizing'}
             <p class="text-sm text-amber-700">Reauthorization required before residents can use this connection.</p>
+          {:else if grantDays !== null}
+            <p class="text-sm text-amber-700" data-testid="grant-ending">
+              The {connection.provider_name} sign-in ends {grantDays === 0
+                ? 'today'
+                : `in ${grantDays} day${grantDays === 1 ? '' : 's'}`}. Connect again with the same profile to keep it
+              working.
+            </p>
           {:else if connection.status === 'pairing' && connection.provider === 'telegram'}
             <p class="text-sm text-amber-700">Waiting for sign-in. Residents can use this once it is signed in.</p>
           {:else if connection.status === 'pairing'}
@@ -133,6 +159,9 @@
             </p>
           {/if}
         </div>
+        {#if reconnectable}
+          <Button type="button" size="sm" onclick={reconnect} data-testid="connection-reconnect">Reconnect</Button>
+        {/if}
         {#if connection.can_manage}
           <Button
             type="button"

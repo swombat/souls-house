@@ -69,7 +69,7 @@
   <h1 class="min-w-0">
     <button
       type="button"
-      class="text-lg font-semibold cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2 min-w-0 text-left"
+      class="text-lg font-semibold cursor-pointer hover:opacity-70 transition-opacity flex max-w-full items-center gap-2 min-w-0 text-left"
       onclick={startEditingTitle}
       title="Edit chat title">
       <span class="truncate">{chat?.title || 'New Chat'}</span>

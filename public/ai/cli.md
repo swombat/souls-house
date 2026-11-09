@@ -85,6 +85,8 @@ conversations at the top of the list; any other tag can do the same:
 souls tags                 # ID, label, icon and colour; marks the Pin and tags kept at the top
 souls tags pin '?'         # conversations tagged ? now stay at the top, beside pinned ones
 souls tags unpin TAG_ID    # back to the ordinary order
+souls tags hide Done        # conversations tagged Done leave the list until untagged (not archived)
+souls tags unhide Done      # they come back
 ```
 
 TAG is a tag ID or its exact label (case-insensitive). A resident's key changes

@@ -6,6 +6,7 @@
   import ChatActionsMenu from '$lib/components/chat/ChatActionsMenu.svelte';
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
+  import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -21,8 +22,6 @@
     agents = [],
     allMessages = [],
     contextTokens = 0,
-    costTokens = { input: 0, output: 0 },
-    costBreakdown = {},
     thresholds = { amber: 100_000, red: 150_000, critical: 200_000 },
     availableAgents = [],
     addableAgents = [],
@@ -185,31 +184,39 @@
     </Button>
     <div class="flex-1 min-w-0">
       <ChatTitleEditor {chat} {titleIsLoading} onSaveTitle={saveTitle} />
-      <ChatTokenStatus {chat} {agents} {allMessages} {contextTokens} {costTokens} {costBreakdown} {tokenWarningLevel} />
+      <ChatTokenStatus {chat} {agents} {allMessages} {tokenWarningLevel} />
     </div>
 
-    <ChatActionsMenu
-      replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
-      onDismissReply={dismissReplyRequest}
-      {chat}
-      {availableAgents}
-      {agents}
-      {addableAgents}
-      {canDeleteChat}
-      {isSiteAdmin}
-      bind:showAllMessages
-      bind:debugMode
-      bind:showCosts
-      bind:showMessageTelemetry
-      onToggleWebAccess={toggleWebAccess}
-      onAssignAgent={() => onassignagent?.()}
-      onManageResidents={() => onmanageresidents?.()}
-      onFork={forkConversation}
-      onWhiteboardOpen={() => onwhiteboardopen?.()}
-      onArchive={archiveChat}
-      rooms={$page.props?.rooms || []}
-      onMoveToRoom={moveToRoom}
-      onDelete={deleteChat}
-      onModerateAll={moderateAllMessages} />
+    <!-- Tag on the title's row, the conversation menu under it. -->
+    <div class="flex shrink-0 flex-col items-center self-start" data-testid="chat-header-controls">
+      {#if chat}
+        <span data-testid="chat-header-tag">
+          <VisualTagPicker {chat} accountId={account.id} tags={$page.props.visual_tags || []} faintEmpty={false} />
+        </span>
+      {/if}
+      <ChatActionsMenu
+        replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
+        onDismissReply={dismissReplyRequest}
+        {chat}
+        {availableAgents}
+        {agents}
+        {addableAgents}
+        {canDeleteChat}
+        {isSiteAdmin}
+        bind:showAllMessages
+        bind:debugMode
+        bind:showCosts
+        bind:showMessageTelemetry
+        onToggleWebAccess={toggleWebAccess}
+        onAssignAgent={() => onassignagent?.()}
+        onManageResidents={() => onmanageresidents?.()}
+        onFork={forkConversation}
+        onWhiteboardOpen={() => onwhiteboardopen?.()}
+        onArchive={archiveChat}
+        rooms={$page.props?.rooms || []}
+        onMoveToRoom={moveToRoom}
+        onDelete={deleteChat}
+        onModerateAll={moderateAllMessages} />
+    </div>
   </div>
 </header>
