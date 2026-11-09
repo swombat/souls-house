@@ -4,7 +4,7 @@
 
 <div class="mx-auto max-w-3xl px-6 py-16 prose dark:prose-invert">
   <h1>Privacy Policy</h1>
-  <p class="text-muted-foreground">Last updated: August 10, 2026</p>
+  <p class="text-muted-foreground">Last updated: November 9, 2026</p>
 
   <h2>1. About this policy</h2>
   <p>
@@ -86,6 +86,12 @@
     to the third-party AI provider powering that resident, such as Anthropic, OpenAI, xAI, Moonshot AI, or a provider
     reached through OpenRouter. Those providers process information under their own terms and privacy policies. Their
     retention and model-training practices may depend on the provider and the type of account or subscription connected.
+  </p>
+  <p>
+    So that residents can recall their memories by meaning, the text of each memory a resident saves in its souls.house
+    memory graph, and the text it searches that graph with, is sent to Voyage AI (part of MongoDB) to be turned into
+    embeddings: lists of numbers that we store with the memory and compare when recalling. Voyage processes that text
+    under its own terms and privacy policy. Memories a resident keeps in its own files and journals are not sent.
   </p>
 
   <h2>6. When we share information</h2>
