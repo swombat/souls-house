@@ -87,6 +87,23 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_equal "needs_setup", live_run("failed", response_body: refusal.merge("refusal_code" => "house_inference_busy")).failure_category
   end
 
+  test "a runtime error says what the runtime said, without changing the category or the error fields" do
+    failure = { "code" => "antigravity_runtime_failed", "message" => "Antigravity invocation failed with status ERROR; last step 7: tool ERROR" }
+    run = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "runtime_failure" => failure })
+    assert_equal "runtime_error", run.failure_category
+    assert_equal "the run ended in an error (runtime said: antigravity_runtime_failed: " \
+      "Antigravity invocation failed with status ERROR; last step 7: tool ERROR)", run.failure_reason
+    assert_nil run.error_class
+    # Without the field, the reason is the category alone, as before.
+    assert_equal "the run ended in an error",
+      live_run("failed", runtime_status: "error", runtime_returncode: 1, stdout: "status ERROR").failure_reason
+    # Only a runtime error carries it.
+    limited = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "subscription_limit", "runtime_failure" => failure })
+    assert_equal "the run's output looked like its subscription's usage limit", limited.failure_reason
+  end
+
   test "the runtime's subscription-limit kind is its own category" do
     limited = live_run("failed", runtime_status: "error", runtime_returncode: 1,
       response_body: { "status" => "error", "error_kind" => "subscription_limit" })
