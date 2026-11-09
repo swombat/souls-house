@@ -20,31 +20,37 @@ class LinkedinGrantExpiryJob < ApplicationJob
 
   private
 
+  # Status, grant end and latch are all read after taking the row lock
+  # (with_lock reloads), so a reconnect or disconnect that commits after the
+  # batch was loaded is judged on its own grant, never the stale one.
   def notify(connection, now)
-    expires_at = connection.grant_expires_at
-    return unless expires_at
+    connection.with_lock do
+      next unless connection.status.in?(%w[connected reauthorizing])
 
-    key = expires_at.utc.iso8601
-    if expires_at <= now
-      latch(connection, "ended_for", key) do
-        connection.update!(status: "reauthorizing") if connection.status == "connected"
-        ServiceConnectionMailer.grant_ended(connection, expires_at).deliver_later
-      end
-    elsif expires_at <= now + WARN_BEFORE && connection.status == "connected"
-      latch(connection, "warned_for", key) do
-        ServiceConnectionMailer.grant_expiring(connection, expires_at).deliver_later
+      expires_at = connection.grant_expires_at
+      next unless expires_at
+
+      key = expires_at.utc.iso8601
+      if expires_at <= now
+        latch(connection, "ended_for", key) do
+          connection.update!(status: "reauthorizing") if connection.status == "connected"
+          ServiceConnectionMailer.grant_ended(connection, expires_at).deliver_later
+        end
+      elsif expires_at <= now + WARN_BEFORE && connection.status == "connected"
+        latch(connection, "warned_for", key) do
+          ServiceConnectionMailer.grant_expiring(connection, expires_at).deliver_later
+        end
       end
     end
   end
 
+  # Called with the row already locked.
   def latch(connection, name, key)
-    connection.with_lock do
-      notices = connection.connector_state.to_h.fetch("grant_notices", {})
-      next if notices[name] == key
+    notices = connection.connector_state.to_h.fetch("grant_notices", {})
+    return if notices[name] == key
 
-      yield
-      connection.update!(connector_state: connection.connector_state.to_h.merge("grant_notices" => notices.merge(name => key)))
-    end
+    yield
+    connection.update!(connector_state: connection.connector_state.to_h.merge("grant_notices" => notices.merge(name => key)))
   end
 
 end

@@ -81,12 +81,52 @@ class LinkedinPublisherTest < ActiveSupport::TestCase
     assert_match(/Bad codec/, error.message)
   end
 
+  # Mira on 169cdeae: only AVAILABLE is ready. A 403 stops; a 404 is waited
+  # on (the record may not exist yet just after finalize) and fails at the
+  # deadline.
+  test "a 403 on the video's status is not sent" do
+    stub_one_part_video("V3")
+    stub_request(:get, %r{/rest/videos/}).to_return(status: 403)
+
+    error = assert_raises(LinkedinPublisher::NotSent) { @publisher.upload_video(StringIO.new("abcd"), size: 4) }
+    assert_equal "media_failed", error.reason
+    assert_match(/403/, error.message)
+  end
+
+  test "a 404 just after finalize is waited on until AVAILABLE" do
+    stub_one_part_video("V4")
+    stub_request(:get, %r{/rest/videos/})
+      .to_return({ status: 404 }, { status: 200, body: { status: "AVAILABLE" }.to_json })
+
+    assert_equal "urn:li:video:V4", @publisher.upload_video(StringIO.new("abcd"), size: 4)
+  end
+
+  test "a video that stays 404 fails at the deadline and is not sent" do
+    stub_one_part_video("V5")
+    stub_request(:get, %r{/rest/videos/}).to_return(status: 404)
+    publisher = LinkedinPublisher.new(access_token: "tok", author_urn: "urn:li:person:abc",
+                                      sleeper: ->(_) { travel(LinkedinPublisher::VIDEO_POLL_LIMIT + 1.minute) })
+
+    error = assert_raises(LinkedinPublisher::NotSent) { publisher.upload_video(StringIO.new("abcd"), size: 4) }
+    assert_match(/not reported the video as available/, error.message)
+  end
+
   test "refuses an upload URL outside linkedin.com" do
     stub_request(:post, "https://api.linkedin.com/rest/images?action=initializeUpload")
       .to_return(status: 200, body: { value: { image: "urn:li:image:I1", uploadUrl: "https://evil.example/up" } }.to_json)
 
     error = assert_raises(LinkedinPublisher::NotSent) { @publisher.upload_image(StringIO.new("png"), content_type: "image/png") }
     assert_match(/outside linkedin.com/, error.message)
+  end
+
+  private
+
+  def stub_one_part_video(id)
+    stub_request(:post, "https://api.linkedin.com/rest/videos?action=initializeUpload")
+      .to_return(status: 200, body: { value: { video: "urn:li:video:#{id}", uploadToken: "",
+                                               uploadInstructions: [ { uploadUrl: "https://www.linkedin.com/up/#{id}", firstByte: 0, lastByte: 3 } ] } }.to_json)
+    stub_request(:put, "https://www.linkedin.com/up/#{id}").to_return(status: 200, headers: { "ETag" => "e" })
+    stub_request(:post, "https://api.linkedin.com/rest/videos?action=finalizeUpload").to_return(status: 200)
   end
 
 end

@@ -138,6 +138,43 @@ module Api
         assert_equal 0, LinkedinPost.count
       end
 
+      # Mira's P1 on 169cdeae: the upload can take minutes, and whatever
+      # changes during it must be seen at the create-post boundary.
+      test "access switched off during the upload: nothing is posted" do
+        image_upload_that { @access.update!(enabled: false) }
+
+        post_image_and_run_job
+
+        assert_not_requested :post, POSTS_URL
+        stored = LinkedinPost.last
+        assert_equal "failed", stored.status
+        assert_equal "access_removed", stored.failure_reason
+      end
+
+      test "connection revoked during the upload: nothing is posted" do
+        image_upload_that { @connection.update_columns(status: "revoked") }
+
+        post_image_and_run_job
+
+        assert_not_requested :post, POSTS_URL
+        assert_equal "failed", LinkedinPost.last.status
+        assert_equal "token_unavailable", LinkedinPost.last.failure_reason
+      end
+
+      test "reconnected during the upload: the post goes out with the new token" do
+        create = image_upload_that(token: "li-fresh") do
+          @connection.replace_credential_payload_without_reconciliation!(
+            @connection.reload.credential_payload_hash.merge("access_token" => "li-fresh", "expires_at" => 60.days.from_now.utc.iso8601)
+          )
+        end
+
+        post_image_and_run_job
+
+        assert_requested create
+        assert_not_requested :post, POSTS_URL, headers: { "Authorization" => "Bearer li-access" }
+        assert_equal "posted", LinkedinPost.last.status
+      end
+
       test "a resident cannot read another resident's post" do
         stub_request(:post, POSTS_URL).to_return(status: 201, headers: { "x-restli-id" => "urn:li:share:7100000000000000005" })
         post_linkedin(text: "Mine", key: "k1")
@@ -159,6 +196,30 @@ module Api
       def post_linkedin(text:, key:)
         extra = key ? { "Idempotency-Key" => key } : {}
         post "/api/v1/linkedin_posts", params: { text: }, headers: headers.merge(extra), as: :json
+      end
+
+      # Stubs an image upload whose PUT runs the block (the change made while
+      # the upload is in flight); returns the create-post stub, which only
+      # matches the given bearer token.
+      def image_upload_that(token: "li-access", &during_upload)
+        stub_request(:post, "https://api.linkedin.com/rest/images?action=initializeUpload")
+          .to_return(status: 200, body: { value: { image: "urn:li:image:I7", uploadUrl: "https://www.linkedin.com/dms-uploads/I7" } }.to_json)
+        stub_request(:put, "https://www.linkedin.com/dms-uploads/I7").to_return do |_request|
+          during_upload.call
+          { status: 201 }
+        end
+        stub_request(:post, POSTS_URL).to_return(status: 201, headers: { "x-restli-id" => "urn:li:share:7100000000000000009" })
+        stub_request(:post, POSTS_URL)
+          .with(headers: { "Authorization" => "Bearer #{token}" })
+          .to_return(status: 201, headers: { "x-restli-id" => "urn:li:share:7100000000000000008" })
+      end
+
+      def post_image_and_run_job
+        post "/api/v1/linkedin_posts",
+             params: { text: "During the upload", media: fixture_file_upload("test_image.png", "image/png") },
+             headers: headers.merge("Idempotency-Key" => "upload-#{SecureRandom.hex(4)}")
+        assert_response :accepted
+        perform_enqueued_jobs(only: LinkedinPostJob)
       end
 
     end

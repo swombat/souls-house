@@ -156,18 +156,24 @@ class LinkedinPoster
   def deliver(post)
     return unless claim(post)
 
+    # A first look before the (possibly long) upload, so a post that could
+    # never be sent fails fast. It decides nothing: access, connection and
+    # token are all checked again, under locks, at the create-post boundary.
     connection = post.service_connection
-    unless agent.service_connections.merge(AgentServiceAccess.effective).exists?(id: connection.id)
-      return finish!(post, status: "failed", failure_reason: "access_removed", error_message: "Nothing was sent: this resident's access to the LinkedIn connection was switched off")
-    end
+    return access_removed!(post) unless effective_access?(connection)
 
     adapter = connection.definition.adapter
-    token = adapter.current_access_token(connection)
-    publisher = LinkedinPublisher.new(access_token: token, author_urn: adapter.author_urn(connection), on_progress: -> { post.touch })
-
-    media_urn = upload_media(post, publisher) if post.media_kind
-    publish(post, publisher, media_urn)
+    if post.media_kind
+      uploader = LinkedinPublisher.new(
+        access_token: adapter.current_access_token(connection),
+        author_urn: adapter.author_urn(connection),
+        on_progress: -> { post.touch }
+      )
+      media_urn = upload_media(post, uploader)
+    end
+    publish(post, media_urn)
   rescue Services::LinkedinAdapter::Expired => e
+    mark_reauthorizing(post.service_connection)
     finish!(post, status: "failed", failure_reason: "reconnect_needed", error_message: e.message.truncate(500))
   rescue Services::AdapterError, ArgumentError => e
     finish!(post, status: "failed", failure_reason: "token_unavailable", error_message: "Nothing was sent: #{e.message}".truncate(500))
@@ -203,14 +209,28 @@ class LinkedinPoster
     raise LinkedinPublisher::NotSent.new("media_failed", "Nothing was sent: the stored file is gone")
   end
 
-  # Under the post's row lock from the last pending check through recording
-  # LinkedIn's answer: a resolver takes the same lock, so it either resolves
-  # first (and nothing is sent) or sees the recorded outcome.
-  def publish(post, publisher, media_urn)
+  # The create-post boundary. Under the post's row lock from the last pending
+  # check through recording LinkedIn's answer: a resolver takes the same
+  # lock, so it either resolves first (and nothing is sent) or sees the
+  # recorded outcome. The connection, the resident's guest seat and access
+  # row are locked too (in the order set_service_access! takes them), so a
+  # switch-off, disconnect or reconnect either commits first and is seen
+  # here, or waits until LinkedIn has answered. The token and author are read
+  # from the connection as it is now, not as it was before the upload.
+  def publish(post, media_urn)
     LinkedinPost.transaction do
       post.lock!
       next unless post.status == "pending"
 
+      connection = post.service_connection
+      adapter = connection.definition.adapter
+      # Locks the connection row and raises unless it is still connected.
+      token = adapter.current_access_token(connection)
+      GuestMembership.lock("FOR SHARE").find_by(agent_id: post.agent_id, account_id: connection.account_id)
+      access = AgentServiceAccess.lock.find_by(agent_id: post.agent_id, service_connection_id: connection.id)
+      next access_removed!(post) unless access && AgentServiceAccess.effective.exists?(id: access.id)
+
+      publisher = LinkedinPublisher.new(access_token: token, author_urn: adapter.author_urn(connection))
       begin
         urn = publisher.create_post(text: post.text, media_urn:)
         finish!(post, status: "posted", post_urn: urn)
@@ -218,6 +238,15 @@ class LinkedinPoster
         finish!(post, status: "outcome_unknown", failure_reason: "outcome_unknown", error_message: e.message.truncate(500))
       end
     end
+  end
+
+  def effective_access?(connection)
+    agent.service_connections.merge(AgentServiceAccess.effective).exists?(id: connection.id)
+  end
+
+  def access_removed!(post)
+    finish!(post, status: "failed", failure_reason: "access_removed",
+                  error_message: "Nothing was sent: this resident's access to the LinkedIn connection was switched off")
   end
 
   def mark_reauthorizing(connection)

@@ -143,19 +143,23 @@ class LinkedinPublisher
     loop do
       response = perform(:get, URI("#{API_BASE}/videos/#{ERB::Util.url_encode(video_urn)}"))
       code = response.code.to_i
-      # A token with only w_member_social may not be allowed to read the
-      # video back; LinkedIn then takes the post and finishes processing
-      # on its side.
-      return if code.in?([ 403, 404 ])
-      raise NotSent.new("media_failed", "LinkedIn could not report the video's status (#{code})") unless code.between?(200, 299)
+      # Only AVAILABLE means ready. A 404 just after finalize may be LinkedIn
+      # not having the record yet, so it is waited on like PROCESSING (and
+      # fails at the deadline); a 403 or anything else stops: nothing is
+      # posted on a video whose state the house cannot see.
+      if code == 403
+        raise NotSent.new("media_failed", "LinkedIn would not show the video's processing status (403), so nothing was posted")
+      elsif code != 404 && !code.between?(200, 299)
+        raise NotSent.new("media_failed", "LinkedIn could not report the video's status (#{code})")
+      end
 
-      data = parse(response.body)
+      data = code == 404 ? {} : parse(response.body)
       case data["status"]
       when "AVAILABLE" then return
       when "PROCESSING_FAILED"
         raise NotSent.new("media_failed", "LinkedIn could not process the video: #{data['processingFailureReason'] || 'no reason given'}".truncate(300))
       end
-      raise NotSent.new("media_failed", "LinkedIn was still processing the video after #{VIDEO_POLL_LIMIT.inspect}") if Time.current > deadline
+      raise NotSent.new("media_failed", "LinkedIn had not reported the video as available after #{VIDEO_POLL_LIMIT.inspect}; nothing was posted") if Time.current > deadline
 
       on_progress.call
       sleeper.call(VIDEO_POLL_INTERVAL)

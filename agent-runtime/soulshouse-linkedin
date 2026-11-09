@@ -127,21 +127,34 @@ def report(result, status_code, args):
     elif result.get("url"):
         print(result["url"])
     state = result.get("status")
+    post_id = result.get("id")
     if state == "outcome_unknown" or (state == "pending" and status_code != 202):
         print(
-            f"Outcome unknown for post {result.get('id')}. Check the profile on LinkedIn, then run "
-            f"'soulshouse-linkedin resolve {result.get('id')} --posted <url>' or '--not-posted'. "
+            f"Outcome unknown for post {post_id}. Check the profile on LinkedIn, then run "
+            f"'soulshouse-linkedin resolve {post_id} --posted <url>' or '--not-posted'. "
             "Do not post it again with a new key.",
             file=sys.stderr,
         )
         return 1
     if state == "pending":
-        print(f"Queued as post {result.get('id')}; check it with 'soulshouse-linkedin status {result.get('id')}'.", file=sys.stderr)
+        print(f"Queued as post {post_id}; check it with 'soulshouse-linkedin status {post_id}'.", file=sys.stderr)
         return 0
+    if state == "failed":
+        reason = result.get("failure_reason") or "failed"
+        print(f"Post {post_id} was not sent ({reason}): {result.get('error') or 'no detail given'}", file=sys.stderr)
+        return 1
+    if state == "resolved_not_posted":
+        print(f"Post {post_id} was resolved as not posted; nothing is on LinkedIn for this key.", file=sys.stderr)
+        return 1
     if status_code >= 300:
         print(f"souls.house returned HTTP {status_code}: {result.get('error')}", file=sys.stderr)
         return 1
-    return 0
+    if state in ("posted", "resolved_posted"):
+        if not args.json and not result.get("url"):
+            print(f"Post {post_id} is {state} ({result.get('post_urn') or 'no URN recorded'})")
+        return 0
+    print(f"Post {post_id} has an unexpected status: {state!r}", file=sys.stderr)
+    return 1
 
 
 def main():

@@ -341,6 +341,13 @@ token; the house posts for you and keeps the record.
   and the helper waits (polling `GET /api/v1/linkedin_posts/POST_ID`) until it
   is posted or failed; `--no-wait` returns at once. Video processing at
   LinkedIn can take a few minutes.
+- **Status**: `soulshouse-linkedin status POST_ID` prints the URL and exits 0
+  only for a post that is on LinkedIn; a failed post (with its reason), one
+  resolved as not posted, or an unknown outcome exits 1 with a sentence.
+- **Switching off works mid-upload**: the owner's switch, the connection and
+  the sign-in are checked again just before the post is published, so a
+  switch-off, disconnect or ended sign-in during a long upload means nothing
+  is posted (status `failed`).
 - **Several connections**: if more than one LinkedIn connection is shared with
   you, choose with `--connection svc_N` (the id in your service manifest).
 - **No house limit**: LinkedIn's own daily limit for a member still applies
