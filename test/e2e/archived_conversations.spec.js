@@ -72,16 +72,23 @@ for (const mobile of [false, true]) {
       await (await filterBox(page, 'Archived')).check();
       await expect(archivedLink).toBeVisible();
       await closeFilter(page);
+      // The URL changes when the visit starts; the sidebar re-renders when it finishes,
+      // which closes a Filter menu opened in between. Wait for the visit's own response
+      // then reopen the menu if a late render shut it.
+      const visit = page.waitForResponse(
+        (r) => r.url().includes('show_archived=true') && Boolean(r.request().headers()['x-inertia'])
+      );
       await archivedLink.click();
       await expect(page).toHaveURL(/show_archived=true/);
-      // The URL changes when the visit starts; the sidebar re-renders when it finishes,
-      // which closes a Filter menu opened in between. Let the visit land first.
-      await page.waitForLoadState('networkidle');
+      await visit;
       if (mobile) {
-        await sidebar.getByRole('button', { name: 'Close sidebar', exact: true }).click();
+        // Landing the visit remounts the page, which slides the mobile sidebar shut.
+        await expect(sidebar.getByTestId('chat-filter-trigger')).not.toBeInViewport();
         await openSidebar();
       }
-      await expect(await filterBox(page, 'Archived')).toBeChecked();
+      await expect(async () => {
+        await expect(await filterBox(page, 'Archived')).toBeChecked({ timeout: 1000 });
+      }).toPass({ timeout: 10000 });
       await expect(archivedLink).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('show-archived.png') });
       await (await filterBox(page, 'Archived')).uncheck();
