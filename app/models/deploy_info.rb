@@ -14,8 +14,11 @@ require "json"
 class DeployInfo
 
   SHA = /\A(\h{7,40})(_.+)?\z/
+  FULL = /\A\h{40}\z/
   DEFAULT_REPO = "swombat/souls-house"
   CACHE_TTL = 5.minutes
+  # How far one full sha is behind another never changes.
+  FACT_TTL = 1.day
   TIMEOUT = 3
 
   class_attribute :fetcher, default: ->(path) { DeployInfo.github_get(path) }
@@ -95,8 +98,11 @@ class DeployInfo
     return nil unless deployed && master && !deployed[:dirty]
     return 0 if master[:sha].start_with?(deployed[:sha])
 
-    data = cached("compare:#{deployed[:sha]}:#{master[:sha]}") do
-      fetch("/repos/#{self.class.repo}/compare/#{deployed[:sha]}...#{master[:sha]}")
+    fact = deployed[:sha].match?(FULL) && master[:sha].match?(FULL)
+    data = cached("compare:#{deployed[:sha]}:#{master[:sha]}", expires_in: fact ? FACT_TTL : CACHE_TTL) do
+      # Only the two fields read below: a compare body lists every file.
+      body = fetch("/repos/#{self.class.repo}/compare/#{deployed[:sha]}...#{master[:sha]}")
+      body.slice("status", "ahead_by") if body.is_a?(Hash)
     end
     return nil unless data.is_a?(Hash)
 
@@ -108,8 +114,8 @@ class DeployInfo
     end
   end
 
-  def cached(key, &block)
-    Rails.cache.fetch("deploy_info:#{self.class.repo}:#{key}", expires_in: CACHE_TTL, skip_nil: true, &block)
+  def cached(key, expires_in: CACHE_TTL, &block)
+    Rails.cache.fetch("deploy_info:#{self.class.repo}:#{key}", expires_in:, skip_nil: true, &block)
   end
 
   def fetch(path)

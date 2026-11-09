@@ -82,4 +82,22 @@ class DeployInfoTest < ActiveSupport::TestCase
     assert_equal DEPLOYED, summary[:deployed][:sha]
   end
 
+  test "the gap between two full shas is a fact: asked once, kept past the master refresh, and only its two fields kept" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    compare = "/repos/swombat/souls-house/compare/#{DEPLOYED}...#{MASTER}"
+    @responses[compare] = { "status" => "ahead", "ahead_by" => 3, "files" => [ { "filename" => "x" } ] }
+
+    assert_equal 3, DeployInfo.summary(version: DEPLOYED)[:behind_by]
+    travel DeployInfo::CACHE_TTL + 1.minute do
+      assert_equal 3, DeployInfo.summary(version: DEPLOYED)[:behind_by]
+    end
+
+    assert_equal 1, @calls.count(compare)
+    assert_equal 2, @calls.count("/repos/swombat/souls-house/commits/master")
+    assert_equal({ "status" => "ahead", "ahead_by" => 3 }, Rails.cache.read("deploy_info:swombat/souls-house:compare:#{DEPLOYED}:#{MASTER}"))
+  ensure
+    Rails.cache = original_cache
+  end
+
 end

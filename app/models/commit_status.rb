@@ -22,6 +22,19 @@ require "json"
 # - Ancestry between two full shas. That never changes, so it is cached for
 #   a long time, keyed by both full shas.
 #
+# Ancestry is also transitive, and that is what keeps a deploy cheap. Each
+# commit remembers the latest revision it is known to be in (its "reach").
+# When the running revision or master moves, a commit that was in the old one
+# is in the new one whenever the old one is an ancestor of the new: one
+# compare between the two revisions, shared by every commit and every reader,
+# instead of one compare per commit. Only "yes" travels this way. A rollback
+# (the new revision behind the old) or a commit that wasn't in the old one is
+# asked about on its own, as before.
+#
+# The GitHub calls a request still needs run in parallel, a few at a time,
+# and identical calls within one request are made once. The per-request
+# budget (MAX_LOOKUPS) counts calls actually made.
+#
 # "Deployed" is measured against the running container (KAMAL_VERSION), so it
 # follows rollbacks. Only the house's own repository has a running revision;
 # an account's repository (CommitBadges) is measured against its default
@@ -45,6 +58,7 @@ class CommitStatus
   # names rather than borrowing the house's "merged" (on master, not deployed).
   DEFAULT_BRANCH_STATUSES = { "merged" => "on_default", "unmerged" => "off_default" }.freeze
   TIMEOUT = 3
+  PARALLEL = 8
 
   # ->(path, token: nil) { [code, body] }
   class_attribute :fetcher, default: ->(path, token: nil) { CommitStatus.github_get(path, token:) }
@@ -74,6 +88,32 @@ class CommitStatus
     nil
   end
 
+  # items.map(&block), with up to PARALLEL items in flight at once. The block
+  # must be safe to run on another thread; each worker runs inside the Rails
+  # executor, so it gets (and returns) its own database connection for the
+  # cache. An exception in the block is raised here.
+  def self.parallel_map(items, &block)
+    items = items.to_a
+    return items.map(&block) if items.size <= 1
+
+    results = Array.new(items.size)
+    queue = Queue.new
+    items.each_with_index { |item, index| queue << [ item, index ] }
+    queue.close
+    workers = Array.new([ items.size, PARALLEL ].min) do
+      Thread.new do
+        Thread.current.report_on_exception = false
+        Rails.application.executor.wrap do
+          while (job = queue.pop)
+            results[job.last] = block.call(job.first)
+          end
+        end
+      end
+    end
+    ActiveSupport::Dependencies.interlock.permit_concurrent_loads { workers.each(&:join) }
+    results
+  end
+
   def self.lookup(shas, summary: DeployInfo.summary)
     new(summary).lookup(shas)
   end
@@ -98,19 +138,35 @@ class CommitStatus
     @cache_repo = cache_scope ? "#{cache_scope}:#{@repo}" : @repo
     @confirm_full = confirm_full
     @lookups = 0
+    @budget = Mutex.new
+    @calls = Concurrent::Map.new
   end
 
   def lookup(shas)
-    candidates(shas).to_h { |sha| [ sha, status_for(sha) ] }
+    list = candidates(shas)
+    list.zip(self.class.parallel_map(list) { |sha| status(sha) }).to_h
   end
 
   # sha => [presence, status]. presence is :found (this repository has the
   # commit), :missing (GitHub said it has no such commit) or nil (unknown).
   def probe(shas)
-    candidates(shas).to_h do |sha|
-      presence, full = resolution(sha)
-      [ sha, [ presence, (full && status_of(full)) ] ]
-    end
+    list = candidates(shas)
+    list.zip(self.class.parallel_map(list) { |sha| probe_one(sha) }).to_h
+  end
+
+  # One candidate's status (see lookup); sha must already be a lowercase
+  # candidate. Safe to call from several threads at once.
+  def status(sha)
+    return nil unless measurable?
+
+    full = resolve(sha)
+    full && status_of(full)
+  end
+
+  # One candidate's [presence, status] (see probe).
+  def probe_one(sha)
+    presence, full = resolution(sha)
+    [ presence, (full && status_of(full)) ]
   end
 
   private
@@ -122,13 +178,6 @@ class CommitStatus
   def full_sha(commit)
     sha = commit.is_a?(Hash) ? commit[:sha].to_s.downcase : ""
     sha.match?(FULL) ? sha : nil
-  end
-
-  def status_for(sha)
-    return nil unless measurable?
-
-    full = resolve(sha)
-    full && status_of(full)
   end
 
   def measurable?
@@ -173,9 +222,8 @@ class CommitStatus
     key = "commit_status:merge_commit:#{@cache_repo}:#{full}"
     cached = Rails.cache.read(key)
     return cached.presence unless cached.nil?
-    return nil unless budget?
 
-    code, data = @fetch.call("/repos/#{@repo}/commits/#{full}/pulls")
+    code, data = github("/repos/#{@repo}/commits/#{full}/pulls")
     return nil unless code == 200 && data.is_a?(Array)
 
     merge = data.filter_map { |pr| pr["merge_commit_sha"].to_s.downcase if pr.is_a?(Hash) && pr["merged_at"] }
@@ -204,9 +252,8 @@ class CommitStatus
     key = "commit_status:resolve:#{@cache_repo}:#{sha}"
     cached = Rails.cache.read(key)
     return (cached.present? ? [ :found, cached ] : [ :missing, nil ]) unless cached.nil?
-    return [ nil, nil ] unless budget?
 
-    code, data = @fetch.call("/repos/#{@repo}/commits/#{sha}")
+    code, data = github("/repos/#{@repo}/commits/#{sha}")
     if no_such_commit?(code, data)
       Rails.cache.write(key, "", expires_in: MISSING_TTL)
       return [ :missing, nil ]
@@ -229,20 +276,49 @@ class CommitStatus
   def ancestor_of?(full, target)
     return true if full == target
 
-    key = "commit_status:ancestor:#{@cache_repo}:#{full}:#{target}"
-    cached = Rails.cache.read(key)
+    cached = Rails.cache.read(ancestor_key(full, target))
     return cached unless cached.nil?
-    return nil unless budget?
 
-    answer = compare(full, target)
-    Rails.cache.write(key, answer, expires_in: FACT_TTL) unless answer.nil?
+    answer = true if reached_through?(full, target)
+    answer = compare(full, target) if answer.nil?
+    record_ancestry(full, target, answer)
     answer
+  end
+
+  # Whether full is in target because the latest revision it is known to be
+  # in is itself an ancestor of target. One hop only: the shared compare is
+  # between two revisions, never chained further.
+  def reached_through?(full, target)
+    reach = Rails.cache.read(reach_key(full))
+    return false unless reach.is_a?(String) && reach.match?(FULL) && reach != full && reach != target
+
+    cached = Rails.cache.read(ancestor_key(reach, target))
+    return cached if cached == true || cached == false
+
+    answer = compare(reach, target)
+    record_ancestry(reach, target, answer)
+    answer == true
+  end
+
+  def record_ancestry(full, target, answer)
+    return if answer.nil?
+
+    Rails.cache.write(ancestor_key(full, target), answer, expires_in: FACT_TTL)
+    Rails.cache.write(reach_key(full), target, expires_in: FACT_TTL) if answer
+  end
+
+  def ancestor_key(full, target)
+    "commit_status:ancestor:#{@cache_repo}:#{full}:#{target}"
+  end
+
+  def reach_key(full)
+    "commit_status:reach:#{@cache_repo}:#{full}"
   end
 
   # compare/BASE...HEAD between two full shas: "ahead" or "identical" means
   # BASE is an ancestor of HEAD.
   def compare(full, target)
-    code, data = @fetch.call("/repos/#{@repo}/compare/#{full}...#{target}")
+    code, data = github("/repos/#{@repo}/compare/#{full}...#{target}")
     return nil unless code == 200 && data.is_a?(Hash)
     return nil unless data.dig("base_commit", "sha").to_s.downcase == full
 
@@ -255,11 +331,32 @@ class CommitStatus
     nil
   end
 
-  def budget?
-    return false if @lookups >= MAX_LOOKUPS
+  # [code, body] from GitHub, or nil when this request's budget is spent.
+  # Identical paths asked during one request (from any thread) share a single
+  # call and its answer, or its exception.
+  def github(path)
+    mine = false
+    call = @calls.compute_if_absent(path) do
+      mine = true
+      Concurrent::Promises.resolvable_future
+    end
+    if mine
+      begin
+        call.fulfill(budget? ? @fetch.call(path) : nil)
+      rescue StandardError => e
+        call.reject(e)
+      end
+    end
+    call.value!
+  end
 
-    @lookups += 1
-    true
+  def budget?
+    @budget.synchronize do
+      return false if @lookups >= MAX_LOOKUPS
+
+      @lookups += 1
+      true
+    end
   end
 
 end

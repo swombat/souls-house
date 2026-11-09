@@ -251,4 +251,73 @@ class CommitStatusTest < ActiveSupport::TestCase
     assert_equal [ 502, nil ], CommitStatus.github_get("/repos/acme/web/commits/51625a7")
   end
 
+  test "a deploy costs one compare between the two revisions, shared by every commit that was in the old one" do
+    shas = (1..5).map { |i| format("%040x", 0xb000000 + i) }
+    shas.each { |sha| compare(sha, DEPLOYED, "ahead") }
+    assert_equal shas.to_h { |sha| [ sha, "deployed" ] }, CommitStatus.lookup(shas, summary: summary)
+    assert_equal 5, @calls.size
+
+    deployed_next = "f" * 40
+    compare(DEPLOYED, deployed_next, "ahead")
+    @calls.clear
+    assert_equal shas.to_h { |sha| [ sha, "deployed" ] }, CommitStatus.lookup(shas, summary: summary(deployed: deployed_next))
+    assert_equal [ "/repos/#{REPO}/compare/#{DEPLOYED}...#{deployed_next}" ], @calls
+
+    # And the next reader asks nothing at all.
+    @calls.clear
+    CommitStatus.lookup(shas, summary: summary(deployed: deployed_next))
+    assert_empty @calls
+  end
+
+  test "a rollback gets no shortcut: each commit is asked about against the older revision" do
+    compare(NEW, DEPLOYED, "ahead")
+    compare(OLD, DEPLOYED, "ahead")
+    assert_equal "deployed", CommitStatus.lookup([ NEW ], summary: summary)[NEW]
+    assert_equal "deployed", CommitStatus.lookup([ OLD ], summary: summary)[OLD]
+
+    rolled_back = "c" * 40
+    compare(DEPLOYED, rolled_back, "behind")
+    compare(NEW, rolled_back, "behind")
+    compare(NEW, MASTER, "ahead")
+    compare(OLD, rolled_back, "ahead")
+    @calls.clear
+
+    statuses = CommitStatus.lookup([ NEW, OLD ], summary: summary(deployed: rolled_back))
+
+    assert_equal({ NEW => "merged", OLD => "deployed" }, statuses)
+    assert_includes @calls, "/repos/#{REPO}/compare/#{NEW}...#{rolled_back}"
+    assert_includes @calls, "/repos/#{REPO}/compare/#{OLD}...#{rolled_back}"
+    assert_equal 1, @calls.count("/repos/#{REPO}/compare/#{DEPLOYED}...#{rolled_back}")
+  end
+
+  test "a failed shortcut compare falls back to asking about the commit itself" do
+    compare(NEW, DEPLOYED, "ahead")
+    CommitStatus.lookup([ NEW ], summary: summary)
+
+    deployed_next = "f" * 40
+    @responses["/repos/#{REPO}/compare/#{DEPLOYED}...#{deployed_next}"] = [ 502, nil ]
+    compare(NEW, deployed_next, "ahead")
+
+    assert_equal "deployed", CommitStatus.lookup([ NEW ], summary: summary(deployed: deployed_next))[NEW]
+  end
+
+  test "the commits on screen are asked about at the same time, not one after another" do
+    running = Concurrent::AtomicFixnum.new(0)
+    widest = Concurrent::AtomicFixnum.new(0)
+    responses = @responses
+    CommitStatus.fetcher = lambda do |path|
+      now = running.increment
+      widest.update { |w| [ w, now ].max }
+      sleep 0.05
+      running.decrement
+      responses.fetch(path)
+    end
+    shas = (1..4).map { |i| format("%040x", 0xc000000 + i) }
+    shas.each { |sha| compare(sha, DEPLOYED, "ahead") }
+
+    assert_equal shas.to_h { |sha| [ sha, "deployed" ] }, CommitStatus.lookup(shas, summary: summary)
+    assert_operator widest.value, :>, 1
+    assert_operator widest.value, :<=, CommitStatus::PARALLEL
+  end
+
 end
