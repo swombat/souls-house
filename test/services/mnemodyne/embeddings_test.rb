@@ -101,4 +101,78 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     end
   end
 
+  def with_voyage(key: "synthetic-voyage-key")
+    previous = ENV["MNEMODYNE_EMBEDDING_PROFILE"]
+    ENV["MNEMODYNE_EMBEDDING_PROFILE"] = "voyage-4"
+    Mnemodyne::Embeddings.stub(:voyage_key, key) do
+      yield stub_request(:post, Mnemodyne::Embeddings::VOYAGE_URL)
+    end
+  ensure
+    ENV["MNEMODYNE_EMBEDDING_PROFILE"] = previous
+  end
+
+  test "a voyage profile calls Voyage with the house key and the input type" do
+    with_voyage do |endpoint|
+      endpoint.with(body: { input: [ "Synthetic query" ], model: "voyage-4", input_type: "query" }.to_json,
+        headers: { "Authorization" => "Bearer synthetic-voyage-key" })
+        .to_return(body: { data: [ { index: 0, embedding: [ 0.25, 0.5 ] } ] }.to_json)
+      assert Mnemodyne::Embeddings.configured?
+      assert Mnemodyne::Embeddings.batched?
+      assert_equal [ 0.25, 0.5 ], Mnemodyne::Embeddings.embed("Synthetic query", input_type: :query)
+      assert_requested endpoint, times: 1
+    end
+  end
+
+  test "a voyage batch comes back in input order whatever order Voyage lists it" do
+    with_voyage do |endpoint|
+      endpoint.with(body: hash_including(input: [ "First", "Second" ], input_type: "document"))
+        .to_return(body: { data: [ { index: 1, embedding: [ 0.0, 2.0 ] }, { index: 0, embedding: [ 1.0, 0.0 ] } ] }.to_json)
+      assert_equal [ [ 1.0, 0.0 ], [ 0.0, 2.0 ] ], Mnemodyne::Embeddings.embed_many([ "First", "Second" ])
+    end
+  end
+
+  test "voyage without a key is not configured and sends nothing" do
+    with_voyage(key: nil) do |endpoint|
+      assert_not Mnemodyne::Embeddings.configured?
+      assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::Embeddings.embed("Never sent") }
+      assert_not_requested endpoint
+    end
+  end
+
+  test "voyage refusals and short or mixed answers are unavailable, never a fallback" do
+    with_voyage do |endpoint|
+      [ { status: 401, body: "{}" }, { status: 500, body: "{}" },
+        { body: { data: [] }.to_json },
+        { body: { data: [ { index: 0, embedding: [ 1.0 ] }, { index: 1, embedding: [ 1.0, 2.0 ] } ] }.to_json } ].each do |response|
+        endpoint.to_return(response)
+        assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::Embeddings.embed_many([ "A", "B" ]) }
+      end
+    end
+  end
+
+  test "a voyage rate limit is retried once inside the budget" do
+    with_voyage do |endpoint|
+      endpoint.to_return({ status: 429, body: "{}" }, { body: { data: [ { index: 0, embedding: [ 1.0 ] } ] }.to_json })
+      assert_equal [ 1.0 ], Mnemodyne::Embeddings.embed("Synthetic text")
+      assert_requested endpoint, times: 2
+    end
+  end
+
+  test "the private accessory takes one text at a time" do
+    with_endpoint do |endpoint|
+      assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::Embeddings.embed_many([ "A", "B" ]) }
+      assert_not_requested endpoint
+    end
+  end
+
+  test "voyage indexes must be exactly 0...count or the whole answer is refused" do
+    with_voyage do |endpoint|
+      [ [ 0, 0 ], [ 0, 2 ], [ 1, nil ], [ -1, 0 ], [ "0", 1 ] ].each do |indexes|
+        data = indexes.each_with_index.map { |index, i| { index: index, embedding: [ i + 1.0, 1.0 ] }.compact }
+        endpoint.to_return(body: { data: data }.to_json)
+        assert_raises(Mnemodyne::Embeddings::Unavailable, indexes.inspect) { Mnemodyne::Embeddings.embed_many([ "A", "B" ]) }
+      end
+    end
+  end
+
 end
