@@ -8,14 +8,17 @@ Run: python3 -m unittest discover -s test/runtime -p 'claude_refresh_lock_test.p
 """
 
 import importlib.util
+import datetime
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+import uuid
 from unittest.mock import patch
 
 
@@ -32,6 +35,18 @@ SUCCESS = "\n".join([
     json.dumps({"type": "process.started", "process_id": "p2"}),
     json.dumps({"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "hello"}}),
     json.dumps({"type": "turn.completed", "usage": {}}),
+]) + "\n"
+
+# The model ran a command, then the clamp lost authentication. The activity
+# reporter drops the command event from the stdout it returns.
+WORK_THEN_AUTH_FAILURE = "\n".join([
+    json.dumps({"type": "process.started", "process_id": "p3"}),
+    json.dumps({"type": "turn.started"}),
+    json.dumps({"type": "item.started", "item": {"id": "item_2", "type": "command_execution", "command": "echo synthetic"}}),
+    json.dumps({"type": "item.completed", "item": {"id": "item_2", "type": "command_execution", "command": "echo synthetic",
+                                                    "status": "completed"}}),
+    json.dumps({"type": "error", "message": "clamp_auth_unavailable: Claude Code subscription authentication is unavailable"}),
+    json.dumps({"type": "turn.failed", "error": {"message": "clamp_auth_unavailable: Claude Code subscription authentication is unavailable"}}),
 ]) + "\n"
 
 
@@ -105,6 +120,26 @@ class ClaudeRefreshLockTest(unittest.TestCase):
     def run_subscription(self, **kwargs):
         return self.shim.run_chaos("claude-opus-5-5", 60, "prompt", True, provider="anthropic",
                                    auth_mode="oauth_account", **kwargs)
+
+    def use_reporter(self):
+        """Route runs through the real activity Reporter, with its reporting
+        to Rails stubbed out (no network)."""
+        import runtime_activity
+        run = str(uuid.uuid4())
+        reporter = runtime_activity.Reporter({
+            "run_id": run, "path": f"/api/v1/runtime_runs/{run}/events", "token": "synthetic-token",
+            "deadline": (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=2)).isoformat(),
+        }, "http://127.0.0.1:9", "anthropic", "oauth_account")
+        patch.object(reporter, "emit").start()
+        self.shim._activity_context.reporter = reporter
+        self.addCleanup(lambda: setattr(self.shim._activity_context, "reporter", None))
+        return reporter
+
+    def use_cancel(self):
+        cancel = threading.Event()
+        self.shim._activity_context.cancel_event = cancel
+        self.addCleanup(lambda: setattr(self.shim._activity_context, "cancel_event", None))
+        return cancel
 
     # Reading a sign-in starts no Claude Code process.
 
@@ -186,6 +221,60 @@ class ClaudeRefreshLockTest(unittest.TestCase):
     def test_other_failures_are_not_retried(self):
         self.script_runs(['{"type": "turn.failed", "error": {"message": "rate limit"}}\n', 1], [SUCCESS, 0])
         self.assertEqual(self.run_subscription().returncode, 1)
+        self.assertEqual(len(self.invocations()), 1)
+
+    # Through the activity reporter, which filters what it returns (Mira, #849 round 1).
+
+    def test_reporter_route_never_retries_a_run_that_acted(self):
+        self.use_reporter()
+        self.script_runs([WORK_THEN_AUTH_FAILURE, 1], [SUCCESS, 0])
+        result = self.run_subscription()
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(result.work_seen)
+        self.assertNotIn("command_execution", result.stdout)  # still filtered: the flag is all that is kept
+        self.assertEqual(len(self.invocations()), 1)
+
+    def test_reporter_route_retries_a_run_that_did_nothing(self):
+        self.use_reporter()
+        self.script_runs([AUTH_FAILURE, 1], [SUCCESS, 0])
+        result = self.run_subscription()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(self.invocations()), 2)
+
+    # Cancellation is never held behind the lock.
+
+    def test_a_cancelled_turn_does_not_wait_for_the_lock(self):
+        cancel = self.use_cancel()
+        cancel.set()
+        self.hold_lock()
+        with patch.object(self.shim.time, "sleep", side_effect=AssertionError("waited")):
+            self.assertLess(self.shim.await_claude_refresh_lock(30, cancel=cancel), 1)
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.run_subscription()
+        self.assertEqual(self.invocations(), [])
+
+    def test_a_cancel_during_the_wait_ends_it(self):
+        cancel = threading.Event()
+        self.hold_lock()
+        threading.Timer(0.2, cancel.set).start()
+        started = time.monotonic()
+        self.shim.await_claude_refresh_lock(30, cancel=cancel)
+        self.assertLess(time.monotonic() - started, 2)
+
+    def test_a_cancel_after_the_failure_stops_the_retry(self):
+        cancel = self.use_cancel()
+        self.script_runs([AUTH_FAILURE, 1], [SUCCESS, 0])
+        original = self.shim._run_chaos_once
+
+        def once(*args, **kwargs):
+            result = original(*args, **kwargs)
+            self.hold_lock()
+            threading.Timer(0.2, cancel.set).start()
+            return result
+
+        with patch.object(self.shim, "_run_chaos_once", side_effect=once):
+            result = self.run_subscription()
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(len(self.invocations()), 1)
 
     # Waiting for the lock.

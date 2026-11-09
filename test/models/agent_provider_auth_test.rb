@@ -80,7 +80,8 @@ class AgentProviderAuthTest < ActiveSupport::TestCase
     assert_equal "#{agent.name}'s Claude sign-in needs reconnecting", mail.subject
     text = mail.text_part.body.to_s
     assert_includes text, "tab=settings"
-    assert_includes text, "tried it twice"
+    assert_includes text, "detected an authentication failure"
+    assert_not_includes text, "twice"
   end
 
   test "a switched-off resident's expired sign-in emails nobody" do

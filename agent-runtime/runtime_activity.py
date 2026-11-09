@@ -30,6 +30,19 @@ _silence_spec.loader.exec_module(silence_nudge)
 ACK_MAX_BYTES = 262_144
 
 
+def is_work_event(event):
+    """True for a Chaos event showing the model did something: any item other
+    than an error, or a completed turn. Used to refuse a retry of a run that
+    may already have acted (#816); read before events are filtered."""
+    if not isinstance(event, dict):
+        return False
+    if event.get("type") == "turn.completed":
+        return True
+    item = event.get("item")
+    return event.get("type") in ("item.started", "item.updated", "item.completed") \
+        and isinstance(item, dict) and item.get("type") != "error"
+
+
 def command_preview(command, extra_secrets=()):
     secrets = [value for key, value in os.environ.items() if _preview_module.SENSITIVE.search(key)]
     return _preview_module.preview(command, secrets + list(extra_secrets))
@@ -218,6 +231,7 @@ class Reporter:
         retained_size = 0
         process_started = b""
         stderr = bytearray()
+        work_seen = False
 
         def source_gap():
             with self.lock:
@@ -225,7 +239,7 @@ class Reporter:
                     self.stream_gap()
 
         def read_stdout():
-            nonlocal retained_size, process_started
+            nonlocal retained_size, process_started, work_seen
             while True:
                 line = proc.stdout.readline(1024 * 1024 + 1)
                 if not line:
@@ -242,6 +256,8 @@ class Reporter:
                     if not isinstance(event, dict):
                         source_gap()
                         continue
+                    # Before any filtering: a run that acted must not be retried.
+                    work_seen = work_seen or is_work_event(event)
                     with self.lock:
                         if self.attempt_id == reader_attempt_id:
                             self.project(event)
@@ -318,9 +334,11 @@ class Reporter:
                 thread.join(timeout=1)
             for pipe in (proc.stdin, proc.stdout, proc.stderr):
                 pipe.close()
-        return subprocess.CompletedProcess(args, proc.returncode,
-                                           (process_started + b"".join(retained)).decode(errors="replace"),
-                                           stderr.decode(errors="replace"))
+        completed = subprocess.CompletedProcess(args, proc.returncode,
+                                                (process_started + b"".join(retained)).decode(errors="replace"),
+                                                stderr.decode(errors="replace"))
+        completed.work_seen = work_seen
+        return completed
 
     def finish(self, response):
         body_response, status = response if isinstance(response, tuple) else (response, 200)

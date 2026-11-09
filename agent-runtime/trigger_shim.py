@@ -941,19 +941,26 @@ def run_chaos(
     retry in a minute". Until 9 Nov 2026 the house took the first one as
     an expired sign-in: Rails marked it expired and refused every later run
     until a person signed in again (Fable, 6-8 Nov: nine refused runs). Only
-    a failure that survives the retry reaches Rails now, so an expiry is one
-    the provider meant. Both attempts share the turn's time budget.
+    a failure that survives the retry reaches Rails now. That still doesn't
+    show the provider revoked anything, only that the sign-in failed twice.
+    Both attempts share the turn's time budget; a cancelled turn neither
+    waits nor retries.
     """
     anthropic_subscription = auth_mode == "oauth_account" and (provider or AGENT_PROVIDER) == "anthropic"
+    cancel = getattr(_activity_context, "cancel_event", None)
     if anthropic_subscription:
-        await_claude_refresh_lock(_remaining_turn_budget(timeout_secs))
+        await_claude_refresh_lock(_remaining_turn_budget(timeout_secs), cancel=cancel)
     result = _run_chaos_once(
         model, timeout_secs, prompt_text, json_output,
         resume_id=resume_id, provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
     )
     if not (anthropic_subscription and clamp_auth_failed_before_work(result)):
         return result
-    waited = await_claude_refresh_lock(_remaining_turn_budget(timeout_secs))
+    if cancel is not None and cancel.is_set():
+        return result
+    waited = await_claude_refresh_lock(_remaining_turn_budget(timeout_secs), cancel=cancel)
+    if cancel is not None and cancel.is_set():
+        return result
     log.warning(
         "claude subscription auth unavailable before work; retrying once "
         f"after refresh-lock wait={waited:.0f}s lock_age={claude_refresh_lock_age()}"
@@ -3342,15 +3349,20 @@ def claude_refresh_lock_age(now=None):
     return max(0.0, (now if now is not None else time.time()) - mtime)
 
 
-def await_claude_refresh_lock(budget_secs, sleep=None, clock=None):
+def await_claude_refresh_lock(budget_secs, sleep=None, clock=None, cancel=None):
     """Wait, within budget_secs, until no live Claude Code refresh lock is held:
     the lock is gone or old enough that Claude Code itself will clear it.
-    Returns the seconds waited."""
-    sleep = sleep or time.sleep
+    Returns at once when the turn is cancelled (cancel is the turn's
+    threading.Event); without an explicit sleep the wait sleeps on that
+    event, so a cancel ends it straight away. Returns the seconds waited."""
     clock = clock or time.monotonic
+    if sleep is None:
+        sleep = cancel.wait if cancel is not None else time.sleep
     started = clock()
     limit = max(0.0, min(budget_secs, CLAUDE_REFRESH_LOCK_WAIT_SECS))
     while True:
+        if cancel is not None and cancel.is_set():
+            return clock() - started
         age = claude_refresh_lock_age()
         waited = clock() - started
         if age is None or age >= CLAUDE_REFRESH_LOCK_STALE_SECS or waited >= limit:
@@ -3361,8 +3373,14 @@ def await_claude_refresh_lock(budget_secs, sleep=None, clock=None):
 def clamp_auth_failed_before_work(result):
     """A finished Claude-subscription run that failed on authentication before
     the model did anything: Chaos's clamp reported clamp_auth_unavailable and
-    no item other than an error completed."""
+    no work event was seen. The activity reporter drops tool events from the
+    stdout it returns, so it carries its own `work_seen`, read before that
+    filtering; a run it saw act is never retried."""
+    from runtime_activity import is_work_event
+
     if result is None or result.returncode == 0:
+        return False
+    if getattr(result, "work_seen", False):
         return False
     stdout = result.stdout or ""
     if "clamp_auth_unavailable" not in stdout:
@@ -3372,13 +3390,7 @@ def clamp_auth_failed_before_work(result):
             event = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(event, dict):
-            continue
-        if event.get("type") == "turn.completed":
-            return False
-        item = event.get("item")
-        if event.get("type") in ("item.started", "item.completed") and isinstance(item, dict) \
-                and item.get("type") != "error":
+        if is_work_event(event):
             return False
     return True
 

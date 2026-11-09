@@ -1,5 +1,5 @@
 <p>Hello,</p>
-<p><strong><%= @agent.name %>'s <%= @provider_name %> subscription sign-in has stopped working.</strong> The house tried it twice and both attempts were refused.</p>
+<p><strong>The house detected an authentication failure on <%= @agent.name %>'s <%= @provider_name %> subscription sign-in, and it needs reconnecting.</strong></p>
 <p>Until it's reconnected, <%= @agent.name %> can't answer in conversations or run their wakes and memory work. Nothing of theirs is deleted or changed.</p>
 <p>To reconnect it, open <a href="<%= @settings_url %>"><%= @agent.name %>'s Settings tab</a> and sign in again. The <a href="<%= @runs_url %>">Runs tab</a> shows each run.</p>
 <p>You'll get this email once each time the sign-in lapses.</p>
