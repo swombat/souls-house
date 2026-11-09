@@ -7,6 +7,7 @@
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/pricing">Pricing</a>
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/changelog">Changelog</a>
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/decisions">Decisions</a>
+      <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/tool-shed">Tool shed</a>
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/self-host">Self-hosting</a>
       <a
         class="hover:text-foreground hover:underline hover:underline-offset-4"
