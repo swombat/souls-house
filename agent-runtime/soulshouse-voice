@@ -48,6 +48,36 @@ def describe(voice):
     return text
 
 
+def list_lines(payload):
+    """The `list` output as (stdout lines, stderr lines). A current voice in
+    neither list is shown as kept; while either list can't be read it is shown
+    with its membership unknown, never dropped."""
+    out, err = [], []
+    current = payload.get("voice_id")
+    if payload.get("unavailable"):
+        err.append(f"The voice list is unavailable just now: {payload['unavailable']}")
+    if payload.get("library_unavailable"):
+        err.append(f"Your account's own voices can't be read just now: {payload['library_unavailable']}")
+    for voice in payload.get("voices") or []:
+        mark = "*" if voice.get("voice_id") == current else " "
+        out.append(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+    library = payload.get("library_voices") or []
+    if library:
+        out.append("")
+        out.append("Your account's own ElevenLabs voices:")
+    for voice in library:
+        mark = "*" if voice.get("voice_id") == current else " "
+        out.append(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+    if current and not payload.get("voice"):
+        if payload.get("unavailable") or payload.get("library_unavailable"):
+            out.append(f"* {current}  (your current voice; a list couldn't be read, so whether it is in one is unknown)")
+        else:
+            out.append(f"* {current}  (your current voice; not in either list, kept until you change it)")
+    if not current:
+        out.append("You have no voice yet.")
+    return out, err
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="soulshouse-voice",
@@ -97,25 +127,11 @@ def main() -> int:
     elif args.command == "set":
         print(f"Voice set: {payload.get('voice_id')}")
     else:
-        current = payload.get("voice_id")
-        if payload.get("unavailable"):
-            print(f"The voice list is unavailable just now: {payload['unavailable']}", file=sys.stderr)
-        for voice in payload.get("voices") or []:
-            mark = "*" if voice.get("voice_id") == current else " "
-            print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
-        if payload.get("library_unavailable"):
-            print(f"Your account's own voices can't be read just now: {payload['library_unavailable']}", file=sys.stderr)
-        library = payload.get("library_voices") or []
-        if library:
-            print("\nYour account's own ElevenLabs voices:")
-        for voice in library:
-            mark = "*" if voice.get("voice_id") == current else " "
-            print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
-        listed_all = not payload.get("unavailable") and not payload.get("library_unavailable")
-        if current and not payload.get("voice") and listed_all:
-            print(f"* {current}  (your current voice; not in either list, kept until you change it)")
-        if not current:
-            print("You have no voice yet.")
+        out, err = list_lines(payload)
+        for line in err:
+            print(line, file=sys.stderr)
+        for line in out:
+            print(line)
     return 0
 
 

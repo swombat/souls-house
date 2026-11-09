@@ -84,16 +84,24 @@ class Agents::VoicesController < ApplicationController
 
   private
 
+  # The voice to preview and the key to render it on (nil: the house's).
+  # As in ElevenLabsVoices.offerable?, an unreadable standard list is only
+  # an answer once the account's own library has also said no: then it is
+  # raised (503), not reported as an unknown voice (404).
   def preview_voice(voice_id)
-    standard = begin
-      ElevenLabsVoices.find(voice_id)
-    rescue ElevenLabsVoices::Unavailable
-      nil
+    unreadable = nil
+    begin
+      standard = ElevenLabsVoices.find(voice_id)
+      return [ standard, nil ] if standard
+    rescue ElevenLabsVoices::Unavailable => e
+      unreadable = e
     end
-    return [ standard, nil ] if standard
 
     own = ElevenLabsVoices.find_in_library(current_account, voice_id)
-    own ? [ own, current_account.eleven_labs_api_key ] : [ nil, nil ]
+    return [ own, current_account.eleven_labs_api_key ] if own
+    raise unreadable if unreadable
+
+    [ nil, nil ]
   end
 
   def set_agent
