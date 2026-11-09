@@ -40,7 +40,7 @@ class FieldTweetStreamTest < ActiveSupport::TestCase
       own_monthly_usd_limit: "7", state: "paused", state_reason: "SECRET-SENTINEL",
       connected_at: @now - 3.hours, checkpoint_at: @now - 2.hours, window_since: @now - 1.hour,
       gap_since: @now - 4.hours, gap_until: @now - 3.hours, last_success_at: @now,
-      next_attempt_at: @now + 15.minutes
+      next_attempt_at: @now + 15.minutes, removed_at: @now
     }.each do |column, value|
       assert_marker(column.to_s) { @source.update!(column => value) }
     end
@@ -276,11 +276,14 @@ class FieldTweetStreamTest < ActiveSupport::TestCase
     stale = backlog(101)
     stale.delete
     oldest = Minitest::Mock.new
-    oldest.expect(:limit, [ stale ], [ FieldTweets.import_allowance_left(@account) ])
+    limited = Minitest::Mock.new
+    oldest.expect(:limit, limited, [ FieldTweets.daily_import_cap ])
+    limited.expect(:pluck, [ stale.id ], [ :id ])
     assert_no_broadcasts(@stream) do
       @source.backlog_items.stub(:oldest_first, oldest) { sync.send(:import_backlog!) }
     end
     oldest.verify
+    limited.verify
   end
 
   test "backlog drain and new tweet creation roll back together" do

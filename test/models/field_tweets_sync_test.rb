@@ -18,6 +18,92 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
 
   teardown { travel_back }
 
+  test "an admitted response after removal keeps its page cursor and paid ledger but freezes import" do
+    travel 15.minutes
+    client = FakeClient.new
+    source_id = @source.id
+    page = page_of([ tweet_payload(991, at: @connected + 5.minutes) ], cursor: "next-page")
+    client.define_singleton_method(:search) do |query, cursor: nil|
+      calls << { query: query, cursor: cursor }
+      source = FieldTweetSource.find(source_id)
+      source.remove!
+      source.account.all_field_tweet_sources.create!(handle: "replacement")
+      page
+    end
+
+    with_house_key { assert_equal :inactive, run_sync(@source, client) }
+    assert_equal 1, client.calls.size
+    assert_equal 0, FieldTweets.imported_today(@account)
+    assert_equal "991", @source.backlog_items.sole.provider_tweet_id
+    assert_equal "next-page", @source.reload.window_cursor
+    assert_equal 1, @source.window_pages
+    assert_equal @connected, @source.checkpoint_at
+    assert @source.removed?
+    assert_equal "paused", @source.state
+    assert_nil @source.next_attempt_at
+    assert_nil @source.sync_claimed_at
+    assert_equal "settled", FieldTweetCall.sole.status
+    assert_equal 1, FieldTweetCall.sole.queued_count
+    assert_equal "replacement", @account.reload.field_tweet_source.handle
+  end
+
+  test "a removed source never drains saved backlog or reserves with a stale instance" do
+    attrs = FieldTweet.attributes_from(tweet_payload(992, at: @connected), fetched_at: @connected)
+    item = @source.backlog_items.create!(provider_tweet_id: "992", posted_at: @connected, attrs: attrs)
+    stale = FieldTweetSource.find(@source.id)
+    @source.remove!
+    with_house_key do
+      assert_raises(FieldTweets::InactiveSource) { FieldTweets.reserve!(stale) }
+      assert_equal :inactive, run_sync(stale, FakeClient.new)
+    end
+    assert FieldTweetBacklogItem.exists?(item.id)
+    assert_equal 0, FieldTweets.imported_today(@account)
+    assert_empty FieldTweetCall.all
+  end
+
+  test "failed admitted calls cannot revive removed state or retry scheduling" do
+    travel 15.minutes
+    source_id = @source.id
+    client = FakeClient.new
+    client.define_singleton_method(:search) do |*, **|
+      FieldTweetSource.find(source_id).remove!
+      raise TwitterApiIo::Error.new("refused", status: 401)
+    end
+    with_house_key { run_sync(@source, client) }
+    assert @source.reload.removed?
+    assert_equal "paused", @source.state
+    assert_nil @source.next_attempt_at
+    assert_equal 0, @source.failure_count
+    assert_equal "failed", FieldTweetCall.sole.status
+  end
+
+  test "a replaced claim retains and settles the old response without overwriting the new worker" do
+    travel 15.minutes
+    source_id = @source.id
+    replacement = {
+      sync_claimed_at: Time.current + 1.second,
+      window_since: @connected + 2.minutes, window_until: Time.current,
+      window_cursor: "new-worker-page", window_pages: 3, window_rejected: 2,
+      failure_count: 4, state_reason: "New worker metadata", next_attempt_at: Time.current + 1.hour
+    }
+    page = page_of([ tweet_payload(993, at: @connected + 5.minutes) ], cursor: "old-worker-page")
+    client = FakeClient.new
+    client.define_singleton_method(:search) do |query, cursor: nil|
+      calls << { query: query, cursor: cursor }
+      FieldTweetSource.find(source_id).update!(replacement)
+      page
+    end
+
+    with_house_key { assert_equal :inactive, run_sync(@source, client) }
+    assert_equal replacement.stringify_keys, @source.reload.attributes.slice(*replacement.keys.map(&:to_s))
+    assert_nil @source.last_success_at
+    assert_equal @connected, @source.checkpoint_at
+    assert_equal "993", @source.backlog_items.sole.provider_tweet_id
+    assert_equal 0, FieldTweets.imported_today(@account)
+    assert_equal "settled", FieldTweetCall.sole.status
+    assert_equal 1, FieldTweetCall.sole.queued_count
+  end
+
   test "a new stream starts at connection and asks for own posts, replies and quotes, not reposts" do
     assert_equal "danielt", @source.handle
     assert_equal @connected, @source.checkpoint_at

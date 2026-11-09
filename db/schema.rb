@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1550,7 +1550,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
     t.datetime "sync_claimed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_field_tweet_sources_on_account_id", unique: true
+    t.datetime "removed_at"
+    t.index ["account_id"], name: "index_field_tweet_sources_on_account_id", unique: true, where: "(removed_at IS NULL)"
     t.index ["created_by_type", "created_by_id"], name: "index_field_tweet_sources_on_created_by"
     t.index ["next_attempt_at"], name: "index_field_tweet_sources_on_next_attempt_at"
     t.check_constraint "state::text = ANY (ARRAY['active'::character varying::text, 'paused'::character varying::text, 'needs_attention'::character varying::text])", name: "field_tweet_sources_state"

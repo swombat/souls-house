@@ -38,7 +38,12 @@
   }
 
   function stopFollowing() {
-    if (!confirm('Tweets already in the Field stay.')) return;
+    if (
+      !confirm(
+        'Tweets already in the Field stay. The source and fetched backlog are retained for administrator recovery. No new paid check will be reserved; an already-reserved check may still finish into that backlog.'
+      )
+    )
+      return;
     router.delete(base, { preserveScroll: true });
   }
 </script>
