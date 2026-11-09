@@ -184,6 +184,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
     store = ActiveSupport::Cache::MemoryStore.new
     other_account = accounts(:team_account)
     other_agent = agents(:other_account_agent)
+    other_agent.update_column(:name, @agent.name) # same line, same digest: only the account scope tells them apart
     @account.update!(eleven_labs_api_key: "key-one")
     other_account.update!(eleven_labs_api_key: "key-two")
     rendered = []
