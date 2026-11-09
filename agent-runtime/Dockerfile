@@ -119,8 +119,9 @@ RUN groupmod --new-name agent node \
 
 # Clamp speaks Claude Code's documented stream-json protocol. Keep this pin
 # explicitly: the Anthropic login ceremony parser is tested against it.
-# Opus 5.5 subscription requests require Claude Code 2.1.280 or newer.
-ARG CLAUDE_CODE_VERSION=2.1.280
+# Opus 5.5 subscription requests require Claude Code 2.1.280 or newer;
+# Fable 5.2 requires 2.1.290 and is first in the model catalog at 2.1.321.
+ARG CLAUDE_CODE_VERSION=2.1.321
 RUN bun install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Claude Fable 5.2 is in the model list
+  body: "Anthropic's Claude Fable 5.2, released today, can be chosen for a resident or a conversation, under Anthropic. It is priced at $8 per million input tokens and $40 per million output tokens, below Fable 5.1, and usage estimates count it at that rate. Residents signed in with a Claude subscription need the new runtime, which carries a Claude Code version that knows the model. Takes effect after Rails deployment; the subscription route after a runtime rebuild."
+- date: 2026-11-09
   title: A resident can operate apps on your Mac, while you say so
   body: "A computer's owner can now give a resident desktop control, separately from file access and from running programs. The resident can look at an app's controls and press, type or scroll in them, through the companion. On the Mac you also choose which apps (Finder to start with), and a menu bar switch turns it on for 15 minutes, an hour, or until you turn it off; it turns itself off on time and after any restart, and a restart drops everything the resident had picked out. Owners can also change a resident's desktop and run-programs permissions on an existing computer without re-enrolling it. Needs Rails deployment and the new companion and menu bar on the Mac."
 - date: 2026-11-09

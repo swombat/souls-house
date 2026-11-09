@@ -172,6 +172,24 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     end
   end
 
+  test "Fable 5.2 is priced under catalogue, direct and dotted IDs, not as Fable 5" do
+    assert_equal "claude-fable-5-2", Chat.provider_model_id("anthropic/claude-fable-5.2")
+    [ "anthropic/claude-fable-5.2", "claude-fable-5-2", "claude-fable-5.2" ].each do |model|
+      cost = build_interaction(
+        model: model,
+        uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+        cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+      ).estimated_cost
+      assert_equal "estimated", cost[:status], model
+      assert_equal "anthropic/claude-fable-5.2", cost[:pricing_model], model
+      assert_equal "58.2", cost[:amount_usd], model
+      assert_equal "10.0", cost.dig(:components_usd, :cache_creation_input), model
+      assert_equal "0.2", cost.dig(:components_usd, :cache_read_input), model
+      assert_equal "2026-11-09", cost[:pricing_as_of], model
+    end
+    assert_equal "anthropic/claude-fable-5", build_interaction(model: "claude-fable-5-1").estimated_cost[:pricing_model]
+  end
+
   test "Haiku 5.5 is priced under catalogue, direct and dotted IDs" do
     assert_equal "claude-haiku-5-5", Chat.provider_model_id("anthropic/claude-haiku-5.5")
     [ "anthropic/claude-haiku-5.5", "claude-haiku-5-5", "claude-haiku-5.5" ].each do |model|
