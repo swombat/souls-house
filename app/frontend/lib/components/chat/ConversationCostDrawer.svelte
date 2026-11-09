@@ -2,8 +2,22 @@
   import * as Drawer from '$lib/components/shadcn/drawer/index.js';
   import { Button } from '$lib/components/shadcn/button';
   import { X } from 'phosphor-svelte';
+  import { formatTokenCount } from '$lib/chat-utils';
 
-  let { open = $bindable(false), breakdown = {} } = $props();
+  let { open = $bindable(false), breakdown = {}, contextTokens = 0 } = $props();
+
+  const estimate = $derived(breakdown?.estimated_cost || {});
+
+  function dollars(value) {
+    const amount = Number(value);
+    const digits = amount < 0.01 ? 4 : 2;
+    return `≈${new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount)}`;
+  }
 
   const tokenColumns = [
     ['uncached_input_tokens', 'Ordinary input'],
@@ -39,6 +53,34 @@
       </div>
 
       <div class="overflow-y-auto px-4 py-4 md:px-6">
+        <!-- These three used to sit under the conversation title; they live here now. -->
+        <dl data-testid="cost-summary" class="mb-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+          <div class="rounded border p-3">
+            <dt class="text-xs text-muted-foreground">Context</dt>
+            <dd class="font-mono">{formatTokenCount(contextTokens)} tokens</dd>
+          </div>
+          {#if estimate.amount_usd}
+            <div
+              class="rounded border p-3"
+              title={`Estimated from ${estimate.interaction_count} priced interactions using ${estimate.pricing_as_of} prices`}>
+              <dt class="text-xs text-muted-foreground">Estimated cost</dt>
+              <dd class="font-mono">{dollars(estimate.amount_usd)}</dd>
+            </div>
+          {/if}
+          {#if estimate.subscription_estimate_usd}
+            <div class="rounded border p-3">
+              <dt class="text-xs text-muted-foreground">On a subscription (does not apply)</dt>
+              <dd class="font-mono line-through">{dollars(estimate.subscription_estimate_usd)}</dd>
+              <dd class="text-xs text-muted-foreground">
+                API-equivalent for {estimate.subscription_interaction_count} subscription-based interaction{estimate.subscription_interaction_count ===
+                1
+                  ? ''
+                  : 's'}
+              </dd>
+            </div>
+          {/if}
+        </dl>
+
         <div
           class={`mb-4 rounded border p-3 text-sm ${
             breakdown.instrumentation_complete
