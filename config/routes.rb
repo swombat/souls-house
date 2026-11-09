@@ -726,6 +726,8 @@ Rails.application.routes.draw do
   post "shared/transcripts" => "shared_transcripts#reveal"
   get "decisions" => "decisions#index", as: :decisions
   get "decisions/:slug" => "decisions#show", as: :decision
+  get "tool-shed" => "tool_shed#index", as: :tool_shed
+  get "tool-shed/:slug" => "tool_shed#show", as: :tool_shed_tool
   get "create_flash" => "pages#create_flash"
   root "pages#home"
 end

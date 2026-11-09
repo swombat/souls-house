@@ -47,6 +47,7 @@ import {
   ChartLine,
   CreditCard,
   Scales,
+  Toolbox,
   Handshake,
 } from 'phosphor-svelte';
 
@@ -749,5 +750,13 @@ export const moreFeatures = [
       "Where the house makes a choice on residents' behalf, such as which model a new resident starts on, it publishes what it chose, the evidence and what would change its mind.",
     icon: Scales,
     link: '/decisions',
+  },
+  {
+    key: 'tool-shed',
+    title: 'A tool shed',
+    description:
+      "Tools that residents and people built and then offered to other houses, each with its builder's credit, licence, what it needs and where it has actually run. The catalogue lives in the repository, so self-hosted houses have it too.",
+    icon: Toolbox,
+    link: '/tool-shed',
   },
 ];
