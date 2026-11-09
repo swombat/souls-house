@@ -1307,6 +1307,14 @@ def instrumented_response(
         response["telegram_delivery_run_id"] = telegram_run[0]
     if roll:
         response["session_roll_reason"] = roll
+    if result.returncode != 0:
+        failure = runtime_failure(events["errors"], result.stderr)
+        if failure:
+            response["runtime_failure"] = failure
+            log.warning(
+                f"trigger failed session_id={session_id} rc={result.returncode} "
+                f"runtime_failure={failure['code']}: {failure['message']}"
+            )
     error_kind = classify_provider_error(response, runtime.get("provider"))
     if error_kind:
         response["error_kind"] = error_kind
@@ -2635,6 +2643,61 @@ def _parse_timestamp(value):
 def _iso_timestamp(value):
     parsed = _parse_timestamp(value)
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if parsed else None
+
+
+RUNTIME_FAILURE_LIMIT = 600
+_RUNTIME_FAILURE_REDACTIONS = (
+    # Authorization headers and bearer tokens.
+    (re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 [redacted]"),
+    # key=value / "key": "value" secrets.
+    (re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|authorization)"
+                r"(\"?\s*[:=]\s*\"?)[^\s\"',;}]+"), r"\1\2[redacted]"),
+    # Provider key shapes (OpenAI/Anthropic sk-, Google AIza/ya29, GitHub gh*_).
+    (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_.-]+|gh[pousr]_[A-Za-z0-9]{20,})"),
+     "[redacted]"),
+    # Query strings carry signed URLs and keys; keep the path.
+    (re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*"), r"\1?[redacted]"),
+    (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), "[email]"),
+    # Any other long opaque run (keys, signatures, JWT segments).
+    (re.compile(r"[A-Za-z0-9_\-+=]{40,}"), "[redacted]"),
+)
+
+
+def runtime_failure(errors, stderr):
+    """Why a failed run failed, as a bounded, redacted field (#843).
+
+    Chaos reports a failed turn as an error event ("antigravity_runtime_failed:
+    Antigravity invocation failed with status ERROR; ..."), and writes to
+    stderr only when something below it does. The event wins; stderr is the
+    fallback. The text is the runtime's diagnosis, not the conversation, but it
+    can quote paths and provider responses, so known secret shapes are
+    redacted before it leaves the container."""
+    text = ""
+    for raw in reversed(errors or []):
+        try:
+            event = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        error = event.get("error")
+        text = event.get("message") or (error.get("message") if isinstance(error, dict) else error) or ""
+        if text:
+            break
+    if not text:
+        lines = [line for line in (stderr or "").splitlines() if line.strip()]
+        text = "\n".join(lines[-5:])
+    text = str(text).strip()
+    if not text:
+        return None
+    code = "runtime_error"
+    match = re.match(r"([a-z][a-z0-9_]{2,63}):\s*", text)
+    if match:
+        code, text = match.group(1), text[match.end():]
+    for pattern, replacement in _RUNTIME_FAILURE_REDACTIONS:
+        text = pattern.sub(replacement, text)
+    text = " ".join(text.split())
+    if len(text) > RUNTIME_FAILURE_LIMIT:
+        text = text[:RUNTIME_FAILURE_LIMIT - 1] + "…"
+    return {"code": code, "message": text}
 
 
 def classify_provider_error(response, provider):
