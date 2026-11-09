@@ -74,6 +74,9 @@ for (const mobile of [false, true]) {
       await closeFilter(page);
       await archivedLink.click();
       await expect(page).toHaveURL(/show_archived=true/);
+      // The URL changes when the visit starts; the sidebar re-renders when it finishes,
+      // which closes a Filter menu opened in between. Let the visit land first.
+      await page.waitForLoadState('networkidle');
       if (mobile) {
         await sidebar.getByRole('button', { name: 'Close sidebar', exact: true }).click();
         await openSidebar();
