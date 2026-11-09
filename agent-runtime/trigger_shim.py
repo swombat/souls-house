@@ -414,7 +414,6 @@ def trigger():
     inference_run = str(payload.get("inference_run") or "")
     _activity_context.inference_run = inference_run if inference_run.isdigit() else None
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
-    run_started_at = datetime.now(timezone.utc)
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
         _activity_context.memory_aggregation = bool(aggregation_context(payload))
@@ -453,7 +452,6 @@ def trigger():
         _unregister_running_session(session_id)
         session_lock.release()
         lock_released = True
-        log_reflex_skips(run_started_at)
         if reporter:
             reporter.finish(response)
         return response
@@ -870,48 +868,6 @@ def require_house_trust(cwd, chaos_home):
 SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
 
 
-REFLEX_TRACE_PATH = AGENT_IDENTITY_PATH / "memory" / "automation" / "state" / "stop-events.jsonl"
-REFLEX_TRACE_TAIL_BYTES = 64 * 1024
-
-
-def log_reflex_skips(since, trace_path=None):
-    """Say in the runtime log when the journal reflex skipped its invitation.
-
-    Chaos drops an exit-0 Stop hook's stderr, and neither persists nor emits
-    HookCompleted in --json output, so the hook can't reach this log itself.
-    It records `journal_skipped` on its trace row; this reads rows written
-    since the run started and logs one warning per run (#725). The trace is
-    the resident's own file, shared by concurrent sessions, so this is a
-    diagnostic, not an exact per-run count. Never raises.
-    """
-    path = Path(trace_path) if trace_path else REFLEX_TRACE_PATH
-    try:
-        with path.open("rb") as fh:
-            fh.seek(0, os.SEEK_END)
-            size = fh.tell()
-            fh.seek(max(0, size - REFLEX_TRACE_TAIL_BYTES))
-            tail = fh.read()
-    except OSError:
-        return 0
-    lines = tail.decode("utf-8", errors="replace").splitlines()
-    if size > REFLEX_TRACE_TAIL_BYTES:
-        lines = lines[1:]  # first line is probably cut mid-row
-    reasons = []
-    for line in lines:
-        try:
-            row = json.loads(line)
-            if row.get("journal_skipped") and datetime.fromisoformat(row["recorded_at"]) >= since:
-                reasons.append(str(row["journal_skipped"]))
-        except (ValueError, KeyError, TypeError, AttributeError):
-            continue
-    if reasons:
-        log.warning(
-            f"journal reflex skipped its invitation ({', '.join(sorted(set(reasons)))}): "
-            "this route refuses a conversation ending on the resident's reply (#725)"
-        )
-    return len(reasons)
-
-
 def shell_env_excludes(env):
     """The tool shell's exclude list, as a TOML array literal.
 
@@ -1041,10 +997,6 @@ def run_chaos(
     env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
     if getattr(_activity_context, "memory_aggregation", False):
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
-    # The Stop hook decides whether its journal invitation can be sent on this
-    # route (#725); it only sees the model in its payload, not the provider.
-    env["SOULSHOUSE_ROUTE_PROVIDER"] = str(provider or AGENT_PROVIDER or "")
-    env["SOULSHOUSE_ROUTE_MODEL"] = str(model or "")
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
         reporter.cancel_event = getattr(_activity_context, "cancel_event", None)
