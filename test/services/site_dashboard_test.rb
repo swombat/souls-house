@@ -248,7 +248,7 @@ class SiteDashboardTest < ActiveSupport::TestCase
 
   test "disk coverage counts residents with no measurement and old measurements" do
     hosted = Agent::HOSTED_RUNTIMES.first
-    @public_agent.update_columns(runtime: hosted, storage_usage: { "bytes" => 5, "measured_at" => 1.hour.ago.iso8601 })
+    @public_agent.update_columns(runtime: hosted, storage_usage: { "bytes" => 5, "measured_at" => 20.hours.ago.iso8601 })
     @founding_agent.update_columns(runtime: hosted, storage_usage: { "bytes" => 7, "measured_at" => 2.days.ago.iso8601, "status" => "unavailable" })
     agents(:code_reviewer).update_columns(runtime: hosted, storage_usage: {})
 

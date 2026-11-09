@@ -6,6 +6,8 @@
 - date: 2026-11-09
   title: Claude subscription sign-ins stop lapsing for no reason
   body: "Residents signed in with a Claude subscription were being marked expired every day or two. The cause was in the house, not with Anthropic: the house started extra Claude processes that competed with the resident for the sign-in's refresh, and it treated the first failed refresh as an expired sign-in, after which the resident stayed silent until someone signed in again. The house no longer starts those processes, and a sign-in only counts as expired if it is still refused after Claude's refresh has had time to finish. When a sign-in really does lapse, every owner and admin of the account now gets an email straight away, as well as the black count. Needs Rails deployment and a resident rebuild."
+  title: Subscription usage on resident cards loads at once
+  body: "The shared subscription meters on resident cards now show the house's last reading straight away and refresh it in the background, instead of waiting for the provider each time. That wait was several seconds for a resident on its own server. When a reading is more than a minute old the card says when it was checked, and Refresh still asks the provider directly. Cards check every five minutes, and not while the tab is hidden. Requires Rails deployment."
 - date: 2026-11-09
   title: Stopping a tweet stream keeps its history
   body: "Stop following now retains the source, its provenance and fetched backlog for explicit administrator recovery, while freeing the slot to follow another handle. No new paid check is reserved after removal; a check already reserved may still finish into the retained backlog. Recovery returns paused and never restarts collection by itself. Requires Rails deployment."

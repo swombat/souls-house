@@ -31,6 +31,56 @@ class Agents::StorageUsageTest < ActiveSupport::TestCase
     assert_not commands.any? { |args| %w[start exec].include?(args.first) }
   end
 
+  test "helper can finish a large home: init reaps du, one CPU, its own timeout first" do
+    calls = []
+    capture = lambda do |*args, seconds: Agents::StorageUsage::COMMAND_SECONDS|
+      calls << [ args, seconds ]
+      output = Agents::VolumeSet.new(@agent).names.keys.map { |key| "1\t/measure/#{key}\n" }.join
+      { ok: true, stdout: args.first == "run" ? output : "", stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal "measured", result[:status]
+      assert_kind_of Float, result[:attempt_seconds]
+    end
+    run, seconds = calls.find { |args, _| args.first == "run" }
+    # Without --init busybox timeout execs du as PID 1, which ignores SIGTERM.
+    assert_includes run, "--init"
+    assert_equal "1", run[run.index("--cpus") + 1]
+    assert_equal %w[nice -n 19 timeout 300 du -sk], run[run.index("busybox:1.37") + 1, 7]
+    assert_operator seconds, :>, Agents::StorageUsage::DU_SECONDS
+    assert calls.reject { |args, _| args.first == "run" }.all? { |_, s| s == Agents::StorageUsage::COMMAND_SECONDS }
+  end
+
+  test "a timeout keeps the last reading and records why and how long" do
+    @agent.update_columns(storage_usage: { "bytes" => 1234, "measured_at" => 1.day.ago.iso8601, "status" => "measured" })
+    capture = lambda do |*args, **|
+      raise Timeout::Error if args.first == "run"
+
+      { ok: true, stdout: "", stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call
+      assert_equal "unavailable", result["status"]
+      assert_equal 1234, result["bytes"]
+      assert_equal "timeout", result["failure"]
+      assert_kind_of Float, result["attempt_seconds"]
+    end
+  end
+
+  test "a later success clears the recorded failure" do
+    @agent.update_columns(storage_usage: { "bytes" => 1, "failure" => "timeout", "attempt_seconds" => 330.0 })
+    capture = lambda do |*args, **|
+      output = Agents::VolumeSet.new(@agent).names.keys.map { |key| "2\t/measure/#{key}\n" }.join
+      { ok: true, stdout: args.first == "run" ? output : "", stderr: "" }
+    end
+    @service.stub(:capture, capture) do
+      result = @service.call.stringify_keys
+      assert_equal "measured", result["status"]
+      assert_not result.key?("failure")
+    end
+  end
+
   test "missing volumes are never mounted and readings are partial" do
     capture = lambda do |*args|
       if args.first == "volume"

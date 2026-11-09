@@ -9,6 +9,8 @@
     resetDescription,
   } from '$lib/subscription-usage';
 
+  const USAGE_POLL_MS = 5 * 60_000;
+
   let { accountId, agentId, modelId, subscription, usageUrl, canReconnect = false } = $props();
 
   let usage = $state(null);
@@ -16,10 +18,19 @@
   let error = $state(false);
   let windows = $derived(displayUsageWindows(usage, subscription?.provider, modelId));
   let now = $state(Date.now());
+
+  // The reading's age comes from when the house checked it and this card's
+  // own clock, so a reading that was fresh when it arrived is labelled once it
+  // is a minute old, without waiting for the next poll.
+  let checkedMinutes = $derived.by(() => {
+    const checkedAt = usage?.checked_at ? new Date(usage.checked_at).getTime() : NaN;
+    if (Number.isNaN(checkedAt)) return null;
+    return Math.max(0, Math.floor((now - checkedAt) / 60_000));
+  });
   $effect(() => {
     const timer = setInterval(() => {
       now = Date.now();
-    }, 60_000);
+    }, 15_000);
     return () => clearInterval(timer);
   });
 
@@ -58,6 +69,7 @@
         if (!response.ok) throw new Error('Usage unavailable');
         const snapshot = await response.json();
         if (!controller.signal.aborted) {
+          now = Date.now();
           usage = snapshot;
           error = false;
         }
@@ -69,10 +81,27 @@
       }
     }
 
-    refresh();
-    const timer = setInterval(refresh, 60_000);
+    // The house keeps the last reading and refreshes it in the background, so
+    // a slow poll is enough; a hidden tab doesn't ask at all, and catches up
+    // when it is shown again.
+    let lastAsked = 0;
+    function ask() {
+      lastAsked = Date.now();
+      refresh();
+    }
+    function tickPoll() {
+      if (!document.hidden) ask();
+    }
+    function onVisible() {
+      if (!document.hidden && Date.now() - lastAsked >= USAGE_POLL_MS) ask();
+    }
+
+    ask();
+    const timer = setInterval(tickPoll, USAGE_POLL_MS);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
       controller.abort();
     };
   });
@@ -101,6 +130,11 @@
       Usage unavailable
     {:else}
       {#if usage?.status === 'limited'}<div class="mb-2">Subscription limit reached</div>{/if}
+      {#if checkedMinutes !== null && checkedMinutes >= 1}
+        <div class="mb-2 text-[10px]" data-testid="usage-checked-at">
+          Checked {checkedMinutes} min ago
+        </div>
+      {/if}
       <div class="space-y-3">
         {#each windows as window}
           {@const used = usedPercent(window)}

@@ -20,7 +20,7 @@
       note:
         storage.disk_bytes === null || storage.disk_bytes === undefined
           ? 'not measured yet'
-          : `${formatCount(storage.disk_residents_measured)} residents, measured hourly`,
+          : `${formatCount(storage.disk_residents_measured)} residents, measured daily`,
       warning: coverageNote(storage.disk_coverage),
     },
     {

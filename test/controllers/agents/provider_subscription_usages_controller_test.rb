@@ -87,4 +87,24 @@ class Agents::ProviderSubscriptionUsagesControllerTest < ActionDispatch::Integra
     assert_response :not_found
   end
 
+  test "a second look within a minute is served from the kept reading" do
+    calls = 0
+    client = Object.new
+    client.define_singleton_method(:usage) do |provider:, model:, refresh:|
+      calls += 1
+      { "provider" => provider, "status" => "available", "windows" => [ { "id" => "session", "remaining_percent" => 55 } ] }
+    end
+
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      AgentProviderAuthClient.stub(:new, client) do
+        2.times { get account_agent_provider_subscription_usage_path(@account, @agent), as: :json }
+      end
+    end
+
+    assert_response :success
+    assert_equal 1, calls
+    assert_equal false, response.parsed_body["stale"]
+    assert_equal 55, response.parsed_body.dig("windows", 0, "remaining_percent")
+  end
+
 end
