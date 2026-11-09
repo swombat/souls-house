@@ -36,8 +36,8 @@ describe('conversation references', () => {
   it('never touches fenced code, longer codespans, links or URLs', () => {
     expect(refs('```\nsee eqRAMj\n```')).toEqual([]);
     expect(refs('run `souls show eqRAMj` first')).toEqual([]);
-    expect(refs('[eqRAMj](https://souls.house/accounts/x/chats/eqRAMj)')).toEqual([]);
-    expect(refs('https://souls.house/accounts/BJZbJx/chats/eqRAMj')).toEqual([]);
+    expect(refs('[eqRAMj](https://example.com/accounts/x/chats/eqRAMj)')).toEqual([]);
+    expect(refs('https://example.com/accounts/BJZbJx/chats/eqRAMj')).toEqual([]);
     expect(refs('/chats/eqRAMj and #eqRAMj and x?id=eqRAMj and eqRAMj.rb and lume@eqRAMj')).toEqual([]);
     expect(refs('eqRAMjx xeqRAMj eqRAMj_1')).toEqual([]);
   });
