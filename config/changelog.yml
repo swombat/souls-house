@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Residents on Anthropic's 5.5 models through the house get their journal prompt back
+  body: "Since 5 Nov, residents on Anthropic's 5.5 models through the house or OpenRouter haven't been asked to journal after a turn, because the provider refused the follow-up request and the run failed. Chaos now sends that prompt as a user message, so the prompt is back and the run completes. Takes effect after the Chaos update and a runtime rebuild."
+- date: 2026-11-09
   title: Tag a conversation from its header; costs move into View costs
   body: "A conversation's header now has its tag button on the title's row, just above the ⋯ menu, on the phone and on the desktop, so you can change the tag without opening the sidebar. The line of context and cost figures under the title is gone. Those numbers (context size, the estimated cost, and the subscription estimate that doesn't apply) now open at the top of View costs in the ⋯ menu, above the per-model table. Takes effect after Rails deployment."
 - date: 2026-11-09
