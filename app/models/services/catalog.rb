@@ -321,6 +321,36 @@ module Services
       requires_credentials: [ %i[withings client_id], %i[withings client_secret] ]
     )
 
+    # A LinkedIn member profile, for posting only. Residents never hold the
+    # token: they post through the house (soulshouse-linkedin, LinkedinPoster),
+    # which keeps the record and the idempotency. Member sign-ins last 60
+    # days; LinkedinGrantExpiryJob warns the owner before they end.
+    Services::Definition.register(
+      key: "linkedin",
+      name: "LinkedIn",
+      management_scopes: %w[personal],
+      credential_strategy: "house_poster",
+      api_origins: [],
+      documentation: [ "https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin" ],
+      access_profiles: {
+        post: %w[openid profile w_member_social]
+      },
+      default_access_profile: "post",
+      runtime_notes: [
+        "Post to this LinkedIn profile with `soulshouse-linkedin post \"text\" [--image file] [--video file.mp4]` " \
+        "(or POST posts_endpoint). You never hold a LinkedIn token. A post is public under the person's own name: " \
+        "publish only what they asked for.",
+        "Text is sent as plain text: LinkedIn mentions and hashtag links are not made. Up to 3,000 characters.",
+        "Media: one image (JPEG, PNG or GIF, up to 10 MB) or one MP4 video (3 s to 30 min, up to 200 MB). " \
+        "Media posts are sent in the background; the helper waits and prints the post URL.",
+        "If the outcome is unknown, check the profile and resolve it (`soulshouse-linkedin resolve`); never just post again. " \
+        "There is no way to read the feed, comment, react, or delete through the house.",
+        "If posting fails because the sign-in ended, say so to the person: the owner reconnects LinkedIn from Integrations."
+      ],
+      adapter_class: "Services::LinkedinAdapter",
+      requires_credentials: [ %i[linkedin client_id], %i[linkedin client_secret] ]
+    )
+
     Services::Definition.register(
       key: "github",
       name: "GitHub repository",

@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""Post to a LinkedIn profile whose connection has been shared with you, through souls.house."""
+
+import argparse
+import io
+import json
+import mimetypes
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+OPENER = urllib.request.build_opener(RefuseRedirects)
+POLL_SECONDS = 5
+WAIT_LIMIT_SECONDS = 25 * 60
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-linkedin",
+        description="Post to a LinkedIn profile whose connection the owner has shared with you.",
+        epilog="Full manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    sub = parser.add_subparsers(dest="operation", required=True)
+
+    post = sub.add_parser(
+        "post",
+        help="publish one post (public, under the person's own name)",
+        description=(
+            "Publish one public post. Every post carries an idempotency key; retrying with the same "
+            "--key never posts twice. If the outcome is unknown, check the profile and use "
+            "'soulshouse-linkedin resolve' instead of posting again."
+        ),
+    )
+    post.add_argument("text", nargs="*", help="the post text (or use --text-file)")
+    post.add_argument("--text-file", help="read the text from this file ('-' for stdin)")
+    media = post.add_mutually_exclusive_group()
+    media.add_argument("--image", help="attach one JPEG, PNG or GIF (up to 10 MB)")
+    media.add_argument("--video", help="attach one MP4 video (3 s to 30 min, up to 200 MB)")
+    post.add_argument("--connection", help="which LinkedIn connection (svc_N), when several are shared with you")
+    post.add_argument("--key", help="idempotency key; reuse it to retry the same post safely (default: a new random key)")
+    post.add_argument("--no-wait", action="store_true", help="for media posts, return once queued instead of waiting")
+    post.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    status = sub.add_parser("status", help="show one post's state")
+    status.add_argument("id")
+    status.add_argument("--json", action="store_true")
+
+    resolve = sub.add_parser(
+        "resolve",
+        help="settle a post whose outcome was unknown",
+        description="Record whether a post whose outcome was unknown reached LinkedIn. Nothing is posted.",
+    )
+    resolve.add_argument("id", help="the post id souls.house returned")
+    outcome = resolve.add_mutually_exclusive_group(required=True)
+    outcome.add_argument("--posted", metavar="URL_OR_URN", help="it was published: its LinkedIn URL or urn:li:share:... id")
+    outcome.add_argument("--not-posted", action="store_true", help="it was not published")
+    resolve.add_argument("--json", action="store_true")
+    return parser
+
+
+def request(app_url, token, path, method="GET", body=None, content_type=None, headers=None):
+    all_headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if content_type:
+        all_headers["Content-Type"] = content_type
+    all_headers.update(headers or {})
+    req = urllib.request.Request(f"{app_url.rstrip('/')}{path}", data=body, headers=all_headers, method=method)
+    try:
+        with OPENER.open(req, timeout=180) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        raw = error.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
+        return error.code, data if isinstance(data, dict) else {"error": raw}
+
+
+def multipart(fields, file_field=None, file_path=None):
+    boundary = f"----soulshouse{uuid.uuid4().hex}"
+    out = io.BytesIO()
+    for name, value in fields.items():
+        out.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode())
+        out.write(value.encode("utf-8"))
+        out.write(b"\r\n")
+    if file_path:
+        filename = os.path.basename(file_path).replace('"', "")
+        mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        out.write(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{file_field}\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: {mime}\r\n\r\n".encode()
+        )
+        with open(file_path, "rb") as handle:
+            out.write(handle.read())
+        out.write(b"\r\n")
+    out.write(f"--{boundary}--\r\n".encode())
+    return out.getvalue(), f"multipart/form-data; boundary={boundary}"
+
+
+def read_text(args):
+    if args.text_file:
+        if args.text_file == "-":
+            return sys.stdin.read()
+        with open(args.text_file, encoding="utf-8") as handle:
+            return handle.read()
+    return " ".join(args.text)
+
+
+def report(result, status_code, args):
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    elif result.get("url"):
+        print(result["url"])
+    state = result.get("status")
+    post_id = result.get("id")
+    if state == "outcome_unknown" or (state == "pending" and status_code != 202):
+        print(
+            f"Outcome unknown for post {post_id}. Check the profile on LinkedIn, then run "
+            f"'soulshouse-linkedin resolve {post_id} --posted <url>' or '--not-posted'. "
+            "Do not post it again with a new key.",
+            file=sys.stderr,
+        )
+        return 1
+    if state == "pending":
+        print(f"Queued as post {post_id}; check it with 'soulshouse-linkedin status {post_id}'.", file=sys.stderr)
+        return 0
+    if state == "failed":
+        reason = result.get("failure_reason") or "failed"
+        print(f"Post {post_id} was not sent ({reason}): {result.get('error') or 'no detail given'}", file=sys.stderr)
+        return 1
+    if state == "resolved_not_posted":
+        print(f"Post {post_id} was resolved as not posted; nothing is on LinkedIn for this key.", file=sys.stderr)
+        return 1
+    if status_code >= 300:
+        print(f"souls.house returned HTTP {status_code}: {result.get('error')}", file=sys.stderr)
+        return 1
+    if state in ("posted", "resolved_posted"):
+        if not args.json and not result.get("url"):
+            print(f"Post {post_id} is {state} ({result.get('post_urn') or 'no URN recorded'})")
+        return 0
+    print(f"Post {post_id} has an unexpected status: {state!r}", file=sys.stderr)
+    return 1
+
+
+def main():
+    args = build_parser().parse_args()
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    if args.operation in ("status", "resolve"):
+        path = f"/api/v1/linkedin_posts/{urllib.parse.quote(args.id)}"
+        try:
+            if args.operation == "status":
+                code, result = request(app_url, token, path)
+                if code == 200 and result.get("status") == "pending":
+                    code = 202
+            else:
+                payload = {"resolution": "not_posted"} if args.not_posted else {"resolution": "posted", "post_url": args.posted}
+                code, result = request(app_url, token, path, method="PATCH",
+                                       body=json.dumps(payload).encode(), content_type="application/json")
+        except Exception as error:
+            print(f"souls.house LinkedIn request failed: {error}", file=sys.stderr)
+            return 1
+        return report(result, code, args)
+
+    text = read_text(args).strip()
+    if not text:
+        print("The post text is empty", file=sys.stderr)
+        return 64
+    fields = {"text": text}
+    if args.connection:
+        fields["connection"] = args.connection
+    media_path = args.image or args.video
+    if media_path and not os.path.isfile(media_path):
+        print(f"No such file: {media_path}", file=sys.stderr)
+        return 66
+    body, content_type = multipart(fields, "media", media_path)
+
+    key = args.key or str(uuid.uuid4())
+    # Disclose the key before anything is sent: if this process is interrupted
+    # mid-request, the key is the only safe way to retry.
+    print(f"[idempotency key: {key}] (retry only with --key {key})", file=sys.stderr, flush=True)
+    try:
+        code, result = request(app_url, token, "/api/v1/linkedin_posts", method="POST", body=body,
+                               content_type=content_type, headers={"Idempotency-Key": key})
+    except BaseException as error:
+        print(f"souls.house LinkedIn request failed: {error!r}", file=sys.stderr, flush=True)
+        print(f"Outcome unknown. Retry only with --key {key} so it cannot post twice.", file=sys.stderr, flush=True)
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        return 1
+
+    if code == 202 and not args.no_wait:
+        print(f"Uploading in the background as post {result.get('id')}; waiting...", file=sys.stderr, flush=True)
+        deadline = time.monotonic() + WAIT_LIMIT_SECONDS
+        while result.get("status") == "pending" and time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
+            try:
+                poll_code, polled = request(app_url, token, f"/api/v1/linkedin_posts/{urllib.parse.quote(str(result.get('id')))}")
+            except Exception:
+                continue  # the post is already queued; a failed check changes nothing
+            if poll_code == 200:
+                result = polled
+        code = 200 if result.get("status") in ("posted", "resolved_posted") else (202 if result.get("status") == "pending" else 502)
+    return report(result, code, args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

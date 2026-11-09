@@ -29,6 +29,8 @@ class ServiceConnection < ApplicationRecord
   # Repository watches: hooks this connection installed. Removed (hook
   # deleted while the token still works) on disconnect; see disconnect!.
   has_many :watched_repositories, dependent: :destroy
+  # What residents published through this connection (LinkedIn).
+  has_many :linkedin_posts, dependent: :destroy
 
   encrypts :credential_payload
   encrypts :pairing_qr
@@ -258,6 +260,12 @@ class ServiceConnection < ApplicationRecord
       # let send, on a provider sending is switched on for.
       endpoints["send_endpoint"] = endpoints["messages_endpoint"] if sendable_by?(agent)
       endpoints
+    when "house_poster"
+      # The house posts for the resident (LinkedinPoster) and keeps the
+      # token; residents get the posting endpoint only.
+      {
+        "posts_endpoint" => "#{base}#{Rails.application.routes.url_helpers.api_v1_linkedin_posts_path}"
+      }
     when "read_proxy"
       # The payload holds a token that can write. Residents get the house's
       # read-only proxy, never the payload.
@@ -378,6 +386,15 @@ class ServiceConnection < ApplicationRecord
 
   def public_id
     "svc_#{id}"
+  end
+
+  # When the owner must next reconnect, for services whose grant ends and
+  # cannot be renewed by the house (LinkedIn's 60-day member sign-in).
+  def grant_expires_at
+    adapter = definition.adapter
+    adapter.grant_expires_at(self) if adapter.respond_to?(:grant_expires_at)
+  rescue Services::Definition::UnknownProvider
+    nil
   end
 
   def disconnect!(revoke_provider: true)
@@ -637,6 +654,7 @@ class ServiceConnection < ApplicationRecord
       label: display_label,
       management_scope: management_scope,
       status: status,
+      grant_expires_at: grant_expires_at&.utc&.iso8601,
       granted_scopes: granted_scopes,
       effective_authority: effective_authority,
       authority_warnings: authority_warnings,

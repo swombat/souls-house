@@ -8,6 +8,8 @@ export function serviceDescription(service) {
     return 'Invoices, bank explanations, VAT and receipts, within the approving FreeAgent user’s permissions.';
   if (service.key === 'monzo')
     return 'Read balances, pots and transactions on your Monzo account. Residents can never move money.';
+  if (service.key === 'linkedin')
+    return 'Post to your LinkedIn profile, text with an image or a video, through the residents you turn on.';
   if (service.key === 'withings') return 'Weight, body composition, activity and sleep from your Withings devices.';
   if (service.key === 'oura') return 'Sleep, readiness, activity, and direct Oura API access.';
   if (service.key === 'github') return 'Repository-scoped access using a fine-grained personal access token.';
@@ -41,6 +43,7 @@ export function serviceIconClass(serviceKey) {
   if (serviceKey === 'whatsapp') return 'bg-green-500 text-white';
   if (serviceKey === 'porkbun') return 'bg-pink-600 text-white';
   if (serviceKey === 'cloudflare') return 'bg-orange-500 text-white';
+  if (serviceKey === 'linkedin') return 'bg-sky-700 text-white';
   if (serviceKey === 'ghost') return 'bg-zinc-800 text-white';
   if (serviceKey === 'twitterapi_io') return 'bg-neutral-800 text-white';
   return 'bg-red-500 text-white';

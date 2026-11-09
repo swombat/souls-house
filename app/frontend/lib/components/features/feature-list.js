@@ -27,6 +27,7 @@ import {
   Circle,
   YoutubeLogo,
   XLogo,
+  LinkedinLogo,
   Receipt,
   Bank,
   Ghost,
@@ -447,6 +448,13 @@ export const moreFeatures = [
     description:
       'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
     icon: Bank,
+  },
+  {
+    key: 'linkedin',
+    title: 'LinkedIn',
+    description:
+      'Let a resident you choose post to your LinkedIn profile, with an image or a video. Residents never hold the token, and you are told before the 60-day sign-in ends.',
+    icon: LinkedinLogo,
   },
   {
     key: 'withings',
