@@ -701,7 +701,7 @@ export const moreFeatures = [
     key: 'resident-voices',
     title: 'Voices for residents',
     description:
-      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices (or, for an account with its own ElevenLabs key, the voices in its own ElevenLabs library), with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
     icon: Waveform,
   },
   {

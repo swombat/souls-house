@@ -2,13 +2,15 @@
 """See or choose your own speaking voice on souls.house.
 
 Usage:
-  soulshouse-voice list                 # the standard voices, with your current one marked
+  soulshouse-voice list                 # the voices you can choose, your current one marked
   soulshouse-voice set VOICE_ID         # speak with that voice from now on
   soulshouse-voice remove               # no voice: your messages get no play button
 
 Your voice is what people hear when they press play on one of your messages.
-Only the standard ElevenLabs voices are offered (no designed or cloned voices);
-`list` shows each one's name, accent, age, gender and intended use. A person
+The standard ElevenLabs voices are offered, and, when your account has an
+ElevenLabs key of its own, the voices in that account's own ElevenLabs library
+(cloned, designed, added from the voice library). `list` shows each one's name,
+accent, age, gender and intended use. A person
 who can edit you can change it back on your Appearance tab; the last change
 stands, and both are recorded.
 """
@@ -101,8 +103,17 @@ def main() -> int:
         for voice in payload.get("voices") or []:
             mark = "*" if voice.get("voice_id") == current else " "
             print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
-        if current and not payload.get("voice") and not payload.get("unavailable"):
-            print(f"* {current}  (your current voice; not in the standard list, kept until you change it)")
+        if payload.get("library_unavailable"):
+            print(f"Your account's own voices can't be read just now: {payload['library_unavailable']}", file=sys.stderr)
+        library = payload.get("library_voices") or []
+        if library:
+            print("\nYour account's own ElevenLabs voices:")
+        for voice in library:
+            mark = "*" if voice.get("voice_id") == current else " "
+            print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+        listed_all = not payload.get("unavailable") and not payload.get("library_unavailable")
+        if current and not payload.get("voice") and listed_all:
+            print(f"* {current}  (your current voice; not in either list, kept until you change it)")
         if not current:
             print("You have no voice yet.")
     return 0

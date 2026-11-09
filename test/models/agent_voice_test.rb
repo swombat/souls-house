@@ -46,4 +46,19 @@ class AgentVoiceTest < ActiveSupport::TestCase
     end
   end
 
+  test "a voice from the account's own library is accepted; one from neither list is refused, naming both" do
+    @agent.account.update!(eleven_labs_api_key: "acct-key")
+
+    with_standard_voices do
+      with_library_voices do
+        assert @agent.update(voice_id: "own-janis")
+        assert_equal "own-janis", @agent.reload.voice_id
+
+        assert_not @agent.update(voice_id: "someone-elses")
+        assert_includes @agent.errors[:voice_id],
+          "is not one of the standard ElevenLabs voices or the account's own ElevenLabs voices"
+      end
+    end
+  end
+
 end
