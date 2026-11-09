@@ -15,6 +15,12 @@ class CompanionOperation < ApplicationRecord
     "trash" => %w[volume path quarantine],
     "execute" => %w[input_size timeout_seconds]
   }.freeze
+  # Desktop arguments are validated in full by the companion's allowlisted
+  # grammar; the house checks the outer shape and the grant.
+  DESKTOP_KEYS = %w[command app steps timeout_seconds interactive compact skeleton max_depth surface root
+    window_id wait_for wait_timeout_ms role name value text description native_id exact first last count nth
+    limit ref property combo direction amount].freeze
+  DESKTOP_MAX_ARGUMENTS = 24.kilobytes
   ACTIVE_STATES = %w[pending dispatched].freeze
   MAX_BODY = 8.megabytes
   MAX_INLINE = 64.kilobytes
@@ -26,9 +32,10 @@ class CompanionOperation < ApplicationRecord
   has_one :input, class_name: "CompanionOperationInput", dependent: :destroy
 
   def self.start!(device:, agent:, kind:, arguments:)
-    raise Refused, "Unsupported operation" unless READ_KINDS.include?(kind) || ARGUMENT_KEYS.key?(kind)
-    raise Refused, "Invalid arguments" unless arguments.is_a?(Hash) && arguments.to_json.bytesize <= 8.kilobytes
-    keys = ARGUMENT_KEYS.fetch(kind, %w[volume path offset limit pattern cursor])
+    raise Refused, "Unsupported operation" unless READ_KINDS.include?(kind) || ARGUMENT_KEYS.key?(kind) || kind == "desktop"
+    limit = kind == "desktop" ? DESKTOP_MAX_ARGUMENTS : 8.kilobytes
+    raise Refused, "Invalid arguments" unless arguments.is_a?(Hash) && arguments.to_json.bytesize <= limit
+    keys = kind == "desktop" ? DESKTOP_KEYS : ARGUMENT_KEYS.fetch(kind, %w[volume path offset limit pattern cursor])
     raise Refused, "Unexpected arguments" unless (arguments.keys - keys).empty?
     if %w[write execute].include?(kind)
       size = arguments["input_size"]
@@ -37,8 +44,18 @@ class CompanionOperation < ApplicationRecord
     if kind == "write"
       raise Refused, "Invalid write mode" unless %w[create overwrite append].include?(arguments.fetch("mode", "create"))
     end
-    timeout = kind == "execute" ? arguments.fetch("timeout_seconds", 30) : 30
-    raise Refused, "Invalid timeout" unless timeout.is_a?(Integer) && timeout.between?(1, 300)
+    if kind == "desktop"
+      raise Refused, "Invalid desktop command" unless arguments["command"].is_a?(String)
+      if arguments["command"] == "batch"
+        steps = arguments["steps"]
+        raise Refused, "Invalid batch" unless steps.is_a?(Array) && steps.size.between?(1, 16) &&
+          steps.all? { |step| step.is_a?(Hash) && (step.keys - DESKTOP_KEYS - %w[steps timeout_seconds]).empty? &&
+            step.keys.exclude?("steps") && step.keys.exclude?("timeout_seconds") }
+      end
+    end
+    timeout = %w[execute desktop].include?(kind) ? arguments.fetch("timeout_seconds", 30) : 30
+    maximum = kind == "desktop" ? 120 : 300
+    raise Refused, "Invalid timeout" unless timeout.is_a?(Integer) && timeout.between?(1, maximum)
 
     device.with_lock do
       where(companion_device: device, state: ACTIVE_STATES).where(deadline: ..Time.current).update_all(state: "timed_out", outcome: "deadline")
@@ -58,6 +75,7 @@ class CompanionOperation < ApplicationRecord
     return false unless resident
     return true if kind == "drives"
     return resident["execute"] == true if kind == "execute"
+    return resident["desktop"] == true if kind == "desktop"
 
     grants = resident.fetch("volumes", [])
     allowed = ->(volume, write) do

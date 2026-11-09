@@ -230,7 +230,7 @@ export const technicalFeatures = [
     key: 'companion-foundation',
     title: 'An explicitly enrolled companion',
     description:
-      'API-only Linux read/write and explicit full-user execution grants, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
+      'API-only Linux read/write, explicit full-user execution grants, and desktop control of locally chosen apps behind a timed switch, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
     icon: TerminalWindow,
   },
   {

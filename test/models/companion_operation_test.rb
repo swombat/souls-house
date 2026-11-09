@@ -149,4 +149,61 @@ class CompanionOperationTest < ActiveSupport::TestCase
     assert_equal "completed", operation.state
   end
 
+  test "desktop is its own grant: execute and volumes never imply it, and it never implies them" do
+    snapshot = { "command" => "snapshot", "app" => "Finder", "interactive" => true }
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    end
+    allow_mutations(execute: true, source_write: true)
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    end
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    assert_equal "desktop", operation.envelope[:operation]
+    assert_equal true, operation.envelope[:policy]["residents"].first["desktop"]
+    assert_not operation.input_required?
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "execute", arguments: { "input_size" => 2 })
+    end
+  end
+
+  test "desktop arguments keep the outer shape and bounds" do
+    allow_mutations
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    start = ->(arguments) { CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: arguments) }
+    assert start.call({ "command" => "batch", "timeout_seconds" => 120,
+      "steps" => [ { "command" => "snapshot", "app" => "Finder" }, { "command" => "click", "app" => "Finder", "ref" => "@a:e1" } ] })
+    [
+      { "command" => "snapshot", "app" => "Finder", "headed" => true },
+      { "command" => "snapshot", "app" => "Finder", "timeout_seconds" => 121 },
+      { "command" => "batch", "steps" => [] },
+      { "command" => "batch", "steps" => [ { "command" => "batch", "steps" => [] } ] },
+      { "command" => "batch", "steps" => Array.new(17) { { "command" => "snapshot", "app" => "Finder" } } },
+      { "app" => "Finder" }
+    ].each do |arguments|
+      assert_raises(CompanionOperation::Refused, arguments.inspect) { start.call(arguments) }
+    end
+  end
+
+  test "owner changes execute and desktop after enrollment; revision bump cancels in-flight work" do
+    allow_mutations
+    operation = start_read
+    revision = @device.grant_revision
+    assert @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    assert_equal revision + 1, @device.reload.grant_revision
+    assert_equal "cancelled", operation.reload.state
+    assert_equal [ { "volume" => "fixture-volume", "access" => "read" }, { "volume" => "destination", "access" => "write" } ],
+      @device.policy["residents"].first["volumes"]
+    assert_not @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    assert_equal revision + 1, @device.reload.grant_revision
+    log = AuditLog.where(action: "companion.device.authority_changed").last
+    assert_equal({ "execute" => false, "desktop" => true }, log.data["after"])
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: false, actor: users(:user_1))
+    assert_not @device.reload.policy["residents"].first.key?("desktop")
+    assert_raises(ArgumentError) do
+      @device.change_resident_authority!(resident_id: "Nobody", execute: true, desktop: true, actor: users(:user_1))
+    end
+  end
+
 end

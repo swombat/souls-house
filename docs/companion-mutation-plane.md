@@ -21,6 +21,33 @@ programs can rewrite `state.json`, including the local ceiling.** The companion
 is not a sandbox, and the local ceiling is not an enforceable limit against an
 execute-granted actor. Admission checks are not post-execution confinement.
 
+Desktop is a fourth, independent authority (`desktop: true` on a resident in
+the grant). Neither read, write nor execute implies it, and it implies none of
+them. It operates apps through the companion's agent-desktop supervisor
+(companion `docs/desktop.md`): the computer's owner also lists, locally, which
+apps each resident may operate, and holds a timed on/off switch (the menu bar).
+Operating an app that can run commands is shell authority through the user
+interface, so the local app scope starts with Finder. `desktop` is written into
+the policy only when true, so companions that predate it see the shape they
+know.
+
+### Changing execute or desktop after enrollment
+
+A confirmed owner/admin with a human API key:
+
+```
+PATCH /api/v1/companion_devices/:id
+{ "account_id": "...", "control": "authority", "resident_id": "<public agent id>",
+  "execute": false, "desktop": true }
+```
+
+Both booleans are required. Volumes are not changed by this control. A change
+bumps `grant_revision`, so every pending or dispatched operation is cancelled
+and none can be delivered under the old grant; the audit row
+`companion.device.authority_changed` records actor, before, after and revision.
+The response is `{ policy, grant_revision, changed }`; an unchanged request
+returns `changed: false` without a revision bump.
+
 ### Human enrollment warning
 
 Enrollment is API-only; there is no companion settings page or grant-description
@@ -35,7 +62,9 @@ The successful creation response includes `id`, `expires_at` and
   contains the user's home, so every write grant receives this warning.
 - Any resident with `execute: true` adds the full-user-authority and
   rewritable-`state.json`/local-ceiling warning, including execute-only grants.
-- Read-only policies with no execute permission return an empty array.
+- Any resident with `desktop: true` adds the warning that operating an app
+  that can run commands is shell authority through the user interface.
+- Read-only policies with no execute or desktop permission return an empty array.
 
 Human-facing API clients must display these warnings with the created grant;
 the response is not a new consent/acknowledgement gate or a permission change.
@@ -49,6 +78,10 @@ Candidate metadata:
 - `rename`: `volume`, `path`, `destination`
 - `trash`: `volume`, `path`, `quarantine`
 - `execute`: `input_size`, `timeout_seconds` (1–300, default 30)
+- `desktop`: `command` plus that verb's typed fields, or `command: "batch"`
+  with 1–16 `steps`; `timeout_seconds` 1–120 (default 30); no input upload.
+  The house checks the outer shape and the grant; the companion validates the
+  full per-verb grammar and refuses with a named reason.
 
 Unknown keys are refused. Paths are relative to a verified granted mount;
 quarantine must be an owned writable directory on that same mount, not a
