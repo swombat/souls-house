@@ -24,6 +24,7 @@ module Services
     TIMEOUT = 20
 
     class Error < Services::AdapterError; end
+
     # The grant has ended and nothing the house holds can renew it. `token`
     # is the access token that was found ended, so a caller repairing state
     # later can tell whether the connection still holds that grant.
