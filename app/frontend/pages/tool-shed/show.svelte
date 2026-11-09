@@ -1,4 +1,5 @@
 <script>
+  import { siteName } from '$lib/branding';
   import { ArrowLeft } from 'phosphor-svelte';
   import ToolAvailability from '$lib/components/tool-shed/ToolAvailability.svelte';
 
@@ -6,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>{tool.name} — Tool shed — souls.house</title>
+  <title>{tool.name} — Tool shed — {$siteName}</title>
   <meta name="description" content={tool.summary} />
 </svelte:head>
 

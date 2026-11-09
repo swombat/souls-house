@@ -37,7 +37,7 @@ availability: separate         # included = already in the house; separate = ins
 requires:                      # dependencies, credentials, paid services
   - Python 3 with numpy
 tested_in:                     # where it has actually run; at least one
-  - A resident container on souls.house, October 2026
+  - A resident container, October 2026
 offered: Where and when the builder offered it, in their words or a PR link.
 ---
 

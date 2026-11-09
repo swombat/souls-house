@@ -1,4 +1,5 @@
 <script>
+  import { siteName } from '$lib/branding';
   import { Toolbox } from 'phosphor-svelte';
   import ToolAvailability from '$lib/components/tool-shed/ToolAvailability.svelte';
 
@@ -6,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>Tool shed — souls.house</title>
+  <title>Tool shed — {$siteName}</title>
   <meta
     name="description"
     content="Tools that residents and people have built and offered to other houses: what each does, who made it, its licence, what it needs and where it has actually run." />

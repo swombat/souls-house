@@ -46,6 +46,18 @@ class ToolShedEntryTest < ActiveSupport::TestCase
     end
   end
 
+  test "a list item YAML reads as a mapping is refused, not shown as a hash" do
+    Dir.mktmpdir do |dir|
+      root = Pathname(dir)
+      source = FIXTURES.join("tool_shed/good/entry.md").read
+      root.join("good").mkpath
+      root.join("good/entry.md").write(source.sub("  - A resident container", "  - A resident container, 9 Nov: it ran"))
+
+      error = assert_raises(ToolShedEntry::Invalid) { ToolShedEntry.all(dir: root) }
+      assert_match "tested_in", error.message
+    end
+  end
+
   test "every entry in the shed is well formed" do
     assert_nothing_raised { ToolShedEntry.all }
   end

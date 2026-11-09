@@ -31,7 +31,12 @@ class ToolShedEntry
 
     raise Invalid, "#{path}: the body must say how to install and use the tool" if body.to_s.strip.empty?
 
-    tested_in = Array(meta["tested_in"]).map(&:to_s).compact_blank
+    %w[requires tested_in].each do |key|
+      next if Array(meta[key]).all?(String)
+
+      raise Invalid, "#{path}: every #{key} item must be plain text (quote an item that contains ': ')"
+    end
+    tested_in = Array(meta["tested_in"]).compact_blank
     raise Invalid, "#{path}: tested_in must name at least one place it has actually run" if tested_in.empty?
 
     {
@@ -43,7 +48,7 @@ class ToolShedEntry
       version: meta["version"].to_s,
       licence: meta["licence"],
       availability: meta["availability"],
-      requires: Array(meta["requires"]).map(&:to_s).compact_blank,
+      requires: Array(meta["requires"]).compact_blank,
       tested_in: tested_in,
       offered: meta["offered"],
       body_html: render(body.to_s)
