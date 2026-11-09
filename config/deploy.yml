@@ -161,7 +161,10 @@ env:
     HOUSE_SOURCE_REPO: <%= house_source_repo %> # owner/repo the Site Admin deploy page reads and dispatches to.
 <% end %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
-    MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1
+    # voyage-* = Voyage AI with credentials voyage.api_key (Mnemodyne::Embeddings). The
+    # bge-small accessory stays configured as the way back: set the profile to
+    # bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1 and re-embed.
+    MNEMODYNE_EMBEDDING_PROFILE: voyage-4
 <% if voice_embeddings_image %>
     VOICE_EMBEDDING_URL: http://souls-house-voice-embeddings:8080 # FieldVoiceprints::VoiceEmbeddings; audio stays on the private network.
 <% end %>

@@ -56,7 +56,7 @@ class Mnemodyne::Recall
     vector = nil
     anchor_id = nil
     if @query.present?
-      vector = Mnemodyne::Embeddings.embed(@query)
+      vector = Mnemodyne::Embeddings.embed(@query, input_type: :query)
       ranked = nodes.select { |node| current_embedding?(node, vector) }
         .sort_by { |node| -Mnemodyne::Embeddings.cosine(vector, node.embedding) }
       seeds = ranked.first(30)

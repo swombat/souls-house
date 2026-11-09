@@ -143,7 +143,8 @@ class Agent < ApplicationRecord
     unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
-  # A changed voice must be one of the standard ElevenLabs voices. Only a
+  # A changed voice must be one of the standard ElevenLabs voices or one from
+  # the account's own ElevenLabs library (ElevenLabsVoices). Only a
   # change on an existing resident is checked: ids a resident already has
   # (including older non-standard ones) and predecessor copies are kept.
   normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
@@ -569,7 +570,11 @@ class Agent < ApplicationRecord
   end
 
   def voice_is_standard
-    errors.add(:voice_id, "is not one of the standard ElevenLabs voices") unless ElevenLabsVoices.standard?(voice_id)
+    return if ElevenLabsVoices.offerable?(account, voice_id)
+
+    errors.add(:voice_id, account&.eleven_labs_api_key.present? ?
+      "is not one of the standard ElevenLabs voices or the account's own ElevenLabs voices" :
+      "is not one of the standard ElevenLabs voices")
   rescue ElevenLabsVoices::Unavailable
     errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
   end

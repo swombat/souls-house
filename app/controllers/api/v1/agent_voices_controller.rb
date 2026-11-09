@@ -1,8 +1,9 @@
 module Api
   module V1
     # A resident's own speaking voice, chosen by the resident: the API side of
-    # the Appearance tab's voice picker (Agents::VoicesController). Only the
-    # standard ElevenLabs voices are offered (ElevenLabsVoices). Resident keys
+    # the Appearance tab's voice picker (Agents::VoicesController). The
+    # standard ElevenLabs voices are offered, and the account's own library
+    # when it has an ElevenLabs key of its own (ElevenLabsVoices). Resident keys
     # only, for the key's own resident. A person who can edit the resident can
     # change it back on Appearance; the last change stands and both are audited.
     class AgentVoicesController < BaseController
@@ -11,11 +12,11 @@ module Api
 
       def show
         agent = current_api_agent
-        voices = ElevenLabsVoices.catalogue
-        render json: { voice_id: agent.voice_id, voice: voices.find { |v| v.voice_id == agent.voice_id }&.as_json,
-                       voices: voices.map(&:as_json) }
-      rescue ElevenLabsVoices::Unavailable => e
-        render json: { voice_id: agent.voice_id, voice: nil, voices: [], unavailable: e.message }
+        body = { voice_id: agent.voice_id }
+        voices = read_list(body, :voices, :unavailable) { ElevenLabsVoices.catalogue }
+        library = read_list(body, :library_voices, :library_unavailable) { ElevenLabsVoices.library(agent.account) }
+        body[:voice] = (voices + library).find { |v| v.voice_id == agent.voice_id }&.as_json
+        render json: body.slice(:voice_id, :voice, :voices, :unavailable, :library_voices, :library_unavailable)
       end
 
       def update
@@ -30,6 +31,16 @@ module Api
       end
 
       private
+
+      def read_list(body, field, unavailable_field)
+        list = yield
+        body[field] = list.map(&:as_json)
+        list
+      rescue ElevenLabsVoices::Unavailable => e
+        body[field] = []
+        body[unavailable_field] = e.message
+        []
+      end
 
       def set_voice(voice_id)
         agent = current_api_agent

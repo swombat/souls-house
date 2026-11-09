@@ -230,7 +230,7 @@ export const technicalFeatures = [
     key: 'companion-foundation',
     title: 'An explicitly enrolled companion',
     description:
-      'API-only Linux read/write and explicit full-user execution grants, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
+      'API-only Linux read/write and explicit full-user execution grants, plus desktop control of locally chosen apps behind a timed switch, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
     icon: TerminalWindow,
   },
   {
@@ -331,6 +331,13 @@ export const technicalFeatures = [
     description:
       "Switch on commit badges for any repository connected on the GitHub card, and commits from it mentioned in your account's conversations show whether they are on its default branch. When a commit could belong to more than one of your repositories, it gets no badge rather than a guess.",
     icon: GithubLogo,
+  },
+  {
+    key: 'conversation-links',
+    title: 'Conversations named, not coded',
+    description:
+      "When a message mentions a conversation by its ID, like eqRAMj, it shows as a link titled with that conversation's current title. Only conversations you can open in the account on screen become links; another account's or a deleted one stays as the plain ID. A few IDs that look like ordinary words (all capitals, or capitalised only at the start) stay as plain text.",
+    icon: Chats,
   },
   {
     key: 'github-resident',
@@ -694,7 +701,7 @@ export const moreFeatures = [
     key: 'resident-voices',
     title: 'Voices for residents',
     description:
-      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices (or, for an account with its own ElevenLabs key, the voices in its own ElevenLabs library), with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
     icon: Waveform,
   },
   {

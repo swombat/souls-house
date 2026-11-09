@@ -51,7 +51,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
 
   test "the preview is the resident saying one line through the message speech path" do
     calls = []
-    fake = ->(text, voice_id:) { calls << [ text, voice_id ]; "ID3-audio" }
+    fake = ->(text, voice_id:, api_key: nil) { calls << [ text, voice_id, api_key ]; "ID3-audio" }
 
     with_standard_voices do
       ElevenLabsTts.stub(:synthesize, fake) do
@@ -62,7 +62,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "audio/mpeg", response.media_type
     assert_equal "ID3-audio", response.body
-    assert_equal [ [ Agents::VoicesController.preview_text(@agent.name), "std-brian" ] ], calls
+    assert_equal [ [ Agents::VoicesController.preview_text(@agent.name), "std-brian", nil ] ], calls
   end
 
   test "no preview for a voice outside the standard list, and a provider failure is a 503" do
@@ -113,6 +113,102 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
     patch voice_account_agent_path(@account, @agent), params: { phonon_voice: "" }, as: :json
     assert_response :success
     assert_nil @agent.reload.phonon_voice
+  end
+
+  test "the picker lists the account's own voices as their own group, without the key" do
+    @account.update!(eleven_labs_api_key: "acct-secret-key")
+
+    with_standard_voices do
+      with_library_voices do
+        get voices_account_agent_path(@account, @agent), as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal %w[std-aria std-brian], response.parsed_body["voices"].map { |v| v["voice_id"] }
+    assert_equal %w[own-janis], response.parsed_body["library_voices"].map { |v| v["voice_id"] }
+    assert_not_includes response.body, "acct-secret-key"
+  end
+
+  test "an unreadable library leaves the standard voices showing, and the other way round" do
+    with_standard_voices do
+      ElevenLabsVoices.stub(:library, ->(_) { raise ElevenLabsVoices::Unavailable, "401" }) do
+        get voices_account_agent_path(@account, @agent), as: :json
+      end
+    end
+    assert_equal 2, response.parsed_body["voices"].size
+    assert response.parsed_body["library_unavailable"]
+
+    with_voice_list_unavailable do
+      with_library_voices do
+        get voices_account_agent_path(@account, @agent), as: :json
+      end
+    end
+    assert response.parsed_body["unavailable"]
+    assert_equal %w[own-janis], response.parsed_body["library_voices"].map { |v| v["voice_id"] }
+  end
+
+  test "an own voice is chosen and previewed through the account's key" do
+    @account.update!(eleven_labs_api_key: "acct-key")
+    calls = []
+    fake = ->(text, voice_id:, api_key: nil) { calls << [ voice_id, api_key ]; "ID3-own" }
+
+    with_standard_voices do
+      with_library_voices do
+        patch voice_account_agent_path(@account, @agent), params: { voice_id: "own-janis" }, as: :json
+        assert_response :success
+        ElevenLabsTts.stub(:synthesize, fake) do
+          get voice_preview_account_agent_path(@account, @agent, voice_id: "own-janis")
+        end
+      end
+    end
+
+    assert_equal "own-janis", @agent.reload.voice_id
+    assert_response :success
+    assert_equal [ [ "own-janis", "acct-key" ] ], calls
+  end
+
+  test "a standard-list outage is a 503 for a voice the own library doesn't have, not a 404" do
+    @account.update!(eleven_labs_api_key: "acct-key")
+
+    with_voice_list_unavailable do
+      with_library_voices do
+        get voice_preview_account_agent_path(@account, @agent, voice_id: "std-aria")
+      end
+    end
+
+    assert_response :service_unavailable
+  end
+
+  test "an own voice's cached preview is never served to another account" do
+    store = ActiveSupport::Cache::MemoryStore.new
+    other_account = accounts(:team_account)
+    other_agent = agents(:other_account_agent)
+    other_agent.update_column(:name, @agent.name) # same line, same digest: only the account scope tells them apart
+    @account.update!(eleven_labs_api_key: "key-one")
+    other_account.update!(eleven_labs_api_key: "key-two")
+    rendered = []
+    fake = ->(_text, voice_id:, api_key: nil) { rendered << api_key; "audio-#{api_key}" }
+
+    Rails.stub(:cache, store) do
+      with_standard_voices do
+        with_library_voices do
+          ElevenLabsTts.stub(:synthesize, fake) do
+            get voice_preview_account_agent_path(@account, @agent, voice_id: "own-janis")
+            assert_equal "audio-key-one", response.body
+
+            get voice_preview_account_agent_path(other_account, other_agent, voice_id: "own-janis")
+            assert_equal "audio-key-two", response.body
+          end
+        end
+        ElevenLabsVoices.stub(:library, ->(_) { [] }) do
+          get voice_preview_account_agent_path(other_account, other_agent, voice_id: "own-janis")
+          assert_response :not_found, "a voice not in this account's library is not served, cached or not"
+        end
+      end
+    end
+
+    assert_equal %w[key-one key-two], rendered
   end
 
 end
