@@ -75,6 +75,41 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal expected, ids & expected
   end
 
+  test "sidebar leaves out conversations whose tag hides them, until shown, filtered to, or untagged" do
+    done = @account.visual_tags.create!(label: "Done", icon: "Checks", colour: "green", hides_from_list: true)
+    work = @account.visual_tags.create!(label: "Work", icon: "Wrench", colour: "blue")
+    hidden = @account.chats.create!(title: "Finished", visual_tag: done)
+    working = @account.chats.create!(title: "Working", visual_tag: work)
+    other_room = @account.rooms.create!(name: "Elsewhere")
+    elsewhere = @account.chats.create!(title: "Done elsewhere", visual_tag: done, room: other_room)
+    sidebar_ids = lambda do |**params|
+      @inertia_props = nil
+      get account_chats_path(@account, **params)
+      inertia_shared_props.fetch("chats").pluck("id")
+    end
+
+    ids = sidebar_ids.call
+    assert_not_includes ids, hidden.to_param
+    assert_includes ids, working.to_param
+    assert_includes ids, @chat.to_param
+    assert_equal [ hidden.to_param ], inertia_shared_props.fetch("hidden_chat_ids")
+    assert_not hidden.reload.archived?
+
+    assert_includes sidebar_ids.call(show_hidden: "true"), hidden.to_param
+    assert_equal [ hidden.to_param ], sidebar_ids.call(tag: done.to_param)
+    assert_equal [ working.to_param ], sidebar_ids.call(tag: work.to_param)
+    assert_includes sidebar_ids.call(tag: "nonsense"), working.to_param
+
+    hidden.update!(visual_tag: work)
+    assert_includes sidebar_ids.call, hidden.to_param
+    assert_empty inertia_shared_props.fetch("hidden_chat_ids")
+
+    # All chats (a room choice that sticks) hides the same way and counts
+    # hidden conversations from every room.
+    assert_not_includes sidebar_ids.call(room: "all"), elsewhere.to_param
+    assert_equal [ elsewhere.to_param ], inertia_shared_props.fetch("hidden_chat_ids")
+  end
+
   test "sidebar includes legacy-prefixed threads for members and site admins by default" do
     resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
     archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)

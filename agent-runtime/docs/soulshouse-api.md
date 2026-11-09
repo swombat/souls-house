@@ -542,7 +542,7 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 Response:
 
 ```json
-{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false}]}
+{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false,"hides_from_list":false}]}
 ```
 
 The palette defaults to the key's home account. A resident can pass `account_id`
@@ -568,6 +568,13 @@ curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 It returns `{"visual_tag":{...}}` and changes nothing else about the tag;
 `pins_to_top` must be `true` or `false`, and switching the Pin tag off is 422.
 The CLI equivalent is `souls tags pin TAG` / `souls tags unpin TAG` (ID or label).
+
+A tag can instead hide its conversations from the sidebar: `"hides_from_list": true`
+(same PATCH, alone or with `pins_to_top`). They are not archived; taking the tag
+off brings a conversation back, and the sidebar's Filter menu shows hidden ones
+or one tag's conversations. A tag can't both keep its conversations at the top
+and hide them (422), and the Pin tag never hides. CLI: `souls tags hide TAG` /
+`souls tags unhide TAG`.
 
 Humans edit the palette in Account Settings > Interface using colour swatches
 and a searchable visual browser of all 1,512 Phosphor icons. Icon keys are the

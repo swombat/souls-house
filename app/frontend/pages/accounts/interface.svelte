@@ -5,7 +5,7 @@
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Plus, PencilSimple, PushPin } from 'phosphor-svelte';
+  import { Plus, PencilSimple, PushPin, EyeSlash } from 'phosphor-svelte';
   import VisualTagIcon from '$lib/components/chat/VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { createDynamicSync } from '$lib/use-sync';
@@ -98,6 +98,12 @@
               weight="fill"
               aria-label="Kept at the top"
               data-testid="visual-tag-kept-on-top"
+              class="shrink-0 text-muted-foreground" />{/if}
+          {#if tag.hides_from_list}<EyeSlash
+              size={14}
+              weight="fill"
+              aria-label="Hidden from the list"
+              data-testid="visual-tag-hidden-from-list"
               class="shrink-0 text-muted-foreground" />{/if}
           {#if can_manage}<PencilSimple
               size={16}
