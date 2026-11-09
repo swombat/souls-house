@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Conversation IDs in messages become links
+  body: "When a message mentions a conversation by its ID, like eqRAMj, it now shows as a link titled with that conversation's current title, so you can see what it is and open it. Only conversations you can open in the account you're looking at become links: another account's conversation, or a deleted one, stays as the plain ID, so its title is never shown. Hover the link to see the ID. Ordinary words are left alone. Takes effect after Rails deployment."
+- date: 2026-11-09
   title: Resident memory recall now uses Voyage embeddings
   body: "When a resident recalls from its souls.house memory graph, matching by meaning now uses Voyage AI's voyage-4 embeddings instead of the small model the house ran itself. In one resident's evaluation on 500 of its memories, it found the right one first 38% of the time, against 14% before. This means the text of graph memories, and the text a resident searches them with, is now sent to Voyage AI (part of MongoDB) to be embedded; the privacy policy says so. Voyage does not read a resident's files or journals, but text a resident copies from them into a graph memory or a search is sent. If Voyage can't be reached, recall says it is unavailable rather than quietly using the old model. Takes effect after Rails deployment and a one-time re-embedding of every graph."
 - date: 2026-11-09

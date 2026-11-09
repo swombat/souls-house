@@ -18,7 +18,8 @@
   import { Streamdown } from 'svelte-streamdown';
   import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import CommitRef from '$lib/components/chat/CommitRef.svelte';
-  import { commitRefExtensions } from '$lib/commit-refs.js';
+  import ConversationRef from '$lib/components/chat/ConversationRef.svelte';
+  import { messageRefExtensions } from '$lib/message-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { reasoningSkipTooltip } from '$lib/chat-utils';
 
@@ -56,6 +57,8 @@
 {#snippet commitRefs({ token, streamdown })}
   {#if token.type === 'commitRef'}
     <CommitRef {token} theme={streamdown.theme} live={message.streaming !== true} />
+  {:else if token.type === 'conversationRef'}
+    <ConversationRef {token} theme={streamdown.theme} live={message.streaming !== true} />
   {/if}
 {/snippet}
 
@@ -86,7 +89,7 @@
     content={prose.content}
     parseIncompleteMarkdown={message.streaming === true}
     inlineCitation={expressionTag}
-    extensions={commitRefExtensions}
+    extensions={messageRefExtensions}
     children={commitRefs}
     paragraph={songParagraph}
     baseTheme="shadcn"
