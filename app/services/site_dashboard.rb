@@ -13,7 +13,8 @@ class SiteDashboard
   LATEST_SIGNUPS = 10
   GIB = 1024**3
   RESTIC_FRESH_FOR = 36.hours
-  DISK_FRESH_FOR = 6.hours
+  # Measured daily at 04:15 (CollectAgentStorageUsageJob); a day plus slack.
+  DISK_FRESH_FOR = 26.hours
   # Bump the version whenever the payload shape changes: Solid Cache
   # survives a deploy, and the page must never read an older shape.
   CACHE_KEY = "admin/site_dashboard/v4".freeze

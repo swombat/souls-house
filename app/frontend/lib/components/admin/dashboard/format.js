@@ -108,7 +108,7 @@ export function timeAgo(iso, nowIso) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-// "measured hourly" stops being true the moment readings go missing or old;
+// "measured daily" stops being true the moment readings go missing or old;
 // say so next to the total instead of letting it pass as complete.
 export function coverageNote(coverage) {
   if (!coverage || !coverage.expected) return null;
