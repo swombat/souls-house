@@ -932,6 +932,54 @@ def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
 ):
+    """Run one Chaos invocation. A Claude subscription run that fails on
+    authentication before doing anything is tried once more after Claude
+    Code's refresh lock has cleared (#816).
+
+    Claude Code's own message for that failure is "another Claude Code
+    process is refreshing it or exited mid-refresh ... usually transient;
+    retry in a minute". Until 9 Nov 2026 the house took the first one as
+    an expired sign-in: Rails marked it expired and refused every later run
+    until a person signed in again (Fable, 6-8 Nov: nine refused runs). Only
+    a failure that survives the retry reaches Rails now, so an expiry is one
+    the provider meant. Both attempts share the turn's time budget.
+    """
+    anthropic_subscription = auth_mode == "oauth_account" and (provider or AGENT_PROVIDER) == "anthropic"
+    if anthropic_subscription:
+        await_claude_refresh_lock(_remaining_turn_budget(timeout_secs))
+    result = _run_chaos_once(
+        model, timeout_secs, prompt_text, json_output,
+        resume_id=resume_id, provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+    )
+    if not (anthropic_subscription and clamp_auth_failed_before_work(result)):
+        return result
+    waited = await_claude_refresh_lock(_remaining_turn_budget(timeout_secs))
+    log.warning(
+        "claude subscription auth unavailable before work; retrying once "
+        f"after refresh-lock wait={waited:.0f}s lock_age={claude_refresh_lock_age()}"
+    )
+    return _run_chaos_once(
+        model, timeout_secs, prompt_text, json_output,
+        resume_id=resume_id, provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+    )
+
+
+def _remaining_turn_budget(timeout_secs):
+    remaining = timeout_secs
+    deadline = getattr(_activity_context, "turn_deadline", None)
+    if deadline is not None:
+        remaining = min(remaining, deadline - time.monotonic())
+    reporter = getattr(_activity_context, "reporter", None)
+    if reporter:
+        remaining = min(remaining, reporter.deadline - time.time())
+    # Leave the retry itself most of what is left.
+    return max(0.0, remaining / 3)
+
+
+def _run_chaos_once(
+    model, timeout_secs, prompt_text, json_output,
+    resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
+):
     cancel = getattr(_activity_context, "cancel_event", None)
     if cancel is not None and cancel.is_set():
         raise subprocess.TimeoutExpired(cmd=CHAOS_BIN, timeout=0)
@@ -3217,34 +3265,122 @@ def _first_http_url(line):
 
 
 def _anthropic_account_status():
+    """The resident's Claude subscription sign-in, read from Claude Code's own
+    files without starting Claude Code (#816).
+
+    This used to run `claude auth status --json` under a 10-second kill, on
+    every usage probe (so before every subscription run) and every status
+    poll. With an expired access token that command refreshes it, under
+    Claude Code's `.oauth_refresh.lock`, as a second refresher beside the
+    resident's own turn. The provider rotates the refresh token on every
+    refresh, so a refresher killed between the provider's answer and the
+    file write leaves a refresh token that no longer works, and one that
+    merely holds the lock makes the turn fail with "another Claude Code
+    process is refreshing it". Both were seen on Claude (2) and Fable (8),
+    1-8 Nov 2026. Reading the files says the same thing the command did
+    (it reported a sign-in present whether or not the token still worked)
+    and refreshes nothing.
+    """
     if not _claude_available():
         return {"status": "none", "provider": "anthropic"}
-    result = subprocess.run(
-        [CLAUDE_BIN, "auth", "status", "--json"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=_anthropic_subscription_env(),
-    )
-    metadata = {}
-    try:
-        metadata = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        pass
-    connected = result.returncode == 0 and (
-        metadata.get("loggedIn") is True
-        or metadata.get("logged_in") is True
-    )
-    if not connected:
+    oauth = _claude_oauth_credentials()
+    if not oauth:
         return {"status": "none", "provider": "anthropic"}
     response = {"status": "connected", "provider": "anthropic"}
-    email = metadata.get("email") or metadata.get("accountEmail")
-    plan = metadata.get("subscriptionType") or metadata.get("plan")
+    email = _claude_account_email()
+    plan = oauth.get("subscriptionType")
     if email:
         response["email"] = email
-    if plan:
+    if isinstance(plan, str) and plan:
         response["plan"] = plan
     return response
+
+
+def _claude_oauth_credentials(now=None):
+    """The `claudeAiOauth` entry of the sign-in's credentials file when it
+    can still be refreshed, else None. Only presence and expiry are read."""
+    try:
+        data = json.loads((CLAUDE_CONFIG_DIR / ".credentials.json").read_text())
+    except (OSError, ValueError):
+        return None
+    oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+    if not isinstance(oauth, dict):
+        return None
+    if not (isinstance(oauth.get("refreshToken"), str) and oauth["refreshToken"]):
+        return None
+    refresh_expires = oauth.get("refreshTokenExpiresAt")
+    if isinstance(refresh_expires, (int, float)) and not isinstance(refresh_expires, bool):
+        if refresh_expires / 1000 <= (now if now is not None else time.time()):
+            return None
+    return oauth
+
+
+def _claude_account_email():
+    try:
+        data = json.loads((CLAUDE_CONFIG_DIR / ".claude.json").read_text())
+    except (OSError, ValueError):
+        return None
+    account = data.get("oauthAccount") if isinstance(data, dict) else None
+    email = account.get("emailAddress") if isinstance(account, dict) else None
+    return email if isinstance(email, str) and email else None
+
+
+# Claude Code (2.1.280) takes this directory as its refresh lock and treats it
+# as abandoned once it is about a minute old (measured 9 Nov 2026 against a
+# scratch config: a 45 s lock blocks a refresh, a 70 s one is cleared).
+CLAUDE_REFRESH_LOCK = ".oauth_refresh.lock"
+CLAUDE_REFRESH_LOCK_STALE_SECS = 65
+CLAUDE_REFRESH_LOCK_WAIT_SECS = 75
+
+
+def claude_refresh_lock_age(now=None):
+    """Seconds since the refresh lock was last touched, or None without one."""
+    try:
+        mtime = (CLAUDE_CONFIG_DIR / CLAUDE_REFRESH_LOCK).stat().st_mtime
+    except OSError:
+        return None
+    return max(0.0, (now if now is not None else time.time()) - mtime)
+
+
+def await_claude_refresh_lock(budget_secs, sleep=None, clock=None):
+    """Wait, within budget_secs, until no live Claude Code refresh lock is held:
+    the lock is gone or old enough that Claude Code itself will clear it.
+    Returns the seconds waited."""
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    started = clock()
+    limit = max(0.0, min(budget_secs, CLAUDE_REFRESH_LOCK_WAIT_SECS))
+    while True:
+        age = claude_refresh_lock_age()
+        waited = clock() - started
+        if age is None or age >= CLAUDE_REFRESH_LOCK_STALE_SECS or waited >= limit:
+            return waited
+        sleep(min(1.0, max(0.05, limit - waited)))
+
+
+def clamp_auth_failed_before_work(result):
+    """A finished Claude-subscription run that failed on authentication before
+    the model did anything: Chaos's clamp reported clamp_auth_unavailable and
+    no item other than an error completed."""
+    if result is None or result.returncode == 0:
+        return False
+    stdout = result.stdout or ""
+    if "clamp_auth_unavailable" not in stdout:
+        return False
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "turn.completed":
+            return False
+        item = event.get("item")
+        if event.get("type") in ("item.started", "item.completed") and isinstance(item, dict) \
+                and item.get("type") != "error":
+            return False
+    return True
 
 
 def _antigravity_account_status():

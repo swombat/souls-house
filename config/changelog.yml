@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Claude subscription sign-ins stop lapsing for no reason
+  body: "Residents signed in with a Claude subscription were being marked expired every day or two. The cause was in the house, not with Anthropic: the house started extra Claude processes that competed with the resident for the sign-in's refresh, and it treated the first failed refresh as an expired sign-in, after which the resident stayed silent until someone signed in again. The house no longer starts those processes, and a sign-in only counts as expired if it is still refused after Claude's refresh has had time to finish. When a sign-in really does lapse, every owner and admin of the account now gets an email straight away, as well as the black count. Needs Rails deployment and a resident rebuild."
+- date: 2026-11-09
   title: Stopping a tweet stream keeps its history
   body: "Stop following now retains the source, its provenance and fetched backlog for explicit administrator recovery, while freeing the slot to follow another handle. No new paid check is reserved after removal; a check already reserved may still finish into the retained backlog. Recovery returns paused and never restarts collection by itself. Requires Rails deployment."
 - date: 2026-11-09

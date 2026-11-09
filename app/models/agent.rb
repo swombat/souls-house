@@ -430,6 +430,7 @@ class Agent < ApplicationRecord
       )
       if status.to_s == "expired" && previous_status != "expired"
         audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+        email_provider_expiry!(provider)
       end
     end
   end
@@ -481,6 +482,20 @@ class Agent < ApplicationRecord
     )
   end
   private :audit_provider_connection!
+
+  # The first sight of a lapsed sign-in reaches the people who run the
+  # account by email as well as the navbar count (#844). Sent after commit,
+  # only from the transition into expired, so a resident that stays expired
+  # sends nothing more.
+  def email_provider_expiry!(provider)
+    return unless active?
+
+    recipients = account.memberships.confirmed.admins.includes(:user).filter_map(&:user).uniq
+    ActiveRecord.after_all_transactions_commit do
+      recipients.each { |user| ResidentHealthMailer.provider_sign_in_expired(self, provider.to_s, user).deliver_later }
+    end
+  end
+  private :email_provider_expiry!
 
   def soul_seed
     system_prompt

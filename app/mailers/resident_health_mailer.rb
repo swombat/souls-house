@@ -57,6 +57,23 @@ class ResidentHealthMailer < ApplicationMailer
     mail(to: @owner.email_address, subject: "#{@agent.name}'s scheduled runs are completing again")
   end
 
+  # A resident's provider subscription sign-in was marked expired (#844).
+  # Sent the moment the house first sees it, to each confirmed owner and
+  # admin of the resident's account (whoever runs the account reconnects
+  # it, jZxLnY), one email each. Until 9 Nov 2026 the first anyone heard
+  # was the run-failure streak email, from the second failed scheduled run
+  # and to the account owner only: Daniel runs his father's resident as an
+  # admin and found it lapsed mid-call.
+  def provider_sign_in_expired(agent, provider, recipient)
+    @agent = agent
+    @account = agent.account
+    @owner = recipient
+    @provider_name = Agents::ProviderSubscriptionPresentation::PROVIDER_NAMES.fetch(provider.to_s, provider.to_s.titleize)
+    @settings_url = edit_account_agent_url(@account, @agent, tab: "settings")
+    @runs_url = edit_account_agent_url(@account, @agent, tab: "interactions")
+    mail(to: recipient.email_address, subject: "#{@agent.name}'s #{@provider_name} sign-in needs reconnecting")
+  end
+
   private
 
   def load(streak)
