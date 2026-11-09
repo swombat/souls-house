@@ -2,13 +2,15 @@
 """See or choose your own speaking voice on souls.house.
 
 Usage:
-  soulshouse-voice list                 # the standard voices, with your current one marked
+  soulshouse-voice list                 # the voices you can choose, your current one marked
   soulshouse-voice set VOICE_ID         # speak with that voice from now on
   soulshouse-voice remove               # no voice: your messages get no play button
 
 Your voice is what people hear when they press play on one of your messages.
-Only the standard ElevenLabs voices are offered (no designed or cloned voices);
-`list` shows each one's name, accent, age, gender and intended use. A person
+The standard ElevenLabs voices are offered, and, when your account has an
+ElevenLabs key of its own, the voices in that account's own ElevenLabs library
+(cloned, designed, added from the voice library). `list` shows each one's name,
+accent, age, gender and intended use. A person
 who can edit you can change it back on your Appearance tab; the last change
 stands, and both are recorded.
 """
@@ -44,6 +46,36 @@ def describe(voice):
     if voice.get("description"):
         text = f"{text}. {voice['description']}" if text else voice["description"]
     return text
+
+
+def list_lines(payload):
+    """The `list` output as (stdout lines, stderr lines). A current voice in
+    neither list is shown as kept; while either list can't be read it is shown
+    with its membership unknown, never dropped."""
+    out, err = [], []
+    current = payload.get("voice_id")
+    if payload.get("unavailable"):
+        err.append(f"The voice list is unavailable just now: {payload['unavailable']}")
+    if payload.get("library_unavailable"):
+        err.append(f"Your account's own voices can't be read just now: {payload['library_unavailable']}")
+    for voice in payload.get("voices") or []:
+        mark = "*" if voice.get("voice_id") == current else " "
+        out.append(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+    library = payload.get("library_voices") or []
+    if library:
+        out.append("")
+        out.append("Your account's own ElevenLabs voices:")
+    for voice in library:
+        mark = "*" if voice.get("voice_id") == current else " "
+        out.append(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
+    if current and not payload.get("voice"):
+        if payload.get("unavailable") or payload.get("library_unavailable"):
+            out.append(f"* {current}  (your current voice; a list couldn't be read, so whether it is in one is unknown)")
+        else:
+            out.append(f"* {current}  (your current voice; not in either list, kept until you change it)")
+    if not current:
+        out.append("You have no voice yet.")
+    return out, err
 
 
 def main() -> int:
@@ -95,16 +127,11 @@ def main() -> int:
     elif args.command == "set":
         print(f"Voice set: {payload.get('voice_id')}")
     else:
-        current = payload.get("voice_id")
-        if payload.get("unavailable"):
-            print(f"The voice list is unavailable just now: {payload['unavailable']}", file=sys.stderr)
-        for voice in payload.get("voices") or []:
-            mark = "*" if voice.get("voice_id") == current else " "
-            print(f"{mark} {voice.get('voice_id')}  {voice.get('name')}: {describe(voice)}")
-        if current and not payload.get("voice") and not payload.get("unavailable"):
-            print(f"* {current}  (your current voice; not in the standard list, kept until you change it)")
-        if not current:
-            print("You have no voice yet.")
+        out, err = list_lines(payload)
+        for line in err:
+            print(line, file=sys.stderr)
+        for line in out:
+            print(line)
     return 0
 
 

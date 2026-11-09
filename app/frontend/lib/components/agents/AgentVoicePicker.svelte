@@ -5,8 +5,8 @@
   import { Label } from '$lib/components/shadcn/label';
   import { Check, Play, SpeakerSlash } from 'phosphor-svelte';
 
-  // The resident's speaking voice: one of the standard ElevenLabs voices, or
-  // none. Saved on its own (like the picture), so the tab's other fields are
+  // The resident's speaking voice: one of the standard ElevenLabs voices, one
+  // of the account's own (when it has an ElevenLabs key of its own), or none. Saved on its own (like the picture), so the tab's other fields are
   // not submitted with it.
   let { voice = null } = $props();
 
@@ -22,8 +22,10 @@
   let previewError = $state(null);
 
   let voices = $state([]);
+  let libraryVoices = $state([]);
   let loading = $state(true);
   let unavailable = $state(false);
+  let libraryUnavailable = $state(false);
 
   // The list comes after the page draws, so a slow provider never holds up
   // the settings page.
@@ -33,7 +35,9 @@
       const response = await fetch(voice.voices_path, { headers: { Accept: 'application/json' } });
       const body = response.ok ? await response.json() : { unavailable: true };
       voices = body.voices ?? [];
+      libraryVoices = body.library_voices ?? [];
       unavailable = Boolean(body.unavailable) || !response.ok;
+      libraryUnavailable = Boolean(body.library_unavailable);
     } catch {
       unavailable = true;
     } finally {
@@ -53,8 +57,9 @@
     if ((selected || null) === lastSeenCurrent) selected = next ?? '';
     lastSeenCurrent = next;
   });
-  const currentIsStandard = $derived(!current || voices.some((v) => v.voice_id === current));
-  const chosen = $derived(voices.find((v) => v.voice_id === selected) ?? null);
+  const allVoices = $derived([...voices, ...libraryVoices]);
+  const currentIsListed = $derived(!current || allVoices.some((v) => v.voice_id === current));
+  const chosen = $derived(allVoices.find((v) => v.voice_id === selected) ?? null);
   const changed = $derived((selected || null) !== current);
 
   function describe(v) {
@@ -131,7 +136,7 @@
 
     {#if loading}
       <p class="text-sm text-muted-foreground">Loading voices…</p>
-    {:else if unavailable}
+    {:else if unavailable && libraryVoices.length === 0}
       <p class="text-sm text-muted-foreground">The voice list can't be read just now. Try again shortly.</p>
     {:else}
       <div
@@ -167,7 +172,7 @@
               </span>
               {#if isSelected}<Check size={18} weight="bold" class="shrink-0 text-primary" />{/if}
             </label>
-            {#if id && voices.some((v) => v.voice_id === id)}
+            {#if id && allVoices.some((v) => v.voice_id === id)}
               <Button
                 type="button"
                 variant="ghost"
@@ -184,8 +189,21 @@
         {#snippet mute()}<SpeakerSlash size={18} weight="bold" />{/snippet}
 
         {@render row('', 'No voice', 'Not read aloud while the account is on ElevenLabs', 'hsl(0 0% 60%)', mute)}
-        {#if current && !currentIsStandard}
-          {@render row(current, 'Current voice', 'Not a standard voice', 'hsl(0 0% 40%)', null)}
+        {#if current && !currentIsListed}
+          {@render row(current, 'Current voice', 'Not in the voice lists', 'hsl(0 0% 40%)', null)}
+        {/if}
+        {#if libraryVoices.length > 0}
+          <div class="bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground" data-testid="voice-group">
+            Your ElevenLabs voices
+          </div>
+          {#each libraryVoices as v (v.voice_id)}
+            {@render row(v.voice_id, v.name, describe(v), `hsl(${hue(v.voice_id)} 60% 45%)`, null)}
+          {/each}
+          {#if voices.length > 0}
+            <div class="bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground" data-testid="voice-group">
+              Standard voices
+            </div>
+          {/if}
         {/if}
         {#each voices as v (v.voice_id)}
           {@render row(v.voice_id, v.name, describe(v), `hsl(${hue(v.voice_id)} 60% 45%)`, null)}
@@ -209,9 +227,18 @@
       {#if chosen?.description}
         <p class="text-xs text-muted-foreground max-w-xl">{chosen.description}</p>
       {/if}
-      {#if current && !currentIsStandard}
+      {#if current && !currentIsListed && !unavailable && !libraryUnavailable}
         <p class="text-xs text-muted-foreground max-w-xl">
-          This resident has a voice from before the standard list. It's kept until someone chooses another.
+          This resident has a voice that isn't in either list. It's kept until someone chooses another.
+        </p>
+      {/if}
+      {#if libraryUnavailable}
+        <p class="text-xs text-muted-foreground max-w-xl">
+          The account's own ElevenLabs voices can't be read just now, so only the standard ones are shown.
+        </p>
+      {:else if unavailable}
+        <p class="text-xs text-muted-foreground max-w-xl">
+          The standard voice list can't be read just now, so only the account's own voices are shown.
         </p>
       {/if}
       {#if previewSrc}
