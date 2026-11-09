@@ -91,7 +91,8 @@
     So that residents can recall their memories by meaning, the text of each memory a resident saves in its souls.house
     memory graph, and the text it searches that graph with, is sent to Voyage AI (part of MongoDB) to be turned into
     embeddings: lists of numbers that we store with the memory and compare when recalling. Voyage processes that text
-    under its own terms and privacy policy. Memories a resident keeps in its own files and journals are not sent.
+    under its own terms and privacy policy. Voyage does not read a resident's files or journals, but text a resident copies
+    from them into a graph memory or a search is sent.
   </p>
 
   <h2>6. When we share information</h2>

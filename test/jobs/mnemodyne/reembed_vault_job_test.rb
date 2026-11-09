@@ -97,4 +97,40 @@ class Mnemodyne::ReembedVaultJobTest < ActiveSupport::TestCase
     end
   end
 
+  test "both embedding jobs share one concurrency slot" do
+    [ Mnemodyne::EmbedNodeJob, Mnemodyne::ReembedVaultJob ].each do |job|
+      assert_equal 1, job.concurrency_limit
+      assert_equal "mnemodyne-embeddings", job.concurrency_group
+      assert_equal "mnemodyne-embeddings", job.concurrency_key
+    end
+  end
+
+  test "a batch failing part way keeps the finished batches and the retry sends only the rest" do
+    extra = (1..Mnemodyne::Embeddings::BATCH_SIZE).map { |i| @vault.nodes.create!(node_type: "memory", content: "Synthetic handle #{i}") }
+    total = extra.length + 1
+    calls = []
+    failing = lambda do |texts, **|
+      calls << texts
+      raise Mnemodyne::Embeddings::Unavailable if calls.length == 2
+      texts.map { [ 1.0, 2.0 ] }
+    end
+    Mnemodyne::Embeddings.stub(:configured?, true) do
+      Mnemodyne::Embeddings.stub(:batched?, true) do
+        Mnemodyne::Embeddings.stub(:profile, "voyage-4") do
+          Mnemodyne::Embeddings.stub(:embed_many, failing) do
+            assert_enqueued_with(job: Mnemodyne::ReembedVaultJob) { Mnemodyne::ReembedVaultJob.perform_now(@vault.id) }
+          end
+          done = @vault.nodes.where(embedding_profile: "voyage-4").count
+          assert_equal Mnemodyne::Embeddings::BATCH_SIZE, done
+          resumed = []
+          Mnemodyne::Embeddings.stub(:embed_many, ->(texts, **) { resumed << texts; texts.map { [ 1.0, 2.0 ] } }) do
+            Mnemodyne::ReembedVaultJob.perform_now(@vault.id)
+          end
+          assert_equal [ calls.last ], resumed, "only the failed batch is sent again"
+          assert_equal total, @vault.nodes.where(embedding_profile: "voyage-4").count
+        end
+      end
+    end
+  end
+
 end

@@ -104,11 +104,16 @@ class Mnemodyne::Embeddings
   end
   private_class_method :voyage_request
 
+  # Each vector must land on its own text: Voyage lists data[i].index, and the
+  # indexes must be exactly 0...count (no duplicates, gaps or strays), or the
+  # whole answer is refused. A single unindexed answer is the accessory's shape.
   def self.parse_vectors(body, count)
     data = JSON.parse(body)["data"]
-    raise Unavailable unless data.is_a?(Array) && data.length == count
-    ordered = data.each_with_index.sort_by { |row, position| row.is_a?(Hash) && row["index"].is_a?(Integer) ? row["index"] : position }
-    ordered.map { |row, _| row.is_a?(Hash) ? row["embedding"] : nil }
+    raise Unavailable unless data.is_a?(Array) && data.length == count && data.all?(Hash)
+    return [ data.first["embedding"] ] if count == 1 && !data.first.key?("index")
+    indexes = data.map { |row| row["index"] }
+    raise Unavailable unless indexes.all?(Integer) && indexes.sort == (0...count).to_a
+    data.sort_by { |row| row["index"] }.map { |row| row["embedding"] }
   end
   private_class_method :parse_vectors
 

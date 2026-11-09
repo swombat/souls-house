@@ -1,6 +1,6 @@
 class Mnemodyne::EmbedNodeJob < ApplicationJob
 
-  limits_concurrency to: 1, key: "mnemodyne-embeddings"
+  limits_concurrency to: 1, key: "mnemodyne-embeddings", group: "mnemodyne-embeddings"
 
   retry_on Mnemodyne::Embeddings::Unavailable, wait: :polynomially_longer, attempts: 3
 

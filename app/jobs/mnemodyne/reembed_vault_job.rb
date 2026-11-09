@@ -1,8 +1,10 @@
 class Mnemodyne::ReembedVaultJob < ApplicationJob
 
   # Shares the single embeddings slot with EmbedNodeJob, so a vault re-embed
-  # and per-node jobs never race the provider together.
-  limits_concurrency to: 1, key: "mnemodyne-embeddings"
+  # and per-node jobs never race the provider together. Solid Queue's group
+  # defaults to the job class, so the shared group is what makes it one slot.
+  # A large vault takes a minute or two; the duration covers that.
+  limits_concurrency to: 1, key: "mnemodyne-embeddings", group: "mnemodyne-embeddings", duration: 15.minutes
 
   # A retry resumes: nodes already embedded under the current profile are
   # skipped, so only what is left is sent again.

@@ -165,4 +165,14 @@ class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
     end
   end
 
+  test "voyage indexes must be exactly 0...count or the whole answer is refused" do
+    with_voyage do |endpoint|
+      [ [ 0, 0 ], [ 0, 2 ], [ 1, nil ], [ -1, 0 ], [ "0", 1 ] ].each do |indexes|
+        data = indexes.each_with_index.map { |index, i| { index: index, embedding: [ i + 1.0, 1.0 ] }.compact }
+        endpoint.to_return(body: { data: data }.to_json)
+        assert_raises(Mnemodyne::Embeddings::Unavailable, indexes.inspect) { Mnemodyne::Embeddings.embed_many([ "A", "B" ]) }
+      end
+    end
+  end
+
 end
