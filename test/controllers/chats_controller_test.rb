@@ -110,6 +110,32 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ elsewhere.to_param ], inertia_shared_props.fetch("hidden_chat_ids")
   end
 
+  test "renaming a conversation keeps the sidebar filter it was opened under" do
+    done = @account.visual_tags.create!(label: "Done", icon: "Checks", colour: "green", hides_from_list: true)
+    hidden = @account.chats.create!(title: "Finished", visual_tag: done)
+
+    referer = account_chat_url(@account, hidden, show_hidden: true, tag: done.to_param, room: "all")
+    patch account_chat_path(@account, hidden), params: { chat: { title: "Renamed" } },
+      headers: { "Referer" => referer }
+    target = URI.parse(response.location)
+    assert_equal account_chat_path(@account, hidden), target.path
+    assert_equal({ "room" => "all", "show_hidden" => "true", "tag" => done.to_param },
+      Rack::Utils.parse_query(target.query))
+
+    @inertia_props = nil
+    get response.location
+    assert_includes inertia_shared_props.fetch("chats").pluck("id"), hidden.to_param
+
+    # Only allowlisted parameters, in their expected shapes, travel.
+    patch account_chat_path(@account, hidden), params: { chat: { title: "Again" } },
+      headers: { "Referer" => "http://www.example.com/x?show_hidden=yes&tag=1;drop&evil=1&show_archived=true" }
+    assert_equal({ "show_archived" => "true" }, Rack::Utils.parse_query(URI.parse(response.location).query))
+
+    # A bare edit still returns to the bare conversation.
+    patch account_chat_path(@account, hidden), params: { chat: { title: "Bare" } }
+    assert_nil URI.parse(response.location).query
+  end
+
   test "sidebar includes legacy-prefixed threads for members and site admins by default" do
     resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
     archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)
