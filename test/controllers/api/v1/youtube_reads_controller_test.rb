@@ -72,25 +72,26 @@ module Api
         assert_equal "URL must identify one public YouTube video", JSON.parse(response.body)["error"]
       end
 
-      test "returns 502 JSON when Gemini wraps an error in an array" do
-        reader = Object.new
-        reader.define_singleton_method(:call) do |**|
-          raise YoutubeVideoReader::UpstreamError, "API key not valid. Please pass a valid API key."
-        end
+      # Parsing Gemini's error shapes is the reader's (youtube_video_reader_test);
+      # here only the mapping to a JSON status the resident's helper can read.
+      test "an upstream failure is a 502 and missing configuration a 503, both as JSON" do
+        {
+          YoutubeVideoReader::UpstreamError.new("API key not valid. Please pass a valid API key.") => :bad_gateway,
+          YoutubeVideoReader::ConfigurationError.new("Gemini API access is not configured") => :service_unavailable
+        }.each do |error, status|
+          reader = Object.new
+          reader.define_singleton_method(:call) { |**| raise error }
 
-        YoutubeVideoReader.stub(:new, -> { reader }) do
-          post api_v1_youtube_reads_url,
-            params: {
-              url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
-              operation: "ask",
-              question: "In one sentence, what happens?"
-            },
-            headers: { "Authorization" => "Bearer #{@api_key.raw_token}" },
-            as: :json
-        end
+          YoutubeVideoReader.stub(:new, -> { reader }) do
+            post api_v1_youtube_reads_url,
+              params: { url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", operation: "ask", question: "What happens?" },
+              headers: { "Authorization" => "Bearer #{@api_key.raw_token}" },
+              as: :json
+          end
 
-        assert_response :bad_gateway
-        assert_equal "API key not valid. Please pass a valid API key.", JSON.parse(response.body)["error"]
+          assert_response status
+          assert_equal error.message, JSON.parse(response.body)["error"]
+        end
       end
 
     end
