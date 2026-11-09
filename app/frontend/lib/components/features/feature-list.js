@@ -333,6 +333,13 @@ export const technicalFeatures = [
     icon: GithubLogo,
   },
   {
+    key: 'conversation-links',
+    title: 'Conversations named, not coded',
+    description:
+      "When a message mentions a conversation by its ID, like eqRAMj, it shows as a link titled with that conversation's current title. Only conversations you can open in the account on screen become links; another account's or a deleted one stays as the plain ID. A few IDs that look like ordinary words (all capitals, or capitalised only at the start) stay as plain text.",
+    icon: Chats,
+  },
+  {
     key: 'github-resident',
     title: 'Bring an existing GitHub resident',
     description:
@@ -694,7 +701,7 @@ export const moreFeatures = [
     key: 'resident-voices',
     title: 'Voices for residents',
     description:
-      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices (or, for an account with its own ElevenLabs key, the voices in its own ElevenLabs library), with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
     icon: Waveform,
   },
   {

@@ -26,11 +26,11 @@ class Mnemodyne::EmbedNodeJobTest < ActiveSupport::TestCase
   test "provider result cannot overwrite changed text or a suspended vault" do
     Mnemodyne::Embeddings.stub(:configured?, true) do
       Mnemodyne::Embeddings.stub(:profile, "synthetic-v1") do
-        Mnemodyne::Embeddings.stub(:embed, ->(_) { @node.update!(content: "Later"); [ 1.0 ] }) do
+        Mnemodyne::Embeddings.stub(:embed, ->(_, **) { @node.update!(content: "Later"); [ 1.0 ] }) do
           Mnemodyne::EmbedNodeJob.perform_now(@vault.id, @node.id)
           assert_nil @node.reload.embedding
         end
-        Mnemodyne::Embeddings.stub(:embed, ->(_) { @vault.update!(suspended_at: Time.current); [ 1.0 ] }) do
+        Mnemodyne::Embeddings.stub(:embed, ->(_, **) { @vault.update!(suspended_at: Time.current); [ 1.0 ] }) do
           Mnemodyne::EmbedNodeJob.perform_now(@vault.id, @node.id)
           assert_nil @node.reload.embedding
         end
@@ -39,7 +39,7 @@ class Mnemodyne::EmbedNodeJobTest < ActiveSupport::TestCase
   end
 
   test "foreign and removed nodes never reach the provider" do
-    Mnemodyne::Embeddings.stub(:embed, ->(_) { flunk "Unexpected provider call" }) do
+    Mnemodyne::Embeddings.stub(:embed, ->(_, **) { flunk "Unexpected provider call" }) do
       Mnemodyne::EmbedNodeJob.perform_now(@vault.id, SecureRandom.uuid)
       Mnemodyne::EmbedNodeJob.perform_now(SecureRandom.uuid, @node.id)
       assert_nil @node.reload.embedding

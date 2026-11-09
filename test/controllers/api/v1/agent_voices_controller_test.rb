@@ -78,6 +78,24 @@ class Api::V1::AgentVoicesControllerTest < ActionDispatch::IntegrationTest
 
   private
 
+  test "a resident with an account key of its own sees and chooses the account's own voices" do
+    @agent.account.update!(eleven_labs_api_key: "acct-secret-key")
+
+    with_standard_voices do
+      with_library_voices do
+        patch "/api/v1/agent/voice", params: { voice_id: "own-janis" }, as: :json, headers: auth(@resident_key)
+        assert_response :success
+        get "/api/v1/agent/voice", headers: auth(@resident_key)
+      end
+    end
+
+    body = response.parsed_body
+    assert_equal "own-janis", body["voice_id"]
+    assert_equal "Janis", body.dig("voice", "name")
+    assert_equal %w[own-janis], body["library_voices"].map { |v| v["voice_id"] }
+    assert_not_includes response.body, "acct-secret-key"
+  end
+
   def auth(key)
     { Authorization: "Bearer #{key.raw_token}" }
   end

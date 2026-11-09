@@ -10,14 +10,30 @@ namespace :mnemodyne do
     abort "Configure the embedding service first" unless Mnemodyne::Embeddings.configured?
     scope = Mnemodyne::Vault.where(suspended_at: nil, erasure_requested_at: nil)
     scope = scope.where(agent: Agent.find(ENV.fetch("RESIDENT_ID"))) if ENV["RESIDENT_ID"].present?
-    count = 0
+    vaults = 0
+    nodes = 0
+    profile = Mnemodyne::Embeddings.profile
     scope.find_each do |vault|
       next unless vault.agent.externally_hosted? && vault.agent.active? && !vault.agent.account.disabled?
-      vault.nodes.find_each do |node|
-        Mnemodyne::EmbedNodeJob.perform_later(vault.id, node.id)
-        count += 1
-      end
+      stale = vault.nodes.count { |node| !Mnemodyne::ReembedVaultJob.current?(node, profile) }
+      next if stale.zero?
+      Mnemodyne::ReembedVaultJob.perform_later(vault.id)
+      vaults += 1
+      nodes += stale
     end
-    puts "Queued #{count} nodes for the configured profile; no graph was provisioned or seeded"
+    puts "Queued #{vaults} vaults (#{nodes} nodes not yet on #{profile}); no graph was provisioned or seeded"
+  end
+
+  desc "Count, per vault, nodes and nodes embedded under the configured profile (counts only)"
+  task coverage: :environment do
+    profile = Mnemodyne::Embeddings.profile
+    puts "profile=#{profile} configured=#{Mnemodyne::Embeddings.configured?}"
+    Mnemodyne::Vault.where(erasure_requested_at: nil).find_each do |vault|
+      total = vault.nodes.count
+      next if total.zero?
+      current = vault.nodes.count { |node| Mnemodyne::ReembedVaultJob.current?(node, profile) }
+      other = vault.nodes.where.not(embedding: nil).where.not(embedding_profile: profile).count
+      puts "resident=#{vault.agent_id} nodes=#{total} current=#{current} missing=#{total - current} other_profile=#{other}"
+    end
   end
 end
