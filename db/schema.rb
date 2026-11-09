@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_093000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1800,6 +1800,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_040000) do
     t.index ["kind", "subject", "sampled_at"], name: "index_house_samples_on_kind_and_subject_and_sampled_at"
   end
 
+  create_table "linkedin_posts", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.bigint "agent_id", null: false
+    t.text "text", null: false
+    t.string "media_kind"
+    t.string "media_filename"
+    t.string "media_urn"
+    t.string "idempotency_key", null: false
+    t.string "request_digest", null: false
+    t.string "status", default: "pending", null: false
+    t.string "post_urn"
+    t.string "failure_reason"
+    t.text "error_message"
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "idempotency_key"], name: "index_linkedin_posts_on_agent_id_and_idempotency_key", unique: true
+    t.index ["agent_id"], name: "index_linkedin_posts_on_agent_id"
+    t.index ["post_urn"], name: "index_linkedin_posts_on_post_urn", unique: true
+    t.index ["resolved_by_agent_id"], name: "index_linkedin_posts_on_resolved_by_agent_id"
+    t.index ["service_connection_id", "created_at"], name: "index_linkedin_posts_on_service_connection_id_and_created_at"
+    t.index ["service_connection_id"], name: "index_linkedin_posts_on_service_connection_id"
+  end
+
   create_table "memberships", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "confirmation_sent_at"
@@ -3241,6 +3266,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_040000) do
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
   add_foreign_key "house_samples", "agents", on_delete: :cascade
+  add_foreign_key "linkedin_posts", "agents"
+  add_foreign_key "linkedin_posts", "agents", column: "resolved_by_agent_id"
+  add_foreign_key "linkedin_posts", "service_connections"
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"
   add_foreign_key "memberships", "users", column: "invited_by_id"

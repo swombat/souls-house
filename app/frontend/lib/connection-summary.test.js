@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { accessSummary, attentionLabel, connectionTitle, serviceLine, startsOpen } from './connection-summary';
+import {
+  accessSummary,
+  attentionLabel,
+  connectionTitle,
+  grantDaysLeft,
+  serviceLine,
+  startsOpen,
+} from './connection-summary';
 
 const resident = (name, enabled) => ({ id: name, name, enabled });
 
@@ -91,5 +98,25 @@ describe('serviceLine', () => {
   it('stays out of the way when the title already is the service name', () => {
     expect(serviceLine({ provider: 'whatsapp', provider_name: 'WhatsApp', label: 'WhatsApp' })).toBeNull();
     expect(serviceLine({ provider: 'x', label: 'Something' })).toBeNull();
+  });
+});
+
+describe('grantDaysLeft', () => {
+  const now = new Date('2026-11-09T09:00:00Z');
+  const linkedin = (expires) => ({ provider: 'linkedin', status: 'connected', grant_expires_at: expires });
+
+  it('counts down only in the last week of a sign-in the house cannot renew', () => {
+    expect(grantDaysLeft(linkedin('2026-11-30T09:00:00Z'), now)).toBeNull();
+    expect(grantDaysLeft(linkedin('2026-11-14T10:00:00Z'), now)).toBe(5);
+    expect(attentionLabel(linkedin('2026-11-14T10:00:00Z'), now)).toBe('Sign-in ends in 5 days');
+    expect(attentionLabel(linkedin('2026-11-10T10:00:00Z'), now)).toBe('Sign-in ends in 1 day');
+    expect(attentionLabel(linkedin('2026-11-09T20:00:00Z'), now)).toBe('Sign-in ends today');
+  });
+
+  it('says nothing for connections without an end, and defers to Reconnect once it has ended', () => {
+    expect(grantDaysLeft({ provider: 'oura', status: 'connected' }, now)).toBeNull();
+    expect(attentionLabel({ ...linkedin('2026-11-01T00:00:00Z'), status: 'reauthorizing' }, now)).toBe(
+      'Reconnect needed'
+    );
   });
 });

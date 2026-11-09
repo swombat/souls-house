@@ -4,7 +4,7 @@ module Services
     class UnknownProvider < KeyError; end
 
     CONNECTION_METHODS = %w[oauth2 credentials pairing].freeze
-    CREDENTIAL_STRATEGIES = %w[static self_refreshing refresh_broker connector read_proxy].freeze
+    CREDENTIAL_STRATEGIES = %w[static self_refreshing refresh_broker connector read_proxy house_poster].freeze
 
     attr_reader :key, :name, :management_scopes, :credential_strategy,
                  :api_origins, :documentation, :access_profiles,
