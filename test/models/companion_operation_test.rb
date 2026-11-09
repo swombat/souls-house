@@ -162,7 +162,7 @@ class CompanionOperationTest < ActiveSupport::TestCase
     operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
     assert_equal "desktop", operation.envelope[:operation]
     assert_equal true, operation.envelope[:policy]["residents"].first["desktop"]
-    assert_not operation.input_required?
+    assert operation.input_required?
     assert_raises(CompanionOperation::Refused) do
       CompanionOperation.start!(device: @device, agent: @agent, kind: "execute", arguments: { "input_size" => 2 })
     end
@@ -180,7 +180,11 @@ class CompanionOperationTest < ActiveSupport::TestCase
       { "command" => "batch", "steps" => [] },
       { "command" => "batch", "steps" => [ { "command" => "batch", "steps" => [] } ] },
       { "command" => "batch", "steps" => Array.new(17) { { "command" => "snapshot", "app" => "Finder" } } },
-      { "app" => "Finder" }
+      { "app" => "Finder" },
+      { "command" => "launch", "app" => "Terminal" },
+      { "command" => "snapshot", "app" => { "x" => 1 } },
+      { "command" => "snapshot", "app" => "Finder", "input_size" => 3 },
+      { "command" => "batch", "steps" => [ { "command" => "click", "app" => [ "Finder" ], "ref" => "@a:e1" } ] }
     ].each do |arguments|
       assert_raises(CompanionOperation::Refused, arguments.inspect) { start.call(arguments) }
     end
@@ -215,15 +219,24 @@ class CompanionOperationTest < ActiveSupport::TestCase
       { "command" => "type", "app" => "Finder", "ref" => "@abc:e2", "text" => "secret words" } ] }
     operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
     assert_equal({ "command" => "batch", "steps" => [ { "command" => "click", "app" => "Finder" },
-      { "command" => "type", "app" => "Finder" } ] }, operation.reload.arguments)
+      { "command" => "type", "app" => "Finder" } ], "input_size" => JSON.generate(payload).bytesize }, operation.reload.arguments)
     assert_not_includes operation.arguments.to_json, "secret"
     assert operation.input.expires_at <= operation.deadline
 
+    assert operation.input_required?
+    assert_equal JSON.generate(payload).bytesize, operation.arguments["input_size"]
     sent = nil
     CompanionChannel.stub(:broadcast_to, ->(_device, message) { sent = message }) { assert operation.dispatch! }
-    assert_equal payload, sent[:arguments]
-    assert_nil CompanionOperationInput.find_by(companion_operation_id: operation.id)
-    assert_not operation.reload.dispatch!
+    assert_not_includes sent.to_json, "secret"
+    assert_not_includes sent.to_json, "@abc"
+    assert_equal true, sent[:input_required]
+    assert_equal payload, JSON.parse(operation.take_input!(epoch: "fixture-epoch", revision: @device.reload.grant_revision))
+    assert_nil operation.take_input!(epoch: "fixture-epoch", revision: @device.grant_revision)
+    assert_raises(CompanionOperation::Refused) { operation.attach_input!("{}") }
+
+    missing = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    missing.input.destroy!
+    assert_not missing.reload.dispatch!
 
     cancelled = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
     @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: false, actor: users(:user_1))

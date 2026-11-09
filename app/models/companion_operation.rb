@@ -21,6 +21,8 @@ class CompanionOperation < ApplicationRecord
     window_id wait_for wait_timeout_ms role name value text description native_id exact first last count nth
     limit ref property combo direction amount].freeze
   DESKTOP_MAX_ARGUMENTS = 24.kilobytes
+  DESKTOP_VERBS = %w[snapshot find get is click type press scroll].freeze
+  DESKTOP_APP = /\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}\z/
   ACTIVE_STATES = %w[pending dispatched].freeze
   MAX_BODY = 8.megabytes
   MAX_INLINE = 64.kilobytes
@@ -45,12 +47,18 @@ class CompanionOperation < ApplicationRecord
       raise Refused, "Invalid write mode" unless %w[create overwrite append].include?(arguments.fetch("mode", "create"))
     end
     if kind == "desktop"
-      raise Refused, "Invalid desktop command" unless arguments["command"].is_a?(String)
+      raise Refused, "Invalid desktop arguments" if arguments.key?("input_size")
+      valid_step = ->(step) do
+        step.is_a?(Hash) && DESKTOP_VERBS.include?(step["command"]) && step["app"].is_a?(String) &&
+          DESKTOP_APP.match?(step["app"]) && (step.keys - DESKTOP_KEYS).empty? &&
+          step.keys.exclude?("steps") && step.keys.exclude?("timeout_seconds")
+      end
       if arguments["command"] == "batch"
         steps = arguments["steps"]
-        raise Refused, "Invalid batch" unless steps.is_a?(Array) && steps.size.between?(1, 16) &&
-          steps.all? { |step| step.is_a?(Hash) && (step.keys - DESKTOP_KEYS - %w[steps timeout_seconds]).empty? &&
-            step.keys.exclude?("steps") && step.keys.exclude?("timeout_seconds") }
+        raise Refused, "Invalid batch" unless (arguments.keys - %w[command steps timeout_seconds]).empty? &&
+          steps.is_a?(Array) && steps.size.between?(1, 16) && steps.all?(&valid_step)
+      else
+        raise Refused, "Invalid desktop command" unless valid_step.call(arguments.except("timeout_seconds"))
       end
     end
     timeout = %w[execute desktop].include?(kind) ? arguments.fetch("timeout_seconds", 30) : 30
@@ -65,11 +73,14 @@ class CompanionOperation < ApplicationRecord
 
       deadline = timeout.seconds.from_now
       if kind == "desktop"
-        # The durable row keeps a receipt (verbs and apps only). Typed text,
-        # refs and the rest live in the expiring input row until dispatch.
-        operation = create!(companion_device: device, agent: agent, kind: kind, arguments: desktop_receipt(arguments),
+        # The durable row and the Cable envelope carry a receipt only (verbs,
+        # apps, input size). Typed text, refs and the rest wait in the expiring
+        # input row, which the device fetches once over HTTP.
+        payload = JSON.generate(arguments).b
+        operation = create!(companion_device: device, agent: agent, kind: kind,
+          arguments: desktop_receipt(arguments).merge("input_size" => payload.bytesize),
           connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: deadline)
-        operation.create_input!(data: JSON.generate(arguments).b, expires_at: [ deadline, 10.minutes.from_now ].min)
+        operation.create_input!(data: payload, expires_at: [ deadline, 10.minutes.from_now ].min)
         operation
       else
         create!(companion_device: device, agent: agent, kind: kind, arguments: arguments,
@@ -106,7 +117,7 @@ class CompanionOperation < ApplicationRecord
   end
 
   def input_required?
-    kind.in?(%w[write execute])
+    kind.in?(%w[write execute desktop])
   end
 
   # The upload is actor/device/operation-bound; never place file bytes, argv or
@@ -144,17 +155,8 @@ class CompanionOperation < ApplicationRecord
         return false unless state == "pending" && deliverable?
         return false if input_required? && (!input || input.expires_at <= Time.current)
 
-        message = envelope
-        if kind == "desktop"
-          saved = input
-          return false unless saved && saved.expires_at > Time.current
-
-          # The full payload goes out once, in flight only, and is gone after.
-          message[:arguments] = JSON.parse(saved.data)
-          saved.destroy!
-        end
         update!(state: "dispatched")
-        CompanionChannel.broadcast_to(companion_device, message)
+        CompanionChannel.broadcast_to(companion_device, envelope)
         true
       end
     end
