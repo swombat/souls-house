@@ -12,19 +12,26 @@ class FieldTweetSourcesController < ApplicationController
   def create
     return back(alert: "#{FieldTweets::NO_FUNDING}.") if FieldTweets.funding_for(current_account).nil?
 
-    source = current_account.build_field_tweet_source(source_params.merge(created_by: Current.user))
+    source = current_account.all_field_tweet_sources.build(source_params.merge(created_by: Current.user))
     if source.save
       FieldTweets::SyncJob.perform_later(source.id)
       back notice: "Following @#{source.handle}. Posts from now on will come into the Field."
     else
       back alert: source.errors.full_messages.to_sentence
     end
+  rescue ActiveRecord::RecordNotUnique
+    back alert: "This account already follows a handle."
   end
 
   # handle can't change: following someone else is removing and adding, so
   # one handle's window never carries over to another.
   def update
-    if @source.update(source_params.except(:handle))
+    saved = @source.with_lock do
+      raise ActiveRecord::RecordNotFound if @source.removed?
+
+      @source.update(source_params.except(:handle))
+    end
+    if saved
       back notice: "Saved."
     else
       back alert: @source.errors.full_messages.to_sentence
@@ -34,7 +41,7 @@ class FieldTweetSourcesController < ApplicationController
   # The tweets already brought in stay in the Field.
   def destroy
     handle = @source.handle
-    @source.destroy!
+    @source.remove!
     back notice: "Stopped following @#{handle}. Tweets already in the Field stay."
   end
 

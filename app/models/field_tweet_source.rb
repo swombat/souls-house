@@ -21,7 +21,7 @@ class FieldTweetSource < ApplicationRecord
   STREAM_STATUS_COLUMNS = %w[
     account_id handle include_replies include_quotes include_reposts
     own_monthly_usd_limit state state_reason connected_at checkpoint_at
-    window_since gap_since gap_until last_success_at next_attempt_at
+    window_since gap_since gap_until last_success_at next_attempt_at removed_at
   ].freeze
 
   after_save :refresh_stream_status, if: -> { (saved_changes.keys & STREAM_STATUS_COLUMNS).any? }
@@ -53,7 +53,9 @@ class FieldTweetSource < ApplicationRecord
   normalizes :handle, with: ->(value) { value.to_s.strip.delete_prefix("@") }
 
   validates :handle, format: { with: FieldTweet::HANDLE, message: "must be an X handle (letters, digits and _, up to 15)" }
-  validates :account_id, uniqueness: { message: "already follows a handle" }
+  scope :live, -> { where(removed_at: nil) }
+
+  validates :account_id, uniqueness: { conditions: -> { live }, message: "already follows a handle" }, unless: :removed?
   validates :own_monthly_usd_limit, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
   before_validation(on: :create) do
@@ -118,20 +120,62 @@ class FieldTweetSource < ApplicationRecord
   end
 
   def pause!(reason)
-    pause_collection!
-    update!(state_reason: reason.to_s.first(300))
+    with_lock do
+      raise ActiveRecord::RecordNotFound if removed?
+
+      pause_collection!
+      update!(state_reason: reason.to_s.first(300))
+    end
   end
 
   def needs_attention!(reason)
-    flag_attention!
-    update!(state_reason: reason.to_s.first(300))
+    with_lock do
+      return if removed?
+
+      flag_attention!
+      update!(state_reason: reason.to_s.first(300))
+    end
   end
 
   # A person's act: start again from where collection stopped (the open
   # window and backlog are kept, not dropped).
   def resume!(now: Time.current)
-    resume_collection!
-    update!(state_reason: nil, failure_count: 0, next_attempt_at: now)
+    with_lock do
+      raise ActiveRecord::RecordNotFound if removed?
+
+      resume_collection!
+      update!(state_reason: nil, failure_count: 0, next_attempt_at: now)
+    end
+  end
+
+  def removed? = removed_at.present?
+
+  # Shares the reservation/import row lock, never a lock across provider HTTP.
+  def remove!(now: Time.current)
+    with_lock do
+      return if removed?
+
+      update!(removed_at: now, state: "paused", next_attempt_at: nil)
+    end
+  end
+
+  # Model-only administrative recovery. Explicit resume is a separate act.
+  def restore!(account:, actor:)
+    with_lock do
+      unless actor.is_a?(User) && actor.is_site_admin? && account.id == account_id &&
+          account.memberships.confirmed.exists?(user: actor)
+        raise ActiveRecord::RecordNotFound
+      end
+
+      return unless removed?
+
+      if sync_claimed_at.present? || FieldTweetCall.where(field_tweet_source_id: id, status: "reserved").exists?
+        errors.add(:base, "Collection is still in flight; reconcile it before recovery")
+        raise ActiveRecord::RecordInvalid, self
+      end
+
+      update!(removed_at: nil, state: "paused", next_attempt_at: nil)
+    end
   end
 
   private

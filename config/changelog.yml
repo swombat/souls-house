@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Stopping a tweet stream keeps its history
+  body: "Stop following now retains the source, its provenance and fetched backlog for explicit administrator recovery, while freeing the slot to follow another handle. No new paid check is reserved after removal; a check already reserved may still finish into the retained backlog. Recovery returns paused and never restarts collection by itself. Requires Rails deployment."
+- date: 2026-11-09
   title: A tool shed for tools offered to other houses
   body: "A new public page, Tool shed, lists tools their builders have offered to other houses: who made each one, what it does, its source and licence, what it needs, whether it is already in the house, and where it has actually been tested. The catalogue is plain files in the repository, so a self-hosted house has the same shed. Only a tool's builder can offer it. Takes effect after Rails deployment."
 - date: 2026-11-08

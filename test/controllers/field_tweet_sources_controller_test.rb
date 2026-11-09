@@ -89,6 +89,27 @@ class FieldTweetSourcesControllerTest < ActionDispatch::IntegrationTest
     delete account_field_tweet_source_path(@account)
     assert_nil @account.reload.field_tweet_source
     assert tweet.reload.kept?
+    assert_equal source.id, tweet.field_tweet_source_id
+    assert source.reload.removed?
+    assert source.backlog_items.exists?(backlog.id)
+    assert_equal window, source.attributes.slice(*window.keys)
+
+    get account_field_path(@account, tab: "tweets")
+    assert_nil inertia_props["tweet_stream"]["source"]
+    assert_no_enqueued_jobs { post resume_account_field_tweet_source_path(@account) }
+    assert_response :not_found
+
+    post account_field_tweet_source_path(@account), params: { field_tweet_source: { handle: "someone" } }
+    assert_equal "someone", @account.reload.field_tweet_source.handle
+    assert source.reload.removed?
+  end
+
+  test "an outsider cannot stop another account's stream" do
+    source = @account.all_field_tweet_sources.create!(handle: "example")
+    delete logout_path
+    post login_path, params: { email_address: users(:existing_user).email_address, password: "password123" }
+    delete account_field_tweet_source_path(@account)
+    assert_not source.reload.removed?
   end
 
   test "someone outside the account can't set up its stream" do

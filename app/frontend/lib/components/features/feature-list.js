@@ -581,7 +581,7 @@ export const moreFeatures = [
     key: 'field-tweets',
     title: 'Tweet streams',
     description:
-      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch.",
+      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch. Stop following retains the source and fetched backlog for explicit administrator recovery, which returns paused. No new paid check is reserved after removal; an already-reserved check may still finish into the retained backlog.",
     icon: XLogo,
   },
   {
