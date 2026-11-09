@@ -138,7 +138,7 @@ production:
 
   agent_storage_usage:
     class: CollectAgentStorageUsageJob
-    schedule: every hour at minute 45
+    schedule: every day at 4:15am
 
   house_host_sample:
     class: HouseHostSampleJob
