@@ -164,8 +164,9 @@ class LinkedinPoster
 
     adapter = connection.definition.adapter
     if post.media_kind
+      @token_in_use = adapter.current_access_token(connection)
       uploader = LinkedinPublisher.new(
-        access_token: adapter.current_access_token(connection),
+        access_token: @token_in_use,
         author_urn: adapter.author_urn(connection),
         on_progress: -> { post.touch }
       )
@@ -173,12 +174,14 @@ class LinkedinPoster
     end
     publish(post, media_urn)
   rescue Services::LinkedinAdapter::Expired => e
-    mark_reauthorizing(post.service_connection)
+    # Raised inside publish's transaction, the adapter's own status change
+    # was rolled back; repeat it, but only against the grant found ended.
+    mark_reauthorizing(post.service_connection, token: e.token)
     finish!(post, status: "failed", failure_reason: "reconnect_needed", error_message: e.message.truncate(500))
   rescue Services::AdapterError, ArgumentError => e
     finish!(post, status: "failed", failure_reason: "token_unavailable", error_message: "Nothing was sent: #{e.message}".truncate(500))
   rescue LinkedinPublisher::NotSent => e
-    mark_reauthorizing(post.service_connection) if e.reason == "unauthorized"
+    mark_reauthorizing(post.service_connection, token: @token_in_use) if e.reason == "unauthorized"
     finish!(post, status: "failed", failure_reason: e.reason, error_message: e.message.truncate(500))
   ensure
     post.media.purge_later if post&.media&.attached? && !post.reload.status.in?(%w[pending])
@@ -225,7 +228,7 @@ class LinkedinPoster
       connection = post.service_connection
       adapter = connection.definition.adapter
       # Locks the connection row and raises unless it is still connected.
-      token = adapter.current_access_token(connection)
+      token = @token_in_use = adapter.current_access_token(connection)
       GuestMembership.lock("FOR SHARE").find_by(agent_id: post.agent_id, account_id: connection.account_id)
       access = AgentServiceAccess.lock.find_by(agent_id: post.agent_id, service_connection_id: connection.id)
       next access_removed!(post) unless access && AgentServiceAccess.effective.exists?(id: access.id)
@@ -249,8 +252,16 @@ class LinkedinPoster
                   error_message: "Nothing was sent: this resident's access to the LinkedIn connection was switched off")
   end
 
-  def mark_reauthorizing(connection)
-    connection.with_lock { connection.update!(status: "reauthorizing") if connection.status == "connected" }
+  # Fenced to the credential that failed: a reconnect that commits between
+  # the failure and this lock holds a different token and is left alone.
+  def mark_reauthorizing(connection, token:)
+    return if token.blank?
+
+    connection.with_lock do
+      next unless connection.status == "connected" && connection.credential_payload_hash["access_token"] == token
+
+      connection.update!(status: "reauthorizing")
+    end
   end
 
   # The last write lands only while the row is still pending, so a

@@ -24,8 +24,19 @@ module Services
     TIMEOUT = 20
 
     class Error < Services::AdapterError; end
-    # The grant has ended and nothing the house holds can renew it.
-    class Expired < Error; end
+    # The grant has ended and nothing the house holds can renew it. `token`
+    # is the access token that was found ended, so a caller repairing state
+    # later can tell whether the connection still holds that grant.
+    class Expired < Error
+
+      attr_reader :token
+
+      def initialize(message = nil, token: nil)
+        @token = token
+        super(message)
+      end
+
+    end
 
     attr_reader :definition
 
@@ -78,15 +89,17 @@ module Services
         if fresh?(payload["access_token"], payload["expires_at"])
           payload["access_token"]
         elsif payload["refresh_token"].present? && fresh?(payload["refresh_token"], payload["refresh_token_expires_at"], allow_missing_expiry: true)
-          refreshed = credential_payload(
-            token_request(grant_type: "refresh_token", refresh_token: payload["refresh_token"]),
-            previous: payload
-          )
+          begin
+            response = token_request(grant_type: "refresh_token", refresh_token: payload["refresh_token"])
+          rescue Expired => e
+            raise Expired.new(e.message, token: payload["access_token"])
+          end
+          refreshed = credential_payload(response, previous: payload)
           connection.replace_credential_payload_without_reconciliation!(refreshed)
           refreshed["access_token"]
         else
           connection.update!(status: "reauthorizing")
-          expired = Expired.new(self.class.expired_message(grant_expires_at(connection)))
+          expired = Expired.new(self.class.expired_message(grant_expires_at(connection)), token: payload["access_token"])
           nil
         end
       end

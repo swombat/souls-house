@@ -162,17 +162,59 @@ module Api
       end
 
       test "reconnected during the upload: the post goes out with the new token" do
-        create = image_upload_that(token: "li-fresh") do
-          @connection.replace_credential_payload_without_reconciliation!(
-            @connection.reload.credential_payload_hash.merge("access_token" => "li-fresh", "expires_at" => 60.days.from_now.utc.iso8601)
-          )
-        end
+        create = image_upload_that(token: "li-fresh") { reconnect!("li-fresh") }
 
         post_image_and_run_job
 
         assert_requested create
         assert_not_requested :post, POSTS_URL, headers: { "Authorization" => "Bearer li-access" }
         assert_equal "posted", LinkedinPost.last.status
+      end
+
+      # Mira's second pass on c23a9212: repairing the connection after a
+      # failure must only touch the grant that failed.
+      test "a 401 on the old token after a mid-upload reconnect leaves the new grant connected" do
+        stub_request(:post, "https://api.linkedin.com/rest/images?action=initializeUpload").to_return do |_request|
+          reconnect!("li-fresh")
+          { status: 401, body: "{}" }
+        end
+
+        post_image_and_run_job
+
+        assert_not_requested :post, POSTS_URL
+        assert_equal "unauthorized", LinkedinPost.last.failure_reason
+        assert_equal "connected", @connection.reload.status
+      end
+
+      test "a 401 on the current token marks the connection for reconnecting" do
+        stub_request(:post, "https://api.linkedin.com/rest/images?action=initializeUpload").to_return(status: 401, body: "{}")
+
+        post_image_and_run_job
+
+        assert_equal "unauthorized", LinkedinPost.last.failure_reason
+        assert_equal "reauthorizing", @connection.reload.status
+      end
+
+      test "a grant found ended at create-post stays marked after the send transaction rolls back" do
+        @connection.replace_credential_payload_without_reconciliation!(
+          @connection.credential_payload_hash.merge("expires_at" => 1.minute.ago.utc.iso8601)
+        )
+
+        post_linkedin(text: "Hello", key: "ended-1")
+
+        assert_not_requested :post, POSTS_URL
+        assert_equal "reconnect_needed", LinkedinPost.last.failure_reason
+        assert_equal "reauthorizing", @connection.reload.status
+      end
+
+      test "the ended-grant repair skips a reconnect that committed after the failure" do
+        reconnect!("li-fresh")
+
+        LinkedinPoster.new(agent: @agent).send(:mark_reauthorizing, @connection, token: "li-access")
+        assert_equal "connected", @connection.reload.status
+
+        LinkedinPoster.new(agent: @agent).send(:mark_reauthorizing, @connection, token: "li-fresh")
+        assert_equal "reauthorizing", @connection.reload.status
       end
 
       test "a resident cannot read another resident's post" do
@@ -212,6 +254,12 @@ module Api
         stub_request(:post, POSTS_URL)
           .with(headers: { "Authorization" => "Bearer #{token}" })
           .to_return(status: 201, headers: { "x-restli-id" => "urn:li:share:7100000000000000008" })
+      end
+
+      def reconnect!(token)
+        @connection.replace_credential_payload_without_reconciliation!(
+          @connection.reload.credential_payload_hash.merge("access_token" => token, "expires_at" => 60.days.from_now.utc.iso8601)
+        )
       end
 
       def post_image_and_run_job
