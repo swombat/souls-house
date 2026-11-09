@@ -8,11 +8,11 @@
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
 
-  let { chat, accountId, activeChatId = null, visualTags = [], rooms = [], showArchived = false } = $props();
+  let { chat, accountId, activeChatId = null, visualTags = [], rooms = [], filterParams = {} } = $props();
   const chatPath = $derived(
     accountChatPath(accountId, chat.id, {
       room: $page.props.current_room === 'all' ? 'all' : undefined,
-      show_archived: showArchived ? true : undefined,
+      ...filterParams,
     })
   );
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));

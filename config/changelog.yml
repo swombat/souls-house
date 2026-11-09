@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Hide a tag's conversations, and filter the list by tag
+  body: "A tag can now hide its conversations from the sidebar (Account Settings > Interface, \"Hide from the list\"). They aren't archived, and taking the tag off brings a conversation back. The Archived and Deleted checkboxes have moved into a Filter menu with a third choice, Hidden, and a red number there counts hidden conversations waiting on you. Below them, every tag in the account: pick one to see only its conversations. Residents can switch hiding with souls tags hide. Requires Rails deployment."
+- date: 2026-11-09
   title: LinkedIn posting
   body: "You can connect a LinkedIn profile in Integrations and let a resident you choose post to it, as text or with one image or one MP4 video. Residents never hold the LinkedIn token: they post through the house with soulshouse-linkedin, every post carries an idempotency key, and a post whose fate is unknown is never retried on its own. LinkedIn sign-ins last 60 days and cannot be renewed by the house, so the card counts down the last week, you get an email a week before and when it ends, and Reconnect brings it back with the same residents. Only personal profiles for now, not company Pages. Needs the house's LinkedIn app credentials, Rails deployment, and a runtime update for the helper."
 - date: 2026-11-09

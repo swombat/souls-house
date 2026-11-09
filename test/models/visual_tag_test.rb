@@ -33,7 +33,7 @@ class VisualTagTest < ActiveSupport::TestCase
     id = @tag.to_param
     @tag.update!(label: "Updated")
     assert_equal id, @tag.reload.to_param
-    assert_equal %w[colour icon id label pinned pins_to_top], @tag.as_json.keys.sort
+    assert_equal %w[colour hides_from_list icon id label pinned pins_to_top], @tag.as_json.keys.sort
     assert_equal @tag, VisualTag.resolve_for(@account, id)
     assert_nil VisualTag.resolve_for(@account, nil)
     [ @tag.id, @tag.id.to_s, "", [], {}, "unknown" ].each do |invalid|
@@ -59,8 +59,8 @@ class VisualTagTest < ActiveSupport::TestCase
     palette = VisualTag.palette_with_usage_for(@account)
     assert_equal %w[alpha Building Zulu Empty zebra], palette.pluck("label")
     assert_equal [ 1, 1, 1, 0, 0 ], palette.pluck("conversation_count")
-    assert_equal %w[colour conversation_count icon id label pinned pins_to_top], palette.first.keys.sort
-    assert_equal %w[colour icon id label pinned pins_to_top], popular.as_json.keys.sort
+    assert_equal %w[colour conversation_count hides_from_list icon id label pinned pins_to_top], palette.first.keys.sort
+    assert_equal %w[colour hides_from_list icon id label pinned pins_to_top], popular.as_json.keys.sort
     assert_equal @tag.as_json, @chat.as_json["visual_tag"]
   end
 
@@ -98,6 +98,32 @@ class VisualTagTest < ActiveSupport::TestCase
     @chat.unarchive!
     assert_nil @chat.reload.visual_tag
     assert @tag.reload
+  end
+
+  test "a tag can hide its conversations, but not while it keeps them on top, and the Pin never hides" do
+    account = Account.create!(name: "Hiding", account_type: :team)
+    pin = account.pin_tag
+    done = account.visual_tags.create!(label: "Done", icon: "Checks", colour: "green")
+
+    done.update!(hides_from_list: true)
+    assert done.reload.hides_from_list?
+    assert_equal true, done.as_json["hides_from_list"]
+    assert_equal [ done ], account.visual_tags.hiding_from_list.to_a
+
+    assert_not done.update(pins_to_top: true)
+    assert done.errors[:hides_from_list].any?
+    assert_not done.reload.pins_to_top?
+    assert done.update(pins_to_top: true, hides_from_list: false)
+
+    assert_not pin.update(hides_from_list: true)
+    assert pin.errors[:hides_from_list].any?
+    assert_not pin.reload.hides_from_list?
+
+    hidden = account.chats.create!(title: "Hidden", visual_tag: done)
+    done.update!(pins_to_top: false, hides_from_list: true)
+    shown = account.chats.create!(title: "Shown")
+    assert_equal [ shown ], account.chats.not_hidden_from_list.to_a
+    assert_equal [ hidden ], account.chats.hidden_from_list.to_a
   end
 
   test "any tag can keep its conversations on top; the Pin always does and cannot be switched off" do

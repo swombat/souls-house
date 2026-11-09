@@ -666,7 +666,8 @@ export const moreFeatures = [
   {
     key: 'visual-tags',
     title: 'Visual tags',
-    description: 'Give conversations an icon and a colour so the sidebar reads at a glance.',
+    description:
+      'Give conversations an icon and a colour so the sidebar reads at a glance. A tag can keep its conversations at the top, or hide them from the list without archiving them; the Filter menu shows hidden ones, with a count of those waiting on you, or only one tag.',
     icon: Tag,
   },
   {

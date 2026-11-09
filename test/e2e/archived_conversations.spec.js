@@ -1,5 +1,23 @@
 import { expect, test } from '@playwright/test';
 
+// The Archived/Deleted/Hidden toggles live in the sidebar's Filter menu,
+// which opens in a popover outside the aside.
+async function filterBox(page, name) {
+  const menu = page.getByTestId('chat-filter-menu');
+  if (!(await menu.isVisible())) await page.locator('aside').getByTestId('chat-filter-trigger').click();
+  await expect(menu).toBeVisible();
+  return menu.getByRole('checkbox', { name, exact: true });
+}
+
+// A click outside an open popover only closes it, as in the browser.
+async function closeFilter(page) {
+  const menu = page.getByTestId('chat-filter-menu');
+  if (await menu.isVisible()) {
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+  }
+}
+
 async function login(page, user, password) {
   await page.goto('/login');
   await page.getByLabel(/email/i).fill(user.email);
@@ -46,32 +64,34 @@ for (const mobile of [false, true]) {
       await expect(page.getByText('This conversation has been archived.', { exact: true })).toBeVisible();
       await expect(page.getByTestId('message-composer').locator('textarea')).toBeDisabled();
       await openSidebar();
-      await expect(sidebar.getByRole('checkbox', { name: 'Archived' })).not.toBeChecked();
+      await expect(await filterBox(page, 'Archived')).not.toBeChecked();
       // Existing account policy treats confirmed members as trusted managers.
       // This change must not narrow the older Deleted control's permissions.
-      await expect(sidebar.getByRole('checkbox', { name: 'Deleted', exact: true })).not.toBeChecked();
+      await expect(await filterBox(page, 'Deleted')).not.toBeChecked();
       await expect(archivedLink).toHaveCount(0);
-      await sidebar.getByRole('checkbox', { name: 'Archived' }).check();
+      await (await filterBox(page, 'Archived')).check();
       await expect(archivedLink).toBeVisible();
+      await closeFilter(page);
       await archivedLink.click();
       await expect(page).toHaveURL(/show_archived=true/);
       if (mobile) {
         await sidebar.getByRole('button', { name: 'Close sidebar', exact: true }).click();
         await openSidebar();
       }
-      await expect(sidebar.getByRole('checkbox', { name: 'Archived' })).toBeChecked();
+      await expect(await filterBox(page, 'Archived')).toBeChecked();
       await expect(archivedLink).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('show-archived.png') });
-      await sidebar.getByRole('checkbox', { name: 'Archived' }).uncheck();
+      await (await filterBox(page, 'Archived')).uncheck();
       await expect(archivedLink).toHaveCount(0);
       await expect(page.getByText(fixture.first_message, { exact: true })).toBeVisible();
+      await closeFilter(page);
       if (mobile) await sidebar.getByRole('button', { name: 'Close sidebar', exact: true }).click();
       await action(page, 'Unarchive');
       await page.goto(chatPath);
       await expect(page.getByTestId('message-composer').locator('textarea')).toBeEnabled();
       await openSidebar();
       await expect(archivedLink).toBeVisible();
-      await expect(sidebar.getByRole('checkbox', { name: 'Archived' })).not.toBeChecked();
+      await expect(await filterBox(page, 'Archived')).not.toBeChecked();
     } finally {
       await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
     }
@@ -95,16 +115,16 @@ test('existing owner deleted audit mode includes archived with either checkbox s
     const sidebar = page.locator('aside');
     const archivedLink = sidebar.getByRole('link', { name: /E2E long conversation/ });
     await expect(archivedLink).toHaveCount(0);
-    await sidebar.getByRole('checkbox', { name: 'Deleted', exact: true }).check();
+    await (await filterBox(page, 'Deleted')).check();
     await expect(page).toHaveURL(/show_deleted=true/);
     await expect(archivedLink).toBeVisible();
-    await sidebar.getByRole('checkbox', { name: 'Archived' }).check();
+    await (await filterBox(page, 'Archived')).check();
     await expect(page).toHaveURL(/show_archived=true/);
     await expect(archivedLink).toBeVisible();
-    await sidebar.getByRole('checkbox', { name: 'Deleted', exact: true }).uncheck();
+    await (await filterBox(page, 'Deleted')).uncheck();
     await expect(page).not.toHaveURL(/show_deleted/);
     await expect(archivedLink).toBeVisible();
-    await sidebar.getByRole('checkbox', { name: 'Archived' }).uncheck();
+    await (await filterBox(page, 'Archived')).uncheck();
     await expect(page).not.toHaveURL(/show_archived/);
     await expect(archivedLink).toHaveCount(0);
   } finally {

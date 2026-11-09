@@ -34,7 +34,7 @@ class Accounts::VisualTagsController < ApplicationController
   private
 
   def visual_tag_params
-    params.require(:visual_tag).permit(:label, :icon, :colour, :pins_to_top)
+    params.require(:visual_tag).permit(:label, :icon, :colour, :pins_to_top, :hides_from_list)
   end
 
   def redirect_validation_errors(tag)
