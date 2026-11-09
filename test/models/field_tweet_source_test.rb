@@ -78,6 +78,40 @@ class FieldTweetSourceTest < ActiveSupport::TestCase
     end
   end
 
+  test "recovery releases an expired claim but refuses one at its lease boundary" do
+    now = Time.current.change(usec: 0)
+    @source.remove!
+    @source.update!(sync_claimed_at: now - FieldTweets::Sync::CLAIM_TTL)
+    assert_raises(ActiveRecord::RecordInvalid) { @source.restore!(account: @account, actor: @admin, now: now) }
+    assert @source.reload.removed?
+
+    @source.update!(sync_claimed_at: now - FieldTweets::Sync::CLAIM_TTL - 1.second)
+    assert_no_enqueued_jobs { @source.restore!(account: @account, actor: @admin, now: now) }
+    assert_nil @source.reload.sync_claimed_at
+    assert_nil @source.removed_at
+    assert_equal "paused", @source.state
+    assert_nil @source.next_attempt_at
+  end
+
+  test "expired reservations need honest uncertain settlement before recovery" do
+    now = Time.current.change(usec: 0)
+    @source.remove!
+    @source.update!(sync_claimed_at: now - FieldTweets::Sync::CLAIM_TTL - 1.second)
+    call = FieldTweetCall.create!(account: @account, field_tweet_source: @source,
+      funding: "house", status: "reserved", charge_usd: TwitterApiIo.page_reserve)
+    assert_raises(ActiveRecord::RecordInvalid) { @source.restore!(account: @account, actor: @admin, now: now) }
+    assert @source.reload.removed?
+
+    charge = call.charge_usd
+    call.fail!(TwitterApiIo::Error.new("Operator reconciliation: no confirmed provider response"))
+    assert_equal "uncertain", call.reload.status
+    assert_equal charge, call.charge_usd
+    assert_no_enqueued_jobs { @source.restore!(account: @account, actor: @admin, now: now) }
+    assert_equal "paused", @source.reload.state
+    assert_nil @source.sync_claimed_at
+    assert_equal charge, call.reload.charge_usd
+  end
+
   test "stale resume funding jobs and due queries cannot collect a removed source" do
     stale = FieldTweetSource.find(@source.id)
     @source.remove!

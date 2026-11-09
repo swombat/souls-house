@@ -160,7 +160,7 @@ class FieldTweetSource < ApplicationRecord
   end
 
   # Model-only administrative recovery. Explicit resume is a separate act.
-  def restore!(account:, actor:)
+  def restore!(account:, actor:, now: Time.current)
     with_lock do
       unless actor.is_a?(User) && actor.is_site_admin? && account.id == account_id &&
           account.memberships.confirmed.exists?(user: actor)
@@ -169,12 +169,13 @@ class FieldTweetSource < ApplicationRecord
 
       return unless removed?
 
-      if sync_claimed_at.present? || FieldTweetCall.where(field_tweet_source_id: id, status: "reserved").exists?
+      live_claim = sync_claimed_at && sync_claimed_at >= now - FieldTweets::Sync::CLAIM_TTL
+      if live_claim || FieldTweetCall.where(field_tweet_source_id: id, status: "reserved").exists?
         errors.add(:base, "Collection is still in flight; reconcile it before recovery")
         raise ActiveRecord::RecordInvalid, self
       end
 
-      update!(removed_at: nil, state: "paused", next_attempt_at: nil)
+      update!(removed_at: nil, state: "paused", next_attempt_at: nil, sync_claimed_at: nil)
     end
   end
 

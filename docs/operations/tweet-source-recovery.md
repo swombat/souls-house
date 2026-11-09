@@ -10,8 +10,10 @@ The account can follow another handle while the old source is retained.
 Removal and paid-call reservation serialize on the source row. **No new call
 is reserved after removal commits.** A call reserved before removal may still
 be sent and charged afterward. Its response is settled normally and its
-fetched page is saved to the retained backlog, with its cursor/checkpoint
-updated. This is not cancellation or a promise of zero outstanding charges.
+fetched page is saved to the retained backlog. Its cursor/checkpoint may
+advance only while the original worker still owns the claim; a replaced worker
+retains and settles its page without overwriting the newer cursor. This is not
+cancellation or a promise of zero outstanding charges.
 
 Backlog import also checks removal under the source row lock. After removal
 commits, retained backlog is frozen: it does not become new Field tweets or
@@ -56,11 +58,29 @@ account-scoped model operation, not a raw `removed_at` update:
 source.restore!(account: account, actor: operator)
 ```
 
-Recovery also refuses outstanding reserved calls or a worker claim. Wait for
-the admitted worker to finish and inspect its outcome; do not delete a claim
-or rewrite a ledger entry to force recovery. A crashed worker or uncertain
-provider response needs separate operational reconciliation, not a claim that
-the call was free.
+Recovery refuses outstanding reserved calls and unexpired worker claims.
+An expired claim uses the same `FieldTweets::Sync::CLAIM_TTL` boundary as worker
+admission and is cleared atomically during recovery. That does not make an
+outstanding paid reservation free or safe to ignore.
+
+If a worker crashed, first verify that it is no longer executing and inspect
+the reserved calls for this account/source. Never reconcile a still-running
+worker merely because its lease expired. If there is no confirmed provider
+response, use the ledger's own failure operation to mark the call **uncertain**,
+retaining its full charge:
+
+```ruby
+call = account.field_tweet_calls.where(field_tweet_source_id: source.id, status: "reserved").find(call_id)
+call.fail!(TwitterApiIo::Error.new("Operator reconciliation: no confirmed provider response"))
+```
+
+Do this only after verifying the specific abandoned call and recording the
+evidence in the restricted operational record. It sends no request and does
+not refund or release the reservation. Reinspect the ledger, then retry
+recovery after all calls are resolved and the claim has expired. Do not use
+`release!`, clear a charge, or fabricate an HTTP status when the outcome is
+unknown. A known provider response requires truthful reconciliation of that
+response, not the unknown-outcome shortcut above.
 
 After recovery, reload the account and source. Check the live source identity,
 paused state, unchanged imported-tweet provenance and retained backlog. Do not
