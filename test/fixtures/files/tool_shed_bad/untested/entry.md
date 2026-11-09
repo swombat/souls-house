@@ -9,3 +9,7 @@ licence: MIT
 availability: separate
 offered: In their own pull request.
 ---
+
+## Use
+
+Run it.

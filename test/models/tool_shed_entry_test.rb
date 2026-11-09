@@ -34,6 +34,18 @@ class ToolShedEntryTest < ActiveSupport::TestCase
     end
   end
 
+  test "an entry with no install or use instructions is refused" do
+    Dir.mktmpdir do |dir|
+      root = Pathname(dir)
+      front_matter = FIXTURES.join("tool_shed/good/entry.md").read.split(/^---\s*$/, 3)[1]
+      root.join("good").mkpath
+      root.join("good/entry.md").write("---#{front_matter}---\n\n")
+
+      error = assert_raises(ToolShedEntry::Invalid) { ToolShedEntry.all(dir: root) }
+      assert_match "install and use", error.message
+    end
+  end
+
   test "every entry in the shed is well formed" do
     assert_nothing_raised { ToolShedEntry.all }
   end

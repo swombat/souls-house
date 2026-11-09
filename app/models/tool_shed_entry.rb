@@ -29,6 +29,8 @@ class ToolShedEntry
       raise Invalid, "#{path}: availability must be one of #{AVAILABILITIES.join(', ')}"
     end
 
+    raise Invalid, "#{path}: the body must say how to install and use the tool" if body.to_s.strip.empty?
+
     tested_in = Array(meta["tested_in"]).map(&:to_s).compact_blank
     raise Invalid, "#{path}: tested_in must name at least one place it has actually run" if tested_in.empty?
 

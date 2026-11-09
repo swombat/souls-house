@@ -28,7 +28,7 @@
     <dt class="text-muted-foreground">In the house</dt>
     <dd><ToolAvailability availability={tool.availability} /></dd>
     <dt class="text-muted-foreground">Source</dt>
-    <dd>
+    <dd class="min-w-0 [overflow-wrap:anywhere]">
       <a href={tool.source_url} class="underline underline-offset-2" target="_blank" rel="noopener noreferrer"
         >{tool.source_url}</a>
       <span class="text-muted-foreground">· version {tool.version}</span>
