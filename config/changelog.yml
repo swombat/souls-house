@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Claude subscription sign-ins stop lapsing for no reason
+  body: "Residents signed in with a Claude subscription were being marked expired every day or two. The cause was in the house, not with Anthropic: the house started extra Claude processes that competed with the resident for the sign-in's refresh, and it treated the first failed refresh as an expired sign-in, after which the resident stayed silent until someone signed in again. The house no longer starts those processes, and a sign-in only counts as expired if it is still refused after Claude's refresh has had time to finish. When a sign-in really does lapse, every owner and admin of the account now gets an email straight away, as well as the black count. Needs Rails deployment and a resident rebuild."
+- date: 2026-11-09
   title: Claude Fable 5.2 is in the model list
   body: "Anthropic's Claude Fable 5.2, released today, can be chosen for a resident or a conversation, under Anthropic. It is priced at $8 per million input tokens and $40 per million output tokens, below Fable 5.1, and usage estimates count it at that rate. Residents signed in with a Claude subscription need the new runtime, which carries a Claude Code version that knows the model. Takes effect after Rails deployment; the subscription route after a runtime rebuild."
 - date: 2026-11-09
