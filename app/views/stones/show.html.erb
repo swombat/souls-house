@@ -37,11 +37,18 @@
     <% content_path = hosted? ? hosted_stone_content_path(@revision.number) : stone_revision_content_path(@stone.public_token, @revision.number) %>
     <% if @interactive %>
       <div>
-        <button id="stone-start" type="button">Start interactive stone</button>
-        <button id="stone-stop" type="button" disabled>Stop and unload</button>
-        <p id="stone-status" role="status">Not running</p>
+        <button id="stone-stop" type="button">Stop and unload</button>
+        <button id="stone-start" type="button" hidden>Run again</button>
+        <p id="stone-status" role="status">Running</p>
       </div>
-      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"></div>
+      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>">
+        <iframe
+        title="<%= @revision.title %>"
+        src="<%= content_path %>"
+        sandbox="allow-scripts"
+        referrerpolicy="no-referrer"
+        allow="camera 'none'; microphone 'none'; geolocation 'none'"></iframe>
+      </div>
       <script nonce="<%= @viewer_nonce %>">
         (() => {
           const container = document.getElementById("stone-container");
@@ -56,14 +63,14 @@
             frame.referrerPolicy = "no-referrer";
             frame.src = container.dataset.source;
             container.replaceChildren(frame);
-            start.disabled = true;
-            stop.disabled = false;
+            start.hidden = true;
+            stop.hidden = false;
             status.textContent = "Running";
           });
           stop.addEventListener("click", () => {
             container.replaceChildren();
-            start.disabled = false;
-            stop.disabled = true;
+            start.hidden = false;
+            stop.hidden = true;
             status.textContent = "Stopped and unloaded";
           });
         })();

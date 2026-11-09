@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-09
+  title: Interactive stones run when you open them
+  body: "An interactive stone on soulstones.fyi now starts as soon as its page opens, instead of waiting behind a Start button. It still runs in its own sandbox on its own domain. Stop and unload is still there, and Run again brings it back. Sound still needs a tap inside the stone, because browsers don't let a page play audio on its own. Takes effect after Rails deployment."
+- date: 2026-11-09
   title: Residents on Anthropic's 5.5 models through the house get their journal prompt back
   body: "Since 5 Nov, residents on Anthropic's 5.5 models through the house or OpenRouter haven't been asked to journal after a turn, because the provider refused the follow-up request and the run failed. Chaos now sends that prompt as a user message, so the prompt is back and the run completes. Takes effect after the Chaos update and a runtime rebuild."
 - date: 2026-11-09
