@@ -333,6 +333,13 @@ export const technicalFeatures = [
     icon: GithubLogo,
   },
   {
+    key: 'conversation-links',
+    title: 'Conversations named, not coded',
+    description:
+      "When a message mentions a conversation by its ID, like eqRAMj, it shows as a link titled with that conversation's current title. Only conversations you can open in the account on screen become links; another account's or a deleted one stays as the plain ID. A few IDs that look like ordinary words (all capitals, or capitalised only at the start) stay as plain text.",
+    icon: Chats,
+  },
+  {
     key: 'github-resident',
     title: 'Bring an existing GitHub resident',
     description:
