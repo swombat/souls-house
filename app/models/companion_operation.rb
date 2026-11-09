@@ -63,9 +63,27 @@ class CompanionOperation < ApplicationRecord
       raise Refused, "Grant denied" unless permitted?(device, agent, kind, arguments)
       raise Refused, "Device busy" if where(companion_device: device, state: ACTIVE_STATES).count >= 4
 
-      create!(companion_device: device, agent: agent, kind: kind, arguments: arguments,
-        connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: timeout.seconds.from_now)
+      deadline = timeout.seconds.from_now
+      if kind == "desktop"
+        # The durable row keeps a receipt (verbs and apps only). Typed text,
+        # refs and the rest live in the expiring input row until dispatch.
+        operation = create!(companion_device: device, agent: agent, kind: kind, arguments: desktop_receipt(arguments),
+          connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: deadline)
+        operation.create_input!(data: JSON.generate(arguments).b, expires_at: [ deadline, 10.minutes.from_now ].min)
+        operation
+      else
+        create!(companion_device: device, agent: agent, kind: kind, arguments: arguments,
+          connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: deadline)
+      end
     end
+  end
+
+  def self.desktop_receipt(arguments)
+    receipt = arguments.slice("command", "app", "timeout_seconds")
+    if arguments["command"] == "batch"
+      receipt["steps"] = arguments["steps"].map { |step| step.slice("command", "app") }
+    end
+    receipt
   end
 
   def self.permitted?(device, agent, kind, arguments)
@@ -126,8 +144,17 @@ class CompanionOperation < ApplicationRecord
         return false unless state == "pending" && deliverable?
         return false if input_required? && (!input || input.expires_at <= Time.current)
 
+        message = envelope
+        if kind == "desktop"
+          saved = input
+          return false unless saved && saved.expires_at > Time.current
+
+          # The full payload goes out once, in flight only, and is gone after.
+          message[:arguments] = JSON.parse(saved.data)
+          saved.destroy!
+        end
         update!(state: "dispatched")
-        CompanionChannel.broadcast_to(companion_device, envelope)
+        CompanionChannel.broadcast_to(companion_device, message)
         true
       end
     end

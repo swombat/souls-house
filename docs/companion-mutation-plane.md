@@ -46,7 +46,10 @@ bumps `grant_revision`, so every pending or dispatched operation is cancelled
 and none can be delivered under the old grant; the audit row
 `companion.device.authority_changed` records actor, before, after and revision.
 The response is `{ policy, grant_revision, changed }`; an unchanged request
-returns `changed: false` without a revision bump.
+returns `changed: false` without a revision bump. A real change also drops the
+device's connection (with reconnect), so work already running there under the
+old policy is cancelled by the companion, which reconnects under the new
+revision.
 
 ### Human enrollment warning
 
@@ -81,7 +84,13 @@ Candidate metadata:
 - `desktop`: `command` plus that verb's typed fields, or `command: "batch"`
   with 1–16 `steps`; `timeout_seconds` 1–120 (default 30); no input upload.
   The house checks the outer shape and the grant; the companion validates the
-  full per-verb grammar and refuses with a named reason.
+  full per-verb grammar and refuses with a named reason. The retained
+  `arguments` row is a receipt (command, app, and each batch step's command and
+  app). The full payload, including typed text and refs, lives in the
+  operation's expiring input row (at most the deadline, at most ten minutes,
+  swept), is read once and deleted when the request is dispatched, and is
+  deleted with the operation's cancellation on an authority change. A missing
+  or expired payload refuses dispatch; reconnect never replays it.
 
 Unknown keys are refused. Paths are relative to a verified granted mount;
 quarantine must be an owned writable directory on that same mount, not a

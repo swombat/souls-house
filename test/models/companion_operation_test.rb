@@ -206,4 +206,37 @@ class CompanionOperationTest < ActiveSupport::TestCase
     end
   end
 
+  test "desktop payload is private and short-lived; the durable row keeps verbs and apps only" do
+    allow_mutations
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    @device.update!(connection_epoch: "fixture-epoch")
+    payload = { "command" => "batch", "steps" => [
+      { "command" => "click", "app" => "Finder", "ref" => "@abc:e1" },
+      { "command" => "type", "app" => "Finder", "ref" => "@abc:e2", "text" => "secret words" } ] }
+    operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    assert_equal({ "command" => "batch", "steps" => [ { "command" => "click", "app" => "Finder" },
+      { "command" => "type", "app" => "Finder" } ] }, operation.reload.arguments)
+    assert_not_includes operation.arguments.to_json, "secret"
+    assert operation.input.expires_at <= operation.deadline
+
+    sent = nil
+    CompanionChannel.stub(:broadcast_to, ->(_device, message) { sent = message }) { assert operation.dispatch! }
+    assert_equal payload, sent[:arguments]
+    assert_nil CompanionOperationInput.find_by(companion_operation_id: operation.id)
+    assert_not operation.reload.dispatch!
+
+    cancelled = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: false, actor: users(:user_1))
+    assert_equal "cancelled", cancelled.reload.state
+    assert_nil CompanionOperationInput.find_by(companion_operation_id: cancelled.id)
+
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    expired = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    travel 11.minutes do
+      CompanionSweepJob.perform_now
+      assert_nil CompanionOperationInput.find_by(companion_operation_id: expired.id)
+      assert_not expired.reload.dispatch!
+    end
+  end
+
 end

@@ -238,9 +238,16 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     patch path, params: body, headers: bearer(human.raw_token), as: :json
     assert_response :success
+    # Running work on the device holds the old policy: the connection is
+    # dropped so it is cancelled there, and the companion reconnects.
+    assert_broadcast_on "action_cable/#{@device.to_gid_param}", { type: "disconnect", reconnect: true }
+    pubsub_adapter.clear
     assert_equal true, response.parsed_body.fetch("changed")
     assert_equal 2, response.parsed_body.fetch("grant_revision")
     assert_equal true, @device.reload.policy["residents"].first["desktop"]
+    patch path, params: body, headers: bearer(human.raw_token), as: :json
+    assert_equal false, response.parsed_body.fetch("changed")
+    assert_no_broadcasts "action_cable/#{@device.to_gid_param}"
     post "/api/v1/companion_devices/#{@device.to_param}/operations",
       params: { operation: "desktop", arguments: { command: "snapshot", app: "Finder", interactive: true } },
       headers: bearer(@key.raw_token), as: :json

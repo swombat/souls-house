@@ -66,11 +66,20 @@ class CompanionDevice < ApplicationRecord
       desktop ? resident["desktop"] = true : resident.delete("desktop")
       next_policy = CompanionEnrollmentGrant.normalize_policy(account, { "residents" => residents })
       update!(policy: next_policy, grant_revision: grant_revision + 1)
-      CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
-        .update_all(state: "cancelled", outcome: "changed")
+      active = CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
+      CompanionOperationInput.where(companion_operation_id: active.select(:id)).delete_all
+      active.update_all(state: "cancelled", outcome: "changed")
       AuditLog.create!(user: actor, account: account, auditable: self, action: "companion.device.authority_changed",
         data: { device_id: obfuscated_id, resident_id: resident_id, before: before, after: after,
           grant_revision: grant_revision })
+      # Work already running on the device holds the old policy. Dropping the
+      # connection cancels it there (the companion drains its process workers
+      # on connection exit) and it reconnects under the new revision.
+      device = self
+      ActiveRecord.after_all_transactions_commit do
+        ActionCable.server.remote_connections.where(current_user: nil, current_app_session: nil,
+          current_companion_device: device).disconnect(reconnect: true)
+      end
       true
     end
   end
