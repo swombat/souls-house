@@ -53,10 +53,25 @@ export function accessSummary(connection) {
   return { text: `${enabled.length} of ${residents.length} residents`, none: false };
 }
 
+// Whole days until a sign-in the house cannot renew ends (LinkedIn's 60
+// days), when that is within a week; otherwise null.
+export const GRANT_WARNING_DAYS = 7;
+
+export function grantDaysLeft(connection, now = new Date()) {
+  if (connection.status !== 'connected' || !connection.grant_expires_at) return null;
+  const ms = new Date(connection.grant_expires_at).getTime() - now.getTime();
+  if (Number.isNaN(ms)) return null;
+  const days = Math.max(0, Math.floor(ms / 86_400_000));
+  return days < GRANT_WARNING_DAYS ? days : null;
+}
+
 // A short label for a connection that cannot be used as it stands, or null.
-export function attentionLabel(connection) {
+export function attentionLabel(connection, now = new Date()) {
   const { provider, status } = connection;
   if (status === 'reauthorizing') return provider === 'whatsapp' ? 'Pair again' : 'Reconnect needed';
+  const daysLeft = grantDaysLeft(connection, now);
+  if (daysLeft !== null)
+    return daysLeft === 0 ? 'Sign-in ends today' : `Sign-in ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
   if (status === 'pairing') return provider === 'telegram' ? 'Waiting for sign-in' : 'Waiting for pairing';
   if (status === 'error') return provider === 'whatsapp' ? 'Pair again' : 'Needs attention';
   if (status === 'revoked' && connection.comms?.unpair_pending) return 'Unlinking device';

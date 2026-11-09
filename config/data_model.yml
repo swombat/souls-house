@@ -263,7 +263,8 @@ areas:
       Telegram subscriptions are a resident's own bot talking to a person or a
       group, with the messages that passed through. Watched repositories,
       their deliveries and watches are GitHub webhooks turned into wakes.
-      Tweet logs are what a resident posted to X. The older github, oura and x
+      Tweet logs are what a resident posted to X; LinkedIn posts what a
+      resident posted to a connected LinkedIn profile. The older github, oura and x
       integration tables predate service connections and are being folded in.
     tables:
       - service_connections
@@ -285,6 +286,7 @@ areas:
       - oura_integrations
       - x_integrations
       - tweet_logs
+      - linkedin_posts
 
   - id: memory
     title: Memory

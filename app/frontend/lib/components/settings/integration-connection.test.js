@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import IntegrationConnection from './integration-connection.svelte';
+import { submitNativePost } from '$lib/integration-forms';
+
+vi.mock('$lib/integration-forms', () => ({ submitNativePost: vi.fn() }));
 
 const base = {
   id: 'svc_test',
@@ -196,8 +199,22 @@ describe('sending as the owner (comms)', () => {
     can_manage: true,
     can_provision: true,
     residents: [
-      { id: 'reader', name: 'Reader', enabled: true, can_send: false, access_update_url: '/a/r', send_grant_url: '/s/r' },
-      { id: 'sender', name: 'Sender', enabled: true, can_send: true, access_update_url: '/a/s', send_grant_url: '/s/s' },
+      {
+        id: 'reader',
+        name: 'Reader',
+        enabled: true,
+        can_send: false,
+        access_update_url: '/a/r',
+        send_grant_url: '/s/r',
+      },
+      {
+        id: 'sender',
+        name: 'Sender',
+        enabled: true,
+        can_send: true,
+        access_update_url: '/a/s',
+        send_grant_url: '/s/s',
+      },
       { id: 'off', name: 'Off', enabled: false, can_send: false, access_update_url: '/a/o', send_grant_url: '/s/o' },
     ],
   };
@@ -232,7 +249,11 @@ describe('sending as the owner (comms)', () => {
   });
 
   it('links the owner to the sends and grant history, and no one else', () => {
-    const { unmount } = mount({ ...comms, can_grant_send: true, comms_sends_url: '/accounts/a/service_connections/svc_1/comms_sends' });
+    const { unmount } = mount({
+      ...comms,
+      can_grant_send: true,
+      comms_sends_url: '/accounts/a/service_connections/svc_1/comms_sends',
+    });
     const link = screen.getByRole('link', { name: /What residents sent as you/ });
     expect(link).toHaveAttribute('href', '/accounts/a/service_connections/svc_1/comms_sends');
     unmount();
@@ -251,5 +272,37 @@ describe('Disconnect warnings', () => {
     expect(warning).toContain('until it expires (up to three hours)');
     expect(warning).toContain('remove the app from your Withings account');
     confirm.mockRestore();
+  });
+});
+
+describe('LinkedIn sign-in that ends', () => {
+  const linkedin = {
+    provider: 'linkedin',
+    provider_name: 'LinkedIn',
+    label: 'Daniel Tenner',
+    management_scope: 'personal',
+    can_manage: true,
+  };
+
+  it('offers Reconnect in the last week, posting an ordinary Connect for the same service', async () => {
+    const soon = new Date(Date.now() + 3 * 86_400_000 + 3_600_000).toISOString();
+    mount({ ...linkedin, grant_expires_at: soon });
+    expect(screen.getByTestId('grant-ending')).toHaveTextContent('ends in 3 days');
+    await fireEvent.click(screen.getByTestId('connection-reconnect'));
+    expect(submitNativePost).toHaveBeenCalledWith('/accounts/selected-house/service_authorizations', {
+      provider: 'linkedin',
+      management_scope: 'personal',
+    });
+  });
+
+  it('says the sign-in has ended once it has, and still offers Reconnect', () => {
+    mount({ ...linkedin, status: 'reauthorizing', grant_expires_at: '2026-01-01T00:00:00Z' });
+    expect(screen.getByTestId('grant-ended')).toBeInTheDocument();
+    expect(screen.getByTestId('connection-reconnect')).toBeInTheDocument();
+  });
+
+  it('shows nothing extra while the end is far off', () => {
+    mount({ ...linkedin, grant_expires_at: new Date(Date.now() + 40 * 86_400_000).toISOString() });
+    expect(screen.queryByTestId('connection-reconnect')).not.toBeInTheDocument();
   });
 });

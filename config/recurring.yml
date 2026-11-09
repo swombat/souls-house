@@ -42,6 +42,12 @@ production:
     queue: default
     schedule: every day at 4:40am
 
+  # LinkedIn sign-ins end after 60 days; warn the owner a week ahead.
+  linkedin_grant_expiry:
+    class: LinkedinGrantExpiryJob
+    queue: default
+    schedule: every day at 9:10am
+
   # Titles conversations GenerateTitleJob (first person's message) left untitled, on
   # the house key and another model family (TitleSweepJob).
   title_sweep:
