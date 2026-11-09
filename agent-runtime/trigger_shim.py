@@ -2649,9 +2649,18 @@ RUNTIME_FAILURE_LIMIT = 600
 _RUNTIME_FAILURE_REDACTIONS = (
     # Authorization headers and bearer tokens.
     (re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 [redacted]"),
-    # key=value / "key": "value" secrets.
-    (re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|authorization)"
-                r"(\"?\s*[:=]\s*\"?)[^\s\"',;}]+"), r"\1\2[redacted]"),
+    # key=value / "key": "value" secrets: the whole value, quoted or not,
+    # including spaces and escapes inside the quotes.
+    (re.compile(
+        r"""(?ix)
+        (?P<key>["']?[\w-]*(?:token|secret|password|passwd|api[_-]?key|apikey|authorization|
+                              credential|cookie|session|private[_-]?key)[\w-]*["']?)
+        (?P<sep>\s*[:=]\s*)
+        (?P<value>"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s,;}\]]+)
+        """),
+     lambda m: m.group("key") + m.group("sep") + (
+         m.group("value")[0] + "[redacted]" + m.group("value")[0]
+         if m.group("value")[:1] in ("\"", "'") else "[redacted]")),
     # Provider key shapes (OpenAI/Anthropic sk-, Google AIza/ya29, GitHub gh*_).
     (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_.-]+|gh[pousr]_[A-Za-z0-9]{20,})"),
      "[redacted]"),

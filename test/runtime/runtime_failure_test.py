@@ -80,6 +80,27 @@ class RuntimeFailureTest(unittest.TestCase):
             self.assertNotIn(secret, failure["message"])
             self.assertNotIn(secret, logs)
 
+    def test_quoted_secret_values_are_redacted_whole(self):
+        cases = {
+            '{"client_secret":"synthetic-secret"}': ("synthetic-secret",),
+            '{"token":"synthetic-short-token"}': ("synthetic-short-token",),
+            '{"password":"two secret words"}': ("two", "secret words"),
+            '{"password":"a \\"quoted\\" word"}': ("quoted", " word"),
+            "refresh_token='two words' tail": ("two words",),
+            "api_key=sk-live-012 next": ("sk-live",),
+        }
+        for text, secrets in cases.items():
+            with self.subTest(text=text):
+                response, _status, logs = self.respond(1, [{"type": "error", "message": text}])
+                message = response["runtime_failure"]["message"]
+                self.assertIn("[redacted]", message)
+                for secret in secrets:
+                    self.assertNotIn(secret, message)
+                    self.assertNotIn(secret, logs)
+        # Prose about a token is not a token.
+        response, _status, _logs = self.respond(1, [{"type": "error", "message": "Token has been expired or revoked"}])
+        self.assertEqual(response["runtime_failure"]["message"], "Token has been expired or revoked")
+
     def test_oversize_reason_is_truncated(self):
         long = "x " * 2000
         response, _status, _logs = self.respond(1, [{"type": "error", "message": long}])
