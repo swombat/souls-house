@@ -48,6 +48,7 @@ class AgentsController < ApplicationController
       ai_api_keys_configured: current_account.ai_api_keys_configured,
       can_manage_ai_credentials: current_account.ai_credentials_manageable_by?(Current.user),
       billing: -> { birth_billing_props },
+      trial: -> { Billing::Trial.as_json_for(current_account) },
       account: current_account.as_json
     }
   end
@@ -271,8 +272,8 @@ class AgentsController < ApplicationController
       publishable_key: Billing.publishable_key,
       tiers: Billing::Tier.all.select(&:purchasable?).as_json,
       account_plans: Billing::AccountPlan.all.as_json,
+      account_plan: current_account.account_plan_json,
       offers: current_account.purchasable_offers.as_json,
-      trial: Billing::Trial.as_json_for(current_account),
       payment_method: payment_method,
       payment_method_error: payment_method_error,
       contact_email: Billing.contact_email,

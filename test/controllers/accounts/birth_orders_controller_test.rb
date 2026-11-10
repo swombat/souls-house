@@ -31,6 +31,9 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "brand" => "visa", "last4" => "4242", "exp_month" => 10, "exp_year" => 2030 }, billing.fetch("payment_method"))
     assert_equal %w[conversation life work], billing.fetch("tiers").map { |tier| tier["id"] }
     assert_equal %w[companions partners colleagues], billing.fetch("account_plans").map { |plan| plan["id"] }
+    # The Plan step names the account's plan.
+    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, billing.fetch("account_plan"))
+    refute billing.key?("trial"), "the trial is one top-level prop, as on the Billing tab"
     assert_equal account_birth_orders_path(@account), billing.fetch("birth_orders_url")
 
     @account.update!(billing_required: false)
@@ -41,7 +44,7 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
 
   test "the free trial: offered on the Plan step, no card, Stripe Checkout, and Stripe's return bears the resident" do
     Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
-    assert_equal({ "eligible" => true, "days" => 14 }, inertia_shared_props.dig("billing", "trial"))
+    assert_equal({ "eligible" => true, "days" => 14 }, inertia_shared_props.fetch("trial"))
 
     Billing.stub(:client, @stripe) do
       assert_no_difference "Agent.count" do
@@ -74,7 +77,7 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
 
     @inertia_props = nil
     Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
-    assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props.dig("billing", "trial"))
+    assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props.fetch("trial"))
   end
 
   test "the free trial is for a small resident at the standard rate, once" do

@@ -277,7 +277,9 @@ class ResidentEntitlement < ApplicationRecord
         tier: subscription.tier,
         rate: subscription.rate,
         current_period_end: subscription.current_period_end&.iso8601,
-        cancel_at_period_end: subscription.cancel_at_period_end
+        cancel_at_period_end: subscription.cancel_at_period_end,
+        # Whether this resident carries the account's house-model allowance.
+        includes_allowance: subscription.allowance_usd.positive?
       }
     }
   end

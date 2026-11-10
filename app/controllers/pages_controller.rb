@@ -53,6 +53,11 @@ class PagesController < ApplicationController
       tiers: Billing::Tier.all.map { |tier| pricing_tier_json(tier) },
       account_plans: Billing::AccountPlan.all.as_json,
       billing_open: Billing.configured?,
+      # Site Admin's switch: off, the page doesn't mention the free trial.
+      free_trial_enabled: Setting.instance.free_trial_enabled?,
+      # Whether a signed-in visitor's account would get it, so one that has
+      # had it, or can't, is never told it's free.
+      trial: authenticated? && current_account ? Billing::Trial.as_json_for(current_account) : nil,
       contact_email: Billing.contact_email
     }
   end

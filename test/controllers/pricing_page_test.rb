@@ -77,6 +77,32 @@ class PricingPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "follows Site Admin's free trial switch, and tells a signed-in account whether it would get the trial" do
+    with_stripe_env do
+      get pricing_path
+      assert_equal true, inertia_shared_props["free_trial_enabled"]
+      assert_nil inertia_shared_props["trial"], "signed out: the trial is for a new account"
+
+      Setting.instance.update!(free_trial_enabled: false)
+      @inertia_props = nil
+      get pricing_path
+      assert_equal false, inertia_shared_props["free_trial_enabled"]
+      Setting.instance.update!(free_trial_enabled: true)
+
+      user = users(:user_1)
+      user.default_account.update!(billing_required: true)
+      post login_path, params: { email_address: user.email_address, password: "password123" }
+      @inertia_props = nil
+      get pricing_path
+      assert_equal({ "eligible" => true, "days" => 14 }, inertia_shared_props["trial"])
+
+      user.default_account.update!(trial_started_at: 1.day.ago)
+      @inertia_props = nil
+      get pricing_path
+      assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props["trial"])
+    end
+  end
+
   # Linked once plans went live (Daniel, 2026-10-25); the footer, not the header.
   test "is linked from the footer" do
     footer = Rails.root.join("app/frontend/lib/components/navigation/Footer.svelte").read

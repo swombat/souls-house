@@ -40,9 +40,14 @@ class AboutSheet
 
   def self.render(**options) = new(**options).render
 
+  # free_trial: whether to state the free 14 days (Site Admin's switch). The
+  # copy baked into the runtime image can't know a house's switch, so it
+  # doesn't state them.
   def initialize(today: Date.current, version: self.class.version, changelog: nil, tiers: Billing::Tier.all,
-    billing_open: self.class.billing_open?, features: nil, baked: false)
+    billing_open: self.class.billing_open?, features: nil, baked: false,
+    free_trial: billing_open != :unknown && Setting.instance.free_trial_enabled?)
     @baked = baked
+    @free_trial = free_trial
     @today = today
     @version = version
     @changelog = changelog || Changelog.entries
@@ -216,17 +221,24 @@ class AboutSheet
     return nil unless prices_shown?
 
     allowance = Billing.usd_label(Billing::Tier::ACCOUNT_ALLOWANCE_USD)
-    paid = Billing::AccountPlan.all.reject(&:free?)
     [
       "Each account gets #{allowance} a month of house-model use, carried by its first resident at the standard price. " \
         "Bring your own subscription or key for more.",
-      "Free for 14 days, no card asked for: the first resident of a new account, small, once per account. " \
-        "With no card added it goes to sleep on day 14; nothing is deleted. " \
-        "#{paid.map(&:name).join(" and ")} are never free: their #{paid.map { |plan| Billing.usd_label(plan.monthly_usd) }.join(" or ")} " \
-        "a month is charged from the day you choose one, also during a resident's free 14 days, and needs a card.",
+      trial_line,
       "Prices are in US dollars a month, plus VAT where it applies. An account with an at-cost offer pays its price, " \
         "under the same size names."
-    ].join("\n\n")
+    ].compact.join("\n\n")
+  end
+
+  # Only while Site Admin offers the trial.
+  def trial_line
+    return nil unless @free_trial
+
+    paid = Billing::AccountPlan.all.reject(&:free?)
+    "Free for 14 days, no card asked for: the first resident of a new account, small, once per account. " \
+      "With no card added it goes to sleep on day 14; nothing is deleted. " \
+      "#{paid.map(&:name).join(" and ")} are never free: their #{paid.map { |plan| Billing.usd_label(plan.monthly_usd) }.join(" or ")} " \
+      "a month is charged from the day you choose one, also during a resident's free 14 days, and needs a card."
   end
 
   # The account plans include a small resident, so their prices show once

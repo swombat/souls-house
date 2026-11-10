@@ -69,6 +69,24 @@ class AboutSheetTest < ActiveSupport::TestCase
     assert_includes text, "**Pay for a resident**: #{source}"
   end
 
+  test "with Site Admin's free trial switched off, the sheet never mentions a free trial" do
+    text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"), free_trial: false)
+    assert_includes text, "Plans are open."
+    assert_includes text, "$9.99 a month including one small resident."
+    refute_match(/free for 14 days|free 14 days|never free|\btrial\b/i, text)
+
+    Setting.instance.update!(free_trial_enabled: false)
+    refute_match(/free for 14 days/i, sheet(billing_open: true, tiers: priced("conversation", "life", "work")))
+    Setting.instance.update!(free_trial_enabled: true)
+    assert_match(/Free for 14 days/, sheet(billing_open: true, tiers: priced("conversation", "life", "work")))
+  end
+
+  test "the copy baked into the runtime image doesn't promise a free trial the house may have switched off" do
+    text = sheet(billing_open: :unknown)
+    assert_includes text, "This copy cannot tell whether this house has opened its plans"
+    refute_match(/free for 14 days|never free/i, text)
+  end
+
   test "a partly priced catalogue offers only the plans that can be bought" do
     text = sheet(billing_open: true, tiers: priced("conversation"))
     plans = text[/## Plans and prices.*?(?=\n## )/m]
