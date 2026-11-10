@@ -31,7 +31,7 @@ class GenerateVoiceJob < ApplicationJob
     return if text.blank?
 
     audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: account.eleven_labs_api_key, delivery:)
-    audio_data = AudioGain.apply(audio_data, delivery.gain_db)
+    audio_data = AudioGain.apply(audio_data, delivery.gain_db, tempo: delivery.tempo)
 
     message.voice_audio.attach(
       io: StringIO.new(audio_data),

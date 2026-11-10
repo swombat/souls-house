@@ -1208,6 +1208,10 @@ carries `delivery` and `delivery_override`.
 - `gain_db` −12 to +12: raised after ElevenLabs renders, then limited at 0.95
   (ffmpeg). **Gain applies to Listen only** (and the Appearance preview), not
   to voice mode's live stream, which uses the model and settings without it.
+- `tempo` 0.8–1.0: a pitch-preserving slowdown (ffmpeg `atempo`) after
+  ElevenLabs renders, for a pace below its 0.7 speed floor; speed 0.7 with
+  tempo 0.93 is about 0.65. Like gain, **tempo applies to Listen only** (and
+  the preview), never to voice mode's stream. Left out, or 1, it does nothing.
 
 Unknown fields, wrong types and out-of-range values are refused with every
 reason at once, and nothing changes. A message whose Listen audio was made
