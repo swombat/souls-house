@@ -41,6 +41,7 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
       tier: 'conversation', stripe_status: 'active')
     entitlement = ResidentEntitlement.for_agent!(@agent)
     entitlement.apply_subscription!(sub)
+    Billing::AllowanceCarrier.new(@agent.account).settle! # as SubscriptionSync does
     @input['stream'] = false
     upstream([ JSON.generate({ 'id' => 'gen-paid', 'choices' => [ { 'message' => { 'role' => 'assistant', 'content' => 'hi' } } ], 'usage' => { 'cost' => 0.004 } }) ]) do
       HouseInference::Gateway.new(agent: @agent, input: @input).call

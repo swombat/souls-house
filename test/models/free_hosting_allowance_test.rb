@@ -78,7 +78,8 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_free_1",
       tier: "life", stripe_status: "active")
     entitlement.apply_subscription!(sub, now: @now)
-    assert_equal BigDecimal("25"), entitlement.reload.allowance_limit
+    Billing::AllowanceCarrier.new(@agent.account, now: @now).settle! # as SubscriptionSync does
+    assert_equal BigDecimal("10"), entitlement.reload.allowance_limit, "the account's allowance, carried by this resident"
     spend!(entitlement, @agent, 8)
 
     sub.update!(stripe_status: "canceled")
@@ -116,6 +117,7 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_up_1",
       tier: "conversation", stripe_status: "active")
     entitlement.apply_subscription!(sub, now: @now)
+    Billing::AllowanceCarrier.new(@agent.account, now: @now).settle! # as SubscriptionSync does
     assert entitlement.reload.active?
     assert_equal before, HouseInferenceCall.free.where(month: month).sum(:charge_usd)
 
@@ -132,6 +134,8 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_down_1",
       tier: "conversation", stripe_status: "active")
     entitlement.apply_subscription!(sub, now: @now)
+    Billing::AllowanceCarrier.new(@agent.account, now: @now).settle! # as SubscriptionSync does
+    entitlement.reload
     configured do
       entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id).settle!({ "cost" => 0.4 })
     end

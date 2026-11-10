@@ -130,24 +130,38 @@ class ResidentEntitlement < ApplicationRecord
   # The offer the current plan was bought at.
   def offer = tier_record&.offer(rate)
 
-  # The month's limit is the highest paid allowance in force at any point in
-  # that UTC month: a ceiling on the month's spend, never a balance that is
-  # topped up. Nothing while the plan isn't paid; free hosting has its own.
+  # The month's limit is the highest paid allowance this resident carried at
+  # any point in that UTC month: a ceiling on the month's spend, never a
+  # balance that is topped up. Nothing while the plan isn't paid; free
+  # hosting has its own.
+  #
+  # The paid allowance is the account's, not the resident's (2026-11-10):
+  # $10 a month carried by one live standard-rate subscription
+  # (Billing::AllowanceCarrier); every other resident carries nothing. An
+  # account with no live standard-rate resident has none. Spend is counted
+  # across the account (allowance_spent), so moving the carrier never gives a
+  # second $10 in one month.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
 
     # Free hosting's allowance is fixed: a paid plan that ended this month
     # doesn't carry its higher ceiling into it. Spend so far still counts.
     return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
+    return BigDecimal("0") unless ResidentSubscription.where(account_id: account_id).can_carry_allowance.exists?
 
-    limits = [ self.class.offer_allowance(tier, rate) ]
+    limits = [ current_subscription&.allowance_usd ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
-    limits.compact.max || BigDecimal("0")
+    [ limits.compact.max || BigDecimal("0"), Billing::Tier::ACCOUNT_ALLOWANCE_USD ].min
   end
 
-  # In-flight calls count at their reservation until settled.
+  # In-flight calls count at their reservation until settled. Free hosting
+  # counts its own calls; a paid plan counts what every resident of the
+  # account drew on the paid allowance this month.
   def allowance_spent(month = HouseInference::Offering.month)
-    house_inference_calls.where(month: month).sum(:charge_usd)
+    return house_inference_calls.where(month: month).sum(:charge_usd) if complimentary?
+
+    HouseInferenceCall.where(month: month, free_pool: false,
+      resident_entitlement_id: ResidentEntitlement.where(account_id: account_id).select(:id)).sum(:charge_usd)
   end
 
   def allowance_remaining(month = HouseInference::Offering.month)
@@ -190,10 +204,12 @@ class ResidentEntitlement < ApplicationRecord
     # Keyed on the ceiling in force, not on the rate: a resident just moved
     # to at cost keeps this month's ceiling until the 1st.
     if limit.zero?
-      raise HouseInference::Error.new(
-        "This resident's #{tier_record&.name} plan includes no house-model allowance; it runs on its own model subscription or key.",
-        code: "house_allowance_none", status: 402
-      )
+      message = if rate == "at_cost"
+        "This resident's #{tier_record&.name} plan includes no house-model allowance; it runs on its own model subscription or key."
+      else
+        "This account's house-model allowance is carried by another resident; this one runs on its own model subscription or key."
+      end
+      raise HouseInference::Error.new(message, code: "house_allowance_none", status: 402)
     end
     raise HouseInference::Error.new(
       "This resident's #{plan_name} allowance is used up for this month. It resets at the start of next month (UTC).",
@@ -210,9 +226,14 @@ class ResidentEntitlement < ApplicationRecord
       configured: HouseInference::Offering.configured? }
   end
 
-  def self.offer_allowance(tier_id, rate)
+  # What a plan of this tier and rate brings of the account's allowance: all
+  # of it if it carries it (one subscription per account), else nothing. At
+  # cost never carries it.
+  def self.offer_allowance(tier_id, rate, carries: false)
     offer = tier_id && Billing::Tier.find(tier_id)&.offer(rate.presence || "standard")
-    offer && BigDecimal(offer.allowance_usd.to_s)
+    return nil unless offer
+
+    carries ? offer.allowance_usd : BigDecimal("0")
   end
 
   def as_json(*)
@@ -244,7 +265,7 @@ class ResidentEntitlement < ApplicationRecord
   end
 
   def activate(subscription, now)
-    record_allowance(subscription.tier, subscription.rate, now)
+    record_allowance(subscription, now)
     self.hold_released_at = now if held?
     activate_plan!
     self.source = "stripe"
@@ -254,16 +275,21 @@ class ResidentEntitlement < ApplicationRecord
     self.grace_deadline = nil
   end
 
-  # Remembers the highest allowance paid for in this UTC month, including the
-  # outgoing tier (in force until now), so a downgrade, or a lapse and
-  # repayment, can't refill the month. The lower limit starts on the 1st.
-  # Called on every activation and when a paid plan ends (new_tier nil), so a
-  # plan carried over from last month still marks this month before it lapses.
-  def record_allowance(new_tier, new_rate, now)
+  # Remembers the highest allowance carried in this UTC month, including the
+  # outgoing plan's (in force until now), so a downgrade, a lapse and
+  # repayment, or losing the carrier can't refill the month. The lower limit
+  # starts on the 1st. Called on every activation and when a paid plan ends
+  # (new_subscription nil), so a plan carried over from last month still
+  # marks this month before it lapses. The outgoing plan is judged on what it
+  # carried before this sync moved anything (Billing::AllowanceCarrier runs
+  # after).
+  def record_allowance(new_subscription, now)
     month = now.utc.to_date.beginning_of_month
-    limits = [ self.class.offer_allowance(new_tier, new_rate) ]
+    limits = [ new_subscription&.allowance_usd ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
-    limits << self.class.offer_allowance(tier, rate) if paid?
+    if paid? && current_subscription
+      limits << self.class.offer_allowance(tier, rate, carries: current_subscription.includes_allowance?)
+    end
     self.allowance_month = month
     self.allowance_limit_usd = limits.compact.max
   end
@@ -281,7 +307,7 @@ class ResidentEntitlement < ApplicationRecord
   # A paid plan ended. Free hosting the house granted comes back; otherwise
   # the resident is held. Nothing is deleted.
   def end_paid_plan(now)
-    record_allowance(nil, nil, now)
+    record_allowance(nil, now)
     self.grace_started_at = nil
     self.grace_deadline = nil
     self.held_at = now unless complimentary_granted_at? || held?
