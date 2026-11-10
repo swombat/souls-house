@@ -50,3 +50,21 @@ test('a failed check is a failure, not a clean portal', () => {
   expect(screen.getByTestId('portal-error')).toHaveTextContent('no route to Stripe');
   expect(screen.queryByTestId('portal-clean')).toBeNull();
 });
+
+test('a portal that will not let customers add a card is called out, for the free trial', () => {
+  render(BillingSettingsCard, {
+    form: { billing_enabled: true, free_trial_enabled: true },
+    status: {
+      ...base,
+      portal: {
+        checked_at: '2026-11-10T17:00:00Z',
+        switchable_prices: [],
+        at_cost_switchable: [],
+        card_update_disabled: ['bpc_1'],
+      },
+    },
+  });
+
+  expect(screen.getByTestId('portal-no-card')).toHaveTextContent('bpc_1');
+  expect(screen.getByLabelText('Offer the free trial')).toHaveAttribute('aria-checked', 'true');
+});

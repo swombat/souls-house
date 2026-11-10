@@ -17,6 +17,16 @@ class Billing::PortalCheckTest < ActiveSupport::TestCase
     assert_equal({ checked_at: @now.iso8601, switchable_prices: [], at_cost_switchable: [] }, check)
   end
 
+  test "a portal that won't let customers add a card is called out: a free trial can't be kept without one" do
+    @stripe.put_portal_configuration(prices: [], card_update: false)
+    @stripe.put_portal_configuration(prices: [], card_update: true)
+    assert_equal [ "bpc_test_1" ], check[:card_update_disabled]
+
+    @stripe = FakeStripe.new
+    @stripe.put_portal_configuration(prices: [])
+    assert_not check.key?(:card_update_disabled), "the house's portal lets customers add a card"
+  end
+
   test "standard prices in the portal's switcher are listed; an at-cost price among them is called out" do
     @stripe.put_portal_configuration(prices: [ CONVERSATION_PRICE, LIFE_PRICE ])
     result = check

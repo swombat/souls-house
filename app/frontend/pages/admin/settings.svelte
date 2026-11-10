@@ -62,6 +62,7 @@
     formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
     formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
     formData.append('setting[billing_enabled]', form.billing_enabled ?? false);
+    formData.append('setting[free_trial_enabled]', form.free_trial_enabled ?? true);
     formData.append('setting[field_ocr_enabled]', form.field_ocr_enabled ?? false);
     formData.append('setting[field_ocr_daily_usd_ceiling]', form.field_ocr_daily_usd_ceiling ?? 1);
     formData.append('setting[field_tweets_enabled]', form.field_tweets_enabled ?? false);

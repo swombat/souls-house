@@ -5,7 +5,8 @@
 # can. Nor may one switch list mix resident prices with account-plan prices
 # (Billing::AccountPlan): a resident's subscription switched onto an account
 # plan's price, or the other way, is refused by the sync with the money
-# taken. Cached for an hour. A Stripe error is reported as an error, never as
+# taken. Nor may a configuration forbid adding a card: a free trial with no
+# card is cancelled at its end. Cached for an hour. A Stripe error is reported as an error, never as
 # "nothing is switchable".
 module Billing
   class PortalCheck
@@ -24,8 +25,14 @@ module Billing
     def read(now = Time.current)
       switchable = []
       unknown = []
+      no_card = []
       each_configuration do |configuration|
         next unless configuration.active
+
+        # A free trial converts only if a card is added before it ends, and
+        # the portal is where it is added (Billing::Trial).
+        card = configuration[:features] && configuration[:features][:payment_method_update]
+        no_card << configuration.id if card && card[:enabled] == false
 
         update = configuration[:features] && configuration[:features][:subscription_update]
         next unless update && update[:enabled]
@@ -44,6 +51,7 @@ module Billing
       at_cost = Tier.all.flat_map { |tier| tier.offer("at_cost").price_ids }
       result = { checked_at: now.iso8601, switchable_prices: switchable.uniq, at_cost_switchable: switchable.uniq & at_cost }
       result[:unknown_configurations] = unknown if unknown.any?
+      result[:card_update_disabled] = no_card if no_card.any?
       account_plan = switchable.uniq & AccountPlan.all.flat_map(&:price_ids)
       resident = switchable.uniq & Tier.all.flat_map(&:offers).flat_map(&:price_ids)
       result[:mixed_kinds_switchable] = account_plan + resident if account_plan.any? && resident.any?

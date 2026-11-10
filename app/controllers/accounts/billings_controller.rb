@@ -25,6 +25,7 @@ class Accounts::BillingsController < ApplicationController
       tiers: Billing::Tier.all.as_json,
       account_plans: Billing::AccountPlan.all.as_json,
       account_plan: current_account.account_plan_json,
+      trial: Billing::Trial.as_json_for(current_account),
       offers: current_account.purchasable_offers.as_json,
       codes: {
         eligible_rates: current_account.eligible_rates,
@@ -119,7 +120,12 @@ class Accounts::BillingsController < ApplicationController
       .where(agent_id: billable_agents.select(:id)).index_by(&:agent_id)
 
     billable_agents.by_name.map do |agent|
-      { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlements[agent.id]&.as_json }
+      entitlement = entitlements[agent.id]
+      # has_payment_method isn't sent: whether Stripe will charge at the
+      # trial's end depends on the customer's default card, which the house
+      # doesn't sync; the wizard reads it live (Billing::PaymentMethod).
+      { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlement&.as_json,
+        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601 }
     end
   end
 
