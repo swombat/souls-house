@@ -1,16 +1,33 @@
 <script>
   import { router } from '@inertiajs/svelte';
-  import { Desktop, Pause, Play, Trash, FolderSimple } from 'phosphor-svelte';
+  import {
+    AppleLogo,
+    CaretDown,
+    Desktop,
+    FolderSimple,
+    HardDrives,
+    LinuxLogo,
+    Pause,
+    Play,
+    Terminal,
+    Trash,
+    UsersThree,
+    WarningCircle,
+  } from 'phosphor-svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Badge } from '$lib/components/shadcn/badge';
   import { Switch } from '$lib/components/shadcn/switch';
   import { Label } from '$lib/components/shadcn/label/index.js';
-  import * as Card from '$lib/components/shadcn/card';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
+
+  // Each computer is a summary card; its settings open underneath, like
+  // Integrations. A single computer starts open, a fleet starts closed.
+  let openCards = $state({});
+  const isOpen = (device) => openCards[device.id] ?? devices.length === 1;
+  const toggle = (device) => (openCards[device.id] = !isOpen(device));
 
   // A change waiting for the owner's confirmation: turning a power on, or
   // removing a computer. Turning a power off needs no confirmation.
@@ -61,6 +78,48 @@
       destructive: true,
     };
   }
+
+  const status = (device) => (device.paused ? 'paused' : device.connected ? 'online' : 'offline');
+  const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
+
+  // The companion reports disks by a hashed key, never a path.
+  function volumeLabel(key) {
+    const [kind, hash = ''] = String(key).split(':');
+    const name = { 'linux-volume': 'Linux disk', 'darwin-volume': 'Mac disk' }[kind] ?? kind;
+    return { name, id: hash.slice(0, 8) };
+  }
+  function platform(device) {
+    const kinds = device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0]));
+    if (kinds.includes('darwin-volume')) return 'mac';
+    if (kinds.includes('linux-volume')) return 'linux';
+    return null;
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return null;
+    const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} h ago`;
+    const days = Math.floor(hours / 24);
+    return days === 1 ? 'yesterday' : `${days} days ago`;
+  }
+  const enrolled = (iso) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+
+  const weekJobs = (device) => (device.activity?.days ?? []).reduce((sum, day) => sum + day.jobs, 0);
+  const peak = (device) => Math.max(1, ...(device.activity?.days ?? []).map((day) => day.jobs));
+  const weekday = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'narrow' });
+
+  function access(resident) {
+    const powers = [resident.execute && 'commands', resident.desktop && 'apps'].filter(Boolean);
+    return powers.length ? powers.join(' + ') : 'folders only';
+  }
+
+  let online = $derived(devices.filter((d) => status(d) === 'online').length);
+  let jobsThisWeek = $derived(devices.reduce((sum, d) => sum + weekJobs(d), 0));
 </script>
 
 <svelte:head>
@@ -74,108 +133,291 @@
   description="Computers enrolled with the companion app, which residents each one serves, and what they may do there.">
   <FlashMessages />
 
-  {#if !can_manage}
+  {#if devices.length === 0}
+    <div class="rounded-2xl border border-dashed bg-muted/30 p-10 text-center">
+      <div class="mx-auto flex size-12 items-center justify-center rounded-xl bg-muted">
+        <Desktop size={26} />
+      </div>
+      <p class="mt-3 font-medium">No computers yet</p>
+      <p class="mt-1 text-sm text-muted-foreground">A resident can help you enrol one with the companion app.</p>
+    </div>
+  {:else}
+    <div class="mb-5 grid grid-cols-3 overflow-hidden rounded-2xl border bg-card" data-testid="fleet-summary">
+      <div class="p-4">
+        <p class="text-2xl font-semibold tabular-nums">{devices.length}</p>
+        <p class="text-xs text-muted-foreground">{devices.length === 1 ? 'computer' : 'computers'}</p>
+      </div>
+      <div class="border-l p-4">
+        <p class="flex items-center gap-2 text-2xl font-semibold tabular-nums">
+          {online}
+          {#if online > 0}<span class="size-2 rounded-full bg-emerald-500"></span>{/if}
+        </p>
+        <p class="text-xs text-muted-foreground">online now</p>
+      </div>
+      <div class="border-l p-4">
+        <p class="text-2xl font-semibold tabular-nums">{jobsThisWeek}</p>
+        <p class="text-xs text-muted-foreground">jobs this week</p>
+      </div>
+    </div>
+  {/if}
+
+  {#if devices.length > 0 && !can_manage}
     <p class="mb-4 text-sm text-muted-foreground">Only an owner or admin of this account can change these.</p>
   {/if}
 
-  {#if devices.length === 0}
-    <Card.Root>
-      <Card.Content class="py-8 text-center text-muted-foreground">
-        No computers are enrolled yet. A resident can help you set one up.
-      </Card.Content>
-    </Card.Root>
-  {/if}
-
-  <div class="space-y-6">
+  <div class="space-y-3">
     {#each devices as device (device.id)}
-      <Card.Root data-testid="computer">
-        <Card.Header class="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div class="min-w-0">
-            <Card.Title class="flex items-center gap-2">
-              <Desktop size={20} />
-              <span class="truncate">{device.name}</span>
-            </Card.Title>
-            <div class="mt-2 flex flex-wrap gap-2">
-              {#if device.paused}
-                <Badge variant="secondary">Paused</Badge>
-              {:else if device.connected}
-                <Badge>Connected</Badge>
+      {@const state = status(device)}
+      {@const open = isOpen(device)}
+      {@const os = platform(device)}
+      {@const lastJob = timeAgo(device.activity?.last_job_at)}
+      <article class="overflow-hidden rounded-2xl border bg-card shadow-sm" data-testid="computer" data-status={state}>
+        <div class="relative p-4 sm:px-5">
+          <button
+            type="button"
+            class="absolute inset-0 rounded-2xl transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            aria-expanded={open}
+            aria-controls="computer-panel-{device.id}"
+            aria-label="{open ? 'Hide' : 'Show'} settings for {device.name}"
+            onclick={() => toggle(device)}></button>
+
+          <div class="pointer-events-none relative flex items-start gap-3 sm:gap-4">
+            <div
+              class="relative flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-inner">
+              {#if os === 'mac'}
+                <AppleLogo size={24} weight="fill" />
+              {:else if os === 'linux'}
+                <LinuxLogo size={24} weight="fill" />
               {:else}
-                <Badge variant="outline">Not connected</Badge>
+                <Desktop size={24} />
               {/if}
+              <span
+                class="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-card">
+                <span
+                  class={`size-2.5 rounded-full ${
+                    state === 'online' ? 'bg-emerald-500' : state === 'paused' ? 'bg-amber-500' : 'bg-zinc-400'
+                  }`}>
+                  {#if state === 'online'}
+                    <span class="block size-2.5 animate-ping rounded-full bg-emerald-500 opacity-60"></span>
+                  {/if}
+                </span>
+              </span>
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h3 class="truncate font-semibold leading-snug">{device.name}</h3>
+                <span
+                  data-testid="computer-status"
+                  class={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    state === 'online'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                      : state === 'paused'
+                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                        : 'bg-muted text-muted-foreground'
+                  }`}>
+                  {statusLabel[state]}
+                </span>
+              </div>
+              <ul class="mt-2 flex flex-wrap gap-1.5" data-testid="computer-access-summary" aria-label="Who it serves">
+                {#each device.residents as resident (resident.id)}
+                  <li
+                    class="inline-flex items-center gap-1.5 rounded-full border bg-background py-0.5 pl-0.5 pr-2 text-xs"
+                    title="{resident.name}: {access(resident)}">
+                    <span
+                      class="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                      {resident.name.slice(0, 1)}
+                    </span>
+                    <span class="font-medium">{resident.name}</span>
+                    {#if resident.execute}<Terminal
+                        size={12}
+                        class="text-muted-foreground"
+                        aria-label="runs commands" />{/if}
+                    {#if resident.desktop}<Desktop
+                        size={12}
+                        class="text-muted-foreground"
+                        aria-label="uses apps" />{/if}
+                    {#if resident.volumes.length}<FolderSimple
+                        size={12}
+                        class="text-muted-foreground"
+                        aria-label="folders" />{/if}
+                  </li>
+                {:else}
+                  <li class="text-xs italic text-muted-foreground">Serves no one</li>
+                {/each}
+              </ul>
+            </div>
+
+            <CaretDown
+              size={18}
+              class={`mt-1 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+          </div>
+
+          <div
+            class="pointer-events-none relative mt-4 grid grid-cols-[1fr_auto_auto] items-end gap-4 rounded-xl bg-muted/50 px-3 py-2.5 sm:gap-6">
+            <div class="flex h-10 w-full max-w-[14rem] items-end gap-1" aria-hidden="true">
+              {#each device.activity?.days ?? [] as day (day.date)}
+                <div class="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div
+                    class={`w-full max-w-4 rounded-sm ${day.jobs ? (state === 'online' ? 'bg-emerald-500/80' : 'bg-foreground/40') : 'bg-foreground/10'}`}
+                    style="height: {Math.max(3, Math.round((day.jobs / peak(device)) * 26))}px">
+                  </div>
+                  <span class="text-[9px] leading-none text-muted-foreground">{weekday(day.date)}</span>
+                </div>
+              {/each}
+            </div>
+            <div class="text-right">
+              <p class="text-lg font-semibold leading-tight tabular-nums" data-testid="computer-week-jobs">
+                {weekJobs(device)}
+                <span class="text-xs font-normal text-muted-foreground">{weekJobs(device) === 1 ? 'job' : 'jobs'}</span>
+              </p>
+              <p class="text-[11px] text-muted-foreground">
+                {#if device.activity?.failed}
+                  <span class="text-amber-700 dark:text-amber-300">{device.activity.failed} failed</span>
+                {:else}
+                  this week
+                {/if}
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-medium leading-tight">{lastJob ?? 'none yet'}</p>
+              <p class="text-[11px] text-muted-foreground">last job</p>
             </div>
           </div>
-          {#if can_manage}
-            <div class="flex shrink-0 gap-2">
-              {#if device.paused}
-                <Button variant="outline" size="sm" disabled={busy} onclick={() => send(device, { control: 'resume' })}>
-                  <Play class="mr-1" size={16} /> Resume
-                </Button>
-              {:else}
-                <Button variant="outline" size="sm" disabled={busy} onclick={() => send(device, { control: 'pause' })}>
-                  <Pause class="mr-1" size={16} /> Pause
-                </Button>
-              {/if}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onclick={() => remove(device)}
-                aria-label="Remove {device.name}">
-                <Trash size={16} />
-              </Button>
-            </div>
-          {/if}
-        </Card.Header>
-        <Card.Content class="space-y-4">
-          {#each device.residents as resident (resident.id)}
-            <div class="rounded-md border border-border p-4" data-testid="computer-resident">
-              <p class="font-medium">{resident.name}</p>
-              <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:gap-8">
-                <div class="flex items-center gap-3">
-                  <Switch
-                    id="execute-{device.id}-{resident.id}"
-                    checked={resident.execute}
-                    disabled={!can_manage || busy}
-                    onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
-                  <Label for="execute-{device.id}-{resident.id}" class="font-normal">Run commands</Label>
-                </div>
-                <div class="flex items-center gap-3">
-                  <Switch
-                    id="desktop-{device.id}-{resident.id}"
-                    checked={resident.desktop}
-                    disabled={!can_manage || busy}
-                    onCheckedChange={(value) => authority(device, resident, 'desktop', value)} />
-                  <Label for="desktop-{device.id}-{resident.id}" class="font-normal">Use apps (desktop)</Label>
-                </div>
-              </div>
-              {#if resident.desktop}
-                <p class="mt-2 text-xs text-muted-foreground">
-                  Desktop still needs the switch in the menu bar on that computer, and only reaches the apps listed
-                  there.
+        </div>
+
+        {#if open}
+          <div id="computer-panel-{device.id}" class="space-y-4 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-5">
+            {#if can_manage}
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm text-muted-foreground">
+                  {#if state === 'paused'}
+                    Nothing runs here until you resume it.
+                  {:else if state === 'offline'}
+                    The companion app isn't connected right now.
+                  {:else}
+                    Connected and taking jobs.
+                  {/if}
+                  {#if device.enrolled_at}
+                    <span class="block text-xs">Enrolled {enrolled(device.enrolled_at)}</span>
+                  {/if}
                 </p>
-              {/if}
-              <div class="mt-3">
-                <p class="text-xs font-medium text-muted-foreground">Folders</p>
-                {#if resident.volumes.length === 0}
-                  <p class="text-sm text-muted-foreground">None</p>
-                {:else}
-                  <ul class="mt-1 space-y-1">
-                    {#each resident.volumes as volume (volume.volume)}
-                      <li class="flex items-center gap-2 text-sm">
-                        <FolderSimple size={14} />
-                        <span class="truncate">{volume.volume}</span>
-                        <Badge variant="outline">{volume.access === 'write' ? 'Read and write' : 'Read only'}</Badge>
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-                <p class="mt-1 text-xs text-muted-foreground">Changing folders needs a new enrollment for now.</p>
+                <div class="flex gap-2">
+                  {#if device.paused}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onclick={() => send(device, { control: 'resume' })}>
+                      <Play class="mr-1" size={16} /> Resume
+                    </Button>
+                  {:else}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onclick={() => send(device, { control: 'pause' })}>
+                      <Pause class="mr-1" size={16} /> Pause
+                    </Button>
+                  {/if}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="text-destructive hover:text-destructive"
+                    disabled={busy}
+                    onclick={() => remove(device)}
+                    aria-label="Remove {device.name}">
+                    <Trash size={16} />
+                  </Button>
+                </div>
               </div>
-            </div>
-          {/each}
-        </Card.Content>
-      </Card.Root>
+            {/if}
+
+            {#each device.residents as resident (resident.id)}
+              <section class="rounded-xl border bg-card" data-testid="computer-resident">
+                <div class="flex items-center gap-3 border-b px-4 py-3">
+                  <span
+                    class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {resident.name.slice(0, 1)}
+                  </span>
+                  <p class="min-w-0 flex-1 truncate font-medium">{resident.name}</p>
+                </div>
+                <div class="divide-y">
+                  <div class="flex items-center justify-between gap-4 px-4 py-3">
+                    <Label
+                      for="execute-{device.id}-{resident.id}"
+                      class="flex min-w-0 items-center gap-2.5 font-normal">
+                      <Terminal size={18} class="shrink-0 text-muted-foreground" />
+                      <span>Run commands</span>
+                    </Label>
+                    <Switch
+                      id="execute-{device.id}-{resident.id}"
+                      checked={resident.execute}
+                      disabled={!can_manage || busy}
+                      onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
+                  </div>
+                  <div class="px-4 py-3">
+                    <div class="flex items-center justify-between gap-4">
+                      <Label
+                        for="desktop-{device.id}-{resident.id}"
+                        class="flex min-w-0 items-center gap-2.5 font-normal">
+                        <Desktop size={18} class="shrink-0 text-muted-foreground" />
+                        <span>Use apps (desktop)</span>
+                      </Label>
+                      <Switch
+                        id="desktop-{device.id}-{resident.id}"
+                        checked={resident.desktop}
+                        disabled={!can_manage || busy}
+                        onCheckedChange={(value) => authority(device, resident, 'desktop', value)} />
+                    </div>
+                    {#if resident.desktop}
+                      <p class="mt-2 flex gap-1.5 text-xs text-muted-foreground">
+                        <WarningCircle size={14} class="mt-px shrink-0" />
+                        Also needs the switch in the menu bar on that computer, and only reaches the apps listed there.
+                      </p>
+                    {/if}
+                  </div>
+                  <div class="px-4 py-3">
+                    <p class="flex items-center gap-2.5 text-sm">
+                      <FolderSimple size={18} class="shrink-0 text-muted-foreground" />
+                      Folders
+                    </p>
+                    {#if resident.volumes.length === 0}
+                      <p class="mt-1 pl-7 text-sm text-muted-foreground">None</p>
+                    {:else}
+                      <ul class="mt-2 space-y-1.5 pl-7">
+                        {#each resident.volumes as volume (volume.volume)}
+                          {@const label = volumeLabel(volume.volume)}
+                          <li class="flex items-center gap-2 text-sm" title={volume.volume}>
+                            <HardDrives size={16} class="shrink-0 text-muted-foreground" />
+                            <span class="min-w-0 truncate">
+                              {label.name}
+                              {#if label.id}<span class="hidden font-mono text-xs text-muted-foreground sm:inline"
+                                  >{label.id}</span
+                                >{/if}
+                            </span>
+                            <span
+                              class={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                volume.access === 'write'
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                              {volume.access === 'write' ? 'Read and write' : 'Read only'}
+                            </span>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                    <p class="mt-2 pl-7 text-xs text-muted-foreground">
+                      Changing folders needs a new enrollment for now.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            {/each}
+          </div>
+        {/if}
+      </article>
     {/each}
   </div>
 </AccountSettingsLayout>
