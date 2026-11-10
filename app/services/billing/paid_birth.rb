@@ -70,7 +70,8 @@ module Billing
       # the same idempotency key, so its parameters must not move when the
       # catalogue is re-costed in between (#619).
       order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
-        stripe_price_id: offer.price_id, billing_code_redemption: account.grant_for(offer.rate),
+        stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+        billing_code_redemption: account.grant_for(offer.rate),
         birth_attributes: attributes.to_h, open_beginning: open_beginning)
       order.update!(stripe_payment_method_id: payment_method.id)
       subscription = open_subscription!(order)
@@ -179,7 +180,7 @@ module Billing
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
-        description: "#{offer.name} hosting for #{order.resident_name}",
+        description: order.stripe_description.presence || legacy_description(order),
         metadata: metadata,
         expand: [ "latest_invoice.confirmation_secret" ]
       }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
@@ -188,6 +189,16 @@ module Billing
     rescue Stripe::APIConnectionError, Stripe::APIError, Stripe::RateLimitError => error
       order.update!(last_error: "Opening the subscription: #{error.class.name.demodulize}")
       raise Uncertain.new(order)
+    end
+
+    # Orders opened before the description was pinned (2026-11-10) used the
+    # sizes' old names; a replay must send exactly that.
+    LEGACY_NAMES = { "conversation" => "Conversation", "life" => "Life", "work" => "Work" }.freeze
+
+    def legacy_description(order)
+      name = LEGACY_NAMES.fetch(order.tier)
+      name = "#{name} at cost" unless order.offer.standard?
+      "#{name} hosting for #{order.resident_name}"
     end
 
     # The order's subscription for certain: retrieved by its id, or, if
