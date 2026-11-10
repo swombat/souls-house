@@ -82,17 +82,25 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
       name: "Team Mac", device_request_id: "team", expires_at: 1.hour.from_now,
       policy: { "residents" => [ { "id" => agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
     device, = CompanionEnrollmentGrant.enroll!(grant.issue_token!(agent), "team")
+    device.update!(connection_epoch: "team-epoch")
+    assert device.record_ceiling_report!(epoch: "team-epoch", claimed_epoch: "team-epoch", ceiling: { "residents" => [
+      { "id" => agent.obfuscated_id, "volumes" => [ { "volume" => "Data", "access" => "write" } ] } ] })
     sign_in users(:existing_user) # team_member: confirmed, role member
     get account_companion_devices_path(team), headers: inertia
     assert_response :success
     assert_equal false, inertia_shared_props.fetch("can_manage")
     assert_equal [ "Team Mac" ], inertia_shared_props.fetch("devices").map { |d| d.fetch("name") }
+    # Members keep the read-only page and never receive what the computer reported.
+    assert_nil inertia_shared_props.fetch("devices").sole["ceiling"]
+    assert_not_includes response.body, "\"access\":\"write\""
 
     team_path = account_companion_device_path(team, device)
     patch team_path, params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
     assert_redirected_to account_companion_devices_path(team)
+    patch team_path, params: { control: "volume", resident_id: agent.obfuscated_id, volume: "Data", access: "write" }
     patch team_path, params: { control: "revoke" }
     device.reload
+    assert_equal [], device.policy.dig("residents", 0, "volumes")
     assert_equal false, device.policy.dig("residents", 0, "execute")
     assert_nil device.revoked_at
     assert_equal 1, device.grant_revision
@@ -124,6 +132,49 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_empty inertia_shared_props.fetch("devices")
     patch path, params: { control: "resume" }
     assert_response :not_found
+  end
+
+  test "a malformed folder change changes nothing" do
+    sign_in @owner
+    patch path, params: { control: "volume", resident_id: @agent.obfuscated_id, volume: "Data", access: "admin" }
+    patch path, params: { control: "volume", resident_id: @agent.obfuscated_id, volume: [ "Data" ], access: "off" }
+    patch path, params: { control: "volume", resident_id: "nobody", volume: "Data", access: "off" }
+    assert_equal [ { "volume" => "Data", "access" => "read" } ], @device.reload.policy.dig("residents", 0, "volumes")
+    assert_equal 1, @device.grant_revision
+  end
+
+  test "an owner sees what the computer reported; before any report it is nil, and it is current only for this connection" do
+    sign_in @owner
+    get account_companion_devices_path(@account), headers: inertia
+    assert_nil inertia_shared_props.fetch("devices").sole.fetch("ceiling")
+    assert_equal CompanionEnrollmentGrant::WRITE_WARNING, inertia_shared_props.dig("warnings", "write")
+
+    report = { "residents" => [ { "id" => @agent.obfuscated_id, "volumes" => [ { "volume" => "Data", "access" => "write" } ] } ] }
+    assert @device.record_ceiling_report!(epoch: "epoch", claimed_epoch: "epoch", ceiling: report)
+    get account_companion_devices_path(@account), headers: inertia
+    ceiling = inertia_shared_props.fetch("devices").sole.fetch("ceiling")
+    assert_equal true, ceiling.fetch("current")
+    assert ceiling.fetch("reported_at")
+    assert_equal({ @agent.obfuscated_id => [ { "volume" => "Data", "access" => "write" } ] }, ceiling.fetch("residents"))
+
+    @device.update!(connection_epoch: nil)
+    get account_companion_devices_path(@account), headers: inertia
+    assert_equal false, inertia_shared_props.fetch("devices").sole.dig("ceiling", "current")
+  end
+
+  test "an owner changes one folder within the report; above it is refused with a reason" do
+    @device.record_ceiling_report!(epoch: "epoch", claimed_epoch: "epoch", ceiling: { "residents" => [
+      { "id" => @agent.obfuscated_id, "volumes" => [ { "volume" => "Data", "access" => "write" }, { "volume" => "Photos", "access" => "read" } ] } ] })
+    sign_in @owner
+    patch path, params: { control: "volume", resident_id: @agent.obfuscated_id, volume: "Data", access: "write" }
+    assert_redirected_to account_companion_devices_path(@account)
+    patch path, params: { control: "volume", resident_id: @agent.obfuscated_id, volume: "Photos", access: "write" }
+    assert_match(/doesn't allow that/, flash[:alert])
+    patch path, params: { control: "volume", resident_id: @agent.obfuscated_id, volume: "Photos", access: "read" }
+    assert_equal [ { "volume" => "Data", "access" => "write" }, { "volume" => "Photos", "access" => "read" } ],
+      @device.reload.policy.dig("residents", 0, "volumes")
+    assert_equal 3, @device.grant_revision
+    assert_equal @owner, AuditLog.where(action: "companion.device.volume_changed").last.user
   end
 
   test "an unknown control or a resident not on the computer changes nothing" do

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: Change a resident's folders from the Computers page
+  body: "On the Computers page an owner or admin can now set each of a resident's folders to off, read only, or read and write, one folder at a time, instead of enrolling the computer again. The page offers no more than the computer itself allows: the companion app reports which folders its own settings permit each resident, and anything beyond that has to be widened on the computer first. Any folder can always be lowered or turned off. Giving write access asks first, because writing to a folder that holds the computer's home can be used to run code there. Any change stops work already running on that computer. Computers whose companion app hasn't reported yet keep their folders read-only on the page until it is updated. Takes effect after Rails deployment and a companion update."
+- date: 2026-11-10
   title: The Computers page shows your machines at a glance
   body: "Account settings → Computers now opens on a summary of your computers: how many there are, how many are online, and how many jobs they ran this week. Each computer is a card with a live status dot (green online, amber paused, grey offline), the residents it serves with small icons for what each may do, a bar chart of jobs per day for the last seven days with any failures, and when the last job was. The arrow on a card opens its settings: pause, resume or remove, and each resident's switches and folders. Folders are shown as disks (Linux disk, Mac disk) rather than raw keys. Takes effect after Rails deployment."
 - date: 2026-11-10
