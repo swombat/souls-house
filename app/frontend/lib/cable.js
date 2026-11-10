@@ -129,6 +129,7 @@ export function subscribeToModel(model, id, props) {
           model === 'RoomNavigation' ||
           model === 'RhythmActivity' ||
           model === 'IntegrationStatus' ||
+          model === 'ComputerStatus' ||
           model === 'ProviderPresentation' ||
           model === 'TelegramPresentation' ||
           model === 'HomeResidentRoster' ||
