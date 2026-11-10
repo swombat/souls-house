@@ -19,6 +19,7 @@ class FieldTablesController < ApplicationController
       table: summary_json(field_table, field_table.live_rows.count),
       rows: field_table.live_rows.includes(:last_written_by).map(&:as_api_json),
       column_types: FieldTable::Column::TYPES,
+      stones: field_table.reading_stones.includes(:stone_revisions).map { |stone| stone_json(stone) },
       limits: field_table.limits.as_json,
       account: current_account.as_json
     }
@@ -40,6 +41,13 @@ class FieldTablesController < ApplicationController
     redirect_to account_field_tables_path(current_account), notice: "#{field_table.name} deleted."
   end
 
+  # Stops every revision of a public stone reading this table, at once.
+  def detach_stone
+    stone = field_table.reading_stones.find(params[:stone_id])
+    field_table.detach_stone!(stone)
+    redirect_to account_field_table_path(current_account, field_table), notice: "Detached. That stone no longer reads #{field_table.name}."
+  end
+
   def export
     filename = "#{field_table.name.parameterize.presence || 'table'}.csv"
     send_data field_table.to_csv, filename: filename, type: "text/csv"
@@ -57,6 +65,11 @@ class FieldTablesController < ApplicationController
   end
 
   private
+
+  def stone_json(stone)
+    latest = stone.stone_revisions.max_by(&:number)
+    { id: stone.to_param, title: latest&.title, public_url: stone.public_url }
+  end
 
   def summary_json(table, row_count)
     {

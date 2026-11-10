@@ -45,6 +45,18 @@ class StoneTests(unittest.TestCase):
             _, _, payload = stone.request_spec(args)
         self.assertIs(True, payload["interactive"])
 
+    def test_tables_need_the_publication_acknowledgement(self):
+        with tempfile.NamedTemporaryFile(suffix=".html") as file:
+            file.write(b"<!doctype html><script>1</script>")
+            file.flush()
+            base = ["create", "--conversation", "chat", "--title", "Chart", "--file", file.name, "--public",
+                    "--interactive", "--table", "abcDEF"]
+            with self.assertRaises(ValueError):
+                stone.request_spec(stone.parser().parse_args(base))
+            _, _, payload = stone.request_spec(stone.parser().parse_args(base + ["--publish-tables"]))
+        self.assertEqual(["abcDEF"], payload["field_table_ids"])
+        self.assertTrue(payload["publish_tables"])
+
     def test_ids_cannot_escape_the_endpoint(self):
         with self.assertRaises(ValueError):
             stone.request_spec(argparse.Namespace(operation="list", conversation="../agents"))

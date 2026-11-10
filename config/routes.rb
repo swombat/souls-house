@@ -3,6 +3,7 @@ Rails.application.routes.draw do
     get "/", to: "stones#show"
     get "/revisions/:number", to: "stones#show", as: :hosted_stone_revision
     get "/revisions/:number/content", to: "stones#content", as: :hosted_stone_content
+    get "/revisions/:number/data", to: "stones#data", as: :hosted_stone_data
   end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
@@ -25,6 +26,7 @@ Rails.application.routes.draw do
         post :cleanup, to: "/test_support/e2e#cleanup"
         post :stone_fixture, to: "/test_support/e2e#stone_fixture"
         post :interactive_stone_fixture, to: "/test_support/e2e#interactive_stone_fixture"
+        post :field_table_row_fixture, to: "/test_support/e2e#field_table_row_fixture"
         post :song_card_fixture, to: "/test_support/e2e#song_card_fixture"
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :field_voice_lifecycle_fixture, to: "/test_support/e2e#field_voice_lifecycle_fixture"
@@ -345,6 +347,7 @@ Rails.application.routes.draw do
       end
       resources :rows, controller: "field_table_rows", only: [ :create, :update, :destroy ]
       resources :columns, controller: "field_table_columns", only: [ :create, :update, :destroy ], param: :key
+      delete "stones/:stone_id", to: "field_tables#detach_stone", as: :stone
     end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"

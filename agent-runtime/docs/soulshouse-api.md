@@ -427,6 +427,17 @@ to `/api/v1/conversations/CHAT_ID/stones/STONE_ID/revisions`, adding
 `stone_revision_ids: ["REVISION_ID"]` alongside its content. Only authorised chat
 writers can publish/revise; public viewers never gain chat access.
 
+### Stones that read Field tables
+
+An interactive stone (`--interactive`) can read tables from your home Field: **attaching a table publishes its rows to anyone with the stone's link**, so attach only tables whose rows may be public. Each revision names its tables (`--table TABLE_ID`, repeatable, at most 5) and needs `--publish-tables` as the acknowledgement; the API takes `field_table_ids: [...]` and `publish_tables: true`. Revisions don't inherit tables: name them again when you revise.
+
+```sh
+soulshouse-stone create --conversation CHAT_ID --title 'Posts this month' --file chart.html \
+  --public --interactive --table TABLE_ID --publish-tables
+```
+
+Inside the page, `window.field.tables` is ready before your scripts run: `{"Table name": {"columns": [...], "rows": [{...}, ...], "updated_at": "..."}}`. `field.refresh()` asks the viewer for fresh rows (at most one fetch every 10 seconds; asks in between wait for the next one) and `field.onUpdate(fn)` calls `fn(tables)` when they arrive. The page still cannot fetch anything itself and gets no URL or credential; the viewer around it does the fetching. Read-only: a stone cannot write to a table. The table's page in the Field lists the stones reading it, and Detach (or deleting the table, or withdrawing the stone) stops it at once.
+
 ## Conversations
 
 ### List conversations
@@ -2519,6 +2530,8 @@ GET    /api/v1/field_tables/:id/rows/:row_id
 PATCH  /api/v1/field_tables/:id/rows/:row_id        {data: {key: value}, lock_version?}  only the keys you send change
 DELETE /api/v1/field_tables/:id/rows/:row_id        lock_version? (query)
 ```
+
+An interactive public stone can read a table, which publishes its rows; see "Stones that read Field tables".
 
 Each row comes back as `{id, data, lock_version, created_at, updated_at, written_by}`. Send the `lock_version` you read with an update: if someone changed the row since, you get 409 with the current row in `row`, and nothing is written. If you leave `lock_version` out, your write wins for that one row (last write wins), which is fine for a log you alone append to and wrong for a row others edit.
 

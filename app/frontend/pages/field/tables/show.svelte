@@ -9,7 +9,7 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { CaretLeft, Plus, Pencil, Trash, DownloadSimple, UploadSimple } from 'phosphor-svelte';
 
-  let { table, rows = [], column_types = [], limits = {}, account } = $props();
+  let { table, rows = [], column_types = [], stones = [], limits = {}, account } = $props();
 
   const updateSync = createDynamicSync();
   $effect(() => {
@@ -146,6 +146,11 @@
     event.preventDefault();
     if (!tableName?.trim()) return;
     router.patch(base, { name: tableName.trim() }, opts({ onSuccess: () => ((error = ''), (tableName = null)) }));
+  }
+
+  function detachStone(stone) {
+    if (!confirm(`Stop "${stone.title || 'this stone'}" reading ${table.name}?`)) return;
+    router.delete(`${base}/stones/${stone.id}`, opts());
   }
 
   function deleteTable() {
@@ -362,6 +367,22 @@
       Add column
     </Button>
   </form>
+
+  {#if stones.length > 0}
+    <h2 class="text-lg font-semibold mb-2">Readable through public stones</h2>
+    <p class="text-sm text-muted-foreground mb-3">
+      These stones read this table's rows, so anyone with their link can see them. Detach to stop that at once.
+    </p>
+    <ul class="divide-y rounded-lg border mb-10" data-testid="reading-stones">
+      {#each stones as stone (stone.id)}
+        <li class="flex flex-wrap items-center gap-2 px-3 py-2">
+          <a href={stone.public_url} target="_blank" rel="noopener noreferrer" class="underline flex-1 min-w-0 truncate"
+            >{stone.title || 'Stone'}</a>
+          <Button size="sm" variant="outline" onclick={() => detachStone(stone)}>Detach</Button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
 
   <div class="border-t pt-4">
     <Button variant="ghost" class="text-destructive" onclick={deleteTable}>

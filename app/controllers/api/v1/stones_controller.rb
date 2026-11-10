@@ -33,7 +33,8 @@ module Api
         stone = Stone.publish!(
           chat: @chat, title: params[:title], html: submitted_html,
           author: current_api_agent || current_api_user, public: public_acknowledged?,
-          interactive: interactive_requested?
+          interactive: interactive_requested?, field_table_ids: field_table_ids_param,
+          publish_tables: tables_publication_acknowledged?
         )
         render json: { stone: stone_json(stone) }, status: :created
       end
@@ -75,6 +76,19 @@ module Api
         raise Stone::InvalidInput, "interactive must be true or false"
       end
 
+      # field_table_ids: [...] attaches Field tables (interactive stones only).
+      def field_table_ids_param
+        ids = params[:field_table_ids]
+        return [] if ids.nil?
+        raise Stone::InvalidInput, "field_table_ids must be a list of table IDs" unless ids.is_a?(Array) && ids.all?(String)
+
+        ids
+      end
+
+      def tables_publication_acknowledged?
+        params[:publish_tables] == true || (request.media_type != "application/json" && params[:publish_tables] == "true")
+      end
+
       def submitted_html
         text = params[:html]
         file = params[:file]
@@ -106,6 +120,7 @@ module Api
           id: revision.to_param, number: revision.number, title: revision.title,
           public_url: revision.stone.public_url(number: revision.number), interactive: revision.interactive?,
           author: { type: revision.agent_id ? "agent" : "human", id: revision.author.to_param },
+          field_tables: revision.field_tables.kept.map { |table| { id: table.to_param, name: table.name } },
           policy_version: revision.policy_version, preview_status: revision.preview_status,
           preview_error: revision.preview_error, created_at: revision.created_at.iso8601
         }

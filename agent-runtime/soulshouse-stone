@@ -32,6 +32,10 @@ def parser():
             command.add_argument("--file", required=True, help="UTF-8 HTML document, or - for stdin")
             command.add_argument("--public", action="store_true", required=True, help="acknowledge public publication")
             command.add_argument("--interactive", action="store_true", help="opt in to inline JavaScript on the configured isolated domain")
+            command.add_argument("--table", action="append", default=[], metavar="TABLE_ID",
+                                 help="a Field table the page reads as window.field.tables (interactive only; repeatable)")
+            command.add_argument("--publish-tables", action="store_true",
+                                 help="acknowledge that attached tables' rows become public with the stone")
         if name == "revise":
             command.add_argument("--base-revision", required=True)
         if name == "post":
@@ -66,6 +70,14 @@ def request_spec(args):
         payload = {"title": args.title, "html": read_file(args.file), "public": True}
         if args.interactive:
             payload["interactive"] = True
+        if args.table:
+            for table in args.table:
+                if not re.fullmatch(r"[A-Za-z0-9]+", table):
+                    raise ValueError("Invalid table ID")
+            if not args.publish_tables:
+                raise ValueError("Attaching a table publishes its rows to anyone with the stone's link; add --publish-tables")
+            payload["field_table_ids"] = args.table
+            payload["publish_tables"] = True
         if args.operation == "revise":
             path += "/revisions"
             payload["base_revision_id"] = args.base_revision

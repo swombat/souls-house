@@ -174,3 +174,109 @@ test('Wing Counterpoint original plays and exchanges scores', async ({ page, req
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }
 });
+
+test('a stone reads its attached Field table, refreshes it, and still cannot fetch', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const chart = `<!doctype html><html><head><title>Posts</title></head><body>
+    <ul id="rows"></ul><button id="refresh">Refresh</button><p id="updates">0</p>
+    <script>
+    const draw = (tables) => {
+      const list = document.getElementById("rows");
+      list.replaceChildren(...tables.Posts.rows.map((r) => {
+        const li = document.createElement("li"); li.textContent = r.platform + ":" + r.views; return li;
+      }));
+    };
+    draw(field.tables);
+    field.onUpdate((tables) => { draw(tables); const n = document.getElementById("updates"); n.textContent = String(Number(n.textContent) + 1); });
+    document.getElementById("refresh").onclick = () => field.refresh();
+    fetch("/revisions/1/data").then(() => document.body.dataset.network = "leaked").catch(() => document.body.dataset.network = "blocked");
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: chart, with_table: true });
+  try {
+    await page.goto(localUrl(fixture.url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#rows li')).toHaveText(['x:3', 'linkedin:8']);
+    await expect(frame.locator('body')).toHaveAttribute('data-network', 'blocked');
+
+    const added = await request.post('/test/e2e/field_table_row_fixture', {
+      data: { account_id: setup.account_id, table_id: fixture.table_id, data: { platform: 'bluesky', views: 13 } },
+    });
+    expect(added.ok(), await added.text()).toBe(true);
+    await frame.locator('#refresh').click();
+    await expect(frame.locator('#rows li')).toHaveText(['x:3', 'linkedin:8', 'bluesky:13']);
+    await expect(frame.locator('#updates')).toHaveText('1');
+
+    // A second ask within 10 s waits for the window rather than fetching again.
+    await frame.locator('#refresh').click();
+    await page.waitForTimeout(1500);
+    await expect(frame.locator('#updates')).toHaveText('1');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});
+
+// Mira's review of #880: rows must only ever reach the document the viewer
+// mounted. A second revision that the first one navigates into listens for
+// any message and forges a refresh with the forwarded token; it must get nothing.
+const SNOOP = `<!doctype html><html><head><title>Snoop</title></head><body><p id="state">waiting</p><script>
+  const leak = (via) => (event) => { document.body.dataset.got = via + ":" + JSON.stringify(event.data).slice(0, 40); };
+  window.addEventListener("message", leak("window"));
+  const k = new URLSearchParams(location.search).get("k");
+  for (const revision of [1, 2]) {
+    // Keep our end of each forged channel, listen on it and ask on it, so an
+    // accidental acceptance of a forged port would show as a leak too.
+    const channel = new MessageChannel();
+    channel.port1.onmessage = leak("port" + revision);
+    parent.postMessage({ souls_field: 1, type: "hello", k, revision }, "*", [channel.port2]);
+    channel.port1.postMessage({ souls_field: 1, type: "refresh" });
+  }
+  parent.postMessage({ souls_field: 1, type: "refresh", k, revision: 1 }, "*");
+  document.getElementById("state").textContent = "arrived";
+  </script></body></html>`;
+
+test('a frame that navigates before its first load never receives the rows', async ({ page, request, baseURL }) => {
+  const redirect = `<!doctype html><html><head><title>Redirect</title></head><body><script>
+    location.replace("/revisions/2/content" + location.search);
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: redirect, with_table: true, second_html: SNOOP });
+  try {
+    await page.goto(localUrl(fixture.first_url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#state')).toHaveText('arrived');
+    await page.waitForTimeout(1500);
+    await expect(frame.locator('body')).not.toHaveAttribute('data-got', /.*/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});
+
+test('a frame that navigates while a refresh is in flight never receives the rows', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const asker = `<!doctype html><html><head><title>Asker</title></head><body><script>
+    field.refresh();
+    location.replace("/revisions/2/content" + location.search);
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: asker, with_table: true, second_html: SNOOP });
+  let served = 0;
+  await page.route('**/revisions/1/data', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    served += 1;
+    await route.continue();
+  });
+  try {
+    await page.goto(localUrl(fixture.first_url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#state')).toHaveText('arrived');
+    await expect.poll(() => served).toBe(1);
+    await page.waitForTimeout(1000);
+    await expect(frame.locator('body')).not.toHaveAttribute('data-got', /.*/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});

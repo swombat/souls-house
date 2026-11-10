@@ -38,6 +38,7 @@ class FieldTable < ApplicationRecord
   belongs_to :created_by, polymorphic: true, optional: true
   belongs_to :updated_by, polymorphic: true, optional: true
   has_many :rows, -> { order(:id) }, class_name: "FieldTableRow", dependent: :delete_all, inverse_of: :field_table
+  has_many :stone_revision_field_tables, dependent: :delete_all
 
   broadcasts_to :account
 
@@ -65,6 +66,17 @@ class FieldTable < ApplicationRecord
 
   def live_rows
     rows.kept
+  end
+
+  # Live stones whose revisions read this table: its rows are public there.
+  def reading_stones
+    Stone.available.joins(stone_revisions: :stone_revision_field_tables)
+      .where(stone_revision_field_tables: { field_table_id: id }).distinct
+  end
+
+  # Stops every revision of the stone reading this table.
+  def detach_stone!(stone)
+    StoneRevisionFieldTable.where(field_table_id: id, stone_revision_id: stone.stone_revisions.select(:id)).delete_all
   end
 
   def editor_name(record = updated_by)

@@ -63,7 +63,7 @@ module StoneHosting
 
       name = StoneHosting.name(host)
       unless name && %w[GET HEAD].include?(request.request_method) &&
-          request.path.match?(%r{\A/(?:revisions/[1-9][0-9]*(?:/content)?)?\z})
+          request.path.match?(%r{\A/(?:revisions/[1-9][0-9]*(?:/content|/data)?)?\z})
         return not_found
       end
 

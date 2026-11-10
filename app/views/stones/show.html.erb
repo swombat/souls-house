@@ -41,13 +41,15 @@
         <button id="stone-start" type="button" hidden>Run again</button>
         <p id="stone-status" role="status">Running</p>
       </div>
-      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>">
+      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"<% if @reads_tables %> data-tables="<%= hosted_stone_data_path(@revision.number) %>" data-revision="<%= @revision.number %>"<% end %>>
+        <% unless @reads_tables %>
         <iframe
         title="<%= @revision.title %>"
         src="<%= content_path %>"
         sandbox="allow-scripts"
         referrerpolicy="no-referrer"
         allow="camera 'none'; microphone 'none'; geolocation 'none'"></iframe>
+        <% end %>
       </div>
       <script nonce="<%= @viewer_nonce %>">
         (() => {
@@ -55,19 +57,84 @@
           const start = document.getElementById("stone-start");
           const stop = document.getElementById("stone-stop");
           const status = document.getElementById("stone-status");
-          start.addEventListener("click", () => {
+          const mount = () => {
+            if (dataPath) unbind();
             const frame = document.createElement("iframe");
             frame.title = container.dataset.title;
             frame.setAttribute("sandbox", "allow-scripts");
             frame.setAttribute("allow", "camera 'none'; microphone 'none'; geolocation 'none'");
             frame.referrerPolicy = "no-referrer";
             frame.src = container.dataset.source;
+            if (dataPath) {
+              // A fresh token per mount, in the frame's own URL: only the
+              // document served for this mount and revision carries it.
+              const bytes = crypto.getRandomValues(new Uint8Array(24));
+              const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+              frame.dataset.k = token;
+              frame.src = container.dataset.source + "?k=" + token;
+              watch(frame);
+            }
             container.replaceChildren(frame);
             start.hidden = true;
             stop.hidden = false;
             status.textContent = "Running";
-          });
+          };
+          start.addEventListener("click", mount);
+          // Field tables (when this revision reads any). The frame's first
+          // script opens a MessageChannel and sends one port with the token
+          // this mount put in its URL and the revision it was served as. The
+          // viewer binds that port once per mount and talks only over it:
+          // refresh asks arrive on it, rows go back on it, never to a
+          // WindowProxy. A document the frame navigates to has no port, so an
+          // in-flight refresh can't reach it. Loads are counted as a second
+          // check. At most one fetch per 10 s; asks in between fold into one.
+          const dataPath = container.dataset.tables;
+          const MIN_GAP = 10000;
+          const revision = Number(container.dataset.revision);
+          let lastFetch = 0, pending = null, port = null;
+          const watch = (frame) => {
+            frame.dataset.loads = "0";
+            frame.addEventListener("load", () => { frame.dataset.loads = String(Number(frame.dataset.loads) + 1); });
+          };
+          const live = (frame) => frame && frame.isConnected && Number(frame.dataset.loads || 0) <= 1;
+          const unbind = () => {
+            if (port) port.close();
+            port = null;
+            if (pending) clearTimeout(pending);
+            pending = null;
+          };
+          const send = async (frame, bound) => {
+            pending = null;
+            lastFetch = Date.now();
+            try {
+              const response = await fetch(dataPath, { credentials: "omit", cache: "no-store" });
+              if (!response.ok) return;
+              const body = await response.json();
+              if (bound === port && live(frame)) bound.postMessage({ souls_field: 1, type: "tables", tables: body.tables });
+            } catch (error) { /* the frame keeps its last rows */ }
+          };
+          if (dataPath) {
+            window.addEventListener("message", (event) => {
+              const frame = container.querySelector("iframe");
+              if (port || !live(frame) || event.source !== frame.contentWindow) return;
+              const data = event.data;
+              if (!data || data.souls_field !== 1 || data.type !== "hello") return;
+              if (data.k !== frame.dataset.k || data.revision !== revision || event.ports.length !== 1) return;
+              const bound = event.ports[0];
+              port = bound;
+              bound.onmessage = (message) => {
+                const ask = message.data;
+                if (bound !== port || !ask || ask.souls_field !== 1 || ask.type !== "refresh" || pending) return;
+                const wait = Math.max(0, lastFetch + MIN_GAP - Date.now());
+                pending = setTimeout(() => send(frame, bound), wait);
+              };
+            });
+            // Made here rather than in the markup, so its first load is
+            // always counted and a later navigation is always noticed.
+            mount();
+          }
           stop.addEventListener("click", () => {
+            if (dataPath) unbind();
             container.replaceChildren();
             start.hidden = false;
             stop.hidden = true;
