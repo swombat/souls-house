@@ -89,3 +89,112 @@ test('the card shows who it serves, the week’s jobs and failures, and disks by
   expect(screen.getByText(/Linux disk/)).toBeInTheDocument();
   expect(screen.queryByText('linux-volume:ed42b0876631aa')).not.toBeInTheDocument();
 });
+
+const reported = {
+  ...device,
+  ceiling: {
+    reported_at: '2026-11-10T15:00:00Z',
+    current: true,
+    residents: {
+      mira: [
+        { volume: 'Data', access: 'write' },
+        { volume: 'Photos', access: 'read' },
+      ],
+    },
+  },
+};
+const withReport = { ...props, devices: [reported], warnings: { ...props.warnings, write: 'Write warning words.' } };
+
+test('without a report from the computer, folders stay read-only and say why', () => {
+  render(Computers, props);
+  expect(screen.queryByLabelText('Data')).not.toBeInTheDocument();
+  expect(screen.getByText(/hasn't said which folders it allows yet/)).toBeInTheDocument();
+});
+
+test('with a report, each folder offers no more than the computer allows', () => {
+  render(Computers, withReport);
+  const photos = screen.getByLabelText('Photos');
+  expect(photos).toHaveValue('off');
+  expect(photos.querySelector('option[value="read"]')).not.toBeDisabled();
+  expect(photos.querySelector('option[value="write"]')).toBeDisabled();
+  expect(screen.getByLabelText('Data').querySelector('option[value="write"]')).not.toBeDisabled();
+});
+
+test('lowering a folder is sent at once with only that folder', async () => {
+  render(Computers, withReport);
+  await fireEvent.change(screen.getByLabelText('Data'), { target: { value: 'off' } });
+  expect(screen.queryByText('Write warning words.')).not.toBeInTheDocument();
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/acct/computers/dev1',
+    { control: 'volume', resident_id: 'mira', volume: 'Data', access: 'off' },
+    expect.any(Object)
+  );
+});
+
+test('every move into write asks first, and a cancel sends nothing and puts the choice back', async () => {
+  render(Computers, withReport);
+  await fireEvent.change(screen.getByLabelText('Data'), { target: { value: 'write' } });
+  expect(await screen.findByText('Write warning words.')).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(router.patch).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Data')).toHaveValue('read');
+
+  await fireEvent.change(screen.getByLabelText('Data'), { target: { value: 'write' } });
+  await fireEvent.click(await screen.findByRole('button', { name: 'Allow' }));
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/acct/computers/dev1',
+    { control: 'volume', resident_id: 'mira', volume: 'Data', access: 'write' },
+    expect.any(Object)
+  );
+});
+
+test('a grant the computer no longer lists can still be lowered, and says so', () => {
+  const lowered = {
+    ...reported,
+    ceiling: { ...reported.ceiling, current: false, residents: { mira: [] } },
+  };
+  render(Computers, { ...withReport, devices: [lowered] });
+  const data = screen.getByLabelText('Data');
+  expect(data).toHaveValue('read');
+  expect(data.querySelector('option[value="off"]')).not.toBeDisabled();
+  expect(data.querySelector('option[value="write"]')).toBeDisabled();
+  expect(screen.getByText(/no longer lists this much access/)).toBeInTheDocument();
+  expect(screen.getByText(/on an earlier connection; it may have changed since/)).toBeInTheDocument();
+});
+
+test('the short disk id shows on every screen size, and a resident with nothing on is not called folders only', () => {
+  const idle = {
+    ...device,
+    residents: [
+      { id: 'mira', name: 'Mira', execute: false, desktop: false, volumes: [] },
+      {
+        id: 'lume',
+        name: 'Lume',
+        execute: false,
+        desktop: false,
+        volumes: [{ volume: 'linux-volume:ed42b0876631aa', access: 'read' }],
+      },
+    ],
+  };
+  render(Computers, { ...props, devices: [idle] });
+  const id = screen.getByText('ed42b087');
+  expect(id.className).not.toMatch(/\bhidden\b/);
+  const chips = screen.getByTestId('computer-access-summary').querySelectorAll('li');
+  expect(chips[0]).toHaveAttribute('title', 'Mira: nothing allowed yet');
+  expect(chips[1]).toHaveAttribute('title', 'Lume: folders');
+});
+
+test('the write confirmation names the disk, not its raw key', async () => {
+  const mac = {
+    ...device,
+    residents: [{ ...device.residents[0], volumes: [] }],
+    ceiling: {
+      reported_at: '2026-11-10T15:00:00Z',
+      current: true,
+      residents: { mira: [{ volume: 'darwin-volume:9a1fe20c77', access: 'write' }] },
+    },
+  };
+  render(Computers, { ...withReport, devices: [mac] });
+  await fireEvent.change(screen.getByLabelText(/Mac disk/), { target: { value: 'write' } });
+  expect(await screen.findByText("Let Mira write to Mac disk 9a1fe20c on Daniel's Mac?")).toBeInTheDocument();
+});

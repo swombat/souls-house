@@ -5,7 +5,6 @@
     CaretDown,
     Desktop,
     FolderSimple,
-    HardDrives,
     LinuxLogo,
     Pause,
     Play,
@@ -20,6 +19,8 @@
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
+  import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
+  import { diskName } from '$lib/companion-volumes.js';
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
 
@@ -33,9 +34,13 @@
   // removing a computer. Turning a power off needs no confirmation.
   let pending = $state(null);
   let busy = $state(false);
+  // Bumped whenever a change finishes or is cancelled, so every folder
+  // choice is redrawn from what the server has, not left at what was picked.
+  let redraw = $state(0);
   function cancel() {
     if (busy) return;
     pending = null;
+    redraw += 1;
   }
 
   const path = (device) => `/accounts/${account.id}/computers/${device.id}`;
@@ -48,6 +53,7 @@
       onFinish: () => {
         busy = false;
         pending = null;
+        redraw += 1;
       },
     });
   }
@@ -82,12 +88,6 @@
   const status = (device) => (device.paused ? 'paused' : device.connected ? 'online' : 'offline');
   const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
 
-  // The companion reports disks by a hashed key, never a path.
-  function volumeLabel(key) {
-    const [kind, hash = ''] = String(key).split(':');
-    const name = { 'linux-volume': 'Linux disk', 'darwin-volume': 'Mac disk' }[kind] ?? kind;
-    return { name, id: hash.slice(0, 8) };
-  }
   function platform(device) {
     const kinds = device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0]));
     if (kinds.includes('darwin-volume')) return 'mac';
@@ -114,12 +114,33 @@
   const weekday = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'narrow' });
 
   function access(resident) {
-    const powers = [resident.execute && 'commands', resident.desktop && 'apps'].filter(Boolean);
-    return powers.length ? powers.join(' + ') : 'folders only';
+    const powers = [
+      resident.execute && 'commands',
+      resident.desktop && 'apps',
+      resident.volumes.length && 'folders',
+    ].filter(Boolean);
+    return powers.length ? powers.join(' + ') : 'nothing allowed yet';
   }
 
   let online = $derived(devices.filter((d) => status(d) === 'online').length);
   let jobsThisWeek = $derived(devices.reduce((sum, d) => sum + weekJobs(d), 0));
+
+  function folder(device, resident, row, access) {
+    if (access === row.current) return;
+    // Only the folder that was touched is sent; every other folder and both
+    // switches stay as the server has them.
+    const data = { control: 'volume', resident_id: resident.id, volume: row.volume, access };
+    if (access === 'write') {
+      pending = {
+        device,
+        data,
+        title: `Let ${resident.name} write to ${diskName(row.volume)} on ${device.name}?`,
+        body: warnings.write,
+      };
+    } else {
+      send(device, data);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -382,35 +403,13 @@
                       <FolderSimple size={18} class="shrink-0 text-muted-foreground" />
                       Folders
                     </p>
-                    {#if resident.volumes.length === 0}
-                      <p class="mt-1 pl-7 text-sm text-muted-foreground">None</p>
-                    {:else}
-                      <ul class="mt-2 space-y-1.5 pl-7">
-                        {#each resident.volumes as volume (volume.volume)}
-                          {@const label = volumeLabel(volume.volume)}
-                          <li class="flex items-center gap-2 text-sm" title={volume.volume}>
-                            <HardDrives size={16} class="shrink-0 text-muted-foreground" />
-                            <span class="min-w-0 truncate">
-                              {label.name}
-                              {#if label.id}<span class="hidden font-mono text-xs text-muted-foreground sm:inline"
-                                  >{label.id}</span
-                                >{/if}
-                            </span>
-                            <span
-                              class={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                                volume.access === 'write'
-                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                  : 'bg-muted text-muted-foreground'
-                              }`}>
-                              {volume.access === 'write' ? 'Read and write' : 'Read only'}
-                            </span>
-                          </li>
-                        {/each}
-                      </ul>
-                    {/if}
-                    <p class="mt-2 pl-7 text-xs text-muted-foreground">
-                      Changing folders needs a new enrollment for now.
-                    </p>
+                    <ResidentFolders
+                      {device}
+                      {resident}
+                      {can_manage}
+                      {busy}
+                      {redraw}
+                      onchoose={(row, access) => folder(device, resident, row, access)} />
                   </div>
                 </div>
               </section>

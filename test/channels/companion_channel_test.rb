@@ -55,4 +55,23 @@ class CompanionChannelTest < ActionCable::Channel::TestCase
       AuditLog.where(action: "companion.device.epoch_takeover").last.data)
   end
 
+  test "a ceiling report is kept from the current connection and dropped once another has taken over" do
+    subscribe
+    epoch = @device.reload.connection_epoch
+    id = agents(:research_assistant).obfuscated_id
+    first = { "residents" => [ { "id" => id, "volumes" => [ { "volume" => "Data", "access" => "write" } ] } ] }
+    perform :report_ceiling, connection_epoch: epoch, ceiling: first
+    assert_equal first, @device.reload.reported_ceiling
+    assert_equal epoch, @device.ceiling_epoch
+
+    # Another connection took over: this subscription's late report changes nothing.
+    @device.update!(connection_epoch: "newer")
+    perform :report_ceiling, connection_epoch: epoch, ceiling: { "residents" => [ { "id" => id, "volumes" => [] } ] }
+    assert_equal first, @device.reload.reported_ceiling
+    assert_equal epoch, @device.ceiling_epoch
+    # A report never grants anything: the device's policy still has no folders.
+    assert_equal [], @device.policy.dig("residents", 0, "volumes")
+    assert_equal 1, @device.grant_revision
+  end
+
 end
