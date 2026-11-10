@@ -61,3 +61,31 @@ test('a member without admin rights sees the computer but cannot change it', () 
   expect(screen.getByLabelText('Run commands')).toBeDisabled();
   expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument();
 });
+
+const week = (counts) => counts.map((jobs, i) => ({ date: `2026-11-0${i + 1}`, jobs }));
+
+test('a fleet starts as summary cards; the chevron opens one computer’s settings', async () => {
+  const second = { ...device, id: 'dev2', name: 'Studio', connected: false, residents: [] };
+  render(Computers, { ...props, devices: [device, second] });
+  expect(screen.queryByLabelText('Run commands')).not.toBeInTheDocument();
+  expect(screen.getByTestId('fleet-summary')).toHaveTextContent('2 computers 1 online now');
+  await fireEvent.click(screen.getByRole('button', { name: "Show settings for Daniel's Mac" }));
+  expect(screen.getByLabelText('Run commands')).toBeInTheDocument();
+  expect(screen.getAllByTestId('computer')[1]).toHaveAttribute('data-status', 'offline');
+});
+
+test('the card shows who it serves, the week’s jobs and failures, and disks by kind not by key', () => {
+  const busy = {
+    ...device,
+    activity: { days: week([0, 2, 0, 5, 1, 0, 3]), failed: 2, last_job_at: new Date().toISOString() },
+    residents: [{ ...device.residents[0], volumes: [{ volume: 'linux-volume:ed42b0876631aa', access: 'write' }] }],
+  };
+  render(Computers, { ...props, devices: [busy] });
+  expect(screen.getByTestId('computer-access-summary')).toHaveTextContent('Mira');
+  expect(screen.getByLabelText('runs commands')).toBeInTheDocument();
+  expect(screen.getByText('2 failed')).toBeInTheDocument();
+  expect(screen.getByTestId('computer-week-jobs')).toHaveTextContent('11 jobs');
+  expect(screen.getByText('just now')).toBeInTheDocument();
+  expect(screen.getByText(/Linux disk/)).toBeInTheDocument();
+  expect(screen.queryByText('linux-volume:ed42b0876631aa')).not.toBeInTheDocument();
+});
