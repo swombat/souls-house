@@ -171,9 +171,14 @@ module Agents
 
       # stdout on success, nil on a non-zero exit. Always --no-lock: the
       # adapter is read-only and a rollback never writes to the repository.
+      # RESTIC_FLAGS and RollbackRestore.args are pinned by
+      # test/fixtures/files/rollback_restic_contract.json, which the real-restic
+      # check (test/host_runner/rollback_verify_test.py) runs against IMAGE.
+      RESTIC_FLAGS = [ "--no-cache", "--no-lock", "-o", "rest.connections=1" ].freeze
+
       def restic!(container, env, *args, mounts: [])
         tool!([ "--network", "container:#{container}", "-e", "RESTIC_PASSWORD", "-e", "RESTIC_REPOSITORY",
-                *mounts, IMAGE, "--no-cache", "--no-lock", "-o", "rest.connections=1", *args ], env:)
+                *mounts, IMAGE, *RESTIC_FLAGS, *args ], env:)
       end
 
       def tool!(args, env: {})
