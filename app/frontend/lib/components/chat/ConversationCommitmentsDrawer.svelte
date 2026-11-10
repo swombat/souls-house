@@ -61,7 +61,7 @@
 {#snippet cap(list)}
   {#if list.total > list.items.length}
     <p class="text-xs text-muted-foreground" data-testid="commitments-cap">
-      Showing {list.items.length} of {list.total}; the rest are on each resident's Commitments tab.
+      Showing {list.items.length} of {list.total}. Open each resident's Commitments tab for their recent commitments.
     </p>
   {/if}
 {/snippet}
