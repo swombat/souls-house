@@ -65,7 +65,9 @@ class StonesController < ActionController::Base
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Content-Disposition"] = "inline"
     html = @revision.html_document
-    html = FieldTableStoneShim.inject(html, @revision) if @revision.interactive? && @revision.field_tables.kept.exists?
+    if @revision.interactive? && @revision.field_tables.kept.exists?
+      html = FieldTableStoneShim.inject(html, @revision, params[:k])
+    end
     render body: html, content_type: "text/html; charset=utf-8"
   end
 

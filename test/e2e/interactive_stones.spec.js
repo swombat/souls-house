@@ -217,3 +217,58 @@ test('a stone reads its attached Field table, refreshes it, and still cannot fet
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }
 });
+
+// Mira's review of #880: rows must only ever reach the document the viewer
+// mounted. A second revision that the first one navigates into listens for
+// any message and forges a refresh with the forwarded token; it must get nothing.
+const SNOOP = `<!doctype html><html><head><title>Snoop</title></head><body><p id="state">waiting</p><script>
+  window.addEventListener("message", (event) => { document.body.dataset.got = "leaked:" + JSON.stringify(event.data).slice(0, 40); });
+  const k = new URLSearchParams(location.search).get("k");
+  for (const revision of [1, 2]) parent.postMessage({ souls_field: 1, type: "hello", k, revision }, "*", [new MessageChannel().port2]);
+  parent.postMessage({ souls_field: 1, type: "refresh", k, revision: 1 }, "*");
+  document.getElementById("state").textContent = "arrived";
+  </script></body></html>`;
+
+test('a frame that navigates before its first load never receives the rows', async ({ page, request, baseURL }) => {
+  const redirect = `<!doctype html><html><head><title>Redirect</title></head><body><script>
+    location.replace("/revisions/2/content" + location.search);
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: redirect, with_table: true, second_html: SNOOP });
+  try {
+    await page.goto(localUrl(fixture.first_url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#state')).toHaveText('arrived');
+    await page.waitForTimeout(1500);
+    await expect(frame.locator('body')).not.toHaveAttribute('data-got', /.*/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});
+
+test('a frame that navigates while a refresh is in flight never receives the rows', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const asker = `<!doctype html><html><head><title>Asker</title></head><body><script>
+    field.refresh();
+    location.replace("/revisions/2/content" + location.search);
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: asker, with_table: true, second_html: SNOOP });
+  let served = 0;
+  await page.route('**/revisions/1/data', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    served += 1;
+    await route.continue();
+  });
+  try {
+    await page.goto(localUrl(fixture.first_url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#state')).toHaveText('arrived');
+    await expect.poll(() => served).toBe(1);
+    await page.waitForTimeout(1000);
+    await expect(frame.locator('body')).not.toHaveAttribute('data-got', /.*/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});

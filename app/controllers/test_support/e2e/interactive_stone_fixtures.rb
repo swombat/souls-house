@@ -39,7 +39,12 @@ module TestSupport::E2e::InteractiveStoneFixtures
         filename: "hostile.html", content_type: "text/html", identify: false, metadata: { stone_html: true })
       stone.latest_revision.html_attachment.update_column(:blob_id, blob.id)
     end
-    render json: { url: stone.public_url, stone_id: stone.to_param, table_id: table_ids.first }
+    if params[:second_html]
+      stone.revise!(title: "Second revision", html: params[:second_html], author: account.users.first!, public: true,
+        base_revision_id: stone.latest_revision.to_param, interactive: true)
+    end
+    render json: { url: stone.public_url, first_url: stone.public_url(number: 1), stone_id: stone.to_param,
+                   table_id: table_ids.first }
   end
 
   # Adds a row to an E2E account's Field table, as a resident would.

@@ -91,6 +91,16 @@ class StoneFieldTablesTest < ActionDispatch::IntegrationTest
     refute_includes response.headers["Content-Security-Policy"], "allow-same-origin"
   end
 
+  test "the shim carries only a well-formed token from the frame URL, and the served revision" do
+    host! @host
+    get "/revisions/1/content", params: { k: "A" * 32 }
+    assert_includes response.body, %(const token = "#{'A' * 32}";)
+    assert_includes response.body, "const revision = 1;"
+    get "/revisions/1/content", params: { k: "\"</script><script>alert(1)" }
+    assert_includes response.body, "const token = null;"
+    assert_not_includes response.body, "<script>alert(1)"
+  end
+
   test "the snapshot cannot close its script tag" do
     @table.add_rows!([ { "platform" => "</script><script>alert(1)</script>" } ], by: @user)
     host! @host
