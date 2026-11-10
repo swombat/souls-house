@@ -51,7 +51,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
 
   test "the preview is the resident saying one line through the message speech path" do
     calls = []
-    fake = ->(text, voice_id:, api_key: nil) { calls << [ text, voice_id, api_key ]; "ID3-audio" }
+    fake = ->(text, voice_id:, api_key: nil, delivery: nil) { calls << [ text, voice_id, api_key ]; "ID3-audio" }
 
     with_standard_voices do
       ElevenLabsTts.stub(:synthesize, fake) do
@@ -151,7 +151,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
   test "an own voice is chosen and previewed through the account's key" do
     @account.update!(eleven_labs_api_key: "acct-key")
     calls = []
-    fake = ->(text, voice_id:, api_key: nil) { calls << [ voice_id, api_key ]; "ID3-own" }
+    fake = ->(text, voice_id:, api_key: nil, delivery: nil) { calls << [ voice_id, api_key ]; "ID3-own" }
 
     with_standard_voices do
       with_library_voices do
@@ -188,7 +188,7 @@ class Agents::VoicesControllerTest < ActionDispatch::IntegrationTest
     @account.update!(eleven_labs_api_key: "key-one")
     other_account.update!(eleven_labs_api_key: "key-two")
     rendered = []
-    fake = ->(_text, voice_id:, api_key: nil) { rendered << api_key; "audio-#{api_key}" }
+    fake = ->(_text, voice_id:, api_key: nil, delivery: nil) { rendered << api_key; "audio-#{api_key}" }
 
     Rails.stub(:cache, store) do
       with_standard_voices do

@@ -163,3 +163,13 @@ test('an unreadable standard list still shows the own voices, and says so', asyn
   expect(screen.getByText(/standard voice list can't be read/)).toBeInTheDocument();
   expect(screen.queryByText('Standard voices')).toBeNull();
 });
+
+test('the delivery the resident set is shown as one read-only line', async () => {
+  render(AgentVoicePicker, {
+    voice: { ...voiceProp('std-aria'), delivery_summary: 'eleven_multilingual_v2 · speed 0.75 · +10 dB on Listen (set by Alanis)' },
+  });
+  await screen.findByRole('radio', { name: /Brian/ });
+
+  expect(screen.getByTestId('agent-voice-delivery').textContent).toContain('Delivery: eleven_multilingual_v2 · speed 0.75');
+  expect(screen.getByTestId('agent-voice-delivery').querySelector('input')).toBeNull();
+});

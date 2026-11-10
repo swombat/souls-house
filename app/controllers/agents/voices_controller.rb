@@ -58,7 +58,7 @@ class Agents::VoicesController < ApplicationController
   end
 
   # The resident saying one line in the given voice, rendered through the
-  # same ElevenLabsTts call its messages use, so what you hear is what its
+  # same ElevenLabsTts call (and delivery, gain included) its Listen audio uses, so what you hear is what its
   # messages will sound like. A standard voice renders on the house's key and
   # is cached per voice and name; a voice from the account's own library
   # renders on the account's key (the house's can't see it) and its cache is
@@ -69,12 +69,13 @@ class Agents::VoicesController < ApplicationController
 
     text = self.class.preview_text(@agent.name)
     scope = api_key ? "account-#{current_account.id}" : "house"
-    key = "agent_voice_preview:#{scope}:#{voice.voice_id}:#{ElevenLabsTts::MODEL_ID}:#{Digest::SHA256.hexdigest(text)}"
+    delivery = @agent.speech_delivery
+    key = "agent_voice_preview:#{scope}:#{delivery.digest(voice.voice_id)}:#{Digest::SHA256.hexdigest(text)}"
     audio = Rails.cache.fetch(key, expires_in: PREVIEW_CACHE_FOR) do
-      ElevenLabsTts.synthesize(text, voice_id: voice.voice_id, api_key:)
+      AudioGain.apply(ElevenLabsTts.synthesize(text, voice_id: voice.voice_id, api_key:, delivery:), delivery.gain_db)
     end
     send_data audio, type: "audio/mpeg", disposition: "inline", filename: "voice-preview.mp3"
-  rescue ElevenLabsVoices::Unavailable, ElevenLabsTts::Error => e
+  rescue ElevenLabsVoices::Unavailable, ElevenLabsTts::Error, AudioGain::Failed => e
     render plain: e.message, status: :service_unavailable
   end
 

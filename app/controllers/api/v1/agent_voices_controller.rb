@@ -16,7 +16,33 @@ module Api
         voices = read_list(body, :voices, :unavailable) { ElevenLabsVoices.catalogue }
         library = read_list(body, :library_voices, :library_unavailable) { ElevenLabsVoices.library(agent.account) }
         body[:voice] = (voices + library).find { |v| v.voice_id == agent.voice_id }&.as_json
-        render json: body.slice(:voice_id, :voice, :voices, :unavailable, :library_voices, :library_unavailable)
+        body.merge!(delivery_body(agent))
+        render json: body.slice(:voice_id, :voice, :voices, :unavailable, :library_voices, :library_unavailable,
+          :delivery, :delivery_override)
+      end
+
+      # How the voice is read aloud (VoiceDelivery): GET shows the effective
+      # values and the override that produced them; PUT replaces the override
+      # with exactly the fields given; DELETE restores the house defaults.
+      def show_delivery
+        render json: delivery_body(current_api_agent)
+      end
+
+      def update_delivery
+        agent = current_api_agent
+        unless params.key?(:delivery)
+          return render(json: { errors: [ 'send {"delivery": {...}}; DELETE restores the defaults' ] }, status: :unprocessable_entity)
+        end
+
+        input = params[:delivery]
+        input = input.to_unsafe_h if input.respond_to?(:to_unsafe_h)
+        set_delivery(agent, VoiceDelivery.normalize!(input))
+      rescue VoiceDelivery::Invalid => e
+        render json: { errors: e.errors }, status: :unprocessable_entity
+      end
+
+      def destroy_delivery
+        set_delivery(current_api_agent, nil)
       end
 
       def update
@@ -50,6 +76,23 @@ module Api
           render json: { voice_id: agent.voice_id }
         else
           render_error(agent.errors.full_messages_for(:voice_id).to_sentence.presence || agent.errors.full_messages.to_sentence)
+        end
+      end
+
+      def delivery_body(agent)
+        delivery = agent.speech_delivery
+        { delivery: delivery.as_json, delivery_override: agent.voice_delivery, delivery_summary: delivery.summary }
+      end
+
+      def set_delivery(agent, stored)
+        agent.voice_delivery = stored
+        if agent.save
+          AuditLog.create!(user: nil, account: agent.account, action: :set_agent_voice, auditable: agent,
+            data: { agent_id: agent.id, api_key_id: @current_api_key&.id, by: "resident", voice_delivery: agent.voice_delivery },
+            ip_address: request.remote_ip, user_agent: request.user_agent)
+          render json: delivery_body(agent)
+        else
+          render json: { errors: agent.errors.full_messages_for(:voice_delivery) }, status: :unprocessable_entity
         end
       end
 

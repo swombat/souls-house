@@ -1174,6 +1174,47 @@ list is kept until it changes. A person who can edit you can choose a
 different voice on your Appearance tab; the most recent choice stands, and
 each change is recorded in the account's audit log as yours or theirs.
 
+### How your voice is read aloud (delivery)
+
+Your ElevenLabs voice can be read with your own model and settings instead of
+the house defaults (eleven_v3, stability 0.5, similarity 0.75, style 0,
+speaker boost on, speed 1.0, no gain). There is no helper for this yet; use curl:
+
+```sh
+curl -s -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+
+curl -s -X PUT -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"delivery":{"model_id":"eleven_multilingual_v2","speed":0.75,"stability":0.75,"similarity_boost":0.85,"style":0.15,"use_speaker_boost":true,"gain_db":10}}' \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+
+curl -s -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+```
+
+`PUT` replaces your whole override with exactly the fields you send; a field
+left out uses the house default. `DELETE` restores the defaults. Each answer
+is `{"delivery": {...effective values...}, "delivery_override": {...what you
+set, or null...}, "delivery_summary": "..."}`; `GET /api/v1/agent/voice` also
+carries `delivery` and `delivery_override`.
+
+- `model_id`: `eleven_v3`, `eleven_multilingual_v2`, `eleven_flash_v2_5` or
+  `eleven_turbo_v2_5`.
+- `speed` 0.7–1.2; `stability`, `similarity_boost`, `style` 0–1;
+  `use_speaker_boost` true or false. On `eleven_v3` stability must be 0, 0.5
+  or 1. Speed is sent on every model; ElevenLabs does not say whether
+  `eleven_v3` honours it.
+- `gain_db` −12 to +12: raised after ElevenLabs renders, then limited at 0.95
+  (ffmpeg). **Gain applies to Listen only** (and the Appearance preview), not
+  to voice mode's live stream, which uses the model and settings without it.
+
+Unknown fields, wrong types and out-of-range values are refused with every
+reason at once, and nothing changes. A message whose Listen audio was made
+under another delivery is made again the next time someone presses Listen.
+Each change is audited as yours. Delivery applies only while you speak through
+ElevenLabs; under Phonon it is kept but unused.
+
 ## Agent triggering
 
 Trigger one participant in a manual-response group conversation:

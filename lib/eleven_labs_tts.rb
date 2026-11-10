@@ -3,7 +3,7 @@ class ElevenLabsTts
   class Error < StandardError; end
 
   API_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
-  MODEL_ID = "eleven_v3"
+  MODEL_ID = VoiceDelivery::DEFAULT_MODEL_ID
   READ_TIMEOUT = 60
   OPEN_TIMEOUT = 10
 
@@ -15,13 +15,7 @@ class ElevenLabsTts
     SystemCallError, EOFError, OpenSSL::SSL::SSLError
   ].freeze
 
-  DEFAULT_VOICE_SETTINGS = {
-    stability: 0.5,
-    similarity_boost: 0.75,
-    style: 0.0,
-    use_speaker_boost: true,
-    speed: 1.0
-  }.freeze
+  DEFAULT_VOICE_SETTINGS = VoiceDelivery::DEFAULT_VOICE_SETTINGS
 
   # api_key: an account's own ElevenLabs key (SpeechEngine: resident speech
   # never uses the house's). Omitted only by house-paid paths such as the voice
@@ -30,13 +24,15 @@ class ElevenLabsTts
     @api_key = api_key
   end
 
-  def self.synthesize(text, voice_id:, api_key: nil)
-    new(api_key:).synthesize(text, voice_id: voice_id)
+  # delivery: the resident's VoiceDelivery (agents.voice_delivery), or nil for
+  # the house defaults. Gain is not ElevenLabs' to apply; see AudioGain.
+  def self.synthesize(text, voice_id:, api_key: nil, delivery: nil)
+    new(api_key:).synthesize(text, voice_id: voice_id, delivery:)
   end
 
-  def synthesize(text, voice_id:)
+  def synthesize(text, voice_id:, delivery: nil)
     uri = URI("#{API_BASE}/#{voice_id}")
-    request = build_request(uri, text)
+    request = build_request(uri, text, delivery)
 
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
       read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
@@ -49,16 +45,16 @@ class ElevenLabsTts
       raise(Error, "ElevenLabs API key not configured")
   end
 
-  def self.stream(text, voice_id:, api_key: nil, &block)
-    new(api_key:).stream(text, voice_id: voice_id, &block)
+  def self.stream(text, voice_id:, api_key: nil, delivery: nil, &block)
+    new(api_key:).stream(text, voice_id: voice_id, delivery:, &block)
   end
 
   # Voice mode: the audio arrives in chunks as ElevenLabs makes it, so playback
   # can start at the first one (about half a second on eleven_v3, against two or
   # more for the whole file). A refusal raises before anything is yielded.
-  def stream(text, voice_id:)
+  def stream(text, voice_id:, delivery: nil)
     uri = URI("#{API_BASE}/#{voice_id}/stream?output_format=mp3_44100_128")
-    request = build_request(uri, text)
+    request = build_request(uri, text, delivery)
     in_caller = false
 
     Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
@@ -80,15 +76,16 @@ class ElevenLabsTts
 
   private
 
-  def build_request(uri, text)
+  def build_request(uri, text, delivery)
+    delivery = VoiceDelivery.for(delivery) unless delivery.is_a?(VoiceDelivery)
     request = Net::HTTP::Post.new(uri)
     request["xi-api-key"] = api_key
     request["Content-Type"] = "application/json"
     request["Accept"] = "audio/mpeg"
     request.body = {
       text: text,
-      model_id: MODEL_ID,
-      voice_settings: DEFAULT_VOICE_SETTINGS
+      model_id: delivery.model_id,
+      voice_settings: delivery.voice_settings
     }.to_json
     request
   end
