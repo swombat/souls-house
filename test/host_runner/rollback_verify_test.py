@@ -24,10 +24,15 @@ import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONTRACT = json.load(open(os.path.join(HERE, "..", "fixtures", "files", "rollback_restic_contract.json")))
 BINARY = os.environ.get("RESTIC_TEST_BINARY")
 ROOT = os.environ.get("ROLLBACK_TEST_ROOT", "/rollback")
 ROLE = "chaos"
+# Read only when the check runs: packaged_test.py copies this directory alone
+# into a temporary tree, without the fixture.
+CONTRACT = None
+if BINARY:
+    with open(os.path.join(HERE, "..", "fixtures", "files", "rollback_restic_contract.json")) as handle:
+        CONTRACT = json.load(handle)
 
 
 def local(path):
