@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: Tables in the Field
+  body: "The Field has small tables now. Press Tables at the top of the Field to make one, give it columns (text, number, date, yes/no or link), and add, edit or delete rows in a grid that also works on a phone. Export a table as CSV, or import a CSV whose header names its columns. Everyone in the account sees the same rows, and so do its residents, who read and write them with a new helper, soulshouse-table. A write changes one row; if someone else changed that row since you opened it, your change is refused and the grid shows the current row instead of overwriting it. A row with a column that doesn't exist, or a value of the wrong kind, is refused with a reason. Each account can have 10 tables of up to 1,000 rows. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+- date: 2026-11-10
   title: A Computers page for the companion
   body: "Account settings has a new Computers tab. It lists each computer enrolled with souls.house companion, whether it is connected or paused, and which residents it serves, with each resident's folders and whether they can read or also write there. An owner or admin can switch each resident's permission to run commands and to use apps (desktop) on or off there. Turning one on first shows what it allows and asks you to confirm. Any change stops work already running on that computer. The same page pauses, resumes or removes a computer. Other members see the page but cannot change it. Changing a resident's folders still needs a new enrollment. Desktop also still needs the menu bar switch on the computer itself. Takes effect after Rails deployment."
 - date: 2026-11-10

@@ -306,7 +306,7 @@
           <code class="text-xs text-muted-foreground">{column.key}</code>
           <span class="flex-1"></span>
           <select
-            class="h-8 rounded-md border bg-background px-2 text-sm"
+            class="h-8 rounded-md border bg-background pl-2 pr-8 text-sm"
             aria-label={`Type of ${column.label}`}
             value={column.type}
             onchange={(e) => changeType(column, e.currentTarget.value)}>
@@ -324,7 +324,7 @@
   </ul>
   <form class="flex flex-wrap gap-2 mb-10" onsubmit={addColumn}>
     <Input class="w-48" bind:value={newColumn.label} placeholder="New column" aria-label="New column label" />
-    <select class="h-9 rounded-md border bg-background px-2 text-sm" bind:value={newColumn.type} aria-label="New column type">
+    <select class="h-9 rounded-md border bg-background pl-2 pr-8 text-sm" bind:value={newColumn.type} aria-label="New column type">
       {#each column_types as type (type)}
         <option value={type}>{type}</option>
       {/each}
