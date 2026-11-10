@@ -197,6 +197,8 @@ areas:
       - field_swarm_reads
       - transcription_glossary_terms
       - whiteboards
+      - field_tables
+      - field_table_rows
 
   - id: billing
     title: Billing

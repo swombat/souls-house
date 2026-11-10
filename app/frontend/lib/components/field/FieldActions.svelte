@@ -2,14 +2,16 @@
   // The ways into the Field. On a phone they share the width as equal
   // tiles, icon above a short label; from sm up they sit in a row.
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { FileArrowUp, Microphone, MusicNotes, NotePencil } from 'phosphor-svelte';
+  import { FileArrowUp, Microphone, MusicNotes, NotePencil, Table } from 'phosphor-svelte';
 
-  let { onFile, onNote, onRecording, onSong } = $props();
+  let { onFile, onNote, onRecording, onSong, tablesHref = null } = $props();
 
   const tile = 'h-auto flex-col gap-1 px-1 py-2 text-xs sm:h-9 sm:flex-row sm:gap-2 sm:px-4 sm:py-2 sm:text-sm';
 </script>
 
-<div class="grid w-full grid-cols-4 gap-2 sm:flex sm:w-auto" data-testid="field-actions">
+<div
+  class="grid w-full gap-2 sm:flex sm:w-auto {tablesHref ? 'grid-cols-5' : 'grid-cols-4'}"
+  data-testid="field-actions">
   <Button class={tile} onclick={onFile} data-testid="field-add-file">
     <FileArrowUp class="size-5 sm:size-4" /> Add file
   </Button>
@@ -24,4 +26,9 @@
     <MusicNotes class="size-5 sm:size-4" />
     <span class="sm:hidden">Song</span><span class="hidden sm:inline">Share a song</span>
   </Button>
+  {#if tablesHref}
+    <Button class={tile} variant="outline" href={tablesHref} data-testid="field-tables-link">
+      <Table class="size-5 sm:size-4" /> Tables
+    </Button>
+  {/if}
 </div>

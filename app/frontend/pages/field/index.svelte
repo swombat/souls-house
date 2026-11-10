@@ -25,7 +25,7 @@
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
   import { fieldItemLink } from '$lib/field';
-  import { CaretLeft, Table } from 'phosphor-svelte';
+  import { CaretLeft } from 'phosphor-svelte';
 
   let {
     items = [],
@@ -323,16 +323,12 @@
       <h1 class="text-3xl font-bold">Field</h1>
       <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
     </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <Button variant="outline" href={`/accounts/${account.id}/field/tables`} data-testid="field-tables-link">
-        <Table size={16} class="mr-1" /> Tables
-      </Button>
-      <FieldActions
-        onFile={() => (uploadOpen = true)}
-        onNote={() => (noteOpen = true)}
-        onRecording={() => (recordingOpen = true)}
-        onSong={addSong} />
-    </div>
+    <FieldActions
+      tablesHref={`/accounts/${account.id}/field/tables`}
+      onFile={() => (uploadOpen = true)}
+      onNote={() => (noteOpen = true)}
+      onRecording={() => (recordingOpen = true)}
+      onSong={addSong} />
   </div>
 
   {#if fieldEmpty}
