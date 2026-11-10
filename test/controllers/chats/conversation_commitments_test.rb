@@ -17,7 +17,7 @@ class Chats::ConversationCommitmentsTest < ActionDispatch::IntegrationTest
     post login_path, params: { email_address: @user.email_address, password: "password123" }
   end
 
-  test "lists this conversation's commitments, waiting soonest first, finished ones apart" do
+  test "lists this conversation's commitments, outstanding soonest first, finished ones apart" do
     later = Commitment.create!(agent: @agent, source_chat: @chat, text: "Check the deploy receipt", summary: "Deploy receipt", due_at: 3.hours.from_now)
     sooner = Commitment.create!(agent: @agent, source_chat: @chat, text: "Look at the night sweep", due_at: 1.hour.from_now)
     done = Commitment.create!(agent: @agent, source_chat: @chat, text: "An older promise", due_at: 2.hours.from_now)
@@ -28,9 +28,10 @@ class Chats::ConversationCommitmentsTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     body = response.parsed_body
-    assert_equal [ sooner.to_param, later.to_param ], body["waiting"].map { |item| item["id"] }
-    assert_equal [ done.to_param ], body["earlier"].map { |item| item["id"] }
-    first = body["waiting"].last
+    assert_equal [ sooner.to_param, later.to_param ], body.dig("outstanding", "items").map { |item| item["id"] }
+    assert_equal [ done.to_param ], body.dig("finished", "items").map { |item| item["id"] }
+    assert_equal [ 2, 0, 1 ], body.values_at("outstanding", "blocked", "finished").map { |list| list["total"] }
+    first = body.dig("outstanding", "items").last
     assert_equal [ "Deploy receipt", "Check the deploy receipt", @agent.name ], first.values_at("headline", "text", "resident_name")
     assert_equal edit_account_agent_path(@account, @agent, tab: "commitments"), first["manage_url"]
   end
@@ -47,14 +48,15 @@ class Chats::ConversationCommitmentsTest < ActionDispatch::IntegrationTest
     post login_path, params: { email_address: member.email_address, password: "password123" }
     get commitments_account_chat_path(team, chat), as: :json
 
-    item = response.parsed_body["waiting"].sole
+    item = response.parsed_body.dig("outstanding", "items").sole
     assert_equal "Team check", item["text"]
     assert_nil item["manage_url"]
   end
 
   test "an empty conversation answers with empty lists, and another house's conversation is not found" do
     get commitments_account_chat_path(@account, @chat), as: :json
-    assert_equal({ "waiting" => [], "earlier" => [] }, response.parsed_body)
+    empty = { "items" => [], "total" => 0 }
+    assert_equal({ "outstanding" => empty, "blocked" => empty, "finished" => empty }, response.parsed_body)
 
     team = accounts(:team_account)
     resident = team.agents.create!(name: "Theirs", system_prompt: "Test", runtime: "external")
@@ -63,6 +65,27 @@ class Chats::ConversationCommitmentsTest < ActionDispatch::IntegrationTest
     outsider_chat.save!
     get commitments_account_chat_path(@account, outsider_chat), as: :json
     assert_response :not_found
+  end
+
+  test "a posted commitment whose wake is still in custody stays outstanding; blocked and delivered are kept apart" do
+    held = Commitment.create!(agent: @agent, source_chat: @chat, text: "Held wake", due_at: 1.hour.from_now)
+    retrying = Commitment.create!(agent: @agent, source_chat: @chat, text: "Retrying wake", due_at: 2.hours.from_now)
+    blocked = Commitment.create!(agent: @agent, source_chat: @chat, text: "Blocked wake", due_at: 3.hours.from_now)
+    delivered = Commitment.create!(agent: @agent, source_chat: @chat, text: "Delivered wake", due_at: 4.hours.from_now)
+    legacy = Commitment.create!(agent: @agent, source_chat: @chat, text: "Posted before wakes were tracked", due_at: 5.hours.from_now)
+    { held => "held", retrying => "retrying", blocked => "blocked", delivered => "delivered", legacy => nil }.each do |commitment, state|
+      commitment.update_columns(status: "activated", activated_at: Time.current, wake_state: state)
+    end
+
+    get commitments_account_chat_path(@account, @chat), as: :json
+
+    body = response.parsed_body
+    assert_equal [ held, retrying ].map(&:to_param), body.dig("outstanding", "items").map { |item| item["id"] }
+    assert_equal [ blocked.to_param ], body.dig("blocked", "items").map { |item| item["id"] }
+    assert_equal [ legacy, delivered ].map(&:to_param), body.dig("finished", "items").map { |item| item["id"] }
+    held_item = body.dig("outstanding", "items").first
+    assert held_item["cancellable"]
+    assert_equal edit_account_agent_path(@account, @agent, tab: "commitments"), held_item["manage_url"]
   end
 
 end

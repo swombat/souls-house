@@ -1,7 +1,9 @@
 <script>
   // "Show commitments" from the conversation menu (Daniel, jMaDAj): the
-  // commitments residents made in this conversation, waiting ones first,
-  // fetched each time the sheet opens. A bottom sheet, like View costs, so it
+  // commitments residents made in this conversation, fetched each time the
+  // sheet opens. Outstanding first (scheduled, or posted with the wake still
+  // held, retrying or woken), then any the house stopped trying to wake, then
+  // finished ones (delivered, stopped, cancelled) behind a toggle. A bottom sheet, like View costs, so it
   // reads the same on a phone and a desk. Rescheduling and cancelling stay on
   // the resident's page; the sheet links there for whoever may manage.
   import * as Drawer from '$lib/components/shadcn/drawer/index.js';
@@ -11,11 +13,14 @@
 
   let { open = $bindable(false), accountId, chatId } = $props();
 
-  let waiting = $state([]);
-  let earlier = $state([]);
+  const EMPTY = { items: [], total: 0 };
+  let outstanding = $state(EMPTY);
+  let blocked = $state(EMPTY);
+  let finished = $state(EMPTY);
   let loading = $state(false);
   let failed = $state(false);
-  let showEarlier = $state(false);
+  let showFinished = $state(false);
+  const nothingLoaded = $derived(outstanding.total + blocked.total + finished.total === 0);
   let request = 0;
 
   async function load() {
@@ -30,8 +35,9 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json();
       if (mine !== request) return;
-      waiting = body.waiting || [];
-      earlier = body.earlier || [];
+      outstanding = body.outstanding || EMPTY;
+      blocked = body.blocked || EMPTY;
+      finished = body.finished || EMPTY;
     } catch {
       if (mine === request) failed = true;
     } finally {
@@ -45,11 +51,20 @@
 
   $effect(() => {
     chatId;
-    waiting = [];
-    earlier = [];
-    showEarlier = false;
+    outstanding = EMPTY;
+    blocked = EMPTY;
+    finished = EMPTY;
+    showFinished = false;
   });
 </script>
+
+{#snippet cap(list)}
+  {#if list.total > list.items.length}
+    <p class="text-xs text-muted-foreground" data-testid="commitments-cap">
+      Showing {list.items.length} of {list.total}; the rest are on each resident's Commitments tab.
+    </p>
+  {/if}
+{/snippet}
 
 {#snippet card(c)}
   <li class="space-y-2 rounded-lg border p-3 sm:p-4" data-testid="conversation-commitment">
@@ -78,8 +93,9 @@
         {/if}
       {/if}
     </p>
-    {#if c.manage_url && c.status === 'scheduled'}
-      <a class="inline-block text-xs underline underline-offset-4" href={c.manage_url}>Reschedule or cancel</a>
+    {#if c.manage_url && c.cancellable}
+      <a class="inline-block text-xs underline underline-offset-4" href={c.manage_url}
+        >{c.status === 'scheduled' ? 'Reschedule or cancel' : 'Stop waking'}</a>
     {/if}
   </li>
 {/snippet}
@@ -107,38 +123,52 @@
       <div class="space-y-4 overflow-y-auto px-4 py-4 md:px-6" data-testid="conversation-commitments">
         {#if failed}
           <p class="text-sm text-destructive">Couldn't load the commitments. Close and open again to retry.</p>
-        {:else if loading && waiting.length === 0 && earlier.length === 0}
+        {:else if loading && nothingLoaded}
           <p class="text-sm text-muted-foreground">Loading…</p>
         {:else}
-          {#if waiting.length === 0}
+          {#if outstanding.items.length === 0}
             <p
               class="rounded border bg-muted/30 p-4 text-sm text-muted-foreground"
-              data-testid="no-waiting-commitments">
+              data-testid="no-outstanding-commitments">
               Nothing is waiting in this conversation.
             </p>
           {:else}
-            <ul class="space-y-3">
-              {#each waiting as c (c.id)}
+            <ul class="space-y-3" data-testid="outstanding-commitments">
+              {#each outstanding.items as c (c.id)}
                 {@render card(c)}
               {/each}
             </ul>
+            {@render cap(outstanding)}
           {/if}
 
-          {#if earlier.length > 0}
+          {#if blocked.items.length > 0}
+            <div class="space-y-3 border-t pt-3" data-testid="blocked-commitments">
+              <h4 class="text-sm font-medium">The house stopped trying to wake the resident</h4>
+              <ul class="space-y-3">
+                {#each blocked.items as c (c.id)}
+                  {@render card(c)}
+                {/each}
+              </ul>
+              {@render cap(blocked)}
+            </div>
+          {/if}
+
+          {#if finished.items.length > 0}
             <div class="space-y-3 border-t pt-3">
               <button
                 type="button"
                 class="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
-                aria-expanded={showEarlier}
-                onclick={() => (showEarlier = !showEarlier)}>
-                {showEarlier ? 'Hide' : 'Show'} delivered and cancelled ({earlier.length})
+                aria-expanded={showFinished}
+                onclick={() => (showFinished = !showFinished)}>
+                {showFinished ? 'Hide' : 'Show'} delivered and cancelled ({finished.total})
               </button>
-              {#if showEarlier}
-                <ul class="space-y-3 opacity-75">
-                  {#each earlier as c (c.id)}
+              {#if showFinished}
+                <ul class="space-y-3 opacity-75" data-testid="finished-commitments">
+                  {#each finished.items as c (c.id)}
                     {@render card(c)}
                   {/each}
                 </ul>
+                {@render cap(finished)}
               {/if}
             </div>
           {/if}

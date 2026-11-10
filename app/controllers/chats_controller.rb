@@ -81,18 +81,28 @@ class ChatsController < ApplicationController
   end
 
   # The conversation menu's "Show commitments" (Daniel, jMaDAj): every
-  # commitment a resident made in this conversation, waiting ones first.
-  # Anyone who can open the conversation sees them, as members of this house
-  # already do on the resident's page (CommitmentPresentation.visible_scope);
-  # reschedule and cancel stay on that page, linked for whoever may manage.
+  # commitment a resident made in this conversation, in three lists.
+  # Outstanding: scheduled, or posted with the wake still in the house's
+  # custody (held, retrying, woken), soonest first. Blocked: posted, and the
+  # house stopped trying to wake the resident. Finished: delivered, stopped or
+  # cancelled. Anyone who can open the conversation sees them, as members of
+  # this house already do on the resident's page
+  # (CommitmentPresentation.visible_scope); reschedule and cancel stay on that
+  # page, linked for whoever may manage. Each list is capped, and its total is
+  # sent so the sheet can say when it shows only part.
   def commitments
     scope = Commitment.where(source_chat_id: @chat.id, account_id: current_account.id)
-      .includes(:agent, :account, :source_chat, :room, :activation_chat, :activation_message, :cancelled_by_user, :cancelled_by_agent)
-    waiting = scope.scheduled.order(:due_at, :id).limit(CommitmentPresentation::LIMIT).to_a
-    earlier = scope.where.not(status: "scheduled").order(due_at: :desc, id: :desc).limit(CommitmentPresentation::LIMIT).to_a
-    render json: {
-      waiting: waiting.map { |commitment| conversation_commitment_json(commitment) },
-      earlier: earlier.map { |commitment| conversation_commitment_json(commitment) }
+    lists = {
+      outstanding: scope.where(status: "scheduled").or(scope.where(status: "activated", wake_state: Commitment::IN_CUSTODY)).order(:due_at, :id),
+      blocked: scope.where(status: "activated", wake_state: "blocked").order(due_at: :desc, id: :desc),
+      finished: scope.where(status: "cancelled")
+        .or(scope.where(status: "activated").where("commitments.wake_state IS NULL OR commitments.wake_state NOT IN (?)", Commitment::IN_CUSTODY + [ "blocked" ]))
+        .order(due_at: :desc, id: :desc)
+    }
+    includes = %i[agent account source_chat room activation_chat activation_message cancelled_by_user cancelled_by_agent]
+    render json: lists.to_h { |name, relation|
+      rows = relation.includes(*includes).limit(CommitmentPresentation::LIMIT).to_a
+      [ name, { items: rows.map { |commitment| conversation_commitment_json(commitment) }, total: relation.count } ]
     }
   end
 
