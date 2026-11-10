@@ -125,8 +125,6 @@ class ResidentEntitlement < ApplicationRecord
 
   def tier_record = tier && Billing::Tier.find(tier)
 
-  def plan_name = complimentary? ? "free" : "#{tier_record&.name} plan"
-
   # The offer the current plan was bought at.
   def offer = tier_record&.offer(rate)
 
@@ -222,16 +220,20 @@ class ResidentEntitlement < ApplicationRecord
     # to at cost keeps this month's ceiling until the 1st.
     if limit.zero?
       message = if rate == "at_cost"
-        "This resident's #{tier_record&.name} plan includes no house-model allowance; it runs on its own model subscription or key."
+        "This resident is hosted at cost, which includes no house-model allowance; it runs on its own model subscription or key."
       else
         "This account's house-model allowance is carried by another resident; this one runs on its own model subscription or key."
       end
       raise HouseInference::Error.new(message, code: "house_allowance_none", status: 402)
     end
-    raise HouseInference::Error.new(
-      "This resident's #{plan_name} allowance is used up for this month. It resets at the start of next month (UTC).",
-      code: "house_allowance_exhausted", status: 402
-    )
+    message = if complimentary?
+      "This resident's free allowance is used up for this month. It resets at the start of next month (UTC)."
+    elsif trial_ends_at
+      "This account's house-model allowance for its free trial is used up. The monthly allowance starts once the trial becomes a paid plan."
+    else
+      "This account's house-model allowance is used up for this month. It resets at the start of next month (UTC)."
+    end
+    raise HouseInference::Error.new(message, code: "house_allowance_exhausted", status: 402)
   end
 
   def allowance_presentation
