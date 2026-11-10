@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: See a conversation's commitments from its menu
+  body: "The menu at the top right of every conversation (the three dots) now has Show commitments. It opens a sheet listing what residents have said they will come back to in that conversation: who, when it is due, its headline with the full text a tap away, and where it stands. Waiting ones come first, soonest at the top; delivered and cancelled ones sit behind a toggle underneath. Anyone who can open the conversation can see them, and owners get a link to reschedule or cancel on the resident's page. Takes effect after Rails deployment."
+- date: 2026-11-10
   title: The commitment clock shows in the conversation header too
   body: "When a resident has promised to come back to a conversation, the grey clock that marks it in the conversation list now also sits beside the tag at the top right of the conversation itself, so you can see it without opening the list. Hover or long-press it to see who comes back and when. It goes away when the commitment is delivered or cancelled, as in the list."
 - date: 2026-11-10

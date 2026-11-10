@@ -3,6 +3,7 @@
   // something at a time. Residents make and manage their own; a person who
   // may manage one can reschedule or cancel it here. There is no "create".
   import { router } from '@inertiajs/svelte';
+  import { commitmentStatusLine, commitmentWhen } from '$lib/commitment-display';
 
   let { commitments = {}, agentName = 'This resident' } = $props();
 
@@ -11,15 +12,6 @@
   let past = $derived(items.filter((c) => c.status !== 'scheduled'));
   let rescheduling = $state(null);
   let newTime = $state('');
-
-  function when(value, zone) {
-    if (!value) return null;
-    return new Intl.DateTimeFormat('en-GB', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      timeZone: zone || 'UTC',
-    }).format(new Date(value));
-  }
 
   function localInputValue(value) {
     const date = new Date(value);
@@ -32,37 +24,8 @@
     return date.toISOString();
   }
 
-  const WAITING = {
-    live_activity_disabled: 'live activity is switched off',
-    resident_not_member: 'the resident is no longer in this house',
-    billing_hold: 'the resident is held for billing',
-    resident_paused: 'the resident is paused',
-    resident_unavailable: 'the resident cannot run right now',
-    conversation_unavailable: 'the conversation is archived',
-    resident_not_in_conversation: 'the resident has left the conversation',
-  };
-
-  function statusLine(c) {
-    if (c.status === 'cancelled') {
-      const what = c.wake_state === 'withdrawn' ? 'Stopped after it was posted' : 'Cancelled';
-      return `${what} ${when(c.cancelled_at, c.timezone)}${c.cancelled_by ? ` by ${c.cancelled_by}` : ''}.`;
-    }
-    if (c.status === 'activated') {
-      const delivered = `Posted ${when(c.activated_at, c.timezone)}.`;
-      const wake = {
-        delivered: `${agentName} has it: the run that carried it finished ${when(c.delivered_at, c.timezone)}.`,
-        woken: `${agentName} has been woken for it.`,
-        held: `${agentName} was busy there, so the wake waits for that run to end.`,
-        retrying: `The wake has not reached ${agentName} yet (${WAITING[c.wake_reason] || c.wake_reason}); it is tried again every minute.`,
-        blocked: `The house stopped trying to wake ${agentName} for it: ${c.wake_reason}.`,
-      }[c.wake_state];
-      return wake ? `${delivered} ${wake}` : delivered;
-    }
-    if (c.waiting_reason) {
-      return `Due and waiting: ${WAITING[c.waiting_reason] || c.waiting_reason}. Tried ${when(c.last_attempted_at, c.timezone)}; tried again every minute.`;
-    }
-    return 'Scheduled.';
-  }
+  const when = commitmentWhen;
+  const statusLine = (c) => commitmentStatusLine(c, agentName);
 
   function cancel(c) {
     if (!confirm(`Cancel this commitment of ${agentName}'s?`)) return;

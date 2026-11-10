@@ -21,6 +21,7 @@
   import { resetListen } from '$lib/listen';
   import ChatOverlays from '$lib/components/chat/ChatOverlays.svelte';
   import ConversationCostDrawer from '$lib/components/chat/ConversationCostDrawer.svelte';
+  import ConversationCommitmentsDrawer from '$lib/components/chat/ConversationCommitmentsDrawer.svelte';
 
   let {
     chat,
@@ -42,6 +43,7 @@
   let showAllMessages = $state(false);
   let debugMode = $state(false);
   let showCosts = $state(false);
+  let showCommitments = $state(false);
   let showMessageTelemetry = $state(false);
   let sidebarOpen = $state(false);
   let previousChatId;
@@ -145,6 +147,7 @@
         bind:showAllMessages
         bind:debugMode
         bind:showCosts
+        bind:showCommitments
         bind:showMessageTelemetry
         onsidebaropen={() => (sidebarOpen = true)}
         onassignagent={() => (actions.ui.assignAgentOpen = true)}
@@ -206,6 +209,7 @@
 </div>
 
 <ConversationCostDrawer bind:open={showCosts} breakdown={costBreakdown} {contextTokens} />
+<ConversationCommitmentsDrawer bind:open={showCommitments} accountId={account?.id} chatId={chat?.id} />
 <ChatOverlays
   {chat}
   {account}

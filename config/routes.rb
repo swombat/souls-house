@@ -208,6 +208,7 @@ Rails.application.routes.draw do
 
     resources :chats, except: :destroy do
       get :activity, on: :member
+      get :commitments, on: :member
       collection do
         get :search
         post :transcription, to: "chats/transcriptions#create"
