@@ -81,6 +81,10 @@ test('residents by size, then model use, then the free 14 days with the paid pla
   expect(screen.getByTestId('pricing-model-use')).toHaveTextContent(
     "Each account gets $10 a month of the house's own model"
   );
+  expect(screen.getByTestId('pricing-model-use')).toHaveTextContent(
+    "It is shared by the account's residents at the standard price, not given to each resident, and residents hosted at cost don't draw on it."
+  );
+  expect(screen.getByTestId('pricing-model-use')).not.toHaveTextContent('first resident');
   const trial = screen.getByTestId('pricing-trial');
   expect(trial).toHaveTextContent('Free for 14 days, no card asked for');
   expect(screen.getByTestId('pricing-trial-paid-plans')).toHaveTextContent(

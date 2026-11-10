@@ -20,9 +20,9 @@
     keysConfigured = {},
     canManageKeys = false,
     // In an account that pays per resident, the house model is paid for by the
-    // account's allowance, not the free grant: [lowest, highest] a resident
-    // can carry, in USD. The account has one allowance, carried by one
-    // resident at the standard price.
+    // account's allowance, not the free grant: [lowest, highest] across the
+    // offers, in USD (at cost draws on none). The account has one allowance,
+    // shared by its residents at the standard price.
     planAllowance = null,
   } = $props();
 
@@ -80,7 +80,8 @@
           <span class="block font-medium">I don't have my own keys</span>
           <span class="block text-sm text-muted-foreground">
             {#if allowanceText}
-              The account includes {allowanceText} a month of the house's models, with its first resident.
+              The account includes {allowanceText} a month of the house's models, shared by its residents at the standard
+              price.
             {:else}
               The house pays for a small model, up to $10 a month.
             {/if}

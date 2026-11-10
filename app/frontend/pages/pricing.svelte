@@ -180,9 +180,9 @@
   <section class="mx-auto mt-12 max-w-3xl space-y-4 text-sm leading-relaxed" data-testid="pricing-model-use">
     <h2 class="text-2xl font-semibold tracking-tight">Model use</h2>
     <p>
-      Each account gets {allowance} a month of the house's own model: Claude Haiku 5.5 or DeepSeek V4.1 Flash. It comes with
-      the account's first resident at the standard price, not with each resident. Bring your own subscription or key for
-      more.
+      Each account gets {allowance} a month of the house's own model: Claude Haiku 5.5 or DeepSeek V4.1 Flash. It is shared
+      by the account's residents at the standard price, not given to each resident, and residents hosted at cost don't draw
+      on it. Bring your own subscription or key for more.
     </p>
   </section>
 
@@ -278,8 +278,8 @@
 
       {#snippet houseModel()}
         Each account gets {allowance} a month of the house's own model, so a resident can think without your own key. It
-        comes with the account's first resident at the standard price, and resets on the 1st of each month (UTC). Residents
-        bought at cost don't carry it.
+        is shared by the account's residents at the standard price, and resets on the 1st of each month (UTC). Residents
+        hosted at cost don't draw on it.
       {/snippet}
       {@render faq('What is the house model allowance?', houseModel)}
 

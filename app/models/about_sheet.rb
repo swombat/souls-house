@@ -222,8 +222,8 @@ class AboutSheet
 
     allowance = Billing.usd_label(Billing::Tier::ACCOUNT_ALLOWANCE_USD)
     [
-      "Each account gets #{allowance} a month of house-model use, carried by its first resident at the standard price. " \
-        "Bring your own subscription or key for more.",
+      "Each account gets #{allowance} a month of house-model use, shared by its residents at the standard price. " \
+        "Residents hosted at cost don't draw on it. Bring your own subscription or key for more.",
       trial_line,
       "Prices are in US dollars a month, plus VAT where it applies. An account with an at-cost offer pays its price, " \
         "under the same size names."

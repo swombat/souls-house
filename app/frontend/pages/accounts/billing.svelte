@@ -187,9 +187,9 @@
         {/each}
       </div>
       <p class="text-xs text-muted-foreground">
-        Each size is hosting for one resident, in a container on the shared house server. The account's $10 a month of
-        house-model use comes with one resident at the standard price, and resets on the 1st (UTC). Residents bought at
-        cost don't carry it.
+        Each size is hosting for one resident, in a container on the shared house server. The account gets $10 a month
+        of house-model use, shared by its residents at the standard price, and it resets on the 1st (UTC). Residents
+        hosted at cost don't draw on it.
       </p>
     </section>
 

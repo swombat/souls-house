@@ -24,18 +24,16 @@
         {allowance.plan} · {trialEnd ? '$10 for the free trial' : `$${allowance.limit_usd.toFixed(2)} this month`}
       </h3>
       <p>
-        {#if trialEnd && allowance.rate !== 'at_cost' && allowance.limit_usd > 0}
-          This resident carries the account's house-model allowance during its free trial: $10 in all until {trialEnd},
-          not $10 a month. It is shared across house models. If the resident is kept after the trial, the allowance
-          becomes $10 a month.
-        {:else if allowance.rate === 'at_cost'}
+        {#if allowance.rate === 'at_cost'}
           Paid for at cost, so it includes no house-model use: this resident runs on its own model subscription or key.
-        {:else if allowance.limit_usd > 0}
-          This resident carries the account's house-model allowance. It is shared across house models and resets each
-          calendar month in UTC, with no rollover. The free $10 allowance isn't used while the resident is paid for.
+        {:else if trialEnd}
+          During the free trial the account's house-model allowance is $10 in all until {trialEnd}, not $10 a month. It
+          is shared by the account's residents at the standard price and across house models. If the resident is kept
+          after the trial, the allowance becomes $10 a month.
         {:else}
-          The account's house-model allowance is carried by another of its residents. This one runs on its own model
-          subscription or key.
+          The account gets $10 a month of house-model use, shared by its residents at the standard price and across
+          house models. It resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while
+          the resident is paid for.
         {/if}
       </p>
     {:else if allowance?.source === 'free'}

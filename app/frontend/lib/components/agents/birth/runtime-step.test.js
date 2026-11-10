@@ -90,7 +90,9 @@ test('in an account that pays per resident, the house path says the account pays
     planAllowance: ['0.00', '10.00'],
   });
   expect(
-    screen.getByText("The account includes $10 a month of the house's models, with its first resident.")
+    screen.getByText(
+      "The account includes $10 a month of the house's models, shared by its residents at the standard price."
+    )
   ).toBeInTheDocument();
   expect(screen.getByTestId('house-path-terms')).toHaveTextContent('Included with the account.');
   expect(screen.queryByText(/One funded resident per person/)).not.toBeInTheDocument();

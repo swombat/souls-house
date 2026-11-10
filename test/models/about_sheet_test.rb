@@ -58,7 +58,8 @@ class AboutSheetTest < ActiveSupport::TestCase
       "of this size. The resident a plan includes can be medium for $10 more."
     assert_includes text, "- **Large**: Heavy building, and several sub-agents at once. $49.99 a month each: hosting for one " \
       "resident of this size. The resident a plan includes can be large for $40 more."
-    assert_includes text, "Each account gets $10 a month of house-model use, carried by its first resident at the standard price."
+    assert_includes text, "Each account gets $10 a month of house-model use, shared by its residents at the standard price. " \
+      "Residents hosted at cost don't draw on it."
     assert_includes text, "Free for 14 days, no card asked for: the first resident of a new account, small, once per account."
     assert_includes text, "Partners and Colleagues are never free: their $20 or $50 a month is charged from the day you choose one"
     assert_includes text, "plus VAT where it applies"
