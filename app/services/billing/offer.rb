@@ -26,7 +26,9 @@ module Billing
     def id = standard? ? tier.id : "#{tier.id}_#{rate}"
     def name = standard? ? tier.name : "#{tier.name} at cost"
     def monthly_usd = standard? ? tier.monthly_usd : Tier::AT_COST_MONTHLY_USD.fetch(tier.id)
-    def allowance_usd = standard? ? tier.allowance_usd : 0
+    # What a resident bought at this rate can carry of the account's
+    # allowance. At cost never carries it.
+    def allowance_usd = standard? ? tier.allowance_usd : BigDecimal("0")
 
     # Stripe price ids differ between test and live mode, so they are
     # configuration. An offer may have several, current first: re-costing
@@ -46,11 +48,11 @@ module Billing
     def purchasable? = price_id.present?
 
     # The tier's features at this rate: the allowance is the rate's.
-    def features = tier.features.merge(allowance_usd: allowance_usd)
+    def features = tier.features.merge(allowance_usd: Billing.usd(allowance_usd))
 
     def as_json(*)
-      { id: id, tier: tier.id, rate: rate, name: name, monthly_usd: monthly_usd, allowance_usd: allowance_usd,
-        purchasable: purchasable?, features: features }
+      { id: id, tier: tier.id, size: tier.size, rate: rate, name: name, monthly_usd: Billing.usd(monthly_usd),
+        allowance_usd: Billing.usd(allowance_usd), purchasable: purchasable?, features: features }
     end
   end
 end

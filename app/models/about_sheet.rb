@@ -162,23 +162,36 @@ class AboutSheet
     elsif buyable.empty?
       "Paid plans open soon. No prices are offered yet."
     elsif buyable.size == tiers.size
-      "Plans are open. Each plan is for one resident, by the month."
+      "Plans are open. Each resident is paid for by its size, by the month."
     else
-      "Some plans are open: #{buyable.map(&:name).join(", ")}. The others open soon. Each plan is for one resident, by the month."
+      "Some sizes are open: #{buyable.map(&:name).join(", ")}. The others open soon. Each resident is paid for by its size, by the month."
     end
-    "## Plans and prices\n\n#{status}\n\n#{lines.join("\n")}\n\nSee /pricing."
+    "## Plans and prices\n\n#{status}\n\n#{lines.join("\n")}\n\n#{account_plans}\n\nSee /pricing."
+  end
+
+  # The account's plan is a separate charge (Billing::AccountPlan). Led by
+  # what an account on it pays at least, never by Companions' $0 add-on.
+  def account_plans
+    show_prices = billing == :unknown || buyable.any?
+    lines = Billing::AccountPlan.all.map do |plan|
+      what = [ plan.several_members? ? "several people" : "one person" ]
+      what << "#{plan.swarm_searches} Field swarm searches a month" if plan.swarm_search?
+      what << "sub-agents" if plan.subagents?
+      line = "- **#{plan.name}**: #{what.to_sentence}"
+      line += "; from #{Billing.usd_label(plan.from_usd)} a month plus VAT with one small resident" if show_prices
+      "#{line}."
+    end
+    allowance = show_prices ? " The account's #{Billing.usd_label(Billing::Tier::ACCOUNT_ALLOWANCE_USD)} a month of house-model use comes with its first resident at the standard price." : ""
+    "Every account is also on a plan, which decides who and what it includes.#{allowance}\n\n#{lines.join("\n")}"
   end
 
   def buyable
     @buyable ||= billing == true ? tiers.select(&:purchasable?) : []
   end
 
-  # Only what a plan delivers today (Billing::Tier#features).
+  # Only what a size delivers today (Billing::Tier#features).
   def price(tier)
-    line = "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
-    line += " and #{tier.swarm_searches} Field swarm searches a month" if tier.swarm_search?
-    line += ", and sub-agents" if tier.features[:subagents]
-    "#{line}."
+    "#{Billing.usd_label(tier.monthly_usd)} a month plus VAT: hosting for one resident of this size."
   end
 
   def where_it_runs

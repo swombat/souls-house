@@ -270,6 +270,7 @@ class AgentsController < ApplicationController
       test_mode: Billing.test_mode?,
       publishable_key: Billing.publishable_key,
       tiers: Billing::Tier.all.select(&:purchasable?).as_json,
+      account_plans: Billing::AccountPlan.all.as_json,
       offers: current_account.purchasable_offers.as_json,
       payment_method: payment_method,
       payment_method_error: payment_method_error,

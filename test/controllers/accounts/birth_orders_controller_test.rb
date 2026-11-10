@@ -30,6 +30,7 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert billing.fetch("can_pay")
     assert_equal({ "brand" => "visa", "last4" => "4242", "exp_month" => 10, "exp_year" => 2030 }, billing.fetch("payment_method"))
     assert_equal %w[conversation life work], billing.fetch("tiers").map { |tier| tier["id"] }
+    assert_equal %w[companions partners colleagues], billing.fetch("account_plans").map { |plan| plan["id"] }
     assert_equal account_birth_orders_path(@account), billing.fetch("birth_orders_url")
 
     @account.update!(billing_required: false)

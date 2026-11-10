@@ -45,10 +45,14 @@ class AboutSheetTest < ActiveSupport::TestCase
     text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"))
     assert_includes text, "Plans are open."
     Billing::Tier.all.each do |tier|
-      assert_includes text, "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
+      assert_includes text, "#{Billing.usd_label(tier.monthly_usd)} a month plus VAT: hosting for one resident of this size."
     end
-    assert_includes text, "and 20 Field swarm searches a month."
-    assert_includes text, "and 100 Field swarm searches a month, and sub-agents."
+    assert_includes text, "$9.99 a month plus VAT"
+    assert_includes text, "- **Companions**: one person; from $9.99 a month plus VAT with one small resident."
+    assert_includes text, "- **Partners**: several people and 20 Field swarm searches a month; from $29.99"
+    assert_includes text, "- **Colleagues**: several people, 100 Field swarm searches a month, and sub-agents; from $59.99"
+    assert_includes text, "The account's $10 a month of house-model use comes with its first resident at the standard price."
+    refute_includes text, "$0", "Companions is never shown as free"
     refute_match(/vCPU|GB memory|GB disk|transcription|backup/i, text[/## Plans and prices.*?(?=\n## )/m])
     refute_includes text, "open soon"
     source = AboutSheet.features.find { |row| row[:key] == "billing" }[:description].squish
@@ -58,12 +62,12 @@ class AboutSheetTest < ActiveSupport::TestCase
   test "a partly priced catalogue offers only the plans that can be bought" do
     text = sheet(billing_open: true, tiers: priced("conversation"))
     plans = text[/## Plans and prices.*?(?=\n## )/m]
-    assert_includes plans, "Some plans are open: Conversation. The others open soon."
-    assert_includes plans, "$20 a month"
-    assert_match(/\*\*Life\*\*: [^\n]* Opens soon\./, plans)
-    assert_match(/\*\*Work\*\*: [^\n]* Opens soon\./, plans)
-    refute_includes plans, "$50"
-    refute_includes plans, "$100"
+    assert_includes plans, "Some sizes are open: Small. The others open soon."
+    assert_includes plans, "$9.99 a month"
+    assert_match(/\*\*Medium\*\*: [^\n]* Opens soon\./, plans)
+    assert_match(/\*\*Large\*\*: [^\n]* Opens soon\./, plans)
+    refute_includes plans, "$19.99"
+    refute_includes plans, "$49.99"
     refute_includes plans, "Plans are open."
   end
 

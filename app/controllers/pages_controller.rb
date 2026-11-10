@@ -7,7 +7,7 @@ class PagesController < ApplicationController
   def home
     @share_video = true
     render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE),
-      from_usd: Billing::Tier.all.map(&:monthly_usd).min }
+      from_usd: Billing.usd(Billing::AccountPlan.all.map(&:from_usd).min) }
   end
 
   def features
@@ -51,6 +51,7 @@ class PagesController < ApplicationController
   def pricing
     render inertia: "pricing", props: {
       tiers: Billing::Tier.all.map { |tier| pricing_tier_json(tier) },
+      account_plans: Billing::AccountPlan.all.as_json,
       billing_open: Billing.configured?,
       contact_email: Billing.contact_email
     }
@@ -70,8 +71,9 @@ class PagesController < ApplicationController
     {
       id: tier.id,
       name: tier.name,
-      monthly_usd: tier.monthly_usd,
-      allowance_usd: tier.allowance_usd,
+      size: tier.size,
+      monthly_usd: Billing.usd(tier.monthly_usd),
+      allowance_usd: Billing.usd(tier.allowance_usd),
       purchasable: tier.purchasable?,
       features: tier.features
     }

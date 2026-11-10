@@ -1,12 +1,19 @@
-# The server-owned plan catalogue. A Stripe price that isn't here is refused.
+# The server-owned catalogue of resident sizes. A Stripe price that isn't
+# here is refused. Every resident is paid for by its size; what the account
+# can do (members, swarm searches, sub-agents) is its plan, a separate charge
+# (Billing::AccountPlan). The ids are the original plan names and stay: they
+# are in the database, Stripe metadata and the credentials keys. People see
+# the size: Small, Medium, Large (2026-11-10).
 #
 # Each plan's numbers were costed against what the house pays at full use
 # (Lume's table in WjNvXj/YwkgkY, 2026-10-14; Daniel agreed): the Hetzner
 # machine, the house-model allowance, Scribe transcription at $0.22/h, Restic
 # backups at S3 list price, swarm reads and Stripe's fee. Every plan keeps a
 # positive margin even when someone uses all of it. Change a number here and
-# re-cost it. Conversation's allowance is $10 (Daniel, WjNvXj/JzPOVe;
-# applied 2026-10-26 after it had stayed at the $8 of the first table).
+# re-cost it. The house-model allowance is no longer a resident's: it is $10
+# a month per account, carried by one standard-rate resident
+# (ResidentSubscription#includes_allowance). allowance_usd here is what a
+# standard-rate resident of the size can carry, the same for every size.
 #
 # memory_gb and cpu_shares are the container limits while residents still live
 # on the shared house server; the machine is what a plan gets once hosting moves
@@ -37,17 +44,24 @@ module Billing
     # working. No house-model allowance. Re-cost by hand when Hetzner or the
     # exchange rate moves: that makes a new Stripe price, and the old id
     # stays in the list (#619).
-    AT_COST_MONTHLY_USD = { "conversation" => 8, "life" => 11, "work" => 20 }.freeze
+    AT_COST_MONTHLY_USD = { "conversation" => BigDecimal("8"), "life" => BigDecimal("11"), "work" => BigDecimal("20") }.freeze
 
-    attr_reader :id, :name, :monthly_usd, :allowance_usd, :memory_gb, :cpu_shares, :server_type,
+    # The house-model allowance, per account per UTC month, carried by one
+    # live standard-rate resident (ResidentSubscription#includes_allowance).
+    ACCOUNT_ALLOWANCE_USD = BigDecimal("10")
+
+    SIZES = %w[small medium large].freeze
+
+    attr_reader :id, :name, :size, :monthly_usd, :allowance_usd, :memory_gb, :cpu_shares, :server_type,
       :transcription_hours, :backup_gb, :swarm_searches, :connections
 
-    def initialize(id:, name:, monthly_usd:, allowance_usd:, memory_gb:, cpu_shares:, server_type:,
+    def initialize(id:, name:, size:, monthly_usd:, memory_gb:, cpu_shares:, server_type:,
       transcription_hours:, backup_gb:, swarm_searches: 0, connections: [])
       @id = id
       @name = name
-      @monthly_usd = monthly_usd
-      @allowance_usd = allowance_usd
+      @size = size
+      @monthly_usd = BigDecimal(monthly_usd)
+      @allowance_usd = ACCOUNT_ALLOWANCE_USD
       @memory_gb = memory_gb
       @cpu_shares = cpu_shares
       @server_type = server_type
@@ -57,12 +71,14 @@ module Billing
       @connections = connections
     end
 
+    # swarm_searches stay for costing what a size used to include; the
+    # account's searches come from its plan (Billing::AccountPlan), not here.
     CATALOGUE = [
-      new(id: "conversation", name: "Conversation", monthly_usd: 20, allowance_usd: 10, memory_gb: 4, cpu_shares: 1024,
+      new(id: "conversation", name: "Small", size: "small", monthly_usd: "9.99", memory_gb: 4, cpu_shares: 1024,
         server_type: "cx23", transcription_hours: 5, backup_gb: 10),
-      new(id: "life", name: "Life", monthly_usd: 50, allowance_usd: 25, memory_gb: 8, cpu_shares: 2048,
+      new(id: "life", name: "Medium", size: "medium", monthly_usd: "19.99", memory_gb: 8, cpu_shares: 2048,
         server_type: "cx33", transcription_hours: 20, backup_gb: 50, swarm_searches: 20, connections: CONNECTIONS),
-      new(id: "work", name: "Work", monthly_usd: 100, allowance_usd: 45, memory_gb: 16, cpu_shares: 4096,
+      new(id: "work", name: "Large", size: "large", monthly_usd: "49.99", memory_gb: 16, cpu_shares: 4096,
         server_type: "cx43", transcription_hours: 40, backup_gb: 200, swarm_searches: 100,
         connections: CONNECTIONS)
     ].freeze
@@ -84,8 +100,6 @@ module Billing
       Offer.for_price(price_id)&.tier
     end
 
-    def self.with_swarm_search = CATALOGUE.select(&:swarm_search?)
-
     def offer(rate = "standard") = Offer.new(tier: self, rate: rate.to_s)
 
     def offers = RATES.map { |rate| offer(rate) }
@@ -97,24 +111,22 @@ module Billing
 
     def machine = MACHINES.fetch(server_type)
 
-    def swarm_search? = swarm_searches.positive?
-
-    # What the plan includes, for the public page, the Billing tab, the
-    # creation wizard and the about-sheet. Only what a plan delivers today
-    # (Daniel, 2026-10-25, going live): hosting for one resident, the monthly
-    # house-model allowance (ResidentEntitlement) and swarm searches
-    # (Account#field_swarm_plan_searches), and sub-agents on the plans in
-    # Agent::Subagents::SUBAGENT_TIERS. The machine, transcription hours, backup space
-    # and connections above stay for costing and are not shown until each one
-    # ships; add it here when it does.
+    # What the size includes, for the public page, the Billing tab, the
+    # creation wizard and the about-sheet. Only what a size delivers today:
+    # hosting for one resident, and the account's house-model allowance if
+    # this resident is the one carrying it (allowance_usd is what it can
+    # carry). Swarm searches and sub-agents are the account plan's
+    # (Billing::AccountPlan#features). The machine, transcription hours,
+    # backup space and connections above stay for costing and are not shown
+    # until each one ships; add it here when it does.
     def features
-      { hosting: true, allowance_usd: allowance_usd, swarm_searches: swarm_searches,
-        subagents: id.in?(Agent::Subagents::SUBAGENT_TIERS) }
+      { hosting: true, allowance_usd: Billing.usd(allowance_usd) }
     end
 
+    # Money is a two-place decimal string in JSON ("9.99"), never a float.
     def as_json(*)
       {
-        id: id, name: name, monthly_usd: monthly_usd, allowance_usd: allowance_usd,
+        id: id, name: name, size: size, monthly_usd: Billing.usd(monthly_usd), allowance_usd: Billing.usd(allowance_usd),
         purchasable: purchasable?, features: features
       }
     end

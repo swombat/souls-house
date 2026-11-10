@@ -28,17 +28,31 @@ class PricingPageTest < ActionDispatch::IntegrationTest
       Billing::Tier.all.each do |tier|
         card = tiers.find { |row| row["id"] == tier.id }
         assert_equal tier.name, card["name"]
-        assert_equal tier.monthly_usd, card["monthly_usd"]
-        assert_equal tier.allowance_usd, card["allowance_usd"]
+        assert_equal tier.size, card["size"]
+        assert_equal Billing.usd(tier.monthly_usd), card["monthly_usd"]
+        assert_equal Billing.usd(tier.allowance_usd), card["allowance_usd"]
         assert_equal tier.features.stringify_keys, card["features"]
       end
       assert_equal %w[conversation life work], tiers.map { |row| row["id"] }
+      assert_equal %w[9.99 19.99 49.99], tiers.map { |row| row["monthly_usd"] }
       assert tiers.none? { |row| row.key?("memory_gb") || row.key?("cpu_shares") }, "container limits stay server-side"
-      # Going live (Daniel, 2026-10-25): a plan shows only what it delivers today.
+      # Going live (Daniel, 2026-10-25): a size shows only what it delivers
+      # today. Swarm searches and sub-agents are the account plan's.
       tiers.each do |row|
-        assert_equal %w[allowance_usd hosting subagents swarm_searches], row["features"].keys.sort, row["id"]
-        assert_equal row["id"] == "work", row["features"]["subagents"], "sub-agents only on Work"
+        assert_equal %w[allowance_usd hosting], row["features"].keys.sort, row["id"]
       end
+    end
+  end
+
+  test "account plans lead with what an account pays at least, never Companions' $0" do
+    without_stripe_env do
+      get pricing_path
+
+      plans = inertia_shared_props["account_plans"]
+      assert_equal %w[companions partners colleagues], plans.map { |plan| plan["id"] }
+      assert_equal %w[9.99 29.99 59.99], plans.map { |plan| plan["from_usd"] }
+      assert_equal({ "members" => "several", "swarm_searches" => 100, "subagents" => true }, plans.last["features"])
+      assert plans.none? { |plan| plan["purchasable"] }
     end
   end
 
