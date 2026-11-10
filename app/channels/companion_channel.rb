@@ -24,6 +24,16 @@ class CompanionChannel < ApplicationCable::Channel
     end
   end
 
+  # The companion's report of its local ceiling, sent once after "ready".
+  # Stored only while this subscription's epoch is still the device's
+  # current one; anything else is dropped without a reply.
+  def report_ceiling(data)
+    return unless @epoch
+
+    current_companion_device.record_ceiling_report!(epoch: @epoch, claimed_epoch: data["connection_epoch"],
+      ceiling: data["ceiling"])
+  end
+
   def unsubscribed
     return unless @epoch
 

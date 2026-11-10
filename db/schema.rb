@@ -979,6 +979,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_160000) do
     t.datetime "revoked_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "reported_ceiling"
+    t.datetime "ceiling_reported_at"
+    t.string "ceiling_epoch"
     t.index ["account_id"], name: "index_companion_devices_on_account_id"
     t.index ["companion_enrollment_grant_id"], name: "index_companion_devices_on_companion_enrollment_grant_id", unique: true
     t.index ["credential_digest"], name: "index_companion_devices_on_credential_digest", unique: true

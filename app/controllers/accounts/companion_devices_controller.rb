@@ -17,7 +17,8 @@ class Accounts::CompanionDevicesController < ApplicationController
       devices: devices.map { |device| device_json(device, agents, activity) },
       warnings: {
         execute: CompanionEnrollmentGrant::EXECUTE_WARNING,
-        desktop: CompanionEnrollmentGrant::DESKTOP_WARNING
+        desktop: CompanionEnrollmentGrant::DESKTOP_WARNING,
+        write: CompanionEnrollmentGrant::WRITE_WARNING
       }
     }
   end
@@ -26,6 +27,8 @@ class Accounts::CompanionDevicesController < ApplicationController
     device = CompanionDevice.where(account: @account).where(revoked_at: nil).find(params[:id])
     if params[:control] == "authority"
       change_authority(device)
+    elsif params[:control] == "volume"
+      change_volume(device)
     elsif CompanionDevice::CONTROLS.include?(params[:control])
       control = params[:control]
       device.apply_control!(control) { audit("companion_#{control}", device) }
@@ -84,6 +87,27 @@ class Accounts::CompanionDevicesController < ApplicationController
     end
   end
 
+  # One folder for one resident per request: off, read or write. The model
+  # keeps every other folder and both switches as stored, and refuses to
+  # widen past what the computer last reported it allows.
+  def change_volume(device)
+    access = params[:access].to_s
+    unless params[:resident_id].is_a?(String) && params[:volume].is_a?(String) &&
+        CompanionDevice::ACCESS_RANK.key?(access)
+      return redirect_to account_companion_devices_path(@account), alert: "That change wasn't understood"
+    end
+
+    changed = device.change_resident_volume!(resident_id: params[:resident_id], volume: params[:volume],
+      access: access, actor: Current.user)
+    notice = changed ? "Saved. Work already running on #{device.name} was stopped." : "Nothing changed"
+    redirect_to account_companion_devices_path(@account), notice: notice
+  rescue CompanionDevice::AboveCeiling
+    redirect_to account_companion_devices_path(@account),
+      alert: "#{device.name} doesn't allow that. Widen it on the computer first, then try again."
+  rescue ArgumentError, CompanionEnrollmentGrant::InvalidPolicy
+    redirect_to account_companion_devices_path(@account), alert: "That change wasn't possible"
+  end
+
   def device_json(device, agents, activity)
     {
       id: device.to_param,
@@ -92,6 +116,7 @@ class Accounts::CompanionDevicesController < ApplicationController
       connected: device.connection_epoch.present?,
       enrolled_at: device.created_at,
       activity: activity.fetch(device.id, { days: [], failed: 0, last_job_at: nil }),
+      ceiling: (ceiling_json(device) if admin?),
       residents: device.policy.fetch("residents").map do |resident|
         agent = agents[resident["id"]]
         {
@@ -109,6 +134,19 @@ class Accounts::CompanionDevicesController < ApplicationController
     device.policy.fetch("residents").map { |resident| Agent.decode_id(resident["id"]) }
   rescue Hashids::InputError
     []
+  end
+
+  # What the computer last said its own ceiling allows, for owners and admins
+  # only. nil means it has never reported (an older companion): the page then
+  # leaves folders read-only. `current` is false once that connection is gone.
+  def ceiling_json(device)
+    return unless device.reported_ceiling
+
+    {
+      reported_at: device.ceiling_reported_at,
+      current: device.connection_epoch.present? && device.ceiling_epoch == device.connection_epoch,
+      residents: device.reported_ceiling.fetch("residents").to_h { |r| [ r["id"], r["volumes"] ] }
+    }
   end
 
   def control_notice(device, control)
