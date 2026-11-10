@@ -85,6 +85,10 @@ class SyncChannel < ApplicationCable::Channel
       model: Whiteboard,
       collections: []
     },
+    "FieldTable" => {
+      model: FieldTable,
+      collections: []
+    },
     "FieldFile" => {
       model: FieldFile,
       collections: []
