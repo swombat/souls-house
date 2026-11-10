@@ -56,14 +56,21 @@
     event.preventDefault();
     if (!editing) return;
     if (editing.mode === 'new') {
-      const data = Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== ''));
+      const data = Object.fromEntries(
+        Object.entries(draft).filter(([, v]) => v !== '' && v !== undefined && v !== null)
+      );
       router.post(`${base}/rows`, { data }, opts({ onSuccess: () => ((error = ''), closeEditor()) }));
     } else {
       // Send every column: unchanged values are rewritten as they were, and
       // a cleared box clears the cell.
       router.patch(
         `${base}/rows/${editing.row.id}`,
-        { data: { ...draft }, lock_version: editing.row.lock_version },
+        {
+          // A cleared number box binds to undefined, which JSON would drop;
+          // null is what clears the cell on the server.
+          data: Object.fromEntries(Object.entries(draft).map(([k, v]) => [k, v === undefined || v === '' ? null : v])),
+          lock_version: editing.row.lock_version,
+        },
         opts({ onSuccess: () => ((error = ''), closeEditor()) })
       );
     }

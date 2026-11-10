@@ -67,13 +67,13 @@ class FieldTable
 
     def cast_number(value)
       return value if value.is_a?(Integer)
-      return (value.finite? ? value : invalid!(value, "a number")) if value.is_a?(Float)
+      return (value.finite? ? value : invalid!(value, "a finite number")) if value.is_a?(Float)
       return cast_number(value.to_f) if value.is_a?(BigDecimal)
       invalid!(value, "a number") unless value.is_a?(String)
 
       text = value.strip
-      return Integer(text, 10) if text.match?(/\A-?\d+\z/)
-      return Float(text) if text.match?(/\A-?(\d+\.\d*|\.\d+|\d+)([eE][-+]?\d+)?\z/)
+      return Integer(text, 10) if text.match?(/\A-?\d{1,300}\z/)
+      return cast_number(Float(text)) if text.match?(/\A-?(\d+\.\d*|\.\d+|\d+)([eE][-+]?\d+)?\z/)
 
       invalid!(value, "a number")
     end

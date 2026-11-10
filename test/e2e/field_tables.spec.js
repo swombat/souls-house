@@ -47,6 +47,14 @@ test('a member makes a table, adds a column, and adds, edits and deletes a row',
   await expect(page.getByRole('cell', { name: '40', exact: true })).toBeVisible();
   await shot('table-desktop');
 
+  // Clearing a number clears the cell (an empty number box must not be dropped).
+  await page.getByRole('button', { name: 'Edit row' }).click();
+  await page.locator('input[name="views"]').fill('');
+  await page.getByRole('button', { name: 'Save row' }).click();
+  await expect(page.getByRole('button', { name: 'Save row' })).toHaveCount(0);
+  await expect(page.getByRole('cell', { name: '40', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('cell', { name: 'First post' })).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('cell', { name: 'First post' })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

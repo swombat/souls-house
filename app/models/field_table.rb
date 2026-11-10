@@ -159,8 +159,7 @@ class FieldTable < ApplicationRecord
 
       list = column_list.map { |c| c.key == current.key ? changed : c }
       self.columns = self.class.validated_columns(list, limits)
-      convert_values!(current, changed) if changed.type != current.type
-      rename_key!(current.key, changed.key) if changed.key != current.key
+      rewrite_column!(current, changed) if changed.type != current.type || changed.key != current.key
       self.updated_by = by
       save!
       changed
@@ -326,22 +325,33 @@ class FieldTable < ApplicationRecord
     raise Refused, "#{where}#{e.message}"
   end
 
-  def convert_values!(from, to)
+  # Converts and/or renames one column in every live row, checking each
+  # row's final size against the cap; any refusal rolls the whole change
+  # back (we are inside #locked). Discarded rows only follow a rename.
+  def rewrite_column!(from, to)
     live_rows.where("data ? :key", key: from.key).find_each do |row|
-      converted = begin
-        to.cast(row.data[from.key])
-      rescue Column::Invalid => e
-        raise Refused, "Can't make #{from.key} a #{to.type} column: in row #{row.to_param}, #{e.message}"
+      value = row.data[from.key]
+      if to.type != from.type
+        value = begin
+          to.cast(value)
+        rescue Column::Invalid => e
+          raise Refused, "Can't make #{from.key} a #{to.type} column: in row #{row.to_param}, #{e.message}"
+        end
       end
-      data = row.data.merge(from.key => converted).compact
+      data = row.data.except(from.key)
+      data[to.key] = value unless value.nil?
+      bytes = data.to_json.bytesize
+      if bytes > limits.row_bytes
+        raise Refused, "That change would make row #{row.to_param} #{bytes} bytes, past the #{limits.row_bytes}-byte limit (nothing was changed)"
+      end
+
       row.update_columns(data: data, lock_version: row.lock_version + 1, updated_at: Time.current)
     end
-  end
+    return if to.key == from.key
 
-  def rename_key!(old_key, new_key)
-    rows.where("data ? :key", key: old_key).update_all([
-      "data = (data - :old) || jsonb_build_object(:new, data -> :old), lock_version = lock_version + 1, updated_at = now()",
-      { old: old_key, new: new_key }
+    rows.discarded.where("data ? :key", key: from.key).update_all([
+      "data = (data - :old) || jsonb_build_object(:new, data -> :old), updated_at = now()",
+      { old: from.key, new: to.key }
     ])
   end
 

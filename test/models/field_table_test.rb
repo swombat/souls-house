@@ -117,6 +117,36 @@ class FieldTableTest < ActiveSupport::TestCase
     assert_equal %w[12 13 x], @table.live_rows.map { |r| r.data["platform"] }
   end
 
+  test "a column rename that would push a row past the byte limit is refused whole" do
+    table = FieldTable.create_in!(@account, name: "wide", columns: [ { key: "a" }, { key: "b", type: "number" } ])
+    big = "x" * (FieldTable::Limits::ROW_BYTES - { "a" => "" }.to_json.bytesize)
+    row = table.add_rows!([ { "a" => big } ], by: @user).first
+    assert_equal FieldTable::Limits::ROW_BYTES, row.data.to_json.bytesize
+
+    error = assert_raises(FieldTable::Refused) { table.change_column!("a", { key: "a#{'b' * 150}" }, by: @user) }
+    assert_match "past the 4096-byte limit", error.message
+    assert_equal %w[a b], table.reload.column_keys
+    assert_equal({ "a" => big }, row.reload.data)
+    assert_equal 0, row.lock_version
+  end
+
+  test "a combined rename and retype checks the final row" do
+    table = FieldTable.create_in!(@account, name: "combo", columns: [ { key: "n" } ])
+    row = table.add_rows!([ { "n" => "7" } ], by: @user).first
+    table.change_column!("n", { key: "count", type: "number" }, by: @user)
+    assert_equal({ "count" => 7 }, row.reload.data)
+    assert_equal({ "key" => "count", "label" => "N", "type" => "number" }, table.reload.columns.first)
+  end
+
+  test "numbers too large to represent are refused, not stored as null" do
+    [ "1e999", "-1e999", "9" * 400 ].each do |huge|
+      error = assert_raises(FieldTable::Refused) { @table.add_rows!([ { "views" => huge } ], by: @user) }
+      assert_match "views must be a", error.message
+    end
+    assert_raises(FieldTable::Refused) { @table.add_rows!([ { "views" => Float::INFINITY } ], by: @user) }
+    assert_equal 0, @table.live_rows.count
+  end
+
   test "removing a column strips its values" do
     row = @table.add_rows!([ { "platform" => "x", "views" => 1 } ], by: @user).first
     @table.remove_column!("platform", by: @user)
