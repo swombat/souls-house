@@ -72,7 +72,7 @@ class Agents::VoicesController < ApplicationController
     delivery = @agent.speech_delivery
     key = "agent_voice_preview:#{scope}:#{delivery.digest(voice.voice_id)}:#{Digest::SHA256.hexdigest(text)}"
     audio = Rails.cache.fetch(key, expires_in: PREVIEW_CACHE_FOR) do
-      AudioGain.apply(ElevenLabsTts.synthesize(text, voice_id: voice.voice_id, api_key:, delivery:), delivery.gain_db)
+      AudioGain.apply(ElevenLabsTts.synthesize(text, voice_id: voice.voice_id, api_key:, delivery:), delivery.gain_db, tempo: delivery.tempo)
     end
     send_data audio, type: "audio/mpeg", disposition: "inline", filename: "voice-preview.mp3"
   rescue ElevenLabsVoices::Unavailable, ElevenLabsTts::Error, AudioGain::Failed => e

@@ -45,4 +45,40 @@ class AudioGainTest < ActiveSupport::TestCase
     assert_raises(AudioGain::Failed) { AudioGain.apply("not audio at all", 6) }
   end
 
+  def duration(mp3)
+    _out, err, _status = Open3.capture3("ffmpeg", "-nostdin", "-f", "mp3", "-i", "pipe:0", "-f", "null", "-",
+      stdin_data: mp3, binmode: true)
+    h, m, s = err.scan(/time=(\d+):(\d+):([\d.]+)/).last
+    h.to_i * 3600 + m.to_i * 60 + s.to_f
+  end
+
+  def pitch_hz(mp3)
+    raw, _err, _status = Open3.capture3("ffmpeg", "-nostdin", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+      "-ac", "1", "-ar", "44100", "-f", "s16le", "pipe:1", stdin_data: mp3, binmode: true)
+    samples = raw.unpack("s<*")[4410, 22050]
+    crossings = samples.each_cons(2).count { |a, b| a.negative? && !b.negative? }
+    crossings / (samples.size / 44100.0)
+  end
+
+  test "the filter: tempo first, then gain and limiter; each only when set" do
+    assert_equal "atempo=0.930,volume=+10.00dB,alimiter=limit=0.95:level=disabled", AudioGain.filter(10, tempo: 0.93)
+    assert_equal "atempo=0.930", AudioGain.filter(0, tempo: 0.93)
+    assert_equal "volume=+10.00dB,alimiter=limit=0.95:level=disabled", AudioGain.filter(10)
+    assert_equal "volume=+10.00dB,alimiter=limit=0.95:level=disabled", AudioGain.filter(10, tempo: 1.0)
+  end
+
+  test "tempo 1 with no gain never runs ffmpeg" do
+    Open3.stub(:capture3, ->(*) { flunk "ffmpeg ran" }) do
+      assert_equal "ID3same", AudioGain.apply("ID3same", 0, tempo: 1.0)
+      assert_equal "ID3same", AudioGain.apply("ID3same", 0, tempo: nil)
+    end
+  end
+
+  test "tempo slows the audio without lowering its pitch" do
+    source = tone(0.5)
+    slowed = AudioGain.apply(source, 0, tempo: 0.8)
+    assert_in_delta duration(source) / 0.8, duration(slowed), 0.1
+    assert_in_delta 440, pitch_hz(slowed), 15
+  end
+
 end

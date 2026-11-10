@@ -23,10 +23,10 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
     @reply = @chat.messages.create!(role: "assistant", agent: @agent, content: "Hello there.", suppress_automatic_dispatch: true)
   end
 
-  def render_with(gains = [])
+  def render_with(gains = [], tempos = [])
     bodies = []
     stub_request(:post, URL).to_return { |request| bodies << JSON.parse(request.body); { status: 200, body: "ID3raw" } }
-    AudioGain.stub(:apply, ->(audio, gain) { gains << gain; gain.to_f.zero? ? audio : "ID3gained" }) do
+    AudioGain.stub(:apply, ->(audio, gain, tempo: nil) { gains << gain; tempos << tempo; gain.to_f.zero? && tempo.nil? ? audio : "ID3gained" }) do
       yield if block_given?
       GenerateVoiceJob.perform_now(@reply)
     end
@@ -65,7 +65,7 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
       Agent.find(@agent.id).update!(voice_delivery: TAKE_03.merge("speed" => 0.9))
       { status: 200, body: "ID3raw" }
     end
-    AudioGain.stub(:apply, ->(audio, _gain) { audio }) { GenerateVoiceJob.perform_now(@reply) }
+    AudioGain.stub(:apply, ->(audio, _gain, tempo: nil) { audio }) { GenerateVoiceJob.perform_now(@reply) }
 
     assert_equal made_under, @reply.reload.voice_audio.blob.metadata["voice_digest"]
     assert_not @reply.voice_audio_current?
@@ -103,6 +103,26 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
   test "two Listen presses on one message are one render at a time" do
     assert_equal 1, GenerateVoiceJob.concurrency_limit
     assert_equal GenerateVoiceJob.new(@reply).concurrency_key, GenerateVoiceJob.new(@reply).concurrency_key
+  end
+
+  test "with a tempo, Listen sends ElevenLabs' speed and slows the stored audio afterwards" do
+    @agent.update!(voice_delivery: TAKE_03.merge("speed" => 0.7, "tempo" => 0.93))
+    gains = []
+    tempos = []
+    bodies = render_with(gains, tempos)
+
+    assert_equal 0.7, bodies.sole.dig("voice_settings", "speed")
+    assert_not bodies.sole.key?("tempo")
+    assert_not bodies.sole["voice_settings"].key?("tempo")
+    assert_equal [ 0.93 ], tempos
+    assert_equal "ID3gained", @reply.reload.voice_audio.download
+  end
+
+  test "with no tempo set, Listen passes none" do
+    @agent.update!(voice_delivery: TAKE_03)
+    tempos = []
+    render_with([], tempos)
+    assert_equal [ nil ], tempos
   end
 
 end

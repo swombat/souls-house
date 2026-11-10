@@ -81,6 +81,29 @@ class VoiceDeliveryTest < ActiveSupport::TestCase
     assert_not_equal "v1:default", VoiceDelivery.for(VoiceDelivery.normalize!("speed" => 0.9)).digest("v1")
   end
 
+  # Tempo (JkMdAe): a slowdown after ElevenLabs, for a pace below its floor.
+  # Unset or 1 changes nothing, and leaves every earlier digest as it was.
+  test "tempo is optional, bounded 0.8 to 1, and only marks the digest when it changes the sound" do
+    assert_nil VoiceDelivery.for(nil).tempo
+    assert_equal 1.0, VoiceDelivery.for(nil).as_json["tempo"]
+    assert_nil VoiceDelivery.for(VoiceDelivery.normalize!("tempo" => 1)).tempo
+
+    slowed = VoiceDelivery.for(VoiceDelivery.normalize!(JANIS_TAKE_03.merge("speed" => 0.7, "tempo" => 0.93)))
+    assert_equal 0.93, slowed.tempo
+    assert_includes slowed.summary, "tempo 0.93 on Listen"
+
+    assert(errors_for("tempo" => 0.65).any? { |e| e.start_with?("tempo must be") })
+    assert(errors_for("tempo" => 1.1).any? { |e| e.start_with?("tempo must be") })
+    assert(errors_for("tempo" => "0.9").any? { |e| e.start_with?("tempo must be") })
+
+    take_03 = VoiceDelivery.for(VoiceDelivery.normalize!(JANIS_TAKE_03))
+    assert_equal take_03.digest("v1"), VoiceDelivery.for(VoiceDelivery.normalize!(JANIS_TAKE_03.merge("tempo" => 1.0))).digest("v1")
+    assert_not_equal take_03.digest("v1"), VoiceDelivery.for(VoiceDelivery.normalize!(JANIS_TAKE_03.merge("tempo" => 0.93))).digest("v1")
+    assert_equal "v1:default", VoiceDelivery.for(VoiceDelivery.normalize!("tempo" => 1.0)).digest("v1")
+    # The digest Janis's take 03 had before tempo existed, unchanged.
+    assert_equal Digest::SHA256.hexdigest(take_03.as_json.except("tempo").sort.to_h.to_json)[0, 16], take_03.digest.split(":").last
+  end
+
   test "an agent refuses an invalid delivery written straight to the column" do
     agent = agents(:research_assistant)
     agent.voice_delivery = { "speed" => 3 }
