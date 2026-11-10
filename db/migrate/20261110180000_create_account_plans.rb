@@ -1,8 +1,9 @@
 # Account plans (Billing::AccountPlan): what an account can do, paid for
 # separately from its residents. A site admin's grant lives on the account;
 # a paid plan is an AccountSubscription, at most one live per account. The
-# house-model allowance moves from each resident to one per account, carried
-# by one live standard-rate resident subscription.
+# house-model allowance moves from each resident to one per account, shared
+# by its standard-rate residents (ResidentEntitlement#allowance_limit), which
+# needs no column.
 class CreateAccountPlans < ActiveRecord::Migration[8.1]
 
   LIVE_STATUSES = "'incomplete', 'trialing', 'active', 'past_due'".freeze
@@ -54,11 +55,6 @@ class CreateAccountPlans < ActiveRecord::Migration[8.1]
     # like its price: an uncertain create is replayed under the same
     # idempotency key, and renaming the sizes must not move its parameters.
     add_column :resident_birth_orders, :stripe_description, :string
-
-    add_column :resident_subscriptions, :includes_allowance, :boolean, null: false, default: false
-    # One carrier per account: two webhooks can't both grant the allowance.
-    add_index :resident_subscriptions, :account_id, unique: true, where: "includes_allowance",
-      name: "index_resident_subscriptions_one_allowance_per_account"
   end
 
 end

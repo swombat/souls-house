@@ -104,9 +104,9 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert_equal "trialing", subscription.stripe_status
     assert_equal Time.utc(2026, 11, 24, 12), subscription.trial_end
     assert_equal Time.utc(2026, 11, 24, 12), subscription.trial_ends_at
-    assert subscription.includes_allowance?
     entitlement = ResidentEntitlement.find_by!(agent: order.agent)
     assert entitlement.active?
+    assert_equal BigDecimal("10"), entitlement.allowance_limit, "the trial's $10"
     assert_equal order.agent_id.to_s, @stripe.subscription("sub_trial")[:metadata]["agent_id"]
   end
 

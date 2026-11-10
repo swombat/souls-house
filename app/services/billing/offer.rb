@@ -26,8 +26,9 @@ module Billing
     def id = standard? ? tier.id : "#{tier.id}_#{rate}"
     def name = standard? ? tier.name : "#{tier.name} at cost"
     def monthly_usd = standard? ? tier.monthly_usd : Tier::AT_COST_MONTHLY_USD.fetch(tier.id)
-    # What a resident bought at this rate can carry of the account's
-    # allowance. At cost never carries it.
+    # The account's monthly house-model allowance a resident bought at this
+    # rate may draw on, shared with the account's other standard-rate
+    # residents. At cost draws on none.
     def allowance_usd = standard? ? tier.allowance_usd : BigDecimal("0")
 
     # Stripe price ids differ between test and live mode, so they are

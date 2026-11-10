@@ -244,7 +244,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_nil row.fetch("trial_ends_at"), "a converted trial has no end"
   end
 
-  test "the Billing tab shows which one resident carries the account's allowance" do
+  test "the Billing tab names no resident as holding the allowance: the account's residents share it" do
     @account.update!(billing_required: true)
     other = agents(:code_reviewer)
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
@@ -256,12 +256,9 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       get account_billing_path(@account)
     end
 
-    carriers = inertia_shared_props.fetch("residents").select do |resident|
-      resident.dig("entitlement", "subscription", "includes_allowance")
-    end
-    assert_equal [ @agent.to_param ], carriers.map { |resident| resident["id"] }, "the first standard resident, only"
-    row = inertia_shared_props.fetch("residents").find { |resident| resident["id"] == other.to_param }
-    assert_equal false, row.dig("entitlement", "subscription", "includes_allowance")
+    subscriptions = inertia_shared_props.fetch("residents").filter_map { |resident| resident.dig("entitlement", "subscription") }
+    assert_equal 2, subscriptions.size
+    assert subscriptions.none? { |subscription| subscription.key?("includes_allowance") }
   end
 
   test "an account that never had a subscription is offered the trial on the Billing tab" do

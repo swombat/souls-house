@@ -36,7 +36,6 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     assert_equal "standard", subscription.rate
     assert_equal LIFE_PRICE, subscription.stripe_price_id
     assert_equal "life", entitlement.reload.tier
-    assert subscription.includes_allowance?, "a resized carrier keeps carrying the account's allowance"
     assert_equal BigDecimal("10"), entitlement.allowance_limit, "the allowance is the account's, whatever the size"
 
     change!("conversation")

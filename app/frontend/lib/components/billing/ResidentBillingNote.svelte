@@ -1,8 +1,7 @@
 <script>
-  // The line under a resident on the Billing tab: where its payment stands,
-  // when its free 14 days end, and whether it carries the account's
-  // house-model allowance. trial_ends_at is set while the resident is in its
-  // free trial. The house doesn't know whether a card is on the account, so
+  // The line under a resident on the Billing tab: where its payment stands
+  // and when its free 14 days end. trial_ends_at is set while the resident is
+  // in its free trial. The house doesn't know whether a card is on the account, so
   // the trial's wording is true either way.
   import { Button } from '$lib/components/shadcn/button/index.js';
 
@@ -48,14 +47,5 @@
     <p>Renews on {date(entitlement.subscription.current_period_end)}.</p>
   {:else if entitlement?.state === 'complimentary'}
     <p>Hosted free by the house. Paying for it is optional.</p>
-  {/if}
-  {#if entitlement?.subscription?.includes_allowance}
-    <p data-testid="resident-allowance">
-      {#if trial && trialEnd}
-        Carries the account's $10 of house-model use for the free trial, until {trialEnd}.
-      {:else}
-        Carries the account's $10 a month of house-model use.
-      {/if}
-    </p>
   {/if}
 </div>

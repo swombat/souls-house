@@ -80,7 +80,7 @@ class Billing::TrialSyncTest < ActiveJob::TestCase
       assert Agent.exists?(resident.id), "the resident is kept, asleep"
       assert_equal "canceled", subscription.stripe_status
       assert_nil subscription.trial_ends_at
-      assert_not subscription.includes_allowance?
+      assert_equal BigDecimal("0"), held.allowance_limit
 
       travel 5.minutes
       process!(deleted)
@@ -128,7 +128,7 @@ class Billing::TrialSyncTest < ActiveJob::TestCase
       assert_equal "active", subscription.stripe_status
       assert_nil subscription.trial_ends_at
       assert_equal @trial_end, subscription.trial_end, "kept for the record"
-      assert subscription.includes_allowance?
+      assert_equal BigDecimal("10"), entitlement.allowance_limit
       assert_equal 1, ResidentSubscription.where(account: @account).count
     end
   end

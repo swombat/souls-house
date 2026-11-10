@@ -2546,10 +2546,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
     t.integer "plan_changes_count", default: 0, null: false
-    t.boolean "includes_allowance", default: false, null: false
     t.datetime "trial_end"
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
-    t.index ["account_id"], name: "index_resident_subscriptions_one_allowance_per_account", unique: true, where: "includes_allowance"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id", unique: true

@@ -63,7 +63,7 @@ class Billing::AccountSubscriptionSyncTest < ActiveSupport::TestCase
     assert_not @agent.reload.subagents_available?
     entitlement = ResidentEntitlement.find_by!(agent: @agent)
     assert entitlement.active?, "the resident is paid for separately and stays awake"
-    assert ResidentSubscription.find_by!(stripe_subscription_id: "sub_r").includes_allowance?
+    assert_equal BigDecimal("10"), entitlement.allowance_limit, "and keeps drawing on the account's house-model allowance"
   end
 
   test "ending a resident's subscription never touches the account's" do

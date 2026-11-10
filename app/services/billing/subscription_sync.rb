@@ -30,9 +30,6 @@ module Billing
         subscription = record!(remote, agent, offer)
         flag_ungranted!(remote, agent, offer)
         ResidentEntitlement.for_agent!(agent).apply_subscription!(subscription, now: @now)
-        # After the entitlement, which judges its outgoing plan on what it
-        # carried before anything moved.
-        AllowanceCarrier.new(agent.account, now: @now).settle!
         subscription.reload
       end
     end

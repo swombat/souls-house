@@ -125,7 +125,7 @@ class Billing::TierTest < ActiveSupport::TestCase
   # S3 $0.023/GB, swarm $0.064 a search, Stripe 2.9% + $0.30. Since
   # 2026-11-10 a size pays for its machine, transcription and backups; the
   # account's plan pays for swarm searches; the $10 allowance is the
-  # account's, carried by one resident. This keeps each size's own margin
+  # account's, shared by its standard-rate residents. This keeps each size's own margin
   # positive at full use.
   MACHINE_EUR = { "cx23" => 6.59, "cx33" => 10.19, "cx43" => 19.19 }.freeze
 
@@ -142,14 +142,14 @@ class Billing::TierTest < ActiveSupport::TestCase
   end
 
   # The cheapest account on each plan: the add-on and one Small resident
-  # carrying the $10 allowance, all of it used, and the plan's searches.
+  # drawing the account's whole $10 allowance, and the plan's searches.
   def cheapest_account_cost(plan)
     small = Billing::Tier.find!("conversation")
     size_cost(small) + Billing::Tier::ACCOUNT_ALLOWANCE_USD.to_f + plan.swarm_searches * 0.064 +
       (plan.free? ? 0 : plan.monthly_usd.to_f * 0.029 + 0.30)
   end
 
-  test "Partners and Colleagues keep a positive margin at full use with one Small resident carrying the allowance" do
+  test "Partners and Colleagues keep a positive margin at full use with one Small resident drawing the allowance" do
     Billing::AccountPlan.all.reject(&:free?).each do |plan|
       cost = cheapest_account_cost(plan)
       assert cost < plan.from_usd, "#{plan.name} costs $#{cost.round(2)} at full use against $#{plan.from_usd}"
@@ -159,7 +159,7 @@ class Billing::TierTest < ActiveSupport::TestCase
   # Found while building the 2026-11-10 pricing: Small at $9.99 can't also
   # pay for a fully used $10 allowance (about $19.17 at full use). Kept as a
   # visible skip, not deleted, until the prices or the allowance are re-costed.
-  test "Companions keeps a positive margin at full use with one Small resident carrying the allowance" do
+  test "Companions keeps a positive margin at full use with one Small resident drawing the allowance" do
     plan = Billing::AccountPlan.find!("companions")
     cost = cheapest_account_cost(plan)
     skip "Re-cost: Companions with one Small resident costs $#{cost.round(2)} at full use against $#{plan.from_usd}" if cost >= plan.from_usd

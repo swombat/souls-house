@@ -57,19 +57,4 @@ class AccountPlanBackfillTest < ActiveSupport::TestCase
     assert_equal "colleagues", team.reload.granted_plan
   end
 
-  test "the oldest live standard-rate subscription of each account carries the allowance, once" do
-    account = accounts(:personal_account)
-    old = ResidentSubscription.create!(agent: agents(:research_assistant), account: account, stripe_subscription_id: "sub_old",
-      tier: "work", stripe_status: "active", created_at: 2.days.ago)
-    ResidentSubscription.create!(agent: agents(:code_reviewer), account: account, stripe_subscription_id: "sub_new",
-      tier: "conversation", stripe_status: "active", created_at: 1.day.ago)
-    ResidentSubscription.create!(agent: agents(:with_save_memory_tool), account: account,
-      stripe_subscription_id: "sub_at_cost", tier: "conversation", rate: "at_cost", stripe_status: "active",
-      created_at: 3.days.ago)
-
-    2.times { backfill! }
-
-    assert_equal [ old.id ], ResidentSubscription.where(includes_allowance: true).pluck(:id)
-  end
-
 end

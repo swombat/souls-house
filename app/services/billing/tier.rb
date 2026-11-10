@@ -11,9 +11,9 @@
 # backups at S3 list price, swarm reads and Stripe's fee. Every plan keeps a
 # positive margin even when someone uses all of it. Change a number here and
 # re-cost it. The house-model allowance is no longer a resident's: it is $10
-# a month per account, carried by one standard-rate resident
-# (ResidentSubscription#includes_allowance). allowance_usd here is what a
-# standard-rate resident of the size can carry, the same for every size.
+# a month per account, shared by its standard-rate residents
+# (ResidentEntitlement#allowance_limit). allowance_usd here is that account
+# allowance, which a standard-rate resident of any size draws on.
 #
 # memory_gb and cpu_shares are the container limits while residents still live
 # on the shared house server; the machine is what a plan gets once hosting moves
@@ -46,8 +46,8 @@ module Billing
     # stays in the list (#619).
     AT_COST_MONTHLY_USD = { "conversation" => BigDecimal("8"), "life" => BigDecimal("11"), "work" => BigDecimal("20") }.freeze
 
-    # The house-model allowance, per account per UTC month, carried by one
-    # live standard-rate resident (ResidentSubscription#includes_allowance).
+    # The house-model allowance, per account per UTC month, shared by every
+    # resident whose plan funds calls at the standard rate.
     ACCOUNT_ALLOWANCE_USD = BigDecimal("10")
 
     SIZES = %w[small medium large].freeze
@@ -113,9 +113,9 @@ module Billing
 
     # What the size includes, for the public page, the Billing tab, the
     # creation wizard and the about-sheet. Only what a size delivers today:
-    # hosting for one resident, and the account's house-model allowance if
-    # this resident is the one carrying it (allowance_usd is what it can
-    # carry). Swarm searches and sub-agents are the account plan's
+    # hosting for one resident, and the account's house-model allowance it
+    # draws on, shared with the account's other standard-rate residents
+    # (allowance_usd). Swarm searches and sub-agents are the account plan's
     # (Billing::AccountPlan#features). The machine, transcription hours,
     # backup space and connections above stay for costing and are not shown
     # until each one ships; add it here when it does.

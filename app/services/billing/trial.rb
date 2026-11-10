@@ -88,16 +88,17 @@ module Billing
         .update_all(trial_started_at: nil, updated_at: Time.current)
     end
 
-    # When the account's allowance is a trial's: its only standard-rate
-    # subscriptions that can carry the allowance are trialing. Returns when the
-    # trial began, or nil.
+    # When the account's allowance is a trial's: every resident drawing on it
+    # (ResidentEntitlement.on_account_allowance) is on a trialing
+    # subscription. A held resident draws nothing, so it doesn't count either
+    # way. Returns when the trial began, or nil.
     def allowance_started_at(account_id)
-      carriers = ResidentSubscription.where(account_id: account_id).can_carry_allowance
-      return nil unless carriers.exists?(stripe_status: "trialing")
-      return nil if carriers.where.not(stripe_status: "trialing").exists?
+      drawing = ResidentSubscription.where(
+        id: ResidentEntitlement.where(account_id: account_id).on_account_allowance.select(:current_subscription_id)
+      )
+      return nil unless drawing.distinct.pluck(:stripe_status) == [ "trialing" ]
 
-      Account.where(id: account_id).pick(:trial_started_at) ||
-        carriers.where(stripe_status: "trialing").minimum(:created_at)
+      Account.where(id: account_id).pick(:trial_started_at) || drawing.minimum(:created_at)
     end
 
     # The trial's props for the wizard and the Billing tab.

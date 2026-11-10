@@ -11,9 +11,9 @@
 #     and no birth order: a resident on the house).
 #
 # Companions is left as null (the default). A grant already set is only ever
-# raised. Then the house-model allowance, now one per account, goes to the
-# oldest live standard-rate resident subscription of each account (there may
-# be none).
+# raised. The house-model allowance, now one per account and shared by its
+# standard-rate residents, needs no backfill: it is worked out from the
+# residents' entitlements when a call is made.
 #
 # Plain SQL and local stubs only: app models change after this runs.
 class BackfillAccountPlans < ActiveRecord::Migration[8.1]
@@ -21,7 +21,6 @@ class BackfillAccountPlans < ActiveRecord::Migration[8.1]
   ORDER = %w[companions partners colleagues].freeze
   TIER_PLAN = { "conversation" => "companions", "life" => "partners", "work" => "colleagues" }.freeze
   IN_FORCE_STATES = %w[active grace complimentary].freeze
-  CARRIER_STATUSES = %w[trialing active past_due].freeze
 
   # The plan an account is granted, or nil for companions. Pure, so the
   # mapping is testable on its own.
@@ -60,17 +59,6 @@ class BackfillAccountPlans < ActiveRecord::Migration[8.1]
 
       execute "UPDATE accounts SET granted_plan = #{connection.quote(plan)} WHERE id = #{Integer(id)}"
     end
-
-    statuses = CARRIER_STATUSES.map { |status| connection.quote(status) }.join(", ")
-    execute <<~SQL
-      UPDATE resident_subscriptions SET includes_allowance = TRUE, updated_at = NOW()
-      WHERE id IN (
-        SELECT DISTINCT ON (account_id) id FROM resident_subscriptions
-        WHERE rate = 'standard' AND stripe_status IN (#{statuses})
-          AND account_id NOT IN (SELECT account_id FROM resident_subscriptions WHERE includes_allowance)
-        ORDER BY account_id, created_at, id
-      )
-    SQL
   end
 
   def down

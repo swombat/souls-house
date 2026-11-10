@@ -99,7 +99,26 @@ class TrialAllowanceTest < ActiveSupport::TestCase
     travel_to Time.utc(2026, 11, 2, 9)
     assert_equal BigDecimal("3"), entitlement.allowance_remaining
     sync!("sub_paid", @second, status: "active")
-    assert_equal BigDecimal("10"), entitlement.allowance_remaining, "the trial rule holds only while every carrier is trialing"
+    assert_equal BigDecimal("10"), entitlement.allowance_remaining,
+      "the trial rule holds only while every standard-rate resident drawing on the allowance is trialing"
+    assert_equal BigDecimal("10"), entitlement(@second).allowance_remaining, "shared by both"
+  end
+
+  test "a paid resident that lapses no longer counts, and the trial's allowance applies again" do
+    spend!(7)
+    travel_to Time.utc(2026, 11, 2, 9)
+    sync!("sub_paid", @second, status: "active")
+    assert_equal BigDecimal("10"), entitlement.allowance_remaining
+    sync!("sub_paid", @second, status: "canceled")
+    assert_equal BigDecimal("3"), entitlement.allowance_remaining
+  end
+
+  test "a resident at cost draws nothing and leaves the trial's allowance as it is" do
+    spend!(7)
+    travel_to Time.utc(2026, 11, 2, 9)
+    sync!("sub_at_cost", @second, status: "active", price: CONVERSATION_AT_COST_PRICE)
+    assert_equal BigDecimal("0"), entitlement(@second).allowance_limit
+    assert_equal BigDecimal("3"), entitlement.allowance_remaining
   end
 
   test "the presentation says when the trial's allowance ends" do
