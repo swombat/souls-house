@@ -334,6 +334,13 @@ class Commitment < ApplicationRecord
     return unless chat_account
 
     ActionCable.server.broadcast("Account:#{chat_account.obfuscated_id}", { action: "refresh", prop: "chats" })
+    # The open conversation's header shows the same mark (#869) and reloads its
+    # own `chat` prop from the Chat channel, so it updates even when the
+    # conversation is filtered out of the sidebar list. A move tells both.
+    chat_ids = [ source_chat_id, (source_chat_id_previously_was if saved_change_to_source_chat_id?) ].compact.uniq
+    Chat.where(id: chat_ids).find_each do |chat|
+      ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", { action: "refresh", prop: "chat" })
+    end
   end
 
   def set_account

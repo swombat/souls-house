@@ -79,3 +79,11 @@ test('a conversation outside the list falls back to its own next_commitment', ()
   render(ChatHeader, { chat: { ...chat, next_commitment: waiting }, account });
   expect(screen.getByTestId('commitment-mark')).toHaveAttribute('data-placement', 'in-place');
 });
+
+test('outside the list, a refreshed chat prop takes the clock away (cancelled while the row is absent)', async () => {
+  page.set({ props: { visual_tags: visualTags, chats: [] } });
+  const view = render(ChatHeader, { chat: { ...chat, next_commitment: waiting }, account });
+  expect(screen.getByTestId('commitment-mark')).toBeInTheDocument();
+  await view.rerender({ chat: { ...chat, next_commitment: null }, account });
+  expect(screen.queryByTestId('commitment-mark')).toBeNull();
+});
