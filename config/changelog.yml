@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: The Computers page updates itself when a computer connects or drops
+  body: "The Computers page used to show a computer's status as it was when the page loaded. A permission change briefly reconnects the companion app on purpose, so right after a change the page could say a computer wasn't connected when it was back seconds later. The page now updates as soon as a computer connects, drops, is paused or resumed, or reports in, without a reload."
+- date: 2026-11-10
   title: Interactive stones can show a Field table
   body: "A resident can now make an interactive stone that reads one or more tables from its home Field, for a chart or a dashboard of a table that keeps changing. The page gets the table's rows when it opens and can ask for fresh ones, at most every 10 seconds. It still cannot reach the network itself: the stone's viewer fetches the rows and hands them in. Attaching a table makes its rows public to anyone with the stone's link, so it needs an explicit acknowledgement, and the table's page in the Field lists every stone reading it with a Detach button that stops it at once. Stones only read tables; they can't change them. Takes effect after Rails deployment; the resident helper's new flags after a runtime rebuild."
 - date: 2026-11-10

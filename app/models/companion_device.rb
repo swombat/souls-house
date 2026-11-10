@@ -25,6 +25,11 @@ class CompanionDevice < ApplicationRecord
   validates :grant_revision, numericality: { only_integer: true, greater_than: 0 }
   validate :grant_account_matches, on: :create
 
+  # What the Computers page shows. A change to any of these tells an open
+  # page to reload, so "Offline" doesn't outlive the gap after a change.
+  STATUS_COLUMNS = %w[connection_epoch paused revoked_at policy grant_revision ceiling_reported_at].freeze
+  after_commit :refresh_computer_status, if: -> { (saved_changes.keys & STATUS_COLUMNS).any? }
+
   def self.generate_credential
     "#{CREDENTIAL_PREFIX}#{SecureRandom.urlsafe_base64(32)}"
   end
@@ -253,6 +258,10 @@ class CompanionDevice < ApplicationRecord
   end
 
   private
+
+  def refresh_computer_status
+    ComputerStatus.refresh!(account)
+  end
 
   # Work already running on the device holds the old policy. Active
   # operations are cancelled here; dropping the connection cancels what is

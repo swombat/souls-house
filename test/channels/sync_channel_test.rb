@@ -224,6 +224,16 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert_equal [ "IntegrationStatus:#{@account.to_param}" ], subscription.streams
   end
 
+  test "computer status subscribes only to an accessible account and rejects others" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ComputerStatus", id: @account.to_param
+    assert subscription.confirmed?
+    assert_equal [ "ComputerStatus:#{@account.to_param}" ], subscription.streams
+
+    subscribe channel: "SyncChannel", model: "ComputerStatus", id: accounts(:existing_user_account).to_param
+    assert subscription.rejected?
+  end
+
   test "integration status rejects inaccessible accounts" do
     stub_connection current_user: @user, current_app_session: nil
     subscribe channel: "SyncChannel", model: "IntegrationStatus", id: accounts(:existing_user_account).to_param
