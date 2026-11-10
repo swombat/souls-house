@@ -19,9 +19,9 @@ class CompanionOperation < ApplicationRecord
   # grammar; the house checks the outer shape and the grant.
   DESKTOP_KEYS = %w[command app steps timeout_seconds interactive compact skeleton max_depth surface root
     window_id wait_for wait_timeout_ms role name value text description native_id exact first last count nth
-    limit ref property combo direction amount].freeze
+    limit ref property combo direction amount url].freeze
   DESKTOP_MAX_ARGUMENTS = 24.kilobytes
-  DESKTOP_VERBS = %w[snapshot find get is click type press scroll].freeze
+  DESKTOP_VERBS = %w[snapshot find get is click type press scroll open].freeze
   DESKTOP_APP = /\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}\z/
   ACTIVE_STATES = %w[pending dispatched].freeze
   MAX_BODY = 8.megabytes
