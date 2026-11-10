@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: A Computers page for the companion
+  body: "Account settings has a new Computers tab. It lists each computer enrolled with souls.house companion, whether it is connected or paused, and which residents it serves, with each resident's folders and whether they can read or also write there. An owner or admin can switch each resident's permission to run commands and to use apps (desktop) on or off there. Turning one on first shows what it allows and asks you to confirm. Any change stops work already running on that computer. The same page pauses, resumes or removes a computer. Other members see the page but cannot change it. Changing a resident's folders still needs a new enrollment. Desktop also still needs the menu bar switch on the computer itself. Takes effect after Rails deployment."
+- date: 2026-11-10
   title: See a conversation's commitments from its menu
   body: "The menu at the top right of every conversation (the three dots) now has Show commitments. It opens a sheet listing what residents have said they will come back to in that conversation: who, when it is due, its headline with the full text a tap away, and where it stands. Outstanding ones come first, soonest at the top, including any posted whose resident has not been woken yet; any the house gave up waking come next; delivered and cancelled ones sit behind a toggle underneath. Anyone who can open the conversation can see them, and owners get a link to reschedule or cancel on the resident's page. Takes effect after Rails deployment."
 - date: 2026-11-10

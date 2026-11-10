@@ -4,6 +4,7 @@ class CompanionDevice < ApplicationRecord
 
   CREDENTIAL_PREFIX = "shcd_".freeze
   RECOVERY_WINDOW = 60.seconds
+  CONTROLS = %w[pause resume revoke].freeze
 
   class InvalidCredential < StandardError; end
   class Paused < StandardError; end
@@ -44,6 +45,32 @@ class CompanionDevice < ApplicationRecord
 
   def active?
     revoked_at.nil? && !paused? && !account.reload.disabled?
+  end
+
+  # The owner's pause, resume or revoke, from the API or the Computers page.
+  # Pause and revoke cancel active work and drop the connection. The block
+  # runs inside the lock, so the caller's audit row commits with the change.
+  def apply_control!(control)
+    raise ArgumentError, "unknown control" unless CONTROLS.include?(control)
+
+    device = self
+    with_lock do
+      if control == "revoke"
+        revoke!
+      else
+        update!(paused: control == "pause")
+      end
+      unless control == "resume"
+        CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
+          .update_all(state: "cancelled", outcome: "changed")
+        ActiveRecord.after_all_transactions_commit do
+          CompanionChannel.broadcast_to(device, { type: control })
+          ActionCable.server.remote_connections.where(current_user: nil, current_app_session: nil,
+            current_companion_device: device).disconnect(reconnect: false)
+        end
+      end
+      yield if block_given?
+    end
   end
 
   # The owner's switch for one resident's execute/desktop authority on an
