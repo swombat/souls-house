@@ -38,6 +38,28 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, @device.credential_digest
   end
 
+  test "each computer carries a week of job counts, its failures and the last job, but never what a job was" do
+    op = ->(state, at) {
+      CompanionOperation.create!(companion_device: @device, agent: @agent, kind: "list",
+        arguments: { "path" => "secret-folder" }, state: state, connection_epoch: "epoch",
+        grant_revision: @device.grant_revision, deadline: at + 1.minute, created_at: at)
+    }
+    op.call("completed", 2.hours.ago)
+    op.call("failed", 2.hours.ago)
+    op.call("completed", 3.days.ago)
+    op.call("completed", 20.days.ago)
+
+    sign_in @owner
+    get account_companion_devices_path(@account), headers: inertia
+    activity = inertia_shared_props.fetch("devices").sole.fetch("activity")
+    assert_equal 7, activity.fetch("days").size
+    assert_equal Time.current.utc.to_date.iso8601, activity.fetch("days").last.fetch("date")
+    assert_equal 3, activity.fetch("days").sum { |day| day.fetch("jobs") }
+    assert_equal 1, activity.fetch("failed")
+    assert_in_delta 2.hours.ago, Time.zone.parse(activity.fetch("last_job_at")), 5
+    assert_not_includes response.body, "secret-folder"
+  end
+
   test "an owner turns desktop on and off, with an audit row and a new revision each time" do
     sign_in @owner
     assert_difference -> { AuditLog.where(action: "companion.device.authority_changed").count }, 2 do
