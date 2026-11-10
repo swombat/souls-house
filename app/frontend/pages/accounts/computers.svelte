@@ -5,7 +5,6 @@
     CaretDown,
     Desktop,
     FolderSimple,
-    HardDrives,
     LinuxLogo,
     Pause,
     Play,
@@ -20,6 +19,8 @@
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
+  import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
+  import { diskName } from '$lib/companion-volumes.js';
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
 
@@ -87,12 +88,6 @@
   const status = (device) => (device.paused ? 'paused' : device.connected ? 'online' : 'offline');
   const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
 
-  // The companion reports disks by a hashed key, never a path.
-  function volumeLabel(key) {
-    const [kind, hash = ''] = String(key).split(':');
-    const name = { 'linux-volume': 'Linux disk', 'darwin-volume': 'Mac disk' }[kind] ?? kind;
-    return { name, id: hash.slice(0, 8) };
-  }
   function platform(device) {
     const kinds = device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0]));
     if (kinds.includes('darwin-volume')) return 'mac';
@@ -130,29 +125,7 @@
   let online = $derived(devices.filter((d) => status(d) === 'online').length);
   let jobsThisWeek = $derived(devices.reduce((sum, d) => sum + weekJobs(d), 0));
 
-  const RANK = { off: 0, read: 1, write: 2 };
-  const ACCESS_LABEL = { off: 'Off', read: 'Read only', write: 'Read and write' };
-
-  // Each folder this resident has, plus each the computer says it allows.
-  // The computer's own ceiling is the most it can offer; anything already
-  // granted can always be lowered or turned off, even if it's not listed.
-  function folders(device, resident) {
-    const allowed = device.ceiling?.residents?.[resident.id] ?? [];
-    const rows = new Map();
-    for (const v of allowed) rows.set(v.volume, { volume: v.volume, current: 'off', ceiling: v.access });
-    for (const v of resident.volumes) {
-      const row = rows.get(v.volume) ?? { volume: v.volume, ceiling: 'off' };
-      rows.set(v.volume, { ...row, current: v.access });
-    }
-    return [...rows.values()].sort((a, b) => a.volume.localeCompare(b.volume));
-  }
-
-  function offered(row, access) {
-    return RANK[access] <= RANK[row.current] || RANK[access] <= RANK[row.ceiling];
-  }
-
-  function folder(device, resident, row, event) {
-    const access = event.currentTarget.value;
+  function folder(device, resident, row, access) {
     if (access === row.current) return;
     // Only the folder that was touched is sent; every other folder and both
     // switches stay as the server has them.
@@ -167,16 +140,6 @@
     } else {
       send(device, data);
     }
-  }
-
-  function diskName(key) {
-    const label = volumeLabel(key);
-    return label.id ? `${label.name} ${label.id}` : label.name;
-  }
-
-  function reportedWhen(ceiling) {
-    if (!ceiling?.reported_at) return '';
-    return new Date(ceiling.reported_at).toLocaleString();
   }
 </script>
 
@@ -440,89 +403,13 @@
                       <FolderSimple size={18} class="shrink-0 text-muted-foreground" />
                       Folders
                     </p>
-                    {#if can_manage && device.ceiling}
-                      {@const rows = folders(device, resident)}
-                      {#if rows.length === 0}
-                        <p class="mt-1 pl-7 text-sm text-muted-foreground">
-                          None. {device.name} doesn't allow this resident any folders.
-                        </p>
-                      {:else}
-                        <ul class="mt-2 space-y-1.5 pl-7">
-                          {#each rows as row (row.volume)}
-                            {@const label = volumeLabel(row.volume)}
-                            <li
-                              class="flex items-center gap-2 text-sm"
-                              title={row.volume}
-                              data-testid="computer-folder">
-                              <HardDrives size={16} class="shrink-0 text-muted-foreground" />
-                              <label
-                                for="folder-{device.id}-{resident.id}-{row.volume}"
-                                class="min-w-0 flex-1 truncate">
-                                {label.name}
-                                {#if label.id}<span class="font-mono text-xs text-muted-foreground">{label.id}</span
-                                  >{/if}
-                              </label>
-                              {#key `${row.current}-${redraw}`}
-                                <select
-                                  id="folder-{device.id}-{resident.id}-{row.volume}"
-                                  class="shrink-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
-                                  value={row.current}
-                                  disabled={busy}
-                                  onchange={(event) => folder(device, resident, row, event)}>
-                                  {#each ['off', 'read', 'write'] as access}
-                                    <option value={access} disabled={!offered(row, access)}
-                                      >{ACCESS_LABEL[access]}</option>
-                                  {/each}
-                                </select>
-                              {/key}
-                            </li>
-                            {#if RANK[row.current] > RANK[row.ceiling]}
-                              <li class="pl-6 text-xs text-muted-foreground">
-                                {device.name} no longer lists this much access. You can lower it or turn it off here.
-                              </li>
-                            {/if}
-                          {/each}
-                        </ul>
-                      {/if}
-                      <p class="mt-2 pl-7 text-xs text-muted-foreground">
-                        What {device.name} allows, as it reported {reportedWhen(device.ceiling)}{device.ceiling.current
-                          ? ''
-                          : ' on an earlier connection; it may have changed since'}. To allow more, change it on the
-                        computer itself.
-                      </p>
-                    {:else}
-                      {#if resident.volumes.length === 0}
-                        <p class="mt-1 pl-7 text-sm text-muted-foreground">None</p>
-                      {:else}
-                        <ul class="mt-2 space-y-1.5 pl-7">
-                          {#each resident.volumes as volume (volume.volume)}
-                            {@const label = volumeLabel(volume.volume)}
-                            <li class="flex items-center gap-2 text-sm" title={volume.volume}>
-                              <HardDrives size={16} class="shrink-0 text-muted-foreground" />
-                              <span class="min-w-0 truncate">
-                                {label.name}
-                                {#if label.id}<span class="font-mono text-xs text-muted-foreground">{label.id}</span
-                                  >{/if}
-                              </span>
-                              <span
-                                class={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                                  volume.access === 'write'
-                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                                    : 'bg-muted text-muted-foreground'
-                                }`}>
-                                {volume.access === 'write' ? 'Read and write' : 'Read only'}
-                              </span>
-                            </li>
-                          {/each}
-                        </ul>
-                      {/if}
-                      {#if can_manage}
-                        <p class="mt-2 pl-7 text-xs text-muted-foreground">
-                          {device.name} hasn't said which folders it allows yet. Once its companion app is updated and connected,
-                          you can change folders here.
-                        </p>
-                      {/if}
-                    {/if}
+                    <ResidentFolders
+                      {device}
+                      {resident}
+                      {can_manage}
+                      {busy}
+                      {redraw}
+                      onchoose={(row, access) => folder(device, resident, row, access)} />
                   </div>
                 </div>
               </section>
