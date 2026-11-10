@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: New prices, with an account plan and residents by size
+  body: "You now pay for two things. The account is on a plan: Companions for one person; Partners for several people, with 20 swarm searches a month; or Colleagues, which adds sub-agents and 100 swarm searches a month. Each resident is paid for by the size of the computer it lives on: small $9.99, medium $19.99 or large $49.99 a month. So Companions is $9.99 a month including one small resident, Partners $29.99 and Colleagues $59.99, and the included resident can be medium or large for the difference. The account gets $10 a month of house-model use, carried by its first resident at the standard price, rather than an allowance per resident. The first resident of a new account can be small and free for 14 days, with no card asked for; with no card added it goes to sleep on day 14, and nothing is deleted. Partners and Colleagues are never free: they are charged from the day you choose one, and need a card. The Billing tab shows the account's plan and moves it to Partners or Colleagues. Accounts already here are given the plan that matches what they had, so nobody loses members, swarm searches or sub-agents, and residents already paid for keep their price. At-cost prices don't change. Prices are in US dollars, plus VAT where it applies. Takes effect after Rails deployment."
+- date: 2026-11-10
   title: The Computers page updates itself when a computer connects or drops
   body: "The Computers page used to show a computer's status as it was when the page loaded. A permission change briefly reconnects the companion app on purpose, so right after a change the page could say a computer wasn't connected when it was back seconds later. The page now updates as soon as a computer connects, drops, is paused or resumed, or reports in, without a reload."
 - date: 2026-11-10

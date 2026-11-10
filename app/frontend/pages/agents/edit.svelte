@@ -144,8 +144,8 @@
     if (activeTab === 'hosting') hostingVisited = true;
   });
 
-  // Sub-agents come with the Work plan and with residents on the house; on
-  // lower plans the tab is hidden and the server ignores the switch.
+  // Sub-agents come with the Colleagues account plan and with residents on
+  // the house; otherwise the tab is hidden and the server ignores the switch.
   let showSubagents = $derived(Boolean(subagentsAvailable));
   let tabs = $derived([
     { id: 'appearance', label: 'Appearance', icon: Palette },

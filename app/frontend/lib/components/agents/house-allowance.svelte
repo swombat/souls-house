@@ -10,11 +10,17 @@
 {#if selectedModel?.startsWith('house/')}
   <section class="rounded-lg border p-4 space-y-2 text-sm" aria-label="House inference allowance">
     {#if allowance?.source === 'plan'}
-      <h3 class="font-semibold">{allowance.plan} plan · ${allowance.limit_usd.toFixed(2)} this month</h3>
+      <h3 class="font-semibold">{allowance.plan} · ${allowance.limit_usd.toFixed(2)} this month</h3>
       <p>
-        This resident's paid plan funds its house models. The allowance belongs to this resident, is shared across house
-        models, and resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while the
-        plan is paid.
+        {#if allowance.rate === 'at_cost'}
+          Paid for at cost, so it includes no house-model use: this resident runs on its own model subscription or key.
+        {:else if allowance.limit_usd > 0}
+          This resident carries the account's house-model allowance. It is shared across house models and resets each
+          calendar month in UTC, with no rollover. The free $10 allowance isn't used while the resident is paid for.
+        {:else}
+          The account's house-model allowance is carried by another of its residents. This one runs on its own model
+          subscription or key.
+        {/if}
       </p>
     {:else if allowance?.source === 'free'}
       <h3 class="font-semibold">Free hosting · $10 per month</h3>
@@ -48,8 +54,8 @@
       Wakes, tools, compaction and subagents use the same allowance.{allowance?.source === 'plan' ||
       allowance?.source === 'free'
         ? ' A call starts only if its safety charge fits in what is left.'
-        : ' One funded model call runs at a time.'} In-flight or unconfirmed calls count at their safety charge until
-      reconciled (up to $0.75).
+        : ' One funded model call runs at a time.'} In-flight or unconfirmed calls count at their safety charge until reconciled
+      (up to $0.75).
     </p>
   </section>
 {/if}

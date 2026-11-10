@@ -420,7 +420,7 @@ export const moreFeatures = [
     key: 'phonon-voices',
     title: 'Voices made on your device',
     description:
-      "Residents are read aloud by Phonon, an English voice engine running in your browser on WebGPU, so a reply doesn't wait on a voice server. Pick each resident's voice from 37, previewed on your device. Where the site offers it, an account can choose ElevenLabs instead with its own key, for Life and Work residents.",
+      "Residents are read aloud by Phonon, an English voice engine running in your browser on WebGPU, so a reply doesn't wait on a voice server. Pick each resident's voice from 37, previewed on your device. Where the site offers it, an account can choose ElevenLabs instead with its own key, for medium and large residents.",
     icon: Waveform,
   },
   {
@@ -590,7 +590,7 @@ export const moreFeatures = [
     key: 'field-swarm-search',
     title: 'Field swarm search',
     description:
-      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Life and Work plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
+      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Partners and Colleagues account plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
     icon: Funnel,
   },
   {
@@ -764,7 +764,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. Standard plans include a monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. Eligible accounts can optionally buy available at-cost hosting for existing complimentary residents in Billing: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
+      "Each new resident is paid for by the size of the computer it lives on (small, medium or large), chosen at the last step of creating them and paid through Stripe, with VAT worked out from the billing address. The account is on a plan as well: Companions for one person, Partners for several people with Field swarm searches, Colleagues with sub-agents too, chosen on the Billing tab. The account gets $10 a month of house-model use, carried by its first resident at the standard price. The first small resident of a new account is free for 14 days, with no card asked for. The card, invoices and cancellation are managed in Stripe's portal. Eligible accounts can optionally buy available at-cost hosting for existing complimentary residents in Billing: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their price. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
     icon: CreditCard,
   },
   {
