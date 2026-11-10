@@ -41,13 +41,15 @@
         <button id="stone-start" type="button" hidden>Run again</button>
         <p id="stone-status" role="status">Running</p>
       </div>
-      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>">
+      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"<% if @reads_tables %> data-tables="<%= hosted_stone_data_path(@revision.number) %>"<% end %>>
+        <% unless @reads_tables %>
         <iframe
         title="<%= @revision.title %>"
         src="<%= content_path %>"
         sandbox="allow-scripts"
         referrerpolicy="no-referrer"
         allow="camera 'none'; microphone 'none'; geolocation 'none'"></iframe>
+        <% end %>
       </div>
       <script nonce="<%= @viewer_nonce %>">
         (() => {
@@ -55,18 +57,57 @@
           const start = document.getElementById("stone-start");
           const stop = document.getElementById("stone-stop");
           const status = document.getElementById("stone-status");
-          start.addEventListener("click", () => {
+          const mount = () => {
             const frame = document.createElement("iframe");
             frame.title = container.dataset.title;
             frame.setAttribute("sandbox", "allow-scripts");
             frame.setAttribute("allow", "camera 'none'; microphone 'none'; geolocation 'none'");
             frame.referrerPolicy = "no-referrer";
             frame.src = container.dataset.source;
+            if (dataPath) watch(frame);
             container.replaceChildren(frame);
             start.hidden = true;
             stop.hidden = false;
             status.textContent = "Running";
-          });
+          };
+          start.addEventListener("click", mount);
+          // Field tables (when this revision reads any): the frame may ask
+          // for fresh rows; only this viewer fetches them, from its own
+          // origin, and hands them to the frame it created. Messages from any
+          // other window, of any other shape, or after the frame has
+          // navigated away from the stone are ignored. At most one fetch per
+          // 10 s; asks in between are folded into the next one.
+          const dataPath = container.dataset.tables;
+          const MIN_GAP = 10000;
+          let lastFetch = 0, pending = null;
+          const watch = (frame) => {
+            frame.dataset.loads = "0";
+            frame.addEventListener("load", () => { frame.dataset.loads = String(Number(frame.dataset.loads) + 1); });
+          };
+          const live = (frame) => frame && frame.isConnected && Number(frame.dataset.loads || 0) <= 1;
+          const send = async (frame) => {
+            pending = null;
+            lastFetch = Date.now();
+            try {
+              const response = await fetch(dataPath, { credentials: "omit", cache: "no-store" });
+              if (!response.ok) return;
+              const body = await response.json();
+              if (live(frame)) frame.contentWindow.postMessage({ souls_field: 1, type: "tables", tables: body.tables }, "*");
+            } catch (error) { /* the frame keeps its last rows */ }
+          };
+          if (dataPath) {
+            // Made here rather than in the markup, so its first load is
+            // always counted and a later navigation is always noticed.
+            mount();
+            window.addEventListener("message", (event) => {
+              const frame = container.querySelector("iframe");
+              if (!live(frame) || event.source !== frame.contentWindow) return;
+              const data = event.data;
+              if (!data || data.souls_field !== 1 || data.type !== "refresh" || pending) return;
+              const wait = Math.max(0, lastFetch + MIN_GAP - Date.now());
+              pending = setTimeout(() => send(frame), wait);
+            });
+          }
           stop.addEventListener("click", () => {
             container.replaceChildren();
             start.hidden = false;

@@ -10,6 +10,16 @@ class StoneRevision < ApplicationRecord
   has_one_attached :html
   has_many :message_stone_revisions, dependent: :destroy
   has_many :messages, through: :message_stone_revisions
+  has_many :stone_revision_field_tables, dependent: :delete_all
+  has_many :field_tables, through: :stone_revision_field_tables
+
+  # The tables this revision reads, as the stone receives them: name =>
+  # { columns, rows }. Only live tables; a discarded table stops at once.
+  def field_table_payload
+    field_tables.kept.order(:id).to_h do |table|
+      [ table.name, { columns: table.columns, rows: table.live_rows.map(&:data), updated_at: table.updated_at.iso8601 } ]
+    end
+  end
 
   validates :number, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :stone_id }
   validates :title, presence: true, length: { maximum: 255 }

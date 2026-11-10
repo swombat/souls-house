@@ -3,6 +3,7 @@ Rails.application.routes.draw do
     get "/", to: "stones#show"
     get "/revisions/:number", to: "stones#show", as: :hosted_stone_revision
     get "/revisions/:number/content", to: "stones#content", as: :hosted_stone_content
+    get "/revisions/:number/data", to: "stones#data", as: :hosted_stone_data
   end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
