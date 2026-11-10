@@ -37,3 +37,10 @@ test('Move to room drills down in place and Back returns', async () => {
   await fireEvent.click(screen.getByRole('menuitem', { name: 'Music' }));
   expect(onMoveToRoom).toHaveBeenCalledWith('r1');
 });
+
+test('Show commitments is in the menu', async () => {
+  const { component } = render(ChatActionsMenu, { chat });
+  await open();
+  await fireEvent.click(await screen.findByRole('menuitem', { name: 'Show commitments' }));
+  expect(component).toBeTruthy();
+});

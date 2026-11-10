@@ -29,6 +29,7 @@
     showAllMessages = $bindable(false),
     debugMode = $bindable(false),
     showCosts = $bindable(false),
+    showCommitments = $bindable(false),
     showMessageTelemetry = $bindable(false),
     onsidebaropen,
     onassignagent,
@@ -222,6 +223,7 @@
         bind:showAllMessages
         bind:debugMode
         bind:showCosts
+        bind:showCommitments
         bind:showMessageTelemetry
         onToggleWebAccess={toggleWebAccess}
         onAssignAgent={() => onassignagent?.()}

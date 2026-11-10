@@ -80,6 +80,32 @@ class ChatsController < ApplicationController
     render json: { runtime_interactions: runtime_interactions_for_timeline }
   end
 
+  # The conversation menu's "Show commitments" (Daniel, jMaDAj): every
+  # commitment a resident made in this conversation, in three lists.
+  # Outstanding: scheduled, or posted with the wake still in the house's
+  # custody (held, retrying, woken), soonest first. Blocked: posted, and the
+  # house stopped trying to wake the resident. Finished: delivered, stopped or
+  # cancelled. Anyone who can open the conversation sees them, as members of
+  # this house already do on the resident's page
+  # (CommitmentPresentation.visible_scope); reschedule and cancel stay on that
+  # page, linked for whoever may manage. Each list is capped, and its total is
+  # sent so the sheet can say when it shows only part.
+  def commitments
+    scope = Commitment.where(source_chat_id: @chat.id, account_id: current_account.id)
+    lists = {
+      outstanding: scope.where(status: "scheduled").or(scope.where(status: "activated", wake_state: Commitment::IN_CUSTODY)).order(:due_at, :id),
+      blocked: scope.where(status: "activated", wake_state: "blocked").order(due_at: :desc, id: :desc),
+      finished: scope.where(status: "cancelled")
+        .or(scope.where(status: "activated").where("commitments.wake_state IS NULL OR commitments.wake_state NOT IN (?)", Commitment::IN_CUSTODY + [ "blocked" ]))
+        .order(due_at: :desc, id: :desc)
+    }
+    includes = %i[agent account source_chat room activation_chat activation_message cancelled_by_user cancelled_by_agent]
+    render json: lists.to_h { |name, relation|
+      rows = relation.includes(*includes).limit(CommitmentPresentation::LIMIT).to_a
+      [ name, { items: rows.map { |commitment| conversation_commitment_json(commitment) }, total: relation.count } ]
+    }
+  end
+
   def create
     unless available_agents_scope.exists?
       redirect_to agent_creation_path, alert: "Create a resident before starting a conversation"
@@ -203,6 +229,21 @@ class ChatsController < ApplicationController
 
   def set_chat
     @chat = current_account.chats.kept.find(params[:id])
+  end
+
+  def conversation_commitment_json(commitment)
+    agent = commitment.agent
+    manage_url = if !commitment.manageable_by?(Current.user)
+      nil
+    elsif agent.account_id == current_account.id
+      edit_account_agent_path(current_account, agent, tab: "commitments")
+    else
+      account_agent_commitments_path(current_account, agent)
+    end
+    commitment.as_json.merge(
+      activation_url: commitment.activation_chat && account_chat_path(commitment.account, commitment.activation_chat),
+      manage_url: manage_url
+    )
   end
 
   def chat_params
