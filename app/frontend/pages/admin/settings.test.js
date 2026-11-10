@@ -85,6 +85,20 @@ test('switches billing on for new accounts and says who pays now', async () => {
   expect(body.get('setting[billing_enabled]')).toBe('true');
 });
 
+test('the free trial is offered by default and can be switched off', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, billing_enabled: true, free_trial_enabled: true },
+    billing: { accounts_required: 2, payment_open: true, configured: true, test_mode: true },
+  });
+  const toggle = screen.getByLabelText('Offer the free trial');
+  expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await fireEvent.click(toggle);
+  await fireEvent.submit(toggle.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[free_trial_enabled]')).toBe('false');
+  expect(body.get('setting[billing_enabled]')).toBe('true');
+});
+
 test('turns on scanned-page transcription with a daily ceiling, and says what is sent', async () => {
   render(Settings, {
     setting: {

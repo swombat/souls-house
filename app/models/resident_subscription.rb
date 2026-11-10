@@ -26,6 +26,10 @@ class ResidentSubscription < ApplicationRecord
   def live? = stripe_status.in?(LIVE_STATUSES)
   def paid? = stripe_status.in?(PAID_STATUSES)
   def ended? = stripe_status.in?(ENDED_STATUSES)
+  def trialing? = stripe_status == "trialing"
+
+  # When the free trial ends, while it runs; nil otherwise.
+  def trial_ends_at = trialing? ? trial_end : nil
 
   def tier_record = Billing::Tier.find(tier)
 

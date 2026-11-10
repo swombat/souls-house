@@ -224,6 +224,36 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
   # Controller contract tests keep fixture transactions; actual committed-intent
   # and PostgreSQL lock behavior is exercised in CheckoutLifecycleTest.
+  test "the Billing tab says whether the trial is offered and when each resident's trial ends" do
+    @account.update!(billing_required: true, trial_started_at: 3.days.ago)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "trialing")
+    ends = 11.days.from_now.change(usec: 0)
+    @stripe.subscription("sub_1")[:trial_end] = ends.to_i
+    with_stripe { Billing::SubscriptionSync.new("sub_1", client: @stripe).call }
+
+    with_stripe { get account_billing_path(@account) }
+    assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props.fetch("trial"))
+    row = inertia_shared_props.fetch("residents").find { |resident| resident["id"] == @agent.to_param }
+    assert_equal ends.iso8601, row.fetch("trial_ends_at")
+    assert_not row.key?("has_payment_method"), "not synced; see the controller"
+    others = inertia_shared_props.fetch("residents").reject { |resident| resident["id"] == @agent.to_param }
+    assert others.all? { |resident| resident.key?("trial_ends_at") && resident["trial_ends_at"].nil? }
+
+    @stripe.set_subscription_status("sub_1", "active")
+    with_stripe { Billing::SubscriptionSync.new("sub_1", client: @stripe).call }
+    @inertia_props = nil
+    with_stripe { get account_billing_path(@account) }
+    row = inertia_shared_props.fetch("residents").find { |resident| resident["id"] == @agent.to_param }
+    assert_nil row.fetch("trial_ends_at"), "a converted trial has no end"
+  end
+
+  test "an account that never had a subscription is offered the trial on the Billing tab" do
+    @account.update!(billing_required: true)
+    with_stripe { get account_billing_path(@account) }
+    assert_equal({ "eligible" => true, "days" => 14 }, inertia_shared_props.fetch("trial"))
+  end
+
   def with_stripe(&block)
     Billing.stub(:client, @stripe) do
       Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }) do

@@ -166,6 +166,8 @@ Rails.application.routes.draw do
       member do
         post :payment
         post :confirm
+        # Where Stripe's free-trial Checkout returns the browser.
+        get :trial_return
       end
     end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -91,6 +91,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
     t.string "speech_engine", default: "phonon", null: false
     t.text "eleven_labs_api_key"
     t.string "granted_plan"
+    t.datetime "trial_started_at"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -2431,12 +2432,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
     t.string "stripe_price_id"
     t.string "stripe_description"
     t.bigint "billing_code_redemption_id"
+    t.boolean "trial", default: false, null: false
+    t.string "stripe_checkout_session_id"
+    t.jsonb "checkout_create_params"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
+    t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY ((ARRAY['pending'::character varying, 'born'::character varying, 'failed'::character varying])::text[])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
     t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
+    t.index ["stripe_checkout_session_id"], name: "index_resident_birth_orders_on_stripe_checkout_session_id", unique: true
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
@@ -2541,6 +2547,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
     t.string "stripe_price_id"
     t.integer "plan_changes_count", default: 0, null: false
     t.boolean "includes_allowance", default: false, null: false
+    t.datetime "trial_end"
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
     t.index ["account_id"], name: "index_resident_subscriptions_one_allowance_per_account", unique: true, where: "includes_allowance"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
@@ -2892,6 +2899,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
     t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
+    t.boolean "free_trial_enabled", default: true, null: false
     t.string "voice_mode_scope", default: "account_choice", null: false
     t.string "speech_engine_scope", default: "disabled", null: false
   end

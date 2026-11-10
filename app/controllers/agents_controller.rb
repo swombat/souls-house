@@ -272,6 +272,7 @@ class AgentsController < ApplicationController
       tiers: Billing::Tier.all.select(&:purchasable?).as_json,
       account_plans: Billing::AccountPlan.all.as_json,
       offers: current_account.purchasable_offers.as_json,
+      trial: Billing::Trial.as_json_for(current_account),
       payment_method: payment_method,
       payment_method_error: payment_method_error,
       contact_email: Billing.contact_email,

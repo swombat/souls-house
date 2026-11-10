@@ -51,6 +51,25 @@ class FakeStripe
     @session_states[id] = @session_states.fetch(id).merge(status: "complete", setup_intent: { payment_method: payment_method })
   end
 
+  # A subscription-mode Checkout session is completed by the customer: Stripe
+  # makes its subscription from the session's subscription_data, trialing if
+  # it asked for a trial (no card needed), and reports the session complete.
+  def complete_checkout_session(id, subscription_id:, trial_end: 14.days.from_now)
+    state = @session_states.fetch(id)
+    params = state.fetch(:create_params)
+    data = params[:subscription_data] || {}
+    trial = data[:trial_period_days].present?
+    @subscriptions[subscription_id] = {
+      id: subscription_id, object: "subscription", status: trial ? "trialing" : "active", customer: params[:customer],
+      cancel_at_period_end: false, metadata: (data[:metadata] || {}).transform_keys(&:to_s),
+      trial_end: trial ? trial_end.to_i : nil, default_payment_method: nil,
+      items: { object: "list", data: params[:line_items].each_with_index.map { |item, index|
+        { id: "si_#{subscription_id}_#{index}", price: { id: item[:price] }, current_period_end: trial_end.to_i }
+      } }
+    }
+    @session_states[id] = state.merge(status: "complete", subscription: subscription_id)
+  end
+
   # The first invoice of a subscription is paid (or not).
   def set_subscription_status(id, status)
     @subscriptions.fetch(id)[:status] = status
@@ -265,13 +284,15 @@ class FakeStripe
   # A portal configuration whose plan switcher offers these prices (none by
   # default: the house's portal lets nobody switch plans). allowed: what the
   # switcher may change; products: nil for a plan list Stripe didn't send.
-  def put_portal_configuration(prices: [], active: true, enabled: true, allowed: %w[price quantity], products: :from_prices)
+  def put_portal_configuration(prices: [], active: true, enabled: true, allowed: %w[price quantity], products: :from_prices,
+    card_update: true)
     product_list = products == :from_prices ? (prices.empty? ? [] : [ { product: "prod_test", prices: prices } ]) : products
     update = { enabled: enabled, default_allowed_updates: allowed }
     update[:products] = product_list unless product_list.nil?
     @portal_configurations << {
       id: "bpc_test_#{@portal_configurations.size + 1}", active: active, is_default: @portal_configurations.empty?,
-      features: { subscription_update: update, subscription_cancel: { enabled: true } }
+      features: { subscription_update: update, subscription_cancel: { enabled: true },
+                  payment_method_update: { enabled: card_update } }
     }
   end
 
