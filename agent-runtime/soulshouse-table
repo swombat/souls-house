@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Field tables: small shared tables in your home account's Field.
+
+People in the account see the same rows on the Field's Tables page. Columns
+are declared (types: text number date boolean link); a key that is not a
+column is refused, and so is a value that doesn't fit its type. A table is
+named by its ID or by its exact name.
+
+  soulshouse-table list
+  soulshouse-table create "Build in public posts" --column date:date --column platform --column link:link
+  soulshouse-table columns TABLE add views --type number [--label Views]
+  soulshouse-table columns TABLE change views --new-key reach | --label Reach | --type text
+  soulshouse-table columns TABLE remove views
+  soulshouse-table add TABLE date=2026-11-10 platform=x          (or --json '{"date": ...}')
+  soulshouse-table add TABLE --file rows.json                     (a JSON list, at most 100 rows, all or none)
+  soulshouse-table update TABLE ROW views=40 [--lock-version 3]   (only these keys change; key= clears)
+  soulshouse-table remove TABLE ROW
+  soulshouse-table read TABLE [--where platform=x] [--sort date --desc] [--limit 50] [--offset 0]
+  soulshouse-table export TABLE [--out file.csv]
+  soulshouse-table rename TABLE "New name"
+  soulshouse-table delete TABLE                                   (only tables you made)
+
+With --lock-version, a row someone changed since you read it is refused (409)
+and the current row is printed; without it your write wins for that row.
+"""
+import argparse
+import csv
+import io
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+MAX_BYTES = 8 * 1024 * 1024
+ID_RE = re.compile(r"[A-Za-z0-9]+")
+KEY_RE = re.compile(r"[a-z][a-z0-9_]*")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+class Failure(Exception):
+    pass
+
+
+def parser():
+    root = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+                                   epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = root.add_subparsers(dest="operation", required=True)
+    sub.add_parser("list")
+    show = sub.add_parser("show")
+    show.add_argument("table")
+    create = sub.add_parser("create")
+    create.add_argument("name")
+    create.add_argument("--column", action="append", default=[], help="key[:type[:label]]")
+    rename = sub.add_parser("rename")
+    rename.add_argument("table")
+    rename.add_argument("name")
+    delete = sub.add_parser("delete")
+    delete.add_argument("table")
+
+    columns = sub.add_parser("columns")
+    columns.add_argument("table")
+    column_ops = columns.add_subparsers(dest="column_operation", required=True)
+    add_col = column_ops.add_parser("add")
+    add_col.add_argument("key")
+    add_col.add_argument("--type", default="text")
+    add_col.add_argument("--label")
+    change_col = column_ops.add_parser("change")
+    change_col.add_argument("key")
+    change_col.add_argument("--new-key")
+    change_col.add_argument("--label")
+    change_col.add_argument("--type")
+    remove_col = column_ops.add_parser("remove")
+    remove_col.add_argument("key")
+
+    add = sub.add_parser("add")
+    add.add_argument("table")
+    add.add_argument("pairs", nargs="*", help="key=value")
+    add.add_argument("--json", dest="json_data")
+    add.add_argument("--file", help="JSON object or list of objects, or - for stdin")
+    update = sub.add_parser("update")
+    update.add_argument("table")
+    update.add_argument("row")
+    update.add_argument("pairs", nargs="*", help="key=value (key= clears)")
+    update.add_argument("--json", dest="json_data")
+    update.add_argument("--lock-version", type=int)
+    remove = sub.add_parser("remove")
+    remove.add_argument("table")
+    remove.add_argument("row")
+    remove.add_argument("--lock-version", type=int)
+
+    read = sub.add_parser("read")
+    read.add_argument("table")
+    read.add_argument("--where", action="append", default=[], help="key=value (equality)")
+    read.add_argument("--sort", help="column key (or created); --sort=-key also sorts descending")
+    read.add_argument("--desc", action="store_true", help="sort descending")
+    read.add_argument("--limit", type=int)
+    read.add_argument("--offset", type=int)
+    export = sub.add_parser("export")
+    export.add_argument("table")
+    export.add_argument("--out", help="file to write (default stdout)")
+    return root
+
+
+class Client:
+    def __init__(self, base, token):
+        self.base = base.rstrip("/")
+        self.token = token
+
+    def call(self, method, path, payload=None, query=None):
+        url = self.base + path
+        if query:
+            url += "?" + urllib.parse.urlencode(query, doseq=True)
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
+                     "Accept": "application/json"},
+            method=method,
+        )
+        try:
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:
+                body = response.read(MAX_BYTES)
+        except urllib.error.HTTPError as error:
+            # Bounded server diagnostics; request headers are never printed.
+            raise Failure(f"Table request failed ({error.code}): {error.read(16384).decode(errors='replace')}")
+        return json.loads(body) if body else {"ok": True}
+
+
+def checked_id(value, what):
+    if not ID_RE.fullmatch(value or ""):
+        raise Failure(f"Invalid {what} ID: {value!r}")
+    return value
+
+
+def resolve_table(client, ref):
+    """An exact (case-insensitive) table name wins; otherwise ref is an ID."""
+    tables = client.call("GET", "/api/v1/field_tables")["field_tables"]
+    for table in tables:
+        if table["name"].lower() == ref.lower():
+            return table["id"]
+    return checked_id(ref, "table")
+
+
+def parse_pairs(pairs):
+    data = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise Failure(f"Expected key=value, got {pair!r}")
+        key, value = pair.split("=", 1)
+        data[key] = value if value != "" else None
+    return data
+
+
+def row_data(args):
+    data = parse_pairs(args.pairs)
+    if args.json_data:
+        loaded = json.loads(args.json_data)
+        if not isinstance(loaded, dict):
+            raise Failure("--json must be an object")
+        data.update(loaded)
+    return data
+
+
+def column_spec(text):
+    parts = text.split(":", 2)
+    spec = {"key": parts[0]}
+    if len(parts) > 1 and parts[1]:
+        spec["type"] = parts[1]
+    if len(parts) > 2 and parts[2]:
+        spec["label"] = parts[2]
+    return spec
+
+
+def read_rows_file(path):
+    stream = sys.stdin if path == "-" else open(path, encoding="utf-8")
+    try:
+        loaded = json.load(stream)
+    finally:
+        if path != "-":
+            stream.close()
+    if isinstance(loaded, dict):
+        return [loaded]
+    if isinstance(loaded, list) and all(isinstance(item, dict) for item in loaded):
+        return loaded
+    raise Failure("--file must hold a JSON object or a list of objects")
+
+
+def to_csv(columns, rows):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    keys = [column["key"] for column in columns]
+    writer.writerow(keys)
+    for row in rows:
+        writer.writerow(["" if row["data"].get(key) is None else row["data"].get(key) for key in keys])
+    return out.getvalue()
+
+
+def run(args, client):
+    op = args.operation
+    if op == "list":
+        return client.call("GET", "/api/v1/field_tables")
+    if op == "create":
+        return client.call("POST", "/api/v1/field_tables",
+                           {"name": args.name, "columns": [column_spec(c) for c in args.column]})
+
+    table = resolve_table(client, args.table)
+    path = f"/api/v1/field_tables/{table}"
+    if op == "show":
+        return client.call("GET", path)
+    if op == "rename":
+        return client.call("PATCH", path, {"name": args.name})
+    if op == "delete":
+        return client.call("DELETE", path)
+    if op == "columns":
+        if args.column_operation == "add":
+            payload = {"key": args.key, "type": args.type}
+            if args.label:
+                payload["label"] = args.label
+            return client.call("POST", f"{path}/columns", payload)
+        key = args.key
+        if not KEY_RE.fullmatch(key):
+            raise Failure(f"Invalid column key: {key!r}")
+        if args.column_operation == "change":
+            payload = {k: v for k, v in (("new_key", args.new_key), ("label", args.label), ("type", args.type)) if v}
+            if not payload:
+                raise Failure("Give --new-key, --label or --type")
+            return client.call("PATCH", f"{path}/columns/{key}", payload)
+        return client.call("DELETE", f"{path}/columns/{key}")
+    if op == "add":
+        if args.file:
+            rows = read_rows_file(args.file)
+            if len(rows) > 100:
+                raise Failure(f"At most 100 rows per call (the file has {len(rows)}); split it")
+            return client.call("POST", f"{path}/rows/bulk", {"rows": rows})
+        data = row_data(args)
+        return client.call("POST", f"{path}/rows", {"data": {k: v for k, v in data.items() if v is not None}})
+    if op == "update":
+        payload = {"data": row_data(args)}
+        if args.lock_version is not None:
+            payload["lock_version"] = args.lock_version
+        return client.call("PATCH", f"{path}/rows/{checked_id(args.row, 'row')}", payload)
+    if op == "remove":
+        query = {"lock_version": args.lock_version} if args.lock_version is not None else None
+        return client.call("DELETE", f"{path}/rows/{checked_id(args.row, 'row')}", query=query)
+    if op == "read":
+        query = [(f"where[{k}]", v if v is not None else "") for k, v in parse_pairs(args.where).items()]
+        if args.sort and args.desc and not args.sort.startswith("-"):
+            args.sort = "-" + args.sort
+        for name in ("sort", "limit", "offset"):
+            if getattr(args, name) is not None:
+                query.append((name, getattr(args, name)))
+        return client.call("GET", f"{path}/rows", query=query)
+    if op == "export":
+        result = client.call("GET", f"{path}/rows")
+        text = to_csv(result["columns"], result["rows"])
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+            return {"ok": True, "rows": len(result["rows"]), "file": args.out}
+        sys.stdout.write(text)
+        return None
+    raise Failure(f"Unknown operation {op}")
+
+
+def main():
+    args = parser().parse_args()
+    base = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not base or not token:
+        sys.exit("The resident API URL and token are required")
+    try:
+        result = run(args, Client(base, token))
+    except (Failure, OSError, ValueError, urllib.error.URLError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    if result is not None:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

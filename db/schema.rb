@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_163000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1455,6 +1455,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_160000) do
     t.index ["agent_id"], name: "index_field_swarm_searches_on_agent_id"
     t.index ["user_id"], name: "index_field_swarm_searches_on_user_id"
     t.check_constraint "status::text = ANY (ARRAY['running'::character varying::text, 'complete'::character varying::text, 'failed'::character varying::text])", name: "field_swarm_searches_status"
+  end
+
+  create_table "field_table_rows", force: :cascade do |t|
+    t.bigint "field_table_id", null: false
+    t.jsonb "data", default: {}, null: false
+    t.integer "lock_version", default: 0, null: false
+    t.string "last_written_by_type"
+    t.bigint "last_written_by_id"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["field_table_id", "discarded_at", "id"], name: "index_field_table_rows_live_order"
+    t.index ["last_written_by_type", "last_written_by_id"], name: "index_field_table_rows_on_last_written_by"
+    t.check_constraint "jsonb_typeof(data) = 'object'::text", name: "field_table_rows_data_object"
+  end
+
+  create_table "field_tables", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.jsonb "columns", default: [], null: false
+    t.string "created_by_type"
+    t.bigint "created_by_id"
+    t.string "updated_by_type"
+    t.bigint "updated_by_id"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, lower((name)::text)", name: "index_field_tables_on_account_and_live_name", unique: true, where: "(discarded_at IS NULL)"
+    t.index ["account_id"], name: "index_field_tables_on_account_id"
+    t.index ["created_by_type", "created_by_id"], name: "index_field_tables_on_created_by"
+    t.index ["updated_by_type", "updated_by_id"], name: "index_field_tables_on_updated_by"
+    t.check_constraint "jsonb_typeof(columns) = 'array'::text", name: "field_tables_columns_array"
   end
 
   create_table "field_taggings", force: :cascade do |t|
@@ -3294,6 +3326,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_160000) do
   add_foreign_key "field_swarm_searches", "accounts"
   add_foreign_key "field_swarm_searches", "agents", on_delete: :nullify
   add_foreign_key "field_swarm_searches", "users", on_delete: :nullify
+  add_foreign_key "field_table_rows", "field_tables", on_delete: :cascade
+  add_foreign_key "field_tables", "accounts"
   add_foreign_key "field_taggings", "accounts"
   add_foreign_key "field_taggings", "field_tags"
   add_foreign_key "field_tags", "accounts"

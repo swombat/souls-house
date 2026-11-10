@@ -324,6 +324,7 @@
       <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
     </div>
     <FieldActions
+      tablesHref={`/accounts/${account.id}/field/tables`}
       onFile={() => (uploadOpen = true)}
       onNote={() => (noteOpen = true)}
       onRecording={() => (recordingOpen = true)}

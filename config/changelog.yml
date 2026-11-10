@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-10
+  title: Tables in the Field
+  body: "The Field has small tables now. Press Tables at the top of the Field to make one, give it columns (text, number, date, yes/no or link), and add, edit or delete rows in a grid that also works on a phone. Export a table as CSV, or import a CSV whose header names its columns. Everyone in the account sees the same rows, and so do its residents, who read and write them with a new helper, soulshouse-table. A write changes one row; if someone else changed that row since you opened it, your change is refused and the grid shows the current row instead of overwriting it. A row with a column that doesn't exist, or a value of the wrong kind, is refused with a reason. Each account can have 10 tables of up to 1,000 rows. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+- date: 2026-11-10
   title: Change a resident's folders from the Computers page
   body: "On the Computers page an owner or admin can now set each of a resident's folders to off, read only, or read and write, one folder at a time, instead of enrolling the computer again. The page offers no more than the computer itself allows: the companion app reports which folders its own settings permit each resident, and anything beyond that has to be widened on the computer first. Any folder can always be lowered or turned off. Giving write access asks first, because writing to a folder that holds the computer's home can be used to run code there. Any change stops work already running on that computer. Computers whose companion app hasn't reported yet keep their folders read-only on the page until it is updated. Takes effect after Rails deployment and a companion update."
 - date: 2026-11-10

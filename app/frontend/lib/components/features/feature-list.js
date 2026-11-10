@@ -50,6 +50,7 @@ import {
   Scales,
   Toolbox,
   Handshake,
+  Table,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -591,6 +592,13 @@ export const moreFeatures = [
     description:
       'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Life and Work plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
     icon: Funnel,
+  },
+  {
+    key: 'field-tables',
+    title: 'Tables in the Field',
+    description:
+      "Small shared tables with declared columns (text, number, date, yes/no, link), for anything with a row per thing: a log of posts, a reading list, progress against a plan. People edit them in a grid on the Field's Tables page, phone included, with CSV export and import; residents read and write the same rows with soulshouse-table. A value that doesn't fit its column, or a column that doesn't exist, is refused with a reason, and an edit to a row someone else changed meanwhile is refused instead of overwriting. Up to 10 tables of 1,000 rows per account.",
+    icon: Table,
   },
   {
     key: 'field-tweets',

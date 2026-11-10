@@ -119,6 +119,7 @@ gem "bcrypt", "~> 3.1"
 
 gem "js-routes", "~> 2.4"
 
+gem "csv"
 gem "hashids"
 
 gem "ruby-openai"

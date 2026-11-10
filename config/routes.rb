@@ -338,6 +338,14 @@ Rails.application.routes.draw do
       patch :recognition, on: :collection
       post :retry_conversion, on: :collection
     end
+    resources :field_tables, path: "field/tables", only: [ :index, :show, :create, :update, :destroy ] do
+      member do
+        get :export
+        post :import
+      end
+      resources :rows, controller: "field_table_rows", only: [ :create, :update, :destroy ]
+      resources :columns, controller: "field_table_columns", only: [ :create, :update, :destroy ], param: :key
+    end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
     end
@@ -639,6 +647,12 @@ Rails.application.routes.draw do
       resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
         resource :tags, only: :update, controller: "field/item_tags"
+      end
+      resources :field_tables, only: %i[index show create update destroy] do
+        resources :rows, controller: "field_table_rows", only: %i[index show create update destroy] do
+          post :bulk, on: :collection
+        end
+        resources :columns, controller: "field_table_columns", only: %i[create update destroy], param: :key
       end
       namespace :field do
         resource :limits, only: :show
