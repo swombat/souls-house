@@ -26,7 +26,12 @@ class CompanionOperation < ApplicationRecord
   ACTIVE_STATES = %w[pending dispatched].freeze
   MAX_BODY = 8.megabytes
   MAX_INLINE = 64.kilobytes
-  SAFE_ERRORS = %w[denied cancelled deadline invalid unsupported unavailable changed failed].freeze
+  # Fixed refusal classes a companion may report. Anything else (raw errors,
+  # paths, OS messages, unknown words) is stored as the generic "failed".
+  # The companion reports "protected" ahead of any other class for a path in
+  # a protected subtree, so these codes never reveal what lies inside one.
+  SAFE_ERRORS = %w[denied cancelled deadline invalid unsupported unavailable changed failed
+    protected symlink not_found].freeze
 
   belongs_to :companion_device
   belongs_to :agent
