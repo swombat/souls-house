@@ -154,6 +154,8 @@ class Agent < ApplicationRecord
   # keeps each engine's choice.
   normalizes :phonon_voice, with: ->(value) { value.to_s.strip.presence }
   validate :phonon_voice_is_standard, if: -> { will_save_change_to_phonon_voice? && phonon_voice.present? }
+  # How its ElevenLabs voice is read aloud (VoiceDelivery); nil: the defaults.
+  validate :voice_delivery_is_valid, if: :will_save_change_to_voice_delivery?
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -351,6 +353,10 @@ class Agent < ApplicationRecord
   # Every resident can be read aloud: with Phonon (the default engine) a
   # resident with no voice of its own uses the catalogue's default one. Under
   # ElevenLabs a missing voice is a reason SpeechEngine gives, not silence.
+  def speech_delivery
+    VoiceDelivery.for(voice_delivery)
+  end
+
   def voiced?
     true
   end
@@ -577,6 +583,12 @@ class Agent < ApplicationRecord
       "is not one of the standard ElevenLabs voices")
   rescue ElevenLabsVoices::Unavailable
     errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
+  end
+
+  def voice_delivery_is_valid
+    VoiceDelivery.normalize!(voice_delivery)
+  rescue VoiceDelivery::Invalid => e
+    e.errors.each { |message| errors.add(:voice_delivery, message) }
   end
 
   def phonon_voice_is_standard

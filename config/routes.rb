@@ -524,6 +524,9 @@ Rails.application.routes.draw do
       get "agent/voice", to: "agent_voices#show"
       patch "agent/voice", to: "agent_voices#update"
       delete "agent/voice", to: "agent_voices#destroy"
+      get "agent/voice/delivery", to: "agent_voices#show_delivery"
+      put "agent/voice/delivery", to: "agent_voices#update_delivery"
+      delete "agent/voice/delivery", to: "agent_voices#destroy_delivery"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create

@@ -264,5 +264,13 @@
     {#if error}
       <p class="text-sm text-destructive">{error}</p>
     {/if}
+
+    {#if voice.delivery_summary}
+      <!-- How the voice is read aloud (VoiceDelivery). The resident sets it
+           through the API; shown here so the owner can see it. -->
+      <p class="text-xs text-muted-foreground" data-testid="agent-voice-delivery">
+        Delivery: {voice.delivery_summary}
+      </p>
+    {/if}
   </div>
 {/if}
