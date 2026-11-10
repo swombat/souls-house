@@ -149,4 +149,107 @@ class CompanionOperationTest < ActiveSupport::TestCase
     assert_equal "completed", operation.state
   end
 
+  test "desktop is its own grant: execute and volumes never imply it, and it never implies them" do
+    snapshot = { "command" => "snapshot", "app" => "Finder", "interactive" => true }
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    end
+    allow_mutations(execute: true, source_write: true)
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    end
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: snapshot)
+    assert_equal "desktop", operation.envelope[:operation]
+    assert_equal true, operation.envelope[:policy]["residents"].first["desktop"]
+    assert operation.input_required?
+    assert_raises(CompanionOperation::Refused) do
+      CompanionOperation.start!(device: @device, agent: @agent, kind: "execute", arguments: { "input_size" => 2 })
+    end
+  end
+
+  test "desktop arguments keep the outer shape and bounds" do
+    allow_mutations
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    start = ->(arguments) { CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: arguments) }
+    assert start.call({ "command" => "batch", "timeout_seconds" => 120,
+      "steps" => [ { "command" => "snapshot", "app" => "Finder" }, { "command" => "click", "app" => "Finder", "ref" => "@a:e1" } ] })
+    [
+      { "command" => "snapshot", "app" => "Finder", "headed" => true },
+      { "command" => "snapshot", "app" => "Finder", "timeout_seconds" => 121 },
+      { "command" => "batch", "steps" => [] },
+      { "command" => "batch", "steps" => [ { "command" => "batch", "steps" => [] } ] },
+      { "command" => "batch", "steps" => Array.new(17) { { "command" => "snapshot", "app" => "Finder" } } },
+      { "app" => "Finder" },
+      { "command" => "launch", "app" => "Terminal" },
+      { "command" => "snapshot", "app" => { "x" => 1 } },
+      { "command" => "snapshot", "app" => "Finder", "input_size" => 3 },
+      { "command" => "batch", "steps" => [ { "command" => "click", "app" => [ "Finder" ], "ref" => "@a:e1" } ] }
+    ].each do |arguments|
+      assert_raises(CompanionOperation::Refused, arguments.inspect) { start.call(arguments) }
+    end
+  end
+
+  test "owner changes execute and desktop after enrollment; revision bump cancels in-flight work" do
+    allow_mutations
+    operation = start_read
+    revision = @device.grant_revision
+    assert @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    assert_equal revision + 1, @device.reload.grant_revision
+    assert_equal "cancelled", operation.reload.state
+    assert_equal [ { "volume" => "fixture-volume", "access" => "read" }, { "volume" => "destination", "access" => "write" } ],
+      @device.policy["residents"].first["volumes"]
+    assert_not @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    assert_equal revision + 1, @device.reload.grant_revision
+    log = AuditLog.where(action: "companion.device.authority_changed").last
+    assert_equal({ "execute" => false, "desktop" => true }, log.data["after"])
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: false, actor: users(:user_1))
+    assert_not @device.reload.policy["residents"].first.key?("desktop")
+    assert_raises(ArgumentError) do
+      @device.change_resident_authority!(resident_id: "Nobody", execute: true, desktop: true, actor: users(:user_1))
+    end
+  end
+
+  test "desktop payload is private and short-lived; the durable row keeps verbs and apps only" do
+    allow_mutations
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    @device.update!(connection_epoch: "fixture-epoch")
+    payload = { "command" => "batch", "steps" => [
+      { "command" => "click", "app" => "Finder", "ref" => "@abc:e1" },
+      { "command" => "type", "app" => "Finder", "ref" => "@abc:e2", "text" => "secret words" } ] }
+    operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    assert_equal({ "command" => "batch", "steps" => [ { "command" => "click", "app" => "Finder" },
+      { "command" => "type", "app" => "Finder" } ], "input_size" => JSON.generate(payload).bytesize }, operation.reload.arguments)
+    assert_not_includes operation.arguments.to_json, "secret"
+    assert operation.input.expires_at <= operation.deadline
+
+    assert operation.input_required?
+    assert_equal JSON.generate(payload).bytesize, operation.arguments["input_size"]
+    sent = nil
+    CompanionChannel.stub(:broadcast_to, ->(_device, message) { sent = message }) { assert operation.dispatch! }
+    assert_not_includes sent.to_json, "secret"
+    assert_not_includes sent.to_json, "@abc"
+    assert_equal true, sent[:input_required]
+    assert_equal payload, JSON.parse(operation.take_input!(epoch: "fixture-epoch", revision: @device.reload.grant_revision))
+    assert_nil operation.take_input!(epoch: "fixture-epoch", revision: @device.grant_revision)
+    assert_raises(CompanionOperation::Refused) { operation.attach_input!("{}") }
+
+    missing = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    missing.input.destroy!
+    assert_not missing.reload.dispatch!
+
+    cancelled = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: false, actor: users(:user_1))
+    assert_equal "cancelled", cancelled.reload.state
+    assert_nil CompanionOperationInput.find_by(companion_operation_id: cancelled.id)
+
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))
+    expired = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
+    travel 11.minutes do
+      CompanionSweepJob.perform_now
+      assert_nil CompanionOperationInput.find_by(companion_operation_id: expired.id)
+      assert_not expired.reload.dispatch!
+    end
+  end
+
 end

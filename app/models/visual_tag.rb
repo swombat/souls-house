@@ -29,6 +29,7 @@ class VisualTag < ApplicationRecord
   validate :account_cannot_change, on: :update
   validate :pin_label_is_fixed, if: :pinned?
   validate :pin_stays_on_top
+  validate :hiding_is_not_keeping_on_top
   before_validation -> { self.label = label.strip if label.is_a?(String) }
   before_destroy :keep_pin, prepend: true
   before_destroy :clear_chat_selections
@@ -38,6 +39,8 @@ class VisualTag < ApplicationRecord
   # Tags whose conversations lead the list: the built-in Pin, and any tag the
   # account has set to keep its conversations on top.
   scope :keeping_on_top, -> { where(pinned: true).or(where(pins_to_top: true)) }
+  # Tags whose conversations stay out of the sidebar until the tag comes off.
+  scope :hiding_from_list, -> { where(hides_from_list: true) }
 
   # Browser-only account aggregate. Keep as_json and the resident API palette
   # presentation-only: guests must not learn usage in rooms they cannot see.
@@ -78,7 +81,7 @@ class VisualTag < ApplicationRecord
 
   def as_json(_options = nil)
     { "id" => to_param, "label" => label, "icon" => icon, "colour" => colour, "pinned" => pinned?,
-      "pins_to_top" => pins_to_top? }
+      "pins_to_top" => pins_to_top?, "hides_from_list" => hides_from_list? }
   end
 
   private
@@ -96,6 +99,18 @@ class VisualTag < ApplicationRecord
 
   def pin_stays_on_top
     errors.add(:pins_to_top, "is always on for the Pin tag") if @pin_switched_off
+  end
+
+  # A tag either keeps its conversations at the top or hides them; the Pin
+  # always keeps them at the top, so it never hides.
+  def hiding_is_not_keeping_on_top
+    return unless hides_from_list?
+
+    if pinned?
+      errors.add(:hides_from_list, "is never on for the Pin tag")
+    elsif pins_to_top?
+      errors.add(:hides_from_list, "can't be on while the tag keeps its conversations at the top")
+    end
   end
 
   def keep_pin

@@ -198,6 +198,7 @@ Rails.application.routes.draw do
     # Repository watches on the Integrations page's GitHub card.
     resources :watched_repositories, path: "repositories", only: [ :create, :update, :destroy ], module: :accounts
     resources :commit_statuses, only: :index, module: :accounts
+    resources :conversation_titles, only: :index, module: :accounts
     resources :repository_watches, path: "watches", only: :destroy, module: :accounts
     resources :github_resident_imports, only: [ :new, :create, :show ] do
       post :approve, on: :member
@@ -523,6 +524,9 @@ Rails.application.routes.draw do
       get "agent/voice", to: "agent_voices#show"
       patch "agent/voice", to: "agent_voices#update"
       delete "agent/voice", to: "agent_voices#destroy"
+      get "agent/voice/delivery", to: "agent_voices#show_delivery"
+      put "agent/voice/delivery", to: "agent_voices#update_delivery"
+      delete "agent/voice/delivery", to: "agent_voices#destroy_delivery"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
@@ -605,6 +609,7 @@ Rails.application.routes.draw do
       resources :youtube_reads, only: :create
       resources :x_reads, only: :create
       resources :x_posts, only: %i[create update]
+      resources :linkedin_posts, only: %i[create show update]
       # A resident connecting a service itself (issue #500).
       scope :resident, as: :resident do
         resources :service_connections, only: %i[index create update destroy], controller: "resident_service_connections" do
@@ -726,6 +731,8 @@ Rails.application.routes.draw do
   post "shared/transcripts" => "shared_transcripts#reveal"
   get "decisions" => "decisions#index", as: :decisions
   get "decisions/:slug" => "decisions#show", as: :decision
+  get "tool-shed" => "tool_shed#index", as: :tool_shed
+  get "tool-shed/:slug" => "tool_shed#show", as: :tool_shed_tool
   get "create_flash" => "pages#create_flash"
   root "pages#home"
 end

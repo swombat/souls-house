@@ -66,4 +66,16 @@ class Api::V1::Field::TweetsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "never-shown"
   end
 
+  test "removed source is hidden from resident status while imported tweets stay readable" do
+    source = @account.all_field_tweet_sources.create!(handle: "danielt")
+    @tweet.update!(field_tweet_source: source)
+    source.remove!
+    get api_v1_field_tweet_stream_path, headers: @headers
+    assert_response :success
+    assert_nil response.parsed_body["source"]
+    get api_v1_field_tweet_path(@tweet), headers: @headers
+    assert_response :success
+    assert_equal source.id, @tweet.reload.field_tweet_source_id
+  end
+
 end

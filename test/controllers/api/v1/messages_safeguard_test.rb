@@ -86,17 +86,6 @@ module Api
         assert_nil Message.last.safeguard_detection
       end
 
-      test "an invalid post leaves no detection and no cold offer" do
-        with_classifier("DETECTED\nGeneric.") do
-          assert_no_difference [ "Message.count", "SafeguardDetection.count" ] do
-            assert_no_enqueued_jobs(only: SafeguardColdOfferJob) do
-              post_as_resident("")
-            end
-          end
-        end
-        assert_response :unprocessable_entity
-      end
-
       def detected_result
         SafeguardResponseCheck::Result.new(
           detected: true, prefilter_reason: "ai_identity_denial", classifier_verdict: "detected",

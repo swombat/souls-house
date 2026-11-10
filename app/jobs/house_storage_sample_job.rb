@@ -21,7 +21,7 @@ class HouseStorageSampleJob < ApplicationJob
 
   private
 
-  # Reuses the hourly CollectAgentStorageUsageJob measurement (du of each
+  # Reuses the daily (04:15) CollectAgentStorageUsageJob measurement (du of each
   # resident's volumes); this only keeps a daily history of it.
   def sample_resident_disk(now)
     Agent.hosted.find_each do |agent|

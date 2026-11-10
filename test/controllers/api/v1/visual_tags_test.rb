@@ -69,7 +69,7 @@ module Api
         get api_v1_visual_tags_path, params: { account_id: destination.to_param }, headers: @resident_headers
         assert_response :success
         assert_equal [ unused.as_json, used.as_json ], response.parsed_body.fetch("visual_tags")
-        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned pins_to_top] }
+        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour hides_from_list icon id label pinned pins_to_top] }
       end
 
       test "a resident's tag change is written into the room under the resident's name; other edits are not" do
@@ -262,6 +262,27 @@ module Api
         pin_tag(pin, false)
         assert_response :unprocessable_entity
         assert pin.reload.pins_to_top?
+      end
+
+      test "a resident switches hides_from_list, alone or with pins_to_top, with an audit row" do
+        assert_difference -> { AuditLog.where(action: "update_visual_tag").count }, 1 do
+          patch api_v1_visual_tag_path(@tag), params: { hides_from_list: true }, as: :json, headers: @resident_headers
+        end
+        assert_response :success
+        assert_equal true, response.parsed_body.dig("visual_tag", "hides_from_list")
+        assert @tag.reload.hides_from_list?
+        assert_equal true, AuditLog.where(action: "update_visual_tag").last.data["hides_from_list"]
+
+        patch api_v1_visual_tag_path(@tag), params: { pins_to_top: true }, as: :json, headers: @resident_headers
+        assert_response :unprocessable_entity
+        patch api_v1_visual_tag_path(@tag), params: { pins_to_top: true, hides_from_list: false }, as: :json,
+          headers: @resident_headers
+        assert_response :success
+        assert @tag.reload.pins_to_top?
+        assert_not @tag.hides_from_list?
+
+        patch api_v1_visual_tag_path(@tag), params: { hides_from_list: "yes" }, as: :json, headers: @resident_headers
+        assert_response :unprocessable_entity
       end
 
       test "a resident cannot switch tags where it is a guest or in another account" do

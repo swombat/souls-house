@@ -119,8 +119,9 @@ RUN groupmod --new-name agent node \
 
 # Clamp speaks Claude Code's documented stream-json protocol. Keep this pin
 # explicitly: the Anthropic login ceremony parser is tested against it.
-# Opus 5.5 subscription requests require Claude Code 2.1.280 or newer.
-ARG CLAUDE_CODE_VERSION=2.1.280
+# Opus 5.5 subscription requests require Claude Code 2.1.280 or newer;
+# Fable 5.2 requires 2.1.290 and is first in the model catalog at 2.1.321.
+ARG CLAUDE_CODE_VERSION=2.1.321
 RUN bun install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 
@@ -252,6 +253,7 @@ COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal
 COPY soulshouse-usage /usr/local/bin/soulshouse-usage
 COPY soulshouse-youtube /usr/local/bin/soulshouse-youtube
 COPY soulshouse-x /usr/local/bin/soulshouse-x
+COPY soulshouse-linkedin /usr/local/bin/soulshouse-linkedin
 COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY soulshouse-comms /usr/local/bin/soulshouse-comms
 COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
@@ -267,7 +269,7 @@ COPY github_import_approval.py github_import_credential.py /home/agent/
 COPY --chmod=0755 github-import-trust-setup /usr/local/bin/github-import-trust-setup
 COPY runtime_settings.py runtime_hooks.py /usr/local/share/helixkit-agent/
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet /usr/local/bin/soulshouse-ghost /usr/local/bin/soulshouse-twenty /usr/local/bin/soulshouse-integrations \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-linkedin /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet /usr/local/bin/soulshouse-ghost /usr/local/bin/soulshouse-twenty /usr/local/bin/soulshouse-integrations \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 

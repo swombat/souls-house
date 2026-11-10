@@ -117,7 +117,7 @@ test('does not refetch or hide usage when live updates replace equivalent subscr
   expect(screen.getByText('40% used')).toBeVisible();
 });
 
-test('refreshes once a minute without blanking bars or overlapping requests, and stops on unmount', async () => {
+test('refreshes every five minutes without blanking bars or overlapping requests, and stops on unmount', async () => {
   vi.useFakeTimers();
   const snapshot = {
     status: 'available',
@@ -138,20 +138,103 @@ test('refreshes once a minute without blanking bars or overlapping requests, and
   await vi.advanceTimersByTimeAsync(0);
   await tick();
   expect(screen.getByText('40% used')).toBeVisible();
-  await vi.advanceTimersByTimeAsync(59_999);
+  await vi.advanceTimersByTimeAsync(299_999);
   expect(fetchUsage).toHaveBeenCalledTimes(1);
   await vi.advanceTimersByTimeAsync(1);
   expect(fetchUsage).toHaveBeenCalledTimes(2);
   expect(screen.getByText('40% used')).toBeVisible();
   expect(screen.queryByText('Checking usage…')).not.toBeInTheDocument();
-  await vi.advanceTimersByTimeAsync(60_000);
+  await vi.advanceTimersByTimeAsync(300_000);
   expect(fetchUsage).toHaveBeenCalledTimes(2);
   finishRefresh({ ok: true, json: async () => snapshot });
   await vi.advanceTimersByTimeAsync(0);
   unmount();
   expect(fetchUsage.mock.calls[1][1].signal.aborted).toBe(true);
-  await vi.advanceTimersByTimeAsync(120_000);
+  await vi.advanceTimersByTimeAsync(600_000);
   expect(fetchUsage).toHaveBeenCalledTimes(2);
+});
+
+test('does not poll while the tab is hidden and catches up when it is shown', async () => {
+  vi.useFakeTimers();
+  let hidden = false;
+  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  const snapshot = {
+    status: 'available',
+    windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+  };
+  const fetchUsage = vi.fn().mockResolvedValue({ ok: true, json: async () => snapshot });
+  vi.stubGlobal('fetch', fetchUsage);
+  render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUsage).toHaveBeenCalledTimes(1);
+  hidden = true;
+  await vi.advanceTimersByTimeAsync(900_000);
+  expect(fetchUsage).toHaveBeenCalledTimes(1);
+  hidden = false;
+  document.dispatchEvent(new Event('visibilitychange'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+});
+
+test('says how old a stale reading is', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'available',
+        stale: true,
+        checked_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+        windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+      }),
+    })
+  );
+  render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  expect(await screen.findByText('Checked 4 min ago')).toBeVisible();
+});
+
+test('labels a reading that arrived fresh once it is older than a minute, between polls', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'available',
+        stale: false,
+        checked_at: new Date().toISOString(),
+        windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+      }),
+    })
+  );
+  render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(screen.queryByTestId('usage-checked-at')).not.toBeInTheDocument();
+  await vi.advanceTimersByTimeAsync(120_000);
+  await tick();
+  expect(screen.getByText('Checked 2 min ago')).toBeVisible();
+});
+
+test('says nothing about age when the reading is fresh', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'available',
+        stale: false,
+        checked_at: new Date().toISOString(),
+        windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+      }),
+    })
+  );
+  render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  expect(await screen.findByText('40% used')).toBeVisible();
+  expect(screen.queryByTestId('usage-checked-at')).not.toBeInTheDocument();
 });
 
 test('ignores an old request after switching residents and clears usage on disconnect', async () => {

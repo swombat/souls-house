@@ -15,6 +15,14 @@ class CompanionOperation < ApplicationRecord
     "trash" => %w[volume path quarantine],
     "execute" => %w[input_size timeout_seconds]
   }.freeze
+  # Desktop arguments are validated in full by the companion's allowlisted
+  # grammar; the house checks the outer shape and the grant.
+  DESKTOP_KEYS = %w[command app steps timeout_seconds interactive compact skeleton max_depth surface root
+    window_id wait_for wait_timeout_ms role name value text description native_id exact first last count nth
+    limit ref property combo direction amount].freeze
+  DESKTOP_MAX_ARGUMENTS = 24.kilobytes
+  DESKTOP_VERBS = %w[snapshot find get is click type press scroll].freeze
+  DESKTOP_APP = /\A[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}\z/
   ACTIVE_STATES = %w[pending dispatched].freeze
   MAX_BODY = 8.megabytes
   MAX_INLINE = 64.kilobytes
@@ -26,9 +34,10 @@ class CompanionOperation < ApplicationRecord
   has_one :input, class_name: "CompanionOperationInput", dependent: :destroy
 
   def self.start!(device:, agent:, kind:, arguments:)
-    raise Refused, "Unsupported operation" unless READ_KINDS.include?(kind) || ARGUMENT_KEYS.key?(kind)
-    raise Refused, "Invalid arguments" unless arguments.is_a?(Hash) && arguments.to_json.bytesize <= 8.kilobytes
-    keys = ARGUMENT_KEYS.fetch(kind, %w[volume path offset limit pattern cursor])
+    raise Refused, "Unsupported operation" unless READ_KINDS.include?(kind) || ARGUMENT_KEYS.key?(kind) || kind == "desktop"
+    limit = kind == "desktop" ? DESKTOP_MAX_ARGUMENTS : 8.kilobytes
+    raise Refused, "Invalid arguments" unless arguments.is_a?(Hash) && arguments.to_json.bytesize <= limit
+    keys = kind == "desktop" ? DESKTOP_KEYS : ARGUMENT_KEYS.fetch(kind, %w[volume path offset limit pattern cursor])
     raise Refused, "Unexpected arguments" unless (arguments.keys - keys).empty?
     if %w[write execute].include?(kind)
       size = arguments["input_size"]
@@ -37,8 +46,24 @@ class CompanionOperation < ApplicationRecord
     if kind == "write"
       raise Refused, "Invalid write mode" unless %w[create overwrite append].include?(arguments.fetch("mode", "create"))
     end
-    timeout = kind == "execute" ? arguments.fetch("timeout_seconds", 30) : 30
-    raise Refused, "Invalid timeout" unless timeout.is_a?(Integer) && timeout.between?(1, 300)
+    if kind == "desktop"
+      raise Refused, "Invalid desktop arguments" if arguments.key?("input_size")
+      valid_step = ->(step) do
+        step.is_a?(Hash) && DESKTOP_VERBS.include?(step["command"]) && step["app"].is_a?(String) &&
+          DESKTOP_APP.match?(step["app"]) && (step.keys - DESKTOP_KEYS).empty? &&
+          step.keys.exclude?("steps") && step.keys.exclude?("timeout_seconds")
+      end
+      if arguments["command"] == "batch"
+        steps = arguments["steps"]
+        raise Refused, "Invalid batch" unless (arguments.keys - %w[command steps timeout_seconds]).empty? &&
+          steps.is_a?(Array) && steps.size.between?(1, 16) && steps.all?(&valid_step)
+      else
+        raise Refused, "Invalid desktop command" unless valid_step.call(arguments.except("timeout_seconds"))
+      end
+    end
+    timeout = %w[execute desktop].include?(kind) ? arguments.fetch("timeout_seconds", 30) : 30
+    maximum = kind == "desktop" ? 120 : 300
+    raise Refused, "Invalid timeout" unless timeout.is_a?(Integer) && timeout.between?(1, maximum)
 
     device.with_lock do
       where(companion_device: device, state: ACTIVE_STATES).where(deadline: ..Time.current).update_all(state: "timed_out", outcome: "deadline")
@@ -46,9 +71,30 @@ class CompanionOperation < ApplicationRecord
       raise Refused, "Grant denied" unless permitted?(device, agent, kind, arguments)
       raise Refused, "Device busy" if where(companion_device: device, state: ACTIVE_STATES).count >= 4
 
-      create!(companion_device: device, agent: agent, kind: kind, arguments: arguments,
-        connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: timeout.seconds.from_now)
+      deadline = timeout.seconds.from_now
+      if kind == "desktop"
+        # The durable row and the Cable envelope carry a receipt only (verbs,
+        # apps, input size). Typed text, refs and the rest wait in the expiring
+        # input row, which the device fetches once over HTTP.
+        payload = JSON.generate(arguments).b
+        operation = create!(companion_device: device, agent: agent, kind: kind,
+          arguments: desktop_receipt(arguments).merge("input_size" => payload.bytesize),
+          connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: deadline)
+        operation.create_input!(data: payload, expires_at: [ deadline, 10.minutes.from_now ].min)
+        operation
+      else
+        create!(companion_device: device, agent: agent, kind: kind, arguments: arguments,
+          connection_epoch: device.connection_epoch, grant_revision: device.grant_revision, deadline: deadline)
+      end
     end
+  end
+
+  def self.desktop_receipt(arguments)
+    receipt = arguments.slice("command", "app", "timeout_seconds")
+    if arguments["command"] == "batch"
+      receipt["steps"] = arguments["steps"].map { |step| step.slice("command", "app") }
+    end
+    receipt
   end
 
   def self.permitted?(device, agent, kind, arguments)
@@ -58,6 +104,7 @@ class CompanionOperation < ApplicationRecord
     return false unless resident
     return true if kind == "drives"
     return resident["execute"] == true if kind == "execute"
+    return resident["desktop"] == true if kind == "desktop"
 
     grants = resident.fetch("volumes", [])
     allowed = ->(volume, write) do
@@ -70,7 +117,7 @@ class CompanionOperation < ApplicationRecord
   end
 
   def input_required?
-    kind.in?(%w[write execute])
+    kind.in?(%w[write execute desktop])
   end
 
   # The upload is actor/device/operation-bound; never place file bytes, argv or

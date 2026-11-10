@@ -34,13 +34,15 @@ class CompanionEnrollmentGrant < ApplicationRecord
     ids = []
     volume_count = 0
     normalized = residents.map do |resident|
-      invalid.call unless resident.is_a?(Hash) && resident.keys.sort == %w[execute id volumes]
+      invalid.call unless resident.is_a?(Hash) &&
+        [ %w[execute id volumes], %w[desktop execute id volumes] ].include?(resident.keys.sort)
       id = resident["id"]
       invalid.call unless id.is_a?(String) && PUBLIC_ID.match?(id)
       agent = account.agents.find_by(id: Agent.decode_id(id))
       invalid.call unless agent && agent.to_param == id && !ids.include?(id)
       ids << id
       invalid.call unless [ true, false ].include?(resident["execute"])
+      invalid.call if resident.key?("desktop") && ![ true, false ].include?(resident["desktop"])
       volumes = resident["volumes"]
       invalid.call unless volumes.is_a?(Array) && volumes.size <= 128
       volume_count += volumes.size
@@ -54,7 +56,12 @@ class CompanionEnrollmentGrant < ApplicationRecord
         keys << key
         { "volume" => key, "access" => volume["access"] }
       end
-      { "id" => id, "volumes" => normalized_volumes, "execute" => resident["execute"] }
+      entry = { "id" => id, "volumes" => normalized_volumes, "execute" => resident["execute"] }
+      # Desktop is its own authority: never implied by execute or volumes. It
+      # is written only when true, so companions that predate it see the
+      # policy shape they already know.
+      entry["desktop"] = true if resident["desktop"] == true
+      entry
     end
     { "residents" => normalized }
   rescue Hashids::InputError
@@ -73,6 +80,11 @@ class CompanionEnrollmentGrant < ApplicationRecord
       warnings << "Execute grants allow arbitrary code execution with the service user's OS authority. " \
         "Executed programs can rewrite state.json, including the local ceiling. The companion is not a " \
         "sandbox, and the local ceiling is not an enforceable limit against an execute-granted actor."
+    end
+    if residents.any? { |resident| resident["desktop"] }
+      warnings << "Desktop grants let a resident operate the apps the computer's owner lists locally, while the " \
+        "owner's timed switch is on. Operating an app that can run commands (Terminal, an editor, a browser " \
+        "console) is shell authority through the user interface."
     end
     warnings
   end

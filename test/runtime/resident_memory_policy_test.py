@@ -71,7 +71,7 @@ class MemoryPolicyTest(unittest.TestCase):
         out=io.StringIO()
         trace=[]
         env={'SOULSHOUSE_MEMORY_AGGREGATION':'1' if aggregation else ''}
-        with patch.object(stop,'IDENTITY_PATH',self.identity), patch.object(stop,'entries_since',return_value=written), patch.object(stop,'turn_floor',return_value=None), patch.object(stop,'append_trace',side_effect=lambda e,a,i,*_:trace.append(i)), patch.object(stop,'command_reference',return_value=(ROOT/'agent-runtime/docs/memory-quick-reference.md').read_text()), patch.dict(os.environ,env), patch('sys.stdin',io.StringIO(json.dumps(dict(last_assistant_message=assistant,stop_hook_active=active)))), contextlib.redirect_stderr(out):
+        with patch.object(stop,'IDENTITY_PATH',self.identity), patch.object(stop,'entries_since',return_value=written), patch.object(stop,'turn_floor',return_value=None), patch.object(stop,'append_trace',side_effect=lambda e,a,i:trace.append(i)), patch.object(stop,'command_reference',return_value=(ROOT/'agent-runtime/docs/memory-quick-reference.md').read_text()), patch.dict(os.environ,env), patch('sys.stdin',io.StringIO(json.dumps(dict(last_assistant_message=assistant,stop_hook_active=active)))), contextlib.redirect_stderr(out):
             try:stop.main();code=0
             except SystemExit as e:code=e.code
         return code,out.getvalue(),trace

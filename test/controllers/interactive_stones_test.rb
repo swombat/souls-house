@@ -31,12 +31,13 @@ class InteractiveStonesTest < ActionDispatch::IntegrationTest
     refute_includes response.headers["Content-Security-Policy"].to_s, "allow-scripts"
   end
 
-  test "isolated viewer requires start and content has independent script-only sandbox" do
+  test "isolated viewer runs on load and content has independent script-only sandbox" do
     host! @host
     get "/"
     assert_response :success
-    assert_select "#stone-start", text: "Start interactive stone"
-    assert_select "iframe", count: 0
+    assert_select "#stone-stop", text: "Stop and unload"
+    assert_select "#stone-container > iframe[sandbox=allow-scripts][src=?]", "/revisions/1/content", count: 1
+    assert_select "iframe[sandbox*=allow-same-origin]", count: 0
     refute response.headers.key?("Set-Cookie")
     get "/revisions/1/content"
     assert_response :success

@@ -10,7 +10,9 @@
   // commitmentLabel: set when a resident has promised to come back to this conversation.
   // The clock then sits faint behind the tag, its right third hidden under it, or in the
   // tag's place when there is no tag. It is absolutely placed, so nothing else in the row moves.
-  let { chat, accountId, tags = [], commitmentLabel = '' } = $props();
+  // faintEmpty: in the sidebar an untagged row shows a barely-there tag outline; the
+  // conversation header passes false so the button is findable there.
+  let { chat, accountId, tags = [], commitmentLabel = '', faintEmpty = true } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -118,7 +120,9 @@
     onpointerdown={menu.pointerdown}
     class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2 {current
       ? visualTagColour(current.colour)
-      : 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'}"
+      : faintEmpty
+        ? 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'
+        : 'text-muted-foreground hover:text-foreground'}"
     aria-label={`Change visual tag: ${label}`}
     {title}
     disabled={chat.discarded}>

@@ -125,3 +125,51 @@ test('voices are native radios in one named group, so arrow keys and the single 
   expect(checked()).toMatch(/Brian/);
   expect(screen.getByRole('button', { name: 'Use this voice' })).not.toBeDisabled();
 });
+
+test("the account's own voices are their own group, previewable and choosable", async () => {
+  fetch.mockImplementation(async () => ({
+    ok: true,
+    json: async () => ({
+      voices,
+      library_voices: [{ voice_id: 'own-janis', name: 'Janis', description: 'Cloned.', labels: {} }],
+    }),
+  }));
+  render(AgentVoicePicker, { voice: voiceProp('own-janis') });
+  await screen.findByRole('radio', { name: /Janis/ });
+
+  expect(screen.getByText('Your ElevenLabs voices')).toBeInTheDocument();
+  expect(screen.getByText('Standard voices')).toBeInTheDocument();
+  expect(checked()).toMatch(/Janis/);
+  expect(screen.queryByText(/isn't in either list/)).toBeNull();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Preview Janis' }));
+  expect(screen.getByTestId('voice-preview-audio').getAttribute('src')).toBe(
+    '/accounts/a/agents/r/voice_preview/own-janis'
+  );
+});
+
+test('an unreadable standard list still shows the own voices, and says so', async () => {
+  fetch.mockImplementation(async () => ({
+    ok: true,
+    json: async () => ({
+      voices: [],
+      unavailable: true,
+      library_voices: [{ voice_id: 'own-janis', name: 'Janis', description: '', labels: {} }],
+    }),
+  }));
+  render(AgentVoicePicker, { voice: voiceProp(null) });
+  await screen.findByRole('radio', { name: /Janis/ });
+
+  expect(screen.getByText(/standard voice list can't be read/)).toBeInTheDocument();
+  expect(screen.queryByText('Standard voices')).toBeNull();
+});
+
+test('the delivery the resident set is shown as one read-only line', async () => {
+  render(AgentVoicePicker, {
+    voice: { ...voiceProp('std-aria'), delivery_summary: 'eleven_multilingual_v2 · speed 0.75 · +10 dB on Listen (set by Alanis)' },
+  });
+  await screen.findByRole('radio', { name: /Brian/ });
+
+  expect(screen.getByTestId('agent-voice-delivery').textContent).toContain('Delivery: eleven_multilingual_v2 · speed 0.75');
+  expect(screen.getByTestId('agent-voice-delivery').querySelector('input')).toBeNull();
+});

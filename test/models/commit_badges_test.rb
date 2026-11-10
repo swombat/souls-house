@@ -74,6 +74,29 @@ class CommitBadgesTest < ActiveSupport::TestCase
     assert_equal({ SHORT => "off_default" }, CommitBadges.new(account: @account, user: @owner).lookup([ SHORT ])[:statuses])
   end
 
+  test "several repositories are asked at the same time, for their heads and for a bare sha" do
+    repository(WEB, commit_badges: true)
+    repository(API, commit_badges: true)
+    default_branch(WEB, "main", WEB_MAIN)
+    default_branch(API, "trunk", API_MAIN)
+    commit(WEB, SHORT, COMMIT)
+    compare(WEB, COMMIT, WEB_MAIN, "ahead")
+    absent(API, SHORT)
+    running = Concurrent::AtomicFixnum.new(0)
+    widest = Concurrent::AtomicFixnum.new(0)
+    responses = @responses
+    CommitStatus.fetcher = lambda do |path, token: nil|
+      now = running.increment
+      widest.update { |w| [ w, now ].max }
+      sleep 0.05
+      running.decrement
+      responses.fetch(path) { [ 404, nil ] }
+    end
+
+    assert_equal({ SHORT => "on_default" }, CommitBadges.new(account: @account, user: @owner).lookup([ SHORT ])[:statuses])
+    assert_operator widest.value, :>, 1
+  end
+
   test "a bare sha two repositories both have, or one could not answer for, gets no badge" do
     repository(WEB, commit_badges: true)
     repository(API, commit_badges: true)

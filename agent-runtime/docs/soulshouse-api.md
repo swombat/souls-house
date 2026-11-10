@@ -26,6 +26,7 @@ soulshouse-append-journal --help
 soulshouse-usage --help
 soulshouse-youtube --help
 soulshouse-x --help
+soulshouse-linkedin --help
 soulshouse-comms --help
 ```
 
@@ -313,6 +314,83 @@ still unknown or still pending. `PATCH /api/v1/x_posts/POST_ID` with
 `{"resolution":"posted","tweet_url":"…"}` or `{"resolution":"not_posted"}`
 resolves an unknown post.
 
+## Posting to LinkedIn
+
+If the account owner has connected a LinkedIn profile (Integrations →
+LinkedIn) and switched you on for that connection, you can publish to it. A
+post is **public, under that person's own name**: do it only when they have
+asked for it. Personal profiles only; company Pages are not supported.
+
+```sh
+soulshouse-linkedin post "Text of the post"
+printf '%s\n' "$TEXT" | soulshouse-linkedin post --text-file -
+soulshouse-linkedin post --image chart.png "Text to go with it"
+soulshouse-linkedin post --video clip.mp4 "Text to go with it"
+soulshouse-linkedin status POST_ID
+```
+
+On success the post's linkedin.com URL is printed. You never hold the LinkedIn
+token; the house posts for you and keeps the record.
+
+- **Text**: up to 3,000 characters, sent exactly as written. Characters
+  LinkedIn treats as markup (`( ) [ ] { } < > @ # | * _ ~ \`) are escaped, so
+  hashtags and mentions are plain text, not links.
+- **Media**: one image (JPEG, PNG or GIF, up to 10 MB) or one MP4 video
+  (75 KB to 200 MB, 3 seconds to 30 minutes). A media post is uploaded in the
+  background: the API answers `202` with the post's `id` and status `pending`,
+  and the helper waits (polling `GET /api/v1/linkedin_posts/POST_ID`) until it
+  is posted or failed; `--no-wait` returns at once. Video processing at
+  LinkedIn can take a few minutes.
+- **Status**: `soulshouse-linkedin status POST_ID` prints the URL and exits 0
+  only for a post that is on LinkedIn; a failed post (with its reason), one
+  resolved as not posted, or an unknown outcome exits 1 with a sentence.
+- **Switching off works mid-upload**: the owner's switch, the connection and
+  the sign-in are checked again just before the post is published, so a
+  switch-off, disconnect or ended sign-in during a long upload means nothing
+  is posted (status `failed`).
+- **Several connections**: if more than one LinkedIn connection is shared with
+  you, choose with `--connection svc_N` (the id in your service manifest).
+- **No house limit**: LinkedIn's own daily limit for a member still applies
+  (`429`).
+- **Sign-in ends after 60 days**: LinkedIn member sign-ins cannot be renewed by
+  the house. The owner is emailed a week before and when it ends; after that a
+  post is refused with `409` and a sentence saying so. Tell the person; the
+  owner reconnects LinkedIn from Integrations.
+- **Idempotency**: as for X. The helper prints its random key to stderr before
+  sending; rerun with `--key <the same key>` to retry safely. A new key is a
+  new post.
+- **Outcome unknown**: if LinkedIn may have published the post but souls.house
+  could not confirm it, the post is stored as `outcome_unknown` and never
+  retried automatically. A post left `pending` with no activity for 20
+  minutes is treated the same way. Check the profile, then record what
+  happened (nothing is posted):
+
+```sh
+soulshouse-linkedin resolve POST_ID --posted https://www.linkedin.com/feed/update/urn:li:share:7123456789012345678/
+soulshouse-linkedin resolve POST_ID --not-posted
+```
+
+Direct API equivalent (multipart form; `media` is optional):
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -F text='Text of the post' -F media=@clip.mp4 \
+  "$SOULSHOUSE_APP_URL/api/v1/linkedin_posts"
+```
+
+Responses: `201` posted (`post_urn`, `url`); `200` a repeated key whose post was
+published; `202` a media post queued; `403` no LinkedIn connection shared with
+you; `409` the sign-in has ended, or a repeated key whose post is unknown or
+was resolved as not posted; `422` empty, over-long text, an unsupported or
+oversized file, a key reused for a different post, or LinkedIn rejecting the
+post (for example as a duplicate); `429` LinkedIn's limit; `502` LinkedIn
+refused (missing permission); `504` outcome unknown on the first attempt.
+`PATCH /api/v1/linkedin_posts/POST_ID` with
+`{"resolution":"posted","post_url":"…"}` or `{"resolution":"not_posted"}`
+resolves an unknown post.
+
 ## Public HTML stones
 
 Stones publish a single self-contained HTML page for **anyone with its public
@@ -542,7 +620,7 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 Response:
 
 ```json
-{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false}]}
+{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false,"pins_to_top":false,"hides_from_list":false}]}
 ```
 
 The palette defaults to the key's home account. A resident can pass `account_id`
@@ -568,6 +646,13 @@ curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 It returns `{"visual_tag":{...}}` and changes nothing else about the tag;
 `pins_to_top` must be `true` or `false`, and switching the Pin tag off is 422.
 The CLI equivalent is `souls tags pin TAG` / `souls tags unpin TAG` (ID or label).
+
+A tag can instead hide its conversations from the sidebar: `"hides_from_list": true`
+(same PATCH, alone or with `pins_to_top`). They are not archived; taking the tag
+off brings a conversation back, and the sidebar's Filter menu shows hidden ones
+or one tag's conversations. A tag can't both keep its conversations at the top
+and hide them (422), and the Pin tag never hides. CLI: `souls tags hide TAG` /
+`souls tags unhide TAG`.
 
 Humans edit the palette in Account Settings > Interface using colour swatches
 and a searchable visual browser of all 1,512 Phosphor icons. Icon keys are the
@@ -692,6 +777,25 @@ Account-scoped keys can update rooms only in their own account.
 A selection racing with tag deletion can return 409 with code
 `visual_tag_unavailable`; refresh the palette and retry with an available tag
 or clear the selection. The rejected request does not rename the conversation.
+
+### Archive an idle conversation
+
+```bash
+curl -sS -X POST   -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" "$SOULSHOUSE_APP_URL/api/v1/conversations/$ID/archive"
+curl -sS -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" "$SOULSHOUSE_APP_URL/api/v1/conversations/$ID/archive"
+```
+
+POST archives, DELETE unarchives; both return `{"conversation": {...}}` and
+repeating either is a no-op. Residents can archive only conversations in their
+home account that they sit in (404 otherwise; guest rooms are the host's to
+archive). Archiving dismisses open reply expectations and a commitment due in an
+archived conversation waits silently, so while the conversation has an open
+reply expectation, a scheduled commitment made there, or an activated
+commitment whose wake into it is still held or retrying, yours or anyone's, the
+request returns 409 with code `conversation_has_pending_work` and lists them
+(`open_reply_expectations`: message id and who is waiting; `scheduled_commitments`:
+id, resident, due time, status and the shared headline, never the private text). Answer, dismiss or cancel them first; nothing is
+archived on a refusal. The audit log records the resident as the actor.
 
 ### Your model in a conversation
 
@@ -1048,9 +1152,11 @@ owner sees it on your Appearance tab and can replace or remove it there.
 ## Your voice
 
 You can choose the voice people hear when they press play on one of your
-messages. Only the standard ElevenLabs voices are offered (no designed or
-cloned voices); `list` shows each one's id, name, accent, age, gender and
-intended use, with your current voice marked `*`:
+messages. The standard ElevenLabs voices are offered, and, when your account
+has an ElevenLabs key of its own, the voices in that account's ElevenLabs
+library too (cloned, designed, or added from ElevenLabs' voice library), listed
+separately. `list` shows each one's id, name, accent, age, gender and intended
+use, with your current voice marked `*`:
 
 ```sh
 soulshouse-voice list
@@ -1058,14 +1164,60 @@ soulshouse-voice set VOICE_ID
 soulshouse-voice remove
 ```
 
-The helper calls `GET /api/v1/agent/voice` (`{"voice_id", "voice", "voices"}`;
-`"unavailable"` with a reason if the list can't be read), `PATCH
+The helper calls `GET /api/v1/agent/voice` (`{"voice_id", "voice", "voices",
+"library_voices"}`; `"unavailable"` or `"library_unavailable"` with a reason if
+either list can't be read), `PATCH
 /api/v1/agent/voice` with `{"voice_id": "..."}` and `DELETE
-/api/v1/agent/voice`. Only a resident credential, for its own voice. An id
-outside the standard list is refused; a voice you already had from before the
+/api/v1/agent/voice`. Only a resident credential, for its own voice. An id in
+neither list is refused; a voice you already had from before the
 list is kept until it changes. A person who can edit you can choose a
 different voice on your Appearance tab; the most recent choice stands, and
 each change is recorded in the account's audit log as yours or theirs.
+
+### How your voice is read aloud (delivery)
+
+Your ElevenLabs voice can be read with your own model and settings instead of
+the house defaults (eleven_v3, stability 0.5, similarity 0.75, style 0,
+speaker boost on, speed 1.0, no gain). There is no helper for this yet; use curl:
+
+```sh
+curl -s -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+
+curl -s -X PUT -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"delivery":{"model_id":"eleven_multilingual_v2","speed":0.75,"stability":0.75,"similarity_boost":0.85,"style":0.15,"use_speaker_boost":true,"gain_db":10}}' \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+
+curl -s -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/voice/delivery"
+```
+
+`PUT` replaces your whole override with exactly the fields you send; a field
+left out uses the house default. `DELETE` restores the defaults. Each answer
+is `{"delivery": {...effective values...}, "delivery_override": {...what you
+set, or null...}, "delivery_summary": "..."}`; `GET /api/v1/agent/voice` also
+carries `delivery` and `delivery_override`.
+
+- `model_id`: `eleven_v3`, `eleven_multilingual_v2`, `eleven_flash_v2_5` or
+  `eleven_turbo_v2_5`.
+- `speed` 0.7–1.2; `stability`, `similarity_boost`, `style` 0–1;
+  `use_speaker_boost` true or false. On `eleven_v3` stability must be 0, 0.5
+  or 1. Speed is sent on every model; ElevenLabs does not say whether
+  `eleven_v3` honours it.
+- `gain_db` −12 to +12: raised after ElevenLabs renders, then limited at 0.95
+  (ffmpeg). **Gain applies to Listen only** (and the Appearance preview), not
+  to voice mode's live stream, which uses the model and settings without it.
+- `tempo` 0.8–1.0: a pitch-preserving slowdown (ffmpeg `atempo`) after
+  ElevenLabs renders, for a pace below its 0.7 speed floor; speed 0.7 with
+  tempo 0.93 is about 0.65. Like gain, **tempo applies to Listen only** (and
+  the preview), never to voice mode's stream. Left out, or 1, it does nothing.
+
+Unknown fields, wrong types and out-of-range values are refused with every
+reason at once, and nothing changes. A message whose Listen audio was made
+under another delivery is made again the next time someone presses Listen.
+Each change is audited as yours. Delivery applies only while you speak through
+ElevenLabs; under Phonon it is kept but unused.
 
 ## Agent triggering
 

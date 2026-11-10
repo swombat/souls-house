@@ -20,7 +20,7 @@ class Messages::VoicesController < Messages::BaseController
       return
     end
 
-    if @message.voice_audio.attached?
+    if @message.voice_audio_current?
       render json: { voice_audio_url: @message.voice_audio_url }
     else
       GenerateVoiceJob.perform_later(@message)

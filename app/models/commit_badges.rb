@@ -18,6 +18,11 @@
 # when exactly one source has the commit and every other source said it has
 # no such commit; two repositories that both have it, or one that could not
 # be asked, leave it without a badge rather than a guess.
+#
+# Every (source, sha) question is independent, so they are all asked at once
+# (CommitStatus.parallel_map), and so are the account repositories' default
+# branch heads; a page with several repositories waits for the slowest
+# answer, not for the sum of them.
 class CommitBadges
 
   REF = %r{\A(?:(?<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@)?(?<sha>\h{7,40})\z}
@@ -51,21 +56,22 @@ class CommitBadges
 
   def statuses(parsed)
     bare, named = parsed.partition { |_, repo, _| repo.nil? }
-    answers = {}
-
-    named.group_by { |_, repo, _| repo }.each do |repo, refs|
+    questions = named.filter_map do |ref, repo, sha|
       source = sources.find { |s| s[:repo].casecmp?(repo) }
-      shas = refs.map(&:last)
-      found = source ? source[:status].lookup(shas) : {}
-      refs.each { |ref, _, sha| answers[ref] = found[sha] }
+      [ :named, ref, source, sha ] if source
+    end
+    bare.each { |ref, _, sha| sources.each { |source| questions << [ :probe, ref, source, sha ] } }
+
+    replies = CommitStatus.parallel_map(questions) do |kind, _, source, sha|
+      kind == :named ? source[:status].status(sha) : source[:status].probe_one(sha)
     end
 
-    if bare.any?
-      shas = bare.map(&:last)
-      probes = sources.map { |source| source[:status].probe(shas) }
-      bare.each { |ref, _, sha| answers[ref] = only_answer(probes.map { |probe| probe[sha] }) }
+    answers = named.to_h { |ref, _, _| [ ref, nil ] }
+    probes = Hash.new { |hash, ref| hash[ref] = [] }
+    questions.zip(replies).each do |(kind, ref, _, _), reply|
+      kind == :named ? answers[ref] = reply : probes[ref] << reply
     end
-
+    bare.each { |ref, _, _| answers[ref] = only_answer(probes[ref]) }
     answers
   end
 
@@ -95,11 +101,13 @@ class CommitBadges
     @sources ||= begin
       list = []
       list << house_source if house?
-      account_repositories.each do |repository|
-        next if list.any? { |s| s[:repo].casecmp?(repository.full_name) }
-
-        list << account_source(repository)
+      repositories = account_repositories.reject { |repository| list.any? { |s| s[:repo].casecmp?(repository.full_name) } }
+        .uniq { |repository| repository.full_name.downcase }
+      fetchers = repositories.map { |repository| account_fetcher(repository) }
+      heads = CommitStatus.parallel_map(repositories.zip(fetchers)) do |repository, fetcher|
+        default_branch_head(repository.full_name, fetcher, account_scope)
       end
+      repositories.zip(fetchers, heads).each { |args| list << account_source(*args) }
       confirm = list.size > 1
       list.each { |source| source[:status] = source.delete(:build).call(confirm) }
     end
@@ -134,16 +142,22 @@ class CommitBadges
       .select { |repository| repository.service_connection&.status == "connected" }
   end
 
-  def account_source(repository)
+  # Read on the request's thread: the credential comes from the database.
+  def account_fetcher(repository)
     token = repository.service_connection.credential_payload_hash["token"].presence
-    fetcher = ->(path) { CommitStatus.fetcher.call(path, token:) }
-    scope = "account:#{@account.id}"
-    head = default_branch_head(repository.full_name, fetcher, scope)
+    ->(path) { CommitStatus.fetcher.call(path, token:) }
+  end
+
+  def account_scope
+    "account:#{@account.id}"
+  end
+
+  def account_source(repository, fetcher, head)
     summary = { repo: repository.full_name, master: head && { sha: head } }
     {
       repo: repository.full_name,
       revision: head.to_s,
-      build: ->(confirm) { CommitStatus.new(summary, fetcher:, tracks_deploys: false, cache_scope: scope, confirm_full: confirm) }
+      build: ->(confirm) { CommitStatus.new(summary, fetcher:, tracks_deploys: false, cache_scope: account_scope, confirm_full: confirm) }
     }
   end
 

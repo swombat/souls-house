@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -540,6 +540,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
     t.string "phonon_voice"
     t.bigint "telegram_unlinked_messages_count", default: 0, null: false
     t.datetime "telegram_unlinked_last_received_at"
+    t.jsonb "voice_delivery"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -1550,7 +1551,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
     t.datetime "sync_claimed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_field_tweet_sources_on_account_id", unique: true
+    t.datetime "removed_at"
+    t.index ["account_id"], name: "index_field_tweet_sources_on_account_id", unique: true, where: "(removed_at IS NULL)"
     t.index ["created_by_type", "created_by_id"], name: "index_field_tweet_sources_on_created_by"
     t.index ["next_attempt_at"], name: "index_field_tweet_sources_on_next_attempt_at"
     t.check_constraint "state::text = ANY (ARRAY['active'::character varying::text, 'paused'::character varying::text, 'needs_attention'::character varying::text])", name: "field_tweet_sources_state"
@@ -1797,6 +1799,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
     t.index ["agent_id"], name: "index_house_samples_on_agent_id"
     t.index ["kind", "sampled_at"], name: "index_house_samples_on_kind_and_sampled_at"
     t.index ["kind", "subject", "sampled_at"], name: "index_house_samples_on_kind_and_subject_and_sampled_at"
+  end
+
+  create_table "linkedin_posts", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.bigint "agent_id", null: false
+    t.text "text", null: false
+    t.string "media_kind"
+    t.string "media_filename"
+    t.string "media_urn"
+    t.string "idempotency_key", null: false
+    t.string "request_digest", null: false
+    t.string "status", default: "pending", null: false
+    t.string "post_urn"
+    t.string "failure_reason"
+    t.text "error_message"
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "idempotency_key"], name: "index_linkedin_posts_on_agent_id_and_idempotency_key", unique: true
+    t.index ["agent_id"], name: "index_linkedin_posts_on_agent_id"
+    t.index ["post_urn"], name: "index_linkedin_posts_on_post_urn", unique: true
+    t.index ["resolved_by_agent_id"], name: "index_linkedin_posts_on_resolved_by_agent_id"
+    t.index ["service_connection_id", "created_at"], name: "index_linkedin_posts_on_service_connection_id_and_created_at"
+    t.index ["service_connection_id"], name: "index_linkedin_posts_on_service_connection_id"
   end
 
   create_table "memberships", force: :cascade do |t|
@@ -2988,6 +3015,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
     t.datetime "updated_at", null: false
     t.boolean "pinned", default: false, null: false
     t.boolean "pins_to_top", default: false, null: false
+    t.boolean "hides_from_list", default: false, null: false
     t.index ["account_id"], name: "index_visual_tags_on_account_id"
     t.index ["account_id"], name: "index_visual_tags_on_account_id_pinned", unique: true, where: "pinned"
     t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true
@@ -3240,6 +3268,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_110100) do
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
   add_foreign_key "house_samples", "agents", on_delete: :cascade
+  add_foreign_key "linkedin_posts", "agents"
+  add_foreign_key "linkedin_posts", "agents", column: "resolved_by_agent_id"
+  add_foreign_key "linkedin_posts", "service_connections"
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"
   add_foreign_key "memberships", "users", column: "invited_by_id"

@@ -12,6 +12,8 @@ class AgentRuntimeInteractionCost
   ].freeze
   NOVEMBER_PRICING_AS_OF = Date.new(2026, 11, 3)
   NOVEMBER_MODELS = %w[z-ai/glm-5.3-flashx-legal].freeze
+  NOVEMBER_9_PRICING_AS_OF = Date.new(2026, 11, 9)
+  NOVEMBER_9_MODELS = %w[anthropic/claude-fable-5.2].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -23,6 +25,7 @@ class AgentRuntimeInteractionCost
   PRICE_RULES = [
     [ /\A(?:anthropic\/)?claude-opus-5[-.]5\z/, "anthropic/claude-opus-5.5", 4, 20 ],
     [ /(?:anthropic\/)?claude-opus-5\z/, "anthropic/claude-opus-5", 5, 25 ],
+    [ /\A(?:anthropic\/)?claude-fable-5[-.]2\z/, "anthropic/claude-fable-5.2", 8, 40 ],
     [ /(?:anthropic\/)?claude-fable-5/, "anthropic/claude-fable-5", 10, 50 ],
     [ /(?:anthropic\/)?claude-sonnet-5/, "anthropic/claude-sonnet-5", 2, 10 ],
     [ /(?:anthropic\/)?claude-opus-4[-.]8/, "anthropic/claude-opus-4.8", 5, 25 ],
@@ -111,6 +114,7 @@ class AgentRuntimeInteractionCost
     "openai/gpt-6.1-terra" => 0.05,
     "google/gemini-4-argon" => 0.1,
     "anthropic/claude-opus-5.5" => 0.2,
+    "anthropic/claude-fable-5.2" => 0.2,
     "google/gemini-3.8-flash" => 0.075,
     "openai/gpt-4.1" => 0.5,
     "openai/gpt-4.1-mini" => 0.1,
@@ -226,7 +230,8 @@ class AgentRuntimeInteractionCost
 
   def pricing_as_of(price)
     model = price&.dig(:model)
-    date = if NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF
+    date = if NOVEMBER_9_MODELS.include?(model) then NOVEMBER_9_PRICING_AS_OF
+    elsif NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF
     elsif OCTOBER_MODELS.include?(model) then OCTOBER_PRICING_AS_OF
     elsif UPDATED_MODELS.include?(model) then UPDATED_PRICING_AS_OF
     else PRICING_AS_OF

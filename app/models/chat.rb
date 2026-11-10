@@ -122,6 +122,12 @@ class Chat < ApplicationRecord
   scope :pinned_first, -> {
     left_joins(:visual_tag).order(Arel.sql("(visual_tags.pinned OR visual_tags.pins_to_top) IS TRUE DESC"))
   }
+  # Conversations whose tag hides them from the sidebar stay out of it
+  # (they are not archived; taking the tag off brings them back).
+  scope :not_hidden_from_list, -> {
+    left_joins(:visual_tag).where(visual_tags: { hides_from_list: [ false, nil ] })
+  }
+  scope :hidden_from_list, -> { joins(:visual_tag).where(visual_tags: { hides_from_list: true }) }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }

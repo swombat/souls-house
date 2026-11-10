@@ -11,7 +11,7 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags', 'rooms', 'current_room'] });
+    updateSync({ [`Account:${accountId}`]: ['chats', 'hidden_chat_ids', 'visual_tags', 'rooms', 'current_room'] });
   });
 
   const scrollKey = $derived(`${accountId}:${$page.props.current_room || ''}`);
@@ -24,7 +24,39 @@
   // confirmed member gets it, and is_account_admin already includes site admins.
   const deletedIsAdminOnly = $derived(!!$page.props.viewing_as_site_admin);
 
-  const showArchived = $derived(new URLSearchParams($page.url.split('?')[1] || '').get('show_archived') === 'true');
+  const urlParams = $derived(new URLSearchParams($page.url.split('?')[1] || ''));
+  const showArchived = $derived(urlParams.get('show_archived') === 'true');
+  const showHidden = $derived(urlParams.get('show_hidden') === 'true');
+  const selectedTagId = $derived(urlParams.get('tag') || null);
+  // Hidden conversations with an open red eye: the server sends only their
+  // IDs, so the count follows both the tags and the eyes as they change.
+  const hiddenAttentionCount = $derived(
+    ($page.props.hidden_chat_ids || []).filter((id) => $page.props.reply_attention?.chats?.[id] > 0).length
+  );
+  // Carried on each conversation link so opening one keeps the filter.
+  const filterParams = $derived({
+    show_archived: showArchived ? true : undefined,
+    show_hidden: showHidden ? true : undefined,
+    tag: selectedTagId || undefined,
+  });
+
+  function visitWithParam(name, value) {
+    const url = new URL(window.location.href);
+    if (value) {
+      url.searchParams.set(name, value);
+    } else {
+      url.searchParams.delete(name);
+    }
+    router.visit(url.toString(), { preserveState: true });
+  }
+
+  function toggleShowHidden() {
+    visitWithParam('show_hidden', showHidden ? null : 'true');
+  }
+
+  function selectTag(tagId) {
+    visitWithParam('tag', tagId);
+  }
 
   function toggleShowArchived() {
     const url = new URL(window.location.href);
@@ -74,6 +106,12 @@
     {deletedIsAdminOnly}
     {showArchived}
     {showDeleted}
+    {showHidden}
+    {hiddenAttentionCount}
+    {selectedTagId}
+    visualTags={$page.props.visual_tags || []}
+    onToggleHidden={toggleShowHidden}
+    onSelectTag={selectTag}
     onCreate={createNewChat}
     {onClose}
     onToggleArchived={toggleShowArchived}
@@ -89,7 +127,7 @@
             {chat}
             {accountId}
             {activeChatId}
-            {showArchived}
+            {filterParams}
             visualTags={$page.props.visual_tags || []}
             rooms={$page.props.rooms || []} />
         {/each}

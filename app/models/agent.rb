@@ -143,7 +143,8 @@ class Agent < ApplicationRecord
     unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
-  # A changed voice must be one of the standard ElevenLabs voices. Only a
+  # A changed voice must be one of the standard ElevenLabs voices or one from
+  # the account's own ElevenLabs library (ElevenLabsVoices). Only a
   # change on an existing resident is checked: ids a resident already has
   # (including older non-standard ones) and predecessor copies are kept.
   normalizes :voice_id, with: ->(value) { value.to_s.strip.presence }
@@ -153,6 +154,8 @@ class Agent < ApplicationRecord
   # keeps each engine's choice.
   normalizes :phonon_voice, with: ->(value) { value.to_s.strip.presence }
   validate :phonon_voice_is_standard, if: -> { will_save_change_to_phonon_voice? && phonon_voice.present? }
+  # How its ElevenLabs voice is read aloud (VoiceDelivery); nil: the defaults.
+  validate :voice_delivery_is_valid, if: :will_save_change_to_voice_delivery?
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   # Its plan was paid while the owner had it paused, so waking left the
@@ -350,6 +353,10 @@ class Agent < ApplicationRecord
   # Every resident can be read aloud: with Phonon (the default engine) a
   # resident with no voice of its own uses the catalogue's default one. Under
   # ElevenLabs a missing voice is a reason SpeechEngine gives, not silence.
+  def speech_delivery
+    VoiceDelivery.for(voice_delivery)
+  end
+
   def voiced?
     true
   end
@@ -430,6 +437,7 @@ class Agent < ApplicationRecord
       )
       if status.to_s == "expired" && previous_status != "expired"
         audit_provider_connection!(PROVIDER_EXPIRED, provider, previous_status:)
+        email_provider_expiry!(provider)
       end
     end
   end
@@ -481,6 +489,20 @@ class Agent < ApplicationRecord
     )
   end
   private :audit_provider_connection!
+
+  # The first sight of a lapsed sign-in reaches the people who run the
+  # account by email as well as the navbar count (#844). Sent after commit,
+  # only from the transition into expired, so a resident that stays expired
+  # sends nothing more.
+  def email_provider_expiry!(provider)
+    return unless active?
+
+    recipients = account.memberships.confirmed.admins.includes(:user).filter_map(&:user).uniq
+    ActiveRecord.after_all_transactions_commit do
+      recipients.each { |user| ResidentHealthMailer.provider_sign_in_expired(self, provider.to_s, user).deliver_later }
+    end
+  end
+  private :email_provider_expiry!
 
   def soul_seed
     system_prompt
@@ -554,9 +576,19 @@ class Agent < ApplicationRecord
   end
 
   def voice_is_standard
-    errors.add(:voice_id, "is not one of the standard ElevenLabs voices") unless ElevenLabsVoices.standard?(voice_id)
+    return if ElevenLabsVoices.offerable?(account, voice_id)
+
+    errors.add(:voice_id, account&.eleven_labs_api_key.present? ?
+      "is not one of the standard ElevenLabs voices or the account's own ElevenLabs voices" :
+      "is not one of the standard ElevenLabs voices")
   rescue ElevenLabsVoices::Unavailable
     errors.add(:voice_id, "couldn't be checked: the ElevenLabs voice list is unavailable just now. Try again shortly.")
+  end
+
+  def voice_delivery_is_valid
+    VoiceDelivery.normalize!(voice_delivery)
+  rescue VoiceDelivery::Invalid => e
+    e.errors.each { |message| errors.add(:voice_delivery, message) }
   end
 
   def phonon_voice_is_standard

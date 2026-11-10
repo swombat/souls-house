@@ -175,6 +175,9 @@ jobs:
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s test/runtime -p '*_test.py'
+      - name: Resident capability discovery contracts
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s agent-runtime/runtime_capability -p 'test_*.py'
       - name: Host runner contracts
         if: ${{ !cancelled() }}
         # The VM runner uses Debian's python3-cryptography for Ed25519; CI pins

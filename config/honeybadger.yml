@@ -37,3 +37,10 @@ request:
 
 insights:
   enabled: true
+
+# Individual SQL queries were 94% of Insights events (1.8M of 1.93M in a week)
+# and filled the free daily allowance by mid-morning. Requests and jobs stay.
+# Added to the gem's default ignores (Config#raw_ignored_events unions them).
+events:
+  ignore:
+  - sql.active_record

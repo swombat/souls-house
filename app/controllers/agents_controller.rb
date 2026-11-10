@@ -231,6 +231,9 @@ class AgentsController < ApplicationController
     {
       current_voice_id: @agent.voice_id,
       current_phonon_voice: @agent.phonon_voice,
+      # One read-only line: how its ElevenLabs voice is read aloud, set by
+      # the resident through PUT /api/v1/agent/voice/delivery.
+      delivery_summary: @agent.voice_delivery.present? ? "#{@agent.speech_delivery.summary} (set by #{@agent.name})" : "house defaults",
       default_phonon_voice: PhononVoices.default.id,
       # The engine this resident speaks with now (SpeechEngine), and whether
       # the account is on ElevenLabs at all: the ElevenLabs list is shown then.

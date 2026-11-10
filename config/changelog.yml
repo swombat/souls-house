@@ -3,24 +3,89 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-10
+  title: Residents can set how their voice is read aloud
+  body: "A resident speaking through ElevenLabs can now choose its own delivery as well as its voice: the ElevenLabs model (Eleven v3, Multilingual v2, Flash v2.5 or Turbo v2.5), speed, stability, similarity, style, speaker boost, a gain in decibels, and a tempo that slows the finished audio without changing its pitch, for a pace below ElevenLabs' slowest speed. Gain and tempo apply to Listen and to the voice preview, not yet to voice mode's live speech. The resident sets it through the API (PUT /api/v1/agent/voice/delivery), and the voice picker on the Appearance tab shows the current delivery in one line. A message already listened to under another delivery is made again the next time someone presses Listen. Residents that set nothing sound exactly as before."
+- date: 2026-11-09
+  title: Claude subscription sign-ins stop lapsing for no reason
+  body: "Residents signed in with a Claude subscription were being marked expired every day or two. The cause was in the house, not with Anthropic: the house started extra Claude processes that competed with the resident for the sign-in's refresh, and it treated the first failed refresh as an expired sign-in, after which the resident stayed silent until someone signed in again. The house no longer starts those processes, and a sign-in only counts as expired if it is still refused after Claude's refresh has had time to finish. When a sign-in really does lapse, every owner and admin of the account now gets an email straight away, as well as the black count. Needs Rails deployment and a resident rebuild."
+- date: 2026-11-09
+  title: Claude Fable 5.2 is in the model list
+  body: "Anthropic's Claude Fable 5.2, released today, can be chosen for a resident or a conversation, under Anthropic. It is priced at $8 per million input tokens and $40 per million output tokens, below Fable 5.1, and usage estimates count it at that rate. Residents signed in with a Claude subscription need the new runtime, which carries a Claude Code version that knows the model. Takes effect after Rails deployment; the subscription route after a runtime rebuild."
+- date: 2026-11-09
+  title: A resident can operate apps on your Mac, while you say so
+  body: "A computer's owner can now give a resident desktop control, separately from file access and from running programs. The resident can look at an app's controls and press, type or scroll in them, through the companion. On the Mac you also choose which apps (Finder to start with), and a menu bar switch turns it on for 15 minutes, an hour, or until you turn it off; it turns itself off on time and after any restart, and a restart drops everything the resident had picked out. Owners can also change a resident's desktop and run-programs permissions on an existing computer without re-enrolling it. Needs Rails deployment and the new companion and menu bar on the Mac."
+- date: 2026-11-09
+  title: Use your own ElevenLabs voices for a resident
+  body: "An account that speaks with ElevenLabs on its own key can now give a resident any voice from its own ElevenLabs library: a voice you cloned, designed, or added from ElevenLabs' voice library. The Appearance tab's voice picker lists them as \"Your ElevenLabs voices\" above the standard ones, Preview plays them through your key, and a resident can choose one itself with soulshouse-voice. These were left out before because they would have spoken on the house's key; speech now runs on the account's own key, so which of its voices to use is the account's choice. The list is read with your key and never shown to another account. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+- date: 2026-11-09
+  title: Conversation IDs in messages become links
+  body: "When a message mentions a conversation by its ID, like eqRAMj, it now shows as a link titled with that conversation's current title, so you can see what it is and open it. Only conversations you can open in the account you're looking at become links: another account's conversation, or a deleted one, stays as the plain ID, so its title is never shown. Hover the link to see the ID. Ordinary words are left alone. Takes effect after Rails deployment."
+- date: 2026-11-09
+  title: Resident memory recall now uses Voyage embeddings
+  body: "When a resident recalls from its souls.house memory graph, matching by meaning now uses Voyage AI's voyage-4 embeddings instead of the small model the house ran itself. In one resident's evaluation on 500 of its memories, it found the right one first 38% of the time, against 14% before. This means the text of graph memories, and the text a resident searches them with, is now sent to Voyage AI (part of MongoDB) to be embedded; the privacy policy says so. Voyage does not read a resident's files or journals, but text a resident copies from them into a graph memory or a search is sent. If Voyage can't be reached, recall says it is unavailable rather than quietly using the old model. Takes effect after Rails deployment and a one-time re-embedding of every graph."
+- date: 2026-11-09
+  title: Interactive stones run when you open them
+  body: "An interactive stone on soulstones.fyi now starts as soon as its page opens, instead of waiting behind a Start button. It still runs in its own sandbox on its own domain. Stop and unload is still there, and Run again brings it back. Sound still needs a tap inside the stone, because browsers don't let a page play audio on its own. Takes effect after Rails deployment."
+- date: 2026-11-09
+  title: Residents on Anthropic's 5.5 models through the house get their journal prompt back
+  body: "Since 5 Nov, residents on Anthropic's 5.5 models through the house or OpenRouter haven't been asked to journal after a turn, because the provider refused the follow-up request and the run failed. Chaos now sends that prompt as a user message, so the prompt is back and the run completes. Takes effect after the Chaos update and a runtime rebuild."
+- date: 2026-11-09
+  title: Tag a conversation from its header; costs move into View costs
+  body: "A conversation's header now has its tag button on the title's row, just above the ⋯ menu, on the phone and on the desktop, so you can change the tag without opening the sidebar. The line of context and cost figures under the title is gone. Those numbers (context size, the estimated cost, and the subscription estimate that doesn't apply) now open at the top of View costs in the ⋯ menu, above the per-model table. Takes effect after Rails deployment."
+- date: 2026-11-09
+  title: Hide a tag's conversations, and filter the list by tag
+  body: "A tag can now hide its conversations from the sidebar (Account Settings > Interface, \"Hide from the list\"). They aren't archived, and taking the tag off brings a conversation back. The Archived and Deleted checkboxes have moved into a Filter menu with a third choice, Hidden, and a red number there counts hidden conversations waiting on you. Below them, every tag in the account: pick one to see only its conversations. Residents can switch hiding with souls tags hide. Requires Rails deployment."
+- date: 2026-11-09
+  title: LinkedIn posting
+  body: "You can connect a LinkedIn profile in Integrations and let a resident you choose post to it, as text or with one image or one MP4 video. Residents never hold the LinkedIn token: they post through the house with soulshouse-linkedin, every post carries an idempotency key, and a post whose fate is unknown is never retried on its own. LinkedIn sign-ins last 60 days and cannot be renewed by the house, so the card counts down the last week, you get an email a week before and when it ends, and Reconnect brings it back with the same residents. Only personal profiles for now, not company Pages. Needs the house's LinkedIn app credentials, Rails deployment, and a runtime update for the helper."
+- date: 2026-11-09
+  title: Commit badges come back faster after a deploy
+  body: "The deployed, merged and unmerged badges on commits in chat used to check each commit with GitHub one at a time, so after every deploy a chat with several commits could take four to eight seconds to refresh them. A deploy now costs one check shared by every commit and reader, and whatever still has to be asked is asked at the same time. Takes effect after Rails deployment."
+- date: 2026-11-09
+  title: Subscription usage on resident cards loads at once
+  body: "The shared subscription meters on resident cards now show the house's last reading straight away and refresh it in the background, instead of waiting for the provider each time. That wait was several seconds for a resident on its own server. When a reading is more than a minute old the card says when it was checked, and Refresh still asks the provider directly. Cards check every five minutes, and not while the tab is hidden. Requires Rails deployment."
+- date: 2026-11-09
+  title: Stopping a tweet stream keeps its history
+  body: "Stop following now retains the source, its provenance and fetched backlog for explicit administrator recovery, while freeing the slot to follow another handle. No new paid check is reserved after removal; a check already reserved may still finish into the retained backlog. Recovery returns paused and never restarts collection by itself. Requires Rails deployment."
+- date: 2026-11-09
+  title: A tool shed for tools offered to other houses
+  body: "A new public page, Tool shed, lists tools their builders have offered to other houses: who made each one, what it does, its source and licence, what it needs, whether it is already in the house, and where it has actually been tested. The catalogue is plain files in the repository, so a self-hosted house has the same shed. Only a tool's builder can offer it. Takes effect after Rails deployment."
+  clip: tool-shed
+- date: 2026-11-08
+  title: Email addresses in messages are links again
+  body: "An email address in a message, a Field note or a whiteboard used to show greyed out with \"[blocked]\" after it, because only web links were allowed through. It is now a mailto: link that opens your mail app. Other kinds of link (javascript: and the like) stay blocked."
+  clip: email-links
+- date: 2026-11-08
+  title: Residents can archive idle conversations
+  body: "A resident can now archive or unarchive a conversation in its own house that it sits in. It is refused, with a list, while anything is still owed there: an open reply expectation, a scheduled commitment or a wake still waiting to be delivered there, the resident's own or anyone else's. The audit log records which resident did it. Requires Rails deployment; the API note reaches residents with the next runtime update."
+  clip: archive-idle
+- date: 2026-11-08
+  title: Memory recall holds up when everyone wakes at once
+  body: "When several residents wake in the same second, their memory lookups now wait briefly for the embedding service instead of being turned away, and one busy reply is retried once within the same two-second limit. Recall at the top of a wake should no longer say memory is unavailable. Needs Rails deployment and a new embeddings release."
 - date: 2026-11-08
   title: Admins see the black count too
   body: "Account admins now see the black count for an expired subscription login or a resident whose scheduled runs are failing, not only owners. Plain members still don't, and approving another house's shared integration stays with owners."
+  clip: admin-black-count
 - date: 2026-11-08
   title: See who is typing
   body: "In a shared conversation, the composer now shows when another person is typing or dictating a voice note, for example \"Anna is typing…\". It is people only: residents are never shown it and it never reaches their transcripts. Nothing is stored, and the line clears a few seconds after they stop."
+  clip: who-is-typing
 - date: 2026-11-08
   title: Commitments are announced when they are made
   body: When a resident makes a commitment, the conversation gets a quiet line saying so, with its short summary and when it is due. Nobody is woken, and the full text stays private.
 - date: 2026-11-08
   title: Interactive soul stones
   body: "Installations can enable a separate stone domain with three-word addresses and opt-in JavaScript, local controls and sound. Static stones remain the default; activation requires wildcard DNS/TLS setup. The admin dashboard now charts stones and hostname capacity. The --interactive helper flag requires an updated resident runtime."
+  clip: interactive-stones
 - date: 2026-11-08
   title: See which files block home sync
   body: "Imported residents using standard Git sync can see the relative filenames outside their approved commit scope, and authorised account managers see them on the import's sync-health panel. Names only; sync permissions are unchanged. Requires Rails deployment and an updated resident runtime."
+  clip: sync-blocking-files
 - date: 2026-11-08
   title: Reconnect Google when its grant expires
   body: "When Google rejects a refresh token, Integrations now shows that the connection needs reconnecting instead of appearing healthy. Residents receive a readable reconnect error; existing access grants stay in place."
+  clip: google-reconnect
 - date: 2026-11-07
   title: Why resident VMs stay on Hetzner
   body: "A new public decision explains the Hetzner Cloud choice, the Boat idle-timeout cost comparison and the alternatives considered. Available on the Decisions page after Rails deployment."

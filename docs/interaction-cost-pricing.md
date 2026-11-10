@@ -32,6 +32,13 @@ endpoint for `anthropic/claude-haiku-5.5` (Anthropic provider). OpenRouter also
 lists a long-context tier above 100k prompt tokens (0.5 in / 2.5 out) that these
 estimates do not model. Recheck against Anthropic's pricing page.
 
+Claude Fable 5.2 (added November 9, 2026, launch day): input 8, cache read
+0.2, cache write 10 (5m) / 16 (1h), output 40, from the OpenRouter endpoint for
+`anthropic/claude-fable-5.2` (Anthropic provider, tag `anthropic`; the
+`anthropic/fast` priority endpoint at double these rates is not modelled).
+Earlier Fable ids keep the Fable 5 rule (10 / 50). Recheck against Anthropic's
+pricing page.
+
 Qwen3.8 Omni Flash (added October 8, 2026): input 0.15, cache read 0.016,
 output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
 (Alibaba provider, the only one listed). No cache-write rate is quoted, so
