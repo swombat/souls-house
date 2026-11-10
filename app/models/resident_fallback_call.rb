@@ -4,7 +4,7 @@
 # snapshotted here so history is never repriced.
 class ResidentFallbackCall < ApplicationRecord
 
-  STATUSES = %w[pending settled released unknown].freeze
+  STATUSES = %w[pending settled not_sent unresolved].freeze
 
   belongs_to :agent
   belongs_to :resident_fallback_turn, optional: true
@@ -15,7 +15,7 @@ class ResidentFallbackCall < ApplicationRecord
 
   def self.committed_usd(agent_id:, period_start:)
     where(agent_id: agent_id, period_start: period_start).sum(
-      Arel.sql("CASE status WHEN 'settled' THEN charge_usd WHEN 'released' THEN 0 ELSE reservation_usd END")
+      Arel.sql("CASE status WHEN 'settled' THEN charge_usd WHEN 'not_sent' THEN 0 ELSE reservation_usd END")
     ).to_d
   end
 
@@ -24,14 +24,21 @@ class ResidentFallbackCall < ApplicationRecord
     update!(status: "settled", charge_usd: charge_usd, cost_source: source, upstream_id: upstream_id || self.upstream_id)
   end
 
-  # Nothing was generated or the provider refused: the call costs nothing.
-  def release!(http_status: nil, upstream_id: nil)
-    update!(status: "released", charge_usd: 0, http_status: http_status, upstream_id: upstream_id || self.upstream_id)
+  # The request provably never left the house (refused before it was sent):
+  # it costs nothing. Anything that may have reached the provider is never
+  # released this way, refused or not: "no output arrived" is not proof that
+  # nothing was billed. Unlike house-funded calls, the owner's key pays here.
+  def not_sent!
+    raise ArgumentError, "only a pending call can be marked not sent" unless status == "pending"
+
+    update!(status: "not_sent", charge_usd: 0)
   end
 
-  # Output arrived but no cost was reported: the reservation stays counted.
-  def unknown!(upstream_id: nil)
-    update!(status: "unknown", upstream_id: upstream_id || self.upstream_id)
+  # The call may have reached the provider and its charge isn't known (an
+  # HTTP refusal, a disconnect, a truncated or uncosted response): the whole
+  # reservation stays counted until billing is resolved.
+  def unresolved!(http_status: nil, upstream_id: nil)
+    update!(status: "unresolved", http_status: http_status, upstream_id: upstream_id || self.upstream_id)
   end
 
 end

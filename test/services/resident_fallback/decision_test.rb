@@ -59,15 +59,17 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     call.settle!(BigDecimal("0.05"), source: "openrouter_usage_cost")
     second = ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
     assert_equal BigDecimal("0.85"), @agent.fallback_policy.committed_usd(@now)
-    second.release!(http_status: 502)
+    second.not_sent!
     assert_equal BigDecimal("0.05"), @agent.fallback_policy.committed_usd(@now)
   end
 
-  test "a call with output but no reported cost keeps its whole reservation" do
+  test "a call that may have reached the provider keeps its whole reservation, refused or not" do
     @account.update_columns(openrouter_api_key: "sk-or-own")
     enable!(cap: 1)
     call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
-    call.unknown!
+    call.unresolved!(http_status: 502)
+    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    assert_raises(ArgumentError) { call.not_sent! }
     assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
   end
 

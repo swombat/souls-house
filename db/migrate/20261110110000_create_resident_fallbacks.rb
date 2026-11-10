@@ -54,9 +54,10 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
       # Provider-reported (OpenRouter usage.cost, BYOK fee + upstream cost).
       t.decimal :charge_usd, precision: 14, scale: 8
       t.string :cost_source
-      # pending: in flight, reservation held. settled: charge known.
-      # released: refused or nothing generated, costs nothing. unknown: output
-      # arrived but no cost was reported, reservation kept.
+      # pending: in flight, reservation held. settled: the provider reported
+      # the charge. not_sent: refused before leaving the house, costs nothing.
+      # unresolved: may have reached the provider, charge unknown; the
+      # reservation stays counted.
       t.string :status, null: false, default: "pending"
       t.integer :http_status
       t.string :upstream_id

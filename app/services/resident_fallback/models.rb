@@ -4,11 +4,12 @@
 # eligible only when it is listed here with reviewed rates. Nothing is read
 # from mutable catalogue data.
 #
-# `max_price` (USD per million tokens) goes to OpenRouter on every call, so a
-# provider charging more is never routed to; it is set at twice the list
-# price to leave room for long-context tiers. Each call's reservation is
-# computed from these caps, so it is a true upper bound on what OpenRouter
-# can charge for that call.
+# `max_price` (USD per million tokens) goes to OpenRouter on every call, set
+# at twice the list price. Whether a reservation computed from it bounds
+# everything settlement counts (the BYOK fee plus upstream cost, cache writes,
+# long-context tiers) is NOT yet proven: slice B must prove that bound per
+# supported route before any call is admitted for real (Mira, egDwxV). Until
+# then nothing calls Decision.admit_call! outside tests.
 module ResidentFallback
   module Models
 
@@ -50,8 +51,8 @@ module ResidentFallback
       ELIGIBLE.keys.map { |id| { model_id: id, label: label(id) } }
     end
 
-    # The most a single call can cost: every input token and every allowed
-    # output token at the caps OpenRouter is told to enforce.
+    # Every input token and every allowed output token at the caps
+    # OpenRouter is told to enforce, rounded up. Provisional (see above).
     def reservation_usd(model_id, input_bound_tokens:, max_output_tokens:)
       config = find(model_id) or raise ArgumentError, "#{model_id} is not a fallback model"
       price = config.fetch(:max_price)

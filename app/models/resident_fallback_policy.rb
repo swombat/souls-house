@@ -43,8 +43,8 @@ class ResidentFallbackPolicy < ApplicationRecord
   end
 
   # What this period has committed against the cap: settled calls at their
-  # reported charge, pending and unknown calls at their full reservation,
-  # released calls at nothing.
+  # reported charge, pending and unresolved calls at their full reservation,
+  # calls refused before they were sent at nothing.
   def committed_usd(time = Time.current)
     ResidentFallbackCall.committed_usd(agent_id: agent_id, period_start: period_start(time))
   end
