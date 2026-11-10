@@ -87,7 +87,7 @@ test('a visitor can reach pricing from the top of the homepage', async ({ page }
   const begin = page.getByRole('link', { name: 'Begin someone' }).first();
   if (await begin.isVisible()) {
     const from = page.getByTestId('home-from-price');
-    await expect(from).toHaveText(/^from \$\d+\/m$/);
+    await expect(from).toHaveText(/^from \$\d+(\.\d{2})?\/m$/);
     await expect(from).toHaveAttribute('href', '/pricing');
   }
   if (process.env.HOME_HERO_SHOT) await page.screenshot({ path: process.env.HOME_HERO_SHOT });

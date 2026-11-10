@@ -85,3 +85,47 @@ test('an account that pays per resident gets a sixth step, Plan, and a draft reo
     expect(screen.getByRole('button', { name: 'Go to step 5: Review' })).toHaveAttribute('aria-current', 'step')
   );
 });
+
+describe('the Plan step button', () => {
+  const small = {
+    id: 'conversation',
+    tier: 'conversation',
+    size: 'small',
+    rate: 'standard',
+    name: 'Small',
+    monthly_usd: '9.99',
+    allowance_usd: '10.00',
+    purchasable: true,
+  };
+  const billing = { can_pay: true, offers: [small], payment_method: null, contact_email: 'hello@example.com' };
+
+  async function reachPlanStep(extra) {
+    Element.prototype.animate ||= function () {
+      const animation = { cancel() {}, finished: Promise.resolve(), onfinish: null };
+      setTimeout(() => animation.onfinish?.());
+      return animation;
+    };
+    localStorage.setItem(
+      draftKey,
+      JSON.stringify({ name: 'Aria', system_prompt: 'Be curious.', key_path: 'house', step: 4 })
+    );
+    render(NewResident, { ...props, ...extra });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Go to step 5: Review' })).toHaveAttribute('aria-current', 'step')
+    );
+    await fireEvent.click(screen.getByRole('checkbox'));
+    await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+  }
+
+  test('says Start free, and needs no card, when the free 14 days apply', async () => {
+    await reachPlanStep({ billing, trial: { eligible: true, days: 14 } });
+    const button = await screen.findByRole('button', { name: 'Start free' });
+    expect(button).toBeEnabled();
+  });
+
+  test('without trial props it asks for a card and states the price', async () => {
+    await reachPlanStep({ billing });
+    const button = await screen.findByRole('button', { name: 'Create Aria · $9.99 a month + VAT' });
+    expect(button).toBeDisabled();
+  });
+});

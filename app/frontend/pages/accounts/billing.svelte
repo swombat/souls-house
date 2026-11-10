@@ -4,9 +4,21 @@
   import { Badge } from '$lib/components/shadcn/badge/index.js';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
-  import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
+  import AccountPlanCard from '$lib/components/billing/AccountPlanCard.svelte';
+  import ResidentBillingNote from '$lib/components/billing/ResidentBillingNote.svelte';
+  import { sizeLines, sizeOf, usd } from '$lib/pricing';
 
-  let { account, billing = {}, tiers = [], offers = null, change_offers = [], codes = null, residents = [] } = $props();
+  let {
+    account,
+    billing = {},
+    tiers = [],
+    offers = null,
+    change_offers = [],
+    codes = null,
+    residents = [],
+    account_plans: accountPlans = [],
+    account_plan: accountPlan = null,
+  } = $props();
 
   let busy = $state(null);
   let code = $state('');
@@ -29,9 +41,17 @@
     complimentary: 'Free (complimentary)',
   };
 
-  function stateLabel(entitlement) {
+  function stateLabel(resident) {
+    const entitlement = resident.entitlement;
     if (!entitlement) return 'No plan';
+    if (onTrial(resident)) return 'Free for 14 days';
     return STATE_LABELS[entitlement.state] || entitlement.state;
+  }
+
+  // A resident in its free 14 days (trial_ends_at comes with the trial; older
+  // props don't have it).
+  function onTrial(resident) {
+    return Boolean(resident.trial_ends_at) || resident.entitlement?.subscription?.status === 'trialing';
   }
 
   function stateVariant(entitlement) {
@@ -45,9 +65,16 @@
     return tiers.find((tier) => tier.id === id)?.name || id;
   }
 
-  function date(value) {
-    if (!value) return null;
-    return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value));
+  // What the resident pays a month, at its own size and rate.
+  function residentPrice(entitlement) {
+    if (!entitlement?.tier || entitlement.source !== 'stripe') return null;
+    const rate = entitlement.rate ?? 'standard';
+    const match = [...(offers ?? []), ...change_offers].find(
+      (offer) => (offer.tier ?? offer.id) === entitlement.tier && (offer.rate ?? 'standard') === rate
+    );
+    const tier = rate === 'standard' ? tiers.find((candidate) => candidate.id === entitlement.tier) : null;
+    const amount = match?.monthly_usd ?? tier?.monthly_usd;
+    return amount === undefined ? null : `${usd(amount)} a month`;
   }
 
   // A resident can start a new subscription unless one is already paying,
@@ -77,10 +104,11 @@
     );
   }
 
-  // A paid resident can move to another plan at its own rate: the offers at
-  // that rate, other than the one it is on.
+  // A paid resident can move to another size at its own rate: the offers at
+  // that rate, other than the one it is on. Not in the free 14 days: those
+  // are for a small resident.
   function canChange(entitlement) {
-    return entitlement?.source === 'stripe' && ['active', 'trialing'].includes(entitlement?.subscription?.status);
+    return entitlement?.source === 'stripe' && entitlement?.subscription?.status === 'active';
   }
 
   function changeOptions(entitlement) {
@@ -111,7 +139,7 @@
   {account}
   active="billing"
   title="Billing"
-  description="Plans for the residents this account hosts. Prices are in US dollars, plus VAT where it applies.">
+  description="The account's plan, and the residents it hosts. Prices are in US dollars a month, plus VAT where it applies.">
   {#snippet actions()}
     {#if billing.has_customer && billing.can_pay}
       <Button variant="outline" onclick={openPortal} disabled={busy !== null}>
@@ -129,48 +157,49 @@
       </div>
     {/if}
 
+    <AccountPlanCard {account} {accountPlan} {accountPlans} canPay={billing.can_pay} />
+
     <section class="space-y-3" data-testid="billing-plans">
+      <h2 class="font-semibold">Residents, by size</h2>
       <div class="grid gap-3 sm:grid-cols-3">
         {#each tiers as tier (tier.id)}
           {@const atCostOffer = atCostOffers.find((offer) => (offer.tier ?? offer.id) === tier.id)}
           <div class="flex flex-col rounded-lg border p-4">
             <h2 class="font-semibold">{tier.name}</h2>
             <p class="mt-2 flex flex-wrap items-baseline gap-x-1">
-              <span class="text-2xl font-semibold">${tier.monthly_usd}</span>
+              <span class="text-2xl font-semibold">{usd(tier.monthly_usd)}</span>
               <span class="whitespace-nowrap text-sm text-muted-foreground">/ month + VAT</span>
             </p>
             {#if atCostGrant && atCostOffer}
               <p class="mt-1 text-sm" data-testid="billing-at-cost-price">
-                <span class="font-medium">${atCostOffer.monthly_usd}</span>
+                <span class="font-medium">{usd(atCostOffer.monthly_usd)}</span>
                 <span class="text-muted-foreground">at cost</span>
               </p>
             {/if}
-            <PlanIncludes
-              features={tier.features}
-              class="mt-3 text-xs text-muted-foreground"
-              iconClass="text-primary/70" />
+            <p class="mt-3 text-xs text-muted-foreground">{sizeLines[sizeOf(tier)] ?? ''}</p>
           </div>
         {/each}
       </div>
       <p class="text-xs text-muted-foreground">
-        Hosting is a container on the shared house server. A plan's house-model allowance resets on the 1st (UTC) and
-        replaces the free allowance while the plan is paid.
+        Each size is hosting for one resident, in a container on the shared house server. The account's $10 a month of
+        house-model use comes with one resident at the standard price, and resets on the 1st (UTC). Residents bought at
+        cost don't carry it.
       </p>
     </section>
 
     {#if atCostGrant}
       <div class="rounded-lg border bg-muted/40 p-4 text-sm" data-testid="billing-at-cost">
         <p class="font-medium">
-          This account can buy plans at cost <span class="font-normal text-muted-foreground"
+          This account can pay for residents at cost <span class="font-normal text-muted-foreground"
             >(code
             <span class="font-mono">{atCostGrant.code}</span>)</span>
         </p>
         <p class="mt-1 text-muted-foreground">
-          At cost is the server's price and what comes with it, with no house-model allowance: the resident runs on a
-          model subscription or key you connect. Connect and select your own model before checkout; a house-funded model
-          cannot be used on an at-cost plan. Choose an available at-cost plan below for a resident hosted free by the
-          house, or on the Plan step when you create a resident. An existing resident's VM size is unchanged. Existing
-          paid plans keep their rate.
+          At cost is the server's price for the size and what comes with it, with no house-model allowance: the resident
+          runs on a model subscription or key you connect. Connect and select your own model before checkout; a
+          house-funded model cannot be used at cost. Choose an at-cost size below for a resident hosted free by the
+          house, or on the Plan step when you create a resident. An existing resident's server is unchanged. Residents
+          already paid for keep their price.
         </p>
       </div>
     {/if}
@@ -182,34 +211,32 @@
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-medium truncate">{resident.name}</span>
-              <Badge variant={stateVariant(entitlement)}>{stateLabel(entitlement)}</Badge>
+              <Badge variant={stateVariant(entitlement)}>{stateLabel(resident)}</Badge>
               {#if entitlement?.tier && entitlement.source === 'stripe'}
                 <Badge variant="outline"
                   >{tierName(entitlement.tier)}{entitlement.rate === 'at_cost' ? ' at cost' : ''}</Badge>
               {/if}
-            </div>
-            <div class="mt-1 text-xs text-muted-foreground">
-              {#if entitlement?.state === 'grace'}
-                The last payment failed. Update the card from Manage billing before {date(entitlement.grace_deadline)}.
-              {:else if entitlement?.state === 'held'}
-                Asleep since {date(entitlement.held_at)}: the plan's payment lapsed, so no new conversations, heartbeats
-                or work start. Nothing is deleted. Pay the open invoice from Manage billing, or choose a plan here, to
-                wake them. If they stay asleep for 30 days, the house will be in touch about their care.
-              {:else if entitlement?.subscription?.cancel_at_period_end}
-                Cancels on {date(entitlement.subscription.current_period_end)}.
-              {:else if entitlement?.state === 'active' && entitlement.subscription?.current_period_end}
-                Renews on {date(entitlement.subscription.current_period_end)}.
-              {:else if entitlement?.state === 'complimentary'}
-                Hosted free by the house. A paid plan is optional.
+              {#if residentPrice(entitlement) && !onTrial(resident)}
+                <span class="text-sm text-muted-foreground" data-testid="resident-price"
+                  >{residentPrice(entitlement)}</span>
               {/if}
             </div>
+            <ResidentBillingNote
+              {resident}
+              price={residentPrice(entitlement)}
+              trial={onTrial(resident)}
+              canManage={billing.has_customer && billing.can_pay}
+              onmanage={openPortal}
+              busy={busy !== null} />
           </div>
 
           {#if billing.can_pay && canSubscribe(entitlement)}
             <div class="flex flex-wrap gap-2 lg:justify-end">
               {#each buyable as offer (offer.id)}
                 <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
-                  {busy === `${resident.id}:${offer.id}` ? 'Opening…' : `${offer.name} · $${offer.monthly_usd}`}
+                  {busy === `${resident.id}:${offer.id}`
+                    ? 'Opening…'
+                    : `${offer.name} · ${usd(offer.monthly_usd)} a month`}
                 </Button>
               {/each}
             </div>
@@ -224,14 +251,13 @@
                     disabled={busy !== null}>
                     {busy === `${resident.id}:change:${offer.id}`
                       ? 'Changing…'
-                      : `Move to ${offer.name} · $${offer.monthly_usd}`}
+                      : `Move to ${offer.name} · ${usd(offer.monthly_usd)} a month`}
                   </Button>
                 {/each}
               </div>
               <p class="text-xs text-muted-foreground lg:text-right">
                 The price changes now; Stripe puts the difference for the rest of this period on the next invoice. The
-                house-model allowance follows the month's rule: this month keeps the higher of the two until the 1st. A
-                resident's own server keeps its size for now.
+                resident stays on the same server for now.
               </p>
             </div>
           {/if}
@@ -260,13 +286,15 @@
           </Button>
         </div>
         <p class="text-xs text-muted-foreground">
-          A code changes which plans this account is offered. It doesn't change a plan already bought.
+          A code changes which prices this account is offered. It doesn't change a price already paid.
         </p>
       </form>
     {/if}
 
     {#if !billing.can_pay}
-      <p class="text-xs text-muted-foreground">Only the account owner can start or change a plan.</p>
+      <p class="text-xs text-muted-foreground">
+        Only the account owner can change the account's plan or pay for a resident.
+      </p>
     {/if}
   {/if}
 </AccountSettingsLayout>

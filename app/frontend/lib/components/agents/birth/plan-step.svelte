@@ -1,16 +1,19 @@
 <script>
   // The creation wizard's last step in an account that pays per resident:
-  // choose the resident's plan, and the card it is paid with. Stripe's own
+  // choose the resident's size, and the card it is paid with. Stripe's own
   // embedded form takes a new card; nothing is charged until the resident is
-  // created with the button below this step.
+  // created with the button below this step. The account's plan is not chosen
+  // here: one line names it and links to Billing. When the account's free 14
+  // days apply (trial.eligible, a small resident at the standard price), no
+  // card is asked for.
   import { onDestroy } from 'svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { Button } from '$lib/components/shadcn/button';
   import { Alert, AlertDescription, AlertTitle } from '$lib/components/shadcn/alert';
   import { Badge } from '$lib/components/shadcn/badge';
-  import { CreditCard, CheckCircle, LockSimple } from 'phosphor-svelte';
-  import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
-  import { planTaglines } from '$lib/pricing';
+  import { CreditCard, LockSimple } from 'phosphor-svelte';
+  import SizePicker from './size-picker.svelte';
+  import { sizeOf, trialApplies, usd } from '$lib/pricing';
   import { loadStripe, postJson, createEmbeddedCheckout } from '$lib/stripe';
 
   let {
@@ -24,6 +27,10 @@
     // Why this draft can't be paid for on the chosen plan, if it can't.
     blocked = null,
     busy = false,
+    // { eligible, days } from the server; absent until the trial ships.
+    trial = null,
+    // The account's Billing tab, where its plan is changed.
+    billingUrl = null,
   } = $props();
 
   // Offers (a plan at a rate: standard, or at cost when the account holds a
@@ -31,22 +38,15 @@
   let tiers = $derived(billing.offers?.length ? billing.offers : billing.tiers || []);
   let chosen = $derived(tiers.find((candidate) => candidate.id === tier) || null);
   let atCost = $derived(chosen?.rate === 'at_cost');
-  // An account with a code is offered each plan at two rates. Show one rate's
-  // plans at a time, with a switch, rather than every offer side by side.
-  let rates = $derived([...new Set(tiers.map((offer) => offer.rate || 'standard'))]);
-  let rate = $derived(chosen?.rate || 'standard');
-  let shown = $derived(tiers.filter((offer) => (offer.rate || 'standard') === rate));
-  const RATE_LABELS = { standard: 'Standard', at_cost: 'At cost' };
-
-  function chooseRate(next) {
-    if (next === rate) return;
-    const sameTier = chosen?.tier ?? chosen?.id;
-    const match =
-      tiers.find((offer) => offer.rate === next && (offer.tier ?? offer.id) === sameTier) ||
-      tiers.find((offer) => offer.rate === next);
-    if (match) tier = match.id;
-  }
   let name = $derived(residentName.trim() || 'your resident');
+  let free = $derived(trialApplies(trial, chosen));
+  let trialDays = $derived(trial?.days ?? 14);
+  // The account's plan, if the server sent it (billing.account_plan).
+  let accountPlanName = $derived(
+    billing.account_plan
+      ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.id)?.name || null
+      : null
+  );
 
   let cardFormOpen = $state(false);
   let cardFormLoading = $state(false);
@@ -54,7 +54,12 @@
   let cardContainer = $state(null);
   let checkout = null;
 
-  if (!tier && tiers.length > 0) tier = tiers[0].id;
+  // Small, at the standard price, unless the draft already chose.
+  if (!tier && tiers.length > 0) {
+    tier = (
+      tiers.find((option) => sizeOf(option) === 'small' && (option.rate ?? 'standard') === 'standard') || tiers[0]
+    ).id;
+  }
 
   function brandName(brand) {
     const names = { visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express', discover: 'Discover' };
@@ -103,14 +108,13 @@
 </script>
 
 <CardHeader>
-  <CardTitle>A plan for {name}</CardTitle>
+  <CardTitle>A computer for {name}</CardTitle>
   <CardDescription>
     {#if atCost}
-      Each resident has its own plan. At cost, it pays for their own server and nothing more: {name} thinks with a model
-      subscription or key you connect.
+      Each resident is paid for by the size of the computer it lives on. At cost, it pays for that computer and nothing
+      more: {name} thinks with a model subscription or key you connect.
     {:else}
-      Each resident has its own plan. It pays for their home here and for the house model they think with, up to the
-      plan's monthly allowance.
+      Each resident is paid for by the size of the computer it lives on. Small is right for most residents.
     {/if}
   </CardDescription>
 </CardHeader>
@@ -124,134 +128,98 @@
       </AlertDescription>
     </Alert>
   {:else}
-    <fieldset class="space-y-4" disabled={busy}>
-      <legend class="sr-only">Plan</legend>
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <span class="text-sm font-medium" aria-hidden="true">Plan</span>
-        {#if rates.length > 1}
-          <div
-            class="inline-flex rounded-md border bg-muted/40 p-0.5 text-sm"
-            role="group"
-            aria-label="Rate"
-            data-testid="plan-rate">
-            {#each rates as option (option)}
-              <button
-                type="button"
-                class="rounded px-3 py-1 transition-colors {option === rate
-                  ? 'bg-background font-medium shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'}"
-                aria-pressed={option === rate}
-                onclick={() => chooseRate(option)}>
-                {RATE_LABELS[option] ?? option}
-              </button>
-            {/each}
+    <SizePicker options={tiers} bind:tier {busy} />
+
+    <p class="text-sm text-muted-foreground" data-testid="plan-account-plan">
+      {#if accountPlanName}
+        This account is on {accountPlanName}.
+      {:else}
+        The account's plan decides who else can join it and what its residents can do.
+      {/if}
+      {#if billingUrl}
+        <a class="underline underline-offset-4" href={billingUrl}>Change it on the Billing tab</a>.
+      {/if}
+    </p>
+
+    {#if !free}
+      <section class="space-y-3" aria-labelledby="paying-with">
+        <div class="flex items-center justify-between">
+          <h3 id="paying-with" class="text-sm font-medium">Paying with</h3>
+          {#if billing.test_mode}
+            <Badge variant="outline" data-testid="plan-test-mode">Test mode · card 4242 4242 4242 4242</Badge>
+          {/if}
+        </div>
+
+        {#if paymentMethod && !cardFormOpen}
+          <div class="flex items-center justify-between gap-4 rounded-lg border p-4" data-testid="plan-card-on-file">
+            <div class="flex items-center gap-3">
+              <CreditCard class="size-6 text-muted-foreground" />
+              <div>
+                <p class="text-sm font-medium">{brandName(paymentMethod.brand)} ending {paymentMethod.last4}</p>
+                <p class="text-xs text-muted-foreground">Expires {expiry(paymentMethod)}</p>
+              </div>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onclick={openCardForm} disabled={busy}>
+              Use a different card
+            </Button>
+          </div>
+        {:else if !cardFormOpen}
+          <div class="rounded-lg border border-dashed p-4 text-sm">
+            {#if billing.payment_method_error}
+              <p class="mb-3 text-muted-foreground">We couldn't reach Stripe to show the card on file.</p>
+            {:else}
+              <p class="mb-3 text-muted-foreground">
+                Add the card this account pays with. It's saved for its residents' plans and isn't charged until you
+                create {name}.
+              </p>
+            {/if}
+            <Button type="button" variant="outline" onclick={openCardForm} disabled={busy}>
+              <CreditCard class="mr-2 size-4" />
+              Add a card
+            </Button>
           </div>
         {/if}
-      </div>
-      <div
-        class="grid gap-3 {shown.length >= 3 ? 'sm:grid-cols-3' : shown.length === 2 ? 'sm:grid-cols-2' : ''}"
-        role="radiogroup"
-        aria-label="Plan">
-        {#each shown as option (option.id)}
-          {@const selected = option.id === tier}
-          <label
-            class="relative flex cursor-pointer flex-col rounded-lg border-2 p-4 transition-colors
-              {selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}">
-            <input
-              type="radio"
-              name="plan"
-              value={option.id}
-              class="sr-only"
-              aria-label={option.name}
-              checked={selected}
-              onchange={() => (tier = option.id)} />
-            <span class="flex items-start justify-between gap-2">
-              <span class="font-semibold"
-                >{option.rate === 'at_cost' ? option.name.replace(/ at cost$/, '') : option.name}</span>
-              {#if selected}<CheckCircle class="size-5 shrink-0 text-primary" weight="fill" />{/if}
-            </span>
-            <span class="mt-1 text-sm text-muted-foreground">
-              {planTaglines[option.tier ?? option.id] ?? ''}
-            </span>
-            <span class="mt-3 flex flex-wrap items-baseline gap-x-1">
-              <span class="text-2xl font-semibold">${option.monthly_usd}</span>
-              <span class="whitespace-nowrap text-sm text-muted-foreground">/ month + VAT</span>
-            </span>
-            <PlanIncludes
-              features={option.features}
-              class="mt-3 text-xs text-muted-foreground"
-              iconClass="text-primary/70" />
-          </label>
-        {/each}
-      </div>
-    </fieldset>
 
-    <section class="space-y-3" aria-labelledby="paying-with">
-      <div class="flex items-center justify-between">
-        <h3 id="paying-with" class="text-sm font-medium">Paying with</h3>
-        {#if billing.test_mode}
-          <Badge variant="outline" data-testid="plan-test-mode">Test mode · card 4242 4242 4242 4242</Badge>
-        {/if}
-      </div>
-
-      {#if paymentMethod && !cardFormOpen}
-        <div class="flex items-center justify-between gap-4 rounded-lg border p-4" data-testid="plan-card-on-file">
-          <div class="flex items-center gap-3">
-            <CreditCard class="size-6 text-muted-foreground" />
-            <div>
-              <p class="text-sm font-medium">{brandName(paymentMethod.brand)} ending {paymentMethod.last4}</p>
-              <p class="text-xs text-muted-foreground">Expires {expiry(paymentMethod)}</p>
+        {#if cardFormOpen}
+          <div class="space-y-2">
+            {#if cardFormLoading}
+              <p class="text-sm text-muted-foreground">Opening Stripe's secure card form…</p>
+            {/if}
+            <!-- Stripe mounts only into an element with no child nodes: keep this one empty. -->
+            <div class="overflow-hidden rounded-lg border" bind:this={cardContainer} data-testid="plan-card-form"></div>
+            <div class="flex items-center justify-between text-xs text-muted-foreground">
+              <span class="flex items-center gap-1"
+                ><LockSimple class="size-3.5" />Your card goes to Stripe. The house never sees it.</span>
+              {#if paymentMethod}
+                <button type="button" class="underline underline-offset-4" onclick={closeCardForm}
+                  >Keep the saved card</button>
+              {/if}
             </div>
           </div>
-          <Button type="button" variant="ghost" size="sm" onclick={openCardForm} disabled={busy}>
-            Use a different card
-          </Button>
-        </div>
-      {:else if !cardFormOpen}
-        <div class="rounded-lg border border-dashed p-4 text-sm">
-          {#if billing.payment_method_error}
-            <p class="mb-3 text-muted-foreground">We couldn't reach Stripe to show the card on file.</p>
-          {:else}
-            <p class="mb-3 text-muted-foreground">
-              Add the card this account pays with. It's saved for its residents' plans and isn't charged until you
-              create {name}.
-            </p>
-          {/if}
-          <Button type="button" variant="outline" onclick={openCardForm} disabled={busy}>
-            <CreditCard class="mr-2 size-4" />
-            Add a card
-          </Button>
-        </div>
-      {/if}
+        {/if}
 
-      {#if cardFormOpen}
-        <div class="space-y-2">
-          {#if cardFormLoading}
-            <p class="text-sm text-muted-foreground">Opening Stripe's secure card form…</p>
-          {/if}
-          <!-- Stripe mounts only into an element with no child nodes: keep this one empty. -->
-          <div class="overflow-hidden rounded-lg border" bind:this={cardContainer} data-testid="plan-card-form"></div>
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="flex items-center gap-1"
-              ><LockSimple class="size-3.5" />Your card goes to Stripe. The house never sees it.</span>
-            {#if paymentMethod}
-              <button type="button" class="underline underline-offset-4" onclick={closeCardForm}
-                >Keep the saved card</button>
-            {/if}
-          </div>
-        </div>
-      {/if}
+        {#if cardError}
+          <p class="text-sm text-destructive" role="alert">{cardError}</p>
+        {/if}
+      </section>
+    {/if}
 
-      {#if cardError}
-        <p class="text-sm text-destructive" role="alert">{cardError}</p>
-      {/if}
-    </section>
-
-    {#if chosen}
+    {#if chosen && free}
+      <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
+        <p class="font-medium" data-testid="plan-trial">Free for {trialDays} days. No card asked for.</p>
+        <p>
+          To keep {name} awake after that, add a card from the account's Billing tab: then it is {usd(
+            chosen.monthly_usd
+          )} + VAT a month. With no card, {name} goes to sleep on day {trialDays}. Nothing is deleted.
+        </p>
+      </section>
+    {:else if chosen}
       <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p>
-          <span class="font-medium">Today:</span> ${chosen.monthly_usd} + VAT for {name}'s first month.
-          <span class="font-medium">Then</span> ${chosen.monthly_usd} + VAT each month until you cancel.
+          <span class="font-medium">Today:</span>
+          {usd(chosen.monthly_usd)} + VAT for {name}'s first month.
+          <span class="font-medium">Then</span>
+          {usd(chosen.monthly_usd)} + VAT each month until you cancel.
         </p>
         {#if atCost}
           <p data-testid="plan-at-cost-terms">
@@ -269,7 +237,7 @@
 
     {#if blocked}
       <Alert variant="destructive" data-testid="plan-blocked">
-        <AlertTitle>This plan doesn't fit the draft</AlertTitle>
+        <AlertTitle>This choice doesn't fit the draft</AlertTitle>
         <AlertDescription>{blocked}</AlertDescription>
       </Alert>
     {/if}

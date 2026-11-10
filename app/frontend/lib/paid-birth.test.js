@@ -118,3 +118,22 @@ test('an uncertain start keeps the order it made, so a retry resumes it', async 
   expect(error.payment.paid).toBeUndefined();
   expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
 });
+
+test('a free first resident has nothing to pay: it goes straight to confirming', async () => {
+  postJson
+    .mockResolvedValueOnce({ ...started, client_secret: null, payment_method_id: null })
+    .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/accounts/a/agents/x/onboarding' });
+  const phases = [];
+
+  const result = await payForResident({
+    billing,
+    agent: { name: 'Aria' },
+    tier: 'conversation',
+    onPhase: (phase) => phases.push(phase),
+    pollMs: 0,
+  });
+
+  expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  expect(result.redirectTo).toBe('/accounts/a/agents/x/onboarding');
+  expect(phases).toEqual(['starting', 'confirming']);
+});

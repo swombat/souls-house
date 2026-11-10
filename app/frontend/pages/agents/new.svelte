@@ -7,6 +7,7 @@
   import BirthScene from '$lib/components/agents/birth/birth-scene.svelte';
   import PlanStep from '$lib/components/agents/birth/plan-step.svelte';
   import { payForResident, payAgain } from '$lib/paid-birth';
+  import { trialApplies, usd } from '$lib/pricing';
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { useForm, router } from '@inertiajs/svelte';
@@ -30,10 +31,12 @@
     ai_api_keys_configured: keysConfigured = {},
     can_manage_ai_credentials: canManageKeys = false,
     billing = null,
+    // The account's free 14 days: { eligible, days }. Older props carry none.
+    trial = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
-  // In an account that pays per resident, a sixth step chooses the plan and
+  // In an account that pays per resident, a sixth step chooses the size and
   // pays for it; the resident is created only once the payment clears.
   const steps = billing
     ? ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review', 'Plan']
@@ -43,8 +46,8 @@
     'A name and a colour to start with. Both can change later.',
     'A few words for them to grow from.',
     'The model they think with.',
-    billing ? 'Look it over before choosing their plan.' : 'Everything is ready when you are.',
-    'Their plan, and how it is paid.',
+    billing ? 'Look it over before choosing their size.' : 'Everything is ready when you are.',
+    'Their size, and how it is paid.',
   ];
   const reviewStep = 4;
   const lastStep = steps.length - 1;
@@ -67,6 +70,9 @@
       : null
   );
   let chosenTier = $derived(planOptions.find((candidate) => candidate.id === tier) || null);
+  let trialOffer = $derived(trial ?? billing?.trial ?? null);
+  // The free 14 days ask for no card.
+  let free = $derived(trialApplies(trialOffer, chosenTier));
   let chosenPlan = $derived(
     chosenTier ? { tier: chosenTier.tier ?? chosenTier.id, rate: chosenTier.rate ?? 'standard' } : null
   );
@@ -135,7 +141,8 @@
       acknowledged &&
       !$form.processing &&
       !atCostNeedsOwnModel &&
-      (!billing || (billing.can_pay && Boolean(chosenTier) && Boolean(paymentMethod) && !paying && !paidPending))
+      (!billing ||
+        (billing.can_pay && Boolean(chosenTier) && (free || Boolean(paymentMethod)) && !paying && !paidPending))
   );
 
   onMount(() => {
@@ -206,7 +213,8 @@
       const retrying =
         lastPayment &&
         (lastPayment.paid ||
-          (lastPayment.order?.tier === chosenPlan?.tier && (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate));
+          (lastPayment.order?.tier === chosenPlan?.tier &&
+            (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate));
       const result = retrying
         ? await payAgain({ billing, payment: lastPayment, onPhase })
         : await payForResident({
@@ -378,9 +386,11 @@
             bind:tier
             bind:paymentMethod
             {payError}
+            trial={trialOffer}
+            billingUrl={`/accounts/${account.id}/billing`}
             payPaid={Boolean(lastPayment?.paid)}
             blocked={atCostNeedsOwnModel
-              ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose a standard plan.`
+              ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose the standard price.`
               : null}
             busy={paying} />
         {/if}
@@ -409,14 +419,17 @@
           {#if $form.processing}
             Preparing…
           {:else if payPhase === 'starting'}
-            Starting the plan…
+            Starting…
           {:else if payPhase === 'paying'}
             Confirming payment…
           {:else if payPhase === 'confirming'}
             Preparing {$form.agent.name}…
+          {:else if billing && chosenTier && free}
+            <Check class="mr-2 size-4" />
+            Start free
           {:else if billing && chosenTier}
             <Check class="mr-2 size-4" />
-            Create {$form.agent.name} · ${chosenTier.monthly_usd}/month + VAT
+            Create {$form.agent.name} · {usd(chosenTier.monthly_usd)} a month + VAT
           {:else}
             <Check class="mr-2 size-4" />
             Create resident and commit this seed

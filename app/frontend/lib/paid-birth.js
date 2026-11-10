@@ -57,6 +57,8 @@ export async function payAgain({ billing, payment, onPhase = () => {}, pollMs = 
 }
 
 async function settle({ stripe, payment, onPhase, pollMs }) {
+  // A free first resident has nothing to pay today: no payment to confirm.
+  if (!payment.client_secret) return confirm({ payment: { ...payment, paid: true }, onPhase, pollMs });
   onPhase('paying');
   const result = await stripe.confirmCardPayment(payment.client_secret, {
     payment_method: payment.payment_method_id,
