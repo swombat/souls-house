@@ -23,8 +23,8 @@ class TrialAllowanceTest < ActiveSupport::TestCase
     sync!("sub_trial", @first, status: "trialing")
   end
 
-  def sync!(id, agent, status:, price: CONVERSATION_PRICE)
-    @stripe.put_subscription(id: id, agent: agent, customer: "cus_1", price: price, status: status)
+  def sync!(id, agent, status:, price: CONVERSATION_PRICE, **stripe)
+    @stripe.put_subscription(id: id, agent: agent, customer: "cus_1", price: price, status: status, **stripe)
     Billing::SubscriptionSync.new(id, client: @stripe).call
   end
 
@@ -92,6 +92,44 @@ class TrialAllowanceTest < ActiveSupport::TestCase
     travel_to Time.utc(2026, 11, 8, 12)
     sync!("sub_trial", @first, status: "canceled")
     assert_equal BigDecimal("0"), entitlement.allowance_limit
+  end
+
+  # Mira's second review: Stripe cancels a trial that crossed the 1st while a
+  # turn is still running. The turn stays funded for the drain window, on what
+  # is left of the trial's $10, not on a fresh month's.
+  test "a trial cancelled mid-turn keeps the trial's ceiling while the turn drains" do
+    trial_end = Time.utc(2026, 11, 8, 12)
+    sync!("sub_trial", @first, status: "trialing", period_end: trial_end, trial_end: trial_end)
+    spend!(7) # October
+    travel_to Time.utc(2026, 11, 2, 9)
+    spend!(2) # November
+    @first.agent_runtime_interactions.create!(trigger_kind: "wake", started_at: Time.current)
+
+    travel_to trial_end
+    sync!("sub_trial", @first, status: "canceled", period_end: trial_end, trial_end: trial_end)
+    assert entitlement.held?
+    assert entitlement.draining?, "the unfinished turn is still funded"
+    assert_equal BigDecimal("3"), entitlement.allowance_limit
+    assert_equal BigDecimal("1"), entitlement.allowance_remaining
+    configured do
+      error = assert_raises(HouseInference::Error) do
+        entitlement.reserve_house_call!(@offering.merge(reservation_usd: BigDecimal("2")), @model, agent_id: @first.id)
+      end
+      assert_equal "house_allowance_exhausted", error.code
+    end
+  end
+
+  test "a paid plan cancelled mid-turn drains on the ordinary monthly ceiling" do
+    trial_end = Time.utc(2026, 11, 8, 12)
+    sync!("sub_trial", @first, status: "trialing", period_end: trial_end, trial_end: trial_end)
+    spend!(7)
+    travel_to Time.utc(2026, 11, 9, 9)
+    sync!("sub_trial", @first, status: "active", period_end: trial_end + 1.month, trial_end: trial_end)
+    @first.agent_runtime_interactions.create!(trigger_kind: "wake", started_at: Time.current)
+    travel_to Time.utc(2026, 11, 20, 9)
+    sync!("sub_trial", @first, status: "canceled", period_end: trial_end + 1.month, trial_end: trial_end)
+    assert entitlement.draining?
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
   end
 
   test "a resident paid for while the trial runs brings the account's ordinary monthly allowance" do

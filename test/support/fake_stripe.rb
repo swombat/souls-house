@@ -99,8 +99,10 @@ class FakeStripe
     @update_fault = error
   end
 
-  def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false)
+  def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false,
+    trial_end: nil)
     @subscriptions[id] = {
+      trial_end: trial_end&.to_i,
       id: id,
       object: "subscription",
       status: status,

@@ -92,13 +92,29 @@ module Billing
     # (ResidentEntitlement.on_account_allowance) is on a trialing
     # subscription. A held resident draws nothing, so it doesn't count either
     # way. Returns when the trial began, or nil.
+    #
+    # With nobody in force, the only calls still funded are a held resident's
+    # unfinished turn (ResidentEntitlement#draining?). If the account has
+    # never paid for a standard-rate resident, that turn is the trial's and
+    # keeps the trial's ceiling: a trial cancelled mid-turn must not find a
+    # fresh month's $10.
     def allowance_started_at(account_id)
       drawing = ResidentSubscription.where(
         id: ResidentEntitlement.where(account_id: account_id).on_account_allowance.select(:current_subscription_id)
       )
-      return nil unless drawing.distinct.pluck(:stripe_status) == [ "trialing" ]
+      statuses = drawing.distinct.pluck(:stripe_status)
+      return nil unless statuses == [ "trialing" ] || (statuses.empty? && never_paid?(account_id))
 
       Account.where(id: account_id).pick(:trial_started_at) || drawing.minimum(:created_at)
+    end
+
+    # No standard-rate subscription of the account has had a paid period:
+    # each one's current period still ends with its trial. A subscription
+    # with no trial on record counts as paid.
+    def never_paid?(account_id)
+      subscriptions = ResidentSubscription.where(account_id: account_id, rate: "standard")
+      subscriptions.exists? &&
+        subscriptions.where("trial_end IS NULL OR current_period_end IS NULL OR current_period_end > trial_end").none?
     end
 
     # The trial's props for the wizard and the Billing tab.
