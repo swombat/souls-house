@@ -92,6 +92,20 @@ class FakeStripe
     }
   end
 
+  # A subscription for an account's plan (Billing::AccountPlanCheckout's metadata).
+  def put_account_subscription(id:, account:, customer:, price:, status:, period_end: 1.month.from_now,
+    cancel_at_period_end: false)
+    @subscriptions[id] = {
+      id: id,
+      object: "subscription",
+      status: status,
+      customer: customer,
+      cancel_at_period_end: cancel_at_period_end,
+      metadata: { "kind" => "account_plan", "account_id" => account.id.to_s },
+      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, current_period_end: period_end.to_i } ] }
+    }
+  end
+
   def v1 = self
 
   def subscriptions_service
@@ -289,13 +303,16 @@ class FakeStripe
     CONVERSATION_AT_COST_PRICE = "price_test_conversation_at_cost".freeze
     LIFE_AT_COST_PRICE = "price_test_life_at_cost".freeze
     WORK_AT_COST_PRICE = "price_test_work_at_cost".freeze
+    PARTNERS_PRICE = "price_test_account_partners".freeze
+    COLLEAGUES_PRICE = "price_test_account_colleagues".freeze
 
     STRIPE_ENV = {
       "STRIPE_SECRET_KEY" => "sk_test_fake", "STRIPE_WEBHOOK_SECRET" => "whsec_test_fake",
       "STRIPE_PRICE_CONVERSATION" => CONVERSATION_PRICE, "STRIPE_PRICE_LIFE" => LIFE_PRICE,
       "STRIPE_PRICE_WORK" => WORK_PRICE,
       "STRIPE_PRICE_CONVERSATION_AT_COST" => CONVERSATION_AT_COST_PRICE, "STRIPE_PRICE_LIFE_AT_COST" => LIFE_AT_COST_PRICE,
-      "STRIPE_PRICE_WORK_AT_COST" => WORK_AT_COST_PRICE
+      "STRIPE_PRICE_WORK_AT_COST" => WORK_AT_COST_PRICE,
+      "STRIPE_PRICE_ACCOUNT_PARTNERS" => PARTNERS_PRICE, "STRIPE_PRICE_ACCOUNT_COLLEAGUES" => COLLEAGUES_PRICE
     }.freeze
 
     def self.included(base)

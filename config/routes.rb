@@ -154,6 +154,8 @@ Rails.application.routes.draw do
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
+      post :account_plan_checkout
+      post :account_plan_change
       post :portal
       resources :codes, only: :create, controller: "billing_codes"
     end

@@ -1,7 +1,8 @@
 # Brings one Stripe subscription into the house. Never trusts the event's copy:
 # it re-fetches the subscription from Stripe under a per-resident advisory
 # lock, validates it against the account and the plan catalogue, and applies
-# it. An older fetch can't land after a newer one.
+# it. An older fetch can't land after a newer one. A subscription for an
+# account's plan (metadata kind=account_plan) is AccountSubscriptionSync's.
 module Billing
   class SubscriptionSync
 
@@ -15,6 +16,7 @@ module Billing
 
     def call
       first = fetch
+      return AccountSubscriptionSync.new(@stripe_subscription_id, client: @client, now: @now).call if account_plan?(first)
       return complete_birth_order(first) if unborn?(first)
 
       agent = agent_for(first)
@@ -28,7 +30,10 @@ module Billing
         subscription = record!(remote, agent, offer)
         flag_ungranted!(remote, agent, offer)
         ResidentEntitlement.for_agent!(agent).apply_subscription!(subscription, now: @now)
-        subscription
+        # After the entitlement, which judges its outgoing plan on what it
+        # carried before anything moved.
+        AllowanceCarrier.new(agent.account, now: @now).settle!
+        subscription.reload
       end
     end
 
@@ -36,6 +41,10 @@ module Billing
 
     def fetch
       @client.v1.subscriptions.retrieve(@stripe_subscription_id)
+    end
+
+    def account_plan?(remote)
+      remote.metadata && remote.metadata["kind"] == AccountSubscriptionSync::KIND
     end
 
     # A subscription bought as the last step of creating a resident names its

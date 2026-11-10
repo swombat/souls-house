@@ -2,7 +2,10 @@
 # customer could switch a subscription to there. At-cost prices must never be
 # among them (docs/proposals/2026-10-28-billing-codes-at-cost.md): a comment
 # can't enforce that; a read of the live configuration, shown in Site Admin,
-# can. Cached for an hour. A Stripe error is reported as an error, never as
+# can. Nor may one switch list mix resident prices with account-plan prices
+# (Billing::AccountPlan): a resident's subscription switched onto an account
+# plan's price, or the other way, is refused by the sync with the money
+# taken. Cached for an hour. A Stripe error is reported as an error, never as
 # "nothing is switchable".
 module Billing
   class PortalCheck
@@ -41,6 +44,9 @@ module Billing
       at_cost = Tier.all.flat_map { |tier| tier.offer("at_cost").price_ids }
       result = { checked_at: now.iso8601, switchable_prices: switchable.uniq, at_cost_switchable: switchable.uniq & at_cost }
       result[:unknown_configurations] = unknown if unknown.any?
+      account_plan = switchable.uniq & AccountPlan.all.flat_map(&:price_ids)
+      resident = switchable.uniq & Tier.all.flat_map(&:offers).flat_map(&:price_ids)
+      result[:mixed_kinds_switchable] = account_plan + resident if account_plan.any? && resident.any?
       result
     rescue Stripe::StripeError => error
       { checked_at: now.iso8601, error: error.message }

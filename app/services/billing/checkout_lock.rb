@@ -3,12 +3,22 @@ module Billing
   # with SubscriptionSync's transaction lock; always acquire it before any rows.
   class CheckoutLock
 
-    def self.synchronize(agent)
+    def self.synchronize(agent, &)
+      hold(SubscriptionSync::LOCK_NAMESPACE, agent.id, "Billing for #{agent.name} is busy. Please try again in a moment.", &)
+    end
+
+    # An account's plan: the same key as AccountSubscriptionSync's lock.
+    def self.synchronize_account(account, &)
+      hold(AccountSubscriptionSync::LOCK_NAMESPACE, account.id,
+        "Billing for this account is busy. Please try again in a moment.", &)
+    end
+
+    def self.hold(namespace, id, busy)
       ApplicationRecord.connection_pool.with_connection do |connection|
         raise NotReady, "Checkout must start outside a database transaction." if connection.transaction_open?
 
         connection.uncached do
-          key = "#{SubscriptionSync::LOCK_NAMESPACE}, #{Integer(agent.id)}"
+          key = "#{Integer(namespace)}, #{Integer(id)}"
           acquired = false
           begin
             begin
@@ -19,7 +29,7 @@ module Billing
               connection.disconnect!
               raise
             end
-            raise NotReady, "Billing for #{agent.name} is busy. Please try again in a moment." unless acquired
+            raise NotReady, busy unless acquired
 
             yield
           ensure
@@ -43,7 +53,7 @@ module Billing
       connection.disconnect!
       raise NotReady, "Billing's database connection was interrupted. Please try again." unless $!
     end
-    private_class_method :release
+    private_class_method :hold, :release
 
   end
 end

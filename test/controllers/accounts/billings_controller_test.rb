@@ -23,7 +23,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to account_billing_path(@account)
-    assert_match(/now on Life/, flash[:notice])
+    assert_match(/now on Medium/, flash[:notice])
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier
     assert AuditLog.exists?(action: "change_plan", user: @user)
 
@@ -51,8 +51,63 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert props.dig("billing", "can_pay")
     assert_match(/@/, props.dig("billing", "contact_email"))
     assert_equal %w[conversation life work], props["tiers"].map { |tier| tier["id"] }
+    assert_equal "9.99", props["tiers"].first["monthly_usd"]
     resident = props["residents"].find { |row| row["id"] == @agent.to_param }
     assert_equal "complimentary", resident.dig("entitlement", "state")
+    assert_equal Billing::AccountPlan.all.as_json.map(&:deep_stringify_keys), props["account_plans"]
+    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, props["account_plan"])
+  end
+
+  test "the account plan prop names its source and the live subscription" do
+    @account.update!(granted_plan: "partners")
+    get account_billing_path(@account)
+    assert_equal({ "id" => "partners", "source" => "grant", "subscription" => nil }, inertia_shared_props["account_plan"])
+
+    AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_a", plan: "colleagues",
+      stripe_status: "active", current_period_end: Time.utc(2026, 12, 10), cancel_at_period_end: true)
+    get account_billing_path(@account)
+    assert_equal({ "id" => "colleagues", "source" => "subscription",
+      "subscription" => { "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true } },
+      inertia_shared_props["account_plan"])
+  end
+
+  test "the owner buys an account plan through Checkout, audited; a member can't" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    with_stripe do
+      post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }, headers: { "X-Inertia" => "true" }
+    end
+    assert_response :conflict
+    assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", response.headers["X-Inertia-Location"]
+    params, = @stripe.checkout_sessions.sole
+    assert_equal "account_plan", params.dig(:metadata, :kind)
+    assert AuditLog.exists?(action: "start_account_plan_checkout", user: @user)
+
+    with_stripe do
+      post account_plan_checkout_account_billing_path(@account), params: { plan: "companions" }
+    end
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/Companions comes with every account/, flash[:alert])
+
+    sign_in(users(:regular_user))
+    with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "colleagues" } }
+    assert_equal 1, @stripe.checkout_sessions.size, "only the owner pays"
+  end
+
+  test "the owner moves the account between Partners and Colleagues, audited" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_account_subscription(id: "sub_a", account: @account, customer: "cus_1", price: PARTNERS_PRICE, status: "active")
+    with_stripe do
+      Billing::SubscriptionSync.new("sub_a", client: @stripe).call
+      post account_plan_change_account_billing_path(@account), params: { plan: "colleagues" }
+    end
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/now on Colleagues/, flash[:notice])
+    assert_equal "colleagues", @account.reload.plan.id
+    audit = AuditLog.find_by!(action: "change_account_plan", user: @user)
+    assert_equal "colleagues", audit.data["now"]
+
+    with_stripe { post account_plan_change_account_billing_path(@account), params: { plan: "colleagues" } }
+    assert_match(/already on Colleagues/, flash[:alert])
   end
 
   test "disabled residents are left off the list and can't be checked out" do
@@ -171,7 +226,9 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   # and PostgreSQL lock behavior is exercised in CheckoutLifecycleTest.
   def with_stripe(&block)
     Billing.stub(:client, @stripe) do
-      Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }, &block)
+      Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }) do
+        Billing::CheckoutLock.stub(:synchronize_account, ->(_account, &operation) { operation.call }, &block)
+      end
     end
   end
 
