@@ -174,6 +174,7 @@ class CompanionOperationTest < ActiveSupport::TestCase
     start = ->(arguments) { CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: arguments) }
     assert start.call({ "command" => "batch", "timeout_seconds" => 120,
       "steps" => [ { "command" => "snapshot", "app" => "Finder" }, { "command" => "click", "app" => "Finder", "ref" => "@a:e1" } ] })
+    assert start.call({ "command" => "open", "app" => "Google Chrome", "url" => "https://x.com/home" })
     [
       { "command" => "snapshot", "app" => "Finder", "headed" => true },
       { "command" => "snapshot", "app" => "Finder", "timeout_seconds" => 121 },
@@ -232,6 +233,11 @@ class CompanionOperationTest < ActiveSupport::TestCase
     assert_equal true, sent[:input_required]
     assert_equal payload, JSON.parse(operation.take_input!(epoch: "fixture-epoch", revision: @device.reload.grant_revision))
     assert_nil operation.take_input!(epoch: "fixture-epoch", revision: @device.grant_revision)
+
+    opened = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop",
+      arguments: { "command" => "open", "app" => "Google Chrome", "url" => "https://example.com/private-path" })
+    assert_equal({ "command" => "open", "app" => "Google Chrome" }, opened.reload.arguments.except("input_size"))
+    assert_not_includes opened.arguments.to_json, "private-path"
     assert_raises(CompanionOperation::Refused) { operation.attach_input!("{}") }
 
     missing = CompanionOperation.start!(device: @device, agent: @agent, kind: "desktop", arguments: payload)
