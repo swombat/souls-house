@@ -7,6 +7,7 @@
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
+  import { commitmentMarkLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -45,6 +46,16 @@
 
   // Check if user can delete chats (account admin or site admin)
   const canDeleteChat = $derived(isAccountAdmin || isSiteAdmin);
+
+  // The same waiting-commitment clock the sidebar row shows (Daniel, 10 Nov, jNwmwJ).
+  // The sidebar list is what the account broadcast refreshes when a commitment is
+  // made or delivered, so its row for this chat is the live value; the chat's own
+  // next_commitment covers a conversation filtered out of the list.
+  const commitmentLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return commitmentMarkLabel(row ? row.next_commitment : chat.next_commitment);
+  });
 
   // Token warning level — based on active context, not lifetime cost
   const tokenWarningLevel = $derived(getTokenWarningLevel(contextTokens, thresholds));
@@ -191,7 +202,12 @@
     <div class="flex shrink-0 flex-col items-center self-start" data-testid="chat-header-controls">
       {#if chat}
         <span data-testid="chat-header-tag">
-          <VisualTagPicker {chat} accountId={account.id} tags={$page.props.visual_tags || []} faintEmpty={false} />
+          <VisualTagPicker
+            {chat}
+            accountId={account.id}
+            tags={$page.props.visual_tags || []}
+            faintEmpty={false}
+            {commitmentLabel} />
         </span>
       {/if}
       <ChatActionsMenu
