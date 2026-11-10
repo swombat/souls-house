@@ -87,6 +87,7 @@ class AgentRuntimeInteractionCost
     [ /mistralai\/mistral-large-2512\z/, "mistralai/mistral-large-2512", 0.5, 1.5 ],
     [ /\A(?:meta\/)?muse-wonder\z/, "meta/muse-wonder", 4, 20 ],
     [ /\A(?:meta\/)?muse-spark-open\z/, "meta/muse-spark-open", 1.25, 4.25 ],
+    [ /\A(?:meta\/)?muse-ember\z/, "meta/muse-ember", 0.1, 0.5 ],
     [ /meta-llama\/llama-4-maverick\z/, "meta-llama/llama-4-maverick", 0.2, 0.8 ],
     [ /\A(?:minimax\/)?minimax-m3\.1-flash\z/, "minimax/minimax-m3.1-flash", 0.15, 0.6 ],
     [ /\A(?:inception\/)?mercury-3\z/, "inception/mercury-3", 0.1, 0.35 ],
@@ -134,6 +135,7 @@ class AgentRuntimeInteractionCost
     "mistralai/mistral-large-2512" => 0.05,
     "meta/muse-wonder" => 0.2,
     "meta/muse-spark-open" => 0.15,
+    "meta/muse-ember" => 0.004,
     "minimax/minimax-m3" => 0.06,
     "minimax/minimax-m3.1-flash" => 0.015,
     "inception/mercury-3" => 0.01,
@@ -163,7 +165,8 @@ class AgentRuntimeInteractionCost
     "google/gemini-2.5-pro" => 0.375,
     "google/gemini-2.5-flash" => 0.08333333333333334,
     "google/gemini-2.5-flash-lite" => 0.08333333333333334,
-    "qwen/qwen3.7-max" => 1.84375
+    "qwen/qwen3.7-max" => 1.84375,
+    "meta/muse-ember" => 0.125
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
 
   def initialize(interaction)

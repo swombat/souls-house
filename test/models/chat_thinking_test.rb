@@ -51,6 +51,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "xiaomi/mimo-v2.6-flash" => [ "Xiaomi", %w[none high] ],
       "meta/muse-wonder" => [ "Meta", %w[none high] ],
       "meta/muse-spark-open" => [ "Meta", %w[none high] ],
+      "meta/muse-ember" => [ "Meta", %w[none high] ],
       "deepseek/deepseek-v4.1-flash-1017" => [ "DeepSeek", %w[none high] ],
       "minimax/minimax-m3.1-flash" => [ "MiniMax", %w[none high] ],
       "inception/mercury-3" => [ "Inception", %w[none high] ],

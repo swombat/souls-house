@@ -359,6 +359,18 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "0.15", cost.dig(:components_usd, :cache_read_input)
   end
 
+  test "Muse Ember is priced from the routed Meta endpoint, with its listed cache-write rate" do
+    cost = build_interaction(
+      provider: "openrouter", model: "meta/muse-ember",
+      uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+    ).estimated_cost
+    assert_equal "estimated", cost[:status]
+    assert_equal "0.729", cost[:amount_usd]
+    assert_equal "0.004", cost.dig(:components_usd, :cache_read_input)
+    assert_equal "0.125", cost.dig(:components_usd, :cache_creation_input)
+  end
+
   test "Opus 5.5 supports dotted runtime ID and one hour cache writes" do
     cost = build_interaction(
       provider: "anthropic", model: "claude-opus-5.5", cache_ttl: "1h",

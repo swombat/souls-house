@@ -111,6 +111,12 @@ for `meta/muse-spark-open` (Modal provider, `meta/muse-spark-open-20261015`, the
 only endpoint; Meta does not serve it). No cache-write price is listed, so cache
 writes fall back to the input rate. OpenRouter only.
 
+Muse Ember (added November 10, 2026, the day after Meta released it): input 0.1,
+cache read 0.004, cache write 0.125, output 0.5, from the OpenRouter endpoint for
+`meta/muse-ember` (Meta provider, `meta/muse-ember-20261109`, the only endpoint).
+Text pricing only; image/audio/video input is not modelled. OpenRouter only (no
+direct Meta route in souls.house).
+
 Gemini rates are selected by the interaction's date, preserving historical
 promotional estimates. Google quotes cache **storage** by token-hour, not a
 one-off cache-write rate. Do not convert that to a token price by assuming a

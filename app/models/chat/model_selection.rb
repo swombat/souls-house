@@ -494,6 +494,7 @@ module Chat::ModelSelection
     # Meta
     { model_id: "meta/muse-wonder", label: "Muse Wonder", group: "Meta", thinking: { supported: true } },
     { model_id: "meta/muse-spark-open", label: "Muse Spark Open", group: "Meta", thinking: { supported: true } },
+    { model_id: "meta/muse-ember", label: "Muse Ember", group: "Meta", thinking: { supported: true } },
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Meta" },
     { model_id: "meta-llama/llama-4-scout", label: "Llama 4 Scout", group: "Meta" },
     { model_id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct", group: "Meta" },
