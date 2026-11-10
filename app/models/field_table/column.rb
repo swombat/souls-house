@@ -1,5 +1,4 @@
 class FieldTable
-
   # One declared column and the value check for its type. Values are cast on
   # the way in, so a CSV "12" and a JSON 12 land as the same number, and
   # anything that doesn't fit the type is refused with the column named.
@@ -113,5 +112,4 @@ class FieldTable
     end
 
   end
-
 end

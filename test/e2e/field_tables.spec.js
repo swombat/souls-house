@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 
 // Field tables, end to end: make a table from the Field, give it columns,
 // add, edit and delete a row in the grid, and look at it on a phone.
-test('a member makes a table, adds a column, and adds, edits and deletes a row', async ({ page, request }, testInfo) => {
+test('a member makes a table, adds a column, and adds, edits and deletes a row', async ({
+  page,
+  request,
+}, testInfo) => {
   const runId = `tables-${Date.now()}`;
   const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
   expect(response.ok()).toBe(true);

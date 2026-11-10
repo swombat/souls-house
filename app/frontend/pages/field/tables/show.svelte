@@ -116,7 +116,11 @@
     if (renameDraft.label.trim() && renameDraft.label.trim() !== column.label) payload.label = renameDraft.label.trim();
     if (renameDraft.key.trim() && renameDraft.key.trim() !== column.key) payload.new_key = renameDraft.key.trim();
     if (Object.keys(payload).length === 0) return (renaming = null);
-    router.patch(`${base}/columns/${column.key}`, payload, opts({ onSuccess: () => ((error = ''), (renaming = null)) }));
+    router.patch(
+      `${base}/columns/${column.key}`,
+      payload,
+      opts({ onSuccess: () => ((error = ''), (renaming = null)) })
+    );
   }
 
   function changeType(column, type) {
@@ -272,9 +276,15 @@
               </td>
             {/each}
             <td class="px-2 py-1 whitespace-nowrap text-right">
-              <button class="p-1 text-muted-foreground hover:text-foreground" title="Edit row" aria-label="Edit row"
+              <button
+                class="p-1 text-muted-foreground hover:text-foreground"
+                title="Edit row"
+                aria-label="Edit row"
                 onclick={() => openEdit(row)}><Pencil size={16} /></button>
-              <button class="p-1 text-muted-foreground hover:text-destructive" title="Delete row" aria-label="Delete row"
+              <button
+                class="p-1 text-muted-foreground hover:text-destructive"
+                title="Delete row"
+                aria-label="Delete row"
                 onclick={() => deleteRow(row)}><Trash size={16} /></button>
             </td>
           </tr>
@@ -314,9 +324,15 @@
               <option value={type}>{type}</option>
             {/each}
           </select>
-          <button class="p-1 text-muted-foreground hover:text-foreground" title="Rename column" aria-label="Rename column"
+          <button
+            class="p-1 text-muted-foreground hover:text-foreground"
+            title="Rename column"
+            aria-label="Rename column"
             onclick={() => startRename(column)}><Pencil size={16} /></button>
-          <button class="p-1 text-muted-foreground hover:text-destructive" title="Remove column" aria-label="Remove column"
+          <button
+            class="p-1 text-muted-foreground hover:text-destructive"
+            title="Remove column"
+            aria-label="Remove column"
             onclick={() => removeColumn(column)}><Trash size={16} /></button>
         {/if}
       </li>
@@ -324,12 +340,18 @@
   </ul>
   <form class="flex flex-wrap gap-2 mb-10" onsubmit={addColumn}>
     <Input class="w-48" bind:value={newColumn.label} placeholder="New column" aria-label="New column label" />
-    <select class="h-9 rounded-md border bg-background pl-2 pr-8 text-sm" bind:value={newColumn.type} aria-label="New column type">
+    <select
+      class="h-9 rounded-md border bg-background pl-2 pr-8 text-sm"
+      bind:value={newColumn.type}
+      aria-label="New column type">
       {#each column_types as type (type)}
         <option value={type}>{type}</option>
       {/each}
     </select>
-    <Button type="submit" variant="outline" disabled={columns.length >= (limits.columns ?? 30) || !newColumn.label.trim()}>
+    <Button
+      type="submit"
+      variant="outline"
+      disabled={columns.length >= (limits.columns ?? 30) || !newColumn.label.trim()}>
       Add column
     </Button>
   </form>

@@ -1,5 +1,4 @@
 class FieldTable
-
   # Every limit on Field tables, in one place. For now every account gets the
   # same numbers; plans will re-point this (Daniel's plans thread), so callers
   # always ask Limits.for(account) rather than reading a constant.
@@ -34,5 +33,4 @@ class FieldTable
     end
 
   end
-
 end

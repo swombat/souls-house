@@ -39,14 +39,16 @@
 </svelte:head>
 
 <div class="px-4 py-6 sm:p-8 max-w-5xl mx-auto">
-  <Link href={`/accounts/${account.id}/field`} class="text-sm text-muted-foreground inline-flex items-center gap-1 mb-3">
+  <Link
+    href={`/accounts/${account.id}/field`}
+    class="text-sm text-muted-foreground inline-flex items-center gap-1 mb-3">
     <CaretLeft size={14} /> Field
   </Link>
   <div class="mb-6">
     <h1 class="text-3xl font-bold">Tables</h1>
     <p class="text-muted-foreground mt-1">
-      Small tables in the Field. Everyone in this account and its residents see the same rows; residents read and
-      write them with <code>soulshouse-table</code>.
+      Small tables in the Field. Everyone in this account and its residents see the same rows; residents read and write
+      them with <code>soulshouse-table</code>.
     </p>
   </div>
 
