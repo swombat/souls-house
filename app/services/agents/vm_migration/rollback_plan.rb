@@ -47,9 +47,14 @@ module Agents
         @agent = agent
         @generation = generation
         @resources = resources
+        # The map this plan was computed from, captured once (Mira, #838
+        # review 6758543392): the swap commits only while the agent is still
+        # on exactly this map, so an old plan can never replace a newer
+        # rollback's map, however freshly the agent was reloaded.
+        @source_map = agent.respond_to?(:volume_map) ? agent.volume_map.deep_dup : nil
       end
 
-      attr_reader :generation
+      attr_reader :generation, :source_map
 
       # One target per role, in ROLES order. Raises Unsafe if the live map is
       # not exactly the five roles, names one volume twice, or if any fresh

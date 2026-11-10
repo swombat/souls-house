@@ -43,8 +43,13 @@ module Agents
       end
 
       def call
-        previous = @agent.volume_map
+        previous = @plan.source_map
         fresh = @plan.fresh_map
+        if Agent.connection.current_transaction.joinable?
+          # Inside an enclosing transaction our "commit" would only be a
+          # savepoint, and start would run before anything was durable.
+          return failed(:before_commit, previous, fresh, "The swap must not run inside an open transaction")
+        end
         missing = RollbackPlan::ROLES.reject { |role| @verified[role] == true || @verified[role.to_s] == true }
         return failed(:before_commit, previous, fresh, "Not verified: #{missing.join(', ')}") if missing.any?
 
@@ -52,6 +57,12 @@ module Agents
           commit!(previous, fresh)
         rescue StandardError => error
           return failed(:before_commit, previous, fresh, error.message)
+        end
+        # "after_commit" is literal: read the row back outside any transaction.
+        # A swallowed ActiveRecord::Rollback leaves commit! returning normally
+        # with nothing written, and must not reach start.
+        unless committed?(fresh)
+          return failed(:before_commit, previous, fresh, "The swap did not commit")
         end
 
         begin
@@ -79,13 +90,24 @@ module Agents
 
       def commit!(previous, fresh)
         @agent.with_lock do
-          raise Failed, "The resident's volume map changed during the rollback" unless @agent.volume_map == previous
+          # with_lock reloads the row, so this compares the database against the
+          # plan's source map, not against whatever this object last held.
+          raise Failed, "The resident's volume map is not the one this rollback was planned from" unless @agent.volume_map == previous
 
           @agent.update!(volume_map: fresh)
           @in_commit.call(@agent)
           AuditLog.create!(user: nil, account: @agent.account, action: "vm_rollback_swap", auditable: @agent,
             data: { by: "house", generation: @plan.generation, previous_map: previous, volume_map: fresh })
         end
+      end
+
+      # The receipt is written in the same transaction as the map, and a
+      # generation is spent once, so this generation's receipt exists exactly
+      # when the swap committed (whatever has happened to the map since).
+      def committed?(fresh)
+        AuditLog.where(action: "vm_rollback_swap", auditable: @agent)
+          .where("data->>'generation' = ?", @plan.generation.to_s)
+          .any? { |receipt| receipt.data["volume_map"] == fresh }
       end
 
       def failed(phase, previous, fresh, message)

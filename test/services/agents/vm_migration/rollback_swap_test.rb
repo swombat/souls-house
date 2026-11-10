@@ -64,4 +64,42 @@ class Agents::VmMigration::RollbackSwapTest < ActiveSupport::TestCase
       Agents::VmMigration::RollbackSwap.revert!(@agent, previous_map: outcome.previous_map, fresh_map: outcome.fresh_map)
     end
   end
+
+  test "an old plan never replaces a newer rollback's map, even after the agent is reloaded" do
+    old_plan = @plan
+    newer = Agents::Resources.new(@agent).derived_volumes.transform_keys(&:to_s).transform_values { |n| "#{n}-rb2" }
+    Agent.where(id: @agent.id).update_all(volume_map: newer)
+    @agent.reload
+    started = false
+
+    outcome = Agents::VmMigration::RollbackSwap.new(@agent, plan: old_plan, verified: @all, start: ->(_) { started = true }).call
+
+    assert_equal :before_commit, outcome.phase
+    assert_not started
+    assert_equal newer, @agent.reload.volume_map
+    assert_not AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
+  end
+
+  test "a swallowed ActiveRecord::Rollback inside the commit is not an after_commit, and start never runs" do
+    started = false
+    outcome = swap(in_commit: ->(_agent) { raise ActiveRecord::Rollback }, start: ->(_) { started = true })
+
+    assert_equal :before_commit, outcome.phase
+    assert_not started
+    assert_nil @agent.reload.volume_map
+    assert_not AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
+  end
+
+  test "inside an enclosing transaction the swap refuses before committing anything" do
+    started = false
+    outcome = nil
+    Agent.transaction do
+      outcome = swap(start: ->(_) { started = true })
+    end
+
+    assert_equal :before_commit, outcome.phase
+    assert_match "open transaction", outcome.error
+    assert_not started
+    assert_nil @agent.reload.volume_map
+  end
 end
