@@ -37,14 +37,18 @@ class Accounts::CompanionDevicesController < ApplicationController
   private
 
   def change_authority(device)
-    flags = [ params[:execute], params[:desktop] ].map(&:to_s)
-    unless params[:resident_id].is_a?(String) && flags.all? { |f| %w[true false].include?(f) }
+    # One switch per request: the page names the permission it changes and
+    # never sends the other, so a stale page can't put back a permission
+    # that was turned off elsewhere. The model reads the other under its lock.
+    permission = params[:permission].to_s
+    value = params[:value].to_s
+    unless params[:resident_id].is_a?(String) && %w[execute desktop].include?(permission) && %w[true false].include?(value)
       return redirect_to account_companion_devices_path(@account), alert: "That change wasn't understood"
     end
 
     # The model writes the audit row (actor, before, after, revision).
-    changed = device.change_resident_authority!(resident_id: params[:resident_id], execute: flags[0] == "true",
-      desktop: flags[1] == "true", actor: Current.user)
+    changed = device.change_resident_authority!(resident_id: params[:resident_id],
+      permission.to_sym => value == "true", actor: Current.user)
     notice = changed ? "Saved. Work already running on #{device.name} was stopped." : "Nothing changed"
     redirect_to account_companion_devices_path(@account), notice: notice
   rescue ArgumentError, CompanionEnrollmentGrant::InvalidPolicy

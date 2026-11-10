@@ -41,12 +41,12 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
   test "an owner turns desktop on and off, with an audit row and a new revision each time" do
     sign_in @owner
     assert_difference -> { AuditLog.where(action: "companion.device.authority_changed").count }, 2 do
-      patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, execute: "false", desktop: "true" }
+      patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "desktop", value: "true" }
       assert_redirected_to account_companion_devices_path(@account)
       assert_equal true, @device.reload.policy.dig("residents", 0, "desktop")
       assert_equal 2, @device.grant_revision
 
-      patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, execute: "false", desktop: "false" }
+      patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "desktop", value: "false" }
     end
     assert_not @device.reload.policy.dig("residents", 0).key?("desktop")
     assert_equal 3, @device.grant_revision
@@ -67,7 +67,7 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "Team Mac" ], inertia_shared_props.fetch("devices").map { |d| d.fetch("name") }
 
     team_path = account_companion_device_path(team, device)
-    patch team_path, params: { control: "authority", resident_id: agent.obfuscated_id, execute: "true", desktop: "true" }
+    patch team_path, params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
     assert_redirected_to account_companion_devices_path(team)
     patch team_path, params: { control: "revoke" }
     device.reload
@@ -108,11 +108,33 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     sign_in @owner
     patch path, params: { control: "explode" }
     patch path, params: { control: "authority", resident_id: agents(:research_assistant).obfuscated_id.reverse,
-      execute: "true", desktop: "true" }
-    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, execute: "yes", desktop: "true" }
+      permission: "execute", value: "true" }
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "execute", value: "yes" }
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "volumes", value: "true" }
+    # The old two-flag shape is not accepted here: it would carry a stale copy of the other switch.
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, execute: "true", desktop: "true" }
     @device.reload
     assert_equal 1, @device.grant_revision
     assert_not @device.paused
+  end
+
+  test "a stale page switching one power off cannot put back the other one" do
+    sign_in @owner
+    # Both on, as a page loaded now would show them.
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "execute", value: "true" }
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "desktop", value: "true" }
+    assert_equal [ true, true ], @device.reload.policy.dig("residents", 0).values_at("execute", "desktop")
+
+    # Another tab turns desktop off.
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "desktop", value: "false" }
+    # The first page, still showing desktop on, turns run-commands off.
+    patch path, params: { control: "authority", resident_id: @agent.obfuscated_id, permission: "execute", value: "false" }
+
+    resident = @device.reload.policy.dig("residents", 0)
+    assert_equal false, resident["execute"]
+    assert_not resident.key?("desktop"), "desktop came back without its confirmation"
+    last = AuditLog.where(action: "companion.device.authority_changed").last
+    assert_equal({ "execute" => false, "desktop" => false }, last.data["after"])
   end
 
 end

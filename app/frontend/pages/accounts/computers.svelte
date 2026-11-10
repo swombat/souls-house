@@ -36,12 +36,9 @@
   }
 
   function authority(device, resident, kind, value) {
-    const next = {
-      control: 'authority',
-      resident_id: resident.id,
-      execute: kind === 'execute' ? value : resident.execute,
-      desktop: kind === 'desktop' ? value : resident.desktop,
-    };
+    // Only the switch that was touched is sent. The other permission is
+    // left as the server has it, which may differ from what this page shows.
+    const next = { control: 'authority', resident_id: resident.id, permission: kind, value };
     if (value) {
       pending = { device, data: next, title: confirmTitle(kind, resident, device), body: warnings[kind] };
     } else {

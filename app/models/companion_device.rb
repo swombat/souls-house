@@ -77,8 +77,14 @@ class CompanionDevice < ApplicationRecord
   # enrolled device. Volumes are not changed here. The revision bump makes
   # every in-flight operation undeliverable; active ones are cancelled. The
   # device's own local ceiling, scope and switch still apply on top.
-  def change_resident_authority!(resident_id:, execute:, desktop:, actor:)
-    raise ArgumentError, "booleans required" unless [ true, false ].include?(execute) && [ true, false ].include?(desktop)
+  #
+  # A nil flag means "leave it as it is": the current value is read under
+  # the lock, so a caller that changes one permission (the Computers page)
+  # can never write back a stale value for the other.
+  def change_resident_authority!(resident_id:, actor:, execute: nil, desktop: nil)
+    flags = [ execute, desktop ]
+    raise ArgumentError, "booleans required" unless flags.all? { |f| [ true, false, nil ].include?(f) }
+    raise ArgumentError, "nothing to change" if flags.all?(&:nil?)
 
     with_lock do
       raise ArgumentError, "device revoked" if revoked_at
@@ -86,6 +92,8 @@ class CompanionDevice < ApplicationRecord
       resident = residents.find { |r| r["id"] == resident_id }
       raise ArgumentError, "resident not on this device" unless resident
       before = { "execute" => resident["execute"], "desktop" => resident["desktop"] == true }
+      execute = before["execute"] if execute.nil?
+      desktop = before["desktop"] if desktop.nil?
       after = { "execute" => execute, "desktop" => desktop }
       return false if before == after
 

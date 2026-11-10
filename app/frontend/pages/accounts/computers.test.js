@@ -32,13 +32,13 @@ test('turning desktop on asks first, shows the warning, and a cancel sends nothi
   expect(screen.getAllByRole('switch', { hidden: true })[1]).toHaveAttribute('aria-checked', 'false');
 });
 
-test('allowing sends both flags for that resident', async () => {
+test('allowing sends only the switch that was turned on', async () => {
   render(Computers, props);
   await fireEvent.click(screen.getByLabelText('Use apps (desktop)'));
   await fireEvent.click(await screen.findByRole('button', { name: 'Allow' }));
   expect(router.patch).toHaveBeenCalledWith(
     '/accounts/acct/computers/dev1',
-    { control: 'authority', resident_id: 'mira', execute: true, desktop: true },
+    { control: 'authority', resident_id: 'mira', permission: 'desktop', value: true },
     expect.any(Object)
   );
 });
@@ -49,7 +49,7 @@ test('turning a power off needs no confirmation', async () => {
   expect(screen.queryByText('Execute warning words.')).not.toBeInTheDocument();
   expect(router.patch).toHaveBeenCalledWith(
     '/accounts/acct/computers/dev1',
-    { control: 'authority', resident_id: 'mira', execute: false, desktop: false },
+    { control: 'authority', resident_id: 'mira', permission: 'execute', value: false },
     expect.any(Object)
   );
 });
