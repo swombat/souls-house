@@ -4,7 +4,7 @@ const stripe = { confirmCardPayment: vi.fn() };
 const postJson = vi.fn();
 vi.mock('$lib/stripe', () => ({ loadStripe: vi.fn(async () => stripe), postJson: (...args) => postJson(...args) }));
 
-const { payForResident, payAgain } = await import('./paid-birth.js');
+const { payForResident, payAgain, trialOrderState } = await import('./paid-birth.js');
 
 const billing = { publishable_key: 'pk_test_1', birth_orders_url: '/accounts/a/birth_orders' };
 const started = {
@@ -119,21 +119,92 @@ test('an uncertain start keeps the order it made, so a retry resumes it', async 
   expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
 });
 
-test('a free first resident has nothing to pay: it goes straight to confirming', async () => {
-  postJson
-    .mockResolvedValueOnce({ ...started, client_secret: null, payment_method_id: null })
-    .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/accounts/a/agents/x/onboarding' });
-  const phases = [];
+describe('the free trial', () => {
+  const trialStarted = {
+    ...started,
+    order: { ...started.order, trial: true },
+    client_secret: null,
+    payment_method_id: null,
+    checkout_url: 'https://checkout.stripe.com/c/pay/cs_test_1',
+  };
 
-  const result = await payForResident({
-    billing,
-    agent: { name: 'Aria' },
-    tier: 'conversation',
-    onPhase: (phase) => phases.push(phase),
-    pollMs: 0,
+  test('asks for the trial and hands back Stripe Checkout, with no card payment', async () => {
+    postJson.mockResolvedValueOnce(trialStarted);
+    const phases = [];
+
+    const result = await payForResident({
+      billing,
+      agent: { name: 'Aria' },
+      tier: 'conversation',
+      trial: true,
+      onPhase: (phase) => phases.push(phase),
+      pollMs: 0,
+    });
+
+    expect(postJson).toHaveBeenCalledTimes(1);
+    expect(postJson).toHaveBeenCalledWith('/accounts/a/birth_orders', {
+      agent: { name: 'Aria' },
+      tier: 'conversation',
+      rate: 'standard',
+      trial: true,
+    });
+    expect(result).toEqual({ checkoutUrl: trialStarted.checkout_url, payment: trialStarted });
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+    expect(phases).toEqual(['starting']);
   });
 
-  expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
-  expect(result.redirectTo).toBe('/accounts/a/agents/x/onboarding');
-  expect(phases).toEqual(['starting', 'confirming']);
+  test('a paid order never sends trial', async () => {
+    postJson.mockResolvedValueOnce(started).mockResolvedValueOnce({ order: {}, redirect_to: '/born' });
+    stripe.confirmCardPayment.mockResolvedValue({ paymentIntent: { status: 'succeeded' } });
+
+    await payForResident({ billing, agent: {}, tier: 'life', pollMs: 0 });
+
+    expect(postJson.mock.calls[0][1]).not.toHaveProperty('trial');
+  });
+
+  test('a refusal is thrown with its message, and nothing is paid', async () => {
+    postJson.mockRejectedValueOnce(
+      Object.assign(new Error('This account has already had its free trial.'), {
+        data: { error: 'This account has already had its free trial.' },
+      })
+    );
+
+    const error = await payForResident({ billing, agent: {}, tier: 'conversation', trial: true }).catch((e) => e);
+
+    expect(error.message).toBe('This account has already had its free trial.');
+    expect(error.payment).toBeUndefined();
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  });
+
+  test('resuming a trial order whose Checkout is open goes back to it', async () => {
+    postJson.mockResolvedValueOnce({ ...trialStarted });
+
+    const result = await payAgain({ billing, payment: trialStarted, pollMs: 0 });
+
+    expect(postJson).toHaveBeenCalledWith(trialStarted.payment_url);
+    expect(result.checkoutUrl).toBe(trialStarted.checkout_url);
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  });
+
+  test('resuming a trial Stripe has already started confirms the resident', async () => {
+    postJson
+      .mockResolvedValueOnce({ ...trialStarted, checkout_url: undefined, paid: true })
+      .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/born' });
+
+    const result = await payAgain({ billing, payment: trialStarted, pollMs: 0 });
+
+    expect(result.redirectTo).toBe('/born');
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  });
+
+  test('a trial order kept with a draft is done, open or gone', async () => {
+    postJson.mockResolvedValueOnce({ ...trialStarted, paid: true });
+    expect(await trialOrderState(trialStarted)).toBe('done');
+    postJson.mockResolvedValueOnce(trialStarted);
+    expect(await trialOrderState(trialStarted)).toBe('open');
+    postJson.mockRejectedValueOnce(Object.assign(new Error('closed'), { data: { error: 'closed' } }));
+    expect(await trialOrderState(trialStarted)).toBe('gone');
+    postJson.mockRejectedValueOnce(new Error('Failed to fetch'));
+    expect(await trialOrderState(trialStarted)).toBe('open');
+  });
 });

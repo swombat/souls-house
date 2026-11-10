@@ -27,7 +27,7 @@
     // Why this draft can't be paid for on the chosen plan, if it can't.
     blocked = null,
     busy = false,
-    // { eligible, days } from the server; absent until the trial ships.
+    // The account's free 14 days, { eligible, days } from the server.
     trial = null,
     // The account's Billing tab, where its plan is changed.
     billingUrl = null,
@@ -42,11 +42,13 @@
   let free = $derived(trialApplies(trial, chosen));
   let trialDays = $derived(trial?.days ?? 14);
   // The account's plan, if the server sent it (billing.account_plan).
-  let accountPlanName = $derived(
+  let accountPlan = $derived(
     billing.account_plan
-      ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.id)?.name || null
+      ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.id) || null
       : null
   );
+  // Partners and Colleagues are never part of the free 14 days.
+  let accountPlanPaid = $derived(Number(accountPlan?.monthly_usd) > 0);
 
   let cardFormOpen = $state(false);
   let cardFormLoading = $state(false);
@@ -104,6 +106,11 @@
     }
   }
 
+  // A free trial asks for no card: Stripe's card form never stays open for one.
+  $effect(() => {
+    if (free) closeCardForm();
+  });
+
   onDestroy(() => checkout?.destroy());
 </script>
 
@@ -131,8 +138,10 @@
     <SizePicker options={tiers} bind:tier {busy} />
 
     <p class="text-sm text-muted-foreground" data-testid="plan-account-plan">
-      {#if accountPlanName}
-        This account is on {accountPlanName}.
+      {#if accountPlan && free && accountPlanPaid}
+        This account is on {accountPlan.name}, which is charged as usual. The free {trialDays} days are for {name} only.
+      {:else if accountPlan}
+        This account is on {accountPlan.name}.
       {:else}
         The account's plan decides who else can join it and what its residents can do.
       {/if}
@@ -244,7 +253,10 @@
 
     {#if payError}
       <Alert variant="destructive" data-testid="plan-pay-error">
-        {#if payPaid}
+        {#if free && !payPaid}
+          <AlertTitle>The free trial didn't start</AlertTitle>
+          <AlertDescription>{payError} Nothing was created.</AlertDescription>
+        {:else if payPaid}
           <AlertTitle>Almost there</AlertTitle>
           <AlertDescription>{payError}</AlertDescription>
         {:else}

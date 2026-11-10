@@ -208,3 +208,46 @@ test('an account that is not eligible, or props without a trial, behave as befor
     unmount();
   }
 });
+
+test('medium, large or at cost with the trial on offer never say "free"', () => {
+  const offers = [
+    { ...tiers[0], tier: 'conversation', rate: 'standard' },
+    { ...tiers[0], id: 'conversation_at_cost', tier: 'conversation', rate: 'at_cost', monthly_usd: '5.00' },
+    { ...tiers[1], tier: 'life', rate: 'standard' },
+  ];
+  for (const tier of ['life', 'conversation_at_cost']) {
+    const { container, unmount } = render(PlanStep, {
+      billing: { ...billing, offers },
+      residentName: 'Aria',
+      tier,
+      trial: { eligible: true, days: 14 },
+    });
+    expect(container).not.toHaveTextContent(/free/i);
+    unmount();
+  }
+});
+
+test('a refused free trial says so in the step, with nothing about cards', () => {
+  render(PlanStep, {
+    billing,
+    residentName: 'Aria',
+    trial: { eligible: true, days: 14 },
+    payError: 'This account has already had its free trial. Choose a plan to create the resident.',
+  });
+  const alert = screen.getByTestId('plan-pay-error');
+  expect(alert).toHaveTextContent("The free trial didn't start");
+  expect(alert).toHaveTextContent('This account has already had its free trial.');
+  expect(alert).toHaveTextContent('Nothing was created.');
+  expect(alert).not.toHaveTextContent(/card/i);
+});
+
+test('an account on a paid plan is told the free days are for the resident only', () => {
+  render(PlanStep, {
+    billing: { ...billing, account_plan: { id: 'partners', source: 'subscription', subscription: null } },
+    residentName: 'Aria',
+    trial: { eligible: true, days: 14 },
+  });
+  expect(screen.getByTestId('plan-account-plan')).toHaveTextContent(
+    'This account is on Partners, which is charged as usual. The free 14 days are for Aria only.'
+  );
+});
