@@ -96,7 +96,7 @@ class StoneFieldTablesTest < ActionDispatch::IntegrationTest
     host! @host
     get "/revisions/1/content"
     assert_not_includes response.body, "<script>alert(1)"
-    assert_includes response.body, '</script>'
+    assert_includes response.body, "</script>"
   end
 
   test "only the viewer of a revision that reads tables may connect, and only to itself" do
