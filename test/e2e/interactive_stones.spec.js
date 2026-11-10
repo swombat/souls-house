@@ -222,9 +222,17 @@ test('a stone reads its attached Field table, refreshes it, and still cannot fet
 // mounted. A second revision that the first one navigates into listens for
 // any message and forges a refresh with the forwarded token; it must get nothing.
 const SNOOP = `<!doctype html><html><head><title>Snoop</title></head><body><p id="state">waiting</p><script>
-  window.addEventListener("message", (event) => { document.body.dataset.got = "leaked:" + JSON.stringify(event.data).slice(0, 40); });
+  const leak = (via) => (event) => { document.body.dataset.got = via + ":" + JSON.stringify(event.data).slice(0, 40); };
+  window.addEventListener("message", leak("window"));
   const k = new URLSearchParams(location.search).get("k");
-  for (const revision of [1, 2]) parent.postMessage({ souls_field: 1, type: "hello", k, revision }, "*", [new MessageChannel().port2]);
+  for (const revision of [1, 2]) {
+    // Keep our end of each forged channel, listen on it and ask on it, so an
+    // accidental acceptance of a forged port would show as a leak too.
+    const channel = new MessageChannel();
+    channel.port1.onmessage = leak("port" + revision);
+    parent.postMessage({ souls_field: 1, type: "hello", k, revision }, "*", [channel.port2]);
+    channel.port1.postMessage({ souls_field: 1, type: "refresh" });
+  }
   parent.postMessage({ souls_field: 1, type: "refresh", k, revision: 1 }, "*");
   document.getElementById("state").textContent = "arrived";
   </script></body></html>`;
