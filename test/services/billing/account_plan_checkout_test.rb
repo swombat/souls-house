@@ -40,6 +40,20 @@ class Billing::AccountPlanCheckoutTest < ActiveSupport::TestCase
     assert_equal COLLEAGUES_PRICE, attempt.stripe_price_id
   end
 
+  test "an account plan is never part of the free trial: a paid Checkout with no trial fields" do
+    Setting.instance.update!(free_trial_enabled: true)
+    @account.update!(billing_required: true)
+    checkout("partners")
+
+    params, = @stripe.checkout_sessions.sole
+    assert_not params.key?(:payment_method_collection), "the card is required, as Checkout's default"
+    assert_not params[:subscription_data].key?(:trial_period_days)
+    assert_not params[:subscription_data].key?(:trial_settings)
+    assert_not params[:metadata].key?(:trial)
+    assert_not params.dig(:subscription_data, :metadata).key?(:trial)
+    assert_nil @account.reload.trial_started_at
+  end
+
   test "the same plan again reuses the open session; another plan replaces it" do
     first = checkout("partners")
     assert_equal first, checkout("partners")

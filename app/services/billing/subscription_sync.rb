@@ -98,6 +98,9 @@ module Billing
         stripe_price_id: stripe_id(remote.items.data.first.price),
         stripe_status: remote.status,
         current_period_end: period_end(remote),
+        # When Stripe ends the free trial (Billing::Trial): it charges then, or
+        # cancels without a card. Kept after the trial for the record.
+        trial_end: remote[:trial_end] ? Time.zone.at(remote[:trial_end]) : subscription.trial_end,
         cancel_at_period_end: remote.cancel_at_period_end ? true : false,
         last_synced_at: @now
       )

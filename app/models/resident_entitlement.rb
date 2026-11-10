@@ -151,7 +151,18 @@ class ResidentEntitlement < ApplicationRecord
 
     limits = [ current_subscription&.allowance_usd ]
     limits << allowance_limit_usd if allowance_month == month && allowance_limit_usd
-    [ limits.compact.max || BigDecimal("0"), Billing::Tier::ACCOUNT_ALLOWANCE_USD ].min
+    limit = [ limits.compact.max || BigDecimal("0"), Billing::Tier::ACCOUNT_ALLOWANCE_USD ].min
+    trial_started_at = Billing::Trial.allowance_started_at(account_id)
+    return limit unless trial_started_at
+
+    # The free trial's allowance is $10 for the whole trial, not $10 a month
+    # (Billing::Trial): this month's ceiling is what the account didn't draw
+    # in the trial's earlier months, so ceiling minus this month's spend
+    # (allowance_spent) is $10 minus everything drawn since the trial began.
+    # Once it converts the ordinary monthly ceiling applies, and what the
+    # trial drew this month counts against it, being this month's spend.
+    before = paid_spend(month: trial_started_at.utc.to_date.beginning_of_month...month)
+    [ limit - before, BigDecimal("0") ].max
   end
 
   # In-flight calls count at their reservation until settled. Free hosting
@@ -160,6 +171,12 @@ class ResidentEntitlement < ApplicationRecord
   def allowance_spent(month = HouseInference::Offering.month)
     return house_inference_calls.where(month: month).sum(:charge_usd) if complimentary?
 
+    paid_spend(month: month)
+  end
+
+  # What every resident of the account drew on the paid allowance in these
+  # months.
+  def paid_spend(month:)
     HouseInferenceCall.where(month: month, free_pool: false,
       resident_entitlement_id: ResidentEntitlement.where(account_id: account_id).select(:id)).sum(:charge_usd)
   end
@@ -223,7 +240,16 @@ class ResidentEntitlement < ApplicationRecord
     used = allowance_spent(month)
     { source: complimentary? ? "free" : "plan", plan: complimentary? ? nil : tier_record&.name, rate: rate, limit_usd: limit.to_f, used_usd: used.to_f,
       remaining_usd: [ limit - used, 0 ].max.to_f, resets_at: month.next_month.iso8601,
+      # During the free trial the allowance is for the trial, not the month.
+      trial_ends_at: trial_ends_at&.iso8601,
       configured: HouseInference::Offering.configured? }
+  end
+
+  # When the account's free trial ends, while its allowance is the trial's.
+  def trial_ends_at
+    return nil if complimentary? || !Billing::Trial.allowance_started_at(account_id)
+
+    ResidentSubscription.where(account_id: account_id, stripe_status: "trialing").minimum(:trial_end)
   end
 
   # What a plan of this tier and rate brings of the account's allowance: all
