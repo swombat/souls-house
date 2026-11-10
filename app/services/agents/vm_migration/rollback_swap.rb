@@ -45,23 +45,28 @@ module Agents
       def call
         previous = @plan.source_map
         fresh = @plan.fresh_map
-        if Agent.connection.current_transaction.joinable?
-          # Inside an enclosing transaction our "commit" would only be a
-          # savepoint, and start would run before anything was durable.
+        if Agent.connection.transaction_open?
+          # Inside any enclosing transaction, joinable or not, our "commit"
+          # would only be a savepoint: the receipt is visible to this
+          # connection but not durable, and start would run before the swap
+          # was. So the swap runs only at the top level.
           return failed(:before_commit, previous, fresh, "The swap must not run inside an open transaction")
         end
         missing = RollbackPlan::ROLES.reject { |role| @verified[role] == true || @verified[role.to_s] == true }
         return failed(:before_commit, previous, fresh, "Not verified: #{missing.join(', ')}") if missing.any?
 
+        receipt_id = nil
         begin
-          commit!(previous, fresh)
+          receipt_id = commit!(previous, fresh)
         rescue StandardError => error
           return failed(:before_commit, previous, fresh, error.message)
         end
-        # "after_commit" is literal: read the row back outside any transaction.
-        # A swallowed ActiveRecord::Rollback leaves commit! returning normally
-        # with nothing written, and must not reach start.
-        unless committed?(fresh)
+        # "after_commit" is literal: read this invocation's own receipt back,
+        # outside any transaction. A swallowed ActiveRecord::Rollback leaves
+        # commit! returning normally with nothing written, and must not reach
+        # start; an older receipt for the same generation proves nothing about
+        # this call.
+        unless committed?(receipt_id, fresh)
           return failed(:before_commit, previous, fresh, "The swap did not commit")
         end
 
@@ -93,21 +98,30 @@ module Agents
           # with_lock reloads the row, so this compares the database against the
           # plan's source map, not against whatever this object last held.
           raise Failed, "The resident's volume map is not the one this rollback was planned from" unless @agent.volume_map == previous
+          # A generation is consumed by its first committed swap. Retrying a
+          # plan (for instance after a revert! restored its source map) must
+          # take a fresh reservation, not reuse a spent one.
+          raise Failed, "Rollback generation #{@plan.generation} has already been swapped" if receipts.exists?
 
           @agent.update!(volume_map: fresh)
           @in_commit.call(@agent)
           AuditLog.create!(user: nil, account: @agent.account, action: "vm_rollback_swap", auditable: @agent,
-            data: { by: "house", generation: @plan.generation, previous_map: previous, volume_map: fresh })
+            data: { by: "house", generation: @plan.generation, previous_map: previous, volume_map: fresh }).id
         end
       end
 
-      # The receipt is written in the same transaction as the map, and a
-      # generation is spent once, so this generation's receipt exists exactly
-      # when the swap committed (whatever has happened to the map since).
-      def committed?(fresh)
+      def receipts
         AuditLog.where(action: "vm_rollback_swap", auditable: @agent)
           .where("data->>'generation' = ?", @plan.generation.to_s)
-          .any? { |receipt| receipt.data["volume_map"] == fresh }
+      end
+
+      # The receipt is written in the same transaction as the map, so this
+      # call's receipt row exists exactly when this call's swap committed.
+      def committed?(receipt_id, fresh)
+        return false if receipt_id.nil?
+
+        receipt = AuditLog.find_by(id: receipt_id, action: "vm_rollback_swap")
+        receipt.present? && receipt.data["volume_map"] == fresh
       end
 
       def failed(phase, previous, fresh, message)
