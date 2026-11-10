@@ -217,9 +217,36 @@ describe('account plan and the free 14 days', () => {
         ],
       })
     );
-    expect(screen.getByText('Free for 14 days')).toBeInTheDocument();
-    expect(screen.getByTestId('resident-trial')).toHaveTextContent('Add a card to keep Aria awake after 24 Nov 2026.');
+    expect(screen.getByText('Free trial')).toBeInTheDocument();
+    expect(screen.getByTestId('resident-trial')).toHaveTextContent('Free trial until 24 Nov 2026.');
+    expect(screen.getByTestId('resident-trial')).toHaveTextContent(
+      'Add a card from Manage billing to keep Aria awake after 24 Nov 2026'
+    );
+    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("also while a resident's free 14 days");
     expect(screen.queryByRole('button', { name: /^Move to (Medium|Large)/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Manage billing' }).length).toBeGreaterThan(0);
   });
+
+  it('with no residents and the trial offered, the empty list mentions the free 14 days', () => {
+    render(Billing, props({ residents: [], trial: { eligible: true, days: 14 } }));
+    const empty = screen.getByTestId('billing-no-residents');
+    expect(empty).toHaveTextContent(
+      "This account doesn't host any residents yet. Its first can be small and free for 14 days, with no card asked for."
+    );
+    expect(screen.getByRole('link', { name: 'Create a resident' })).toHaveAttribute(
+      'href',
+      '/accounts/home/agents/new'
+    );
+  });
+
+  it.each([[{ eligible: false, days: 14 }], [null]])(
+    'an account without the trial (%o) is never told of one',
+    (trial) => {
+      const { container } = render(Billing, props({ residents: [], trial }));
+      expect(screen.getByTestId('billing-no-residents')).toHaveTextContent(
+        "This account doesn't host any residents yet."
+      );
+      expect(container).not.toHaveTextContent(/free for 14|free 14 days|free trial/i);
+    }
+  );
 });

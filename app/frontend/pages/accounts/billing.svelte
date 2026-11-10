@@ -18,6 +18,8 @@
     residents = [],
     account_plans: accountPlans = [],
     account_plan: accountPlan = null,
+    // The account's free 14 days: { eligible, days }.
+    trial = null,
   } = $props();
 
   let busy = $state(null);
@@ -43,13 +45,12 @@
 
   function stateLabel(resident) {
     const entitlement = resident.entitlement;
-    if (!entitlement) return 'No plan';
-    if (onTrial(resident)) return 'Free for 14 days';
+    if (!entitlement) return 'Not paid for';
+    if (onTrial(resident)) return 'Free trial';
     return STATE_LABELS[entitlement.state] || entitlement.state;
   }
 
-  // A resident in its free 14 days (trial_ends_at comes with the trial; older
-  // props don't have it).
+  // A resident in its free trial.
   function onTrial(resident) {
     return Boolean(resident.trial_ends_at) || resident.entitlement?.subscription?.status === 'trialing';
   }
@@ -157,7 +158,12 @@
       </div>
     {/if}
 
-    <AccountPlanCard {account} {accountPlan} {accountPlans} canPay={billing.can_pay} />
+    <AccountPlanCard
+      {account}
+      {accountPlan}
+      {accountPlans}
+      canPay={billing.can_pay}
+      trialShown={Boolean(trial?.eligible) || residents.some(onTrial)} />
 
     <section class="space-y-3" data-testid="billing-plans">
       <h2 class="font-semibold">Residents, by size</h2>
@@ -263,7 +269,13 @@
           {/if}
         </div>
       {:else}
-        <div class="p-6 text-sm text-muted-foreground">This account doesn't host any residents yet.</div>
+        <div class="p-6 text-sm text-muted-foreground" data-testid="billing-no-residents">
+          This account doesn't host any residents yet.
+          {#if trial?.eligible}
+            Its first can be small and free for {trial.days ?? 14} days, with no card asked for.
+            <a class="underline underline-offset-4" href="/accounts/{account.id}/agents/new">Create a resident</a>.
+          {/if}
+        </div>
       {/each}
     </div>
 

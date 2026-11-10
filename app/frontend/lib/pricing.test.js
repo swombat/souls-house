@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { accountPlanLines, accountPlanTaglines, planAction, sizeLines, sizeOf, trialApplies, usd } from './pricing';
+import {
+  accountPlanLines,
+  accountPlanTaglines,
+  planAction,
+  sizeLines,
+  sizeOf,
+  trialAction,
+  trialApplies,
+  trialShown,
+  usd,
+} from './pricing';
 
 const partners = {
   id: 'partners',
@@ -115,5 +125,38 @@ describe('sizeOf and trialApplies', () => {
     expect(trialApplies(null, small)).toBe(false);
     expect(trialApplies({ eligible: true }, { id: 'life', tier: 'life', rate: 'standard' })).toBe(false);
     expect(trialApplies({ eligible: true }, { ...small, id: 'conversation_at_cost', rate: 'at_cost' })).toBe(false);
+  });
+});
+
+describe('trialShown and trialAction', () => {
+  const offered = { billingOpen: true, freeTrialEnabled: true, smallPurchasable: true };
+
+  it('shows the free 14 days only while the house offers them, and to a signed-in account only if eligible', () => {
+    expect(trialShown({ ...offered, user: null, trial: null })).toBe(true);
+    expect(trialShown({ ...offered, freeTrialEnabled: false, user: null })).toBe(false);
+    expect(trialShown({ ...offered, billingOpen: false, user: null })).toBe(false);
+    expect(trialShown({ ...offered, smallPurchasable: false, user: null })).toBe(false);
+    expect(trialShown({ ...offered, user: { id: 1 }, trial: { eligible: true, days: 14 } })).toBe(true);
+    expect(trialShown({ ...offered, user: { id: 1 }, trial: { eligible: false, days: 14 } })).toBe(false);
+    expect(trialShown({ ...offered, user: { id: 1 }, trial: null })).toBe(false);
+  });
+
+  it('leads a visitor to sign up, an owner to the wizard, and tells a member who can start it', () => {
+    expect(trialAction({ user: null, allowSignups: true })).toEqual({
+      kind: 'link',
+      label: 'Begin someone',
+      href: '/signup',
+    });
+    expect(trialAction({ user: null, allowSignups: false })).toEqual({
+      kind: 'link',
+      label: 'Sign in',
+      href: '/login',
+    });
+    expect(trialAction({ user: { id: 1 }, account: { id: 'home' }, isAccountAdmin: true })).toEqual({
+      kind: 'link',
+      label: 'Start free',
+      href: '/accounts/home/agents/new',
+    });
+    expect(trialAction({ user: { id: 1 }, account: { id: 'home' }, isAccountAdmin: false }).kind).toBe('note');
   });
 });

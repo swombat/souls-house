@@ -31,47 +31,61 @@ test('the resident that carries the allowance says so', () => {
   );
 });
 
-test('a resident in its free 14 days with no card says when it sleeps, and links to Manage billing', async () => {
+const trialing = { ...paid, subscription: { ...paid.subscription, status: 'trialing' } };
+
+test('a resident on its free trial says until when, and how to keep it, true with or without a card', async () => {
   const onmanage = vi.fn();
-  const entitlement = { ...paid, subscription: { ...paid.subscription, status: 'trialing' } };
   render(ResidentBillingNote, {
-    resident: { id: 'r', name: 'Aria', entitlement, trial_ends_at: '2026-11-24T12:00:00Z' },
+    resident: { id: 'r', name: 'Aria', entitlement: trialing, trial_ends_at: '2026-11-24T12:00:00Z' },
     price: '$9.99 a month',
     trial: true,
     canManage: true,
     onmanage,
   });
   const note = screen.getByTestId('resident-trial');
-  expect(note).toHaveTextContent('Free until 24 Nov 2026.');
-  expect(note).toHaveTextContent('Add a card to keep Aria awake after 24 Nov 2026.');
-  expect(note).toHaveTextContent('Nothing is deleted.');
+  expect(note).toHaveTextContent(
+    'Free trial until 24 Nov 2026. Add a card from Manage billing to keep Aria awake after 24 Nov 2026 at $9.99 a ' +
+      'month + VAT; with no card, Aria goes to sleep on 24 Nov 2026 and nothing is deleted.'
+  );
+  expect(note.textContent).not.toMatch(/—/);
   expect(screen.queryByText(/Renews on/)).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Manage billing' }));
   expect(onmanage).toHaveBeenCalled();
 });
 
-test('a resident in its free 14 days with a card says what follows', () => {
+test('has_payment_method is not read: a trial reads the same whatever it says', () => {
   render(ResidentBillingNote, {
     resident: {
       id: 'r',
       name: 'Aria',
-      entitlement: paid,
+      entitlement: trialing,
       trial_ends_at: '2026-11-24T12:00:00Z',
       has_payment_method: true,
     },
     price: '$9.99 a month',
     trial: true,
-    canManage: true,
   });
-  expect(screen.getByTestId('resident-trial')).toHaveTextContent(
-    'Free until 24 Nov 2026. Then $9.99 a month + VAT on the card on file.'
-  );
+  expect(screen.getByTestId('resident-trial')).toHaveTextContent('Add a card from Manage billing to keep Aria awake');
+  expect(screen.queryByText(/card on file/)).toBeNull();
   expect(screen.queryByRole('button', { name: 'Manage billing' })).toBeNull();
 });
 
+test('during the trial the allowance is $10 for the trial, not a month', () => {
+  const entitlement = { ...trialing, subscription: { ...trialing.subscription, includes_allowance: true } };
+  render(ResidentBillingNote, {
+    resident: { id: 'r', name: 'Aria', entitlement, trial_ends_at: '2026-11-24T12:00:00Z' },
+    trial: true,
+  });
+  expect(screen.getByTestId('resident-allowance')).toHaveTextContent(
+    "Carries the account's $10 of house-model use for the free trial, until 24 Nov 2026."
+  );
+  expect(screen.getByTestId('resident-allowance')).not.toHaveTextContent('a month');
+});
+
 test('a trialing subscription without trial_ends_at in the props still reads sensibly', () => {
-  const entitlement = { ...paid, subscription: { ...paid.subscription, status: 'trialing' } };
-  render(ResidentBillingNote, { resident: { id: 'r', name: 'Aria', entitlement }, trial: true, canManage: true });
-  expect(screen.getByTestId('resident-trial')).toHaveTextContent('In its free 14 days.');
-  expect(screen.queryByText(/Add a card/)).toBeNull();
+  render(ResidentBillingNote, { resident: { id: 'r', name: 'Aria', entitlement: trialing }, trial: true });
+  expect(screen.getByTestId('resident-trial')).toHaveTextContent(
+    'On its free trial. Add a card from Manage billing to keep Aria awake after the trial; with no card, Aria goes to ' +
+      'sleep then and nothing is deleted.'
+  );
 });

@@ -4,16 +4,17 @@
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
-  import { planAction, accountPlanTaglines, sizeLines, sizeOf, usd } from '$lib/pricing';
+  import { planAction, trialAction, trialShown, accountPlanTaglines, sizeLines, sizeOf, usd } from '$lib/pricing';
 
   let {
     tiers = [],
     account_plans: accountPlans = [],
     billing_open: billingOpen = false,
     contact_email: contactEmail,
-    // Whether the house offers the free 14 days (Site Admin). Older props
-    // don't say; the trial is on by default.
-    free_trial_enabled: freeTrialEnabled = true,
+    // Whether the house offers the free 14 days (Site Admin's switch).
+    free_trial_enabled: freeTrialEnabled = false,
+    // Signed in: whether the account would get them, { eligible, days }.
+    trial = null,
   } = $props();
 
   const user = $derived($page.props?.user);
@@ -46,6 +47,10 @@
 
   const allowance = $derived(usd(small?.allowance_usd ?? 10));
   const paidPlans = $derived(accountPlans.filter((plan) => Number(plan.monthly_usd) > 0));
+  const showTrial = $derived(
+    trialShown({ billingOpen, freeTrialEnabled, smallPurchasable: Boolean(small?.purchasable), user, trial })
+  );
+  const startTrial = $derived(trialAction({ user, account, isAccountAdmin, allowSignups }));
 </script>
 
 <svelte:head>
@@ -181,7 +186,7 @@
     </p>
   </section>
 
-  {#if billingOpen && freeTrialEnabled}
+  {#if showTrial}
     <section
       class="mx-auto mt-12 max-w-3xl space-y-2 rounded-2xl border p-6 text-sm leading-relaxed"
       data-testid="pricing-trial">
@@ -195,6 +200,14 @@
           {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month is charged from the day you choose one,
           also while a resident's free 14 days are running, and needs a card.
         </p>
+      {/if}
+      {#if startTrial.kind === 'link'}
+        <a
+          href={startTrial.href}
+          class="{buttonVariants({ variant: 'default' })} mt-2"
+          data-testid="pricing-trial-action">{startTrial.label}</a>
+      {:else}
+        <p data-testid="pricing-trial-action">{startTrial.label}</p>
       {/if}
     </section>
   {/if}

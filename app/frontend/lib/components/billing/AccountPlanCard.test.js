@@ -34,8 +34,8 @@ const accountPlans = [
 ];
 const account = { id: 'acc' };
 
-function show(accountPlan, canPay = true) {
-  return render(AccountPlanCard, { account, accountPlan, accountPlans, canPay });
+function show(accountPlan, canPay = true, trialShown = true) {
+  return render(AccountPlanCard, { account, accountPlan, accountPlans, canPay, trialShown });
 }
 
 beforeEach(() => post.mockReset());
@@ -131,4 +131,11 @@ test('someone who is not the owner sees the plan but no buttons', () => {
 test('renders nothing when the props carry no account plan', () => {
   show(null);
   expect(screen.queryByTestId('account-plan')).toBeNull();
+});
+
+test('an account the tab offers no free trial is never told about one, and still sees the charge', () => {
+  show({ id: 'companions', source: 'default', subscription: null }, true, false);
+  const terms = screen.getByTestId('account-plan-terms');
+  expect(terms).toHaveTextContent('It is charged from today and needs a card: Stripe asks for one.');
+  expect(terms).not.toHaveTextContent(/free/i);
 });

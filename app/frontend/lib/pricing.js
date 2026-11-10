@@ -75,6 +75,25 @@ export function planAction({ plan, billingOpen, user, account, isAccountAdmin, a
   return { kind: 'link', label: 'Sign in', href: '/login' };
 }
 
+// The free 14 days' action on /pricing. Signed out, the same as a plan's:
+// signing up lands a new account in the creation wizard. Signed in, the
+// account's owner (or admin) goes straight to the wizard.
+export function trialAction({ user, account, isAccountAdmin, allowSignups }) {
+  if (!user) return planAction({ plan: { purchasable: true }, billingOpen: true, user, allowSignups });
+  if (account && isAccountAdmin)
+    return { kind: 'link', label: 'Start free', href: `/accounts/${account.id}/agents/new` };
+  return { kind: 'note', label: "The account's owner can start it when creating its first resident." };
+}
+
+// Whether /pricing mentions the free 14 days: the house offers them (Site
+// Admin's switch, and a small resident can be bought), and a signed-in
+// visitor's account would get them (trial.eligible). An account that has had
+// its trial, or can't have one, is never told it's free.
+export function trialShown({ billingOpen, freeTrialEnabled, smallPurchasable, user, trial }) {
+  if (!billingOpen || !freeTrialEnabled || !smallPurchasable) return false;
+  return user ? Boolean(trial?.eligible) : true;
+}
+
 // Whether the wizard's free 14 days apply to the chosen size: the account is
 // eligible (the server decides: its first resident, once per account) and
 // the resident is small, at the standard price.

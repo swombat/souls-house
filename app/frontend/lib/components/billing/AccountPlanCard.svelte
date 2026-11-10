@@ -11,7 +11,9 @@
   import { accountPlanTaglines, usd } from '$lib/pricing';
 
   // accountPlan: { id, source: subscription|grant|default, subscription }.
-  let { account, accountPlan, accountPlans = [], canPay = false } = $props();
+  // trialShown: the tab mentions a free trial (one is offered, or running), so
+  // a move says it isn't part of it.
+  let { account, accountPlan, accountPlans = [], canPay = false, trialShown = false } = $props();
 
   let busy = $state(null);
 
@@ -100,8 +102,8 @@
             The new price starts today. Stripe puts the difference for the rest of this period on the next invoice.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, on top of the
-            residents. It is charged from today, also while a resident's free 14 days are running, and needs a card:
-            Stripe asks for one.
+            residents. It is charged from today{trialShown ? ", also while a resident's free 14 days are running," : ''}
+            and needs a card: Stripe asks for one.
           {/if}
         </p>
       </div>

@@ -7,6 +7,10 @@ vi.mock('@inertiajs/svelte', async () => {
 });
 
 const { default: Pricing } = await import('./pricing.svelte');
+const { page } = await import('@inertiajs/svelte');
+
+const signedOut = { site_settings: { allow_signups: true } };
+afterEach(() => page.set({ props: signedOut }));
 
 const tiers = [
   { id: 'conversation', name: 'Small', size: 'small', monthly_usd: '9.99', allowance_usd: '10.00', purchasable: true },
@@ -62,7 +66,13 @@ test('three account plan cards lead with what an account pays, one small residen
 });
 
 test('residents by size, then model use, then the free 14 days with the paid plans never free', () => {
-  render(Pricing, { tiers, account_plans: accountPlans, billing_open: true, contact_email: 'hello@example.com' });
+  render(Pricing, {
+    tiers,
+    account_plans: accountPlans,
+    billing_open: true,
+    contact_email: 'hello@example.com',
+    free_trial_enabled: true,
+  });
   const sizes = screen.getByTestId('pricing-sizes');
   expect(within(sizes).getByRole('rowheader', { name: 'Medium' })).toBeInTheDocument();
   expect(sizes).toHaveTextContent('$19.99');
@@ -97,4 +107,56 @@ test('with billing off, every card says it opens soon', () => {
 test('with billing off there is no free line either', () => {
   render(Pricing, { tiers, account_plans: accountPlans, billing_open: false, contact_email: 'hello@example.com' });
   expect(screen.queryByTestId('pricing-trial')).toBeNull();
+});
+
+describe('the free 14 days and where they lead', () => {
+  const open = {
+    tiers,
+    account_plans: accountPlans,
+    billing_open: true,
+    contact_email: 'hello@example.com',
+    free_trial_enabled: true,
+  };
+  const owner = {
+    ...signedOut,
+    user: { id: 1 },
+    account: { id: 'home' },
+    is_account_admin: true,
+  };
+
+  test('signed out: the action signs up, which lands a new account in the wizard', () => {
+    render(Pricing, open);
+    expect(within(screen.getByTestId('pricing-trial')).getByRole('link', { name: 'Begin someone' })).toHaveAttribute(
+      'href',
+      '/signup'
+    );
+  });
+
+  test("signed in as the owner of an eligible account: Start free opens the account's wizard", () => {
+    page.set({ props: owner });
+    render(Pricing, { ...open, trial: { eligible: true, days: 14 } });
+    expect(within(screen.getByTestId('pricing-trial')).getByRole('link', { name: 'Start free' })).toHaveAttribute(
+      'href',
+      '/accounts/home/agents/new'
+    );
+  });
+
+  test.each([
+    ['has had its trial', { eligible: false, days: 14 }],
+    ['sent no trial', null],
+  ])('signed in, an account that %s never sees "free" next to a price', (_, trial) => {
+    page.set({ props: owner });
+    const { container } = render(Pricing, { ...open, trial });
+    expect(screen.queryByTestId('pricing-trial')).toBeNull();
+    expect(container.querySelector('[data-plan="companions"]').parentElement).not.toHaveTextContent(
+      /free for|free 14/i
+    );
+    expect(screen.getByTestId('pricing-sizes')).not.toHaveTextContent(/free/i);
+  });
+
+  test('no switch in the props reads as off', () => {
+    const { free_trial_enabled: _, ...withoutSwitch } = open;
+    render(Pricing, withoutSwitch);
+    expect(screen.queryByTestId('pricing-trial')).toBeNull();
+  });
 });
