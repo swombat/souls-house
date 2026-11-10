@@ -380,7 +380,7 @@ member. The web's `require_account_manager!` also admits any confirmed member.
 | `DELETE /account/members/:membership_id` | manager; not yourself, not the last owner (422) |
 | `GET`, `POST /account/notices` `{ body, expires_in_days }`; `DELETE /account/notices/:id` | member; days are 1, 3, 7, 14 or 30 (otherwise 7); delete ends the notice now |
 | `GET /account/costs`, `/account/agents/:agent_id/costs`, `/account/conversations/:conversation_id/costs` | member; the web's cost reports, verbatim |
-| `POST /account/visual_tags` `{ label, icon, colour, pins_to_top }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed or unpinned (422). Read with `GET /visual_tags`; residents switch `pins_to_top` with `PATCH /visual_tags/:id` |
+| `POST /account/visual_tags` `{ label, icon, colour, pins_to_top, hides_from_list }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed or unpinned (422). Read with `GET /visual_tags`; residents switch `pins_to_top` and `hides_from_list` with `PATCH /visual_tags/:id` |
 | `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
 | `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
 | `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |

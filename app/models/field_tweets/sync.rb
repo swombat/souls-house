@@ -56,7 +56,7 @@ module FieldTweets
     end
 
     def self.due(now: Time.current)
-      FieldTweetSource.where(state: "active").where("next_attempt_at IS NULL OR next_attempt_at <= ?", now)
+      FieldTweetSource.live.where(state: "active").where("next_attempt_at IS NULL OR next_attempt_at <= ?", now)
     end
 
     # client: ->(api_key) { an object with #search(query, cursor:) }
@@ -69,11 +69,16 @@ module FieldTweets
     # => :claimed (another run has it), :done, :more (window still open),
     # :waiting (allowance or budget), :failed, :inactive
     def call
-      return :claimed unless claim!
+      @source.reload
+      return :inactive if @source.removed? || @source.state != "active"
+      unless claim!
+        @source.reload
+        return @source.removed? || @source.state != "active" ? :inactive : :claimed
+      end
 
       begin
         @source.reload
-        return :inactive unless @source.state == "active"
+        return :inactive unless collecting?
 
         run
       ensure
@@ -94,11 +99,16 @@ module FieldTweets
       import_backlog!
       pages = 0
       loop do
+        @source.reload
+        return :inactive unless collecting?
+
         if @source.backlog_items.exists? || FieldTweets.import_allowance_left(@source.account, now: now).zero?
           schedule!(now + FieldTweets.poll_interval, reason: "Today's import allowance is used up; collection goes on tomorrow")
           return :waiting
         end
-        unless @source.window_open? || open_window!
+        opened = @source.window_open? || open_window!
+        return :inactive if opened == :inactive
+        unless opened
           schedule!(now + FieldTweets.poll_interval)
           return :done
         end
@@ -133,16 +143,20 @@ module FieldTweets
     end
 
     def open_window!
-      until_time = now - LAG
-      return false if until_time - @source.checkpoint_at < MIN_WINDOW
+      active_write do
+        until_time = now - LAG
+        next false if until_time - @source.checkpoint_at < MIN_WINDOW
 
-      since = [ @source.checkpoint_at - OVERLAP, @source.connected_at ].max
-      @source.update!(window_since: since, window_until: until_time, window_cursor: nil, window_pages: 0)
-      true
+        since = [ @source.checkpoint_at - OVERLAP, @source.connected_at ].max
+        @source.update!(window_since: since, window_until: until_time, window_cursor: nil, window_pages: 0)
+        true
+      end
     end
 
     def fetch_page!
-      call = FieldTweets.reserve!(@source, retry_call: @source.failure_count.positive?, now: now)
+      call = FieldTweets.reserve!(@source, retry_call: @source.failure_count.positive?, now: now, claimed_at: @claimed_at)
+    rescue FieldTweets::InactiveSource
+      :inactive
     rescue FieldTweets::LimitReached => e
       # Nobody paying is waited out at the poll interval (a funding change
       # also brings it forward); a spent budget waits for the next month.
@@ -186,7 +200,9 @@ module FieldTweets
       # guards against the provider including one anyway.
       attrs.reject! { it[:is_repost] } unless @source.include_reposts
 
-      FieldTweetSource.transaction do
+      # An admitted paid response is retained even when Stop committed during
+      # HTTP. Only its page/cursor/ledger bookkeeping may progress after removal.
+      @source.with_lock do
         ids = attrs.map { it[:provider_tweet_id] }
         known = FieldTweet.where(account_id: @source.account_id, provider_tweet_id: ids).pluck(:provider_tweet_id) +
           @source.backlog_items.where(provider_tweet_id: ids).pluck(:provider_tweet_id)
@@ -198,9 +214,15 @@ module FieldTweets
           FieldTweetStream.refresh!(@source.account_id) if inserted.rows.any?
         end
 
-        @source.update!(window_rejected: @source.window_rejected + rejected) if rejected.positive?
-        result = advance_window!(page, attrs)
-        @source.update!(failure_count: 0, last_success_at: fetched_at, state_reason: nil) unless result == :broken
+        # A replaced claim may already be paging a different window. Keep this
+        # paid response, but never overwrite that worker's cursor or metadata.
+        # Stop preserves the claim, so its admitted page still advances normally.
+        result = :inactive
+        if @source.sync_claimed_at == @claimed_at
+          @source.update!(window_rejected: @source.window_rejected + rejected) if rejected.positive?
+          result = advance_window!(page, attrs)
+          @source.update!(failure_count: 0, last_success_at: fetched_at, state_reason: nil) if collecting? && result != :broken
+        end
         call.settle!(returned: page.tweets.size, already_stored: page.tweets.size - fresh.size - rejected,
           queued: fresh.size, rejected: rejected)
         result
@@ -242,27 +264,29 @@ module FieldTweets
     end
 
     def failed!(error, funding: @source.funding)
-      if error.funding?
-        if funding == "house"
-          FieldTweets.halt_house!("TwitterAPI.io refused the house key (#{error.status})", now: now)
-          schedule!(now + FieldTweets.poll_interval, reason: funding_closed_reason)
+      active_write do
+        if error.funding?
+          if funding == "house"
+            FieldTweets.halt_house!("TwitterAPI.io refused the house key (#{error.status})", now: now)
+            schedule!(now + FieldTweets.poll_interval, reason: funding_closed_reason)
+          else
+            # Never the house's key instead: the account chose its own.
+            @source.needs_attention!("TwitterAPI.io refused the key in this account's TwitterAPI.io integration (#{error.status}). " \
+              "Add credit on twitterapi.io, or replace the key under Integrations.")
+          end
+        elsif error.status == 400 && @source.window_cursor.present?
+          # Most likely a cursor gone stale while the window waited: page the
+          # same window again from its start. Tweets already kept are counted
+          # and skipped.
+          @source.update!(window_cursor: nil, window_pages: 0)
+          retry_later!("The provider rejected the saved page cursor; the window restarts")
+        elsif error.transient?
+          retry_later!("#{error.message}; trying again later")
         else
-          # Never the house's key instead: the account chose its own.
-          @source.needs_attention!("TwitterAPI.io refused the key in this account's TwitterAPI.io integration (#{error.status}). " \
-            "Add credit on twitterapi.io, or replace the key under Integrations.")
+          @source.needs_attention!("TwitterAPI.io rejected the search (#{error.status})")
         end
-      elsif error.status == 400 && @source.window_cursor.present?
-        # Most likely a cursor gone stale while the window waited: page the
-        # same window again from its start. Tweets already kept are counted
-        # and skipped.
-        @source.update!(window_cursor: nil, window_pages: 0)
-        retry_later!("The provider rejected the saved page cursor; the window restarts")
-      elsif error.transient?
-        retry_later!("#{error.message}; trying again later")
-      else
-        @source.needs_attention!("TwitterAPI.io rejected the search (#{error.status})")
+        :failed
       end
-      :failed
     end
 
     def retry_later!(reason)
@@ -278,18 +302,21 @@ module FieldTweets
     end
 
     def schedule!(time, reason: nil)
-      @source.update!(next_attempt_at: time, state_reason: reason&.first(300))
+      active_write { @source.update!(next_attempt_at: time, state_reason: reason&.first(300)) }
     end
 
     # Oldest first, within the day's allowance. Each tweet in its own
     # transaction with the removal of its backlog row.
     def import_backlog!
-      allowance = FieldTweets.import_allowance_left(@source.account, now: now)
-      return if allowance.zero?
-
       imported = 0
-      @source.backlog_items.oldest_first.limit(allowance).each do |item|
-        FieldTweet.transaction do
+      @source.backlog_items.oldest_first.limit(FieldTweets.daily_import_cap).pluck(:id).each do |id|
+        @source.with_lock do
+          return imported unless collecting?
+          return imported if FieldTweets.import_allowance_left(@source.account, now: now).zero?
+
+          item = @source.backlog_items.find_by(id: id)
+          next unless item
+
           attributes = item.attrs.symbolize_keys
           unless FieldTweet.exists?(account_id: @source.account_id, provider_tweet_id: attributes[:provider_tweet_id])
             FieldTweet.create!(attributes.merge(account_id: @source.account_id, field_tweet_source: @source))
@@ -306,13 +333,28 @@ module FieldTweets
 
     def claim!
       @claimed_at = now
-      FieldTweetSource.where(id: @source.id)
+      @claimed_at = @claimed_at.change(usec: @claimed_at.usec)
+      FieldTweetSource.live.where(id: @source.id, state: "active")
         .where("sync_claimed_at IS NULL OR sync_claimed_at < ?", @claimed_at - CLAIM_TTL)
         .update_all(sync_claimed_at: @claimed_at) == 1
     end
 
     def release!
       FieldTweetSource.where(id: @source.id, sync_claimed_at: @claimed_at).update_all(sync_claimed_at: nil)
+    end
+
+    def collecting?
+      !@source.removed? && @source.state == "active" && @source.sync_claimed_at == @claimed_at
+    end
+
+    # Re-read under the same row lock as Stop; stale workers never schedule or
+    # change collection state after removal (or after losing their claim).
+    def active_write
+      @source.with_lock do
+        next :inactive unless collecting?
+
+        yield
+      end
     end
 
   end

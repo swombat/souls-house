@@ -13,6 +13,7 @@ class ChatsController < ApplicationController
 
     render inertia: "chats/new", props: {
       chats: Chat.sidebar_json_for(@chats),
+      hidden_chat_ids: sidebar_hidden_chat_ids,
       agents: available_agents(as: :list),
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
@@ -27,6 +28,7 @@ class ChatsController < ApplicationController
 
     render inertia: "chats/new", props: {
       chats: Chat.sidebar_json_for(@chats),
+      hidden_chat_ids: sidebar_hidden_chat_ids,
       account: current_account.as_json,
       agents: available_agents(as: :list),
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
@@ -49,6 +51,7 @@ class ChatsController < ApplicationController
       chats = sidebar_chats
       props[:chats] = Chat.sidebar_json_for(chats)
     end
+    props[:hidden_chat_ids] = sidebar_hidden_chat_ids if inertia_prop_requested?(:hidden_chat_ids)
 
     if inertia_prop_requested?(:messages)
       messages = @chat.messages_page
@@ -155,6 +158,7 @@ class ChatsController < ApplicationController
     else
       chats = base_scope.kept
     end
+    chats = filter_sidebar_by_tag(chats)
 
     if params[:show_deleted].present? && can_manage_account?
       chats.latest
@@ -164,6 +168,37 @@ class ChatsController < ApplicationController
       active_chats = chats.active.pinned_first.latest
       params[:show_archived] == "true" ? active_chats + chats.archived.latest : active_chats
     end
+  end
+
+  # The Filter menu: a chosen tag shows only its conversations (hidden ones
+  # too, since that is what was asked for); otherwise conversations whose tag
+  # hides them stay out unless show_hidden is on. An unknown or removed tag
+  # filters nothing rather than failing the page.
+  def filter_sidebar_by_tag(chats)
+    if (tag = sidebar_tag_filter)
+      chats.where(visual_tag: tag)
+    elsif params[:show_hidden] == "true"
+      chats
+    else
+      chats.not_hidden_from_list
+    end
+  end
+
+  def sidebar_tag_filter
+    return @sidebar_tag_filter if defined?(@sidebar_tag_filter)
+
+    @sidebar_tag_filter = begin
+      params[:tag].is_a?(String) ? VisualTag.resolve_for(current_account, params[:tag]) : nil
+    rescue ActiveRecord::RecordNotFound
+      nil
+    end
+  end
+
+  # Hidden conversations in this room that the list would otherwise show, so
+  # the Filter menu can count the ones waiting on the viewer (the browser
+  # never receives the hidden rows themselves).
+  def sidebar_hidden_chat_ids
+    current_account.chats.in_room(selected_room).kept.listed.active.hidden_from_list.pluck(:id).map { |id| Chat.encode_id(id) }
   end
 
   def set_chat

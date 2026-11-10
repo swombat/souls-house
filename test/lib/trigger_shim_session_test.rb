@@ -941,20 +941,24 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "subscriber@example.com", result["email"]
   end
 
-  test "provider status parsing recognizes Claude subscription auth JSON" do
+  test "provider status reads the Claude subscription sign-in from its files without starting Claude Code" do
     out = run_shim_python(<<~PY)
-      import types
+      import pathlib, tempfile, time
       mod._claude_available = lambda: True
-      mod.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
-          stdout=json.dumps({
-              "loggedIn": True,
-              "authMethod": "claude.ai",
-              "apiProvider": "firstParty",
-              "email": "subscriber@example.com",
-          }),
-          stderr="",
-          returncode=0,
-      )
+      def refuse(*args, **kwargs):
+          raise AssertionError("status must not start a Claude process (#816)")
+      mod.subprocess.run = refuse
+      mod.subprocess.Popen = refuse
+      config = pathlib.Path(tempfile.mkdtemp())
+      (config / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {
+          "accessToken": "fake-access",
+          "refreshToken": "fake-refresh",
+          "expiresAt": int((time.time() - 3600) * 1000),
+      }}))
+      (config / ".claude.json").write_text(json.dumps({
+          "oauthAccount": {"emailAddress": "subscriber@example.com"},
+      }))
+      mod.CLAUDE_CONFIG_DIR = config
       print(json.dumps(mod._provider_account_status("anthropic")))
     PY
 
@@ -984,15 +988,11 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_not_includes result.to_json.downcase, "token"
   end
 
-  test "provider status parsing does not mistake Not logged in text for a connection" do
+  test "provider status reports no Claude sign-in when the credentials file is missing" do
     out = run_shim_python(<<~PY)
-      import types
+      import pathlib, tempfile
       mod._claude_available = lambda: True
-      mod.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
-          stdout="Not logged in",
-          stderr="",
-          returncode=0,
-      )
+      mod.CLAUDE_CONFIG_DIR = pathlib.Path(tempfile.mkdtemp())
       print(json.dumps(mod._provider_account_status("anthropic")))
     PY
 
@@ -1001,18 +1001,16 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "anthropic", result["provider"]
   end
 
-  test "provider status parsing honors an explicit logged-out JSON status" do
+  test "provider status reports no Claude sign-in when the credentials hold no refresh token" do
     out = run_shim_python(<<~PY)
-      import types
+      import pathlib, tempfile
       mod._claude_available = lambda: True
-      mod.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
-          stdout=json.dumps({
-              "loggedIn": False,
-              "email": "stale@example.com",
-          }),
-          stderr="",
-          returncode=0,
-      )
+      config = pathlib.Path(tempfile.mkdtemp())
+      (config / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"accessToken": "fake-access"}}))
+      (config / ".claude.json").write_text(json.dumps({
+          "oauthAccount": {"emailAddress": "stale@example.com"},
+      }))
+      mod.CLAUDE_CONFIG_DIR = config
       print(json.dumps(mod._provider_account_status("anthropic")))
     PY
 

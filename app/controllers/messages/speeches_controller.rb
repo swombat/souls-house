@@ -25,7 +25,11 @@ class Messages::SpeechesController < Messages::BaseController
     response.headers["Last-Modified"] = Time.current.httpdate # bypass Rack::ETag buffering
     response.headers["X-Accel-Buffering"] = "no"
     started = false
-    ElevenLabsTts.stream(text, voice_id: @message.agent.voice_id, api_key: @chat.account.eleven_labs_api_key) do |chunk|
+    # Delivery's model and settings apply here too; its gain does not (Listen
+    # only: a gain stage would delay the first chunk or reroute the player).
+    agent = @message.agent
+    ElevenLabsTts.stream(text, voice_id: agent.voice_id, api_key: @chat.account.eleven_labs_api_key,
+      delivery: agent.speech_delivery) do |chunk|
       started = true
       response.stream.write(chunk)
     end

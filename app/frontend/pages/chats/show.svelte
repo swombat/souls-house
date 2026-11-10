@@ -49,7 +49,6 @@
   const isSiteAdmin = $derived($page.props.user?.site_admin ?? false);
   const thresholds = $derived($page.props.token_thresholds || { amber: 100_000, red: 150_000, critical: 200_000 });
   const contextTokens = $derived(chat?.context_tokens || 0);
-  const costTokens = $derived(chat?.cost_tokens || { input: 0, output: 0 });
   const tokenWarningLevel = $derived(getTokenWarningLevel(contextTokens, thresholds));
 
   const history = createChatHistory(() => ({
@@ -140,8 +139,6 @@
         {agents}
         allMessages={history.messages}
         {contextTokens}
-        {costTokens}
-        {costBreakdown}
         {thresholds}
         availableAgents={available_agents}
         addableAgents={addable_agents}
@@ -208,7 +205,7 @@
   </main>
 </div>
 
-<ConversationCostDrawer bind:open={showCosts} breakdown={costBreakdown} />
+<ConversationCostDrawer bind:open={showCosts} breakdown={costBreakdown} {contextTokens} />
 <ChatOverlays
   {chat}
   {account}

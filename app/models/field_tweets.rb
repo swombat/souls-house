@@ -27,6 +27,7 @@ module FieldTweets
   IN_FLIGHT = 10.minutes
 
   class LimitReached < StandardError; end
+  class InactiveSource < StandardError; end
 
   # Not a setting. Test credentials might carry a key; tests turn this on
   # and use a fake client.
@@ -77,11 +78,15 @@ module FieldTweets
   # streams stay paused. Not called for edits that change nothing about
   # paying (ServiceConnection#tweet_funding_changed?).
   def integration_changed!(account)
-    source = FieldTweetSource.find_by(account_id: account.id) or return
-    if source.state == "needs_attention"
-      source.resume!
-    elsif source.state == "active"
-      source.update!(next_attempt_at: Time.current)
+    source = FieldTweetSource.live.find_by(account_id: account.id) or return
+    source.with_lock do
+      return if source.removed?
+
+      if source.state == "needs_attention"
+        source.resume!
+      elsif source.state == "active"
+        source.update!(next_attempt_at: Time.current)
+      end
     end
   end
 
@@ -114,10 +119,13 @@ module FieldTweets
 
   # => a reserved FieldTweetCall for one page. Raises LimitReached with the
   # reason a person is shown.
-  def reserve!(source, retry_call: false, now: Time.current)
+  def reserve!(source, retry_call: false, now: Time.current, claimed_at: nil)
     reserve = TwitterApiIo.page_reserve
     FieldTweetCall.transaction do
       FieldTweetCall.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{FieldTweetCall.connection.quote(LOCK_KEY)}))")
+      source.reload(lock: true)
+      raise InactiveSource if source.removed? || source.state != "active"
+      raise InactiveSource if claimed_at && source.sync_claimed_at != claimed_at
 
       # Read fresh under the lock: a grant revoked or an integration removed
       # since the run began stops the next page, not just the next run.

@@ -1,6 +1,6 @@
 class Mnemodyne::EmbedNodeJob < ApplicationJob
 
-  limits_concurrency to: 1, key: "mnemodyne-embeddings"
+  limits_concurrency to: 1, key: "mnemodyne-embeddings", group: "mnemodyne-embeddings"
 
   retry_on Mnemodyne::Embeddings::Unavailable, wait: :polynomially_longer, attempts: 3
 
@@ -13,7 +13,7 @@ class Mnemodyne::EmbedNodeJob < ApplicationJob
     text = node.embedding_text
     digest = Digest::SHA256.hexdigest(text)
     profile = Mnemodyne::Embeddings.profile
-    vector = Mnemodyne::Embeddings.embed(text)
+    vector = Mnemodyne::Embeddings.embed(text, input_type: :document)
     vault.with_lock do
       return if vault.erasure_requested_at? || vault.suspended_at? || vault.agent.reload.account.disabled?
       node = vault.nodes.find_by(id: node_id)

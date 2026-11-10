@@ -36,6 +36,7 @@ module Agents
         "openai/gpt-6.1-terra" => [ "openai", "gpt-6.1-terra" ],
         "openai/gpt-6-luna" => [ "openai", "gpt-6-luna" ],
         "anthropic/claude-opus-5.5" => [ "anthropic", "claude-opus-5-5" ],
+        "anthropic/claude-fable-5.2" => [ "anthropic", "claude-fable-5-2" ],
         "anthropic/claude-fable-5.1" => [ "anthropic", "claude-fable-5-1" ],
         "anthropic/claude-haiku-5.5" => [ "anthropic", "claude-haiku-5-5" ],
         "x-ai/grok-4.7" => [ "xai", "grok-4.7" ],

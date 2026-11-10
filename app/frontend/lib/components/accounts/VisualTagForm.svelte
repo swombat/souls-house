@@ -14,10 +14,16 @@
   let icon = $state(tag?.icon || 'ChatCircle');
   let colour = $state(tag?.colour || 'slate');
   let pinsToTop = $state(Boolean(tag?.pins_to_top));
+  let hidesFromList = $state(Boolean(tag?.hides_from_list));
   let saving = $state(false);
   let errors = $state({});
   const changed = $derived(
-    !tag || label !== tag.label || icon !== tag.icon || colour !== tag.colour || pinsToTop !== Boolean(tag.pins_to_top)
+    !tag ||
+      label !== tag.label ||
+      icon !== tag.icon ||
+      colour !== tag.colour ||
+      pinsToTop !== Boolean(tag.pins_to_top) ||
+      hidesFromList !== Boolean(tag.hides_from_list)
   );
 
   // Refresh an untouched form when another account member edits the palette.
@@ -27,18 +33,21 @@
       source?.label !== tag?.label ||
       source?.icon !== tag?.icon ||
       source?.colour !== tag?.colour ||
-      source?.pins_to_top !== tag?.pins_to_top
+      source?.pins_to_top !== tag?.pins_to_top ||
+      source?.hides_from_list !== tag?.hides_from_list
     ) {
       if (
         label === source?.label &&
         icon === source?.icon &&
         colour === source?.colour &&
-        pinsToTop === Boolean(source?.pins_to_top)
+        pinsToTop === Boolean(source?.pins_to_top) &&
+        hidesFromList === Boolean(source?.hides_from_list)
       ) {
         label = tag?.label || '';
         icon = tag?.icon || 'ChatCircle';
         colour = tag?.colour || 'slate';
         pinsToTop = Boolean(tag?.pins_to_top);
+        hidesFromList = Boolean(tag?.hides_from_list);
       }
       source = tag;
     }
@@ -52,7 +61,15 @@
     const path = `/accounts/${accountId}/visual_tags${tag ? `/${tag.id}` : ''}`;
     router[tag ? 'patch' : 'post'](
       path,
-      { visual_tag: { label: label.trim(), icon, colour, pins_to_top: tag?.pinned ? true : pinsToTop } },
+      {
+        visual_tag: {
+          label: label.trim(),
+          icon,
+          colour,
+          pins_to_top: tag?.pinned ? true : pinsToTop,
+          hides_from_list: tag?.pinned ? false : hidesFromList,
+        },
+      },
       {
         preserveScroll: true,
         onError: (value) => (errors = value),
@@ -82,7 +99,7 @@
   class="flex flex-col gap-4 sm:min-h-0 sm:flex-1"
   aria-label={tag ? `Edit ${tag.label}` : 'Add visual tag'}>
   <div class="flex flex-col gap-5 sm:grid sm:min-h-0 sm:flex-1 sm:grid-cols-[220px_1fr] sm:grid-rows-1">
-    <div class="space-y-4">
+    <div class="space-y-4 sm:min-h-0 sm:overflow-y-auto sm:pr-1">
       <div class="hidden rounded-xl border bg-muted/20 p-3 sm:block" aria-label="Tag preview">
         <p class="mb-3 text-xs text-muted-foreground">In the discussion list</p>
         <div class="flex items-center gap-2 rounded-md bg-background px-2 py-3 text-sm">
@@ -115,7 +132,10 @@
             data-testid="visual-tag-pins-to-top"
             checked={tag?.pinned ? true : pinsToTop}
             disabled={!canManage || saving || tag?.pinned}
-            onCheckedChange={(value) => (pinsToTop = value)} />
+            onCheckedChange={(value) => {
+              pinsToTop = value;
+              if (value) hidesFromList = false;
+            }} />
         </label>
         <p class="text-xs text-muted-foreground">
           {tag?.pinned
@@ -123,6 +143,26 @@
             : 'Conversations with this tag stay at the top of the list, with pinned ones.'}
         </p>
       </div>
+      {#if !tag?.pinned}
+        <div class="space-y-1">
+          <label class="flex items-center justify-between gap-3 text-sm font-medium">
+            <span>Hide from the list</span>
+            <Switch
+              aria-label="Hide conversations with this tag from the list"
+              data-testid="visual-tag-hides-from-list"
+              checked={hidesFromList}
+              disabled={!canManage || saving}
+              onCheckedChange={(value) => {
+                hidesFromList = value;
+                if (value) pinsToTop = false;
+              }} />
+          </label>
+          <p class="text-xs text-muted-foreground">
+            Conversations with this tag leave the list without being archived, and come back when the tag comes off.
+            Filter → Hidden shows them.
+          </p>
+        </div>
+      {/if}
       <fieldset disabled={!canManage || saving}>
         <legend class="mb-2 text-sm font-medium">Colour</legend>
         <div class="flex flex-wrap gap-1">

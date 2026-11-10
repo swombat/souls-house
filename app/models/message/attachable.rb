@@ -60,7 +60,27 @@ module Message::Attachable
   end
 
   def audio_url = blob_url_for(audio_recording)
-  def voice_audio_url = blob_url_for(voice_audio)
+  # Listen's stored audio, only while it was made with the resident's voice
+  # and delivery as they are now (VoiceDelivery#digest). Audio from another
+  # delivery is not offered, so Listen makes it again.
+  def voice_audio_url = voice_audio_current? ? blob_url_for(voice_audio) : nil
+
+  def voice_audio_current?
+    voice_audio_made_with?(current_voice_digest)
+  end
+
+  def current_voice_digest
+    agent ? agent.speech_delivery.digest(agent.voice_id) : VoiceDelivery::DEFAULT.digest
+  end
+
+  # Audio stored before delivery existed carries no digest; it counts as
+  # current only under the default delivery, which is how it was made.
+  def voice_audio_made_with?(digest)
+    return false unless voice_audio.attached?
+
+    stored = voice_audio.blob.metadata["voice_digest"]
+    stored ? stored == digest : digest.split(":").last == "default"
+  end
 
   # Files the speaker attached, then the voice recording behind a dictated
   # message. The recording is the audio the composer transcribed; the message

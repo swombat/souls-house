@@ -195,6 +195,7 @@ module Chat::ModelSelection
 
     # Anthropic
     { model_id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", group: "Anthropic", provider_model_id: "claude-opus-5-5", thinking: { supported: true, requires_direct_api: true } },
+    { model_id: "anthropic/claude-fable-5.2", label: "Claude Fable 5.2", group: "Anthropic", provider_model_id: "claude-fable-5-2", thinking: { supported: true, requires_direct_api: true } },
     { model_id: "anthropic/claude-fable-5.1", label: "Claude Fable 5.1", group: "Anthropic", provider_model_id: "claude-fable-5-1", thinking: { supported: true, requires_direct_api: true } },
     { model_id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", group: "Anthropic", provider_model_id: "claude-haiku-5-5", thinking: { supported: true, requires_direct_api: true } },
     {
@@ -698,7 +699,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:openai_max].merge(options: %i[none low medium high xhigh max])
       when "openai/gpt-6-astra-pro"
         REASONING_PROFILES[:openai_max]
-      when "anthropic/claude-fable-5.1"
+      when "anthropic/claude-fable-5.2", "anthropic/claude-fable-5.1"
         REASONING_PROFILES[:anthropic]
       when "x-ai/grok-4.7"
         REASONING_PROFILES[:grok_multi_agent]

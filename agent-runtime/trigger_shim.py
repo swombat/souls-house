@@ -414,7 +414,6 @@ def trigger():
     inference_run = str(payload.get("inference_run") or "")
     _activity_context.inference_run = inference_run if inference_run.isdigit() else None
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
-    run_started_at = datetime.now(timezone.utc)
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
         _activity_context.memory_aggregation = bool(aggregation_context(payload))
@@ -453,7 +452,6 @@ def trigger():
         _unregister_running_session(session_id)
         session_lock.release()
         lock_released = True
-        log_reflex_skips(run_started_at)
         if reporter:
             reporter.finish(response)
         return response
@@ -870,48 +868,6 @@ def require_house_trust(cwd, chaos_home):
 SHELL_ENV_ALLOWED_KEYS = frozenset({"OPENROUTER_API_KEY"})
 
 
-REFLEX_TRACE_PATH = AGENT_IDENTITY_PATH / "memory" / "automation" / "state" / "stop-events.jsonl"
-REFLEX_TRACE_TAIL_BYTES = 64 * 1024
-
-
-def log_reflex_skips(since, trace_path=None):
-    """Say in the runtime log when the journal reflex skipped its invitation.
-
-    Chaos drops an exit-0 Stop hook's stderr, and neither persists nor emits
-    HookCompleted in --json output, so the hook can't reach this log itself.
-    It records `journal_skipped` on its trace row; this reads rows written
-    since the run started and logs one warning per run (#725). The trace is
-    the resident's own file, shared by concurrent sessions, so this is a
-    diagnostic, not an exact per-run count. Never raises.
-    """
-    path = Path(trace_path) if trace_path else REFLEX_TRACE_PATH
-    try:
-        with path.open("rb") as fh:
-            fh.seek(0, os.SEEK_END)
-            size = fh.tell()
-            fh.seek(max(0, size - REFLEX_TRACE_TAIL_BYTES))
-            tail = fh.read()
-    except OSError:
-        return 0
-    lines = tail.decode("utf-8", errors="replace").splitlines()
-    if size > REFLEX_TRACE_TAIL_BYTES:
-        lines = lines[1:]  # first line is probably cut mid-row
-    reasons = []
-    for line in lines:
-        try:
-            row = json.loads(line)
-            if row.get("journal_skipped") and datetime.fromisoformat(row["recorded_at"]) >= since:
-                reasons.append(str(row["journal_skipped"]))
-        except (ValueError, KeyError, TypeError, AttributeError):
-            continue
-    if reasons:
-        log.warning(
-            f"journal reflex skipped its invitation ({', '.join(sorted(set(reasons)))}): "
-            "this route refuses a conversation ending on the resident's reply (#725)"
-        )
-    return len(reasons)
-
-
 def shell_env_excludes(env):
     """The tool shell's exclude list, as a TOML array literal.
 
@@ -929,6 +885,61 @@ def shell_env_excludes(env):
 
 
 def run_chaos(
+    model, timeout_secs, prompt_text, json_output,
+    resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
+):
+    """Run one Chaos invocation. A Claude subscription run that fails on
+    authentication before doing anything is tried once more after Claude
+    Code's refresh lock has cleared (#816).
+
+    Claude Code's own message for that failure is "another Claude Code
+    process is refreshing it or exited mid-refresh ... usually transient;
+    retry in a minute". Until 9 Nov 2026 the house took the first one as
+    an expired sign-in: Rails marked it expired and refused every later run
+    until a person signed in again (Fable, 6-8 Nov: nine refused runs). Only
+    a failure that survives the retry reaches Rails now. That still doesn't
+    show the provider revoked anything, only that the sign-in failed twice.
+    Both attempts share the turn's time budget; a cancelled turn neither
+    waits nor retries.
+    """
+    anthropic_subscription = auth_mode == "oauth_account" and (provider or AGENT_PROVIDER) == "anthropic"
+    cancel = getattr(_activity_context, "cancel_event", None)
+    if anthropic_subscription:
+        await_claude_refresh_lock(_remaining_turn_budget(timeout_secs), cancel=cancel)
+    result = _run_chaos_once(
+        model, timeout_secs, prompt_text, json_output,
+        resume_id=resume_id, provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+    )
+    if not (anthropic_subscription and clamp_auth_failed_before_work(result)):
+        return result
+    if cancel is not None and cancel.is_set():
+        return result
+    waited = await_claude_refresh_lock(_remaining_turn_budget(timeout_secs), cancel=cancel)
+    if cancel is not None and cancel.is_set():
+        return result
+    log.warning(
+        "claude subscription auth unavailable before work; retrying once "
+        f"after refresh-lock wait={waited:.0f}s lock_age={claude_refresh_lock_age()}"
+    )
+    return _run_chaos_once(
+        model, timeout_secs, prompt_text, json_output,
+        resume_id=resume_id, provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+    )
+
+
+def _remaining_turn_budget(timeout_secs):
+    remaining = timeout_secs
+    deadline = getattr(_activity_context, "turn_deadline", None)
+    if deadline is not None:
+        remaining = min(remaining, deadline - time.monotonic())
+    reporter = getattr(_activity_context, "reporter", None)
+    if reporter:
+        remaining = min(remaining, reporter.deadline - time.time())
+    # Leave the retry itself most of what is left.
+    return max(0.0, remaining / 3)
+
+
+def _run_chaos_once(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
 ):
@@ -1041,10 +1052,6 @@ def run_chaos(
     env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
     if getattr(_activity_context, "memory_aggregation", False):
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
-    # The Stop hook decides whether its journal invitation can be sent on this
-    # route (#725); it only sees the model in its payload, not the provider.
-    env["SOULSHOUSE_ROUTE_PROVIDER"] = str(provider or AGENT_PROVIDER or "")
-    env["SOULSHOUSE_ROUTE_MODEL"] = str(model or "")
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
         reporter.cancel_event = getattr(_activity_context, "cancel_event", None)
@@ -1307,6 +1314,14 @@ def instrumented_response(
         response["telegram_delivery_run_id"] = telegram_run[0]
     if roll:
         response["session_roll_reason"] = roll
+    if result.returncode != 0:
+        failure = runtime_failure(events["errors"], result.stderr)
+        if failure:
+            response["runtime_failure"] = failure
+            log.warning(
+                f"trigger failed session_id={session_id} rc={result.returncode} "
+                f"runtime_failure={failure['code']}: {failure['message']}"
+            )
     error_kind = classify_provider_error(response, runtime.get("provider"))
     if error_kind:
         response["error_kind"] = error_kind
@@ -2637,6 +2652,70 @@ def _iso_timestamp(value):
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if parsed else None
 
 
+RUNTIME_FAILURE_LIMIT = 600
+_RUNTIME_FAILURE_REDACTIONS = (
+    # Authorization headers and bearer tokens.
+    (re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 [redacted]"),
+    # key=value / "key": "value" secrets: the whole value, quoted or not,
+    # including spaces and escapes inside the quotes.
+    (re.compile(
+        r"""(?ix)
+        (?P<key>["']?[\w-]*(?:token|secret|password|passwd|api[_-]?key|apikey|authorization|
+                              credential|cookie|session|private[_-]?key)[\w-]*["']?)
+        (?P<sep>\s*[:=]\s*)
+        (?P<value>"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s,;}\]]+)
+        """),
+     lambda m: m.group("key") + m.group("sep") + (
+         m.group("value")[0] + "[redacted]" + m.group("value")[0]
+         if m.group("value")[:1] in ("\"", "'") else "[redacted]")),
+    # Provider key shapes (OpenAI/Anthropic sk-, Google AIza/ya29, GitHub gh*_).
+    (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,}|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_.-]+|gh[pousr]_[A-Za-z0-9]{20,})"),
+     "[redacted]"),
+    # Query strings carry signed URLs and keys; keep the path.
+    (re.compile(r"(https?://[^\s?\"']+)\?[^\s\"']*"), r"\1?[redacted]"),
+    (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), "[email]"),
+    # Any other long opaque run (keys, signatures, JWT segments).
+    (re.compile(r"[A-Za-z0-9_\-+=]{40,}"), "[redacted]"),
+)
+
+
+def runtime_failure(errors, stderr):
+    """Why a failed run failed, as a bounded, redacted field (#843).
+
+    Chaos reports a failed turn as an error event ("antigravity_runtime_failed:
+    Antigravity invocation failed with status ERROR; ..."), and writes to
+    stderr only when something below it does. The event wins; stderr is the
+    fallback. The text is the runtime's diagnosis, not the conversation, but it
+    can quote paths and provider responses, so known secret shapes are
+    redacted before it leaves the container."""
+    text = ""
+    for raw in reversed(errors or []):
+        try:
+            event = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        error = event.get("error")
+        text = event.get("message") or (error.get("message") if isinstance(error, dict) else error) or ""
+        if text:
+            break
+    if not text:
+        lines = [line for line in (stderr or "").splitlines() if line.strip()]
+        text = "\n".join(lines[-5:])
+    text = str(text).strip()
+    if not text:
+        return None
+    code = "runtime_error"
+    match = re.match(r"([a-z][a-z0-9_]{2,63}):\s*", text)
+    if match:
+        code, text = match.group(1), text[match.end():]
+    for pattern, replacement in _RUNTIME_FAILURE_REDACTIONS:
+        text = pattern.sub(replacement, text)
+    text = " ".join(text.split())
+    if len(text) > RUNTIME_FAILURE_LIMIT:
+        text = text[:RUNTIME_FAILURE_LIMIT - 1] + "…"
+    return {"code": code, "message": text}
+
+
 def classify_provider_error(response, provider):
     if response.get("status") != "error":
         return None
@@ -3217,34 +3296,131 @@ def _first_http_url(line):
 
 
 def _anthropic_account_status():
+    """The resident's Claude subscription sign-in, read from Claude Code's own
+    files without starting Claude Code (#816).
+
+    This used to run `claude auth status --json` under a 10-second kill, on
+    every usage probe (so before every subscription run) and every status
+    poll. With an expired access token that command refreshes it, under
+    Claude Code's `.oauth_refresh.lock`, as a second refresher beside the
+    resident's own turn. The provider rotates the refresh token on every
+    refresh, so a refresher killed between the provider's answer and the
+    file write leaves a refresh token that no longer works, and one that
+    merely holds the lock makes the turn fail with "another Claude Code
+    process is refreshing it". Both were seen on Claude (2) and Fable (8),
+    1-8 Nov 2026. Reading the files says the same thing the command did
+    (it reported a sign-in present whether or not the token still worked)
+    and refreshes nothing.
+    """
     if not _claude_available():
         return {"status": "none", "provider": "anthropic"}
-    result = subprocess.run(
-        [CLAUDE_BIN, "auth", "status", "--json"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=_anthropic_subscription_env(),
-    )
-    metadata = {}
-    try:
-        metadata = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        pass
-    connected = result.returncode == 0 and (
-        metadata.get("loggedIn") is True
-        or metadata.get("logged_in") is True
-    )
-    if not connected:
+    oauth = _claude_oauth_credentials()
+    if not oauth:
         return {"status": "none", "provider": "anthropic"}
     response = {"status": "connected", "provider": "anthropic"}
-    email = metadata.get("email") or metadata.get("accountEmail")
-    plan = metadata.get("subscriptionType") or metadata.get("plan")
+    email = _claude_account_email()
+    plan = oauth.get("subscriptionType")
     if email:
         response["email"] = email
-    if plan:
+    if isinstance(plan, str) and plan:
         response["plan"] = plan
     return response
+
+
+def _claude_oauth_credentials(now=None):
+    """The `claudeAiOauth` entry of the sign-in's credentials file when it
+    can still be refreshed, else None. Only presence and expiry are read."""
+    try:
+        data = json.loads((CLAUDE_CONFIG_DIR / ".credentials.json").read_text())
+    except (OSError, ValueError):
+        return None
+    oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+    if not isinstance(oauth, dict):
+        return None
+    if not (isinstance(oauth.get("refreshToken"), str) and oauth["refreshToken"]):
+        return None
+    refresh_expires = oauth.get("refreshTokenExpiresAt")
+    if isinstance(refresh_expires, (int, float)) and not isinstance(refresh_expires, bool):
+        if refresh_expires / 1000 <= (now if now is not None else time.time()):
+            return None
+    return oauth
+
+
+def _claude_account_email():
+    try:
+        data = json.loads((CLAUDE_CONFIG_DIR / ".claude.json").read_text())
+    except (OSError, ValueError):
+        return None
+    account = data.get("oauthAccount") if isinstance(data, dict) else None
+    email = account.get("emailAddress") if isinstance(account, dict) else None
+    return email if isinstance(email, str) and email else None
+
+
+# Claude Code (2.1.280) takes this directory as its refresh lock and treats it
+# as abandoned once it is about a minute old (measured 9 Nov 2026 against a
+# scratch config: a 45 s lock blocks a refresh, a 70 s one is cleared).
+CLAUDE_REFRESH_LOCK = ".oauth_refresh.lock"
+CLAUDE_REFRESH_LOCK_STALE_SECS = 65
+CLAUDE_REFRESH_LOCK_WAIT_SECS = 75
+
+
+def claude_refresh_lock_age(now=None):
+    """Seconds since the refresh lock was last touched, or None without one."""
+    try:
+        mtime = (CLAUDE_CONFIG_DIR / CLAUDE_REFRESH_LOCK).stat().st_mtime
+    except OSError:
+        return None
+    return max(0.0, (now if now is not None else time.time()) - mtime)
+
+
+def await_claude_refresh_lock(budget_secs, sleep=None, clock=None, cancel=None):
+    """Wait, within budget_secs, until no live Claude Code refresh lock is held:
+    the lock is gone or old enough that Claude Code itself will clear it.
+    Returns at once when the turn is cancelled (cancel is the turn's
+    threading.Event); without an explicit sleep the wait sleeps on that
+    event, so a cancel ends it straight away. Returns the seconds waited."""
+    clock = clock or time.monotonic
+    if sleep is None:
+        sleep = cancel.wait if cancel is not None else time.sleep
+    started = clock()
+    limit = max(0.0, min(budget_secs, CLAUDE_REFRESH_LOCK_WAIT_SECS))
+    while True:
+        if cancel is not None and cancel.is_set():
+            return clock() - started
+        age = claude_refresh_lock_age()
+        waited = clock() - started
+        if age is None or age >= CLAUDE_REFRESH_LOCK_STALE_SECS or waited >= limit:
+            return waited
+        sleep(min(1.0, max(0.05, limit - waited)))
+
+
+def clamp_auth_failed_before_work(result):
+    """A finished Claude-subscription run that failed on authentication before
+    the model did anything: Chaos's clamp reported clamp_auth_unavailable and
+    no work event was seen. The activity reporter drops tool events from the
+    stdout it returns, so it carries its own `work_seen`, read before that
+    filtering; a run it saw act is never retried. A gap in what was read (a
+    line dropped as oversized, unparsable or not an event) is treated as work
+    that might have happened, on both routes (Mira, #849 round 2)."""
+    from runtime_activity import is_work_event
+
+    if result is None or result.returncode == 0:
+        return False
+    if getattr(result, "work_seen", False) or getattr(result, "source_gap", False):
+        return False
+    stdout = result.stdout or ""
+    if "clamp_auth_unavailable" not in stdout:
+        return False
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return False
+        if not isinstance(event, dict) or is_work_event(event):
+            return False
+    return True
 
 
 def _antigravity_account_status():

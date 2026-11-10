@@ -14,6 +14,7 @@
     XLogo,
     Receipt,
     Ghost,
+    LinkedinLogo,
   } from 'phosphor-svelte';
 
   // The glyph for one service, in every place a service is shown. The tile
@@ -35,6 +36,7 @@
     twitterapi_io: [XLogo, 'bold'],
     xero: [Receipt, 'bold'],
     ghost: [Ghost, 'fill'],
+    linkedin: [LinkedinLogo, 'fill'],
   };
   let [Icon, weight] = $derived(icons[provider] || [Heartbeat, 'fill']);
 </script>

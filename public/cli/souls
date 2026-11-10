@@ -916,13 +916,16 @@ def tag_line(tag):
         marks.append("the Pin tag")
     elif tag.get("pins_to_top"):
         marks.append("kept at the top")
+    if tag.get("hides_from_list"):
+        marks.append("hidden from the list")
     suffix = f"  ({', '.join(marks)})" if marks else ""
     return f"{tag.get('id')}  {tag.get('label')}  [{tag.get('icon')} · {tag.get('colour')}]{suffix}"
 
 
 def cmd_tags(client, args):
     """The account's visual tags (one per conversation). pin/unpin set whether
-    conversations with a tag stay at the top of the list, like the Pin tag.
+    conversations with a tag stay at the top of the list, like the Pin tag;
+    hide/unhide set whether they stay out of the list (not archived).
     TAG is a tag ID or its exact label (case-insensitive), e.g. "?"."""
     action = args.tags_command
     data = client.get("visual_tags")
@@ -945,7 +948,11 @@ def cmd_tags(client, args):
     if len(match) > 1:
         ids = ", ".join(tag.get("id") for tag in match)
         raise CliError(f"several tags are labelled {wanted!r} ({ids}); name one by ID", EXIT_USAGE)
-    emit(client.patch(f"visual_tags/{match[0]['id']}", json_body={"pins_to_top": action == "pin"}))
+    if action in ("hide", "unhide"):
+        body = {"hides_from_list": action == "hide"}
+    else:
+        body = {"pins_to_top": action == "pin"}
+    emit(client.patch(f"visual_tags/{match[0]['id']}", json_body=body))
 
 
 def cmd_announce(client, args):
@@ -1549,13 +1556,15 @@ def build_parser():
     p.add_argument("--json", action="store_true", help="with list, print the raw response")
 
     p = add("tags", cmd_tags,
-            "The account's visual tags: list, and pin/unpin to keep a tag's conversations at the top",
+            "The account's visual tags: list, pin/unpin to keep a tag's conversations at the top, "
+            "hide/unhide to keep them out of the list",
             epilog="Examples:\n"
                    "  souls tags                 # list: ID, label, icon and colour, and which stay on top\n"
                    "  souls tags pin '?'         # conversations tagged ? stay at the top, like Pin\n"
-                   "  souls tags unpin TAG_ID")
-    p.add_argument("tags_command", nargs="?", choices=["list", "pin", "unpin"], default="list",
-                   metavar="list|pin|unpin")
+                   "  souls tags unpin TAG_ID\n"
+                   "  souls tags hide Done        # conversations tagged Done leave the list until untagged")
+    p.add_argument("tags_command", nargs="?", choices=["list", "pin", "unpin", "hide", "unhide"], default="list",
+                   metavar="list|pin|unpin|hide|unhide")
     p.add_argument("tag", nargs="?", metavar="TAG", help="a tag ID, or its exact label")
     p.add_argument("--json", action="store_true", help="with list, print the raw response")
 

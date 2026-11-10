@@ -26,6 +26,20 @@ const stream = {
   poll_minutes: 15,
 };
 
+test('stop confirmation names retention and the already-reserved call limit', async ({ mount, page }) => {
+  const panel = await mount(FieldTweetStreamPanel, { props: { accountId: 'account-one', stream } });
+  const dialogPromise = page.waitForEvent('dialog');
+  const click = panel.getByRole('button', { name: 'Stop following', exact: true }).click();
+  const dialog = await dialogPromise;
+  expect(dialog.message()).toContain('Tweets already in the Field stay.');
+  expect(dialog.message()).toContain('retained for administrator recovery');
+  expect(dialog.message()).toContain('No new paid check will be reserved');
+  expect(dialog.message()).toContain('an already-reserved check may still finish into that backlog');
+  await dialog.dismiss();
+  await click;
+  await expect(panel).toContainText('Following');
+});
+
 test('live presentation keeps a dirty stream form but resets replacement identities', async ({
   mount,
   page,

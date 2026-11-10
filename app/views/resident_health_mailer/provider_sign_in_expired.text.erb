@@ -1,0 +1,15 @@
+Hello,
+
+The house detected an authentication failure on <%= @agent.name %>'s <%= @provider_name %> subscription sign-in, and it needs reconnecting.
+
+Until it's reconnected, <%= @agent.name %> can't answer in conversations or run their wakes and memory work. Nothing of theirs is deleted or changed.
+
+To reconnect it, open <%= @agent.name %>'s Settings tab and sign in again:
+<%= @settings_url %>
+
+The Runs tab shows each run:
+<%= @runs_url %>
+
+You'll get this email once each time the sign-in lapses.
+
+<%= Setting.instance.site_name %>

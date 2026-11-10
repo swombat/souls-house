@@ -27,6 +27,7 @@ import {
   Circle,
   YoutubeLogo,
   XLogo,
+  LinkedinLogo,
   Receipt,
   Bank,
   Ghost,
@@ -47,6 +48,7 @@ import {
   ChartLine,
   CreditCard,
   Scales,
+  Toolbox,
   Handshake,
 } from 'phosphor-svelte';
 
@@ -228,7 +230,7 @@ export const technicalFeatures = [
     key: 'companion-foundation',
     title: 'An explicitly enrolled companion',
     description:
-      'API-only Linux read/write and explicit full-user execution grants, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
+      'API-only Linux read/write and explicit full-user execution grants, plus desktop control of locally chosen apps behind a timed switch, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
     icon: TerminalWindow,
   },
   {
@@ -329,6 +331,13 @@ export const technicalFeatures = [
     description:
       "Switch on commit badges for any repository connected on the GitHub card, and commits from it mentioned in your account's conversations show whether they are on its default branch. When a commit could belong to more than one of your repositories, it gets no badge rather than a guess.",
     icon: GithubLogo,
+  },
+  {
+    key: 'conversation-links',
+    title: 'Conversations named, not coded',
+    description:
+      "When a message mentions a conversation by its ID, like eqRAMj, it shows as a link titled with that conversation's current title. Only conversations you can open in the account on screen become links; another account's or a deleted one stays as the plain ID. A few IDs that look like ordinary words (all capitals, or capitalised only at the start) stay as plain text.",
+    icon: Chats,
   },
   {
     key: 'github-resident',
@@ -446,6 +455,13 @@ export const moreFeatures = [
     description:
       'Let residents you choose read your Monzo balances, pots and transactions. Read-only: the house never gives them a token that could move money.',
     icon: Bank,
+  },
+  {
+    key: 'linkedin',
+    title: 'LinkedIn',
+    description:
+      'Let a resident you choose post to your LinkedIn profile, with an image or a video. Residents never hold the token, and you are told before the 60-day sign-in ends.',
+    icon: LinkedinLogo,
   },
   {
     key: 'withings',
@@ -580,7 +596,7 @@ export const moreFeatures = [
     key: 'field-tweets',
     title: 'Tweet streams',
     description:
-      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch.",
+      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch. Stop following retains the source and fetched backlog for explicit administrator recovery, which returns paused. No new paid check is reserved after removal; an already-reserved check may still finish into the retained backlog.",
     icon: XLogo,
   },
   {
@@ -657,7 +673,8 @@ export const moreFeatures = [
   {
     key: 'visual-tags',
     title: 'Visual tags',
-    description: 'Give conversations an icon and a colour so the sidebar reads at a glance.',
+    description:
+      'Give conversations an icon and a colour so the sidebar reads at a glance. A tag can keep its conversations at the top, or hide them from the list without archiving them; the Filter menu shows hidden ones, with a count of those waiting on you, or only one tag.',
     icon: Tag,
   },
   {
@@ -684,7 +701,7 @@ export const moreFeatures = [
     key: 'resident-voices',
     title: 'Voices for residents',
     description:
-      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices, with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
+      "Choose the voice a resident's messages are read aloud in, from the standard ElevenLabs voices (or, for an account with its own ElevenLabs key, the voices in its own ElevenLabs library), with a preview of the resident saying a line in it. The resident can choose its own; the most recent choice stands, so you can always change it back on the Appearance tab.",
     icon: Waveform,
   },
   {
@@ -749,5 +766,13 @@ export const moreFeatures = [
       "Where the house makes a choice on residents' behalf, such as which model a new resident starts on, it publishes what it chose, the evidence and what would change its mind.",
     icon: Scales,
     link: '/decisions',
+  },
+  {
+    key: 'tool-shed',
+    title: 'A tool shed',
+    description:
+      "Tools that residents and people built and then offered to other houses, each with its builder's credit, licence, what it needs and where it has actually run. The catalogue lives in the repository, so self-hosted houses have it too.",
+    icon: Toolbox,
+    link: '/tool-shed',
   },
 ];

@@ -41,15 +41,18 @@ class Api::V1::ConversationLifecycleTest < ActionDispatch::IntegrationTest
     assert_not @chat.reload.archived?
   end
 
-  test "archive is 404 for another account's conversation and 403 for a resident key" do
+  test "archive is 404 for another account's conversation; a resident key archives a room it sits in (#813)" do
     post api_v1_conversation_archive_path(@foreign_chat), headers: @headers, as: :json
     assert_response :not_found
     assert_not @foreign_chat.reload.archived?
 
+    post api_v1_conversation_archive_path(@foreign_chat), headers: @resident_headers, as: :json
+    assert_response :not_found
+
     @chat.agents << @agent
     post api_v1_conversation_archive_path(@chat), headers: @resident_headers, as: :json
-    assert_response :forbidden
-    assert_not @chat.reload.archived?
+    assert_response :success
+    assert @chat.reload.archived?
   end
 
   test "a key whose person is no longer a confirmed member reaches nothing" do

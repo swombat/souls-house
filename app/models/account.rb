@@ -77,7 +77,8 @@ class Account < ApplicationRecord
   has_many :field_files, dependent: :destroy
   has_many :field_tweets, dependent: :delete_all
   has_many :field_songs, dependent: :destroy
-  has_one :field_tweet_source, dependent: :destroy
+  has_one :field_tweet_source, -> { live }
+  has_many :all_field_tweet_sources, class_name: "FieldTweetSource", dependent: :destroy
   has_many :field_tweet_calls, dependent: :delete_all
   has_many :field_swarm_searches, dependent: :delete_all
   has_many :field_recordings, dependent: :destroy

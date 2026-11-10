@@ -43,14 +43,12 @@ module Api
         assert_equal "queued", @chat.agent_runtime_interactions.sole.execution_state
       end
 
-      test "creates message without triggering retired inline inference" do
+      test "a human API post with no resident in the room saves and wakes nobody" do
         @chat.messages.create!(content: "Hello", role: "user", user: @user)
 
-        assert_no_enqueued_jobs(only: AiResponseJob) do
-          post api_v1_conversation_messages_url(@chat),
-               params: { content: "New message" },
-               headers: { "Authorization" => "Bearer #{@token}" }
-        end
+        post api_v1_conversation_messages_url(@chat),
+             params: { content: "New message" },
+             headers: { "Authorization" => "Bearer #{@token}" }
         assert_response :created
 
         json = JSON.parse(response.body)

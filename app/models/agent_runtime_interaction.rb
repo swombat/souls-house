@@ -603,7 +603,20 @@ class AgentRuntimeInteraction < ApplicationRecord
     if category == "house_provider_refused" && inference_refusal_reason.present?
       cause = "#{cause} (reason: #{inference_refusal_reason})"
     end
+    # What the runtime itself said, redacted and bounded in the container
+    # before it left (trigger_shim.py runtime_failure, #843). Runs tab and
+    # Site Admin only; the room notice keeps the category alone.
+    if category == "runtime_error" && (said = runtime_failure_text)
+      cause = "#{cause} (runtime said: #{said})"
+    end
     cause
+  end
+
+  def runtime_failure_text
+    failure = response_body["runtime_failure"] if response_body.is_a?(Hash)
+    return unless failure.is_a?(Hash) && failure["message"].present?
+
+    [ failure["code"].presence, failure["message"] ].compact.join(": ").truncate(700)
   end
 
   def setup_refusal

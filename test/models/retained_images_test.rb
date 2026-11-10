@@ -42,6 +42,17 @@ class RetainedImagesTest < ActiveSupport::TestCase
     assert_empty @profile.retired_avatars
   end
 
+  test "saving the current avatar again adds no history row" do
+    @profile.avatar.attach(png("first.png"))
+    blob = @profile.avatar.blob
+
+    perform_enqueued_jobs { @profile.update!(avatar: blob.signed_id) }
+
+    @profile.reload
+    assert_equal blob.id, @profile.avatar.blob.id
+    assert_empty @profile.retired_avatars, "the live image is not history"
+  end
+
   test "an older queued purge of a retained blob leaves it alone" do
     @profile.avatar.attach(png("first.png"))
     blob = @profile.avatar.blob

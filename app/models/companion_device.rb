@@ -14,7 +14,7 @@ class CompanionDevice < ApplicationRecord
   has_many :companion_cable_tickets, dependent: :delete_all
 
   encrypts :session_response
-  attr_readonly :account_id, :companion_enrollment_grant_id, :name, :policy
+  attr_readonly :account_id, :companion_enrollment_grant_id, :name
 
   validates :name, presence: true, length: { maximum: 100 }
   validates :credential_digest, presence: true, uniqueness: true
@@ -44,6 +44,44 @@ class CompanionDevice < ApplicationRecord
 
   def active?
     revoked_at.nil? && !paused? && !account.reload.disabled?
+  end
+
+  # The owner's switch for one resident's execute/desktop authority on an
+  # enrolled device. Volumes are not changed here. The revision bump makes
+  # every in-flight operation undeliverable; active ones are cancelled. The
+  # device's own local ceiling, scope and switch still apply on top.
+  def change_resident_authority!(resident_id:, execute:, desktop:, actor:)
+    raise ArgumentError, "booleans required" unless [ true, false ].include?(execute) && [ true, false ].include?(desktop)
+
+    with_lock do
+      raise ArgumentError, "device revoked" if revoked_at
+      residents = policy.fetch("residents").map(&:dup)
+      resident = residents.find { |r| r["id"] == resident_id }
+      raise ArgumentError, "resident not on this device" unless resident
+      before = { "execute" => resident["execute"], "desktop" => resident["desktop"] == true }
+      after = { "execute" => execute, "desktop" => desktop }
+      return false if before == after
+
+      resident["execute"] = execute
+      desktop ? resident["desktop"] = true : resident.delete("desktop")
+      next_policy = CompanionEnrollmentGrant.normalize_policy(account, { "residents" => residents })
+      update!(policy: next_policy, grant_revision: grant_revision + 1)
+      active = CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
+      CompanionOperationInput.where(companion_operation_id: active.select(:id)).delete_all
+      active.update_all(state: "cancelled", outcome: "changed")
+      AuditLog.create!(user: actor, account: account, auditable: self, action: "companion.device.authority_changed",
+        data: { device_id: obfuscated_id, resident_id: resident_id, before: before, after: after,
+          grant_revision: grant_revision })
+      # Work already running on the device holds the old policy. Dropping the
+      # connection cancels it there (the companion drains its process workers
+      # on connection exit) and it reconnects under the new revision.
+      device = self
+      ActiveRecord.after_all_transactions_commit do
+        ActionCable.server.remote_connections.where(current_user: nil, current_app_session: nil,
+          current_companion_device: device).disconnect(reconnect: true)
+      end
+      true
+    end
   end
 
   def revoke!(actor: nil)
