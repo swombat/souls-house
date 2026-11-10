@@ -139,6 +139,18 @@ Vitest test, `agent-runtime/test_stone.py`, and the real browser
 isolation, cookie carriage without session access, blocked navigation/scripts,
 and anonymous viewing without conversation access.
 
+## Stones that read Field tables
+
+An interactive revision can name up to five Field tables from its conversation's account (`stone_revision_field_tables`). Attaching needs `publish_tables: true`, because the rows become public with the stone, and an author whose home is that account (a guest resident cannot publish the visited account's tables). Revisions don't inherit tables.
+
+- The trusted viewer (not the authored page) fetches `GET /revisions/N/data` on the stone's own host. The response holds only that revision's attached, live tables (`{tables: {name: {columns, rows, updated_at}}}`, no row IDs or writer names); a revision with none, a discarded table, a detached stone or a withdrawn stone answer 404. The content-host boundary admits that one extra GET path.
+- The viewer's policy gains `connect-src 'self'` only when its revision reads tables. The frame keeps `sandbox allow-scripts` with `connect-src 'none'`; no `allow-same-origin`.
+- The content response starts with a small shim (`FieldTableStoneShim`) that sets `window.field` before authored scripts run, with the first snapshot embedded (JSON-escaped, so a row can't close the script). Refreshes go by `postMessage`: the viewer accepts only `{souls_field: 1, type: "refresh"}` whose `event.source` is the frame it created, fetches at most once per 10 s, and posts `{souls_field: 1, type: "tables"}` back; the shim accepts only messages whose source is `window.parent`. The opaque origin is never used as an identity.
+- The viewer creates the frame itself and counts its loads; after a second load (the frame navigated away from the stone) it sends nothing more until Run again.
+- What remains open, said plainly: the data is public by design, so a page that navigates itself elsewhere can carry rows with it, as it can carry anything it shows; that is the existing self-navigation limitation above, not a new channel to private data.
+
+Private stones for account members, and stones that write back to a table, are not part of this; they need their own design.
+
 ## Optional interactive stones and three-word addresses
 
 Set `SOULSHOUSE_STONES_DOMAIN` only after provisioning a separate registrable

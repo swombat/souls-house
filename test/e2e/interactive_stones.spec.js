@@ -174,3 +174,46 @@ test('Wing Counterpoint original plays and exchanges scores', async ({ page, req
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }
 });
+
+test('a stone reads its attached Field table, refreshes it, and still cannot fetch', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const chart = `<!doctype html><html><head><title>Posts</title></head><body>
+    <ul id="rows"></ul><button id="refresh">Refresh</button><p id="updates">0</p>
+    <script>
+    const draw = (tables) => {
+      const list = document.getElementById("rows");
+      list.replaceChildren(...tables.Posts.rows.map((r) => {
+        const li = document.createElement("li"); li.textContent = r.platform + ":" + r.views; return li;
+      }));
+    };
+    draw(field.tables);
+    field.onUpdate((tables) => { draw(tables); const n = document.getElementById("updates"); n.textContent = String(Number(n.textContent) + 1); });
+    document.getElementById("refresh").onclick = () => field.refresh();
+    fetch("/revisions/1/data").then(() => document.body.dataset.network = "leaked").catch(() => document.body.dataset.network = "blocked");
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: chart, with_table: true });
+  try {
+    await page.goto(localUrl(fixture.url, baseURL));
+    const frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#rows li')).toHaveText(['x:3', 'linkedin:8']);
+    await expect(frame.locator('body')).toHaveAttribute('data-network', 'blocked');
+
+    const added = await request.post('/test/e2e/field_table_row_fixture', {
+      data: { account_id: setup.account_id, table_id: fixture.table_id, data: { platform: 'bluesky', views: 13 } },
+    });
+    expect(added.ok(), await added.text()).toBe(true);
+    await frame.locator('#refresh').click();
+    await expect(frame.locator('#rows li')).toHaveText(['x:3', 'linkedin:8', 'bluesky:13']);
+    await expect(frame.locator('#updates')).toHaveText('1');
+
+    // A second ask within 10 s waits for the window rather than fetching again.
+    await frame.locator('#refresh').click();
+    await page.waitForTimeout(1500);
+    await expect(frame.locator('#updates')).toHaveText('1');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});

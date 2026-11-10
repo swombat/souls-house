@@ -94,6 +94,7 @@ areas:
       - stone_addresses
       - stone_revisions
       - message_stone_revisions
+      - stone_revision_field_tables
       - tweet_embeds
       - message_tweet_embeds
 

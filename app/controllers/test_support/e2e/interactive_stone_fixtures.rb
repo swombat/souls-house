@@ -25,15 +25,31 @@ module TestSupport::E2e::InteractiveStoneFixtures
       };
       </script></body></html>
     HTML
+    table_ids = []
+    if params[:with_table]
+      table = FieldTable.create_in!(account, name: "Posts", columns: [ { "key" => "platform" }, { "key" => "views", "type" => "number" } ])
+      table.add_rows!([ { "platform" => "x", "views" => 3 }, { "platform" => "linkedin", "views" => 8 } ], by: nil)
+      table_ids = [ table.to_param ]
+    end
     stone = Stone.publish!(chat: chat, title: "Interactive test stone", html: html,
-      author: account.users.first!, public: true, interactive: true)
+      author: account.users.first!, public: true, interactive: true, field_table_ids: table_ids, publish_tables: table_ids.any?)
     if params[:hostile_html]
       # Deliberately bypass upload validation; headers/sandbox must stand alone.
       blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(params[:hostile_html]),
         filename: "hostile.html", content_type: "text/html", identify: false, metadata: { stone_html: true })
       stone.latest_revision.html_attachment.update_column(:blob_id, blob.id)
     end
-    render json: { url: stone.public_url, stone_id: stone.to_param }
+    render json: { url: stone.public_url, stone_id: stone.to_param, table_id: table_ids.first }
+  end
+
+  # Adds a row to an E2E account's Field table, as a resident would.
+  def field_table_row_fixture
+    account = Account.find(params.fetch(:account_id))
+    raise ActiveRecord::RecordNotFound unless Rails.env.test? && account.name.start_with?("E2E ")
+
+    table = account.field_tables.kept.find(params.fetch(:table_id))
+    row = table.add_rows!([ params.require(:data).to_unsafe_h ], by: nil).first
+    render json: { row_id: row.to_param }
   end
 
 end

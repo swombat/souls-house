@@ -88,6 +88,22 @@ class FieldTablesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "the table page lists stones that read it, and Detach stops one" do
+    old_domain = ENV["SOULSHOUSE_STONES_DOMAIN"]
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = "soulstones.test"
+    chat = @account.chats.create!(title: "Charts", model_id: "openrouter/auto")
+    stone = Stone.publish!(chat: chat, title: "Posts chart", html: "<!doctype html><p>chart</p><script>1</script>",
+      author: @user, public: true, interactive: true, field_table_ids: [ @table.to_param ], publish_tables: true)
+    get account_field_table_path(@account, @table)
+    assert_equal [ "Posts chart" ], props["stones"].map { |s| s["title"] }
+
+    delete account_field_table_stone_path(@account, @table, stone)
+    assert_redirected_to account_field_table_path(@account, @table)
+    assert_empty @table.reading_stones
+  ensure
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = old_domain
+  end
+
   test "deleting a table discards it" do
     delete account_field_table_path(@account, @table)
     assert_redirected_to account_field_tables_path(@account)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_163000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2892,6 +2892,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_163000) do
     t.check_constraint "name::text ~ '^[a-z]+-[a-z]+-[a-z]+$'::text", name: "stone_addresses_name_format"
   end
 
+  create_table "stone_revision_field_tables", force: :cascade do |t|
+    t.bigint "stone_revision_id", null: false
+    t.bigint "field_table_id", null: false
+    t.string "attached_by_type"
+    t.bigint "attached_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["attached_by_type", "attached_by_id"], name: "index_stone_revision_field_tables_on_attached_by"
+    t.index ["field_table_id"], name: "index_stone_revision_field_tables_on_field_table_id"
+    t.index ["stone_revision_id", "field_table_id"], name: "index_stone_revision_field_tables_unique", unique: true
+  end
+
   create_table "stone_revisions", force: :cascade do |t|
     t.bigint "stone_id", null: false
     t.integer "number", null: false
@@ -3492,6 +3504,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_163000) do
   add_foreign_key "stalled_thread_sweeps", "chats", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "messages", on_delete: :cascade
   add_foreign_key "stone_addresses", "stones", on_delete: :nullify
+  add_foreign_key "stone_revision_field_tables", "field_tables", on_delete: :cascade
+  add_foreign_key "stone_revision_field_tables", "stone_revisions", on_delete: :cascade
   add_foreign_key "stone_revisions", "agents"
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"
