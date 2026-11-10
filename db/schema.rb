@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2396,6 +2396,62 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_010000) do
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_entitlements_rate_known"
   end
 
+  create_table "resident_fallback_calls", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "resident_fallback_turn_id"
+    t.datetime "period_start", null: false
+    t.string "upstream_model", null: false
+    t.jsonb "max_price", null: false
+    t.bigint "input_bound_tokens", null: false
+    t.bigint "max_output_tokens", null: false
+    t.decimal "reservation_usd", precision: 14, scale: 8, null: false
+    t.decimal "charge_usd", precision: 14, scale: 8
+    t.string "cost_source"
+    t.string "status", default: "pending", null: false
+    t.integer "http_status"
+    t.string "upstream_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "period_start"], name: "index_resident_fallback_calls_on_agent_id_and_period_start"
+    t.index ["agent_id"], name: "index_resident_fallback_calls_on_agent_id"
+    t.index ["resident_fallback_turn_id"], name: "index_resident_fallback_calls_on_resident_fallback_turn_id"
+    t.check_constraint "reservation_usd >= 0::numeric AND (charge_usd IS NULL OR charge_usd >= 0::numeric)", name: "fallback_calls_nonnegative"
+  end
+
+  create_table "resident_fallback_policies", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.boolean "enabled", default: false, null: false
+    t.string "model_id"
+    t.decimal "cap_usd", precision: 10, scale: 2
+    t.string "cap_period", default: "month", null: false
+    t.string "payer", default: "openrouter", null: false
+    t.bigint "enabled_by_user_id"
+    t.datetime "enabled_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
+    t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
+    t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric", name: "fallback_policies_positive_cap"
+  end
+
+  create_table "resident_fallback_turns", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "chat_id"
+    t.bigint "primary_interaction_id"
+    t.bigint "fallback_interaction_id"
+    t.string "primary_provider", null: false
+    t.string "primary_model", null: false
+    t.string "fallback_model_id", null: false
+    t.string "upstream_model", null: false
+    t.datetime "primary_resets_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_resident_fallback_turns_on_agent_id"
+    t.index ["chat_id"], name: "index_resident_fallback_turns_on_chat_id"
+    t.index ["fallback_interaction_id"], name: "index_resident_fallback_turns_on_fallback_interaction_id", unique: true
+    t.index ["primary_interaction_id"], name: "index_resident_fallback_turns_on_primary_interaction_id"
+  end
+
   create_table "resident_subscriptions", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.bigint "account_id", null: false
@@ -3345,6 +3401,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_010000) do
   add_foreign_key "resident_entitlements", "accounts"
   add_foreign_key "resident_entitlements", "agents"
   add_foreign_key "resident_entitlements", "resident_subscriptions", column: "current_subscription_id"
+  add_foreign_key "resident_fallback_calls", "agents"
+  add_foreign_key "resident_fallback_calls", "resident_fallback_turns", on_delete: :nullify
+  add_foreign_key "resident_fallback_policies", "agents"
+  add_foreign_key "resident_fallback_policies", "users", column: "enabled_by_user_id"
+  add_foreign_key "resident_fallback_turns", "agent_runtime_interactions", column: "fallback_interaction_id", on_delete: :nullify
+  add_foreign_key "resident_fallback_turns", "agent_runtime_interactions", column: "primary_interaction_id", on_delete: :nullify
+  add_foreign_key "resident_fallback_turns", "agents"
+  add_foreign_key "resident_fallback_turns", "chats", on_delete: :nullify
   add_foreign_key "resident_subscriptions", "accounts"
   add_foreign_key "resident_subscriptions", "agents"
   add_foreign_key "resident_turns", "agent_runtime_interactions"
