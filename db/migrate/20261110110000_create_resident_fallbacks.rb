@@ -65,7 +65,7 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
       t.integer :http_status
       t.string :upstream_id
       t.timestamps
-      t.check_constraint # PostgreSQL sorts NaN above every number, so ">= 0" alone admits it.
+      # PostgreSQL sorts NaN above every number, so ">= 0" alone admits it.
       t.check_constraint "reservation_usd >= 0 AND reservation_usd <> 'NaN'::numeric AND " \
         "(charge_usd IS NULL OR (charge_usd >= 0 AND charge_usd <> 'NaN'::numeric))",
         name: "fallback_calls_nonnegative"
