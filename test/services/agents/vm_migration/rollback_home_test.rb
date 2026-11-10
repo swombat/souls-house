@@ -32,17 +32,19 @@ class Agents::VmMigration::RollbackHomeTest < ActiveSupport::TestCase
   # Volumes are stateful (create keeps the first label, as Docker does);
   # everything else answers from the test's script.
   class FakeDocker
-    attr_reader :calls, :volumes
+    attr_reader :calls, :volumes, :envs
 
     def initialize(test)
       @test = test
       @calls = []
+      @envs = {}
       @volumes = {}
     end
 
     def capture3(*args, deadline:)
-      args.shift if args.first.is_a?(Hash)
+      env = args.first.is_a?(Hash) ? args.shift : {}
       @calls << args
+      @envs[args.object_id] = env
       out, err, code = answer(args)
       [ out.to_s, err.to_s, Status.new(code) ]
     end
@@ -67,14 +69,22 @@ class Agents::VmMigration::RollbackHomeTest < ActiveSupport::TestCase
 
     def runs = @calls.select { |argv| argv[0, 2] == %w[docker run] }
     def restores = runs.select { |argv| argv.include?("restore") }
+    def restics = runs.select { |argv| argv.include?("--no-lock") }
+    def shapes = runs.select { |argv| argv.include?("carry-shape") }
+    def env_of(argv) = @envs.fetch(argv.object_id)
   end
 
   setup do
     @agent = agents(:research_assistant)
     @agent.update_columns(uuid: UUID, restic_password: PASSWORD, volume_map: nil, volume_rollback_generation: 0)
     @resources = Agents::Resources.new(@agent)
-    @shapes = Agents::VmMigration::RollbackPlan::ROLES.to_h { |role| [ role.to_s, SHAPE.dup ] }
-    @restored_shape = ->(_volume) { SHAPE }
+    # A different shape per role, so a role measured as another fails.
+    @shapes = Agents::VmMigration::RollbackPlan::ROLES.each_with_index.to_h do |role, index|
+      [ role.to_s, { "entries" => 10 + index, "shape" => index.to_s * 64 } ]
+    end
+    @role_of = @resources.derived_volumes.to_h { |role, name| [ name, role.to_s ] }
+    @restored_shape = ->(volume) { @shapes.fetch(@role_of.fetch(volume.sub(/-rb\d+\z/, ""))) }
+    @on_restore = nil
     @restore_exit = 0
     @docker = FakeDocker.new(self)
     @adapter = FakeAdapter.new
@@ -93,7 +103,11 @@ class Agents::VmMigration::RollbackHomeTest < ActiveSupport::TestCase
   def respond(argv)
     return [ "carry-probe #{'1' * 32}", "", 0 ] if argv.include?("wget")
     return [ @snapshot_json || snapshot_json, "", 0 ] if argv.include?("snapshots")
-    return [ "", "", @restore_exit ] if argv.include?("restore")
+    if argv.include?("restore")
+      @on_restore&.call
+      @on_restore = nil
+      return [ "", "", @restore_exit ]
+    end
     if argv.include?("carry-shape")
       volume = argv.find { |arg| arg.start_with?("type=volume,src=") }.split(",")[1].delete_prefix("src=")
       shape = @restored_shape.call(volume)
@@ -136,6 +150,21 @@ class Agents::VmMigration::RollbackHomeTest < ActiveSupport::TestCase
     end
     assert(@docker.runs.none? { |argv| (argv & %w[backup init forget prune]).any? })
     assert_equal fresh, @agent.reload.volume_map
+    # Each fresh volume is measured exactly once.
+    measured = @docker.shapes.map { |argv| argv.find { |arg| arg.start_with?("type=volume,src=") }.split(",")[1].delete_prefix("src=") }
+    assert_equal fresh.values.sort, measured.sort
+    # Secrets reach restic through its environment, never its argv.
+    assert_operator @docker.restics.size, :>=, 6
+    @docker.restics.each do |argv|
+      env = @docker.env_of(argv)
+      assert_equal PASSWORD, env["RESTIC_PASSWORD"]
+      assert_equal @adapter.repository_url, env["RESTIC_REPOSITORY"]
+      assert_not(argv.any? { |arg| arg.include?(PASSWORD) || arg.include?("secret@") })
+    end
+    receipt = AuditLog.where(action: "vm_rollback_swap", auditable: @agent).sole
+    assert_equal SNAPSHOT, receipt.data.dig("evidence", "snapshot_id")
+    assert_equal @shapes, receipt.data.dig("evidence", "shapes")
+    assert(receipt.data.dig("evidence", "verified").values.all?)
   end
 
   test "a generation that is not the latest reservation is refused before any IO" do
@@ -191,5 +220,20 @@ class Agents::VmMigration::RollbackHomeTest < ActiveSupport::TestCase
     assert_raises(Agents::VmMigration::RollbackHome::Failed) { home.call }
     assert_equal 1, @docker.restores.size
     assert_nil @agent.reload.volume_map
+  end
+
+  test "a newer reservation made during the restore stops this attempt at the swap" do
+    @generation = Agents::VmMigration::RollbackPlan.reserve!(@agent)
+    @on_restore = -> { Agents::VmMigration::RollbackPlan.reserve!(@agent) }
+    started = false
+
+    result = home.call(start: ->(_) { started = true })
+
+    assert_not result.ok?
+    assert_equal :before_commit, result.swap.phase
+    assert_match "no longer", result.swap.error
+    assert_not started
+    assert_nil @agent.reload.volume_map
+    assert_not AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
   end
 end

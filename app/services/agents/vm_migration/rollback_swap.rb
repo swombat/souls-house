@@ -34,12 +34,15 @@ module Agents
       # in_commit: called inside the commit's transaction (the placement
       #   switch); raising there rolls the whole commit back (before_commit).
       # start: called after the commit (recreate the container on the map).
-      def initialize(agent, plan:, verified:, in_commit: ->(_agent) {}, start: ->(_agent) {})
+      # evidence: what proved the fresh volumes (the snapshot id and the
+      #   per-role shapes), kept in the receipt with the previous map.
+      def initialize(agent, plan:, verified:, in_commit: ->(_agent) {}, start: ->(_agent) {}, evidence: {})
         @agent = agent
         @plan = plan
         @verified = verified
         @in_commit = in_commit
         @start = start
+        @evidence = evidence
       end
 
       def call
@@ -105,6 +108,13 @@ module Agents
           # with_lock reloads the row, so this compares the database against the
           # plan's source map, not against whatever this object last held.
           raise Failed, "The resident's volume map is not the one this rollback was planned from" unless @agent.volume_map == previous
+          # The reservation is rechecked HERE, under the same lock as the
+          # commit (Mira, #838 review 6758830079): a newer reservation made
+          # during a long restore leaves the map unchanged, so only the
+          # generation shows that this attempt has been superseded.
+          unless @agent.volume_rollback_generation.to_i == @plan.generation
+            raise Failed, "Rollback generation #{@plan.generation} is no longer this resident's latest reservation"
+          end
           # A generation is consumed by its first committed swap. Retrying a
           # plan (for instance after a revert! restored its source map) must
           # take a fresh reservation, not reuse a spent one.
@@ -113,7 +123,8 @@ module Agents
           @agent.update!(volume_map: fresh)
           @in_commit.call(@agent)
           AuditLog.create!(user: nil, account: @agent.account, action: "vm_rollback_swap", auditable: @agent,
-            data: { by: "house", generation: @plan.generation, token:, previous_map: previous, volume_map: fresh })
+            data: { by: "house", generation: @plan.generation, token:, previous_map: previous, volume_map: fresh,
+                    evidence: @evidence })
         end
       end
 

@@ -9,8 +9,9 @@ module Agents
     #   2. The generation is reserved (RollbackPlan.reserve!) by the caller
     #      BEFORE any external IO, and the server's final snapshot is taken
     #      for that generation. This class refuses any generation but the
-    #      latest reserved one, so a stale snapshot or caller cannot reach
-    #      the swap.
+    #      latest reserved one before any IO, and RollbackSwap checks it again
+    #      under the commit's lock, so an attempt superseded during its
+    #      restore cannot reach the swap either.
     #   3. The snapshot is read back: its id, its tags (this resident, this
     #      generation, rollback=v1), its host and exactly the five paths.
     #   4. The fresh volumes are allocated with RollbackPlan#allocate!
@@ -95,7 +96,9 @@ module Agents
         unverified = verified.reject { |_role, ok| ok }.keys
         raise Failed, "Restored homes do not match the server's: #{unverified.join(', ')}" if unverified.any?
 
-        swap = RollbackSwap.new(@agent, plan:, verified:, in_commit:, start:).call
+        evidence = { "snapshot_id" => @snapshot.snapshot_id, "verified" => verified.transform_keys(&:to_s),
+                     "shapes" => restored.transform_keys(&:to_s) }
+        swap = RollbackSwap.new(@agent, plan:, verified:, in_commit:, start:, evidence:).call
         Result.new(generation: @generation, verified:, shapes: restored, swap:)
       rescue Agents::BoundedCommand::TimedOut
         raise Failed, "The rollback ran out of time"

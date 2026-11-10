@@ -7,7 +7,7 @@ class Agents::VmMigration::RollbackSwapTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
-    @agent.update_columns(uuid: "55555555-5555-4555-8555-555555555555", volume_map: nil, volume_rollback_generation: 0)
+    @agent.update_columns(uuid: "55555555-5555-4555-8555-555555555555", volume_map: nil, volume_rollback_generation: 1)
     @plan = Agents::VmMigration::RollbackPlan.new(@agent, generation: 1)
     @all = Agents::VmMigration::RollbackPlan::ROLES.index_with(true)
   end
@@ -156,5 +156,17 @@ class Agents::VmMigration::RollbackSwapTest < ActiveSupport::TestCase
     assert_not started
     assert_equal @plan.fresh_map, @agent.reload.volume_map
     assert AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
+  end
+
+  test "a newer reservation made before the commit supersedes this attempt, even with the map unchanged" do
+    Agent.where(id: @agent.id).update_all(volume_rollback_generation: 2)
+    started = false
+    outcome = swap(start: ->(_) { started = true })
+
+    assert_equal :before_commit, outcome.phase
+    assert_match "no longer", outcome.error
+    assert_not started
+    assert_nil @agent.reload.volume_map
+    assert_not AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
   end
 end

@@ -140,6 +140,24 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
     assert_equal [ "#{@prefix}data/aa/#{A}" ], @objects.keys
   end
 
+  test "a read-only adapter refuses DELETE of a lock without reaching the repository" do
+    deletes = []
+    factory = lambda do |resident|
+      Backup::VmRepository.new(agent: resident, client: @client, bucket: "synthetic-backups", budget_bytes: @budget).tap do |repository|
+        repository.define_singleton_method(:delete_lock) { |path| deletes << path }
+      end
+    end
+    Agents::VmMigration::CarryAdapter.open(@resident, deadline: Agents::BoundedCommand.now + 60, repository_factory: factory) do |adapter|
+      assert_equal "200", call(adapter, "DELETE", "/locks/#{A}").code
+    end
+    assert_equal 1, deletes.size, "the writable adapter reaches delete_lock"
+    Agents::VmMigration::CarryAdapter.open(@resident, deadline: Agents::BoundedCommand.now + 60, repository_factory: factory,
+      read_only: true) do |adapter|
+      assert_equal "403", call(adapter, "DELETE", "/locks/#{B}").code
+    end
+    assert_equal 1, deletes.size, "the read-only adapter never calls delete_lock"
+  end
+
   test "only this run's credential is accepted" do
     open_adapter do |adapter|
       user, password = credential(adapter)
