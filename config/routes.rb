@@ -171,6 +171,8 @@ Rails.application.routes.draw do
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
     resource :interface, only: %i[show update], module: :accounts
+    # Computers enrolled through the companion app, and the owner's switches.
+    resources :companion_devices, path: "computers", only: %i[index update], module: :accounts
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :rooms, only: [ :index, :create, :update, :destroy ], module: :accounts
     resource :resident_room, only: :update, module: :accounts

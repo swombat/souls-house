@@ -4,6 +4,7 @@ class CompanionDevice < ApplicationRecord
 
   CREDENTIAL_PREFIX = "shcd_".freeze
   RECOVERY_WINDOW = 60.seconds
+  CONTROLS = %w[pause resume revoke].freeze
 
   class InvalidCredential < StandardError; end
   class Paused < StandardError; end
@@ -46,12 +47,44 @@ class CompanionDevice < ApplicationRecord
     revoked_at.nil? && !paused? && !account.reload.disabled?
   end
 
+  # The owner's pause, resume or revoke, from the API or the Computers page.
+  # Pause and revoke cancel active work and drop the connection. The block
+  # runs inside the lock, so the caller's audit row commits with the change.
+  def apply_control!(control)
+    raise ArgumentError, "unknown control" unless CONTROLS.include?(control)
+
+    device = self
+    with_lock do
+      if control == "revoke"
+        revoke!
+      else
+        update!(paused: control == "pause")
+      end
+      unless control == "resume"
+        CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
+          .update_all(state: "cancelled", outcome: "changed")
+        ActiveRecord.after_all_transactions_commit do
+          CompanionChannel.broadcast_to(device, { type: control })
+          ActionCable.server.remote_connections.where(current_user: nil, current_app_session: nil,
+            current_companion_device: device).disconnect(reconnect: false)
+        end
+      end
+      yield if block_given?
+    end
+  end
+
   # The owner's switch for one resident's execute/desktop authority on an
   # enrolled device. Volumes are not changed here. The revision bump makes
   # every in-flight operation undeliverable; active ones are cancelled. The
   # device's own local ceiling, scope and switch still apply on top.
-  def change_resident_authority!(resident_id:, execute:, desktop:, actor:)
-    raise ArgumentError, "booleans required" unless [ true, false ].include?(execute) && [ true, false ].include?(desktop)
+  #
+  # A nil flag means "leave it as it is": the current value is read under
+  # the lock, so a caller that changes one permission (the Computers page)
+  # can never write back a stale value for the other.
+  def change_resident_authority!(resident_id:, actor:, execute: nil, desktop: nil)
+    flags = [ execute, desktop ]
+    raise ArgumentError, "booleans required" unless flags.all? { |f| [ true, false, nil ].include?(f) }
+    raise ArgumentError, "nothing to change" if flags.all?(&:nil?)
 
     with_lock do
       raise ArgumentError, "device revoked" if revoked_at
@@ -59,6 +92,8 @@ class CompanionDevice < ApplicationRecord
       resident = residents.find { |r| r["id"] == resident_id }
       raise ArgumentError, "resident not on this device" unless resident
       before = { "execute" => resident["execute"], "desktop" => resident["desktop"] == true }
+      execute = before["execute"] if execute.nil?
+      desktop = before["desktop"] if desktop.nil?
       after = { "execute" => execute, "desktop" => desktop }
       return false if before == after
 

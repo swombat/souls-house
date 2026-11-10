@@ -211,6 +211,19 @@ class CompanionOperationTest < ActiveSupport::TestCase
     end
   end
 
+  test "a flag left out of an authority change keeps the value stored under the lock" do
+    @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: true, desktop: true, actor: users(:user_1))
+    assert @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, actor: users(:user_1))
+    assert_equal [ false, true ], @device.reload.policy["residents"].first.values_at("execute", "desktop")
+    assert @device.change_resident_authority!(resident_id: @agent.obfuscated_id, desktop: false, actor: users(:user_1))
+    assert_equal false, @device.reload.policy["residents"].first["execute"]
+    assert_not @device.policy["residents"].first.key?("desktop")
+    assert_raises(ArgumentError) { @device.change_resident_authority!(resident_id: @agent.obfuscated_id, actor: users(:user_1)) }
+    assert_raises(ArgumentError) do
+      @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: "true", actor: users(:user_1))
+    end
+  end
+
   test "desktop payload is private and short-lived; the durable row keeps verbs and apps only" do
     allow_mutations
     @device.change_resident_authority!(resident_id: @agent.obfuscated_id, execute: false, desktop: true, actor: users(:user_1))

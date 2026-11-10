@@ -14,6 +14,7 @@
     DoorOpen,
     UserSound,
     Archive,
+    Desktop,
   } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
@@ -35,6 +36,7 @@
     { id: 'model_api_keys', label: 'Model API keys', icon: Cpu, href: accountAgentApiKeysPath(account.id) },
     { id: 'house_api', label: `${$siteName} API`, icon: PlugsConnected, href: accountApiKeysPath(account.id) },
     { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },
+    { id: 'computers', label: 'Computers', icon: Desktop, href: `/accounts/${account.id}/computers` },
     { id: 'notices', label: 'Notices', icon: Megaphone, href: accountNoticesPath(account.id) },
     { id: 'glossary', label: 'Glossary', icon: BookOpenText, href: `/accounts/${account.id}/glossary` },
     { id: 'voices', label: 'Voices', icon: UserSound, href: `/accounts/${account.id}/field/voices` },
