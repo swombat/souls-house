@@ -119,12 +119,12 @@ only; do not replace a resident runtime or mount an existing identity.
 docker build --build-arg CHAOS_HEAD="$(cat agent-runtime/chaos-ref)" \
   -t souls-capability-candidate agent-runtime
 docker run --rm --network none --user agent \
-  --entrypoint /usr/bin/python3 \
+  --entrypoint python3 \
   --workdir /home/agent/runtime_capability \
   souls-capability-candidate -m unittest -v
 docker run --rm --network none --user agent \
-  --entrypoint /usr/bin/python3 souls-capability-candidate -c \
-  'import os,sys,yaml; from pathlib import Path; sys.path.insert(0,"/home/agent"); from runtime_capability import probes; print("interpreter:",sys.executable); print("PATH:",os.environ.get("PATH","")); print("probes:",Path(probes.__file__))'
+  --entrypoint python3 souls-capability-candidate -c \
+  'import os,sys,yaml; from pathlib import Path; sys.path.insert(0,"/home/agent"); from runtime_capability import boundary; print("interpreter:",sys.executable); print("PATH:",os.environ.get("PATH","")); print("boundary:",Path(boundary.__file__))'
 ```
 
 Retain the candidate image ID, build revision and test output. These commands
