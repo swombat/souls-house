@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { expect, test, vi } from 'vitest';
 import { writable } from 'svelte/store';
+import { page } from '@inertiajs/svelte';
 import ChatHeader from './ChatHeader.svelte';
 import ConversationCostDrawer from './ConversationCostDrawer.svelte';
 
@@ -53,4 +54,28 @@ test('the View costs panel carries context and both dollar estimates', () => {
   expect(summary).toHaveTextContent('42');
   expect(summary).toHaveTextContent('≈$3.50');
   expect(within(summary).getByText('≈$17.20')).toHaveClass('line-through');
+});
+
+const visualTags = [tag];
+const waiting = { due_at: '2026-11-17T08:00:00Z', resident_name: 'Lume', count: 1 };
+
+test('a waiting commitment puts the grey clock beside the header tag, as in the sidebar', () => {
+  page.set({ props: { visual_tags: visualTags, chats: [{ id: 'c1', next_commitment: waiting }] } });
+  render(ChatHeader, { chat: { ...chat, visual_tag: tag }, account });
+  const mark = within(screen.getByTestId('chat-header-tag')).getByTestId('commitment-mark');
+  expect(mark).toHaveAttribute('data-placement', 'behind-tag');
+  expect(mark.getAttribute('aria-label')).toMatch(/^Lume will come back here/);
+  expect(mark.className).toContain('text-muted-foreground/40');
+});
+
+test('the sidebar row is the live value: a delivered commitment takes the clock away', () => {
+  page.set({ props: { visual_tags: visualTags, chats: [{ id: 'c1', next_commitment: null }] } });
+  render(ChatHeader, { chat: { ...chat, next_commitment: waiting }, account });
+  expect(screen.queryByTestId('commitment-mark')).toBeNull();
+});
+
+test('a conversation outside the list falls back to its own next_commitment', () => {
+  page.set({ props: { visual_tags: visualTags, chats: [] } });
+  render(ChatHeader, { chat: { ...chat, next_commitment: waiting }, account });
+  expect(screen.getByTestId('commitment-mark')).toHaveAttribute('data-placement', 'in-place');
 });
