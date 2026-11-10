@@ -47,9 +47,9 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
     @budget = 20.gigabytes
   end
 
-  def open_adapter(deadline: Agents::BoundedCommand.now + 60, &block)
+  def open_adapter(deadline: Agents::BoundedCommand.now + 60, read_only: false, &block)
     factory = ->(resident) { Backup::VmRepository.new(agent: resident, client: @client, bucket: "synthetic-backups", budget_bytes: @budget) }
-    Agents::VmMigration::CarryAdapter.open(@resident, deadline:, repository_factory: factory, &block)
+    Agents::VmMigration::CarryAdapter.open(@resident, deadline:, repository_factory: factory, read_only:, &block)
   end
 
   def credential(adapter)
@@ -272,6 +272,17 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
   test "stop closes the port" do
     port = open_adapter(&:port)
     assert_raises(Errno::ECONNREFUSED) { TCPSocket.new("127.0.0.1", port) }
+  end
+
+  test "a read-only adapter (a rollback restore) serves reads and refuses every write, lock included" do
+    open_adapter { |adapter| assert_equal "200", call(adapter, "POST", "/data/#{A}", body: "one").code }
+    open_adapter(read_only: true) do |adapter|
+      assert_equal "200", call(adapter, "GET", "/data/#{A}").code
+      assert_equal "403", call(adapter, "POST", "/data/#{B}", body: "two").code
+      assert_equal "403", call(adapter, "POST", "/locks/#{B}", body: "lock").code
+      assert_equal "403", call(adapter, "POST", "/?create=true").code
+    end
+    assert_equal [ "#{@prefix}data/aa/#{A}" ], @objects.keys
   end
 
 end

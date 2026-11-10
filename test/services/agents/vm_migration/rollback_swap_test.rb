@@ -145,4 +145,16 @@ class Agents::VmMigration::RollbackSwapTest < ActiveSupport::TestCase
     assert_nil @agent.reload.volume_map
     assert_equal 1, AuditLog.where(action: "vm_rollback_swap", auditable: @agent).count
   end
+
+  test "an error raised after the database commit is after_commit, and start never runs" do
+    started = false
+    outcome = swap(in_commit: ->(_agent) { ActiveRecord::Base.current_transaction.after_commit { raise "hook failed" } },
+      start: ->(_) { started = true })
+
+    assert_equal :after_commit, outcome.phase
+    assert_match "hook failed", outcome.error
+    assert_not started
+    assert_equal @plan.fresh_map, @agent.reload.volume_map
+    assert AuditLog.exists?(action: "vm_rollback_swap", auditable: @agent)
+  end
 end

@@ -55,18 +55,25 @@ module Agents
         missing = RollbackPlan::ROLES.reject { |role| @verified[role] == true || @verified[role.to_s] == true }
         return failed(:before_commit, previous, fresh, "Not verified: #{missing.join(', ')}") if missing.any?
 
-        receipt_id = nil
+        # Every outcome is judged by this call's own receipt, found by a token
+        # only this call knows, read back outside any transaction. An older
+        # receipt for the same generation proves nothing about this call.
+        token = SecureRandom.hex(16)
         begin
-          receipt_id = commit!(previous, fresh)
+          commit!(previous, fresh, token)
         rescue StandardError => error
+          # An error raised by a callback after the database commit (an
+          # after_commit hook, say) still comes out of with_lock. The receipt
+          # tells the two apart: if it is there, the swap committed, and this
+          # is an after_commit failure. start is not run: what committed
+          # alongside the error is for a person to look at.
+          return failed(:after_commit, previous, fresh, "Committed, then: #{error.message}") if committed?(token, fresh)
+
           return failed(:before_commit, previous, fresh, error.message)
         end
-        # "after_commit" is literal: read this invocation's own receipt back,
-        # outside any transaction. A swallowed ActiveRecord::Rollback leaves
-        # commit! returning normally with nothing written, and must not reach
-        # start; an older receipt for the same generation proves nothing about
-        # this call.
-        unless committed?(receipt_id, fresh)
+        # A swallowed ActiveRecord::Rollback leaves commit! returning normally
+        # with nothing written, and must not reach start.
+        unless committed?(token, fresh)
           return failed(:before_commit, previous, fresh, "The swap did not commit")
         end
 
@@ -93,7 +100,7 @@ module Agents
 
       private
 
-      def commit!(previous, fresh)
+      def commit!(previous, fresh, token)
         @agent.with_lock do
           # with_lock reloads the row, so this compares the database against the
           # plan's source map, not against whatever this object last held.
@@ -106,7 +113,7 @@ module Agents
           @agent.update!(volume_map: fresh)
           @in_commit.call(@agent)
           AuditLog.create!(user: nil, account: @agent.account, action: "vm_rollback_swap", auditable: @agent,
-            data: { by: "house", generation: @plan.generation, previous_map: previous, volume_map: fresh }).id
+            data: { by: "house", generation: @plan.generation, token:, previous_map: previous, volume_map: fresh })
         end
       end
 
@@ -117,11 +124,8 @@ module Agents
 
       # The receipt is written in the same transaction as the map, so this
       # call's receipt row exists exactly when this call's swap committed.
-      def committed?(receipt_id, fresh)
-        return false if receipt_id.nil?
-
-        receipt = AuditLog.find_by(id: receipt_id, action: "vm_rollback_swap")
-        receipt.present? && receipt.data["volume_map"] == fresh
+      def committed?(token, fresh)
+        receipts.where("data->>'token' = ?", token).any? { |receipt| receipt.data["volume_map"] == fresh }
       end
 
       def failed(phase, previous, fresh, message)
