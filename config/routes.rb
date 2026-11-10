@@ -640,6 +640,12 @@ Rails.application.routes.draw do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
         resource :tags, only: :update, controller: "field/item_tags"
       end
+      resources :field_tables, only: %i[index show create update destroy] do
+        resources :rows, controller: "field_table_rows", only: %i[index show create update destroy] do
+          post :bulk, on: :collection
+        end
+        resources :columns, controller: "field_table_columns", only: %i[create update destroy], param: :key
+      end
       namespace :field do
         resource :limits, only: :show
         resource :search, only: :show
