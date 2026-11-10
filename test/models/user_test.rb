@@ -181,7 +181,7 @@ class UserTest < ActiveSupport::TestCase
   end
 
   test "manageable_by? returns true for any confirmed member" do
-    team_account = Account.create!(name: "Management Test", account_type: :team)
+    team_account = Account.create!(name: "Management Test", account_type: :team, granted_plan: "partners")
 
     # Test owner
     owner = User.create!(email_address: "owner-#{rand(10000)}@example.com")
@@ -200,7 +200,7 @@ class UserTest < ActiveSupport::TestCase
   end
 
   test "owned_by? returns true only for owners" do
-    team_account = Account.create!(name: "Ownership Test", account_type: :team)
+    team_account = Account.create!(name: "Ownership Test", account_type: :team, granted_plan: "partners")
 
     # Test owner
     owner = User.create!(email_address: "test-owner@example.com")

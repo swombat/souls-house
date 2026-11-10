@@ -133,7 +133,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
   test "request text includes the sub-agent policy section only when enabled" do
     agent = agents(:research_assistant)
-    agent.account.assign_attributes(use_system_ai_credentials: false)
+    # Sub-agents come with the account's Colleagues plan.
+    agent.account.assign_attributes(use_system_ai_credentials: false, granted_plan: "colleagues")
     Account::AI_PROVIDERS.each_key { |provider| agent.account.public_send("#{provider}_api_key=", nil) }
     agent.account.save!
     agent.account.openrouter_api_key = "sk-or-test"
@@ -153,7 +154,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
   test "a resumed session's delta carries the revocation after sub-agents are switched off" do
     agent = agents(:research_assistant)
-    agent.account.update!(use_system_ai_credentials: false, openrouter_api_key: "sk-or-test")
+    agent.account.update!(use_system_ai_credentials: false, openrouter_api_key: "sk-or-test", granted_plan: "colleagues")
     agent.update!(persistent_session: true, subagents_enabled: true,
                   subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Sub-agent revocation")

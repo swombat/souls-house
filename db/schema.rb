@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_180100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -90,10 +90,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
     t.boolean "voice_mode_enabled", default: false, null: false
     t.string "speech_engine", default: "phonon", null: false
     t.text "eleven_labs_api_key"
+    t.string "granted_plan"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "accounts_granted_plan_known"
+  end
+
+  create_table "account_plan_checkout_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "create_params", null: false
+    t.string "idempotency_key", null: false
+    t.string "plan", null: false
+    t.datetime "resolved_at"
+    t.string "stripe_price_id", null: false
+    t.string "stripe_session_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_plan_checkout_attempts_on_account_id"
+    t.index ["account_id"], name: "one_unresolved_account_plan_checkout_per_account", unique: true, where: "(resolved_at IS NULL)"
+    t.index ["idempotency_key"], name: "index_account_plan_checkout_attempts_on_idempotency_key", unique: true
+    t.index ["stripe_session_id"], name: "index_account_plan_checkout_attempts_on_stripe_session_id", unique: true
+  end
+
+  create_table "account_subscriptions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "cancel_at_period_end", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "current_period_end"
+    t.datetime "last_synced_at"
+    t.datetime "past_due_since"
+    t.string "plan", null: false
+    t.integer "plan_changes_count", default: 0, null: false
+    t.string "stripe_price_id"
+    t.string "stripe_status", null: false
+    t.string "stripe_subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
+    t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY ((ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying])::text[]))"
+    t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
+    t.check_constraint "plan::text = ANY (ARRAY['partners'::character varying, 'colleagues'::character varying]::text[])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "action_mcp_session_messages", force: :cascade do |t|
@@ -2392,6 +2429,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
     t.uuid "reference", default: -> { "gen_random_uuid()" }, null: false
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
+    t.string "stripe_description"
     t.bigint "billing_code_redemption_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
@@ -2502,7 +2540,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
     t.integer "plan_changes_count", default: 0, null: false
+    t.boolean "includes_allowance", default: false, null: false
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
+    t.index ["account_id"], name: "index_resident_subscriptions_one_allowance_per_account", unique: true, where: "includes_allowance"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id", unique: true
@@ -3214,6 +3254,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_170000) do
   add_foreign_key "account_exports", "users"
   add_foreign_key "account_imports", "accounts"
   add_foreign_key "account_imports", "users"
+  add_foreign_key "account_plan_checkout_attempts", "accounts"
+  add_foreign_key "account_subscriptions", "accounts"
   add_foreign_key "accounts", "rooms", column: "resident_room_id", on_delete: :nullify
   add_foreign_key "action_mcp_session_messages", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_messages_session_id", on_update: :cascade, on_delete: :cascade
   add_foreign_key "action_mcp_session_subscriptions", "action_mcp_sessions", column: "session_id", on_delete: :cascade

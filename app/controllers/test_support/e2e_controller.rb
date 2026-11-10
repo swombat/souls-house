@@ -521,7 +521,9 @@ module TestSupport
       end
       secondary_user = create_user!("e2e-#{run_id}-secondary@example.com")
       admin_user = create_user!("e2e-#{run_id}-admin@example.com", site_admin: true)
-      account = Account.create!(name: "E2E #{run_id} Team", account_type: :team)
+      # Colleagues: what the account plan backfill gives an account like this
+      # (several members, residents on the house with sub-agents).
+      account = Account.create!(name: "E2E #{run_id} Team", account_type: :team, granted_plan: "colleagues")
       account.add_user!(primary_user, role: "owner", skip_confirmation: true) unless params[:single_account]
       account.add_user!(secondary_user, role: "member", skip_confirmation: true)
       if params[:admin_account_list]

@@ -68,6 +68,7 @@ class Membership < ApplicationRecord
   }
   validate :enforce_personal_account_rules
   validate :inviter_may_grant_owner, on: :create
+  validate :account_plan_allows_another_member, on: :create
   before_destroy :ensure_removable
 
   # Callbacks with proper naming
@@ -267,6 +268,15 @@ class Membership < ApplicationRecord
     return if account.owned_by?(invited_by)
 
     errors.add(:base, "Only an owner can invite someone as owner")
+  end
+
+  # Companions is for one person (Billing::AccountPlan). A personal account
+  # says so in its own words above.
+  def account_plan_allows_another_member
+    return if account.nil? || account.personal?
+
+    reason = account.member_limit_refusal(adding: self)
+    errors.add(:base, reason) if reason
   end
 
   def ensure_removable

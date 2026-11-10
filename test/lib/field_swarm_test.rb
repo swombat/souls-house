@@ -251,13 +251,13 @@ class FieldSwarmTest < ActiveSupport::TestCase
     assert_equal 2, FieldSwarmSearch.count
   end
 
-  test "a Work plan in force allows swarm search without the admin switch, metered by the month" do
+  test "a Colleagues plan in force allows swarm search without the admin switch, metered by the month" do
     @account.update!(field_swarm_enabled: false)
-    entitlement = ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "pending",
-      tier: "work")
+    subscription = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_acct", plan: "colleagues",
+      stripe_status: "incomplete")
     with_reader(@reader) { assert_raises(FieldSwarm::Disabled) { swarm.call } }
 
-    entitlement.update!(state: "active")
+    subscription.update!(stripe_status: "active")
     assert @account.field_swarm_allowed?
     assert_equal 100, @account.field_swarm_monthly_limit
     with_reader(@reader) { swarm.call }
@@ -268,10 +268,10 @@ class FieldSwarmTest < ActiveSupport::TestCase
     assert_equal 1, FieldSwarmSearch.where(account: @account).count
   end
 
-  test "Conversation doesn't include swarm search" do
+  test "Companions doesn't include swarm search, whatever size its residents are" do
     @account.update!(field_swarm_enabled: false)
     ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "active",
-      tier: "conversation")
+      tier: "work")
     assert_not @account.field_swarm_allowed?
     with_reader(->(**) { flunk "no reader should run" }) { assert_raises(FieldSwarm::Disabled) { swarm.call } }
   end

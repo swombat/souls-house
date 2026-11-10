@@ -59,6 +59,7 @@ class Agent::SubagentsTest < ActiveSupport::TestCase
 
   test "available_subagent_models resolves catalogue entries and custom entries when enabled" do
     @agent.account.openrouter_api_key = "sk-or-test"
+    @agent.account.granted_plan = "colleagues"
     @agent.update!(
       subagents_enabled: true,
       subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813", "openrouter:some-custom-model" ]
@@ -81,6 +82,7 @@ class Agent::SubagentsTest < ActiveSupport::TestCase
 
   test "available_subagent_models drops keys whose provider has no credentials" do
     @agent.account.openrouter_api_key = "sk-or-test"
+    @agent.account.granted_plan = "colleagues"
     @agent.update!(
       subagents_enabled: true,
       subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813", "anthropic:claude-opus-5" ]
@@ -89,21 +91,30 @@ class Agent::SubagentsTest < ActiveSupport::TestCase
     assert_equal [ "openrouter:deepseek/deepseek-v4-pro-0813" ], @agent.available_subagent_models.map { |entry| entry[:key] }
   end
 
-  test "sub-agents are available on the house, with no plan or a complimentary one" do
-    assert @agent.subagents_available?
+  # Sub-agents come with the account's Colleagues plan (2026-11-10), for a
+  # resident whose own hosting is in force or that is on the house.
+  test "sub-agents come with a Colleagues account, not the resident's size" do
+    assert_not @agent.subagents_available?, "Companions: none, even on the house"
+    @agent.account.update!(granted_plan: "partners")
+    assert_not @agent.reload.subagents_available?, "Partners: none"
+
+    @agent.account.update!(granted_plan: "colleagues")
+    assert @agent.reload.subagents_available?, "Colleagues: a resident on the house has them"
 
     entitlement = ResidentEntitlement.create!(agent: @agent, account: @agent.account, source: "complimentary",
       state: "complimentary", complimentary_granted_at: Time.current)
     assert @agent.subagents_available?
 
-    # A complimentary resident that also bought a lower plan keeps them.
-    entitlement.update!(source: "stripe", state: "active", tier: "life")
-    assert @agent.subagents_available?
+    %w[conversation life work].each do |tier|
+      entitlement.update_columns(source: "stripe", state: "active", tier: tier)
+      assert @agent.subagents_available?, "any size in a Colleagues account: #{tier}"
+    end
   end
 
-  test "sub-agents come with the Work plan and not lower plans" do
+  test "in a Colleagues account the resident's own plan must be in force" do
+    @agent.account.update!(granted_plan: "colleagues")
     entitlement = ResidentEntitlement.create!(agent: @agent, account: @agent.account, source: "stripe",
-      state: "active", tier: "work")
+      state: "active", tier: "conversation")
     assert @agent.subagents_available?
 
     entitlement.update!(state: "grace")
@@ -112,19 +123,26 @@ class Agent::SubagentsTest < ActiveSupport::TestCase
     entitlement.update_columns(state: "held")
     assert_not @agent.subagents_available?
 
-    %w[conversation life].each do |tier|
-      entitlement.update_columns(state: "active", tier: tier)
-      assert_not @agent.subagents_available?, tier
-    end
+    entitlement.update_columns(state: "pending")
+    assert_not @agent.subagents_available?
+  end
+
+  test "a paid Colleagues subscription grants them; ending it takes them away" do
+    subscription = AccountSubscription.create!(account: @agent.account, stripe_subscription_id: "sub_acct",
+      plan: "colleagues", stripe_status: "active")
+    assert @agent.subagents_available?
+
+    subscription.update!(stripe_status: "canceled")
+    assert_not @agent.reload.subagents_available?
   end
 
   test "a lower plan cannot switch sub-agents on, and a switch left on grants nothing" do
-    @agent.account.update!(openrouter_api_key: "sk-or-test")
+    @agent.account.update!(openrouter_api_key: "sk-or-test", granted_plan: "colleagues")
     @agent.update!(subagents_enabled: true, subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
     assert_equal 1, @agent.available_subagent_models.size
 
-    ResidentEntitlement.create!(agent: @agent, account: @agent.account, source: "stripe", state: "active",
-      tier: "life")
+    @agent.account.update!(granted_plan: "partners")
+    @agent.reload
     assert_not @agent.subagents_permitted?
     assert_equal [], @agent.available_subagent_models
     assert @agent.update(name: "Renamed"), "an unrelated save still works with the switch left on"
@@ -132,10 +150,11 @@ class Agent::SubagentsTest < ActiveSupport::TestCase
     @agent.update!(subagents_enabled: false)
     @agent.subagents_enabled = true
     assert_not @agent.valid?
-    assert_includes @agent.errors[:subagents_enabled], "Sub-agents come with the Work plan"
+    assert_includes @agent.errors[:subagents_enabled], "Sub-agents come with the Colleagues plan"
   end
 
   test "a paid birth waiting for its billing link is not taken for a resident on the house" do
+    @agent.account.update!(granted_plan: "colleagues")
     assert @agent.subagents_available?
 
     ResidentBirthOrder.create!(account: @agent.account, creator: users(:user_1), tier: "life", state: "born",

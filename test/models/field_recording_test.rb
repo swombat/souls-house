@@ -14,7 +14,7 @@ class FieldRecordingTest < ActiveSupport::TestCase
   def recording(**attributes) = claimed_recording(account: @account, user: @user, **attributes)
 
   test "an account with a site admin in it isn't held to the weekly allowance" do
-    limited = Account.create!(name: "Limited #{SecureRandom.hex(3)}", account_type: "team",
+    limited = Account.create!(name: "Limited #{SecureRandom.hex(3)}", account_type: "team", granted_plan: "partners",
       recording_ms_weekly_limit: 2.hours.in_milliseconds)
     limited.memberships.create!(user: users(:regular_user), role: "owner", confirmed_at: Time.current)
     assert_not limited.recording_unlimited?

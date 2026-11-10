@@ -12,6 +12,8 @@ team_account:
   id: 2
   name: "Test Team Account"
   account_type: 1
+  # Several members: Partners, as the account plan backfill would grant.
+  granted_plan: partners
   use_system_ai_credentials: true
   slug: test-team-account
   created_at: <%= 1.day.ago %>
@@ -21,6 +23,8 @@ another_team:
   id: 3
   name: "Another Team"
   account_type: 1
+  # Several members: Partners, as the account plan backfill would grant.
+  granted_plan: partners
   use_system_ai_credentials: true
   slug: another-team
   created_at: <%= 2.days.ago %>
@@ -93,6 +97,8 @@ team_single_user:
   id: 11
   name: "Single User Team"
   account_type: 1
+  # Several members: Partners, as the account plan backfill would grant.
+  granted_plan: partners
   use_system_ai_credentials: true
   slug: single-user-team
   created_at: <%= 1.day.ago %>
@@ -103,6 +109,8 @@ team:
   id: 12
   name: "Team for Testing"
   account_type: 1
+  # Several members: Partners, as the account plan backfill would grant.
+  granted_plan: partners
   use_system_ai_credentials: true
   slug: team-for-testing
   created_at: <%= 1.day.ago %>
@@ -121,6 +129,8 @@ other:
   id: 14
   name: "Other Account"
   account_type: 1
+  # Several members: Partners, as the account plan backfill would grant.
+  granted_plan: partners
   use_system_ai_credentials: true
   slug: other-account
   created_at: <%= 1.day.ago %>

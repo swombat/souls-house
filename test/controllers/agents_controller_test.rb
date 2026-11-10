@@ -523,14 +523,19 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       reflexes["offered"].map { |o| o.values_at("name", "reminder", "score", "message_id", "excerpt") }
   end
 
-  test "edit says whether the resident's plan includes sub-agents" do
+  test "edit says whether the account's plan includes sub-agents" do
+    get edit_account_agent_path(@account, @agent)
+    assert_equal false, inertia_shared_props["subagents_available"], "Companions has none"
+
+    @account.update!(granted_plan: "colleagues")
+    @inertia_props = nil
     get edit_account_agent_path(@account, @agent)
     assert_equal true, inertia_shared_props["subagents_available"]
 
-    ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "active", tier: "life")
+    ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "held", tier: "work")
     @inertia_props = nil
     get edit_account_agent_path(@account, @agent)
-    assert_equal false, inertia_shared_props["subagents_available"]
+    assert_equal false, inertia_shared_props["subagents_available"], "the resident's own plan must be in force"
   end
 
   test "edit exposes provider subscription setup for a supported hosted agent" do
@@ -735,6 +740,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "update persists subagents_enabled and subagent_models" do
+    @account.update!(granted_plan: "colleagues") # sub-agents come with Colleagues
     patch account_agent_path(@account, @agent), params: {
       agent: {
         subagents_enabled: true,
@@ -749,6 +755,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "update clears the sub-agent allowlist when the form sends an empty list" do
+    @account.update!(granted_plan: "colleagues")
     @agent.update!(subagents_enabled: true, subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
 
     patch account_agent_path(@account, @agent),
@@ -760,6 +767,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a rejected sub-agent allowlist returns to the Sub-agents tab with the error" do
+    @account.update!(granted_plan: "colleagues")
     patch account_agent_path(@account, @agent), params: {
       agent: { subagents_enabled: true, subagent_models: [ "openrouter:bad?" ] }
     }
