@@ -89,6 +89,33 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::StatementInvalid) { call.update_columns(status: "settled", charge_usd: nil) }
   end
 
+  test "a non-finite charge is refused and the reservation stays held (Mira #871)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    enable!(cap: 1)
+    call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
+    [ BigDecimal("NaN"), BigDecimal("Infinity"), "NaN", "not a number" ].each do |bad|
+      assert_raises(ArgumentError, bad.inspect) { call.settle!(bad, source: "openrouter_usage_cost") }
+    end
+    assert_equal "pending", call.reload.status
+    # The reservation stays held, and a second call still can't fit.
+    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    error = assert_raises(ResidentFallback::Decision::Refused) do
+      ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
+    end
+    assert_equal "fallback_cap_reached", error.code
+    call.charge_usd = BigDecimal("NaN")
+    assert_not call.valid?
+  end
+
+  test "the database refuses a NaN amount even when the model is bypassed (Mira #871)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    enable!(cap: 1)
+    call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ResidentFallbackCall.connection.execute("UPDATE resident_fallback_calls SET status = 'settled', charge_usd = 'NaN' WHERE id = #{call.id}")
+    end
+  end
+
   test "a stale or late callback never overwrites a known settlement (Mira #871)" do
     @account.update_columns(openrouter_api_key: "sk-or-own")
     enable!(cap: 1)

@@ -71,7 +71,10 @@ module ResidentFallback
         config = policy.model_config
         max_output = [ max_output_tokens.to_i, config.fetch(:max_output_tokens) ].min
         reservation = Models.reservation_usd(policy.model_id, input_bound_tokens: input_bound_tokens, max_output_tokens: max_output)
-        if policy.committed_usd(at) + reservation > policy.cap_usd
+        # Written as "admit only if it provably fits": a non-finite total
+        # (which no row should hold) refuses instead of comparing false.
+        total = policy.committed_usd(at) + reservation
+        unless total.finite? && total <= policy.cap_usd
           raise Refused.new("fallback_cap_reached", reason_for("fallback_cap_reached", agent: agent, policy: policy, at: at))
         end
 
@@ -89,7 +92,8 @@ module ResidentFallback
       return "fallback_off" unless policy&.enabled?
       return "fallback_model_unavailable" unless policy.model_config
       return "fallback_payer_key_missing" unless policy.payer_key
-      return "fallback_cap_reached" if policy.committed_usd(@at) >= policy.cap_usd
+      committed = policy.committed_usd(@at)
+      return "fallback_cap_reached" unless committed.finite? && committed < policy.cap_usd
 
       nil
     end

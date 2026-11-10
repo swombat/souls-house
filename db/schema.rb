@@ -2415,7 +2415,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_110000) do
     t.index ["agent_id", "admitted_at"], name: "index_resident_fallback_calls_on_agent_id_and_admitted_at"
     t.index ["agent_id"], name: "index_resident_fallback_calls_on_agent_id"
     t.index ["resident_fallback_turn_id"], name: "index_resident_fallback_calls_on_resident_fallback_turn_id"
-    t.check_constraint "reservation_usd >= 0::numeric AND (charge_usd IS NULL OR charge_usd >= 0::numeric)", name: "fallback_calls_nonnegative"
+    t.check_constraint "reservation_usd >= 0::numeric AND reservation_usd <> 'NaN'::numeric AND (charge_usd IS NULL OR charge_usd >= 0::numeric AND charge_usd <> 'NaN'::numeric)", name: "fallback_calls_nonnegative"
     t.check_constraint "status::text <> 'settled'::text OR charge_usd IS NOT NULL", name: "fallback_calls_settled_have_charge"
   end
 
@@ -2432,7 +2432,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_110000) do
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
     t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
-    t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric", name: "fallback_policies_positive_cap"
+    t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric AND cap_usd <> 'NaN'::numeric", name: "fallback_policies_positive_cap"
   end
 
   create_table "resident_fallback_turns", force: :cascade do |t|

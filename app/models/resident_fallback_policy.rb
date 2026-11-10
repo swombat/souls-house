@@ -17,6 +17,7 @@ class ResidentFallbackPolicy < ApplicationRecord
   validates :cap_period, inclusion: { in: CAP_PERIODS }
   validates :payer, inclusion: { in: PAYERS }
   validates :cap_usd, numericality: { greater_than: 0, less_than_or_equal_to: MAX_CAP_USD }, allow_nil: true
+  validate { errors.add(:cap_usd, "must be finite") if cap_usd && !cap_usd.finite? }
   validate :enabled_policy_is_complete
 
   def model_config = ResidentFallback::Models.find(model_id)

@@ -13,6 +13,16 @@ class ResidentFallbackCall < ApplicationRecord
   validates :upstream_model, :admitted_at, :max_price, presence: true
   validates :reservation_usd, numericality: { greater_than_or_equal_to: 0 }
   validates :charge_usd, presence: true, if: -> { status == "settled" }
+  # Positive, not merely "not negative": NaN is neither negative nor a number,
+  # and a NaN anywhere in the sum makes every cap comparison false.
+  validate :amounts_are_finite
+
+  def self.finite_amount(value)
+    amount = BigDecimal(value.to_s)
+    amount if amount.finite? && amount >= 0
+  rescue ArgumentError, TypeError
+    nil
+  end
 
   # Calls admitted inside [from, to). The window is the policy's *current*
   # period, computed at read time from each call's admission time, so a
@@ -33,8 +43,8 @@ class ResidentFallbackCall < ApplicationRecord
   def settle!(charge_usd, source:, upstream_id: nil)
     raise ArgumentError, "a settled call needs a known charge; use unresolved!" if charge_usd.nil?
 
-    charge = BigDecimal(charge_usd.to_s)
-    raise ArgumentError, "a charge can't be negative" if charge.negative?
+    charge = self.class.finite_amount(charge_usd) or
+      raise ArgumentError, "a charge must be a finite amount of at least zero; use unresolved! if it isn't known"
 
     with_lock do
       next false if status == "settled"
@@ -67,6 +77,13 @@ class ResidentFallbackCall < ApplicationRecord
 
       update!(status: "unresolved", http_status: http_status, upstream_id: upstream_id || self.upstream_id)
     end
+  end
+
+  private
+
+  def amounts_are_finite
+    errors.add(:reservation_usd, "must be finite") if reservation_usd && !reservation_usd.finite?
+    errors.add(:charge_usd, "must be finite") if charge_usd && !charge_usd.finite?
   end
 
 end

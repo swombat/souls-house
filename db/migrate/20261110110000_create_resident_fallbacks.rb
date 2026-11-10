@@ -17,7 +17,7 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
       t.references :enabled_by_user, foreign_key: { to_table: :users }
       t.datetime :enabled_at
       t.timestamps
-      t.check_constraint "cap_usd IS NULL OR cap_usd > 0", name: "fallback_policies_positive_cap"
+      t.check_constraint "cap_usd IS NULL OR (cap_usd > 0 AND cap_usd <> 'NaN'::numeric)", name: "fallback_policies_positive_cap"
     end
 
     # One logical turn that hopped: the refused subscription attempt and the
@@ -65,7 +65,9 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
       t.integer :http_status
       t.string :upstream_id
       t.timestamps
-      t.check_constraint "reservation_usd >= 0 AND (charge_usd IS NULL OR charge_usd >= 0)",
+      t.check_constraint # PostgreSQL sorts NaN above every number, so ">= 0" alone admits it.
+      t.check_constraint "reservation_usd >= 0 AND reservation_usd <> 'NaN'::numeric AND " \
+        "(charge_usd IS NULL OR (charge_usd >= 0 AND charge_usd <> 'NaN'::numeric))",
         name: "fallback_calls_nonnegative"
       t.check_constraint "status <> 'settled' OR charge_usd IS NOT NULL",
         name: "fallback_calls_settled_have_charge"
