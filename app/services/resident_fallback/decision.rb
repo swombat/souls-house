@@ -76,7 +76,7 @@ module ResidentFallback
         end
 
         ResidentFallbackCall.create!(
-          agent: agent, resident_fallback_turn: turn, period_start: policy.period_start(at),
+          agent: agent, resident_fallback_turn: turn, admitted_at: at,
           upstream_model: config.fetch(:upstream_model), max_price: config.fetch(:max_price),
           input_bound_tokens: input_bound_tokens, max_output_tokens: max_output, reservation_usd: reservation
         )

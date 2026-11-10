@@ -2399,7 +2399,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_110000) do
   create_table "resident_fallback_calls", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.bigint "resident_fallback_turn_id"
-    t.datetime "period_start", null: false
+    t.datetime "admitted_at", null: false
     t.string "upstream_model", null: false
     t.jsonb "max_price", null: false
     t.bigint "input_bound_tokens", null: false
@@ -2412,10 +2412,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_110000) do
     t.string "upstream_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["agent_id", "period_start"], name: "index_resident_fallback_calls_on_agent_id_and_period_start"
+    t.index ["agent_id", "admitted_at"], name: "index_resident_fallback_calls_on_agent_id_and_admitted_at"
     t.index ["agent_id"], name: "index_resident_fallback_calls_on_agent_id"
     t.index ["resident_fallback_turn_id"], name: "index_resident_fallback_calls_on_resident_fallback_turn_id"
     t.check_constraint "reservation_usd >= 0::numeric AND (charge_usd IS NULL OR charge_usd >= 0::numeric)", name: "fallback_calls_nonnegative"
+    t.check_constraint "status::text <> 'settled'::text OR charge_usd IS NOT NULL", name: "fallback_calls_settled_have_charge"
   end
 
   create_table "resident_fallback_policies", force: :cascade do |t|

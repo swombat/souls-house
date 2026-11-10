@@ -69,8 +69,57 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
     call.unresolved!(http_status: 502)
     assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
-    assert_raises(ArgumentError) { call.not_sent! }
+    assert_equal false, call.not_sent!
+    assert_equal "unresolved", call.reload.status
     assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    # Billing resolved later: the known charge replaces the reservation.
+    assert call.settle!(BigDecimal("0.3"), source: "openrouter_generation_lookup")
+    assert_equal BigDecimal("0.3"), @agent.fallback_policy.committed_usd(@now)
+  end
+
+  test "a call is never settled at an unknown charge (Mira #871: NULL settle dropped the reservation)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    enable!(cap: 1)
+    call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
+    assert_raises(ArgumentError) { call.settle!(nil, source: "openrouter_usage_cost") }
+    assert_raises(ArgumentError) { call.settle!(BigDecimal("-0.01"), source: "openrouter_usage_cost") }
+    assert_equal "pending", call.reload.status
+    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    # Nor can a write that bypasses the model leave a settled NULL behind.
+    assert_raises(ActiveRecord::StatementInvalid) { call.update_columns(status: "settled", charge_usd: nil) }
+  end
+
+  test "a stale or late callback never overwrites a known settlement (Mira #871)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    enable!(cap: 1)
+    stale = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
+    assert ResidentFallbackCall.find(stale.id).settle!(BigDecimal("0.3"), source: "openrouter_usage_cost")
+
+    # `stale` still believes it is pending.
+    assert_equal "pending", stale.status
+    assert_equal false, stale.not_sent!
+    assert_equal false, stale.unresolved!(http_status: 502)
+    assert_equal false, stale.settle!(BigDecimal("0.01"), source: "openrouter_usage_cost")
+    stale.reload
+    assert_equal [ "settled", BigDecimal("0.3") ], [ stale.status, stale.charge_usd ]
+    assert_equal BigDecimal("0.3"), @agent.fallback_policy.committed_usd(@now)
+  end
+
+  test "changing the cap period keeps every call inside the new window (Mira #871)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    policy = enable!(cap: 2, period: "month")
+    # Tue 3 Nov (last week, this month) and Mon 9 Nov (this week).
+    ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 0, max_output_tokens: 1_000, at: Time.utc(2026, 11, 3, 9))
+      .settle!(BigDecimal("0.4"), source: "openrouter_usage_cost")
+    ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 0, max_output_tokens: 1_000, at: Time.utc(2026, 11, 9, 9))
+      .settle!(BigDecimal("0.9"), source: "openrouter_usage_cost")
+    assert_equal BigDecimal("1.3"), policy.committed_usd(@now)
+
+    policy.update!(cap_period: "week")
+    assert_equal BigDecimal("0.9"), policy.reload.committed_usd(@now), "month → week keeps this week's call"
+
+    policy.update!(cap_period: "month")
+    assert_equal BigDecimal("1.3"), policy.reload.committed_usd(@now), "week → month keeps the month's earlier call"
   end
 
   test "output is clamped to the model's limit before the reservation is computed" do

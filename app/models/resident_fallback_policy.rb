@@ -44,9 +44,10 @@ class ResidentFallbackPolicy < ApplicationRecord
 
   # What this period has committed against the cap: settled calls at their
   # reported charge, pending and unresolved calls at their full reservation,
-  # calls refused before they were sent at nothing.
+  # calls refused before they were sent at nothing. The window is the current
+  # cap period, applied to each call's admission time.
   def committed_usd(time = Time.current)
-    ResidentFallbackCall.committed_usd(agent_id: agent_id, period_start: period_start(time))
+    ResidentFallbackCall.committed_usd(agent_id: agent_id, from: period_start(time), to: period_end(time))
   end
 
   def remaining_usd(time = Time.current)

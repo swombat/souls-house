@@ -45,7 +45,10 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
     create_table :resident_fallback_calls do |t|
       t.references :agent, null: false, foreign_key: true
       t.references :resident_fallback_turn, foreign_key: { on_delete: :nullify }
-      t.datetime :period_start, null: false
+      # When the call was admitted. The cap window is computed from this at
+      # read time, so changing the cap period never forgets calls inside the
+      # new window.
+      t.datetime :admitted_at, null: false
       t.string :upstream_model, null: false
       t.jsonb :max_price, null: false
       t.bigint :input_bound_tokens, null: false
@@ -64,8 +67,10 @@ class CreateResidentFallbacks < ActiveRecord::Migration[8.1]
       t.timestamps
       t.check_constraint "reservation_usd >= 0 AND (charge_usd IS NULL OR charge_usd >= 0)",
         name: "fallback_calls_nonnegative"
+      t.check_constraint "status <> 'settled' OR charge_usd IS NOT NULL",
+        name: "fallback_calls_settled_have_charge"
     end
-    add_index :resident_fallback_calls, [ :agent_id, :period_start ]
+    add_index :resident_fallback_calls, [ :agent_id, :admitted_at ]
   end
 
 end
