@@ -21,8 +21,16 @@
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
   import { diskName } from '$lib/companion-volumes.js';
+  import { createDynamicSync } from '$lib/use-sync';
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
+
+  // A computer that connects, drops or changes tells this page to reload its
+  // devices. Without it, a change's brief reconnect gap stayed "Offline".
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({ [`ComputerStatus:${account.id}`]: ['devices'] });
+  });
 
   // Each computer is a summary card; its settings open underneath, like
   // Integrations. A single computer starts open, a fleet starts closed.

@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { router } from '@inertiajs/svelte';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import Computers from './computers.svelte';
+
+const { syncUpdate } = vi.hoisted(() => ({ syncUpdate: vi.fn() }));
+vi.mock('$lib/use-sync', () => ({ createDynamicSync: () => syncUpdate }));
 
 const device = {
   id: 'dev1',
@@ -197,4 +200,9 @@ test('the write confirmation names the disk, not its raw key', async () => {
   render(Computers, { ...withReport, devices: [mac] });
   await fireEvent.change(screen.getByLabelText(/Mac disk/), { target: { value: 'write' } });
   expect(await screen.findByText("Let Mira write to Mac disk 9a1fe20c on Daniel's Mac?")).toBeInTheDocument();
+});
+
+test('the page listens for its computers connecting or dropping and reloads only the devices', () => {
+  render(Computers, props);
+  expect(syncUpdate).toHaveBeenLastCalledWith({ 'ComputerStatus:acct': ['devices'] });
 });
