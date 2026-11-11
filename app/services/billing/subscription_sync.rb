@@ -68,6 +68,7 @@ module Billing
         remote = fetch
         account_for(remote) == account || raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} changed account")
         items = all_items(remote)
+        @shared_ending = shared_ending?(remote, items)
         synced = sync_items!(remote, items, account)
         end_removed!(remote, items)
         point_account!(remote, account)
@@ -76,10 +77,24 @@ module Billing
       end
       raise InvalidSubscription, @problems.join("; ") if @problems.any?
 
+      if @shared_ending
+        Rails.error.report(SharedBillEnding.new("Subscription #{@stripe_subscription_id} carries several residents and " \
+          "was set to end at period end; every resident on it ends then"), handled: true,
+          context: { subsystem: "billing", account_id: account.id })
+      end
       agent ? rows.find { |row| row.agent_id == agent.id } : (rows.one? ? rows.first : nil)
     end
 
     private
+
+    # A bill several residents share, newly set to end at period end. The
+    # house never does this (Billing::Portal can't cancel; a resident's own
+    # plan ends by losing its item), so it was done elsewhere, perhaps on a
+    # portal page opened before that guard, and an operator should look.
+    def shared_ending?(remote, items)
+      items.size > 1 && remote.cancel_at_period_end &&
+        ResidentSubscription.live.where(stripe_subscription_id: remote.id, cancel_at_period_end: false).exists?
+    end
 
     def fetch
       @client.v1.subscriptions.retrieve(@stripe_subscription_id)

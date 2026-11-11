@@ -270,8 +270,10 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @stripe.subscription_updates
   end
 
-  test "the portal opens for the account's Stripe customer" do
+  test "the portal opens for the account's Stripe customer, on the configuration that can't cancel" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_portal_configuration(prices: [])
+    @stripe.put_portal_configuration(enabled: false, cancel: false)
 
     with_stripe do
       post portal_account_billing_path(@account), headers: { "X-Inertia" => "true" }
@@ -280,12 +282,11 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     assert_equal "https://billing.stripe.com/p/session/test_1", response.headers["X-Inertia-Location"]
     assert_equal "cus_1", @stripe.portal_sessions.sole[:customer]
+    assert_equal "bpc_test_2", @stripe.portal_sessions.sole[:configuration]
   end
 
-  test "a shared bill with no safe portal configuration is sent back with the reason, and no session is made" do
+  test "with no safe portal configuration Manage billing says why, and no session is made" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
-    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
-      items: [ { agent: agents(:research_assistant), price: CONVERSATION_PRICE }, { agent: agents(:code_reviewer), price: LIFE_PRICE } ])
     @stripe.put_portal_configuration(prices: [])
 
     with_stripe do
@@ -293,7 +294,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to account_billing_path(@account)
-    assert_match(/could end all of them at once/, flash[:alert])
+    assert_match(/write to/, flash[:alert])
     assert_empty @stripe.portal_sessions
   end
 
