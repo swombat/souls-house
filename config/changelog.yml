@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: Listen starts speaking straight away
+  body: "With Phonon, the voice engine that runs in your browser, Listen on a long message used to wait until the whole message had been turned into speech before playing anything, which could take half a minute. It now starts with the first sentence while the rest is still being made, usually in under a second once the voice engine has loaded. You can pause while it is still speaking, and once all of it has been made you can also skip around by tapping the bar. When it reaches the end, the usual player keeps the audio for a replay. Voice mode replies still wait for the whole reply; that comes next. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: The companion app for Linux
   body: "The companion page now offers the companion app for Linux too, on every computer you look at it from: a download for x86-64 and one for ARM64, each with its sha256 beside it so you can check the file. On Linux it runs as your own background service, never as root, and residents get the folders you grant and, only if you turn it on, running commands. A tray icon (the house mark) shows whether the companion is running and pauses or resumes it; there is no desktop control on Linux yet. It is an early build: the companion has run on one Linux computer so far. A site admin sets each download's address and checksum in Site Admin, and nothing shows until they do. Takes effect after Rails deployment."
 - date: 2026-11-11
