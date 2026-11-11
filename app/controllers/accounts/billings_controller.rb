@@ -5,7 +5,7 @@ class Accounts::BillingsController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_account_manager!
-  before_action :require_account_owner!, only: [ :checkout, :plan_change, :portal, :account_plan_checkout,
+  before_action :require_account_owner!, only: [ :checkout, :add_resident, :plan_change, :portal, :account_plan_checkout,
     :account_plan_change ]
 
   def show
@@ -35,15 +35,23 @@ class Accounts::BillingsController < ApplicationController
       # Where a paid resident can move: every purchasable offer; the tab
       # keeps the resident's own rate.
       change_offers: Billing::Tier.all.flat_map(&:offers).select(&:purchasable?).as_json,
-      residents: residents_json
+      residents: residents_json,
+      pending_add: pending_add_json
     }
   end
 
+  # With a live subscription, a resident joins it (Billing::AddItem): the
+  # owner is shown the quote, and confirms it with add_resident.
   def checkout
     agent = billable_agents.find(params[:agent_id])
     tier = Billing::Tier.find(params[:tier]) || raise(ActionController::BadRequest, "Unknown plan")
     rate = params[:rate].presence || "standard"
     raise ActionController::BadRequest, "Unknown rate" unless Billing::Tier::RATES.include?(rate)
+    if Billing::AddItem.applies?(current_account)
+      attempt = Billing::AddItem.new(agent: agent, tier: tier, rate: rate).quote
+      return redirect_to account_billing_path(current_account, add: attempt.id)
+    end
+
     url = Billing::Checkout.new(
       agent: agent,
       tier: tier,
@@ -52,7 +60,31 @@ class Accounts::BillingsController < ApplicationController
       cancel_url: account_billing_url(current_account)
     ).url
     inertia_location url
-  rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady, Stripe::StripeError => error
+  rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady,
+    Billing::AddItem::Refused, Billing::InvalidSubscription, Stripe::StripeError => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
+  # The owner confirmed the quote they were shown. A quote that no longer
+  # holds is made again and shown, with nothing charged.
+  def add_resident
+    attempt = BillingCheckoutAttempt.where(account: current_account, kind: Billing::AddItem::KIND).find(params[:attempt_id])
+    agent = billable_agents.find(attempt.agent_id)
+    row = Billing::AddItem.new(agent: agent).confirm!(attempt, digest: params[:digest].to_s)
+    audit("add_resident_to_subscription", agent, tier: row.tier, rate: row.rate,
+      stripe_subscription_id: row.stripe_subscription_id, stripe_subscription_item_id: row.stripe_subscription_item_id)
+    redirect_to account_billing_path(current_account),
+      notice: "#{agent.name} is on #{row.tier_record&.name || row.tier} now. The part of this period goes on the next bill."
+  rescue Billing::AddItem::QuoteChanged => error
+    begin
+      fresh = Billing::AddItem.new(agent: agent, tier: Billing::Tier.find!(attempt.tier), rate: attempt.rate).quote
+      redirect_to account_billing_path(current_account, add: fresh.id), alert: error.message
+    rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady,
+      Billing::AddItem::Refused, Billing::InvalidSubscription, Stripe::StripeError => again
+      redirect_to account_billing_path(current_account), alert: billing_error_message(again)
+    end
+  rescue Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady,
+    Billing::AddItem::Refused, Billing::InvalidSubscription, Stripe::StripeError => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
@@ -109,6 +141,21 @@ class Accounts::BillingsController < ApplicationController
   end
 
   private
+
+  # The quote the owner is being asked to confirm, if one was just made.
+  def pending_add_json
+    return nil if params[:add].blank?
+
+    attempt = BillingCheckoutAttempt.unresolved.find_by(id: params[:add], account: current_account,
+      kind: Billing::AddItem::KIND, submitted_at: nil)
+    return nil unless attempt
+
+    quote = attempt.quote
+    { attempt_id: attempt.id, digest: Billing::AddItem.digest(quote), resident_name: attempt.agent.name,
+      plan: Billing::Tier.find(attempt.tier)&.name || attempt.tier, rate: attempt.rate, currency: quote["currency"],
+      added_cents: quote["added_next"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
+      next_at: quote["next_at"] && Time.zone.at(quote["next_at"]).to_date.iso8601 }
+  end
 
   # Disabled residents don't appear and can't be paid for: re-enable one first.
   def billable_agents

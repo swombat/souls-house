@@ -20,6 +20,9 @@
     account_plan: accountPlan = null,
     // The account's free 14 days: { eligible, days }.
     trial = null,
+    // A resident about to join the account's subscription (Billing::AddItem):
+    // the server's quote, confirmed as-is or not at all.
+    pending_add: pendingAdd = null,
   } = $props();
 
   let busy = $state(null);
@@ -126,6 +129,25 @@
     );
   }
 
+  function cents(amount, currency) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: (currency || 'usd').toUpperCase() }).format(
+      (amount ?? 0) / 100
+    );
+  }
+
+  function confirmAdd() {
+    busy = 'add';
+    router.post(
+      `/accounts/${account.id}/billing/add_resident`,
+      { attempt_id: pendingAdd.attempt_id, digest: pendingAdd.digest },
+      { onFinish: () => (busy = null) }
+    );
+  }
+
+  function cancelAdd() {
+    router.visit(`/accounts/${account.id}/billing`);
+  }
+
   function openPortal() {
     busy = 'portal';
     router.post(`/accounts/${account.id}/billing/portal`, {}, { onFinish: () => (busy = null) });
@@ -155,6 +177,31 @@
     {#if billing.test_mode}
       <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="billing-test-mode">
         <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>
+      </div>
+    {/if}
+
+    {#if pendingAdd && billing.can_pay}
+      <div
+        class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm"
+        data-testid="billing-add-confirm">
+        <p class="font-medium">
+          Add {pendingAdd.resident_name} on {pendingAdd.plan}{pendingAdd.rate === 'at_cost' ? ' at cost' : ''} to the account's
+          subscription?
+        </p>
+        <p>
+          Nothing is charged today. Your next bill{pendingAdd.next_at ? `, on ${pendingAdd.next_at},` : ''} goes up by about
+          {cents(pendingAdd.added_cents, pendingAdd.currency)} for {pendingAdd.resident_name}: the rest of this period
+          and the next month. That bill comes to about {cents(pendingAdd.next_total_cents, pendingAdd.currency)} in all,
+          including anything else already due on it. After that, the account pays about
+          {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for all its residents together. These are Stripe's
+          totals, with tax and discounts in.
+        </p>
+        <div class="flex gap-2">
+          <Button size="sm" onclick={confirmAdd} disabled={busy !== null}>
+            {busy === 'add' ? 'Adding…' : `Add ${pendingAdd.resident_name}`}
+          </Button>
+          <Button size="sm" variant="outline" onclick={cancelAdd} disabled={busy !== null}>Not now</Button>
+        </div>
       </div>
     {/if}
 

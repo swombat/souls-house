@@ -250,3 +250,41 @@ describe('account plan and the free 14 days', () => {
     }
   );
 });
+
+describe('adding a resident to the account subscription', () => {
+  const pendingAdd = {
+    attempt_id: 7,
+    digest: 'abc',
+    resident_name: 'Second',
+    plan: 'Small',
+    rate: 'standard',
+    currency: 'usd',
+    added_cents: 2200,
+    next_total_cents: 6200,
+    recurring_cents: 5500,
+    next_at: '2026-12-01',
+  };
+
+  it("shows the server's quote and confirms exactly that quote", async () => {
+    render(Billing, props({ pending_add: pendingAdd }));
+
+    const panel = screen.getByTestId('billing-add-confirm');
+    expect(panel).toHaveTextContent('Add Second on Small');
+    expect(panel).toHaveTextContent('Your next bill, on 2026-12-01, goes up by about $22.00 for Second');
+    expect(panel).toHaveTextContent('comes to about $62.00 in all');
+    expect(panel).toHaveTextContent('about $55.00 a month for all its residents together');
+    expect(panel).toHaveTextContent('Nothing is charged today.');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add Second' }));
+    expect(router.post).toHaveBeenCalledWith(
+      '/accounts/home/billing/add_resident',
+      { attempt_id: 7, digest: 'abc' },
+      expect.any(Object)
+    );
+  });
+
+  it('shows no quote to someone who cannot pay', () => {
+    render(Billing, props({ pending_add: pendingAdd, billing: { configured: true, can_pay: false } }));
+    expect(screen.queryByTestId('billing-add-confirm')).not.toBeInTheDocument();
+  });
+});

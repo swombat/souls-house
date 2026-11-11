@@ -155,6 +155,7 @@ Rails.application.routes.draw do
     end
     resource :billing, only: :show, module: :accounts do
       post :checkout
+      post :add_resident
       post :plan_change
       post :account_plan_checkout
       post :account_plan_change

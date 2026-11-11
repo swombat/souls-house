@@ -203,6 +203,73 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @stripe.checkout_sessions
   end
 
+  test "with a live subscription, choosing a plan shows the quote and confirming adds the resident to it" do
+    second = agents(:code_reviewer)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    with_stripe do
+      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
+    end
+
+    attempt = BillingCheckoutAttempt.find_by!(agent: second, kind: "item")
+    assert_redirected_to account_billing_path(@account, add: attempt.id)
+    assert_empty @stripe.checkout_sessions, "no second subscription is opened"
+    assert_empty @stripe.subscription_updates, "nothing changes before the owner confirms"
+
+    get account_billing_path(@account, add: attempt.id)
+    shown = inertia_shared_props["pending_add"]
+    assert_equal [ second.name, Billing::AddItem.digest(attempt.quote) ], shown.values_at("resident_name", "digest")
+
+    sign_in(users(:regular_user))
+    with_stripe do
+      post add_resident_account_billing_path(@account), params: { attempt_id: attempt.id, digest: shown["digest"] }
+    end
+    assert_empty @stripe.subscription_updates, "only the owner adds a resident"
+
+    sign_in(@user)
+    with_stripe do
+      post add_resident_account_billing_path(@account), params: { attempt_id: attempt.id, digest: shown["digest"] }
+    end
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/next bill/, flash[:notice])
+    assert ResidentEntitlement.find_by!(agent: second).active?
+    assert_equal [ "sub_acct" ], ResidentSubscription.live.where(account: @account).distinct.pluck(:stripe_subscription_id)
+    assert AuditLog.exists?(action: "add_resident_to_subscription", user: @user)
+  end
+
+  test "a stale quote is made again and shown, and a refusal says why" do
+    second = agents(:code_reviewer)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    with_stripe do
+      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
+    end
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/Add a card first/, flash[:alert])
+
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe { post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" } }
+    stale = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "item")
+    @stripe.price_amounts[CONVERSATION_PRICE] = 4_200
+    with_stripe do
+      post add_resident_account_billing_path(@account),
+        params: { attempt_id: stale.id, digest: Billing::AddItem.digest(stale.quote) }
+    end
+
+    fresh = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "item")
+    assert_not_equal stale.id, fresh.id
+    assert_redirected_to account_billing_path(@account, add: fresh.id)
+    assert_match(/price changed/, flash[:alert])
+    assert_empty @stripe.subscription_updates
+  end
+
   test "the portal opens for the account's Stripe customer" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
 
