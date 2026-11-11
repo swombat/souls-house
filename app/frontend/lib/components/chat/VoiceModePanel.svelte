@@ -1,6 +1,8 @@
 <script>
+  import { onDestroy } from 'svelte';
   import { Microphone, MicrophoneSlash, Spinner, Stop } from 'phosphor-svelte';
   import { createVoiceModeSession } from '$lib/voice-mode-session.svelte.js';
+  import { voiceModeOpen } from '$lib/voice-mode-open';
   import VoiceModeReadout from './VoiceModeReadout.svelte';
   import VoiceModeHeld from './VoiceModeHeld.svelte';
 
@@ -10,7 +12,11 @@
   // Props: accountId, chatId, userId, messages, onsent, onerror, onend, and
   // endDrainMs (how long End waits for turns in flight; tests shorten it).
   const props = $props();
+  // Voice mode owns reading while it is open: the header's read-aloud reader
+  // closes before this panel's reader takes the audio element (lib/read-aloud.js).
+  voiceModeOpen.set(true);
   const session = createVoiceModeSession(props);
+  onDestroy(() => voiceModeOpen.set(false));
 </script>
 
 <div class="space-y-3" data-testid="voice-mode-panel" aria-live="polite">
