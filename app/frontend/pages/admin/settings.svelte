@@ -61,6 +61,12 @@
     formData.append('setting[companion_mac_download_url]', form.companion_mac_download_url ?? '');
     formData.append('setting[companion_mac_early_download_url]', form.companion_mac_early_download_url ?? '');
     formData.append('setting[companion_mac_early_download_sha256]', form.companion_mac_early_download_sha256 ?? '');
+    for (const arch of ['amd64', 'arm64']) {
+      for (const field of ['url', 'sha256']) {
+        const key = `companion_linux_${arch}_download_${field}`;
+        formData.append(`setting[${key}]`, form[key] ?? '');
+      }
+    }
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);

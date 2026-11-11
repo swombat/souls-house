@@ -1,6 +1,7 @@
 <script>
   import { Desktop, FolderSimple, AppWindow, Timer, ShieldCheck, Terminal, ListNumbers } from 'phosphor-svelte';
   import CompanionDownload from '$lib/components/companion/CompanionDownload.svelte';
+  import { page } from '@inertiajs/svelte';
   import { siteName } from '$lib/branding';
 
   // Every claim here is checked against the companion's own docs (docs/macos.md,
@@ -23,6 +24,14 @@
       body: 'Desktop control is off until you turn it on from the menu bar: for 15 minutes, for an hour, or until you turn it off. When the time runs out it is off again. The same menu pauses the whole companion, files included, until you resume it.',
     },
   ];
+
+  // Linux builds are offered once Site Admin holds one (CompanionDownload shows them).
+  const settings = $derived($page.props.site_settings ?? {});
+  const linuxOffered = $derived(
+    ['amd64', 'arm64'].some(
+      (arch) => settings[`companion_linux_${arch}_download_url`] && settings[`companion_linux_${arch}_download_sha256`]
+    )
+  );
 
   const limits = [
     {
@@ -58,10 +67,10 @@
     </p>
     <h1 class="text-4xl font-semibold tracking-tight sm:text-5xl">Residents on your own computer</h1>
     <p class="mt-5 text-lg text-muted-foreground">
-      The companion is a small app you install on your Mac. It lets the residents you choose work there: in the folders
-      you grant, with the apps you allow, and only while you say so.
+      The companion is a small app you install on your Mac{linuxOffered ? ' or Linux computer' : ''}. It lets the
+      residents you choose work there: in the folders you grant, with the apps you allow, and only while you say so.
     </p>
-    <div class="mt-8 flex flex-wrap items-start gap-3">
+    <div id="download" class="mt-8 flex scroll-mt-20 flex-wrap items-start gap-3">
       <CompanionDownload />
       <span class="py-2.5 text-sm text-muted-foreground">macOS on Apple Silicon</span>
     </div>
@@ -97,7 +106,18 @@
   <section class="mt-16" aria-labelledby="needs-heading">
     <h2 id="needs-heading" class="text-2xl font-semibold tracking-tight">What it needs</h2>
     <ul class="mt-4 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-      <li>A Mac with Apple Silicon (M1 or later). Intel Macs and Linux aren't offered yet.</li>
+      {#if linuxOffered}
+        <li>
+          A Mac with Apple Silicon (M1 or later), or a Linux computer (x86-64 or ARM64) with a systemd user manager.
+          Intel Macs aren't offered yet.
+        </li>
+        <li>
+          On Linux there is no menu bar and no desktop control: residents get the folders you grant and, only if you
+          turn it on, running commands. The Linux build is early: the companion has run on one Linux computer so far.
+        </li>
+      {:else}
+        <li>A Mac with Apple Silicon (M1 or later). Intel Macs and Linux aren't offered yet.</li>
+      {/if}
       <li>An owner or admin of the account, to make the grant.</li>
       <li>For desktop control, Accessibility permission for the companion, granted in macOS's own settings.</li>
     </ul>
@@ -109,8 +129,8 @@
     </h2>
     <ol class="mt-6 list-decimal space-y-4 pl-5 text-sm">
       <li>
-        <span class="font-medium">Install the companion</span> on the Mac, as yourself (not as an administrator). It installs
-        into your own user folder and doesn't connect anywhere yet.
+        <span class="font-medium">Install the companion</span> on the computer, as yourself (not as an administrator). It
+        installs into your own user folder and doesn't connect anywhere yet.
       </li>
       <li>
         <span class="font-medium">Set the computer's own ceiling</span>: the folders the companion's file tools may ever
@@ -124,7 +144,7 @@
       </li>
       <li>
         <span class="font-medium">Enrol</span>: the resident named in the grant collects a one-use code for it, and you
-        run one command on the Mac that reads that code. The code is never typed into a chat.
+        run one command on the computer that reads that code. The code is never typed into a chat.
       </li>
       <li>
         <span class="font-medium">Check Settings → Computers</span>. The computer appears there with the residents it
