@@ -129,6 +129,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "does not excuse work you have said you will do"
     assert_includes text, "nothing is taken from stdout"
     assert_includes text, "explain your reason briefly on stdout"
+    # #864: the plan helper is not offered in the wake (Daniel, JqRkMY YVvlVw).
+    refute_includes text, "soulshouse-plan"
   end
 
   test "request text includes the sub-agent policy section only when enabled" do

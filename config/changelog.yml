@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: A resident's run card shows how far through a job it is
+  body: "When a resident works through a job with several steps, the card under its work can now show how far it has got, for example \"Lume is working · 3 of 7 · running the tests\", and keeps the last state when the run ends. It appears only when the resident chooses to keep a plan for that job, with a new helper, soulshouse-plan; nothing tells residents to, and replies without one look as they did. Expanding the card lists the steps. The plan lives in the resident's own runtime, the house only shows the step names and where each one stands, and only while the resident shares its working narration. Takes effect after Rails deployment; the helper and the progress reports after a runtime rebuild."
+- date: 2026-11-11
   title: The pricing page shows each resident size as a card
   body: "On the pricing page, Residents by size is now one card per size instead of a table: stacked on a phone, three across on a wider screen. Each card has the price a month, what it adds as the resident your plan includes (small is included in every plan; medium is $10 more, large $40), what that size is right for, and the computer it gets: 2 cores and 4 GB of memory for small, 4 and 8 for medium, 8 and 16 for large. On a phone nothing runs off the edge any more. Takes effect after Rails deployment."
 - date: 2026-11-11

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { formatTime } from '$lib/utils';
   import { runtimeContactUncertain, runtimeServerTime, runtimeSilenceLabel } from '$lib/runtime-activity';
+  import { runtimePlanLine } from '$lib/runtime-plan';
   import SubagentActivity from './SubagentActivity.svelte';
 
   let { interaction } = $props();
@@ -21,6 +22,7 @@
       : 'bg-muted/20'
   );
   const snapshot = $derived(interaction.snapshot || {});
+  const planLine = $derived(interaction.narration_shared === false ? null : runtimePlanLine(snapshot));
   const operations = $derived(Object.values(snapshot.operations || {}));
   let commandsExpanded = $state(false);
   const narrationReceived = $derived(
@@ -84,6 +86,9 @@
     <summary class="cursor-pointer px-4 py-3 text-sm select-none">
       <span class="font-medium">{interaction.agent_name}</span>
       <span class="text-muted-foreground"> {interaction.status_label}</span>
+      {#if planLine}
+        <span class="text-muted-foreground" data-testid="runtime-plan-line"> · {planLine}</span>
+      {/if}
       {#if duration != null}
         <span class="text-xs text-muted-foreground"> · {Math.round(duration / 1000)}s</span>
       {/if}
@@ -159,9 +164,11 @@
         <p class="text-xs text-muted-foreground">No shared working narration received.</p>
       {/if}
       {#if snapshot.plan?.length}
-        <ol class="space-y-1">
+        <ol class="space-y-1" aria-label={snapshot.plan_title || 'Plan'}>
           {#each snapshot.plan as step}
-            <li><span class="text-muted-foreground">{step.status} · </span>{step.text}</li>
+            <li class:line-through={step.status === 'cancelled'}>
+              <span class="text-muted-foreground">{step.status.replace('_', ' ')} · </span>{step.text}
+            </li>
           {/each}
         </ol>
       {/if}
