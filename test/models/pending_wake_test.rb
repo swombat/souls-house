@@ -66,7 +66,8 @@ class PendingWakeTest < ActiveSupport::TestCase
     wake.reload
     assert wake.released_at
     assert_equal @resident, wake.released_interaction.agent
-    assert_match(/arrived here while you were already responding/, wake.prompt_note)
+    assert_match(/arrived here when you couldn't take it yet/, wake.prompt_note)
+    assert_no_match(/that run finished/, wake.prompt_note)
   end
 
   test "expired and paused wakes are dropped, not run" do

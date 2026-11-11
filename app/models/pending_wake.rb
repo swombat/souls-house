@@ -204,9 +204,12 @@ class PendingWake < ApplicationRecord
   # One line for the released run's prompt, so the resident knows why it woke.
   def prompt_note
     count = requests_count == 1 ? "A request" : "#{requests_count} requests"
-    "#{count} for you to respond arrived here while you were already responding " \
-      "(most recently from #{requested_by}, at #{last_requested_at.utc.iso8601}). " \
-      "They were held until that run finished. Everything posted since your previous run is in the transcript below."
+    # Neutral about why (#884 r1): a wake is held for a run still going or
+    # for a VM restart (#868), and the note must not invent a run.
+    "#{count} for you to respond arrived here when you couldn't take it yet " \
+      "(already responding, or your runtime restarting; most recently from #{requested_by}, " \
+      "at #{last_requested_at.utc.iso8601}). " \
+      "They were held until you could. Everything posted since your previous run is in the transcript below."
   end
 
   private

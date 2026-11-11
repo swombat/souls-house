@@ -80,7 +80,7 @@ module Agents
         return [ :unavailable, "its VM has not finished its first verified backup" ]
       end
       if placement.refresh_command_id.present?
-        since = placement.refresh_requested_at || placement.updated_at
+        since = refresh_hold_started_at(placement)
         return [ :settling, "a restart of its VM is in flight" ] if since > now - HOLD_LIMIT
 
         return [ :unavailable, "a restart of its VM has not finished in #{(HOLD_LIMIT / 60).to_i} minutes" ]
@@ -100,6 +100,16 @@ module Agents
       [ :unavailable, "its VM's runner has not been heard from in #{(HOLD_LIMIT / 60).to_i} minutes" ]
     end
 
+    # When turns began waiting on the current refresh: the first command's
+    # time, kept across a recovery start (Mira, #884 r1). A refresh recorded
+    # before the snapshot carried it falls back to the command's own time.
+    def refresh_hold_started_at(placement)
+      raw = placement.refresh_snapshot
+      stamp = raw["hold_started_at"] if raw.is_a?(Hash)
+      (Time.iso8601(stamp.to_s) if stamp.present? rescue nil) ||
+        placement.refresh_requested_at || placement.updated_at
+    end
+
     def settling?(agent, now: Time.current)
       unavailability(agent, now:)&.first == :settling
     end
@@ -108,7 +118,7 @@ module Agents
     # the truthful reason. Never falls through to the local runtime (#868).
     def require_dispatchable!(agent, now: Time.current)
       kind, reason = unavailability(agent, now:)
-      return if kind.nil? && dispatchable?(agent)
+      return if kind.nil? && enrollment_for(agent, now:).present?
 
       # No reason but not dispatchable: the state moved between the two
       # reads, which is a moment, not an outage.
@@ -344,7 +354,10 @@ module Agents
           # only for a done answer that names it (settle_refresh!).
           image = JSON.parse(command.payload_json.to_s)["image"]
           placement.update!(refresh_command_id: command.id, refresh_requested_at: Time.current,
-            refresh_snapshot: { "accesses" => accesses, "recoveries" => 0, "image" => image }, refresh_last_error: nil)
+            refresh_snapshot: { "accesses" => accesses, "recoveries" => 0, "image" => image,
+              # When turns started waiting on this restart (#868). A recovery
+              # start keeps it, so a person's wait is bounded once, not per command.
+              "hold_started_at" => Time.current.iso8601(6) }, refresh_last_error: nil)
           command
         end
       end
@@ -447,6 +460,7 @@ module Agents
       { "accesses" => Array(raw["accesses"]), "recoveries" => raw["recoveries"].to_i }.tap do |snapshot|
         # A malformed recorded image fails closed: it can never be confirmed.
         snapshot["image"] = IMAGE_ID.match?(image) ? image : "invalid" if raw.key?("image")
+        snapshot["hold_started_at"] = raw["hold_started_at"] if raw["hold_started_at"].present?
       end
     end
 

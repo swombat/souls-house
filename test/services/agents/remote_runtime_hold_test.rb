@@ -137,6 +137,41 @@ module Agents
       end
     end
 
+    test "a recovery start does not restart the hold: the limit counts from the first restart" do
+      live do
+        command = begin_refresh
+        started = @placement.reload.refresh_snapshot["hold_started_at"]
+        assert started
+
+        travel 14.minutes
+        assert RemoteRuntime.settling?(@agent)
+        answer(command, "failed")
+        assert_equal :recovering, RemoteRuntime.settle_refresh!(@placement.reload)
+        assert_equal started, @placement.reload.refresh_snapshot["hold_started_at"], "kept across the recovery"
+
+        travel 2.minutes
+        assert_not RemoteRuntime.settling?(@agent), "16 minutes after the first restart, not 2 after the recovery"
+        error = assert_raises(RemoteRuntime::Unavailable) { RemoteRuntime.require_dispatchable!(@agent) }
+        assert_not_instance_of RemoteRuntime::Settling, error
+        assert_includes error.message, "has not finished in 15 minutes"
+      end
+    end
+
+    test "a scheduled wake that meets a restart is not held: it is refused with the remote reason, as before" do
+      live do
+        begin_refresh
+        result = nil
+        assert_no_difference -> { AgentRuntimeInteraction.count } do
+          assert_no_difference -> { PendingWake.count } do
+            result = ExternalAgentWakeRequest.new(agent: @agent).call
+          end
+        end
+        assert_equal 0, result[:status]
+        assert_includes result[:error], "a restart of its VM is in flight"
+        assert_no_enqueued_jobs(only: [ BusyRunRetryJob, PendingWakeJob ])
+      end
+    end
+
     test "a placement that is gone fails with the remote reason, never the local runtime's" do
       live do
         @placement.update!(state: "retired")
