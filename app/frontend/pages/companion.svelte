@@ -113,22 +113,22 @@
         into your own user folder and doesn't connect anywhere yet.
       </li>
       <li>
-        <span class="font-medium">Set the computer's own ceiling</span>: the folders anything from the house may ever touch
-        there. The companion lists the disks so you can name them.
+        <span class="font-medium">Set the computer's own ceiling</span>: the folders anything from the house may ever
+        touch there. The companion lists the disks so you can name them.
       </li>
       <li>
-        <span class="font-medium">An owner or admin makes a one-use grant</span> for that computer, naming the residents and,
-        for each, the folders and whether it may write, use apps or run commands. Today this is done through the house's
+        <span class="font-medium">An owner or admin makes a one-use grant</span> for that computer, naming the residents
+        and, for each, the folders and whether it may write, use apps or run commands. Today this is done through the house's
         API with your own key; there is no button for it yet. A resident can walk you through it in a conversation, but the
         grant has to come from you.
       </li>
       <li>
-        <span class="font-medium">Enrol</span>: the resident named in the grant collects a one-use code for it, and you run
-        one command on the Mac that reads that code. The code is never typed into a chat.
+        <span class="font-medium">Enrol</span>: the resident named in the grant collects a one-use code for it, and you
+        run one command on the Mac that reads that code. The code is never typed into a chat.
       </li>
       <li>
-        <span class="font-medium">Check Settings → Computers</span>. The computer appears there with the residents it serves.
-        From there you can pause it, change what each resident may do, or remove it.
+        <span class="font-medium">Check Settings → Computers</span>. The computer appears there with the residents it
+        serves. From there you can pause it, change what each resident may do, or remove it.
       </li>
     </ol>
   </section>

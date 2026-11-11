@@ -223,4 +223,27 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_not setting.update(follow_through_scope: "most")
   end
 
+  test "a site admin sets, clears and cannot give a non-https companion download address" do
+    sign_in @admin
+    assert_nil Setting.instance.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "  https://example.com/c.zip " } }
+    assert_redirected_to admin_settings_path
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "http://example.com/c.zip" } }
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "javascript:alert(1)" } }
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "" } }
+    assert_nil Setting.instance.reload.companion_mac_download_url
+  end
+
+  test "a non-admin cannot set the companion download address" do
+    sign_in @user
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "https://example.com/c.zip" } }
+    assert_nil Setting.instance.reload.companion_mac_download_url
+  end
+
 end

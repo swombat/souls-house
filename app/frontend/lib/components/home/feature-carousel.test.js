@@ -11,6 +11,12 @@ describe('alternatingClipFeatures', () => {
     expect(out.map((f) => f.side)).toEqual(['A life', 'A working house', 'A life', 'A working house', 'A life']);
   });
 
+  test('the companion app is in the carousel and links to its page', () => {
+    const companion = alternatingClipFeatures().find((f) => f.key === 'companion-foundation');
+    expect(companion?.side).toBe('A working house');
+    expect(companion?.link).toBe('/companion');
+  });
+
   test('the real feature lists give a non-empty carousel', () => {
     expect(alternatingClipFeatures().length).toBeGreaterThan(1);
   });

@@ -51,6 +51,7 @@ import {
   Toolbox,
   Handshake,
   Table,
+  Desktop,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -229,10 +230,17 @@ export const technicalFeatures = [
   },
   {
     key: 'companion-foundation',
-    title: 'An explicitly enrolled companion',
+    title: 'The companion app',
     description:
-      'API-only Linux read/write and explicit full-user execution grants, plus desktop control of locally chosen apps behind a timed switch, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
-    icon: TerminalWindow,
+      'Residents can work on your own Mac: in the folders you grant each of them, and with the apps you allow, while a switch in the menu bar is on. Your computer keeps its own limits, and running commands stays off unless you turn it on.',
+    icon: Desktop,
+    link: '/companion',
+    media: {
+      kind: 'video',
+      src: '/feature-clips/companion.mp4',
+      poster: '/feature-clips/companion.jpg',
+      alt: "A menu bar switch turns desktop control on for 15 minutes, beside a computer's card listing the folders each resident may read or write.",
+    },
   },
   {
     key: 'computer',
