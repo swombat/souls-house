@@ -48,7 +48,7 @@ module Billing
       end
       sync_class.new(current.stripe_subscription_id, client: @client).call(agent: @agent)
 
-      remote_id, offer, item_id, from, count, single = ApplicationRecord.transaction do
+      remote_id, offer, item_id, from, count, single, change = ApplicationRecord.transaction do
         SubscriptionSync.lock!(@agent.account_id)
         entitlement.reload
         subscription = entitlement.current_subscription
@@ -61,18 +61,24 @@ module Billing
         raise NotConfigured, "The #{offer.name} plan has no Stripe price configured" unless offer.purchasable?
 
         remote = @client.v1.subscriptions.retrieve(subscription.stripe_subscription_id)
-        item = item_for(remote, subscription)
+        items = all_items(remote)
+        item = item_for(items, subscription)
         from = item.price.respond_to?(:id) ? item.price.id : item.price
+        # Stripe allows a price once per subscription: if a sibling already
+        # has the catalogue price, this item gets an inline copy of it
+        # (Billing::ItemPrice). Decided here, under the lock, and sent as is.
+        change = ItemPrice.new(client: @client).item_params(offer, items: items, except_item_id: item.id)
         subscription.update!(plan_changes_count: subscription.plan_changes_count + 1)
-        [ remote.id, offer, item.id, from, subscription.plan_changes_count, remote.items.data.one? ]
+        [ remote.id, offer, item.id, from, subscription.plan_changes_count, items.one?, change ]
       end
 
-      params = { items: [ { id: item_id, price: offer.price_id } ], proration_behavior: "create_prorations" }
+      params = { items: [ { id: item_id, **change } ], proration_behavior: "create_prorations" }
       # A subscription that is this resident alone describes it; one shared
       # by the account's residents doesn't.
       params.merge!(description: "#{offer.name} hosting for #{@agent.name}", metadata: { tier: offer.tier.id }) if single
       # The item is in the key: two residents on one subscription can make the
-      # same change at the same count, and each is its own mutation.
+      # same change at the same count, and each is its own mutation. The
+      # payload is built once per key, so a retried request is identical.
       @client.v1.subscriptions.update(remote_id, params,
         { idempotency_key: "souls-house-plan-change-#{remote_id}-#{item_id}-#{count}-#{from}-#{offer.price_id}" })
       sync_class.new(remote_id, client: @client).call(agent: @agent)
@@ -82,14 +88,27 @@ module Billing
 
     # This resident's item: the one the house recorded, or a legacy
     # subscription's only item.
-    def item_for(remote, subscription)
-      items = remote.items.data
+    def item_for(items, subscription)
       item = if subscription.stripe_subscription_item_id
         items.find { |row| row.id == subscription.stripe_subscription_item_id }
       elsif items.one?
         items.first
       end
       item || raise(Refused, "#{@agent.name}'s plan isn't on its subscription any more. Try again in a minute.")
+    end
+
+    # Every item, past Stripe's embedded first page: a sibling on a later
+    # page can hold the price this change wants.
+    def all_items(remote)
+      items = remote.items.data.to_a
+      return items unless remote.items.respond_to?(:has_more) && remote.items.has_more
+
+      loop do
+        page = @client.v1.subscription_items.list({ subscription: remote.id, limit: 100, starting_after: items.last.id })
+        items.concat(page.data.to_a)
+        break unless page.has_more && page.data.any?
+      end
+      items
     end
 
     # Tests stand in a sync that fails after the remote change.

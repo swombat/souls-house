@@ -14,6 +14,9 @@
 # other than one, a resident of another account, a binding that contradicts
 # the house's record or another item, a resident already paid for elsewhere)
 # is still present: it is never treated as removed and never grants anything.
+# A price is in the catalogue when it is one of an offer's configured prices,
+# or an inline copy of one that Billing::ItemPrice can vouch for (Stripe
+# allows each price only once per subscription).
 # Its row, if it has one, may only follow the subscription down (past_due,
 # ended), so it can't outlive the money. While the subscription stays live,
 # what the row already granted stands for Billing::GRACE_PERIOD from when it
@@ -38,6 +41,7 @@ module Billing
       @stripe_subscription_id = stripe_subscription_id
       @client = client
       @now = now
+      @prices = ItemPrice.new(client: client)
     end
 
     # Returns the row for agent:, or without one the subscription's sole row
@@ -145,7 +149,7 @@ module Billing
           next
         end
 
-        offer = Offer.for_price(stripe_id(item.price))
+        offer = @prices.offer_for(item)
         agent = Agent.find(agent_id)
         row = record!(remote, item, agent, offer, recorded)
         flag_ungranted!(remote, item, legacy, agent, offer)
@@ -171,7 +175,8 @@ module Billing
       return "recorded on #{recorded.stripe_subscription_id}" if recorded && recorded.stripe_subscription_id != remote.id
       return "quantity #{item[:quantity].inspect}, not 1" unless item[:quantity] == 1
       return "another item names the same resident" if claimed.fetch(agent_id).size > 1
-      return "price #{stripe_id(item.price).inspect} is outside the plan catalogue" unless Offer.for_price(stripe_id(item.price))
+      price_problem = @prices.problem(item)
+      return price_problem if price_problem
 
       agent = Agent.find_by(id: agent_id)
       return "names no resident here (#{agent_id})" unless agent

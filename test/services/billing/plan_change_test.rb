@@ -29,7 +29,7 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
 
     id, params = @stripe.subscription_updates.sole
     assert_equal "sub_1", id
-    assert_equal [ { id: "si_sub_1", price: LIFE_PRICE } ], params[:items]
+    assert_equal [ { id: "si_sub_1", price: LIFE_PRICE, metadata: { "catalogue_price" => LIFE_PRICE } } ], params[:items]
     assert_equal "create_prorations", params[:proration_behavior]
     assert_equal "Medium hosting for #{@agent.name}", params[:description]
     assert_equal "life", subscription.tier
@@ -46,7 +46,8 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
   test "the rate stays what it was: an at-cost plan moves to the other plan's at-cost price" do
     paid!(CONVERSATION_AT_COST_PRICE)
     subscription = change!("work")
-    assert_equal [ { id: "si_sub_1", price: WORK_AT_COST_PRICE } ], @stripe.subscription_updates.sole[1][:items]
+    assert_equal [ { id: "si_sub_1", price: WORK_AT_COST_PRICE, metadata: { "catalogue_price" => WORK_AT_COST_PRICE } } ],
+      @stripe.subscription_updates.sole[1][:items]
     assert_equal "at_cost", subscription.rate
     assert_equal "work", subscription.tier
     assert_equal BigDecimal("0"), ResidentEntitlement.find_by!(agent: @agent).allowance_limit

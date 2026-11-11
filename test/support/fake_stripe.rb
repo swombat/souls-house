@@ -34,6 +34,48 @@ class FakeStripe
     @update_responses = {}
     @update_params = {}
     @cancelled_subscriptions = []
+    @prices = {}
+    @inline_prices = 0
+    Helpers::CATALOGUE.each { |id, (product, amount)| put_price(id, product: product, unit_amount: amount) }
+  end
+
+  # A catalogue price as Stripe would serve it: flat, licensed, monthly.
+  # Overrides make the shapes the house must refuse (tiered, another
+  # product, a different tax behaviour...).
+  def put_price(id, product: "prod_test_other", unit_amount: 1000, **overrides)
+    @prices[id] = { id: id, object: "price", active: true, type: "recurring", billing_scheme: "per_unit",
+                    product: product, currency: "usd", unit_amount: unit_amount, tax_behavior: "exclusive",
+                    recurring: { interval: "month", interval_count: 1, usage_type: "licensed" },
+                    tiers_mode: nil, transform_quantity: nil, custom_unit_amount: nil }.deep_merge(overrides)
+  end
+
+  # What Stripe makes from an item's price_data: a new, inactive price.
+  def create_inline_price(data)
+    @inline_prices += 1
+    put_price("price_inline_#{@inline_prices}", product: data.fetch(:product), unit_amount: data.fetch(:unit_amount),
+      active: false, currency: data.fetch(:currency), tax_behavior: data[:tax_behavior] || "unspecified",
+      recurring: { interval: data.dig(:recurring, :interval), interval_count: data.dig(:recurring, :interval_count) || 1 })
+  end
+
+  # An inline copy of a catalogue price, as the house would have Stripe make
+  # it, with overrides for copies the house must not accept.
+  def inline_price(catalogue, **overrides)
+    source = @prices.fetch(catalogue)
+    price = create_inline_price(product: source[:product], unit_amount: source[:unit_amount], currency: source[:currency],
+      tax_behavior: source[:tax_behavior], recurring: source[:recurring].slice(:interval, :interval_count))
+    price.deep_merge!(overrides)
+  end
+
+  def price_object(id)
+    @prices.fetch(id) { put_price(id, product: "prod_test_unknown") }
+  end
+
+  def prices
+    Service.new(retrieve: lambda { |id|
+      raise Stripe::InvalidRequestError.new("No such price: '#{id}'", "id") unless @prices.key?(id)
+
+      construct(@prices[id])
+    })
   end
 
   # A card Stripe would hold for a customer, by payment method id.
@@ -65,7 +107,7 @@ class FakeStripe
       cancel_at_period_end: false, metadata: (data[:metadata] || {}).transform_keys(&:to_s),
       trial_end: trial ? trial_end.to_i : nil, default_payment_method: nil,
       items: { object: "list", data: params[:line_items].each_with_index.map { |item, index|
-        { id: "si_#{subscription_id}_#{index}", price: { id: item[:price] }, quantity: item[:quantity] || 1,
+        { id: "si_#{subscription_id}_#{index}", price: price_object(item[:price]), quantity: item[:quantity] || 1,
           current_period_end: trial_end.to_i }
       } }
     }
@@ -96,9 +138,11 @@ class FakeStripe
     @search_lags = true
   end
 
-  # The next subscription update raises error and changes nothing.
-  def fail_next_subscription_update(error = Stripe::APIConnectionError.new("timed out"))
+  # The next subscription update raises error. It changes nothing, unless
+  # applied: Stripe made the change and only the answer was lost.
+  def fail_next_subscription_update(error = Stripe::APIConnectionError.new("timed out"), applied: false)
     @update_fault = error
+    @update_fault_applied = applied
   end
 
   def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false,
@@ -111,21 +155,25 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { agent_id: agent.id.to_s },
-      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, quantity: 1, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: price_object(price), quantity: 1, current_period_end: period_end.to_i } ] }
     }
   end
 
   # An account's one subscription, one item per resident. items: hashes of
-  # agent:, price:, and optionally id:, quantity:, metadata: (merged over the
-  # item's agent_id). page_size: serve items in pages of this size, the rest
-  # through subscription_items.list, as Stripe does past its embedded page.
+  # agent:, and price: (a price id, or a price hash from inline_price), and
+  # optionally id:, quantity:, metadata: (merged over the item's agent_id).
+  # page_size: serve items in pages of this size, the rest through
+  # subscription_items.list, as Stripe does past its embedded page. Stripe
+  # can't hold one price on two items, so neither can this.
   def put_shared_subscription(id:, account:, customer:, status:, items:, period_end: 1.month.from_now, page_size: nil,
     trial_end: nil, metadata: {})
     data = items.each_with_index.map do |item, index|
       meta = item[:agent] ? { "agent_id" => item[:agent].id.to_s } : {}
-      { id: item[:id] || "si_#{id}_#{index}", price: { id: item.fetch(:price) }, quantity: item.fetch(:quantity, 1),
+      price = item.fetch(:price)
+      { id: item[:id] || "si_#{id}_#{index}", price: price.is_a?(Hash) ? price : price_object(price), quantity: item.fetch(:quantity, 1),
         metadata: meta.merge((item[:metadata] || {}).transform_keys(&:to_s)), current_period_end: period_end.to_i }
     end
+    refuse_shared_price!(data)
     @subscriptions[id] = {
       id: id, object: "subscription", status: status, customer: customer, cancel_at_period_end: false,
       trial_end: trial_end&.to_i,
@@ -157,7 +205,7 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { "kind" => "account_plan", "account_id" => account.id.to_s },
-      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, quantity: 1, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: price_object(price), quantity: 1, current_period_end: period_end.to_i } ] }
     }
   end
 
@@ -183,12 +231,14 @@ class FakeStripe
         end
         @created_subscriptions << [ params, opts ]
         id = "sub_new_#{@created_subscriptions.size}"
+        items = params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: price_object(item[:price]), quantity: item[:quantity] || 1, current_period_end: 1.month.from_now.to_i } }
+        refuse_shared_price!(items)
         @subscriptions[id] = {
           id: id, object: "subscription", status: "incomplete", customer: params[:customer],
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
           default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
           create_params: params.except(:expand).deep_dup,
-          items: { object: "list", data: params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: { id: item[:price] }, quantity: item[:quantity] || 1, current_period_end: 1.month.from_now.to_i } } }
+          items: { object: "list", data: items }
         }
         raise error if error
         construct(with_invoice(@subscriptions[id]))
@@ -199,10 +249,13 @@ class FakeStripe
         Stripe::StripeObject.construct_from(object: "search_result", data: found.map(&:deep_dup))
       },
       update: lambda { |id, params, opts = {}|
+        lost = nil
         if @update_fault
           error = @update_fault
           @update_fault = nil
-          raise error
+          raise error unless @update_fault_applied
+
+          lost = error
         end
         # Stripe replays an idempotency key, for the same parameters only: the
         # cached response, no mutation.
@@ -216,19 +269,34 @@ class FakeStripe
         end
         @subscription_updates << [ id, params, opts ]
         stored = stored_subscription(id)
-        stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
-        stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
+        # Stripe validates the whole request before changing anything: a
+        # change that would put one price on two items fails and leaves the
+        # subscription as it was.
+        planned = (stored[:all_items] || stored[:items][:data]).map(&:deep_dup)
         Array(params[:items]).each do |change|
-          item = stored[:items][:data].find { |row| row[:id] == change[:id] } ||
+          item = planned.find { |row| row[:id] == change[:id] } ||
             raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
           item[:price] = { id: change[:price] } if change[:price]
+          item[:price] = { price_data: change[:price_data] } if change[:price_data]
+          item[:metadata] = (item[:metadata] || {}).merge(change[:metadata].transform_keys(&:to_s)) if change[:metadata]
         end
+        refuse_shared_price!(planned)
+        planned.each do |item|
+          item[:price] = create_inline_price(item[:price][:price_data]) if item[:price].key?(:price_data)
+          item[:price] = price_object(item[:price][:id]) unless item[:price].key?(:object)
+        end
+        stored[:items][:data] = planned.first(stored[:items][:data].size)
+        stored[:all_items] = planned if stored.key?(:all_items)
+        stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
+        stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
         stored[:description] = params[:description] if params.key?(:description)
         response = construct(with_invoice(stored))
         if opts[:idempotency_key]
           @update_responses[opts[:idempotency_key]] = response
           @update_params[opts[:idempotency_key]] = [ id, params.deep_dup ]
         end
+        raise lost if lost
+
         response
       },
       cancel: lambda { |id|
@@ -351,6 +419,16 @@ class FakeStripe
     @subscriptions.fetch(id) { raise Stripe::InvalidRequestError.new("No such subscription", "id") }
   end
 
+  # Stripe's own refusal, word for word in its essentials.
+  def refuse_shared_price!(items)
+    ids = items.filter_map { |item| item[:price][:id] }
+    duplicate = ids.find { |id| ids.count(id) > 1 }
+    return unless duplicate
+
+    raise Stripe::InvalidRequestError.new("A new item with Price #{duplicate} can't be added to this Subscription because " \
+      "an existing Subscription Item is already using that Price.", "items")
+  end
+
   def with_invoice(subscription)
     subscription.merge(latest_invoice: { id: "in_#{subscription[:id]}", status: "open",
       confirmation_secret: { type: "payment_intent", client_secret: "pi_#{subscription[:id]}_secret" } })
@@ -370,6 +448,15 @@ class FakeStripe
     WORK_AT_COST_PRICE = "price_test_work_at_cost".freeze
     PARTNERS_PRICE = "price_test_account_partners".freeze
     COLLEAGUES_PRICE = "price_test_account_colleagues".freeze
+
+    # Catalogue prices as Stripe holds them: price id => [product, unit amount].
+    # A tier's standard and at-cost prices share its product.
+    CATALOGUE = {
+      CONVERSATION_PRICE => [ "prod_test_conversation", 2499 ], LIFE_PRICE => [ "prod_test_life", 4999 ],
+      WORK_PRICE => [ "prod_test_work", 9999 ], CONVERSATION_AT_COST_PRICE => [ "prod_test_conversation", 999 ],
+      LIFE_AT_COST_PRICE => [ "prod_test_life", 1999 ], WORK_AT_COST_PRICE => [ "prod_test_work", 3999 ],
+      PARTNERS_PRICE => [ "prod_test_partners", 1999 ], COLLEAGUES_PRICE => [ "prod_test_colleagues", 4999 ]
+    }.freeze
 
     STRIPE_ENV = {
       "STRIPE_SECRET_KEY" => "sk_test_fake", "STRIPE_WEBHOOK_SECRET" => "whsec_test_fake",
