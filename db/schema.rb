@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -28,7 +28,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_account_exports_on_account_id"
     t.index ["user_id"], name: "index_account_exports_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying, 'running'::character varying, 'ready'::character varying, 'failed'::character varying, 'expired'::character varying]::text[])", name: "account_exports_status"
+    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying::text, 'running'::character varying::text, 'ready'::character varying::text, 'failed'::character varying::text, 'expired'::character varying::text])", name: "account_exports_status"
   end
 
   create_table "account_imports", force: :cascade do |t|
@@ -45,7 +45,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_account_imports_on_account_id"
     t.index ["user_id"], name: "index_account_imports_on_user_id"
-    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying, 'validating'::character varying, 'previewed'::character varying, 'invalid'::character varying, 'importing'::character varying, 'imported'::character varying, 'failed'::character varying]::text[])", name: "account_imports_status"
+    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying::text, 'validating'::character varying::text, 'previewed'::character varying::text, 'invalid'::character varying::text, 'importing'::character varying::text, 'imported'::character varying::text, 'failed'::character varying::text])", name: "account_imports_status"
+  end
+
+  create_table "account_plan_checkout_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "create_params", null: false
+    t.string "idempotency_key", null: false
+    t.string "plan", null: false
+    t.datetime "resolved_at"
+    t.string "stripe_price_id", null: false
+    t.string "stripe_session_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_plan_checkout_attempts_on_account_id"
+    t.index ["account_id"], name: "one_unresolved_account_plan_checkout_per_account", unique: true, where: "(resolved_at IS NULL)"
+    t.index ["idempotency_key"], name: "index_account_plan_checkout_attempts_on_idempotency_key", unique: true
+    t.index ["stripe_session_id"], name: "index_account_plan_checkout_attempts_on_stripe_session_id", unique: true
+  end
+
+  create_table "account_subscriptions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "cancel_at_period_end", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "current_period_end"
+    t.datetime "last_synced_at"
+    t.datetime "past_due_since"
+    t.string "plan", null: false
+    t.integer "plan_changes_count", default: 0, null: false
+    t.string "stripe_price_id"
+    t.string "stripe_status", null: false
+    t.string "stripe_subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
+    t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
+    t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
+    t.check_constraint "plan::text = ANY (ARRAY['partners'::character varying::text, 'colleagues'::character varying::text])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "accounts", force: :cascade do |t|
@@ -96,42 +131,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
-    t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "accounts_granted_plan_known"
-  end
-
-  create_table "account_plan_checkout_attempts", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.datetime "created_at", null: false
-    t.jsonb "create_params", null: false
-    t.string "idempotency_key", null: false
-    t.string "plan", null: false
-    t.datetime "resolved_at"
-    t.string "stripe_price_id", null: false
-    t.string "stripe_session_id"
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_account_plan_checkout_attempts_on_account_id"
-    t.index ["account_id"], name: "one_unresolved_account_plan_checkout_per_account", unique: true, where: "(resolved_at IS NULL)"
-    t.index ["idempotency_key"], name: "index_account_plan_checkout_attempts_on_idempotency_key", unique: true
-    t.index ["stripe_session_id"], name: "index_account_plan_checkout_attempts_on_stripe_session_id", unique: true
-  end
-
-  create_table "account_subscriptions", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.boolean "cancel_at_period_end", default: false, null: false
-    t.datetime "created_at", null: false
-    t.datetime "current_period_end"
-    t.datetime "last_synced_at"
-    t.datetime "past_due_since"
-    t.string "plan", null: false
-    t.integer "plan_changes_count", default: 0, null: false
-    t.string "stripe_price_id"
-    t.string "stripe_status", null: false
-    t.string "stripe_subscription_id", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
-    t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY ((ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying])::text[]))"
-    t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
-    t.check_constraint "plan::text = ANY (ARRAY['partners'::character varying, 'colleagues'::character varying]::text[])", name: "account_subscriptions_plan_paid"
+    t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_granted_plan_known"
   end
 
   create_table "action_mcp_session_messages", force: :cascade do |t|
@@ -596,7 +596,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true
     t.index ["uuid"], name: "index_agents_on_uuid", unique: true
-    t.check_constraint "first_conversation_greeting IS NULL OR (first_conversation_greeting::text = ANY (ARRAY['owed'::character varying, 'sent'::character varying, 'spent'::character varying, 'skipped'::character varying]::text[]))", name: "agents_first_conversation_greeting_values"
+    t.check_constraint "first_conversation_greeting IS NULL OR (first_conversation_greeting::text = ANY (ARRAY['owed'::character varying::text, 'sent'::character varying::text, 'spent'::character varying::text, 'skipped'::character varying::text]))", name: "agents_first_conversation_greeting_values"
     t.check_constraint "turn_timeout_minutes >= 1 AND turn_timeout_minutes <= 1440", name: "agents_turn_timeout_minutes_range"
   end
 
@@ -914,9 +914,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["source_message_id"], name: "index_commitments_on_source_message_id"
     t.index ["status", "due_at"], name: "index_commitments_on_status_and_due_at"
     t.index ["wake_interaction_id"], name: "index_commitments_on_wake_interaction_id"
-    t.index ["wake_state"], name: "idx_commitments_wake_in_custody", where: "((wake_state)::text = ANY ((ARRAY['woken'::character varying, 'held'::character varying, 'retrying'::character varying])::text[]))"
-    t.check_constraint "destination::text = ANY (ARRAY['same_conversation'::character varying, 'new_conversation'::character varying]::text[])", name: "commitments_destination"
-    t.check_constraint "status::text = ANY (ARRAY['scheduled'::character varying, 'activated'::character varying, 'cancelled'::character varying]::text[])", name: "commitments_status"
+    t.index ["wake_state"], name: "idx_commitments_wake_in_custody", where: "((wake_state)::text = ANY (ARRAY[('woken'::character varying)::text, ('held'::character varying)::text, ('retrying'::character varying)::text]))"
+    t.check_constraint "destination::text = ANY (ARRAY['same_conversation'::character varying::text, 'new_conversation'::character varying::text])", name: "commitments_destination"
+    t.check_constraint "status::text = ANY (ARRAY['scheduled'::character varying::text, 'activated'::character varying::text, 'cancelled'::character varying::text])", name: "commitments_status"
   end
 
   create_table "comms_chats", force: :cascade do |t|
@@ -2456,7 +2456,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.jsonb "item_quote"
     t.datetime "item_submitted_at"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
-    t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY ((ARRAY['pending'::character varying, 'born'::character varying, 'failed'::character varying])::text[])))"
+    t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('born'::character varying)::text, ('failed'::character varying)::text])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
     t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
@@ -2466,8 +2466,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
   create_table "resident_entitlements", force: :cascade do |t|
@@ -2494,7 +2494,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2580,7 +2580,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_id"], name: "one_unitemised_row_per_subscription", unique: true, where: "(stripe_subscription_item_id IS NULL)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -2633,7 +2633,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["rhythm_id", "user_id"], name: "index_rhythm_holds_one_open_human", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'human'::text))"
     t.index ["rhythm_id"], name: "index_rhythm_holds_on_rhythm_id"
     t.index ["user_id"], name: "index_rhythm_holds_on_user_id"
-    t.check_constraint "(kind::text = ANY (ARRAY['human'::character varying, 'agent'::character varying]::text[])) OR released_at IS NOT NULL", name: "rhythm_holds_open_kind_known"
+    t.check_constraint "(kind::text = ANY (ARRAY['human'::character varying::text, 'agent'::character varying::text])) OR released_at IS NOT NULL", name: "rhythm_holds_open_kind_known"
   end
 
   create_table "rhythm_occurrences", force: :cascade do |t|
@@ -2688,7 +2688,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["next_run_at"], name: "index_rhythms_on_next_run_at"
     t.index ["room_id"], name: "index_rhythms_on_room_id"
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
-    t.check_constraint "room_choice::text = ANY (ARRAY['resident_default'::character varying, 'main'::character varying, 'room'::character varying]::text[])", name: "rhythms_room_choice_known"
+    t.check_constraint "room_choice::text = ANY (ARRAY['resident_default'::character varying::text, 'main'::character varying::text, 'room'::character varying::text])", name: "rhythms_room_choice_known"
   end
 
   create_table "room_model_defaults", force: :cascade do |t|
@@ -2746,7 +2746,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["resident_turn_id"], name: "index_runner_commands_on_resident_turn_id"
     t.index ["runner_enrollment_id", "state", "id"], name: "index_runner_commands_on_runner_enrollment_id_and_state_and_id"
     t.index ["runner_enrollment_id"], name: "index_runner_commands_on_runner_enrollment_id"
-    t.check_constraint "seed_role IS NULL OR kind::text = 'seed_home'::text AND (seed_role::text = ANY (ARRAY['identity'::character varying, 'repo'::character varying, 'work'::character varying]::text[]))", name: "runner_commands_seed_role"
+    t.check_constraint "seed_role IS NULL OR kind::text = 'seed_home'::text AND (seed_role::text = ANY (ARRAY['identity'::character varying::text, 'repo'::character varying::text, 'work'::character varying::text]))", name: "runner_commands_seed_role"
   end
 
   create_table "runner_enrollments", force: :cascade do |t|
@@ -3281,6 +3281,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
     t.index ["search_vector"], name: "index_whiteboards_on_search_vector", using: :gin
   end
 
+  create_table "work_completion_permissions", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.bigint "user_id", null: false
+    t.integer "work_revision", null: false
+    t.boolean "auto_close", default: false, null: false
+    t.datetime "revoked_at"
+    t.datetime "consumed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_id", "work_revision"], name: "index_work_completion_permissions_on_chat_id_and_work_revision"
+    t.index ["chat_id"], name: "index_work_completion_permissions_on_chat_id"
+    t.index ["user_id"], name: "index_work_completion_permissions_on_user_id"
+  end
+
+  create_table "work_completions", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.bigint "message_id", null: false
+    t.bigint "agent_id"
+    t.bigint "user_id"
+    t.string "request_key", null: false
+    t.integer "source_revision", null: false
+    t.integer "review_revision", null: false
+    t.text "changes_summary", null: false
+    t.text "result", null: false
+    t.text "checks", null: false
+    t.text "remaining", null: false
+    t.bigint "accepted_by_id"
+    t.datetime "accepted_at"
+    t.integer "accepted_revision"
+    t.jsonb "closure_blocked"
+    t.datetime "closed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["accepted_by_id"], name: "index_work_completions_on_accepted_by_id"
+    t.index ["agent_id"], name: "index_work_completions_on_agent_id"
+    t.index ["chat_id", "request_key"], name: "index_work_completions_on_chat_id_and_request_key", unique: true
+    t.index ["chat_id"], name: "index_work_completions_on_chat_id"
+    t.index ["message_id"], name: "index_work_completions_on_message_id"
+    t.index ["user_id"], name: "index_work_completions_on_user_id"
+  end
+
   create_table "x_integrations", force: :cascade do |t|
     t.text "access_token"
     t.bigint "account_id", null: false
@@ -3621,5 +3662,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
   add_foreign_key "watched_repositories", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "whiteboards", "accounts"
+  add_foreign_key "work_completion_permissions", "chats"
+  add_foreign_key "work_completion_permissions", "users"
+  add_foreign_key "work_completions", "agents"
+  add_foreign_key "work_completions", "chats"
+  add_foreign_key "work_completions", "messages"
+  add_foreign_key "work_completions", "users"
+  add_foreign_key "work_completions", "users", column: "accepted_by_id"
   add_foreign_key "x_integrations", "accounts"
 end

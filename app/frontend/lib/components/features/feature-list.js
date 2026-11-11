@@ -701,6 +701,13 @@ export const moreFeatures = [
     icon: Eye,
   },
   {
+    key: 'work-completion',
+    title: 'A handoff before closure',
+    description:
+      'Save a structured completion handoff, then accept that exact work revision or authorise it once without another review. Closure checks for unanswered requests and pending promises even after human acceptance; blocked closure keeps the handoff and accepted work visible.',
+    icon: Eye,
+  },
+  {
     key: 'rooms',
     title: 'Rooms for different parts of life',
     description:
