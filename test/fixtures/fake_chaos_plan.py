@@ -15,6 +15,7 @@ try:
 except (OSError, ValueError):
     state = {"workspaces": [], "plans": {}, "attachments": {}}
 args = sys.argv[1:]
+PAGE = 50
 MOVES = {"start": ("pending", "in_progress"), "complete": ("in_progress", "completed"),
          "block": ("in_progress", "blocked"), "unblock": ("blocked", "in_progress"),
          "cancel": (None, "cancelled")}
@@ -36,10 +37,13 @@ def find(ref):
     fail("plan not found")
 
 
-def view(plan):
+def view(plan, offset=0):
+    """Pages of 50 tasks with next_offset, as the real `chaos plan read` does."""
     head = {key: plan[key] for key in ("id", "reference", "title", "status", "revision")}
+    tasks = [dict(task, depth=task.get("depth", 0)) for task in plan["tasks"]]
+    more = offset + PAGE < len(tasks)
     return {"capabilities": {"available": True}, "plan": head,
-            "tasks": [dict(task, depth=0) for task in plan["tasks"]], "next_offset": None}
+            "tasks": tasks[offset:offset + PAGE], "next_offset": offset + PAGE if more else None}
 
 
 if args[:2] == ["workspace", "list"]:
@@ -50,7 +54,8 @@ elif args[:2] == ["workspace", "create"]:
     save()
     print(json.dumps(item))
 elif args[:2] == ["plan", "read"]:
-    print(json.dumps(view(find(args[-1]))))
+    offset = int(args[args.index("--offset") + 1]) if "--offset" in args else 0
+    print(json.dumps(view(find(args[-1]), offset)))
 elif args[:2] == ["plan", "attach"]:
     state["attachments"][args[2]] = find(args[3])["id"]
     save()

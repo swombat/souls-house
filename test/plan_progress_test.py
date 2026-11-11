@@ -184,6 +184,65 @@ class ReporterPlanTest(unittest.TestCase):
         self.run_with(self.reporter(str(uuid.uuid4())), stream)
         self.assertEqual([], self.plans())
 
+    def native(self, action, **fields):
+        """Change the newest plan through Chaos itself, not the helper."""
+        plan = sorted(self.chaos.state()["plans"].values(), key=lambda p: p["reference"])[-1]
+        body = {"request_id": str(uuid.uuid4()), "plan": plan["id"], "expected_revision": plan["revision"],
+                "action": action, "reason": "done natively", **fields}
+        result = subprocess.run([str(self.chaos.bin), "plan", "change", json.dumps(body)], capture_output=True,
+                                text=True, env=self.chaos.env, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_a_plan_ended_through_chaos_itself_shows_on_its_run_and_not_after(self):
+        started = str(uuid.uuid4())
+        self.chaos.plan("start", "Old job", "a", thread="session-1", run=started)
+        self.chaos.plan("tick", thread="session-1", run=started)
+        self.native("complete")
+        stream = [{"type": "process.started", "process_id": "session-1"}, {"type": "turn.started"}]
+        self.run_with(self.reporter(started), stream)
+        self.assertEqual({"title": "Old job", "status": "completed", "steps": [{"text": "a", "status": "completed"}]},
+                         self.plans()[-1], "the run that ended it keeps its last state")
+        for _ in range(2):
+            self.packets.clear()
+            self.run_with(self.reporter(str(uuid.uuid4())), stream)
+            self.assertEqual([], self.plans(), "a later, unrelated run carries no old plan")
+
+    def test_a_plan_ended_through_chaos_between_runs_follows_no_run(self):
+        earlier = str(uuid.uuid4())
+        self.chaos.plan("start", "Old job", "a", thread="session-1", run=earlier)
+        self.chaos.plan("tick", thread="session-1", run=earlier)
+        self.native("cancel")
+        stream = [{"type": "process.started", "process_id": "session-1"}, {"type": "turn.started"}]
+        self.run_with(self.reporter(str(uuid.uuid4())), stream)
+        self.assertEqual([], self.plans())
+        pointer = json.loads((self.chaos.home / "house-plans" / "thread-session-1.json").read_text())
+        self.assertIn("ended_run_id", pointer, "the pointer is settled so later runs stop reading it")
+        started = self.chaos.plan("start", "New job", "x", thread="session-1", run=earlier)
+        self.assertEqual(0, started.returncode, started.stderr)
+
+    def test_a_plan_longer_than_one_page_is_read_whole(self):
+        run = str(uuid.uuid4())
+        steps = [f"step {n}" for n in range(1, 52)]
+        self.chaos.plan("start", "Long", *steps, thread="session-1", run=run)
+        self.run_with(self.reporter(run), [{"type": "process.started", "process_id": "session-1"},
+                                           {"type": "turn.started"}])
+        plan = self.plans()[-1]
+        self.assertEqual(steps, [step["text"] for step in plan["steps"]])
+        self.assertEqual(["in_progress"] + ["pending"] * 50, [step["status"] for step in plan["steps"]])
+
+    def test_a_plan_whose_pages_cannot_all_be_read_is_not_sent(self):
+        run = str(uuid.uuid4())
+        self.chaos.plan("start", "Long", *[f"s{n}" for n in range(60)], thread="session-1", run=run)
+        reporter = self.reporter(run)
+        original = module.PLAN_READ_PAGES
+        module.PLAN_READ_PAGES = 1
+        try:
+            self.run_with(reporter, [{"type": "process.started", "process_id": "session-1"},
+                                     {"type": "turn.started"}])
+        finally:
+            module.PLAN_READ_PAGES = original
+        self.assertEqual([], self.plans(), "a partial plan would miscount, so nothing is sent")
+
     def test_a_run_without_a_plan_sends_no_plan(self):
         self.run_with(self.reporter(str(uuid.uuid4())), [{"type": "process.started", "process_id": "session-9"},
                                                           {"type": "turn.started"}])

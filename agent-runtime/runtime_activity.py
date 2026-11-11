@@ -33,6 +33,9 @@ ACK_MAX_BYTES = 262_144
 PLAN_POINTER_DIR = "house-plans"
 PLAN_TASK_STATUSES = frozenset(("pending", "in_progress", "blocked", "completed", "cancelled"))
 PLAN_READ_TIMEOUT = 5
+# Chaos pages `plan read` at 50 tasks; the helper allows 100 steps, and
+# nested tasks take page slots too.
+PLAN_READ_PAGES = 10
 
 
 def is_work_event(event):
@@ -105,6 +108,7 @@ class Reporter:
         self.plan_bin = "chaos"
         self.last_plan = None
         self.plan_reading = threading.Lock()
+        self.plans_seen_open = set()
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -228,7 +232,8 @@ class Reporter:
 
     def plan_pointer(self):
         """The plan soulshouse-plan left for this run, else for this session.
-        A plan that ended is shown only on the run that ended it."""
+        A plan that ended is shown only on the run that ended it. Returns
+        (plan_id, pointer path, pointer data) or None."""
         env = self.plan_env or {}
         home = Path(env.get("CHAOS_HOME") or Path.home() / ".chaos") / PLAN_POINTER_DIR
         names = [f"run-{self.run_id}.json"]
@@ -243,8 +248,50 @@ class Reporter:
                 continue
             if "ended_run_id" in data and data["ended_run_id"] != self.run_id:
                 continue
-            return data["plan_id"]
+            return data["plan_id"], home / name, data
         return None
+
+    def read_plan(self, plan_id):
+        """Every page of `chaos plan read` (50 tasks a page, nested ones
+        included), or None if any page fails or the plan cannot be read whole
+        within the bound. A partial plan would miscount the card."""
+        deadline = time.monotonic() + PLAN_READ_TIMEOUT
+        data, tasks, offset, previous = None, [], 0, 0
+        for _ in range(PLAN_READ_PAGES):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            args = [self.plan_bin, "plan", "read"] + (["--offset", str(offset)] if offset else []) + [plan_id]
+            proc = subprocess.run(args, capture_output=True, env=self.plan_env, timeout=remaining,
+                                  stdin=subprocess.DEVNULL)
+            if proc.returncode != 0 or len(proc.stdout) > 1024 * 1024:
+                return None
+            page = json.loads(proc.stdout)
+            if not isinstance(page, dict) or not isinstance(page.get("tasks"), list):
+                return None
+            data = data or page
+            tasks.extend(page["tasks"])
+            offset = page.get("next_offset")
+            if offset is None:
+                return dict(data, tasks=tasks)
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset <= previous:
+                return None
+            previous = offset
+        return None
+
+    @staticmethod
+    def settle_pointer(path, plan_id, ended_run_id):
+        """Mark a pointer whose plan Chaos ended without the helper (its own
+        plan tool, or `chaos plan change`), so later runs stop reading it."""
+        try:
+            current = json.loads(path.read_text())
+            if not isinstance(current, dict) or current.get("plan_id") != plan_id or "ended_run_id" in current:
+                return
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_text(json.dumps(dict(current, ended_run_id=ended_run_id)))
+            os.replace(tmp, path)
+        except (OSError, ValueError):
+            pass
 
     def poll_plan(self, wait=False):
         """Read the pointed-to plan with `chaos plan read` and send it if it
@@ -252,18 +299,31 @@ class Reporter:
         how a clamped resident's ticks reach the card. Never raises."""
         if not self.share or self.plan_env is None:
             return
-        plan_id = self.plan_pointer()
-        if not plan_id:
+        pointer = self.plan_pointer()
+        if not pointer:
             return
+        plan_id, path, data = pointer
         if not self.plan_reading.acquire(blocking=wait):
             return
 
         def read():
             try:
-                proc = subprocess.run([self.plan_bin, "plan", "read", plan_id], capture_output=True,
-                                      env=self.plan_env, timeout=PLAN_READ_TIMEOUT, stdin=subprocess.DEVNULL)
-                if proc.returncode == 0 and len(proc.stdout) <= 1024 * 1024:
-                    self.send_plan(self.plan_payload(json.loads(proc.stdout)))
+                payload = self.plan_payload(self.read_plan(plan_id))
+                if not payload:
+                    return
+                if payload["status"] == "active":
+                    self.plans_seen_open.add(plan_id)
+                elif "ended_run_id" not in data:
+                    # Ended outside the helper. It is this run's ending only if
+                    # this run started the plan or saw it open; otherwise it
+                    # ended before this run and must not follow onto it.
+                    run_pointer = path.with_name(f"run-{self.run_id}.json")
+                    mine = path == run_pointer or plan_id in self.plans_seen_open
+                    for pointer_path in {path, run_pointer}:
+                        self.settle_pointer(pointer_path, plan_id, self.run_id if mine else None)
+                    if not mine:
+                        return
+                self.send_plan(payload)
             except (OSError, ValueError, subprocess.SubprocessError):
                 pass
             finally:
