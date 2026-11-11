@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -706,6 +706,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_150000) do
     t.datetime "resolved_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "kind", default: "checkout", null: false
+    t.string "stripe_subscription_id"
+    t.string "stripe_subscription_item_id"
+    t.jsonb "quote"
+    t.datetime "submitted_at"
     t.index ["account_id"], name: "index_billing_checkout_attempts_on_account_id"
     t.index ["agent_id"], name: "index_billing_checkout_attempts_on_agent_id"
     t.index ["agent_id"], name: "one_unresolved_checkout_per_resident", unique: true, where: "(resolved_at IS NULL)"

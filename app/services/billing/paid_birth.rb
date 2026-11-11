@@ -342,7 +342,10 @@ module Billing
     # the subscription is brought in so the plan is in force. Repeatable.
     def link!(order)
       remote = @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
-      if remote.metadata["agent_id"].to_s != order.agent_id.to_s
+      # Once the subscription is the account's (Billing::AddItem converted
+      # it), its metadata names no resident: the item carries the order's
+      # provenance, and an old retry must not write a resident back on top.
+      if remote.metadata["kind"] != "account" && remote.metadata["agent_id"].to_s != order.agent_id.to_s
         @client.v1.subscriptions.update(remote.id, {
           metadata: { agent_id: order.agent_id.to_s, birth_order: order.reference },
           description: "#{order.offer.name} hosting for #{order.agent.name}"

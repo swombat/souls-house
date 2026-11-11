@@ -273,7 +273,17 @@ class FakeStripe
         # change that would put one price on two items fails and leaves the
         # subscription as it was.
         planned = (stored[:all_items] || stored[:items][:data]).map(&:deep_dup)
+        shown = stored[:items][:data].size
         Array(params[:items]).each do |change|
+          if change[:id].nil?
+            # A new item, as Billing::AddItem adds a resident.
+            planned << { id: "si_#{id}_added_#{planned.size}", quantity: change[:quantity] || 1,
+                         price: change[:price_data] ? { price_data: change[:price_data] } : { id: change[:price] },
+                         metadata: (change[:metadata] || {}).transform_keys(&:to_s),
+                         current_period_end: planned.first&.dig(:current_period_end) || 1.month.from_now.to_i }
+            shown += 1 unless stored[:items][:has_more]
+            next
+          end
           item = planned.find { |row| row[:id] == change[:id] } ||
             raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
           item[:price] = { id: change[:price] } if change[:price]
@@ -285,7 +295,7 @@ class FakeStripe
           item[:price] = create_inline_price(item[:price][:price_data]) if item[:price].key?(:price_data)
           item[:price] = price_object(item[:price][:id]) unless item[:price].key?(:object)
         end
-        stored[:items][:data] = planned.first(stored[:items][:data].size)
+        stored[:items][:data] = planned.first(shown)
         stored[:all_items] = planned if stored.key?(:all_items)
         stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
         stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
@@ -413,7 +423,38 @@ class FakeStripe
 
   def subscriptions = subscriptions_service
 
+  # What a price costs a month, in cents, for invoice previews.
+  def price_amounts = (@price_amounts ||= Hash.new(1_000))
+
+  # The part-period a preview charges for an added item, in cents.
+  attr_writer :proration_amount
+
+  attr_reader :previews
+
+  # Stripe's preview of the next invoice if the subscription took these
+  # items: next period's charge for every item, plus a proration line for
+  # each item being added.
+  def invoices
+    Invoices.new(self)
+  end
+
+  Invoices = Struct.new(:fake) do
+    def create_preview(params = {}, *) = fake.send(:preview_invoice, params)
+  end
+
   private
+
+  def preview_invoice(params)
+    (@previews ||= []) << params.deep_dup
+    stored = stored_subscription(params[:subscription])
+    items = (stored[:all_items] || stored[:items][:data]).map { |item| item[:price][:id] }
+    added = Array(params.dig(:subscription_details, :items)).select { |item| item[:id].nil? }.map { |item| item[:price] }
+    lines = (items + added).map { |price| { amount: price_amounts[price], proration: false } }
+    lines += added.map { |_price| { amount: @proration_amount || 500, proration: true } }
+    construct(object: "invoice", currency: "usd", total: lines.sum { |line| line[:amount] },
+      next_payment_attempt: (stored[:items][:data].first || {})[:current_period_end],
+      lines: { object: "list", data: lines })
+  end
 
   def stored_subscription(id)
     @subscriptions.fetch(id) { raise Stripe::InvalidRequestError.new("No such subscription", "id") }
