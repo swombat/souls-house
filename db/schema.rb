@@ -2557,6 +2557,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_150000) do
     t.integer "plan_changes_count", default: 0, null: false
     t.datetime "trial_end"
     t.string "stripe_subscription_item_id"
+    t.datetime "untrusted_since"
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"

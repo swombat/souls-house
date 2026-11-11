@@ -74,7 +74,7 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     keys = @stripe.subscription_updates.map { |_id, _params, opts| opts[:idempotency_key] }
     assert_equal 4, keys.size
     assert_equal 4, keys.uniq.size
-    assert_equal %w[1 2 3 4], keys.map { |key| key[/-sub_1-(\d+)-/, 1] }
+    assert_equal %w[1 2 3 4], keys.map { |key| key[/-sub_1-si_sub_1-(\d+)-/, 1] }
     assert_equal "conversation", ResidentEntitlement.find_by!(agent: @agent).tier
     assert_equal 4, ResidentSubscription.find_by!(stripe_subscription_id: "sub_1").plan_changes_count
   end
@@ -88,7 +88,7 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
 
     change!("life")
     _id, _params, opts = @stripe.subscription_updates.sole
-    assert_equal "souls-house-plan-change-sub_1-2-#{CONVERSATION_PRICE}-#{LIFE_PRICE}", opts[:idempotency_key]
+    assert_equal "souls-house-plan-change-sub_1-si_sub_1-2-#{CONVERSATION_PRICE}-#{LIFE_PRICE}", opts[:idempotency_key]
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier
   end
 
@@ -116,7 +116,7 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     @stripe.instance_variable_set(:@recovered, true)
     change!("conversation")
     keys = @stripe.subscription_updates.map { |_id, _params, opts| opts[:idempotency_key] }
-    assert_equal %w[1 2], keys.map { |key| key[/-sub_1-(\d+)-/, 1] }
+    assert_equal %w[1 2], keys.map { |key| key[/-sub_1-si_sub_1-(\d+)-/, 1] }
     assert_equal CONVERSATION_PRICE, @stripe.subscription("sub_1")[:items][:data].first[:price][:id]
     assert_equal "conversation", ResidentEntitlement.find_by!(agent: @agent).tier
     assert_not @stripe.subscription_updates.last[2][:replayed], "performed, not replayed"
@@ -149,12 +149,17 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     assert_equal 1, @stripe.subscription_updates.size, "Stripe was not updated again"
   end
 
-  test "a replayed key performs nothing: the fake, like Stripe, returns the cached answer" do
+  test "a replayed key performs nothing, and only for the same parameters: the fake, like Stripe" do
     paid!(CONVERSATION_PRICE)
     @stripe.v1.subscriptions.update("sub_1", { items: [ { id: "si_sub_1", price: LIFE_PRICE } ] }, { idempotency_key: "k" })
-    @stripe.v1.subscriptions.update("sub_1", { items: [ { id: "si_sub_1", price: WORK_PRICE } ] }, { idempotency_key: "k" })
+    @stripe.v1.subscriptions.update("sub_1", { items: [ { id: "si_sub_1", price: LIFE_PRICE } ] }, { idempotency_key: "k" })
     assert_equal LIFE_PRICE, @stripe.subscription("sub_1")[:items][:data].first[:price][:id]
     assert @stripe.subscription_updates.last[2][:replayed]
+
+    assert_raises(Stripe::IdempotencyError) do
+      @stripe.v1.subscriptions.update("sub_1", { items: [ { id: "si_sub_1", price: WORK_PRICE } ] }, { idempotency_key: "k" })
+    end
+    assert_equal LIFE_PRICE, @stripe.subscription("sub_1")[:items][:data].first[:price][:id]
   end
 
 end

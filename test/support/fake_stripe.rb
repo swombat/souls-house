@@ -32,6 +32,7 @@ class FakeStripe
     @created_subscriptions = []
     @subscription_updates = []
     @update_responses = {}
+    @update_params = {}
     @cancelled_subscriptions = []
   end
 
@@ -203,8 +204,13 @@ class FakeStripe
           @update_fault = nil
           raise error
         end
-        # Stripe replays an idempotency key: the cached response, no mutation.
+        # Stripe replays an idempotency key, for the same parameters only: the
+        # cached response, no mutation.
         if (key = opts[:idempotency_key]) && (cached = @update_responses[key])
+          unless @update_params[key] == [ id, params ]
+            raise Stripe::IdempotencyError.new("Keys for idempotent requests can only be used with the same parameters they " \
+              "were first used with.")
+          end
           @subscription_updates << [ id, params, opts.merge(replayed: true) ]
           next cached
         end
@@ -219,7 +225,10 @@ class FakeStripe
         end
         stored[:description] = params[:description] if params.key?(:description)
         response = construct(with_invoice(stored))
-        @update_responses[opts[:idempotency_key]] = response if opts[:idempotency_key]
+        if opts[:idempotency_key]
+          @update_responses[opts[:idempotency_key]] = response
+          @update_params[opts[:idempotency_key]] = [ id, params.deep_dup ]
+        end
         response
       },
       cancel: lambda { |id|

@@ -71,8 +71,10 @@ module Billing
       # A subscription that is this resident alone describes it; one shared
       # by the account's residents doesn't.
       params.merge!(description: "#{offer.name} hosting for #{@agent.name}", metadata: { tier: offer.tier.id }) if single
+      # The item is in the key: two residents on one subscription can make the
+      # same change at the same count, and each is its own mutation.
       @client.v1.subscriptions.update(remote_id, params,
-        { idempotency_key: "souls-house-plan-change-#{remote_id}-#{count}-#{from}-#{offer.price_id}" })
+        { idempotency_key: "souls-house-plan-change-#{remote_id}-#{item_id}-#{count}-#{from}-#{offer.price_id}" })
       sync_class.new(remote_id, client: @client).call(agent: @agent)
     end
 

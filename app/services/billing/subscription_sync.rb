@@ -15,8 +15,11 @@
 # the house's record or another item, a resident already paid for elsewhere)
 # is still present: it is never treated as removed and never grants anything.
 # Its row, if it has one, may only follow the subscription down (past_due,
-# ended), so it can't outlive the money. The valid items around it still
-# sync; the problem is raised after they commit, so the event is reported.
+# ended), so it can't outlive the money. While the subscription stays live,
+# what the row already granted stands for Billing::GRACE_PERIOD from when it
+# was first found unreadable (a replay doesn't move that), then ends, here or
+# in Billing::SweepJob. The valid items around it still sync; the problem is
+# raised after they commit, so the event is reported.
 #
 # A recorded item missing from the complete item list was removed: its
 # resident's plan ends.
@@ -198,19 +201,27 @@ module Billing
         # cancels without a card. Kept after the trial for the record.
         trial_end: remote[:trial_end] ? Time.zone.at(remote[:trial_end]) : row.trial_end,
         cancel_at_period_end: remote.cancel_at_period_end ? true : false,
+        untrusted_since: nil,
         last_synced_at: @now
       )
       row.save!
       row
     end
 
-    # An untrusted item's row only ever follows the subscription down.
+    # An untrusted item's row only ever follows the subscription down, and
+    # while the subscription stays live it is held for at most grace.
     def follow_down!(remote, row)
       return if row.stripe_subscription_id != remote.id
-      return unless remote.status.in?(DOWNGRADES) && row.stripe_status != remote.status
 
-      row.update!(stripe_status: remote.status, last_synced_at: @now)
-      ResidentEntitlement.for_agent!(row.agent).apply_subscription!(row, now: @now)
+      if remote.status.in?(DOWNGRADES)
+        return if row.stripe_status == remote.status
+
+        row.update!(stripe_status: remote.status, last_synced_at: @now)
+        ResidentEntitlement.for_agent!(row.agent).apply_subscription!(row, now: @now)
+      elsif row.live?
+        row.update!(untrusted_since: @now) if row.untrusted_since.nil?
+        ResidentEntitlement.for_agent!(row.agent).expire_untrusted!(row, now: @now)
+      end
     end
 
     # Recorded items the subscription no longer has were removed.

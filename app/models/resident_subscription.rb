@@ -19,11 +19,15 @@ class ResidentSubscription < ApplicationRecord
   validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :live, -> { where(stripe_status: LIVE_STATUSES) }
+  # Live rows whose item the sync couldn't read for longer than grace.
+  scope :untrusted_expired, ->(now = Time.current) { live.where(untrusted_since: ..(now - Billing::GRACE_PERIOD)) }
 
   def live? = stripe_status.in?(LIVE_STATUSES)
   def paid? = stripe_status.in?(PAID_STATUSES)
   def ended? = stripe_status.in?(ENDED_STATUSES)
   def trialing? = stripe_status == "trialing"
+
+  def untrusted_expired?(now = Time.current) = untrusted_since.present? && untrusted_since + Billing::GRACE_PERIOD <= now
 
   # When the free trial ends, while it runs; nil otherwise.
   def trial_ends_at = trialing? ? trial_end : nil

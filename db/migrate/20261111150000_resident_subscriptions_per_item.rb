@@ -6,10 +6,16 @@
 #
 # billing_customers.stripe_subscription_id is the account's one subscription,
 # once it has one; nothing reads it yet.
+#
+# untrusted_since: when the sync first found this row's item present but
+# unreadable (an unknown price, a contradicting binding) while its
+# subscription was still live. What the row granted stands for at most
+# Billing::GRACE_PERIOD from then; a readable sync clears it.
 class ResidentSubscriptionsPerItem < ActiveRecord::Migration[8.1]
 
   def change
     add_column :resident_subscriptions, :stripe_subscription_item_id, :string
+    add_column :resident_subscriptions, :untrusted_since, :datetime
     add_index :resident_subscriptions, :stripe_subscription_item_id, unique: true,
       where: "stripe_subscription_item_id IS NOT NULL"
 
