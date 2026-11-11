@@ -58,11 +58,46 @@ class Billing::AddItemTest < ActiveSupport::TestCase
     added = attempt.create_params["items"].sole
     assert_equal CONVERSATION_PRICE, added["price"]
     assert_equal({ "agent_id" => @b.id.to_s, "account_id" => @account.id.to_s, "tier" => "conversation",
-                   "checkout_attempt" => attempt.idempotency_key }, added["metadata"])
+                   "checkout_attempt" => attempt.idempotency_key, "catalogue_price" => CONVERSATION_PRICE }, added["metadata"])
     assert_equal "create_prorations", attempt.create_params["proration_behavior"]
     assert attempt.create_params["proration_date"].present?, "the part-period is pinned to the quote"
     assert_nil attempt.create_params["metadata"], "an account subscription needs no conversion"
-    assert_equal [ 700, 5_500, 6_200, "usd" ], attempt.quote.values_at("prorated", "recurring", "next_total", "currency")
+    assert_equal [ 2_200, 6_200, 5_500, "usd" ], attempt.quote.values_at("added_next", "next_total", "recurring_total", "currency")
+  end
+
+  test "a second resident on a taken tier is added with an inline copy of the catalogue price" do
+    shared([ { agent: @a, price: CONVERSATION_PRICE, id: "si_a" } ])
+
+    attempt = quote(@b)
+    added = attempt.create_params["items"].sole
+    assert_nil added["price"]
+    assert_equal({ "product" => "prod_test_conversation", "currency" => "usd", "unit_amount" => 2499,
+                   "recurring" => { "interval" => "month", "interval_count" => 1 }, "tax_behavior" => "exclusive" },
+      added["price_data"])
+    assert_equal CONVERSATION_PRICE, added["metadata"]["catalogue_price"]
+
+    row = confirm(@b, attempt)
+    assert_equal [ "conversation", "standard" ], [ row.tier, row.rate ]
+    assert_match(/\Aprice_inline_/, row.stripe_price_id)
+    assert entitlement(@b).active?
+  end
+
+  test "the quote is Stripe's totals: one-off charges, tax and discounts in, and the month without the one-offs" do
+    shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" } ])
+    @stripe.proration_amount = 700
+    @stripe.put_pending_invoice_item("cus_1", 300)
+    @stripe.tax_percent = 10
+    @stripe.amount_off = 200
+    @stripe.preview_line_page = 1 # every preview has more lines than it embeds
+    billed = ->(subtotal) { (subtotal - 200) + ((subtotal - 200) * 0.10).round }
+
+    shown = quote(@b).quote
+
+    assert_equal billed.(4999 + 2499 + 700 + 300), shown["next_total"], "the whole next bill, one-off included"
+    assert_equal billed.(4999 + 2499 + 700 + 300) - billed.(4999 + 300), shown["added_next"]
+    assert_equal billed.(4999 + 2499), shown["recurring_total"], "a month for everyone: no part-period, no one-off"
+    assert_equal "none", @stripe.previews.last.dig(:subscription_details, :proration_behavior),
+      "Stripe's recurring estimate refuses prorations"
   end
 
   test "confirming sends the pinned update once and the resident's plan is in force on its item" do
@@ -200,7 +235,7 @@ class Billing::AddItemTest < ActiveSupport::TestCase
     assert_raises(Billing::NotReady) { quote(@b) }
 
     # Had Stripe applied it, the item carrying the key is the answer.
-    late = { id: "si_late", price: { id: CONVERSATION_PRICE }, quantity: 1, current_period_end: 1.month.from_now.to_i,
+    late = { id: "si_late", price: @stripe.price_object(CONVERSATION_PRICE), quantity: 1, current_period_end: 1.month.from_now.to_i,
              metadata: { "agent_id" => @b.id.to_s, "checkout_attempt" => attempt.idempotency_key } }
     items << late
     shown = @stripe.subscription("sub_acct")[:items][:data]

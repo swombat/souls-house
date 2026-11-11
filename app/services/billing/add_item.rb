@@ -3,6 +3,10 @@
 # eoXAEj slice 2a). The part-period goes on the next invoice
 # (create_prorations); nothing is charged on the day.
 #
+# Stripe allows a price once per subscription, so the new item carries its
+# offer's catalogue price or, when another resident already holds it, an
+# inline copy (Billing::ItemPrice), decided when the quote pins the update.
+#
 #   quote    under the account lock: brings the parent subscription in, checks
 #            it can carry another resident on credit, pins the exact update
 #            (payload, proration date, idempotency key) on a new attempt, and
@@ -54,6 +58,7 @@ module Billing
     def initialize(agent:, tier: nil, rate: "standard", client: Billing.client, now: Time.current)
       @agent, @client, @now = agent, client, now
       @offer = tier&.offer(rate)
+      @prices = ItemPrice.new(client: client)
     end
 
     # Returns the attempt, unsent, with its quote.
@@ -206,7 +211,8 @@ module Billing
       metadata.merge!(rate: @offer.rate, redemption_id: grant.id.to_s) unless @offer.standard?
       items = []
       items << provenance(parent) if legacy?(parent)
-      items << { price: @offer.price_id, quantity: 1, metadata: metadata }
+      price = @prices.item_params(@offer, items: all_items(parent))
+      items << price.merge(quantity: 1, metadata: metadata.merge(price[:metadata].symbolize_keys))
       payload = { items: items, proration_behavior: "create_prorations", proration_date: @now.to_i }
       if legacy?(parent)
         payload[:metadata] = RESIDENT_KEYS.index_with { "" }.merge("kind" => "account",
@@ -223,29 +229,29 @@ module Billing
       { id: item.id, metadata: from.merge("agent_id" => row.agent_id.to_s, "account_id" => @agent.account_id.to_s) }
     end
 
-    # What the owner is asked to confirm, and what confirm! checks again.
+    # What the owner is asked to confirm, and what confirm! checks again. All
+    # amounts are Stripe's own invoice totals (tax and discounts in), never
+    # sums of lines:
+    #   added_next      what adding the resident adds to the next bill (that
+    #                   bill with the change, less that bill without it)
+    #   next_total      the whole next bill with the change, including any
+    #                   one-off charges already waiting for it
+    #   recurring_total a month's bill for every item after the change, with
+    #                   no part-period or one-off charges (Stripe's recurring
+    #                   estimate, which refuses prorations, so made without)
     def preview(parent, payload)
-      customer = BillingCustomer.find_by!(account: @agent.account)
-      invoice = @client.v1.invoices.create_preview({
-        customer: customer.stripe_customer_id, subscription: parent.id,
-        subscription_details: { items: payload[:items].map { |item| item.except(:metadata) },
-                                proration_behavior: "create_prorations", proration_date: payload[:proration_date] }
-      })
-      lines = invoice.lines.data.to_a
-      prorated = lines.select { |line| proration?(line) }.sum { |line| line.amount.to_i }
+      customer = BillingCustomer.find_by!(account: @agent.account).stripe_customer_id
+      items = payload[:items].map { |item| item.except(:metadata) }
+      before = @client.v1.invoices.create_preview({ customer: customer, subscription: parent.id })
+      after = @client.v1.invoices.create_preview({ customer: customer, subscription: parent.id,
+        subscription_details: { items: items, proration_behavior: "create_prorations", proration_date: payload[:proration_date] } })
+      monthly = @client.v1.invoices.create_preview({ customer: customer, subscription: parent.id, preview_mode: "recurring",
+        subscription_details: { items: items, proration_behavior: "none" } })
       {
-        "currency" => invoice.currency, "prorated" => prorated,
-        "recurring" => lines.reject { |line| proration?(line) }.sum { |line| line.amount.to_i },
-        "next_total" => invoice.total.to_i, "next_at" => invoice[:next_payment_attempt] || invoice[:period_end],
+        "currency" => after.currency, "added_next" => after.total.to_i - before.total.to_i, "next_total" => after.total.to_i,
+        "recurring_total" => monthly.total.to_i, "next_at" => after[:next_payment_attempt] || after[:period_end],
         "price" => @offer.price_id, "parent" => parent.id, "parent_items" => snapshot(parent)
       }
-    end
-
-    def proration?(line)
-      return true if line[:proration]
-
-      details = line[:parent] && line[:parent][:subscription_item_details]
-      details && details[:proration] ? true : false
     end
 
     def snapshot(parent)

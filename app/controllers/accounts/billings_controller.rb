@@ -153,7 +153,7 @@ class Accounts::BillingsController < ApplicationController
     quote = attempt.quote
     { attempt_id: attempt.id, digest: Billing::AddItem.digest(quote), resident_name: attempt.agent.name,
       plan: Billing::Tier.find(attempt.tier)&.name || attempt.tier, rate: attempt.rate, currency: quote["currency"],
-      prorated_cents: quote["prorated"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring"],
+      added_cents: quote["added_next"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
       next_at: quote["next_at"] && Time.zone.at(quote["next_at"]).to_date.iso8601 }
   end
 

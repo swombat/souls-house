@@ -189,12 +189,12 @@
           subscription?
         </p>
         <p>
-          About {cents(pendingAdd.prorated_cents, pendingAdd.currency)} for the rest of this period goes on the next bill{pendingAdd.next_at
-            ? ` on ${pendingAdd.next_at}`
-            : ''}, which will be about
-          {cents(pendingAdd.next_total_cents, pendingAdd.currency)}. After that, about
-          {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for all the account's residents together, plus
-          VAT where it applies. Nothing is charged today.
+          Nothing is charged today. Your next bill{pendingAdd.next_at ? `, on ${pendingAdd.next_at},` : ''} goes up by about
+          {cents(pendingAdd.added_cents, pendingAdd.currency)} for {pendingAdd.resident_name}: the rest of this period
+          and the next month. That bill comes to about {cents(pendingAdd.next_total_cents, pendingAdd.currency)} in all,
+          including anything else already due on it. After that, the account pays about
+          {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for all its residents together. These are Stripe's
+          totals, with tax and discounts in.
         </p>
         <div class="flex gap-2">
           <Button size="sm" onclick={confirmAdd} disabled={busy !== null}>

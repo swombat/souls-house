@@ -259,7 +259,7 @@ describe('adding a resident to the account subscription', () => {
     plan: 'Small',
     rate: 'standard',
     currency: 'usd',
-    prorated_cents: 700,
+    added_cents: 2200,
     next_total_cents: 6200,
     recurring_cents: 5500,
     next_at: '2026-12-01',
@@ -270,9 +270,9 @@ describe('adding a resident to the account subscription', () => {
 
     const panel = screen.getByTestId('billing-add-confirm');
     expect(panel).toHaveTextContent('Add Second on Small');
-    expect(panel).toHaveTextContent('About $7.00 for the rest of this period');
-    expect(panel).toHaveTextContent('on 2026-12-01, which will be about $62.00');
-    expect(panel).toHaveTextContent('about $55.00 a month');
+    expect(panel).toHaveTextContent('Your next bill, on 2026-12-01, goes up by about $22.00 for Second');
+    expect(panel).toHaveTextContent('comes to about $62.00 in all');
+    expect(panel).toHaveTextContent('about $55.00 a month for all its residents together');
     expect(panel).toHaveTextContent('Nothing is charged today.');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add Second' }));

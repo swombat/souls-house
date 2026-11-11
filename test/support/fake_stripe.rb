@@ -423,17 +423,31 @@ class FakeStripe
 
   def subscriptions = subscriptions_service
 
-  # What a price costs a month, in cents, for invoice previews.
-  def price_amounts = (@price_amounts ||= Hash.new(1_000))
+  # What a price costs a month, in cents, for invoice previews, where a test
+  # overrides the price's own unit amount.
+  def price_amounts = (@price_amounts ||= {})
 
   # The part-period a preview charges for an added item, in cents.
   attr_writer :proration_amount
 
+  # Invoice-level effects a preview totals in: a tax rate (percent, on the
+  # whole invoice) and an amount off each invoice.
+  attr_writer :tax_percent, :amount_off
+
+  # How many lines a preview embeds before has_more (Stripe: 10).
+  attr_writer :preview_line_page
+
   attr_reader :previews
 
-  # Stripe's preview of the next invoice if the subscription took these
-  # items: next period's charge for every item, plus a proration line for
-  # each item being added.
+  # A one-off charge waiting for the customer's next invoice.
+  def put_pending_invoice_item(customer, amount)
+    (@pending_items ||= Hash.new { |hash, key| hash[key] = [] })[customer] << amount
+  end
+
+  # Stripe's preview of an invoice if the subscription took these items.
+  # preview_mode "next" (the default): next period's charge for every item,
+  # a proration line for each item being added, and pending one-off charges.
+  # "recurring": a period's charge alone; like Stripe, it refuses prorations.
   def invoices
     Invoices.new(self)
   end
@@ -447,13 +461,40 @@ class FakeStripe
   def preview_invoice(params)
     (@previews ||= []) << params.deep_dup
     stored = stored_subscription(params[:subscription])
-    items = (stored[:all_items] || stored[:items][:data]).map { |item| item[:price][:id] }
-    added = Array(params.dig(:subscription_details, :items)).select { |item| item[:id].nil? }.map { |item| item[:price] }
-    lines = (items + added).map { |price| { amount: price_amounts[price], proration: false } }
-    lines += added.map { |_price| { amount: @proration_amount || 500, proration: true } }
-    construct(object: "invoice", currency: "usd", total: lines.sum { |line| line[:amount] },
+    details = params[:subscription_details] || {}
+    recurring = params[:preview_mode] == "recurring"
+    if recurring && details[:items] && details[:proration_behavior] != "none"
+      raise Stripe::InvalidRequestError.new("Recurring estimates do not support the following features: subscription prorations, " \
+        "trials, cancellations, prebilling, schedules, and invoice item additions.", "preview_mode")
+    end
+
+    items = (stored[:all_items] || stored[:items][:data]).map(&:deep_dup)
+    added = []
+    Array(details[:items]).each do |change|
+      price = if change[:price_data]
+        { id: "price_preview", unit_amount: change[:price_data][:unit_amount] }
+      elsif change[:price]
+        price_object(change[:price])
+      end
+      if change[:id].nil?
+        added << { price: price }
+      elsif price
+        items.find { |item| item[:id] == change[:id] }[:price] = price
+      end
+    end
+    refuse_shared_price!((items + added).reject { |item| item[:price][:id] == "price_preview" })
+    amount = ->(price) { price_amounts.fetch(price[:id]) { price[:unit_amount] } }
+    lines = (items + added).map { |item| { amount: amount.(item[:price]), proration: false } }
+    unless recurring
+      lines += added.map { { amount: @proration_amount || 500, proration: true } } if details[:proration_behavior] == "create_prorations"
+      lines += Array(@pending_items&.dig(params[:customer])).map { |pending| { amount: pending, proration: false } }
+    end
+    subtotal = lines.sum { |line| line[:amount] }
+    discounted = [ subtotal - (@amount_off || 0), 0 ].max
+    tax = (discounted * (@tax_percent || 0) / 100.0).round
+    construct(object: "invoice", currency: "usd", subtotal: subtotal, total: discounted + tax,
       next_payment_attempt: (stored[:items][:data].first || {})[:current_period_end],
-      lines: { object: "list", data: lines })
+      lines: { object: "list", data: lines.first(@preview_line_page || 10), has_more: lines.size > (@preview_line_page || 10) })
   end
 
   def stored_subscription(id)
