@@ -99,10 +99,10 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     paid!(CONVERSATION_PRICE)
     stripe = @stripe
     failing_after_update = Class.new(Billing::SubscriptionSync) do
-      define_method(:call) do
+      define_method(:call) do |**options|
         last = stripe.subscription_updates.last
         raise ActiveRecord::StatementInvalid, "connection lost" if last && !last[2][:replayed] && !stripe.instance_variable_get(:@recovered)
-        super()
+        super(**options)
       end
     end
     service = Billing::PlanChange.new(agent: @agent, tier: Billing::Tier.find!("life"), client: @stripe)
@@ -129,10 +129,10 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     paid!(CONVERSATION_PRICE)
     stripe = @stripe
     failing_after_update = Class.new(Billing::SubscriptionSync) do
-      define_method(:call) do
+      define_method(:call) do |**options|
         last = stripe.subscription_updates.last
         raise ActiveRecord::StatementInvalid, "connection lost" if last && !stripe.instance_variable_get(:@recovered)
-        super()
+        super(**options)
       end
     end
     service = Billing::PlanChange.new(agent: @agent, tier: Billing::Tier.find!("life"), client: @stripe)

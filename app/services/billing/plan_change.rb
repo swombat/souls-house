@@ -27,7 +27,7 @@ module Billing
     #     transaction: a change whose answer was lost has already happened
     #     there, and that reconciliation must stand whatever is decided next,
     #     including "already on that plan".
-    #  1. Under the per-resident advisory lock SubscriptionSync takes (taken
+    #  1. Under the account advisory lock SubscriptionSync takes (taken
     #     first, so this and the webhook never hold the entitlement row and
     #     the lock in opposite orders): decide, and give the change its own
     #     identity, the subscription's change count, committed when this
@@ -46,12 +46,10 @@ module Billing
       unless current&.live? && entitlement.paid?
         raise Refused, "#{@agent.name} has no paid plan to change. Choose a plan first."
       end
-      sync_class.new(current.stripe_subscription_id, client: @client).call
+      sync_class.new(current.stripe_subscription_id, client: @client).call(agent: @agent)
 
-      remote_id, offer, item_id, from, count = ApplicationRecord.transaction do
-        ApplicationRecord.connection.execute(
-          "SELECT pg_advisory_xact_lock(#{SubscriptionSync::LOCK_NAMESPACE}, #{Integer(@agent.id)})"
-        )
+      remote_id, offer, item_id, from, count, single = ApplicationRecord.transaction do
+        SubscriptionSync.lock!(@agent.account_id)
         entitlement.reload
         subscription = entitlement.current_subscription
         unless subscription&.live? && entitlement.paid?
@@ -63,22 +61,34 @@ module Billing
         raise NotConfigured, "The #{offer.name} plan has no Stripe price configured" unless offer.purchasable?
 
         remote = @client.v1.subscriptions.retrieve(subscription.stripe_subscription_id)
-        item = remote.items.data.first
+        item = item_for(remote, subscription)
         from = item.price.respond_to?(:id) ? item.price.id : item.price
         subscription.update!(plan_changes_count: subscription.plan_changes_count + 1)
-        [ remote.id, offer, item.id, from, subscription.plan_changes_count ]
+        [ remote.id, offer, item.id, from, subscription.plan_changes_count, remote.items.data.one? ]
       end
 
-      @client.v1.subscriptions.update(remote_id, {
-        items: [ { id: item_id, price: offer.price_id } ],
-        proration_behavior: "create_prorations",
-        description: "#{offer.name} hosting for #{@agent.name}",
-        metadata: { tier: offer.tier.id }
-      }, { idempotency_key: "souls-house-plan-change-#{remote_id}-#{count}-#{from}-#{offer.price_id}" })
-      sync_class.new(remote_id, client: @client).call
+      params = { items: [ { id: item_id, price: offer.price_id } ], proration_behavior: "create_prorations" }
+      # A subscription that is this resident alone describes it; one shared
+      # by the account's residents doesn't.
+      params.merge!(description: "#{offer.name} hosting for #{@agent.name}", metadata: { tier: offer.tier.id }) if single
+      @client.v1.subscriptions.update(remote_id, params,
+        { idempotency_key: "souls-house-plan-change-#{remote_id}-#{count}-#{from}-#{offer.price_id}" })
+      sync_class.new(remote_id, client: @client).call(agent: @agent)
     end
 
     private
+
+    # This resident's item: the one the house recorded, or a legacy
+    # subscription's only item.
+    def item_for(remote, subscription)
+      items = remote.items.data
+      item = if subscription.stripe_subscription_item_id
+        items.find { |row| row.id == subscription.stripe_subscription_item_id }
+      elsif items.one?
+        items.first
+      end
+      item || raise(Refused, "#{@agent.name}'s plan isn't on its subscription any more. Try again in a minute.")
+    end
 
     # Tests stand in a sync that fails after the remote change.
     def sync_class = SubscriptionSync

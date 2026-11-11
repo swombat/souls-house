@@ -64,7 +64,8 @@ class FakeStripe
       cancel_at_period_end: false, metadata: (data[:metadata] || {}).transform_keys(&:to_s),
       trial_end: trial ? trial_end.to_i : nil, default_payment_method: nil,
       items: { object: "list", data: params[:line_items].each_with_index.map { |item, index|
-        { id: "si_#{subscription_id}_#{index}", price: { id: item[:price] }, current_period_end: trial_end.to_i }
+        { id: "si_#{subscription_id}_#{index}", price: { id: item[:price] }, quantity: item[:quantity] || 1,
+          current_period_end: trial_end.to_i }
       } }
     }
     @session_states[id] = state.merge(status: "complete", subscription: subscription_id)
@@ -109,9 +110,41 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { agent_id: agent.id.to_s },
-      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, quantity: 1, current_period_end: period_end.to_i } ] }
     }
   end
+
+  # An account's one subscription, one item per resident. items: hashes of
+  # agent:, price:, and optionally id:, quantity:, metadata: (merged over the
+  # item's agent_id). page_size: serve items in pages of this size, the rest
+  # through subscription_items.list, as Stripe does past its embedded page.
+  def put_shared_subscription(id:, account:, customer:, status:, items:, period_end: 1.month.from_now, page_size: nil,
+    trial_end: nil, metadata: {})
+    data = items.each_with_index.map do |item, index|
+      meta = item[:agent] ? { "agent_id" => item[:agent].id.to_s } : {}
+      { id: item[:id] || "si_#{id}_#{index}", price: { id: item.fetch(:price) }, quantity: item.fetch(:quantity, 1),
+        metadata: meta.merge((item[:metadata] || {}).transform_keys(&:to_s)), current_period_end: period_end.to_i }
+    end
+    @subscriptions[id] = {
+      id: id, object: "subscription", status: status, customer: customer, cancel_at_period_end: false,
+      trial_end: trial_end&.to_i,
+      metadata: { "kind" => "account", "account_id" => account.id.to_s }.merge(metadata.transform_keys(&:to_s)),
+      items: { object: "list", data: page_size ? data.first(page_size) : data, has_more: page_size ? data.size > page_size : false },
+      all_items: data
+    }
+  end
+
+  def subscription_items
+    Service.new(list: lambda { |params|
+      all = stored_subscription(params[:subscription])[:all_items] || stored_subscription(params[:subscription])[:items][:data]
+      from = params[:starting_after] ? all.index { |row| row[:id] == params[:starting_after] } + 1 : 0
+      size = [ params[:limit] || 100, @subscription_item_page_size || 100 ].min
+      page = all[from, size] || []
+      construct(object: "list", data: page, has_more: from + size < all.size)
+    })
+  end
+
+  def subscription_item_page_size!(size) = @subscription_item_page_size = size
 
   # A subscription for an account's plan (Billing::AccountPlanCheckout's metadata).
   def put_account_subscription(id:, account:, customer:, price:, status:, period_end: 1.month.from_now,
@@ -123,7 +156,7 @@ class FakeStripe
       customer: customer,
       cancel_at_period_end: cancel_at_period_end,
       metadata: { "kind" => "account_plan", "account_id" => account.id.to_s },
-      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, current_period_end: period_end.to_i } ] }
+      items: { object: "list", data: [ { id: "si_#{id}", price: { id: price }, quantity: 1, current_period_end: period_end.to_i } ] }
     }
   end
 
@@ -154,7 +187,7 @@ class FakeStripe
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
           default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
           create_params: params.except(:expand).deep_dup,
-          items: { object: "list", data: params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: { id: item[:price] }, current_period_end: 1.month.from_now.to_i } } }
+          items: { object: "list", data: params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: { id: item[:price] }, quantity: item[:quantity] || 1, current_period_end: 1.month.from_now.to_i } } }
         }
         raise error if error
         construct(with_invoice(@subscriptions[id]))

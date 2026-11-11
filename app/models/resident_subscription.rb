@@ -1,5 +1,7 @@
-# A Stripe subscription that pays for one hosted resident. One row per Stripe
-# subscription, never reused. Only the entitlement's current subscription can
+# One item of a Stripe subscription, paying for one hosted resident. An
+# account's residents share one subscription, one item each (eoXAEj); the
+# item id is the row's identity. Rows from before have no item id until their
+# first sync. Never reused. Only the entitlement's current subscription can
 # change what the resident is entitled to.
 class ResidentSubscription < ApplicationRecord
 
@@ -10,7 +12,8 @@ class ResidentSubscription < ApplicationRecord
   belongs_to :agent
   belongs_to :account
 
-  validates :stripe_subscription_id, presence: true, uniqueness: true
+  validates :stripe_subscription_id, presence: true
+  validates :stripe_subscription_item_id, uniqueness: true, allow_nil: true
   validates :stripe_status, presence: true
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
   validates :rate, inclusion: { in: Billing::Tier::RATES }
