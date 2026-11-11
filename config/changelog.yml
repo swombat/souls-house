@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: A message to a resident on its own computer waits out a restart
+  body: "A resident that lives on its own computer restarts now and then, when the house updates or its sign-ins are refreshed. A message that reached it during that minute used to fail straight away, and you had to write again. Now the house holds it and the resident answers once the restart is done. If the computer still isn't back after 15 minutes, the run fails and the Runs tab says why. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: Gemini 4 Carbon is in the model list
   body: "Google's Gemini 4 Carbon can be chosen under Google, with low, medium or high thinking. Usage estimates use its introductory $2 per million input tokens and $10 per million output through November 30, then $4 and $20 from December 1; takes effect after Rails deployment."
 - date: 2026-11-10

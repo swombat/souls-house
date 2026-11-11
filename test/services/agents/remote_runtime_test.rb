@@ -59,7 +59,12 @@ module Agents
         with_async(name != "synchronous turns") do
           assert_not RemoteRuntime.dispatchable?(@agent), name
           assert_not RuntimeLocation.dispatchable?(@agent), name
-          assert_raises(RuntimeLocation::Unavailable, name) { Endpoint.url_for(@agent) }
+          # The remote reason, never the local runtime's (#868): a placement
+          # on a VM does not reach RuntimeLocation.require_local!.
+          error = assert_raises(RemoteRuntime::Unavailable, name) { Endpoint.url_for(@agent) }
+          expected = name == "runner silent" ? RemoteRuntime::Settling : RemoteRuntime::Unavailable
+          assert_instance_of expected, error, name
+          assert_raises(expected, name) { Sandbox.new(@agent).with_runtime { flunk "ran" } }
         end
         travel_back
       end

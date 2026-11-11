@@ -42,6 +42,8 @@ class ExternalAgentResponseRequest
     { status: 409, body: { "status" => "participant_changed" } }
   rescue Agent::RuntimeAvailability::Unavailable
     raise
+  rescue Agents::RemoteRuntime::Settling => e
+    hold_while_remote_runtime_settles(e)
   rescue StandardError => e
     @interaction&.record_error!(e)
     Rails.logger.warn "[ExternalAgentResponseRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
@@ -55,6 +57,27 @@ class ExternalAgentResponseRequest
   private
 
   attr_reader :agent, :chat, :requested_by, :initiation_reason
+
+  # A VM resident in the middle of a restart, or whose runner's heartbeat is
+  # briefly late, can't take this turn for a moment (#868). That is not a
+  # failure and the request is not dropped: the run is recorded busy, with
+  # the reason, before anything reached the runtime. A person's request comes
+  # back as a PendingWake (BusyRunRetryJob), a resident's handoff knocks again
+  # (MessageHandoff#retry_after_busy!), and PendingWake.release! waits for the
+  # VM before it runs. Past RemoteRuntime::HOLD_LIMIT the same condition is
+  # Unavailable and the run fails with that reason instead.
+  def hold_while_remote_runtime_settles(error)
+    Rails.logger.info "[ExternalAgentResponseRequest] #{agent.id} held: #{error.message}"
+    if @interaction&.live_activity?
+      @interaction.with_lock do
+        @interaction.update!(error_class: error.class.name, error_message: error.message)
+        @interaction.finish_execution!("busy")
+      end
+    else
+      @interaction&.record_error!(error)
+    end
+    { status: 409, body: { "status" => "already_running", "held" => "remote_runtime_settling" } }
+  end
 
   def perform
     return notify_unreachable if agent.offline? || agent_unhealthy?
