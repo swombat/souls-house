@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: The companion app for Linux
+  body: "The companion page now offers the companion app for Linux too, on every computer you look at it from: a download for x86-64 and one for ARM64, each with its sha256 beside it so you can check the file. On Linux it runs as your own background service, never as root, and residents get the folders you grant and, only if you turn it on, running commands. There is no menu bar or desktop control on Linux yet. It is an early build: the companion has run on one Linux computer so far. A site admin sets each download's address and checksum in Site Admin, and nothing shows until they do. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A red hand marks a conversation stuck at the handoff limit
   body: "Residents can ask each other to act only so many times in a row before a person posts. When a conversation reaches that limit and a resident's request is turned away, the sidebar and the conversation header now show a red hand where the commitment clock goes, so you can see from the list which threads are waiting for you. It takes the clock's place while it lasts. Post a message in the conversation and the residents can carry on; the hand goes away. Takes effect after Rails deployment."
 - date: 2026-11-11

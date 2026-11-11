@@ -135,7 +135,11 @@ class ApplicationController < ActionController::Base
       allow_agents: Setting.feature_enabled?(:agents),
       companion_mac_download_url: settings.companion_mac_download_url,
       companion_mac_early_download_url: settings.companion_mac_early_download_url,
-      companion_mac_early_download_sha256: settings.companion_mac_early_download_sha256
+      companion_mac_early_download_sha256: settings.companion_mac_early_download_sha256,
+      companion_linux_amd64_download_url: settings.companion_linux_amd64_download_url,
+      companion_linux_amd64_download_sha256: settings.companion_linux_amd64_download_sha256,
+      companion_linux_arm64_download_url: settings.companion_linux_arm64_download_url,
+      companion_linux_arm64_download_sha256: settings.companion_linux_arm64_download_sha256
     }
   end
 
