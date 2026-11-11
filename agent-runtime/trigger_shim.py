@@ -992,10 +992,11 @@ def _run_chaos_once(
     if inference_run:
         env[INFERENCE_RUN_ENV] = inference_run
     if getattr(_activity_context, "paid_fallback", False):
-        # No paid key reaches a paid-fallback invocation: a subagent or a
-        # tool that switches provider can't spend the owner's key (or any
-        # other) outside the gateway's cap. A subscription provider would only
-        # meet the allowance that already refused this turn.
+        # No paid key in the environment of a paid-fallback invocation (its
+        # stored logins are hidden below): a helper that selects another
+        # configured provider can't authenticate to it with the owner's key or
+        # any other. This covers Chaos's own provider resolution; it doesn't
+        # sandbox a resident's shell against credentials it wrote itself.
         for key in PAID_FALLBACK_STRIPPED_ENV:
             env.pop(key, None)
     telegram_run = getattr(_activity_context, "telegram_run", None)
@@ -1003,6 +1004,13 @@ def _run_chaos_once(
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])
         env["SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID"] = str(telegram_run[1])
     args = [CHAOS_BIN, "exec"]
+    if getattr(_activity_context, "paid_fallback", False):
+        # Removing the env keys isn't enough: Chaos also resolves a provider's
+        # stored login (auth.json or the vault) when a helper selects that
+        # provider. An empty per-process store hides every stored login, so
+        # only env-authenticated providers work: the house gateway, which
+        # meters the call (#690, Mira #887).
+        args += ["-c", 'cli_auth_credentials_store="ephemeral"']
     if json_output:
         # Machine-readable JSONL: process.started carries the process_id we
         # map for resume; turn.completed carries token usage.

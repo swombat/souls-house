@@ -11,6 +11,8 @@ Run: python3 -m unittest discover -s test/runtime -p 'paid_fallback_*_test.py'
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -32,7 +34,8 @@ class PaidFallbackEnvTest(unittest.TestCase):
             f"#!{sys.executable}\n"
             "import json, os, sys\n"
             "sys.stdin.read()\n"
-            f"print(json.dumps(sorted(k for k in {list(KEYS)!r} if k in os.environ)))\n"
+            f"keys = sorted(k for k in {list(KEYS)!r} if k in os.environ)\n"
+            "print(json.dumps(keys + (['EPHEMERAL_STORE'] if 'cli_auth_credentials_store=\"ephemeral\"' in sys.argv else [])))\n"
         )
         fake_chaos.chmod(0o755)
         environment = {
@@ -74,7 +77,8 @@ class PaidFallbackEnvTest(unittest.TestCase):
     def test_a_paid_fallback_turn_on_the_house_provider_gets_no_paid_key(self):
         for persistent in (False, True):
             with self.subTest(persistent=persistent):
-                self.assertEqual(self.trigger(provider="house", paid_fallback=True, persistent_session=persistent), [])
+                # No paid key, and stored logins hidden behind an empty store.
+                self.assertEqual(self.trigger(provider="house", paid_fallback=True, persistent_session=persistent), ["EPHEMERAL_STORE"])
                 self.assertFalse(self.shim._activity_context.paid_fallback)
 
     def test_ordinary_turns_keep_their_keys_and_the_flag_needs_the_house_provider(self):
@@ -84,6 +88,28 @@ class PaidFallbackEnvTest(unittest.TestCase):
         # The previous turn's flag never carries over.
         self.trigger(provider="house", paid_fallback=True)
         self.assertEqual(self.trigger(provider="house"), sorted(KEYS))
+
+
+@unittest.skipUnless(os.environ.get("CHAOS_REAL_BIN") or shutil.which("chaos"), "needs the pinned chaos binary")
+class StoredLoginHiddenTest(unittest.TestCase):
+    """With the real binary: a stored API-key login is visible normally and
+    invisible under the store mode a paid-fallback invocation runs with."""
+
+    def test_a_stored_api_key_login_is_invisible_in_the_ephemeral_store(self):
+        chaos = os.environ.get("CHAOS_REAL_BIN") or shutil.which("chaos")
+        with tempfile.TemporaryDirectory() as home:
+            env = {"HOME": home, "PATH": os.defpath, "CHAOS_HOME": home,
+                   "CHAOS_STORAGE_URL": f"sqlite://{home}/chaos.sqlite"}
+            def run(*args, stdin=None):
+                done = subprocess.run([chaos, *args], input=stdin, env=env, capture_output=True, text=True, timeout=60)
+                done.output = done.stdout + done.stderr
+                return done
+            stored = run("accounts", "--with-api-key", "--provider", "openai", stdin="sk-synthetic-stored-key\n")
+            self.assertEqual(stored.returncode, 0, stored.stderr)
+            self.assertIn("API key connected", run("accounts", "status").output)
+            hidden = run("-c", 'cli_auth_credentials_store="ephemeral"', "accounts", "status")
+            self.assertIn("Stored provider accounts: none", hidden.output)
+            self.assertNotIn("sk-synth", hidden.output)
 
 
 if __name__ == "__main__":
