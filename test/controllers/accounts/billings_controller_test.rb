@@ -282,6 +282,21 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "cus_1", @stripe.portal_sessions.sole[:customer]
   end
 
+  test "a shared bill with no safe portal configuration is sent back with the reason, and no session is made" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: agents(:research_assistant), price: CONVERSATION_PRICE }, { agent: agents(:code_reviewer), price: LIFE_PRICE } ])
+    @stripe.put_portal_configuration(prices: [])
+
+    with_stripe do
+      post portal_account_billing_path(@account), headers: { "X-Inertia" => "true" }
+    end
+
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/could end all of them at once/, flash[:alert])
+    assert_empty @stripe.portal_sessions
+  end
+
   test "another account's residents and billing are out of reach" do
     get account_billing_path(accounts(:other))
     assert_response :not_found
