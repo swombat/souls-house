@@ -52,7 +52,8 @@ kind of test (KjXOAe, 2026-10-09); this uses well under $1.
    and checkpoint, **not** proof of a full recovery onto a new VM.
 8. Interrupted backup: start one more backup, and while it is running restart
    the runner on the VM (`systemctl restart souls-house-runner`, over the
-   break-glass SSH key). Expected: the resident comes back unpaused, the
+   souls.house management SSH key used by Mira and Lume to administer
+   customers' VMs). Expected: the resident comes back unpaused, the
    tools are gone, the runner's recovery acknowledgement releases the hold
    (`Backup::VmResident.held?` false), and the interrupted snapshot is
    **not** counted as verified. A resident left paused, or a hold that never
