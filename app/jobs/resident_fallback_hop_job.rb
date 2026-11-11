@@ -16,10 +16,9 @@ class ResidentFallbackHopJob < ApplicationJob
     reason = refusal(turn, run)
     return end_with_refusal(turn, run, reason) if reason
 
-    ExternalAgentResponseRequest.new(
-      agent: turn.agent, chat: turn.chat, requested_by: run.requested_by || "souls.house", interaction: run,
-      wake_source_kinds: run.wake_source_kinds, requested_at: run.response_requested_at, fallback_turn: turn
-    ).call
+    options = { interaction: run, wake_source_kinds: run.wake_source_kinds, requested_at: run.response_requested_at, fallback_turn: turn }
+    options[:requested_by] = run.requested_by if run.requested_by.present?
+    ExternalAgentResponseRequest.new(agent: turn.agent, chat: turn.chat, **options).call
   end
 
   private
