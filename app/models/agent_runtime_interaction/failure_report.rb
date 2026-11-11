@@ -33,10 +33,15 @@ module AgentRuntimeInteraction::FailureReport
   # scheduled wake and the memory aggregations. Telegram and orientation runs
   # are neither (someone asked, or it ran once at birth).
   SCHEDULED_TRIGGER_KINDS = [ "wake", /\Amemory_aggregation_/ ].freeze
-  # The request never reached a runtime that could answer it.
-  UNAVAILABLE_ERROR_CLASSES = %w[
-    Errno::ECONNREFUSED Errno::EHOSTUNREACH Errno::ENETUNREACH SocketError Net::OpenTimeout
+  # A VM resident that could not take the turn (#868). The message is the
+  # house's own sentence (Agents::RemoteRuntime#unavailability), safe to show.
+  REMOTE_UNAVAILABLE_ERROR_CLASSES = %w[
+    Agents::RemoteRuntime::Unavailable Agents::RemoteRuntime::Settling Agents::RemoteRuntime::RunnerTooOld
   ].freeze
+  # The request never reached a runtime that could answer it.
+  UNAVAILABLE_ERROR_CLASSES = (%w[
+    Errno::ECONNREFUSED Errno::EHOSTUNREACH Errno::ENETUNREACH SocketError Net::OpenTimeout
+  ] + REMOTE_UNAVAILABLE_ERROR_CLASSES).freeze
   UNAVAILABLE_TRANSPORT_STATUSES = [ 502, 503, 504 ].freeze
 
   included do

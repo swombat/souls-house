@@ -25,6 +25,13 @@ module Agents
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
     class RunnerTooOld < Unavailable; end
+    # Ready but not dispatchable for a moment: a restart is in flight or the
+    # runner's heartbeat is briefly late (#868). A turn that meets this is
+    # held as a PendingWake, not failed. It stops being a moment after
+    # HOLD_LIMIT, and then the same condition is reported as Unavailable.
+    class Settling < Unavailable; end
+
+    HOLD_LIMIT = 15.minutes
 
     module_function
 
@@ -59,6 +66,54 @@ module Agents
 
     def dispatchable?(agent)
       enrollment_for(agent).present?
+    end
+
+    # Why a remote resident can't take a turn now, or nil when it can (or is
+    # not remote). [:settling, reason] for a momentary gap a turn should wait
+    # out; [:unavailable, reason] for one it should fail on. Reasons are the
+    # house's own words, safe for the Runs tab.
+    def unavailability(agent, now: Time.current)
+      placement = placement_for(agent)
+      return nil unless placement&.backend == "hetzner_cloud"
+      return [ :unavailable, "its VM placement is #{placement.state}" ] unless placement.state == "ready"
+      if placement.vm_birth? && agent.runtime_ready_at.nil?
+        return [ :unavailable, "its VM has not finished its first verified backup" ]
+      end
+      if placement.refresh_command_id.present?
+        since = placement.refresh_requested_at || placement.updated_at
+        return [ :settling, "a restart of its VM is in flight" ] if since > now - HOLD_LIMIT
+
+        return [ :unavailable, "a restart of its VM has not finished in #{(HOLD_LIMIT / 60).to_i} minutes" ]
+      end
+      return [ :unavailable, "asynchronous turns are off" ] unless ResidentTurn.enabled?
+
+      enrollment = RunnerEnrollment.uncached do
+        RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil)
+          .where.not(enrolled_at: nil).order(enrolled_at: :desc).first
+      end
+      return [ :unavailable, "its VM has no enrolled runner" ] unless enrollment
+      return nil if enrollment.healthy?(now:)
+
+      heard = enrollment.last_heartbeat_at
+      return [ :settling, "its VM's runner heartbeat is late" ] if heard && heard > now - HOLD_LIMIT
+
+      [ :unavailable, "its VM's runner has not been heard from in #{(HOLD_LIMIT / 60).to_i} minutes" ]
+    end
+
+    def settling?(agent, now: Time.current)
+      unavailability(agent, now:)&.first == :settling
+    end
+
+    # For a remote resident: return when a turn can be dispatched, else raise
+    # the truthful reason. Never falls through to the local runtime (#868).
+    def require_dispatchable!(agent, now: Time.current)
+      kind, reason = unavailability(agent, now:)
+      return if kind.nil? && dispatchable?(agent)
+
+      # No reason but not dispatchable: the state moved between the two
+      # reads, which is a moment, not an outage.
+      reason ||= "its VM runtime changed state just now"
+      raise(kind == :unavailable ? Unavailable : Settling, "#{agent.name} can't take a turn yet: #{reason}")
     end
 
     def endpoint_url(agent)
@@ -325,6 +380,8 @@ module Agents
           reconcile_refreshed_services!(agent, snapshot, now)
           placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
             refresh_last_error: nil)
+          # Turns held while it restarted can go now (#868).
+          PendingWake.release_held_for!(agent)
           return :done
         end
 

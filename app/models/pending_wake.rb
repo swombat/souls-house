@@ -19,6 +19,8 @@
 class PendingWake < ApplicationRecord
 
   EXPIRY = 6.hours
+  # How soon a wake held for a settling VM resident is looked at again.
+  REMOTE_RECHECK = 15.seconds
 
   belongs_to :chat
   belongs_to :agent
@@ -82,6 +84,16 @@ class PendingWake < ApplicationRecord
 
       reason = wake.lapse_reason
       next wake.drop!(reason) if reason
+
+      # A VM resident mid-restart (or with a late heartbeat) is "not yet",
+      # like busy (#868). Nothing else will ask again, so look again shortly;
+      # a settled refresh also asks at once (RemoteRuntime.settle_refresh!).
+      # Past RemoteRuntime::HOLD_LIMIT it is no longer settling, the wake is
+      # released, and the run fails with the remote reason.
+      if Agents::RemoteRuntime.settling?(agent)
+        wake.recheck_after(REMOTE_RECHECK)
+        next nil
+      end
 
       begin
         result = chat.trigger_agent_response!(agent, wake_source_kinds: wake.standing_source_kinds)
@@ -167,6 +179,21 @@ class PendingWake < ApplicationRecord
     return "sources_withdrawn" unless standing_source?
 
     nil
+  end
+
+  def recheck_after(wait)
+    chat_id, agent_id = self.chat_id, self.agent_id
+    ActiveRecord.after_all_transactions_commit { PendingWakeJob.set(wait: wait).perform_later(chat_id, agent_id) }
+  end
+
+  # Ask again at once for every wake held on this resident, e.g. when its
+  # VM restart has settled (#868).
+  def self.release_held_for!(agent)
+    agent_id = agent.id
+    chat_ids = open.where(agent_id: agent_id).pluck(:chat_id)
+    ActiveRecord.after_all_transactions_commit do
+      chat_ids.each { |chat_id| PendingWakeJob.perform_later(chat_id, agent_id) }
+    end
   end
 
   def drop!(reason)
