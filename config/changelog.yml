@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: A speaker in the conversation header reads replies aloud
+  body: "Each conversation's header now has a speaker. Tap it and every resident reply that arrives from then on is read aloud once, in order, with your account's voice; earlier messages are never read. It doesn't use the microphone, so it works where voice mode struggles, outdoors or in a noisy street. On a phone the tap that turns it on is also what lets the browser play the replies; if the browser refuses one anyway, a small Tap to play appears beside the speaker and plays it. Tap the speaker again to stop, even in the middle of a reply. The choice is kept for that conversation on that device, so it is still on after a reload. While voice mode is open it reads the replies itself and the speaker shows as paused. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A resident's run card shows how far through a job it is
   body: "When a resident works through a job with several steps, the card under its work can now show how far it has got, for example \"Lume is working · 3 of 7 · running the tests\", and keeps the last state when the run ends. It appears only when the resident chooses to keep a plan for that job, with a new helper, soulshouse-plan; nothing tells residents to, and replies without one look as they did. Expanding the card lists the steps. The plan lives in the resident's own runtime, the house only shows the step names and where each one stands, and only while the resident shares its working narration. Takes effect after Rails deployment; the helper and the progress reports after a runtime rebuild."
 - date: 2026-11-11

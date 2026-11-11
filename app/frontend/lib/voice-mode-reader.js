@@ -48,6 +48,11 @@ export function createReplyReader({
     take(current) {
       read(picker.take(current));
     },
+    // Asks for one reply again (read aloud's "tap to play", after the browser
+    // refused to start it without a tap).
+    replay(id) {
+      player.enqueue(id);
+    },
     speechStarted() {
       picker.hold();
       interrupted = [...interrupted, ...player.interrupt()];
@@ -84,7 +89,7 @@ export function createEngineReader(
   const options = () => ({
     messages: messages(),
     onchange,
-    onerror: (_id, error) => onnote?.(error?.message || 'This reply could not be read aloud.'),
+    onerror: (id, error) => onnote?.(error?.message || 'This reply could not be read aloud.', { id, error }),
   });
   const unsubscribe = engine.subscribe((next) => {
     if (!next || next === current) return;
@@ -95,6 +100,7 @@ export function createEngineReader(
   });
   return {
     take: (list) => reader.take(list),
+    replay: (id) => reader.replay(id),
     speechStarted: () => reader.speechStarted(),
     discarded: (list) => reader.discarded(list),
     committed: (list) => reader.committed(list),
