@@ -48,7 +48,7 @@ class Chats::WorkStatusesControllerTest < ActionDispatch::IntegrationTest
 
   def sidebar_ids(**filters)
     get account_chats_path(@account), params: filters,
-      headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+      headers: { "X-Inertia" => "true", "X-Inertia-Version" => InertiaRails.configuration.version }
     assert_response :ok
     response.parsed_body.fetch("props").fetch("chats").map { |chat| chat["id"] }
   end

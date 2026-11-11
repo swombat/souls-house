@@ -8,7 +8,7 @@
   import WorkStatusSummary from './WorkStatusSummary.svelte';
   import WorkStatusIcon from './WorkStatusIcon.svelte';
   import WorkStatusFilter from './WorkStatusFilter.svelte';
-  import { workStatusDescription } from '$lib/work-status';
+  import { workStatusDescription, workStatusInfo } from '$lib/work-status';
 
   // On a phone, offer as many recent conversations as fit on the screen,
   // up to MAX_RECENT. One that would be cut off is not shown at all.
@@ -42,6 +42,7 @@
   let scroller = $state();
   let list = $state();
   let fitCount = $state(MAX_RECENT);
+  let filtersOpen = $state(false);
   const shownChats = $derived(recentChats.slice(0, fitCount));
 
   // Lay out every candidate, then keep the ones whose bottom edge is inside
@@ -89,16 +90,23 @@
   class="flex-1 min-h-0 overflow-y-auto flex items-start md:items-center justify-center px-4 md:px-6 py-4">
   <div class="w-full text-center text-muted-foreground max-w-md">
     <h2 class="hidden md:block text-xl font-semibold">Start a new conversation</h2>
-    {#if shownChats.length > 0 || selectedWorkStatus || workReplied}
+    {#if shownChats.length > 0 || selectedWorkStatus || workReplied || filtersOpen}
       <nav aria-label="Recent conversations" class="md:hidden">
-        <div class="mb-4 rounded border border-border p-3 text-left">
-          <WorkStatusFilter
-            selected={selectedWorkStatus}
-            replied={workReplied}
-            onSelect={(state) => filterWork('work_status', state)}
-            onToggleReplied={() => filterWork('work_replied', workReplied ? null : 'true')} />
-        </div>
-        <p>Or pick an existing conversation:</p>
+        <details bind:open={filtersOpen} ontoggle={() => measure()} class="mb-2 rounded border border-border text-left">
+          <summary class="cursor-pointer px-2 py-1 text-sm text-foreground">
+            Filter conversations{selectedWorkStatus
+              ? ` · ${workStatusInfo(selectedWorkStatus)?.label || selectedWorkStatus}`
+              : ''}{workReplied ? ' · Human replied' : ''}
+          </summary>
+          <div class="px-2 pb-2">
+            <WorkStatusFilter
+              selected={selectedWorkStatus}
+              replied={workReplied}
+              onSelect={(state) => filterWork('work_status', state)}
+              onToggleReplied={() => filterWork('work_replied', workReplied ? null : 'true')} />
+          </div>
+        </details>
+        {#if shownChats.length > 0}<p>Or pick an existing conversation:</p>{/if}
         <ul bind:this={list} class="mt-3 space-y-2">
           {#each shownChats as chat (chat.id)}
             {@const working = workingIn(chat)}

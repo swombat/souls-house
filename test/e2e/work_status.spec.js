@@ -64,7 +64,8 @@ for (const mobile of [false, true]) {
         const nav = mobile
           ? page.getByRole('navigation', { name: 'Recent conversations' })
           : page.locator('aside').first();
-        if (!mobile) await nav.getByTestId('chat-filter-trigger').click();
+        if (mobile) await nav.locator('summary').filter({ hasText: 'Filter conversations' }).click();
+        else await nav.getByTestId('chat-filter-trigger').click();
         const filter = mobile ? nav : page;
         await filter.getByRole('combobox', { name: 'Work status', exact: true }).selectOption('ready_for_review');
         await expect(page).toHaveURL(/work_status=ready_for_review/);
