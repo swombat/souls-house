@@ -11,7 +11,11 @@ class ResidentFallbackHopJob < ApplicationJob
   def perform(turn_id)
     turn = ResidentFallbackTurn.find_by(id: turn_id)
     run = turn&.fallback_interaction
-    return unless run && run.finished_at.nil? && turn.chat
+    return unless run && turn.chat
+    # Claimed once, under the run's lock: a second delivery of this job
+    # finds the run already on its fallback lane and does nothing, instead
+    # of dispatching again and ending the shared run as busy (Mira #887).
+    return unless claim!(turn, run)
 
     reason = refusal(turn, run)
     return end_with_refusal(turn, run, reason) if reason
@@ -22,6 +26,15 @@ class ResidentFallbackHopJob < ApplicationJob
   end
 
   private
+
+  def claim!(turn, run)
+    run.with_lock do
+      next false if run.finished_at? || run.resident_turn.present? || ResidentFallback::Lane.fallback_session?(run.session_id)
+
+      run.update!(session_id: ResidentFallback::Lane.session_id(turn.agent, turn.chat, fallback: true))
+      true
+    end
+  end
 
   def refusal(turn, run)
     return "fallback_off" unless Setting.instance.paid_fallback_enabled?
@@ -44,7 +57,8 @@ class ResidentFallbackHopJob < ApplicationJob
     run.with_lock do
       next if run.finished_at?
 
-      run.update!(error_class: nil, error_message: nil, provider: turn.primary_provider, model: turn.primary_model)
+      run.update!(error_class: nil, error_message: nil, provider: turn.primary_provider, model: turn.primary_model,
+        session_id: ResidentFallback::Lane.session_id(turn.agent, turn.chat, fallback: false))
       run.record_result!(status: result["status"].to_i, body: body)
     end
     ResidentTurnCompletion.new(hopped, result.merge("body" => body)).call if hopped

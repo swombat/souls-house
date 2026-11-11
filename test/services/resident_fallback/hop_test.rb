@@ -96,6 +96,10 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
         assert_nil run.resident_turn
 
         perform_enqueued_jobs(only: ResidentFallbackHopJob)
+        # A second delivery of the same job does nothing (Mira #887).
+        ResidentFallbackHopJob.perform_now(ResidentFallbackTurn.sole.id)
+        assert_equal 1, ResidentTurn.where(agent_runtime_interaction_id: run.id, hopped_at: nil).count
+        assert_nil run.reload.finished_at
         second = run.reload.resident_turn
         payload = JSON.parse(second.payload)
         assert_equal [ "house", "fallback/anthropic/claude-sonnet-5", true ], payload.values_at("provider", "model", "paid_fallback")
