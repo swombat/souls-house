@@ -8,7 +8,7 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
 
   LIMITED = {
     status: "error", error_kind: "subscription_limit",
-    subscription_usage: { provider: "xai", status: "limited", windows: [ { blocking: true, remaining_percent: 0, resets_at: "2026-11-11T14:00:00Z" } ] }
+    subscription_usage: { provider: "xai", status: "limited", windows: [ { blocking: true, remaining_percent: 0, resets_at: "2099-11-11T14:00:00Z" } ] }
   }.freeze
 
   setup do
@@ -66,7 +66,7 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     run = turn.fallback_interaction
     assert_equal run, turn.primary_interaction, "one logical turn, one run"
     assert_equal [ "xai", "grok-build-0.1", "anthropic/claude-sonnet-5" ], [ turn.primary_provider, turn.primary_model, turn.fallback_model_id ]
-    assert_equal Time.utc(2026, 11, 11, 14), turn.primary_resets_at
+    assert_equal Time.utc(2099, 11, 11, 14), turn.primary_resets_at
     assert_equal 429, turn.primary_result["status"]
 
     assert_equal 2, @triggers.size
