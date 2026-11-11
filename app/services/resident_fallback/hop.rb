@@ -99,6 +99,10 @@ module ResidentFallback
       return false if Lane.fallback_session?(@interaction.session_id)
       return false if ResidentFallbackTurn.exists?(primary_interaction_id: @interaction.id)
       return false if Agent.exists?(first_conversation_interaction_id: @interaction.id)
+      # An imported home brings its own Chaos configuration, which may name a
+      # provider with a key of its own; the runtime's guard only removes the
+      # keys the house provides (#690). Not in v1.
+      return false if agent.imported_home?
       return false unless Setting.instance.paid_fallback_enabled?
       return false unless Decision.for(agent).ok?
 

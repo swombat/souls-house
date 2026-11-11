@@ -179,6 +179,15 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     assert_nil ResidentFallback::Hop.open!(interaction: interaction, result: limited), "one hop per run"
   end
 
+  test "an imported home doesn't hop: its own Chaos configuration is outside the runtime's key guard" do
+    opt_in!
+    @agent.update_columns(home_profile: "portable_v1", portable_home_id: 1)
+    assert @agent.reload.imported_home?
+    ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+    assert_equal 0, ResidentFallbackTurn.count
+    assert_includes @chat.messages.order(:id).last.content, "subscription limit has been reached"
+  end
+
   test "a policy that can't admit a call (no own key) doesn't hop" do
     opt_in!
     @agent.account.update_columns(openrouter_api_key: nil)
