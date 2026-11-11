@@ -106,6 +106,29 @@ class StoneBoundaryTest < Minitest::Test
     assert_equal 4, @calls.size
   end
 
+  def test_only_a_small_json_post_to_a_revisions_rows_path_is_let_through
+    host = "quiet-blue-river.soulstones.test"
+    body = '{"table":"Posts","row":{"platform":"x"}}'
+    status, headers, = call_boundary("/revisions/2/rows", method: "POST", host: host, body: body)
+    assert_equal 200, status
+    refute headers.key?("set-cookie")
+    env = @calls.last
+    assert_equal "quiet-blue-river", env["souls_house.stone_name"]
+    assert_nil env["HTTP_COOKIE"]
+    assert_nil env["HTTP_AUTHORIZATION"]
+
+    assert_denied "/revisions/2/rows", method: "POST", host: host, body: body, content_type: "text/plain"
+    assert_denied "/revisions/2/rows", method: "POST", host: host, body: body, content_type: "application/x-www-form-urlencoded"
+    assert_denied "/revisions/2/rows", method: "POST", host: host, body: ""
+    assert_denied "/revisions/2/rows", method: "POST", host: host, body: "x" * 20_000
+    assert_denied "/revisions/2/rows", method: "PUT", host: host, body: body
+    assert_denied "/revisions/2/rows", host: host
+    assert_denied "/revisions/0/rows", method: "POST", host: host, body: body
+    assert_denied "/revisions/2/data", method: "POST", host: host, body: body
+    assert_denied "/revisions/2/rows/1", method: "POST", host: host, body: body
+    assert_denied "/revisions/2/rows", method: "POST", host: "soulstones.test", body: body
+  end
+
   def test_internal_health_check_reaches_real_rails_health_controller
     @boundary = StoneHosting::Boundary.new(Rails::HealthController.action(:show))
     [ "soulstones.test", nil ].each do |domain|
@@ -130,8 +153,10 @@ class StoneBoundaryTest < Minitest::Test
     assert_equal before, @calls.size, "denied request reached downstream"
   end
 
-  def call_boundary(path, host: "house.test", method: "GET", forwarded: nil)
-    env = Rack::MockRequest.env_for("http://#{host}#{path}", method: method)
+  def call_boundary(path, host: "house.test", method: "GET", forwarded: nil, body: nil, content_type: "application/json")
+    options = { method: method }
+    options.merge!(input: body, "CONTENT_TYPE" => content_type) if body
+    env = Rack::MockRequest.env_for("http://#{host}#{path}", options)
     env["HTTP_HOST"] = host
     env["HTTP_COOKIE"] = "session=synthetic"
     env["HTTP_AUTHORIZATION"] = "Bearer synthetic"

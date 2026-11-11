@@ -83,6 +83,7 @@ class FieldTable < ApplicationRecord
     case record
     when User then record.full_name.presence || record.email_address.split("@").first
     when Agent then record.name
+    when Stone then "Stone: #{record.latest_revision&.title || 'untitled'}"
     end
   end
 

@@ -43,8 +43,9 @@ module TestSupport::E2e::InteractiveStoneFixtures
       stone.revise!(title: "Second revision", html: params[:second_html], author: account.users.first!, public: true,
         base_revision_id: stone.latest_revision.to_param, interactive: true)
     end
+    stone.issue_write_key! if params[:write_link]
     render json: { url: stone.public_url, first_url: stone.public_url(number: 1), stone_id: stone.to_param,
-                   table_id: table_ids.first }
+                   table_id: table_ids.first, write_url: stone.write_url }
   end
 
   # Adds a row to an E2E account's Field table, as a resident would.

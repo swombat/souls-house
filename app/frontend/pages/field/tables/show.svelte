@@ -148,6 +148,33 @@
     router.patch(base, { name: tableName.trim() }, opts({ onSuccess: () => ((error = ''), (tableName = null)) }));
   }
 
+  function makeWriteLink(stone) {
+    const again = stone.writable ? ' The current write link will stop working.' : '';
+    if (
+      !confirm(
+        `Anyone holding the write link can add rows to every table "${stone.title || 'this stone'}" reads.${again}`
+      )
+    )
+      return;
+    router.post(`${base}/stones/${stone.id}/write_link`, {}, opts());
+  }
+
+  function revokeWriteLink(stone) {
+    if (!confirm(`Revoke the write link for "${stone.title || 'this stone'}"? Its plain link stays read-only.`)) return;
+    router.delete(`${base}/stones/${stone.id}/write_link`, opts());
+  }
+
+  let copiedStone = $state(null);
+  async function copyWriteLink(stone) {
+    try {
+      await navigator.clipboard.writeText(stone.write_url);
+      copiedStone = stone.id;
+      setTimeout(() => (copiedStone = null), 2000);
+    } catch {
+      prompt('Copy the write link', stone.write_url);
+    }
+  }
+
   function detachStone(stone) {
     if (!confirm(`Stop "${stone.title || 'this stone'}" reading ${table.name}?`)) return;
     router.delete(`${base}/stones/${stone.id}`, opts());
@@ -371,13 +398,23 @@
   {#if stones.length > 0}
     <h2 class="text-lg font-semibold mb-2">Readable through public stones</h2>
     <p class="text-sm text-muted-foreground mb-3">
-      These stones read this table's rows, so anyone with their link can see them. Detach to stop that at once.
+      These stones read this table's rows, so anyone with their link can see them. Detach to stop that at once. A write
+      link also lets whoever holds it add rows from the stone; revoke it to make the stone read-only again.
     </p>
     <ul class="divide-y rounded-lg border mb-10" data-testid="reading-stones">
       {#each stones as stone (stone.id)}
         <li class="flex flex-wrap items-center gap-2 px-3 py-2">
           <a href={stone.public_url} target="_blank" rel="noopener noreferrer" class="underline flex-1 min-w-0 truncate"
             >{stone.title || 'Stone'}</a>
+          {#if stone.writable}
+            <Button size="sm" variant="outline" onclick={() => copyWriteLink(stone)}
+              >{copiedStone === stone.id ? 'Copied' : 'Copy write link'}</Button>
+            <Button size="sm" variant="ghost" onclick={() => makeWriteLink(stone)}>New write link</Button>
+            <Button size="sm" variant="ghost" class="text-destructive" onclick={() => revokeWriteLink(stone)}
+              >Revoke write link</Button>
+          {:else}
+            <Button size="sm" variant="outline" onclick={() => makeWriteLink(stone)}>Make write link</Button>
+          {/if}
           <Button size="sm" variant="outline" onclick={() => detachStone(stone)}>Detach</Button>
         </li>
       {/each}

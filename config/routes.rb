@@ -4,6 +4,7 @@ Rails.application.routes.draw do
     get "/revisions/:number", to: "stones#show", as: :hosted_stone_revision
     get "/revisions/:number/content", to: "stones#content", as: :hosted_stone_content
     get "/revisions/:number/data", to: "stones#data", as: :hosted_stone_data
+    post "/revisions/:number/rows", to: "stones#write", as: :hosted_stone_rows
   end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
@@ -353,6 +354,8 @@ Rails.application.routes.draw do
       resources :rows, controller: "field_table_rows", only: [ :create, :update, :destroy ]
       resources :columns, controller: "field_table_columns", only: [ :create, :update, :destroy ], param: :key
       delete "stones/:stone_id", to: "field_tables#detach_stone", as: :stone
+      post "stones/:stone_id/write_link", to: "field_tables#issue_write_link", as: :stone_write_link
+      delete "stones/:stone_id/write_link", to: "field_tables#revoke_write_link"
     end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
@@ -565,6 +568,7 @@ Rails.application.routes.draw do
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create, :update ] do
         resources :stones, only: [ :index, :show, :create, :destroy ] do
+          resource :write_link, only: [ :create, :destroy ], controller: "stone_write_links"
           resources :revisions, only: [ :index, :show, :create ], controller: "stone_revisions"
         end
         resource :draft, only: [ :show, :update ]

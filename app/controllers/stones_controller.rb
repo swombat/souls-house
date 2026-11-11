@@ -22,6 +22,13 @@ class StonesController < ActionController::Base
   before_action :find_revision
   helper_method :hosted?
 
+  # A write carries the stone's write key in X-Stone-Write-Key and no
+  # cookie (this controller never loads a session), so there is no session for
+  # a forged request to borrow.
+  skip_forgery_protection only: :write
+  rate_limit to: 30, within: 1.minute, only: :write, by: -> { request.env["souls_house.stone_name"].to_s },
+    with: -> { render json: { error: "Too many writes from this stone; wait a minute" }, status: :too_many_requests }
+
   rescue_from ActiveRecord::RecordNotFound, with: :not_found
   rescue_from Stone::Withdrawn, with: :not_found
   rescue_from ActiveStorage::FileNotFoundError, with: :not_found
@@ -83,6 +90,32 @@ class StonesController < ActionController::Base
 
     response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
     render json: { tables: payload }
+  end
+
+  # One row appended to a table this exact revision reads, by whoever holds
+  # the stone's write link. Only the trusted viewer calls this: it read the
+  # key from the link's fragment, and the authored frame never sees it.
+  def write
+    raise ActiveRecord::RecordNotFound unless hosted? && @revision.interactive?
+
+    response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    key = request.headers["X-Stone-Write-Key"].to_s[/\A[A-Za-z0-9_-]{20,128}\z/]
+    unless @stone.write_key_matches?(key)
+      return render json: { error: "This link can't write to tables (no write key, or it was revoked)" }, status: :forbidden
+    end
+
+    name = params[:table]
+    table = @revision.field_tables.kept.find_by(name: name) if name.is_a?(String)
+    return render json: { error: "This stone doesn't read a table called #{name.to_s.truncate(80)}" }, status: :not_found unless table
+
+    row = params[:row]
+    row = row.to_unsafe_h if row.respond_to?(:to_unsafe_h)
+    raise FieldTable::Refused, "row must be an object of column => value" unless row.is_a?(Hash)
+
+    created = table.add_rows!([ row ], by: @stone).first
+    render json: { row: created.data }, status: :created
+  rescue FieldTable::Refused => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   private
