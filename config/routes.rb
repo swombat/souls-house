@@ -160,6 +160,9 @@ Rails.application.routes.draw do
       post :account_plan_checkout
       post :account_plan_change
       post :portal
+      post :end_plan
+      post :confirm_end_plan
+      post :keep_plan
       resources :codes, only: :create, controller: "billing_codes"
     end
     resource :billing_card, only: :create, module: :accounts do

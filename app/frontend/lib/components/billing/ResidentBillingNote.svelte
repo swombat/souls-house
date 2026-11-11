@@ -10,6 +10,9 @@
   let { resident, price = null, trial = false, canManage = false, onmanage = () => {}, busy = false } = $props();
 
   let entitlement = $derived(resident.entitlement);
+  // A plan set to end wins over the trial wording: adding a card does not undo
+  // the cancellation, only Keep does.
+  let ending = $derived(!!entitlement?.subscription?.cancel_at_period_end);
   let trialEnd = $derived(date(resident.trial_ends_at));
   // What the resident costs once its trial ends, e.g. " at $9.99 a month + VAT".
   let afterTrial = $derived(price ? ` at ${price} + VAT` : '');
@@ -21,7 +24,7 @@
 </script>
 
 <div class="mt-1 space-y-1 text-xs text-muted-foreground">
-  {#if trial}
+  {#if trial && !ending}
     <p data-testid="resident-trial">
       <span class="font-medium text-foreground">
         {#if trialEnd}Free trial until {trialEnd}.{:else}On its free trial.{/if}
@@ -41,8 +44,8 @@
       work start. Nothing is deleted. Pay the open invoice from Manage billing, or choose a size here, to wake them. If
       they stay asleep for 30 days, the house will be in touch about their care.
     </p>
-  {:else if entitlement?.subscription?.cancel_at_period_end}
-    <p>Cancels on {date(entitlement.subscription.current_period_end)}.</p>
+  {:else if ending}
+    <p>Ends on {date(entitlement.subscription.current_period_end)}; won't renew.</p>
   {:else if entitlement?.state === 'active' && entitlement.subscription?.current_period_end}
     <p>Renews on {date(entitlement.subscription.current_period_end)}.</p>
   {:else if entitlement?.state === 'complimentary'}
