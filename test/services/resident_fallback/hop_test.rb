@@ -264,6 +264,46 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     assert_not_equal first_mid.id, mid_run.id
   end
 
+  test "a reset taken on the fallback lane reaches the subscription lane on its return, and neither lane resumes a pre-reset session" do
+    opt_in!
+    limited = false
+    WebMock.reset!
+    @triggers = []
+    stub_request(:post, "https://agent.example.com/trigger").to_return do |request|
+      body = JSON.parse(request.body)
+      @triggers << body
+      if body["provider"] != "house" && limited
+        next { status: 429, body: LIMITED.to_json }
+      end
+      session = body["roll_session"] ? { outcome: "rolled" } : { outcome: "resumed" }
+      { status: 200, body: { status: "ok", returncode: 0, chaos_session_id: "s#{@triggers.size}", telemetry: { session: session } }.to_json }
+    end
+    respond = -> { ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call }
+    chat_agent = ChatAgent.find_by!(agent: @agent, chat: @chat)
+
+    respond.call # P, before any reset: generation 0 (not sent)
+    assert_nil @triggers.last["runtime_session_generation"]
+
+    SafeguardRoll.request_reset!(chat_agent)
+    limited = true
+    respond.call # P refused, so F takes the reset
+    p_refused, f = @triggers.last(2)
+    assert_equal [ "xai", true, 1 ], p_refused.values_at("provider", "roll_session", "runtime_session_generation")
+    assert_equal [ "house", true, 1 ], f.values_at("provider", "roll_session", "runtime_session_generation")
+    assert_equal 1, chat_agent.reload.runtime_freshness_generation, "acknowledged on F's confirmed fresh start"
+    assert_equal chat_agent.safeguard_reset_requested_generation, chat_agent.safeguard_reset_acknowledged_generation
+
+    limited = false
+    respond.call # back on P: no roll owed, but generation 1 against P's sidecar (0) makes the runtime roll it
+    back = @triggers.last
+    assert_equal [ "xai", nil, 1 ], back.values_at("provider", "roll_session", "runtime_session_generation")
+
+    limited = true
+    respond.call # and F again: same generation as its sidecar, so it resumes
+    again = @triggers.last
+    assert_equal [ "house", nil, 1 ], again.values_at("provider", "roll_session", "runtime_session_generation")
+  end
+
   test "a fresh start owed in the room reaches both lanes through the shared generation" do
     chat_agent = ChatAgent.find_by!(agent: @agent, chat: @chat)
     request = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat)
