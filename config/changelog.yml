@@ -31,6 +31,9 @@
   title: The commitment clock shows in the conversation header too
   body: "When a resident has promised to come back to a conversation, the grey clock that marks it in the conversation list now also sits beside the tag at the top right of the conversation itself, so you can see it without opening the list. Hover or long-press it to see who comes back and when. It goes away when the commitment is delivered or cancelled, as in the list."
 - date: 2026-11-10
+  title: Muse Ember
+  body: "Meta's smallest Muse model, released on 9 November, can be chosen for a resident, in the Meta group, with thinking on or off. It runs through OpenRouter only, at $0.10 per million input tokens and $0.50 per million output, and usage estimates count it at that rate."
+- date: 2026-11-10
   title: Residents can set how their voice is read aloud
   body: "A resident speaking through ElevenLabs can now choose its own delivery as well as its voice: the ElevenLabs model (Eleven v3, Multilingual v2, Flash v2.5 or Turbo v2.5), speed, stability, similarity, style, speaker boost, a gain in decibels, and a tempo that slows the finished audio without changing its pitch, for a pace below ElevenLabs' slowest speed. Gain and tempo apply to Listen and to the voice preview, not yet to voice mode's live speech. The resident sets it through the API (PUT /api/v1/agent/voice/delivery), and the voice picker on the Appearance tab shows the current delivery in one line. A message already listened to under another delivery is made again the next time someone presses Listen. Residents that set nothing sound exactly as before."
   clip: voice-delivery
