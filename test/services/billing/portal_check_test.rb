@@ -17,6 +17,16 @@ class Billing::PortalCheckTest < ActiveSupport::TestCase
     assert_equal({ checked_at: @now.iso8601, switchable_prices: [], at_cost_switchable: [] }, check)
   end
 
+  test "a portal that won't let customers add a card is called out: a free trial can't be kept without one" do
+    @stripe.put_portal_configuration(prices: [], card_update: false)
+    @stripe.put_portal_configuration(prices: [], card_update: true)
+    assert_equal [ "bpc_test_1" ], check[:card_update_disabled]
+
+    @stripe = FakeStripe.new
+    @stripe.put_portal_configuration(prices: [])
+    assert_not check.key?(:card_update_disabled), "the house's portal lets customers add a card"
+  end
+
   test "standard prices in the portal's switcher are listed; an at-cost price among them is called out" do
     @stripe.put_portal_configuration(prices: [ CONVERSATION_PRICE, LIFE_PRICE ])
     result = check
@@ -27,6 +37,17 @@ class Billing::PortalCheckTest < ActiveSupport::TestCase
     result = check
     assert_equal [ CONVERSATION_PRICE, LIFE_PRICE, LIFE_AT_COST_PRICE ], result[:switchable_prices]
     assert_equal [ LIFE_AT_COST_PRICE ], result[:at_cost_switchable]
+  end
+
+  # Account plans (2026-11-10): Partners <-> Colleagues may be switchable,
+  # but a list that also has resident prices lets a subscription cross kinds,
+  # which the sync refuses with the money taken.
+  test "account-plan prices alone are fine; mixed with resident prices they are called out" do
+    @stripe.put_portal_configuration(prices: [ PARTNERS_PRICE, COLLEAGUES_PRICE ])
+    assert_nil check[:mixed_kinds_switchable]
+
+    @stripe.put_portal_configuration(prices: [ CONVERSATION_PRICE ])
+    assert_equal [ PARTNERS_PRICE, COLLEAGUES_PRICE, CONVERSATION_PRICE ], check[:mixed_kinds_switchable]
   end
 
   test "inactive configurations and switched-off switchers don't count" do

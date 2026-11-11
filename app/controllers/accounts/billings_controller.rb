@@ -5,7 +5,8 @@ class Accounts::BillingsController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_account_manager!
-  before_action :require_account_owner!, only: [ :checkout, :plan_change, :portal ]
+  before_action :require_account_owner!, only: [ :checkout, :plan_change, :portal, :account_plan_checkout,
+    :account_plan_change ]
 
   def show
     if params[:checkout] == "success"
@@ -22,6 +23,9 @@ class Accounts::BillingsController < ApplicationController
         contact_email: Billing.contact_email
       },
       tiers: Billing::Tier.all.as_json,
+      account_plans: Billing::AccountPlan.all.as_json,
+      account_plan: current_account.account_plan_json,
+      trial: Billing::Trial.as_json_for(current_account),
       offers: current_account.purchasable_offers.as_json,
       codes: {
         eligible_rates: current_account.eligible_rates,
@@ -74,6 +78,36 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
+  # The account's plan, bought through Stripe Checkout. Moving between paid
+  # plans is account_plan_change; cancelling is in Stripe's portal.
+  def account_plan_checkout
+    plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
+    url = Billing::AccountPlanCheckout.new(
+      account: current_account,
+      plan: plan,
+      success_url: account_billing_url(current_account, checkout: "success"),
+      cancel_url: account_billing_url(current_account)
+    ).url
+    audit("start_account_plan_checkout", current_account, plan: plan.id)
+    inertia_location url
+  rescue Billing::AccountPlanCheckout::Refused, Billing::AlreadySubscribed, Billing::NotConfigured, Billing::NotReady,
+    Stripe::StripeError => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
+  # Partners and Colleagues, either way, now, prorated by Stripe.
+  def account_plan_change
+    plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
+    subscription = Billing::AccountPlanChange.new(account: current_account, plan: plan).call
+    audit("change_account_plan", current_account, plan: plan.id, now: subscription.plan,
+      stripe_subscription_id: subscription.stripe_subscription_id)
+    now_on = subscription.plan_record&.name || subscription.plan
+    redirect_to account_billing_path(current_account),
+      notice: "The account is now on #{now_on}. Stripe puts the difference for the rest of this period on the next invoice."
+  rescue Billing::AccountPlanChange::Refused, Billing::NotConfigured, Billing::InvalidSubscription, Stripe::StripeError => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
   private
 
   # Disabled residents don't appear and can't be paid for: re-enable one first.
@@ -86,7 +120,12 @@ class Accounts::BillingsController < ApplicationController
       .where(agent_id: billable_agents.select(:id)).index_by(&:agent_id)
 
     billable_agents.by_name.map do |agent|
-      { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlements[agent.id]&.as_json }
+      entitlement = entitlements[agent.id]
+      # has_payment_method isn't sent: whether Stripe will charge at the
+      # trial's end depends on the customer's default card, which the house
+      # doesn't sync; the wizard reads it live (Billing::PaymentMethod).
+      { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlement&.as_json,
+        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601 }
     end
   end
 

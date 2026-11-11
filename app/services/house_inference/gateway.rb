@@ -10,13 +10,9 @@ module HouseInference
     end
 
     def call
-      offering = Offering.find(@input['model'])
-      unless offering && @agent.model_id == @input['model']
-        raise Error.new('Only the resident’s selected house model is allowed.', status: 403)
-      end
-      raise Error.new('House inference has not been configured by the operator.') unless Offering.configured?
+      offering = authorize!
       body = Request.build(@input, offering)
-      call = reserve!(offering)
+      call = reserve!(offering, body)
       buffer = +''
       usage = nil
       upstream_id = nil
@@ -26,7 +22,7 @@ module HouseInference
       total_bytes = 0
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 180
       request = Net::HTTP::Post.new(URL)
-      request['Authorization'] = "Bearer #{Offering.key}"
+      request['Authorization'] = "Bearer #{upstream_key}"
       request['Content-Type'] = 'application/json'
       request.body = JSON.generate(body)
       http = Net::HTTP.new(URL.host, URL.port)
@@ -36,6 +32,9 @@ module HouseInference
       http.write_timeout = 30
       http.max_retries = 0
       # A retry is a new admitted call, never a hidden repeat of a billed POST.
+      # Connected first, so a call that failed to connect is known unsent.
+      http.start
+      @sent = true
       http.request(request) do |response|
         unless response.is_a?(Net::HTTPSuccess)
           # A refused request delivered nothing, so the resident pays nothing
@@ -44,8 +43,7 @@ module HouseInference
           # status is kept, and why (#725), sanitised: never the body itself.
           reason = HouseInference::RefusalReason.call(self.class.bounded_body(response, deadline: deadline))
           call.release!(http_status: response.code.to_i, refusal_reason: reason)
-          raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
-            code: 'house_provider_refused', status: 502, reason: reason)
+          raise provider_refused(reason)
         end
         response.read_body do |chunk|
           if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
@@ -102,6 +100,7 @@ module HouseInference
       else
         call&.release!(upstream_id: upstream_id)
       end
+      http&.finish if http&.started?
     end
 
     # At most the first RefusalReason::MAX_BYTES of a refusal's body. Reading
@@ -137,10 +136,30 @@ module HouseInference
 
     private
 
+    def authorize!
+      offering = Offering.find(@input['model'])
+      unless offering && @agent.model_id == @input['model']
+        raise Error.new('Only the resident’s selected house model is allowed.', status: 403)
+      end
+      raise Error.new('House inference has not been configured by the operator.') unless Offering.configured?
+      offering
+    end
+
+    def upstream_key = Offering.key
+
+    # Whether the request may have left the house: set once the connection
+    # to the provider is open.
+    def sent? = @sent == true
+
+    def provider_refused(reason)
+      Error.new('The pinned house provider could not complete this request. No personal credentials were used.',
+        code: 'house_provider_refused', status: 502, reason: reason)
+    end
+
     # A paid plan's allowance first (paid replaces the free grant, never
     # stacks); otherwise the user's free grant. Each ledger re-checks under
     # the lock, so a plan that lapses in between is refused, not misbilled.
-    def reserve!(offering)
+    def reserve!(offering, _body = nil)
       entitlement = ResidentEntitlement.find_by(agent: @agent)
       return entitlement.reserve_house_call!(offering, @input['model'], agent_id: @agent.id) if entitlement&.funds_calls?
       # Asleep: its plan lapsed. The free grant doesn't stand in for it.

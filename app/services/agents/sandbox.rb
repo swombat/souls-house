@@ -96,7 +96,12 @@ module Agents
       ensure_memory_not_suspended!
       ensure_awake!
       # Started and stopped on its VM by explicit commands, never cold-started.
-      return yield if RemoteRuntime.dispatchable?(agent)
+      # One that can't take a turn now raises RemoteRuntime's reason, never
+      # the local runtime's (#868).
+      if RemoteRuntime.remote?(agent)
+        RemoteRuntime.require_dispatchable!(agent)
+        return yield
+      end
 
       RuntimeLocation.require_local!(agent)
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?

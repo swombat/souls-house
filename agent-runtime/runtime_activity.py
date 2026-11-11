@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import random
+import re
 import signal
 import subprocess
 import threading
@@ -28,6 +29,16 @@ _silence_spec.loader.exec_module(silence_nudge)
 # The ack carries up to ten room messages (see silence_nudge); Rails bounds
 # each one, and this bounds what the shim will read.
 ACK_MAX_BYTES = 262_144
+
+# soulshouse-plan keeps its pointers here (under the run's CHAOS_HOME).
+PLAN_POINTER_DIR = "house-plans"
+PLAN_TASK_STATUSES = frozenset(("pending", "in_progress", "blocked", "completed", "cancelled"))
+PLAN_READ_TIMEOUT = 5
+# Chaos pages `plan read` at 50 tasks; the helper allows 100 steps, and
+# nested tasks take page slots too.
+PLAN_READ_PAGES = 10
+# A Chaos plan id or reference; never an option-shaped argument.
+PLAN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./-]{0,199}")
 
 
 def is_work_event(event):
@@ -93,6 +104,19 @@ class Reporter:
         self.silence = None
         # Set by the trigger shim from the payload: the waking turn was spoken.
         self.voice_mode = False
+        # The resident's plan (#864): which Chaos session this run is, the env
+        # its chaos ran with, and the last plan sent, so only changes are sent.
+        self.process_id = None
+        self.plan_env = None
+        self.plan_bin = "chaos"
+        self.last_plan = None
+        self.plan_reading = threading.Lock()
+        self.plans_seen_open = set()
+        self.native_plan_id = None
+        # Native nudges coalesce: one read in flight, one latest refresh pending.
+        self.native_cond = threading.Condition()
+        self.native_pending = None
+        self.native_running = False
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -136,19 +160,33 @@ class Reporter:
             self.seq = 0
             self.operations = {}
             self.subagents = {}
+            # Each attempt has its own snapshot; send the plan again.
+            self.last_plan = None
             self.emit("attempt.started", {"narration_capability": self.capability})
             self.stream_gap("stream.started")
 
     def project(self, event):
         kind = event.get("type")
         if kind == "process.started":
+            if isinstance(event.get("process_id"), str):
+                self.process_id = event["process_id"]
             self.stream_gap("stream.started")
+        elif kind == "plan.updated":
+            # Chaos's own plan tool committed a change (non-clamped sessions).
+            # The event carries one page of the plan, not the plan, so it is a
+            # nudge to read the whole plan it names (#886 review).
+            if self.plan_pointer():
+                self.poll_plan()
+            else:
+                self.read_native(event.get("plan_id"))
         elif kind == "agent.status_changed":
             self.project_subagent(event)
         elif kind == "turn.started":
             self.emit("turn.started")
+            self.poll_plan()
         elif kind in ("turn.completed", "turn.failed"):
             self.emit("turn.finished")
+            self.poll_plan()
         elif kind in ("item.started", "item.updated", "item.completed"):
             item = event.get("item") or {}
             category = self.CATEGORIES.get(item.get("type"))
@@ -176,6 +214,175 @@ class Reporter:
                      "status": "completed" if step.get("completed") else "pending"}
                     for step in item.get("items", [])[:100] if isinstance(step, dict)
                 ]})
+
+    def plan_payload(self, plan):
+        """Titles and states of a Chaos plan's top-level tasks, nothing else.
+        Takes `chaos plan read` output or a Chaos plan.updated event."""
+        if not isinstance(plan, dict):
+            return None
+        head = plan.get("plan") if isinstance(plan.get("plan"), dict) else plan
+        tasks = plan.get("tasks")
+        if not isinstance(tasks, list):
+            return None
+        tasks = [task for task in tasks if isinstance(task, dict) and task.get("depth", 0) == 0
+                 and task.get("status") in PLAN_TASK_STATUSES]
+        if all("position" in task for task in tasks):
+            tasks.sort(key=lambda task: task["position"] if isinstance(task["position"], int) else 0)
+        return {
+            "title": self._text(head.get("title", ""))[:200],
+            "status": head.get("status") if head.get("status") in ("active", "completed", "cancelled") else "active",
+            "steps": [{"text": self._text(task.get("title", "")), "status": task["status"]} for task in tasks[:100]],
+        }
+
+    def send_plan(self, payload):
+        if not payload or not self.share:
+            return
+        with self.lock:
+            if payload == self.last_plan:
+                return
+            self.last_plan = payload
+        self.emit("plan.updated", payload)
+
+    def plan_pointer(self):
+        """The plan soulshouse-plan left for this run, else for this session.
+        A plan that ended is shown only on the run that ended it. Returns
+        (plan_id, pointer path, pointer data) or None."""
+        env = self.plan_env or {}
+        home = Path(env.get("CHAOS_HOME") or Path.home() / ".chaos") / PLAN_POINTER_DIR
+        names = [f"run-{self.run_id}.json"]
+        if self.process_id and "/" not in self.process_id and not self.process_id.startswith("."):
+            names.append(f"thread-{self.process_id}.json")
+        for name in names:
+            try:
+                data = json.loads((home / name).read_text())
+            except (OSError, ValueError):
+                continue
+            if not isinstance(data, dict) or not isinstance(data.get("plan_id"), str):
+                continue
+            if "ended_run_id" in data and data["ended_run_id"] != self.run_id:
+                continue
+            return data["plan_id"], home / name, data
+        return None
+
+    def read_plan(self, plan_id):
+        """Every page of `chaos plan read` (50 tasks a page, nested ones
+        included), or None if any page fails or the plan cannot be read whole
+        within the bound. A partial plan would miscount the card."""
+        deadline = time.monotonic() + PLAN_READ_TIMEOUT
+        data, tasks, offset, previous = None, [], 0, 0
+        for _ in range(PLAN_READ_PAGES):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            args = [self.plan_bin, "plan", "read"] + (["--offset", str(offset)] if offset else []) + [plan_id]
+            proc = subprocess.run(args, capture_output=True, env=self.plan_env, timeout=remaining,
+                                  stdin=subprocess.DEVNULL)
+            if proc.returncode != 0 or len(proc.stdout) > 1024 * 1024:
+                return None
+            page = json.loads(proc.stdout)
+            if not isinstance(page, dict) or not isinstance(page.get("tasks"), list):
+                return None
+            data = data or page
+            tasks.extend(page["tasks"])
+            offset = page.get("next_offset")
+            if offset is None:
+                return dict(data, tasks=tasks)
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset <= previous:
+                return None
+            previous = offset
+        return None
+
+    @staticmethod
+    def settle_pointer(path, plan_id, ended_run_id):
+        """Mark a pointer whose plan Chaos ended without the helper (its own
+        plan tool, or `chaos plan change`), so later runs stop reading it."""
+        try:
+            current = json.loads(path.read_text())
+            if not isinstance(current, dict) or current.get("plan_id") != plan_id or "ended_run_id" in current:
+                return
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_text(json.dumps(dict(current, ended_run_id=ended_run_id)))
+            os.replace(tmp, path)
+        except (OSError, ValueError):
+            pass
+
+    def read_native(self, plan_id, wait=False):
+        """Read and send the whole plan a native plan.updated named. Nudges
+        coalesce: at most one read runs and one refresh waits, and the waiting
+        refresh is always for the latest plan named, so a burst of events costs
+        two reads, not one each. With wait, return once a read that started
+        after this call has finished, or after a bounded wait. Never raises."""
+        if not self.share or self.plan_env is None or not isinstance(plan_id, str) \
+                or not PLAN_ID.fullmatch(plan_id):
+            return
+        self.native_plan_id = plan_id
+        with self.native_cond:
+            self.native_pending = plan_id
+            if self.native_running:
+                if wait:
+                    deadline = time.monotonic() + 2 * PLAN_READ_TIMEOUT + 1
+                    while self.native_running and self.native_cond.wait(max(0, deadline - time.monotonic())):
+                        pass
+                return
+            self.native_running = True
+        if wait:
+            self._native_worker()
+        else:
+            threading.Thread(target=self._native_worker, daemon=True).start()
+
+    def _native_worker(self):
+        while True:
+            with self.native_cond:
+                plan_id, self.native_pending = self.native_pending, None
+                if plan_id is None:
+                    self.native_running = False
+                    self.native_cond.notify_all()
+                    return
+            try:
+                self.send_plan(self.plan_payload(self.read_plan(plan_id)))
+            except Exception:  # the worker must always reach its exit to clear native_running
+                logging.getLogger(__name__).debug("native plan read failed", exc_info=True)
+
+    def poll_plan(self, wait=False):
+        """Read the pointed-to plan with `chaos plan read` and send it if it
+        changed. Command-line changes emit nothing on the stream, so this is
+        how a clamped resident's ticks reach the card. Never raises."""
+        if not self.share or self.plan_env is None:
+            return
+        pointer = self.plan_pointer()
+        if not pointer:
+            return
+        plan_id, path, data = pointer
+        if not self.plan_reading.acquire(blocking=wait):
+            return
+
+        def read():
+            try:
+                payload = self.plan_payload(self.read_plan(plan_id))
+                if not payload:
+                    return
+                if payload["status"] == "active":
+                    self.plans_seen_open.add(plan_id)
+                elif "ended_run_id" not in data:
+                    # Ended outside the helper. It is this run's ending only if
+                    # this run started the plan or saw it open; otherwise it
+                    # ended before this run and must not follow onto it.
+                    run_pointer = path.with_name(f"run-{self.run_id}.json")
+                    mine = path == run_pointer or plan_id in self.plans_seen_open
+                    for pointer_path in {path, run_pointer}:
+                        self.settle_pointer(pointer_path, plan_id, self.run_id if mine else None)
+                    if not mine:
+                        return
+                self.send_plan(payload)
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
+            finally:
+                self.plan_reading.release()
+
+        if wait:
+            read()
+        else:
+            threading.Thread(target=read, daemon=True).start()
 
     def project_subagent(self, event):
         if not self.share:
@@ -225,6 +432,9 @@ class Reporter:
                 env.pop(key)
         timeout = max(0.1, min(timeout, self.deadline - time.time()))
         args = self._arm_silence_clock(args, env)
+        self.plan_env = {key: value for key, value in env.items()
+                         if key not in ("SOULSHOUSE_STEER_FILE",)}
+        self.plan_bin = env.get("SOULSHOUSE_CHAOS_BIN") or (args[0] if args else "chaos")
         proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, env=env, start_new_session=True)
         retained = collections.deque()
@@ -310,6 +520,7 @@ class Reporter:
                 except subprocess.TimeoutExpired:
                     if time.monotonic() - last_heartbeat >= 10:
                         self.emit("heartbeat")
+                        self.poll_plan()
                         last_heartbeat = time.monotonic()
         except subprocess.TimeoutExpired:
             try:
@@ -338,6 +549,10 @@ class Reporter:
                 thread.join(timeout=1)
             for pipe in (proc.stdin, proc.stdout, proc.stderr):
                 pipe.close()
+        # The run's last word on its plan, so the card settles where it ended.
+        self.poll_plan(wait=True)
+        if self.native_plan_id and not self.plan_pointer():
+            self.read_native(self.native_plan_id, wait=True)
         completed = subprocess.CompletedProcess(args, proc.returncode,
                                                 (process_started + b"".join(retained)).decode(errors="replace"),
                                                 stderr.decode(errors="replace"))

@@ -257,7 +257,7 @@ module AgentRuntimeInteraction::LiveActivity
     attempts = agent_runtime_attempts.order(:number).to_a
     latest = attempts.last
     stored_snapshot = latest&.snapshot || {}
-    snapshot = stored_snapshot.slice("operations", "commentary", "plan", "narration_capability", "fallback")
+    snapshot = stored_snapshot.slice("operations", "commentary", "plan", "plan_title", "plan_status", "narration_capability", "fallback")
     replies = linked_messages.count
     state = execution_state
     ongoing = !state.in?(TERMINAL_STATES)

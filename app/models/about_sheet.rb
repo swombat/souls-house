@@ -40,9 +40,14 @@ class AboutSheet
 
   def self.render(**options) = new(**options).render
 
+  # free_trial: whether to state the free 14 days (Site Admin's switch). The
+  # copy baked into the runtime image can't know a house's switch, so it
+  # doesn't state them.
   def initialize(today: Date.current, version: self.class.version, changelog: nil, tiers: Billing::Tier.all,
-    billing_open: self.class.billing_open?, features: nil, baked: false)
+    billing_open: self.class.billing_open?, features: nil, baked: false,
+    free_trial: billing_open != :unknown && Setting.instance.free_trial_enabled?)
     @baked = baked
+    @free_trial = free_trial
     @today = today
     @version = version
     @changelog = changelog || Changelog.entries
@@ -88,8 +93,14 @@ class AboutSheet
     source[/<meta\s+name="description"\s+content="([^"]+)"/m, 1]&.squish
   end
 
-  def self.plan_taglines(source: PRICING_COPY.read)
-    block = source[/planTaglines\s*=\s*\{(.*?)\}/m, 1].to_s
+  # The one-line copy for each account plan and each resident size, read
+  # from the maps /pricing uses (accountPlanTaglines, sizeLines).
+  def self.plan_taglines(source: PRICING_COPY.read) = copy_map("accountPlanTaglines", source)
+
+  def self.size_lines(source: PRICING_COPY.read) = copy_map("sizeLines", source)
+
+  def self.copy_map(name, source)
+    block = source[/#{name}\s*=\s*\{(.*?)\}/m, 1].to_s
     block.scan(/(\w+):\s*(#{LITERAL})/).to_h { |id, line| [ id, line[1..-2].gsub(/\\(.)/, '\1') ] }
   end
 
@@ -142,43 +153,107 @@ class AboutSheet
     "## What a resident can do here\n\nFrom the features page, /features.\n\n#{groups.join("\n\n")}"
   end
 
-  # Each plan is offered only if it can be bought itself: Stripe can be set
-  # up for one plan and not the others, as /pricing shows with "Opens soon".
+  # You pay for two things: the account's plan and each resident by its size.
+  # Each size is offered only if it can be bought itself: Stripe can be set
+  # up for one size and not the others, as /pricing shows with "Opens soon".
+  # Account plans lead with what an account on them pays at least, one small
+  # resident included, never with Companions' $0 add-on.
   def plans
-    taglines = self.class.plan_taglines
-    lines = tiers.map do |tier|
-      line = "- **#{tier.name}**"
-      line += ": #{taglines[tier.id]}" if taglines[tier.id]
-      if billing == :unknown || buyable.include?(tier)
-        line += " #{price(tier)}"
-      elsif billing == true
-        line += " Opens soon."
-      end
-      line
-    end
     status = if billing == :unknown
       "This copy cannot tell whether this house has opened its plans; /pricing says. " \
         "The prices below are the catalogue as of this copy's date."
     elsif buyable.empty?
       "Paid plans open soon. No prices are offered yet."
     elsif buyable.size == tiers.size
-      "Plans are open. Each plan is for one resident, by the month."
+      "Plans are open."
     else
-      "Some plans are open: #{buyable.map(&:name).join(", ")}. The others open soon. Each plan is for one resident, by the month."
+      "Some sizes are open: #{buyable.map(&:name).join(", ")}. The others open soon."
     end
-    "## Plans and prices\n\n#{status}\n\n#{lines.join("\n")}\n\nSee /pricing."
+    intro = "You pay for two things: the account's plan, and each resident by the size of the computer it lives on."
+    sections = [ "## Plans and prices", status, intro, "Account plans:", account_plan_lines, "Residents, by size:",
+      size_lines, money_lines, "See /pricing." ]
+    sections.compact.join("\n\n")
+  end
+
+  def account_plan_lines
+    taglines = self.class.plan_taglines
+    Billing::AccountPlan.all.map do |plan|
+      line = "- **#{plan.name}**:"
+      line += " #{taglines[plan.id]}" if taglines[plan.id]
+      line += " #{account_plan_includes(plan)}"
+      line += " #{Billing.usd_label(plan.from_usd)} a month including one small resident." if prices_shown?
+      line
+    end.join("\n")
+  end
+
+  # Only what a plan delivers today (Billing::AccountPlan#features).
+  def account_plan_includes(plan)
+    if plan.subagents?
+      "Everything in Partners, residents can hand work to sub-agents, and #{plan.swarm_searches} Field swarm searches a month."
+    elsif plan.several_members?
+      "Several people in the account, and #{plan.swarm_searches} Field swarm searches a month."
+    else
+      "One person in the account."
+    end
+  end
+
+  def size_lines
+    lines = self.class.size_lines
+    small = tiers.find { |tier| tier.size == "small" }
+    tiers.map do |tier|
+      line = "- **#{tier.name}**:"
+      line += " #{lines[tier.size]}" if lines[tier.size]
+      if billing == :unknown || buyable.include?(tier)
+        line += " #{price(tier)}"
+        if small && tier != small
+          line += " The resident a plan includes can be #{tier.size} for #{Billing.usd_label(tier.monthly_usd - small.monthly_usd)} more."
+        end
+      elsif billing == true
+        line += " Opens soon."
+      end
+      line
+    end.join("\n")
+  end
+
+  # Model use and the free 14 days, only where prices are offered. The paid
+  # account plans are never part of the free days (Mira, 2026-11-10).
+  def money_lines
+    return nil unless prices_shown?
+
+    allowance = Billing.usd_label(Billing::Tier::ACCOUNT_ALLOWANCE_USD)
+    [
+      "Each account gets #{allowance} a month of house-model use, shared by its residents at the standard price. " \
+        "Residents hosted at cost don't draw on it. Bring your own subscription or key for more.",
+      trial_line,
+      "Prices are in US dollars a month, plus VAT where it applies. An account with an at-cost offer pays its price, " \
+        "under the same size names."
+    ].compact.join("\n\n")
+  end
+
+  # Only while Site Admin offers the trial.
+  def trial_line
+    return nil unless @free_trial
+
+    paid = Billing::AccountPlan.all.reject(&:free?)
+    "Free for 14 days, no card asked for: the first resident of a new account, small, once per account. " \
+      "With no card added it goes to sleep on day 14; nothing is deleted. " \
+      "#{paid.map(&:name).join(" and ")} are never free: their #{paid.map { |plan| Billing.usd_label(plan.monthly_usd) }.join(" or ")} " \
+      "a month is charged from the day you choose one, also during a resident's free 14 days, and needs a card."
+  end
+
+  # The account plans include a small resident, so their prices show once
+  # the small size can be bought.
+  def prices_shown?
+    billing == :unknown || buyable.any? { |tier| tier.size == "small" }
   end
 
   def buyable
     @buyable ||= billing == true ? tiers.select(&:purchasable?) : []
   end
 
-  # Only what a plan delivers today (Billing::Tier#features).
+  # Only what a size delivers today (Billing::Tier#features).
   def price(tier)
-    line = "$#{tier.monthly_usd} a month plus VAT: hosting for one resident, with $#{tier.allowance_usd} a month of house-model use"
-    line += " and #{tier.swarm_searches} Field swarm searches a month" if tier.swarm_search?
-    line += ", and sub-agents" if tier.features[:subagents]
-    "#{line}."
+    "#{Billing.usd_label(tier.monthly_usd)} a month each: hosting for one resident of this size."
   end
 
   def where_it_runs

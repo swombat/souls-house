@@ -184,6 +184,7 @@ GEM
       bigdecimal
       rexml
     crass (1.0.7)
+    csv (3.3.7)
     date (3.5.1)
     deadline_machines (0.1.1)
     debug (1.11.1)
@@ -654,6 +655,7 @@ DEPENDENCIES
   capybara
   cgi
   chrono_machines
+  csv
   debug
   discard (~> 2.0)
   doorkeeper (= 5.9.9)

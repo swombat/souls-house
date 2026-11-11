@@ -18,7 +18,10 @@ class AgentRuntimeInteraction < ApplicationRecord
   belongs_to :agent
   belongs_to :chat, optional: true
   has_many :linked_telegram_messages, class_name: "TelegramMessage", dependent: :nullify
-  has_one :resident_turn, dependent: :destroy
+  # The live one. A run whose subscription refused before it started and
+  # which hopped to the paid fallback (#690) also keeps the retired turn.
+  has_one :resident_turn, -> { where(hopped_at: nil) }, dependent: :destroy
+  has_many :hopped_resident_turns, -> { where.not(hopped_at: nil) }, class_name: "ResidentTurn", dependent: :destroy
   # A follow-through nudge points at the run it continues (FollowThroughCheck).
   belongs_to :follow_through_of, class_name: "AgentRuntimeInteraction", optional: true
   belongs_to :stalled_thread_sweep, optional: true
@@ -277,7 +280,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       with_lock do
         update!(error_class: error.class.name, error_message: error.message)
         # Connect failures precede any request bytes; read/reset failures don't.
-        before_send = activity_token_digest.nil? || [
+        # A VM resident that can't take a turn is refused before dispatch (#868).
+        before_send = activity_token_digest.nil? || error.is_a?(Agents::RemoteRuntime::Unavailable) || [
           "Errno::ECONNREFUSED", "Errno::EHOSTUNREACH", "Errno::ENETUNREACH", "SocketError", "Net::OpenTimeout"
         ].include?(error.class.name)
         if before_send
@@ -608,6 +612,10 @@ class AgentRuntimeInteraction < ApplicationRecord
     # Site Admin only; the room notice keeps the category alone.
     if category == "runtime_error" && (said = runtime_failure_text)
       cause = "#{cause} (runtime said: #{said})"
+    end
+    # A VM resident's own reason (#868), written by the house, not the runtime.
+    if category == "runtime_unavailable" && error_class.in?(REMOTE_UNAVAILABLE_ERROR_CLASSES) && error_message.present?
+      cause = "#{cause} (#{error_message.truncate(300)})"
     end
     cause
   end

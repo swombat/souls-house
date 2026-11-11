@@ -20,7 +20,8 @@ module Api
         revision = @stone.revise!(
           title: params[:title], html: submitted_html, author: current_api_agent || current_api_user,
           public: public_acknowledged?, base_revision_id: params[:base_revision_id],
-          interactive: interactive_requested?
+          interactive: interactive_requested?, field_table_ids: field_table_ids_param,
+          publish_tables: tables_publication_acknowledged?
         )
         render json: {
           revision: revision_json(revision),

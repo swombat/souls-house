@@ -44,6 +44,11 @@ class SyncChannel < ApplicationCable::Channel
       model: Account,
       collections: []
     },
+    # The Computers page: a computer connected, dropped or changed.
+    "ComputerStatus" => {
+      model: Account,
+      collections: []
+    },
     "HomeResidentRoster" => {
       model: Account,
       collections: []
@@ -83,6 +88,10 @@ class SyncChannel < ApplicationCable::Channel
     },
     "Whiteboard" => {
       model: Whiteboard,
+      collections: []
+    },
+    "FieldTable" => {
+      model: FieldTable,
       collections: []
     },
     "FieldFile" => {

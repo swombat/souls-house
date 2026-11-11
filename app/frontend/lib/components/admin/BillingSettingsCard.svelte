@@ -23,6 +23,18 @@
       <span class="font-medium">New accounts pay for their residents</span>
     </label>
 
+    <label class="flex items-center gap-3">
+      <Switch
+        aria-label="Offer the free trial"
+        checked={form.free_trial_enabled !== false}
+        onCheckedChange={(on) => (form.free_trial_enabled = on)} />
+      <span class="font-medium">Offer the free trial</span>
+    </label>
+    <p class="text-sm text-muted-foreground">
+      An account that pays for its residents can have one small resident free for 14 days, once, without a card. With no
+      card by then the resident goes to sleep; nothing is deleted.
+    </p>
+
     <p class="text-sm text-muted-foreground" data-testid="billing-status">
       {status.accounts_required ?? 0}
       {status.accounts_required === 1 ? 'account pays' : 'accounts pay'} for new residents now.
@@ -63,6 +75,12 @@
               <li class="text-rose-600" data-testid="portal-unsafe">
                 At-cost prices can be chosen in Stripe's portal by anyone with a subscription: {status.portal.at_cost_switchable.join(', ')}.
                 Remove them from the portal configuration's plan list.
+              </li>
+            {/if}
+            {#if status.portal.card_update_disabled?.length > 0}
+              <li class="text-rose-600" data-testid="portal-no-card">
+                Stripe's portal doesn't let customers add a card ({status.portal.card_update_disabled.join(', ')}), so a free
+                trial can't be kept past its end. Turn on payment method updates in the portal configuration.
               </li>
             {/if}
             {#if status.portal.unknown_configurations?.length > 0}

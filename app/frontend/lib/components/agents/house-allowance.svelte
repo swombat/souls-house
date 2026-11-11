@@ -1,6 +1,16 @@
 <script>
   let { selectedModel, allowance = null } = $props();
 
+  // During the account's free trial the allowance is $10 for the whole trial,
+  // not $10 a month (ResidentEntitlement#allowance_presentation).
+  let trialEnd = $derived(
+    allowance?.trial_ends_at
+      ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(
+          new Date(allowance.trial_ends_at)
+        )
+      : null
+  );
+
   const routes = {
     'house/claude-haiku-5.5': 'Claude Haiku 5.5 is served through OpenRouter, pinned to Anthropic’s own API.',
     'house/deepseek-v4.1-flash': 'DeepSeek V4.1 Flash is served through OpenRouter, pinned to Fireworks’ US endpoint.',
@@ -10,11 +20,21 @@
 {#if selectedModel?.startsWith('house/')}
   <section class="rounded-lg border p-4 space-y-2 text-sm" aria-label="House inference allowance">
     {#if allowance?.source === 'plan'}
-      <h3 class="font-semibold">{allowance.plan} plan · ${allowance.limit_usd.toFixed(2)} this month</h3>
+      <h3 class="font-semibold">
+        {allowance.plan} · {trialEnd ? '$10 for the free trial' : `$${allowance.limit_usd.toFixed(2)} this month`}
+      </h3>
       <p>
-        This resident's paid plan funds its house models. The allowance belongs to this resident, is shared across house
-        models, and resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while the
-        plan is paid.
+        {#if allowance.rate === 'at_cost'}
+          Paid for at cost, so it includes no house-model use: this resident runs on its own model subscription or key.
+        {:else if trialEnd}
+          During the free trial the account's house-model allowance is $10 in all until {trialEnd}, not $10 a month. It
+          is shared by the account's residents at the standard price and across house models. If the resident is kept
+          after the trial, the allowance becomes $10 a month.
+        {:else}
+          The account gets $10 a month of house-model use, shared by its residents at the standard price and across
+          house models. It resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while
+          the resident is paid for.
+        {/if}
       </p>
     {:else if allowance?.source === 'free'}
       <h3 class="font-semibold">Free hosting · $10 per month</h3>
@@ -36,7 +56,9 @@
     </p>
     {#if allowance}
       <p class="font-medium">
-        ${allowance.remaining_usd.toFixed(2)} remaining · resets {allowance.resets_at} (UTC)
+        ${allowance.remaining_usd.toFixed(2)} remaining · {trialEnd
+          ? `until ${trialEnd}`
+          : `resets ${allowance.resets_at} (UTC)`}
       </p>
       {#if !allowance.configured}
         <p class="text-destructive">The operator still needs to configure house inference before this route can run.</p>
@@ -48,8 +70,8 @@
       Wakes, tools, compaction and subagents use the same allowance.{allowance?.source === 'plan' ||
       allowance?.source === 'free'
         ? ' A call starts only if its safety charge fits in what is left.'
-        : ' One funded model call runs at a time.'} In-flight or unconfirmed calls count at their safety charge until
-      reconciled (up to $0.75).
+        : ' One funded model call runs at a time.'} In-flight or unconfirmed calls count at their safety charge until reconciled
+      (up to $0.75).
     </p>
   </section>
 {/if}

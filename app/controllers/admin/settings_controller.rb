@@ -52,6 +52,7 @@ class Admin::SettingsController < ApplicationController
       payment_open: Billing.configured?,
       configured: Billing.configured?,
       test_mode: Billing.test_mode?,
+      free_trial_enabled: Setting.instance.free_trial_enabled?,
       # What used to reach only Honeybadger (#619): a Stripe event the house
       # couldn't apply, and a paid at-cost subscription on an account with no
       # grant (docs/proposals/2026-10-28-billing-codes-at-cost.md).
@@ -77,11 +78,20 @@ class Admin::SettingsController < ApplicationController
       :reflexes_scope,
       :voice_mode_scope,
       :speech_engine_scope,
+      :companion_mac_download_url,
+      :companion_mac_early_download_url,
+      :companion_mac_early_download_sha256,
+      :companion_linux_amd64_download_url,
+      :companion_linux_amd64_download_sha256,
+      :companion_linux_arm64_download_url,
+      :companion_linux_arm64_download_sha256,
       :stalled_sweep_minutes,
       :stalled_sweep_wake,
       :new_residents_on_vm,
       :vm_resident_limit,
       :billing_enabled,
+      :free_trial_enabled,
+      :paid_fallback_enabled,
       :field_ocr_enabled,
       :field_ocr_daily_usd_ceiling,
       :field_tweets_enabled,

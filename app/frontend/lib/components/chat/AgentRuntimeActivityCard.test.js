@@ -332,3 +332,41 @@ test('a running card does not show a reason yet', () => {
   });
   expect(screen.queryByTestId('quiet-reason')).not.toBeInTheDocument();
 });
+
+test('a run with a plan shows its progress on the collapsed line; a run without one shows no line', () => {
+  const planned = {
+    ...base,
+    narration_shared: true,
+    snapshot: {
+      plan_title: 'Ship it',
+      plan: [
+        { text: 'read the code', status: 'completed' },
+        { text: 'running the tests', status: 'in_progress' },
+        { text: 'deploy', status: 'pending' },
+      ],
+    },
+  };
+  const { unmount } = render(AgentRuntimeActivityCard, { interaction: planned });
+  expect(screen.getByTestId('runtime-plan-line')).toHaveTextContent('· 1 of 3 · running the tests');
+  unmount();
+
+  render(AgentRuntimeActivityCard, { interaction: { ...base, narration_shared: true, snapshot: {} } });
+  expect(screen.queryByTestId('runtime-plan-line')).not.toBeInTheDocument();
+});
+
+test('the plan line keeps the last state after the run ends and hides when narration is not shared', () => {
+  const finished = {
+    ...base,
+    active: false,
+    status: 'completed',
+    status_label: 'finished',
+    narration_shared: true,
+    snapshot: { plan_status: 'completed', plan: [{ text: 'a', status: 'completed' }, { text: 'b', status: 'completed' }] },
+  };
+  const { unmount } = render(AgentRuntimeActivityCard, { interaction: finished });
+  expect(screen.getByTestId('runtime-plan-line')).toHaveTextContent('2 of 2');
+  unmount();
+
+  render(AgentRuntimeActivityCard, { interaction: { ...finished, narration_shared: false } });
+  expect(screen.queryByTestId('runtime-plan-line')).not.toBeInTheDocument();
+});

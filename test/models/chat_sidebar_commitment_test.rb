@@ -69,6 +69,25 @@ class ChatSidebarCommitmentTest < ActiveSupport::TestCase
     assert_broadcast_on(channel, marker) { commitment.cancel!(by: @user) }
   end
 
+  test "making and cancelling a commitment refresh the open conversation itself, listed or not" do
+    channel = "Chat:#{@chat.obfuscated_id}"
+    marker = { action: "refresh", prop: "chat" }
+    commitment = nil
+    assert_broadcast_on(channel, marker) { commitment = commit(@lume, "Come back", at: @now + 1.hour) }
+    assert_broadcast_on(channel, marker) { commitment.reschedule!(due_at: @now + 2.hours) }
+    assert_broadcast_on(channel, marker) { commitment.cancel!(by: @user) }
+    assert_no_broadcasts("Chat:#{@other.obfuscated_id}") { commit(@lume, "Another", at: @now + 1.hour) }
+  end
+
+  test "moving a commitment to another conversation refreshes both open conversations" do
+    commitment = commit(@lume, "Come back", at: @now + 1.hour)
+    assert_broadcast_on("Chat:#{@chat.obfuscated_id}", { action: "refresh", prop: "chat" }) do
+      assert_broadcast_on("Chat:#{@other.obfuscated_id}", { action: "refresh", prop: "chat" }) do
+        commitment.update!(source_chat: @other)
+      end
+    end
+  end
+
   test "moving a commitment between destinations refreshes the list both ways" do
     channel = "Account:#{@account.obfuscated_id}"
     marker = { action: "refresh", prop: "chats" }

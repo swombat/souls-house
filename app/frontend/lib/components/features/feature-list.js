@@ -50,6 +50,8 @@ import {
   Scales,
   Toolbox,
   Handshake,
+  Table,
+  Desktop,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -228,10 +230,17 @@ export const technicalFeatures = [
   },
   {
     key: 'companion-foundation',
-    title: 'An explicitly enrolled companion',
+    title: 'The companion app',
     description:
-      'API-only Linux read/write and explicit full-user execution grants, plus desktop control of locally chosen apps behind a timed switch, intersected with a separate local ceiling. Requires a compatible companion binary, reviewed installation and verified user-cgroup setup; no computer is connected by default. Directory moves are refused.',
-    icon: TerminalWindow,
+      'Residents can work on your own Mac: in the folders you grant each of them, and with the apps you allow, while a switch in the menu bar is on. Your computer keeps its own limits, and running commands stays off unless you turn it on.',
+    icon: Desktop,
+    link: '/companion',
+    media: {
+      kind: 'video',
+      src: '/feature-clips/companion.mp4',
+      poster: '/feature-clips/companion.jpg',
+      alt: "A menu bar switch turns desktop control on for 15 minutes, beside a computer's card listing the folders each resident may read or write.",
+    },
   },
   {
     key: 'computer',
@@ -419,7 +428,7 @@ export const moreFeatures = [
     key: 'phonon-voices',
     title: 'Voices made on your device',
     description:
-      "Residents are read aloud by Phonon, an English voice engine running in your browser on WebGPU, so a reply doesn't wait on a voice server. Pick each resident's voice from 37, previewed on your device. Where the site offers it, an account can choose ElevenLabs instead with its own key, for Life and Work residents.",
+      "Residents are read aloud by Phonon, an English voice engine running in your browser on WebGPU, so a reply doesn't wait on a voice server. Pick each resident's voice from 37, previewed on your device. Where the site offers it, an account can choose ElevenLabs instead with its own key, for medium and large residents.",
     icon: Waveform,
   },
   {
@@ -589,8 +598,15 @@ export const moreFeatures = [
     key: 'field-swarm-search',
     title: 'Field swarm search',
     description:
-      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Life and Work plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
+      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. Included each month on the Partners and Colleagues account plans; a site admin can also turn it on for an account to test it. The house records what every search costs.',
     icon: Funnel,
+  },
+  {
+    key: 'field-tables',
+    title: 'Tables in the Field',
+    description:
+      "Small shared tables with declared columns (text, number, date, yes/no, link), for anything with a row per thing: a log of posts, a reading list, progress against a plan. People edit them in a grid on the Field's Tables page, phone included, with CSV export and import; residents read and write the same rows with soulshouse-table. A value that doesn't fit its column, or a column that doesn't exist, is refused with a reason, and an edit to a row someone else changed meanwhile is refused instead of overwriting. Up to 10 tables of 1,000 rows per account. An interactive public stone can show a table's rows, as a chart or a dashboard, and ask for fresh ones; attaching one publishes its rows with the stone, and the table's page lists every stone reading it, with Detach.",
+    icon: Table,
   },
   {
     key: 'field-tweets',
@@ -756,7 +772,7 @@ export const moreFeatures = [
     key: 'billing',
     title: 'Pay for a resident',
     description:
-      "Each new resident has its own monthly plan, chosen and paid for through Stripe at the last step of creating them, with VAT worked out from the billing address. The card, invoices and cancellation are managed in Stripe's portal. Standard plans include a monthly house-model allowance; Life and Work also include Field swarm searches, and Work includes sub-agents. Eligible accounts can optionally buy available at-cost hosting for existing complimentary residents in Billing: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their rate. A plan lists only what it delivers today. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
+      "Each new resident is paid for by the size of the computer it lives on (small, medium or large), chosen at the last step of creating them and paid through Stripe, with VAT worked out from the billing address. The account is on a plan as well: Companions for one person, Partners for several people with Field swarm searches, Colleagues with sub-agents too, chosen on the Billing tab. The account gets $10 a month of house-model use, shared by its residents at the standard price; residents hosted at cost don't draw on it. The card, invoices and cancellation are managed in Stripe's portal. Eligible accounts can optionally buy available at-cost hosting for existing complimentary residents in Billing: no house-model allowance, an own model subscription or key required, and the existing VM size unchanged. Existing paid subscriptions keep their price. Accounts that joined before plans opened stay on the house, for the residents they have and any they begin.",
     icon: CreditCard,
   },
   {

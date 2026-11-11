@@ -40,6 +40,18 @@ class Setting < ApplicationRecord
   validates :speech_engine_scope, inclusion: { in: SPEECH_ENGINE_SCOPES }
   validates :stalled_sweep_minutes, inclusion: { in: StalledThreadSweeper::INTERVALS }
   validates :site_name, presence: true, length: { maximum: 100 }
+  # The Mac main download stays blank until a Developer ID-signed, notarised build
+  # exists; https only. Each other download offered with a checksum beside it: address + sha256, both or neither.
+  COMPANION_CHECKSUMMED_DOWNLOADS = %i[companion_mac_early companion_linux_amd64 companion_linux_arm64].freeze
+  COMPANION_DOWNLOAD_URLS = [ :companion_mac_download_url, *COMPANION_CHECKSUMMED_DOWNLOADS.map { |d| :"#{d}_download_url" } ].freeze
+  COMPANION_DOWNLOAD_SHAS = COMPANION_CHECKSUMMED_DOWNLOADS.map { |d| :"#{d}_download_sha256" }.freeze
+  normalizes(*COMPANION_DOWNLOAD_URLS, with: ->(url) { url.strip.presence })
+  normalizes(*COMPANION_DOWNLOAD_SHAS, with: ->(sum) { sum.strip.downcase.presence })
+  validates(*COMPANION_DOWNLOAD_URLS, length: { maximum: 500 },
+    format: { with: %r{\Ahttps://[^\s]+\z}, message: "must be an https:// address" }, allow_nil: true)
+  validates(*COMPANION_DOWNLOAD_SHAS, format: { with: /\A\h{64}\z/, message: "must be 64 hex characters" },
+    allow_nil: true)
+  validate :companion_early_download_pair
   validates :safeguard_owner_notice_threshold,
     numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :logo, content_type: [ :png, :jpg, :gif, :webp, :svg ],
@@ -145,6 +157,14 @@ class Setting < ApplicationRecord
 
   def invalidate_voice_mode
     self.class.current_transaction.after_commit { VoiceModeInvalidationJob.perform_later }
+  end
+
+  def companion_early_download_pair
+    COMPANION_CHECKSUMMED_DOWNLOADS.each do |download|
+      next if self[:"#{download}_download_url"].nil? == self[:"#{download}_download_sha256"].nil?
+
+      errors.add(:"#{download}_download_sha256", "and its download address go together")
+    end
   end
 
 end

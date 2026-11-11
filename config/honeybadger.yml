@@ -41,6 +41,20 @@ insights:
 # Individual SQL queries were 94% of Insights events (1.8M of 1.93M in a week)
 # and filled the free daily allowance by mid-morning. Requests and jobs stay.
 # Added to the gem's default ignores (Config#raw_ignored_events unions them).
+# Still capped at ~13:20 UTC on 10 Nov (~190k events), so the next-biggest
+# noise goes too: the SolidCable trim job (~44k performs before the cap),
+# runner command polling (~20k), resident runtime event ingest (~15k) and
+# outbound HTTP (~19k). Human-facing pages and the other jobs stay.
+# Hash entries match payload fields; values are regexes.
 events:
   ignore:
   - sql.active_record
+  - request.net_http
+  - event_type: "active_job"
+    job_class: "^SolidCable::TrimJob$"
+  - event_type: "^process_action\\.action_controller$"
+    controller: "^Api::V1::HostRunner::CommandsController$"
+    action: "^next$"
+  - event_type: "^process_action\\.action_controller$"
+    controller: "^Api::V1::RuntimeEventsController$"
+    action: "^create$"

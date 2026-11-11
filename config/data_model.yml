@@ -94,6 +94,7 @@ areas:
       - stone_addresses
       - stone_revisions
       - message_stone_revisions
+      - stone_revision_field_tables
       - tweet_embeds
       - message_tweet_embeds
 
@@ -197,6 +198,8 @@ areas:
       - field_swarm_reads
       - transcription_glossary_terms
       - whiteboards
+      - field_tables
+      - field_table_rows
 
   - id: billing
     title: Billing
@@ -214,6 +217,10 @@ areas:
       one is its grant, and decides which plans it may buy at which rate.
       Checkout attempts keep the authorised payment intent before Stripe is
       called, so an uncertain answer cannot create a second payable checkout.
+      Resident fallback policies are an owner's opt-in to answer on a paid
+      fallback model when a subscription allowance runs out, with a spending
+      cap; fallback turns and calls are the ledger of what that fallback was
+      admitted to spend, call by call, against the cap.
     tables:
       - billing_customers
       - billing_codes
@@ -221,9 +228,14 @@ areas:
       - billing_checkout_attempts
       - resident_birth_orders
       - resident_subscriptions
+      - account_subscriptions
+      - account_plan_checkout_attempts
       - resident_entitlements
       - house_inference_grants
       - house_inference_calls
+      - resident_fallback_policies
+      - resident_fallback_turns
+      - resident_fallback_calls
       - metered_action_events
       - stripe_events
 

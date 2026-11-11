@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+"""Show the room where you are in a job with several steps, if you want to.
+
+With a plan, the run card under your work shows one line while you go, for
+example "3 of 7 · running the tests", and keeps the last state when the run
+ends. Without one it shows what it always showed. Nothing asks you to use it.
+
+Usage:
+  soulshouse-plan start "Title" "first step" "second step" ...
+  soulshouse-plan tick [N]          # finish the current step (or step N), start the next
+  soulshouse-plan block N "why"     # step N is waiting on something
+  soulshouse-plan unblock N
+  soulshouse-plan drop N "why"      # step N won't be done
+  soulshouse-plan add "step"        # append a step
+  soulshouse-plan done              # the job is finished (every step ticked or dropped)
+  soulshouse-plan cancel "why"      # abandon the job
+  soulshouse-plan show
+
+Steps are numbered from 1 in the order given. The plan lives in your own
+Chaos database (a workspace named "house-jobs"), attached to the session you
+are running in; the house only sees titles and states, through your run card,
+and only while you share working narration. Starting a new plan cancels the
+one this session still has open.
+"""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import uuid
+
+WORKSPACE = "house-jobs"
+OPEN = ("pending", "in_progress", "blocked")
+
+
+class PlanError(Exception):
+    pass
+
+
+def chaos_home():
+    return Path(os.environ.get("CHAOS_HOME") or Path.home() / ".chaos")
+
+
+def pointer_dir():
+    return chaos_home() / "house-plans"
+
+
+def thread_id():
+    value = os.environ.get("CHAOS_THREAD_ID", "")
+    if not value or "/" in value or value.startswith("."):
+        raise PlanError("no Chaos session here (CHAOS_THREAD_ID is unset); run this from inside a run")
+    return value
+
+
+def run_id():
+    value = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID", "")
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def chaos(*args):
+    try:
+        proc = subprocess.run([os.environ.get("SOULSHOUSE_CHAOS_BIN", "chaos"), *args],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PlanError(f"chaos {args[0]} {args[1]} failed: {error}") from None
+    if proc.returncode != 0:
+        message = proc.stderr.strip().splitlines()
+        message = [line for line in message if not line.startswith("WARNING:")]
+        raise PlanError(f"chaos {args[0]} {args[1]}: " + (" ".join(message)[-400:] or f"exit {proc.returncode}"))
+    try:
+        return json.loads(proc.stdout) if proc.stdout.strip() else None
+    except ValueError:
+        raise PlanError(f"chaos {args[0]} {args[1]} printed something that is not JSON") from None
+
+
+def change(plan, **fields):
+    body = {"request_id": str(uuid.uuid4()), "plan": plan, "expected_revision": None, **fields}
+    return chaos("plan", "change", json.dumps(body))
+
+
+def read(plan):
+    data = chaos("plan", "read", plan)
+    tasks = list(data.get("tasks") or [])
+    offset = data.get("next_offset")
+    while offset is not None and len(tasks) < 1000:
+        page = chaos("plan", "read", "--offset", str(offset), plan)
+        tasks.extend(page.get("tasks") or [])
+        offset = page.get("next_offset")
+    data["tasks"] = sorted((task for task in tasks if task.get("depth", 0) == 0),
+                           key=lambda task: task.get("position", 0))
+    return data
+
+
+def workspace():
+    offset = 0
+    while offset is not None:
+        page = chaos("workspace", "list", "--offset", str(offset)) if offset else chaos("workspace", "list")
+        for item in page.get("items") or []:
+            if item.get("name") == WORKSPACE:
+                return item["code"]
+        offset = page.get("next_offset")
+    return chaos("workspace", "create", WORKSPACE)["code"]
+
+
+def write_pointer(name, data):
+    directory = pointer_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data))
+    os.replace(tmp, path)
+
+
+def remember(plan_id, ended=False):
+    """Tell the runtime which plan to show. A plan that ended is shown only
+    on the run it ended in, so the next reply does not wear an old plan."""
+    data = {"plan_id": plan_id, "updated_at": time.time()}
+    run = run_id()
+    if ended:
+        data["ended_run_id"] = run
+    write_pointer(f"thread-{thread_id()}.json", data)
+    if run:
+        write_pointer(f"run-{run}.json", data)
+
+
+def current():
+    try:
+        data = json.loads((pointer_dir() / f"thread-{thread_id()}.json").read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not data.get("plan_id") or data.get("ended_run_id", False) is not False:
+        raise PlanError("this session has no open plan; start one with: soulshouse-plan start \"Title\" \"step\" ...")
+    return data["plan_id"]
+
+
+def step(plan, number):
+    tasks = plan["tasks"]
+    try:
+        index = int(number)
+    except (TypeError, ValueError):
+        raise PlanError(f"step must be a number from 1 to {len(tasks)}") from None
+    if not 1 <= index <= len(tasks):
+        raise PlanError(f"there is no step {index}; this plan has {len(tasks)}")
+    return tasks[index - 1]
+
+
+def transition(plan_id, task, event, reason):
+    return change(plan_id, action="transition", task=task["reference"],
+                  task_revision=task["revision"], event=event, reason=reason or event)
+
+
+def start_next(plan_id):
+    plan = read(plan_id)
+    if any(task["status"] == "in_progress" for task in plan["tasks"]):
+        return
+    pending = next((task for task in plan["tasks"] if task["status"] == "pending"), None)
+    if pending:
+        transition(plan_id, pending, "start", "next step")
+
+
+def summary(plan):
+    tasks = plan["tasks"]
+    counted = [task for task in tasks if task["status"] != "cancelled"]
+    done = sum(task["status"] == "completed" for task in counted)
+    lines = [f"{plan['plan']['title']} ({plan['plan']['status']}, {done} of {len(counted)})"]
+    marks = {"completed": "x", "in_progress": ">", "blocked": "!", "cancelled": "-", "pending": " "}
+    for number, task in enumerate(tasks, 1):
+        lines.append(f"  [{marks.get(task['status'], '?')}] {number}. {task['title']}")
+    return "\n".join(lines)
+
+
+def cmd_start(args):
+    if len(args) < 2:
+        raise PlanError('usage: soulshouse-plan start "Title" "step" ["step" ...]')
+    title, steps = args[0], args[1:]
+    if len(steps) > 100:
+        raise PlanError("a plan holds at most 100 steps")
+    tid = thread_id()
+    try:
+        old = current()
+    except PlanError:
+        old = None
+    if old:
+        try:
+            cmd_cancel(["replaced by a new plan"], quiet=True)
+        except PlanError:
+            pass
+    created = change(None, action="create", workspace=workspace(), title=title)["plan"]
+    plan_id, revision = created["id"], created["revision"]
+    for position, text in enumerate(steps):
+        revision = change(plan_id, expected_revision=revision, action="add_task", title=text,
+                          parent=None, position=position)["plan"]["revision"]
+    chaos("plan", "attach", tid, plan_id)
+    remember(plan_id)
+    start_next(plan_id)
+    return read(plan_id)
+
+
+def cmd_tick(args):
+    plan_id = current()
+    plan = read(plan_id)
+    if args:
+        task = step(plan, args[0])
+    else:
+        task = next((t for t in plan["tasks"] if t["status"] == "in_progress"), None) \
+            or next((t for t in plan["tasks"] if t["status"] == "pending"), None)
+        if task is None:
+            raise PlanError("no step is open; finish with: soulshouse-plan done")
+    if task["status"] == "completed":
+        raise PlanError(f"step {plan['tasks'].index(task) + 1} is already ticked")
+    if task["status"] in ("pending", "blocked"):
+        transition(plan_id, task, "start" if task["status"] == "pending" else "unblock", "working on it")
+        task = step(read(plan_id), plan["tasks"].index(task) + 1)
+    transition(plan_id, task, "complete", "done")
+    start_next(plan_id)
+    remember(plan_id)
+    return read(plan_id)
+
+
+def cmd_block(args):
+    if len(args) < 2 or not args[1].strip():
+        raise PlanError('usage: soulshouse-plan block N "why"')
+    plan_id = current()
+    task = step(read(plan_id), args[0])
+    if task["status"] == "pending":
+        transition(plan_id, task, "start", "working on it")
+        task = step(read(plan_id), args[0])
+    transition(plan_id, task, "block", args[1])
+    remember(plan_id)
+    return read(plan_id)
+
+
+def cmd_unblock(args):
+    if not args:
+        raise PlanError("usage: soulshouse-plan unblock N")
+    plan_id = current()
+    transition(plan_id, step(read(plan_id), args[0]), "unblock", "unblocked")
+    remember(plan_id)
+    return read(plan_id)
+
+
+def cmd_drop(args):
+    if len(args) < 2 or not args[1].strip():
+        raise PlanError('usage: soulshouse-plan drop N "why"')
+    plan_id = current()
+    transition(plan_id, step(read(plan_id), args[0]), "cancel", args[1])
+    start_next(plan_id)
+    remember(plan_id)
+    return read(plan_id)
+
+
+def cmd_add(args):
+    if len(args) != 1 or not args[0].strip():
+        raise PlanError('usage: soulshouse-plan add "step"')
+    plan_id = current()
+    plan = read(plan_id)
+    if len(plan["tasks"]) >= 100:
+        raise PlanError("a plan holds at most 100 steps")
+    change(plan_id, expected_revision=plan["plan"]["revision"], action="add_task", title=args[0],
+           parent=None, position=len(plan["tasks"]))
+    start_next(plan_id)
+    remember(plan_id)
+    return read(plan_id)
+
+
+def cmd_done(args):
+    plan_id = current()
+    plan = read(plan_id)
+    for task in plan["tasks"]:
+        if task["status"] == "in_progress":
+            transition(plan_id, task, "complete", "done")
+    plan = read(plan_id)
+    left = [str(n) for n, task in enumerate(plan["tasks"], 1) if task["status"] in OPEN]
+    if left:
+        raise PlanError(f"step {', '.join(left)} still open: tick or drop it first")
+    change(plan_id, expected_revision=plan["plan"]["revision"], action="complete", reason="done")
+    return finish(plan_id)
+
+
+def cmd_cancel(args, quiet=False):
+    if not args or not args[0].strip():
+        raise PlanError('usage: soulshouse-plan cancel "why"')
+    plan_id = current()
+    plan = read(plan_id)
+    change(plan_id, expected_revision=plan["plan"]["revision"], action="cancel", reason=args[0])
+    return finish(plan_id)
+
+
+def finish(plan_id):
+    final = read(plan_id)
+    try:
+        chaos("plan", "detach", thread_id())
+    except PlanError:
+        pass
+    remember(plan_id, ended=True)
+    return final
+
+
+def cmd_show(args):
+    return read(current())
+
+
+COMMANDS = {"start": cmd_start, "tick": cmd_tick, "block": cmd_block, "unblock": cmd_unblock,
+            "drop": cmd_drop, "add": cmd_add, "done": cmd_done, "cancel": cmd_cancel, "show": cmd_show}
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    command = COMMANDS.get(argv[0])
+    if command is None:
+        print(f"unknown command {argv[0]!r}; see soulshouse-plan --help", file=sys.stderr)
+        return 2
+    try:
+        print(summary(command(argv[1:])))
+    except PlanError as error:
+        print(f"soulshouse-plan: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

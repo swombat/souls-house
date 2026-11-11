@@ -9,9 +9,11 @@
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
   import SpeechEngineSettingsCard from '$lib/components/admin/SpeechEngineSettingsCard.svelte';
+  import CompanionDownloadSettingsCard from '$lib/components/admin/CompanionDownloadSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
+  import PaidFallbackSettingsCard from '$lib/components/admin/PaidFallbackSettingsCard.svelte';
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
   import FieldTweetsSettingsCard from '$lib/components/admin/FieldTweetsSettingsCard.svelte';
 
@@ -56,12 +58,23 @@
     formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'disabled');
     formData.append('setting[voice_mode_scope]', form.voice_mode_scope ?? 'account_choice');
     formData.append('setting[speech_engine_scope]', form.speech_engine_scope ?? 'disabled');
+    formData.append('setting[companion_mac_download_url]', form.companion_mac_download_url ?? '');
+    formData.append('setting[companion_mac_early_download_url]', form.companion_mac_early_download_url ?? '');
+    formData.append('setting[companion_mac_early_download_sha256]', form.companion_mac_early_download_sha256 ?? '');
+    for (const arch of ['amd64', 'arm64']) {
+      for (const field of ['url', 'sha256']) {
+        const key = `companion_linux_${arch}_download_${field}`;
+        formData.append(`setting[${key}]`, form[key] ?? '');
+      }
+    }
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
     formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
     formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
     formData.append('setting[billing_enabled]', form.billing_enabled ?? false);
+    formData.append('setting[free_trial_enabled]', form.free_trial_enabled ?? true);
+    formData.append('setting[paid_fallback_enabled]', form.paid_fallback_enabled ?? false);
     formData.append('setting[field_ocr_enabled]', form.field_ocr_enabled ?? false);
     formData.append('setting[field_ocr_daily_usd_ceiling]', form.field_ocr_daily_usd_ceiling ?? 1);
     formData.append('setting[field_tweets_enabled]', form.field_tweets_enabled ?? false);
@@ -141,11 +154,14 @@
       <ReflexesSettingsCard {form} />
       <VoiceModeSettingsCard {form} />
       <SpeechEngineSettingsCard {form} />
+      <CompanionDownloadSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
 
       <BillingSettingsCard {form} status={billing} />
+
+      <PaidFallbackSettingsCard {form} />
 
       <FieldOcrSettingsCard {form} status={field_ocr} />
 

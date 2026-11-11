@@ -2,6 +2,7 @@
   import AgentHostingPanel from '$lib/components/agents/agent-hosting-panel.svelte';
   import AgentRuntimeStatus from '$lib/components/agents/AgentRuntimeStatus.svelte';
   import AgentSubscriptionSettings from '$lib/components/agents/AgentSubscriptionSettings.svelte';
+  import AgentPaidFallbackCard from '$lib/components/agents/AgentPaidFallbackCard.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import {
@@ -67,6 +68,7 @@
     shared_connections: sharedConnections = [],
     can_decide_guest_access: canDecideGuestAccess = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
+    paid_fallback_url: paidFallbackUrl = null,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
@@ -144,8 +146,8 @@
     if (activeTab === 'hosting') hostingVisited = true;
   });
 
-  // Sub-agents come with the Work plan and with residents on the house; on
-  // lower plans the tab is hidden and the server ignores the switch.
+  // Sub-agents come with the Colleagues account plan and with residents on
+  // the house; otherwise the tab is hidden and the server ignores the switch.
   let showSubagents = $derived(Boolean(subagentsAvailable));
   let tabs = $derived([
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -279,6 +281,9 @@
               {/if}
             {/snippet}
           </AgentSettingsPanel>
+          {#if paidFallbackUrl}
+            <AgentPaidFallbackCard url={paidFallbackUrl} agentName={agent.name} />
+          {/if}
         {:else if activeTab === 'subagents' && showSubagents}
           <AgentSubagentsPanel
             bind:enabled={$form.agent.subagents_enabled}

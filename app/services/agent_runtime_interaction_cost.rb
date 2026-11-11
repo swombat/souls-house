@@ -14,6 +14,8 @@ class AgentRuntimeInteractionCost
   NOVEMBER_MODELS = %w[z-ai/glm-5.3-flashx-legal].freeze
   NOVEMBER_9_PRICING_AS_OF = Date.new(2026, 11, 9)
   NOVEMBER_9_MODELS = %w[anthropic/claude-fable-5.2].freeze
+  NOVEMBER_11_PRICING_AS_OF = Date.new(2026, 11, 11)
+  NOVEMBER_11_MODELS = %w[google/gemini-4-carbon].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -66,6 +68,7 @@ class AgentRuntimeInteractionCost
     [ /(?:openai\/)?gpt-4o-mini(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o-mini", 0.15, 0.6 ],
     [ /(?:openai\/)?gpt-4o(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o", 2.5, 10 ],
 
+    [ /\A(?:google\/)?gemini-4-carbon\z/, "google/gemini-4-carbon", 2, 10 ],
     [ /\A(?:google\/)?gemini-4-argon\z/, "google/gemini-4-argon", 2, 10 ],
     [ /\A(?:google\/)?gemini-3\.8-flash\z/, "google/gemini-3.8-flash", 0.75, 3.75 ],
     [ /(?:google\/)?gemini-3\.7-flash\z/, "google/gemini-3.7-flash", 0.75, 3.75 ],
@@ -87,6 +90,7 @@ class AgentRuntimeInteractionCost
     [ /mistralai\/mistral-large-2512\z/, "mistralai/mistral-large-2512", 0.5, 1.5 ],
     [ /\A(?:meta\/)?muse-wonder\z/, "meta/muse-wonder", 4, 20 ],
     [ /\A(?:meta\/)?muse-spark-open\z/, "meta/muse-spark-open", 1.25, 4.25 ],
+    [ /\A(?:meta\/)?muse-ember\z/, "meta/muse-ember", 0.1, 0.5 ],
     [ /meta-llama\/llama-4-maverick\z/, "meta-llama/llama-4-maverick", 0.2, 0.8 ],
     [ /\A(?:minimax\/)?minimax-m3\.1-flash\z/, "minimax/minimax-m3.1-flash", 0.15, 0.6 ],
     [ /\A(?:inception\/)?mercury-3\z/, "inception/mercury-3", 0.1, 0.35 ],
@@ -113,6 +117,7 @@ class AgentRuntimeInteractionCost
   CACHE_READ_RATES = {
     "openai/gpt-6.1-terra" => 0.05,
     "google/gemini-4-argon" => 0.1,
+    "google/gemini-4-carbon" => 0.1,
     "anthropic/claude-opus-5.5" => 0.2,
     "anthropic/claude-fable-5.2" => 0.2,
     "google/gemini-3.8-flash" => 0.075,
@@ -134,6 +139,7 @@ class AgentRuntimeInteractionCost
     "mistralai/mistral-large-2512" => 0.05,
     "meta/muse-wonder" => 0.2,
     "meta/muse-spark-open" => 0.15,
+    "meta/muse-ember" => 0.004,
     "minimax/minimax-m3" => 0.06,
     "minimax/minimax-m3.1-flash" => 0.015,
     "inception/mercury-3" => 0.01,
@@ -163,7 +169,8 @@ class AgentRuntimeInteractionCost
     "google/gemini-2.5-pro" => 0.375,
     "google/gemini-2.5-flash" => 0.08333333333333334,
     "google/gemini-2.5-flash-lite" => 0.08333333333333334,
-    "qwen/qwen3.7-max" => 1.84375
+    "qwen/qwen3.7-max" => 1.84375,
+    "meta/muse-ember" => 0.125
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
 
   def initialize(interaction)
@@ -215,7 +222,7 @@ class AgentRuntimeInteractionCost
     price = PRICE_RULES.find { |rule| model.to_s.match?(rule[:pattern]) }
     # Use the interaction date, not today's date, so historical promotional
     # usage retains its rate. Storage time is not present in token telemetry.
-    if price && price[:model] == "google/gemini-4-argon" &&
+    if price && %w[google/gemini-4-argon google/gemini-4-carbon].include?(price[:model]) &&
         interaction.started_at.to_date >= Date.new(2026, 12, 1)
       price = price.merge(input: price[:input] * 2, output: price[:output] * 2,
         cache_read: BigDecimal("0.2"))
@@ -230,7 +237,8 @@ class AgentRuntimeInteractionCost
 
   def pricing_as_of(price)
     model = price&.dig(:model)
-    date = if NOVEMBER_9_MODELS.include?(model) then NOVEMBER_9_PRICING_AS_OF
+    date = if NOVEMBER_11_MODELS.include?(model) then NOVEMBER_11_PRICING_AS_OF
+    elsif NOVEMBER_9_MODELS.include?(model) then NOVEMBER_9_PRICING_AS_OF
     elsif NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF
     elsif OCTOBER_MODELS.include?(model) then OCTOBER_PRICING_AS_OF
     elsif UPDATED_MODELS.include?(model) then UPDATED_PRICING_AS_OF
@@ -246,7 +254,7 @@ class AgentRuntimeInteractionCost
       return BigDecimal("0.0416666666666667") * (price[:input] / BigDecimal("0.75"))
     end
 
-    if interaction.provider == "openrouter" && price[:model] == "google/gemini-4-argon"
+    if interaction.provider == "openrouter" && %w[google/gemini-4-argon google/gemini-4-carbon].include?(price[:model])
       # Routed catalogue write rate at launch ($0.1875 at $2 input), scaled
       # with the scheduled December price change like Gemini 3.8 Flash.
       return BigDecimal("0.1875") * (price[:input] / BigDecimal("2"))

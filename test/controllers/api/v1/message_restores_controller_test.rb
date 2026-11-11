@@ -6,7 +6,7 @@ class Api::V1::MessageRestoresControllerTest < ActionDispatch::IntegrationTest
     @user = users(:user_1)
     @user.update!(is_site_admin: true)
     @account = accounts(:personal_account)
-    @account.update!(account_type: :team)
+    @account.update!(account_type: :team, granted_plan: "partners")
     @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Recovery",
       manual_responses: true, agents: [ agents(:research_assistant) ])
     @message = @chat.messages.create!(role: "user", user: @user, content: "Retained message",

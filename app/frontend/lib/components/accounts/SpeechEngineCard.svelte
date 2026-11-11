@@ -102,8 +102,8 @@
         class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
         data-testid="speech-engine-latency-warning">
         ElevenLabs is much slower to start speaking than Phonon on this device: each reply waits for its servers before
-        a word is heard. It reads only Life and Work residents (and residents on the house); Conversation residents
-        speak with Phonon.
+        a word is heard. It reads only medium and large residents (and residents on the house); small residents speak
+        with Phonon.
       </p>
     {/if}
 

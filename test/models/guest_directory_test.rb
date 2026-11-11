@@ -9,7 +9,7 @@ class GuestDirectoryTest < ActiveSupport::TestCase
   setup do
     @user = users(:user_1)
     @home, @receiving, @unrelated = 3.times.map do |i|
-      account = Account.create!(name: "Guest directory #{i} #{SecureRandom.hex(4)}", account_type: :team)
+      account = Account.create!(name: "Guest directory #{i} #{SecureRandom.hex(4)}", account_type: :team, granted_plan: "partners")
       account.add_user!(@user, role: "owner", skip_confirmation: true)
       account
     end

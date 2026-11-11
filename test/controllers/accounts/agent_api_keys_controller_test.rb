@@ -96,8 +96,7 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
           openrouter_api_key: "account-openrouter-key",
           moonshot_api_key: "account-moonshot-key",
           zai_api_key: "account-zai-key",
-          minimax_api_key: "account-minimax-key",
-          use_system_ai_credentials: false
+          minimax_api_key: "account-minimax-key"
         }
       }
     end
@@ -108,7 +107,18 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
     assert_equal "account-moonshot-key", @account.moonshot_api_key
     assert_equal "account-zai-key", @account.zai_api_key
     assert_equal "account-minimax-key", @account.minimax_api_key
-    assert @account.use_system_ai_credentials?
+  end
+
+  # Switching the house's own credentials off is a site admin's
+  # (Admin::AccountsController), not something the owner's key form can do.
+  test "the key form cannot switch off the house's credentials" do
+    @account.update!(use_system_ai_credentials: true)
+
+    patch account_agent_api_keys_path(@account), params: {
+      account: { openrouter_api_key: "account-openrouter-key", use_system_ai_credentials: false }
+    }
+
+    assert @account.reload.use_system_ai_credentials?
   end
 
   test "key changes are filtered from audit logs" do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -90,10 +90,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.boolean "voice_mode_enabled", default: false, null: false
     t.string "speech_engine", default: "phonon", null: false
     t.text "eleven_labs_api_key"
+    t.string "granted_plan"
+    t.datetime "trial_started_at"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "accounts_granted_plan_known"
+  end
+
+  create_table "account_plan_checkout_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "create_params", null: false
+    t.string "idempotency_key", null: false
+    t.string "plan", null: false
+    t.datetime "resolved_at"
+    t.string "stripe_price_id", null: false
+    t.string "stripe_session_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_plan_checkout_attempts_on_account_id"
+    t.index ["account_id"], name: "one_unresolved_account_plan_checkout_per_account", unique: true, where: "(resolved_at IS NULL)"
+    t.index ["idempotency_key"], name: "index_account_plan_checkout_attempts_on_idempotency_key", unique: true
+    t.index ["stripe_session_id"], name: "index_account_plan_checkout_attempts_on_stripe_session_id", unique: true
+  end
+
+  create_table "account_subscriptions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "cancel_at_period_end", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "current_period_end"
+    t.datetime "last_synced_at"
+    t.datetime "past_due_since"
+    t.string "plan", null: false
+    t.integer "plan_changes_count", default: 0, null: false
+    t.string "stripe_price_id"
+    t.string "stripe_status", null: false
+    t.string "stripe_subscription_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
+    t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY ((ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying])::text[]))"
+    t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
+    t.check_constraint "plan::text = ANY (ARRAY['partners'::character varying, 'colleagues'::character varying]::text[])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "action_mcp_session_messages", force: :cascade do |t|
@@ -730,6 +768,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.integer "safeguard_reset_requested_generation", default: 0, null: false
     t.integer "safeguard_reset_acknowledged_generation", default: 0, null: false
     t.string "model_id"
+    t.integer "runtime_freshness_generation", default: 0, null: false
     t.index ["agent_id", "agent_summary_generated_at"], name: "index_chat_agents_on_agent_summary_recency"
     t.index ["agent_id", "closed_for_initiation_at"], name: "index_chat_agents_on_agent_closed_initiation"
     t.index ["agent_id"], name: "index_chat_agents_on_agent_id"
@@ -981,6 +1020,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.datetime "revoked_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "reported_ceiling"
+    t.datetime "ceiling_reported_at"
+    t.string "ceiling_epoch"
     t.index ["account_id"], name: "index_companion_devices_on_account_id"
     t.index ["companion_enrollment_grant_id"], name: "index_companion_devices_on_companion_enrollment_grant_id", unique: true
     t.index ["credential_digest"], name: "index_companion_devices_on_credential_digest", unique: true
@@ -1454,6 +1496,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.index ["agent_id"], name: "index_field_swarm_searches_on_agent_id"
     t.index ["user_id"], name: "index_field_swarm_searches_on_user_id"
     t.check_constraint "status::text = ANY (ARRAY['running'::character varying::text, 'complete'::character varying::text, 'failed'::character varying::text])", name: "field_swarm_searches_status"
+  end
+
+  create_table "field_table_rows", force: :cascade do |t|
+    t.bigint "field_table_id", null: false
+    t.jsonb "data", default: {}, null: false
+    t.integer "lock_version", default: 0, null: false
+    t.string "last_written_by_type"
+    t.bigint "last_written_by_id"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["field_table_id", "discarded_at", "id"], name: "index_field_table_rows_live_order"
+    t.index ["last_written_by_type", "last_written_by_id"], name: "index_field_table_rows_on_last_written_by"
+    t.check_constraint "jsonb_typeof(data) = 'object'::text", name: "field_table_rows_data_object"
+  end
+
+  create_table "field_tables", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.jsonb "columns", default: [], null: false
+    t.string "created_by_type"
+    t.bigint "created_by_id"
+    t.string "updated_by_type"
+    t.bigint "updated_by_id"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, lower((name)::text)", name: "index_field_tables_on_account_and_live_name", unique: true, where: "(discarded_at IS NULL)"
+    t.index ["account_id"], name: "index_field_tables_on_account_id"
+    t.index ["created_by_type", "created_by_id"], name: "index_field_tables_on_created_by"
+    t.index ["updated_by_type", "updated_by_id"], name: "index_field_tables_on_updated_by"
+    t.check_constraint "jsonb_typeof(columns) = 'array'::text", name: "field_tables_columns_array"
   end
 
   create_table "field_taggings", force: :cascade do |t|
@@ -1962,6 +2036,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.jsonb "notice_link"
     t.boolean "voice_mode", default: false, null: false
     t.jsonb "rich_ui"
+    t.bigint "paid_fallback_interaction_id"
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
@@ -2359,13 +2434,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.uuid "reference", default: -> { "gen_random_uuid()" }, null: false
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
+    t.string "stripe_description"
     t.bigint "billing_code_redemption_id"
+    t.boolean "trial", default: false, null: false
+    t.string "stripe_checkout_session_id"
+    t.jsonb "checkout_create_params"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
+    t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY ((ARRAY['pending'::character varying, 'born'::character varying, 'failed'::character varying])::text[])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
     t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
+    t.index ["stripe_checkout_session_id"], name: "index_resident_birth_orders_on_stripe_checkout_session_id", unique: true
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
@@ -2398,6 +2479,66 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_entitlements_rate_known"
   end
 
+  create_table "resident_fallback_calls", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "resident_fallback_turn_id"
+    t.datetime "admitted_at", null: false
+    t.string "upstream_model", null: false
+    t.jsonb "max_price", null: false
+    t.bigint "input_bound_tokens", null: false
+    t.bigint "max_output_tokens", null: false
+    t.decimal "reservation_usd", precision: 14, scale: 8, null: false
+    t.decimal "charge_usd", precision: 14, scale: 8
+    t.string "cost_source"
+    t.string "status", default: "pending", null: false
+    t.integer "http_status"
+    t.string "upstream_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "admitted_at"], name: "index_resident_fallback_calls_on_agent_id_and_admitted_at"
+    t.index ["agent_id"], name: "index_resident_fallback_calls_on_agent_id"
+    t.index ["resident_fallback_turn_id"], name: "index_resident_fallback_calls_on_resident_fallback_turn_id"
+    t.check_constraint "reservation_usd >= 0::numeric AND reservation_usd <> 'NaN'::numeric AND (charge_usd IS NULL OR charge_usd >= 0::numeric AND charge_usd <> 'NaN'::numeric)", name: "fallback_calls_nonnegative"
+    t.check_constraint "status::text <> 'settled'::text OR charge_usd IS NOT NULL", name: "fallback_calls_settled_have_charge"
+  end
+
+  create_table "resident_fallback_policies", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.boolean "enabled", default: false, null: false
+    t.string "model_id"
+    t.decimal "cap_usd", precision: 10, scale: 2
+    t.string "cap_period", default: "month", null: false
+    t.string "payer", default: "openrouter", null: false
+    t.bigint "enabled_by_user_id"
+    t.datetime "enabled_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "use_notice_at"
+    t.datetime "use_notice_period_start"
+    t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
+    t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
+    t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric AND cap_usd <> 'NaN'::numeric", name: "fallback_policies_positive_cap"
+  end
+
+  create_table "resident_fallback_turns", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "chat_id"
+    t.bigint "primary_interaction_id"
+    t.bigint "fallback_interaction_id"
+    t.string "primary_provider", null: false
+    t.string "primary_model", null: false
+    t.string "fallback_model_id", null: false
+    t.string "upstream_model", null: false
+    t.datetime "primary_resets_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "primary_result"
+    t.index ["agent_id"], name: "index_resident_fallback_turns_on_agent_id"
+    t.index ["chat_id"], name: "index_resident_fallback_turns_on_chat_id"
+    t.index ["fallback_interaction_id"], name: "index_resident_fallback_turns_on_fallback_interaction_id", unique: true
+    t.index ["primary_interaction_id"], name: "index_resident_fallback_turns_on_primary_interaction_id"
+  end
+
   create_table "resident_subscriptions", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.bigint "account_id", null: false
@@ -2412,6 +2553,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.string "rate", default: "standard", null: false
     t.string "stripe_price_id"
     t.integer "plan_changes_count", default: 0, null: false
+    t.datetime "trial_end"
     t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
@@ -2436,8 +2578,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.string "session_id", null: false
     t.string "state", default: "queued", null: false
     t.datetime "updated_at", null: false
+    t.datetime "hopped_at"
     t.index ["agent_id"], name: "index_resident_turns_on_agent_id"
-    t.index ["agent_runtime_interaction_id"], name: "index_resident_turns_on_agent_runtime_interaction_id", unique: true
+    t.index ["agent_runtime_interaction_id"], name: "one_live_resident_turn_per_run", unique: true, where: "(hopped_at IS NULL)"
     t.index ["dispatch_id"], name: "index_resident_turns_on_dispatch_id", unique: true
     t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY (ARRAY[('starting'::character varying)::text, ('running'::character varying)::text, ('unknown'::character varying)::text]))"
     t.index ["state", "created_at"], name: "index_resident_turns_on_state_and_created_at"
@@ -2762,8 +2905,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
     t.boolean "billing_enabled", default: false, null: false
     t.datetime "billing_enabled_at"
+    t.boolean "free_trial_enabled", default: true, null: false
     t.string "voice_mode_scope", default: "account_choice", null: false
     t.string "speech_engine_scope", default: "disabled", null: false
+    t.string "companion_mac_download_url", limit: 500
+    t.string "companion_mac_early_download_url", limit: 500
+    t.string "companion_mac_early_download_sha256", limit: 64
+    t.boolean "paid_fallback_enabled", default: false, null: false
+    t.string "companion_linux_amd64_download_url", limit: 500
+    t.string "companion_linux_amd64_download_sha256", limit: 64
+    t.string "companion_linux_arm64_download_url", limit: 500
+    t.string "companion_linux_arm64_download_sha256", limit: 64
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|
@@ -2800,6 +2952,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
     t.index ["name"], name: "index_stone_addresses_on_name", unique: true
     t.index ["stone_id"], name: "index_stone_addresses_on_stone_id", unique: true
     t.check_constraint "name::text ~ '^[a-z]+-[a-z]+-[a-z]+$'::text", name: "stone_addresses_name_format"
+  end
+
+  create_table "stone_revision_field_tables", force: :cascade do |t|
+    t.bigint "stone_revision_id", null: false
+    t.bigint "field_table_id", null: false
+    t.string "attached_by_type"
+    t.bigint "attached_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["attached_by_type", "attached_by_id"], name: "index_stone_revision_field_tables_on_attached_by"
+    t.index ["field_table_id"], name: "index_stone_revision_field_tables_on_field_table_id"
+    t.index ["stone_revision_id", "field_table_id"], name: "index_stone_revision_field_tables_unique", unique: true
   end
 
   create_table "stone_revisions", force: :cascade do |t|
@@ -3112,6 +3276,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
   add_foreign_key "account_exports", "users"
   add_foreign_key "account_imports", "accounts"
   add_foreign_key "account_imports", "users"
+  add_foreign_key "account_plan_checkout_attempts", "accounts"
+  add_foreign_key "account_subscriptions", "accounts"
   add_foreign_key "accounts", "rooms", column: "resident_room_id", on_delete: :nullify
   add_foreign_key "action_mcp_session_messages", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_messages_session_id", on_update: :cascade, on_delete: :cascade
   add_foreign_key "action_mcp_session_subscriptions", "action_mcp_sessions", column: "session_id", on_delete: :cascade
@@ -3236,6 +3402,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
   add_foreign_key "field_swarm_searches", "accounts"
   add_foreign_key "field_swarm_searches", "agents", on_delete: :nullify
   add_foreign_key "field_swarm_searches", "users", on_delete: :nullify
+  add_foreign_key "field_table_rows", "field_tables", on_delete: :cascade
+  add_foreign_key "field_tables", "accounts"
   add_foreign_key "field_taggings", "accounts"
   add_foreign_key "field_taggings", "field_tags"
   add_foreign_key "field_tags", "accounts"
@@ -3347,6 +3515,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
   add_foreign_key "resident_entitlements", "accounts"
   add_foreign_key "resident_entitlements", "agents"
   add_foreign_key "resident_entitlements", "resident_subscriptions", column: "current_subscription_id"
+  add_foreign_key "resident_fallback_calls", "agents"
+  add_foreign_key "resident_fallback_calls", "resident_fallback_turns", on_delete: :nullify
+  add_foreign_key "resident_fallback_policies", "agents"
+  add_foreign_key "resident_fallback_policies", "users", column: "enabled_by_user_id"
+  add_foreign_key "resident_fallback_turns", "agent_runtime_interactions", column: "fallback_interaction_id", on_delete: :nullify
+  add_foreign_key "resident_fallback_turns", "agent_runtime_interactions", column: "primary_interaction_id", on_delete: :nullify
+  add_foreign_key "resident_fallback_turns", "agents"
+  add_foreign_key "resident_fallback_turns", "chats", on_delete: :nullify
   add_foreign_key "resident_subscriptions", "accounts"
   add_foreign_key "resident_subscriptions", "agents"
   add_foreign_key "resident_turns", "agent_runtime_interactions"
@@ -3392,6 +3568,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_040000) do
   add_foreign_key "stalled_thread_sweeps", "chats", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "messages", on_delete: :cascade
   add_foreign_key "stone_addresses", "stones", on_delete: :nullify
+  add_foreign_key "stone_revision_field_tables", "field_tables", on_delete: :cascade
+  add_foreign_key "stone_revision_field_tables", "stone_revisions", on_delete: :cascade
   add_foreign_key "stone_revisions", "agents"
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"

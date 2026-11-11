@@ -19,7 +19,7 @@ class Accounts::PortabilityControllerTest < ActionDispatch::IntegrationTest
     export
   end
 
-  test "the page shows limits, what never travels, and which residents would be skipped" do
+  test "the page shows limits and what never travels, privately" do
     get account_portability_path(@account)
     assert_response :success
     assert_equal "accounts/portability", inertia_component

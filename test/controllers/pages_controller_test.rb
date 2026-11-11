@@ -37,10 +37,10 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert latest.all? { |entry| entry["clip"].present? }
   end
 
-  test "home page carries the cheapest plan's price for the from-price under Begin someone" do
+  test "home page carries the cheapest account's price for the from-price under Begin someone" do
     get root_path
 
-    assert_equal Billing::Tier.all.map(&:monthly_usd).min, inertia_shared_props["from_usd"]
+    assert_equal "9.99", inertia_shared_props["from_usd"], "Companions with one Small resident, never $0"
   end
 
   test "home page link previews carry the house film" do
@@ -132,6 +132,17 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     get root_path, headers: { "X-Inertia" => true, "X-Inertia-Version" => "wrong-version" }
     assert_response :conflict
     assert_equal "http://www.example.com#{root_path}", @response.headers["X-Inertia-Location"]
+  end
+
+  test "the companion page is public and says the Mac download is coming until a signed build is set" do
+    get companion_path
+    assert_response :success
+    assert_equal "companion", inertia_component
+    assert_nil inertia_shared_props.dig("site_settings", "companion_mac_download_url")
+
+    Setting.instance.update!(companion_mac_download_url: "https://example.com/companion.zip")
+    get companion_path
+    assert_equal "https://example.com/companion.zip", inertia_shared_props.dig("site_settings", "companion_mac_download_url")
   end
 
 end

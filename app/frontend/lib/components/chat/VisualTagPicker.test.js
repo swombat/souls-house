@@ -155,3 +155,17 @@ test('deleted conversations do not advertise an available mutation', () => {
   render(VisualTagPicker, { ...props, chat: { ...props.chat, discarded: true } });
   expect(screen.getByRole('button')).toBeDisabled();
 });
+
+test('a thread stuck at the handoff limit shows the red hand in place of the clock, and the clock returns when it clears', async () => {
+  const waiting = { due_at: '2026-11-12T09:00:00Z', resident_name: 'Mira', count: 1 };
+  const row = { ...props.chat, next_commitment: waiting, handoff_stuck: true };
+  const { rerender } = render(ChatSidebarItem, { chat: row, accountId: 'house', visualTags: [tag] });
+  const hand = screen.getByTestId('handoff-stuck-mark');
+  expect(hand).toHaveClass('text-red-600');
+  expect(hand).toHaveAttribute('title', expect.stringMatching(/^Stuck: residents reached the handoff limit/));
+  expect(screen.queryByTestId('commitment-mark')).toBeNull();
+
+  await rerender({ chat: { ...row, handoff_stuck: false }, accountId: 'house', visualTags: [tag] });
+  expect(screen.queryByTestId('handoff-stuck-mark')).toBeNull();
+  expect(screen.getByTestId('commitment-mark')).toHaveAttribute('title', expect.stringMatching(/^Mira will come back here /));
+});

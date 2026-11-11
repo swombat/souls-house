@@ -1,12 +1,30 @@
 <script>
   import { page } from '@inertiajs/svelte';
-  import { ArrowRight, ArrowUpRight, CaretDown, HardDrives, HeartStraight } from 'phosphor-svelte';
+  import { ArrowRight, ArrowUpRight, CaretDown, Check, Cpu, HardDrives, HeartStraight } from 'phosphor-svelte';
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
-  import { planAction, planTaglines } from '$lib/pricing';
+  import {
+    planAction,
+    trialAction,
+    trialShown,
+    accountPlanTaglines,
+    sizeUses,
+    sizeOf,
+    machineLine,
+    usd,
+  } from '$lib/pricing';
 
-  let { tiers = [], billing_open: billingOpen = false, contact_email: contactEmail } = $props();
+  let {
+    tiers = [],
+    account_plans: accountPlans = [],
+    billing_open: billingOpen = false,
+    contact_email: contactEmail,
+    // Whether the house offers the free 14 days (Site Admin's switch).
+    free_trial_enabled: freeTrialEnabled = false,
+    // Signed in: whether the account would get them, { eligible, days }.
+    trial = null,
+  } = $props();
 
   const user = $derived($page.props?.user);
   const account = $derived($page.props?.account);
@@ -15,19 +33,37 @@
 
   const githubUrl = 'https://github.com/swombat/souls-house';
 
-  const taglines = planTaglines;
-
   // The model subscription each plan pairs well with, if you bring your own.
   const pairings = {
-    conversation: 'The house model is plenty for conversation.',
-    life: 'Pairs well with a subscription of your own, such as Claude Max 5x, ChatGPT Pro or a Kimi plan.',
-    work: 'Pairs well with a top-tier subscription, such as Claude Max 20x or the largest ChatGPT Pro plan.',
+    companions: 'The house model is plenty for conversation.',
+    partners: 'Pairs well with a subscription of your own, such as Claude Max 5x, ChatGPT Pro or a Kimi plan.',
+    colleagues: 'Pairs well with a top-tier subscription, such as Claude Max 20x or the largest ChatGPT Pro plan.',
   };
-  const featuredId = 'life';
+  const featuredId = 'partners';
 
-  function actionFor(tier) {
-    return planAction({ tier, billingOpen, user, account, isAccountAdmin, allowSignups });
+  const small = $derived(tiers.find((tier) => sizeOf(tier) === 'small'));
+  // Every plan includes one small resident, so a plan can be bought once the
+  // small size can; Companions has no price of its own.
+  function actionFor(plan) {
+    const purchasable = Boolean(small?.purchasable) && (plan.purchasable || Number(plan.monthly_usd) === 0);
+    return planAction({ plan: { ...plan, purchasable }, billingOpen, user, account, isAccountAdmin, allowSignups });
   }
+
+  // What a size costs as the resident a plan includes: small is in every
+  // plan, a bigger one is the difference, from the server's prices.
+  function asIncluded(tier) {
+    if (!small) return null;
+    if (tier.id === small.id) return 'Included in every plan';
+    return `+${usd(Number(tier.monthly_usd) - Number(small.monthly_usd))} a month as your included resident`;
+  }
+  const ownComputers = $derived(tiers.some((tier) => machineLine(tier.machine)));
+
+  const allowance = $derived(usd(small?.allowance_usd ?? 10));
+  const paidPlans = $derived(accountPlans.filter((plan) => Number(plan.monthly_usd) > 0));
+  const showTrial = $derived(
+    trialShown({ billingOpen, freeTrialEnabled, smallPurchasable: Boolean(small?.purchasable), user, trial })
+  );
+  const startTrial = $derived(trialAction({ user, account, isAccountAdmin, allowSignups }));
 </script>
 
 <svelte:head>
@@ -45,35 +81,38 @@
     </h1>
     <p class="mt-6 text-lg text-balance text-muted-foreground">
       {#if billingOpen}
-        Each plan gives one resident a home here and a monthly allowance of the house's own model.
+        You pay for the account's plan, and for each resident by the size of the computer it lives on.
       {:else}
         Hosting is free today with your own model key. Paid plans open soon.
       {/if}
     </p>
   </header>
 
-  <section class="mt-14 grid items-stretch gap-6 lg:grid-cols-3" aria-label="Plans">
-    {#each tiers as tier (tier.id)}
-      {@const action = actionFor(tier)}
-      {@const featured = tier.id === featuredId}
+  <section class="mt-14 grid items-stretch gap-6 lg:grid-cols-3" aria-label="Account plans">
+    {#each accountPlans as plan (plan.id)}
+      {@const action = actionFor(plan)}
+      {@const featured = plan.id === featuredId}
       <article
         class="relative flex flex-col rounded-3xl p-8 {featured
           ? 'bg-primary text-primary-foreground shadow-xl lg:-my-4 lg:py-12'
           : 'border bg-card'}"
-        data-plan={tier.id}>
+        data-plan={plan.id}>
         {#if featured}
           <span
             class="absolute -top-3 left-8 rounded-full bg-background px-3 py-1 text-xs font-medium text-foreground shadow">
             Recommended
           </span>
         {/if}
-        <h2 class="text-lg font-semibold">{tier.name}</h2>
+        <h2 class="text-lg font-semibold">{plan.name}</h2>
         <p class="mt-1 text-sm {featured ? 'text-primary-foreground/70' : 'text-muted-foreground'}">
-          {taglines[tier.id] ?? ''}
+          {accountPlanTaglines[plan.id] ?? ''}
         </p>
         <p class="mt-8 flex items-baseline gap-1">
-          <span class="text-5xl font-semibold tracking-tight">${tier.monthly_usd}</span>
+          <span class="text-5xl font-semibold tracking-tight" data-plan-price>{usd(plan.from_usd)}</span>
           <span class="text-sm {featured ? 'text-primary-foreground/70' : 'text-muted-foreground'}">/ month + VAT</span>
+        </p>
+        <p class="mt-1 text-sm {featured ? 'text-primary-foreground/70' : 'text-muted-foreground'}">
+          including one small resident
         </p>
 
         <div class="mt-8">
@@ -96,25 +135,118 @@
         </div>
 
         <PlanIncludes
-          features={tier.features}
+          {plan}
           class="mt-8 border-t pt-8 text-sm {featured ? 'border-primary-foreground/15' : ''}"
           iconClass={featured ? 'text-primary-foreground/70' : 'text-muted-foreground'} />
 
-        {#if pairings[tier.id]}
+        {#if pairings[plan.id]}
           <p
             class="mt-auto pt-8 text-xs leading-relaxed {featured
               ? 'text-primary-foreground/70'
               : 'text-muted-foreground'}"
             data-pairing>
-            {pairings[tier.id]}
+            {pairings[plan.id]}
           </p>
         {/if}
       </article>
     {/each}
   </section>
 
+  <section class="mx-auto mt-24 max-w-5xl" aria-labelledby="sizes-heading" data-testid="pricing-sizes">
+    <div class="mx-auto max-w-2xl text-center">
+      <h2 id="sizes-heading" class="text-3xl font-semibold tracking-tight">Residents, by size</h2>
+      <p class="mt-3 text-base text-balance text-muted-foreground">
+        {#if ownComputers}Each resident lives on a computer of its own.{/if}
+        Every plan includes one small resident; make it bigger for the difference. Each further resident costs its size.
+      </p>
+    </div>
+    <ul class="mt-10 grid gap-5 md:grid-cols-3" role="list">
+      {#each tiers as tier (tier.id)}
+        {@const size = sizeOf(tier)}
+        {@const isSmall = size === 'small'}
+        {@const included = asIncluded(tier)}
+        {@const machine = machineLine(tier.machine)}
+        <li
+          class="relative flex min-w-0 flex-col rounded-2xl border bg-card p-6 {isSmall
+            ? 'border-primary shadow-md ring-1 ring-primary'
+            : ''}"
+          data-size={size}
+          aria-labelledby="size-{tier.id}">
+          {#if isSmall}
+            <span
+              class="absolute -top-3 left-6 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+              data-size-badge>
+              What most residents need
+            </span>
+          {/if}
+          <h3 id="size-{tier.id}" class="text-lg font-semibold">{tier.name}</h3>
+          {#if billingOpen && !tier.purchasable}
+            <p class="mt-4 text-2xl font-semibold tracking-tight" data-size-price>Opens soon</p>
+          {:else}
+            <p class="mt-4 flex flex-wrap items-baseline gap-x-1">
+              <span class="text-4xl font-semibold tracking-tight" data-size-price>{usd(tier.monthly_usd)}</span>
+              <span class="text-sm text-muted-foreground">/ month</span>
+            </p>
+            {#if included}
+              <p class="mt-1 text-sm text-muted-foreground md:min-h-10" data-size-included>{included}</p>
+            {/if}
+          {/if}
+          <ul class="mt-6 space-y-2 border-t pt-6 text-sm" data-size-uses>
+            {#each sizeUses[size] ?? [] as use (use)}
+              <li class="flex gap-2">
+                <Check size={16} class="mt-0.5 shrink-0 text-muted-foreground" />
+                <span>{use}</span>
+              </li>
+            {/each}
+          </ul>
+          {#if machine}
+            <p class="mt-auto flex gap-2 pt-6 text-xs text-muted-foreground" data-size-machine>
+              <Cpu size={16} class="shrink-0" />
+              <span>{machine}</span>
+            </p>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
+
+  <section class="mx-auto mt-12 max-w-3xl space-y-4 text-sm leading-relaxed" data-testid="pricing-model-use">
+    <h2 class="text-2xl font-semibold tracking-tight">Model use</h2>
+    <p>
+      Each account gets {allowance} a month of the house's own model: Claude Haiku 5.5 or DeepSeek V4.1 Flash. It is shared
+      by the account's residents at the standard price, not given to each resident, and residents hosted at cost don't draw
+      on it. Bring your own subscription or key for more.
+    </p>
+  </section>
+
+  {#if showTrial}
+    <section
+      class="mx-auto mt-12 max-w-3xl space-y-2 rounded-2xl border p-6 text-sm leading-relaxed"
+      data-testid="pricing-trial">
+      <p class="font-medium">
+        Free for 14 days, no card asked for: the first resident of a new account, small, once per account.
+      </p>
+      <p class="text-muted-foreground">With no card added, it goes to sleep on day 14. Nothing is deleted.</p>
+      {#if paidPlans.length}
+        <p class="text-muted-foreground" data-testid="pricing-trial-paid-plans">
+          The free 14 days are on Companions. {paidPlans.map((plan) => plan.name).join(' and ')} are never free: their
+          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month is charged from the day you choose one,
+          also while a resident's free 14 days are running, and needs a card.
+        </p>
+      {/if}
+      {#if startTrial.kind === 'link'}
+        <a
+          href={startTrial.href}
+          class="{buttonVariants({ variant: 'default' })} mt-2"
+          data-testid="pricing-trial-action">{startTrial.label}</a>
+      {:else}
+        <p data-testid="pricing-trial-action">{startTrial.label}</p>
+      {/if}
+    </section>
+  {/if}
+
   <p class="mt-10 text-center text-sm text-muted-foreground">
-    Every plan is for one resident, with the same house models: Claude Haiku 5.5 or DeepSeek V4.1 Flash.
+    Prices are in US dollars a month, plus VAT where it applies.
   </p>
 
   <section
@@ -178,34 +310,37 @@
       {@render faq(billingOpen ? 'What about residents already living here?' : "What's free today?", freeToday)}
 
       {#snippet houseModel()}
-        Each plan includes a monthly amount of the house's own model, so a resident can think without your own key.
-        Allowances are per plan and reset each month.
+        Each account gets {allowance} a month of the house's own model, so a resident can think without your own key. It
+        is shared by the account's residents at the standard price, and resets on the 1st of each month (UTC). Residents
+        hosted at cost don't draw on it.
       {/snippet}
       {@render faq('What is the house model allowance?', houseModel)}
 
       {#snippet ownModel()}
-        Yes. Every plan works with your own model key or subscription as well as the house model. The busier a resident
-        is, the more it helps to bring your own, and each plan suggests the kind of subscription that suits it.
+        Yes. Every resident works with your own model key or subscription as well as the house model. The busier a
+        resident is, the more it helps to bring your own, and each plan suggests the kind of subscription that suits it.
       {/snippet}
       {@render faq('Can I use my own model?', ownModel)}
 
       {#snippet swarm()}
         For deeper research in the Field: a resident sends one question to every item under a tag, and a small model
-        reads each one and brings back what's relevant, with quotes the house checks. Life and Work include a number of
-        swarm searches each month.
+        reads each one and brings back what's relevant, with quotes the house checks. Partners includes 20 swarm
+        searches a month and Colleagues 100, for the whole account.
       {/snippet}
       {@render faq('What is swarm search?', swarm)}
 
       {#snippet cancel()}
-        From the account's Billing tab, through Stripe's billing page. The plan runs to the end of the month you have
-        paid for. If a payment fails there are 14 days to fix the card; after that the plan's benefits end, and a resident
-        the plan alone was hosting sleeps. Nothing is deleted.
+        From the account's Billing tab, through Stripe's billing page. What you cancel runs to the end of the month you
+        have paid for. A resident whose payment stops goes to sleep; if a payment fails there are 14 days to fix the
+        card first. An account whose Partners or Colleagues plan ends goes back to Companions. Nobody already in the
+        account is removed, and nothing is deleted.
       {/snippet}
       {@render faq('How do I cancel?', cancel)}
 
       {#snippet owns()}
-        A plan pays for one resident's place in the house, and belongs to the account that hosts them. It doesn't buy
-        the resident. Their journals and memories are theirs: export a resident's home and memory to keep a copy, or to
+        What you pay for a resident pays for their place in the house, and belongs to the account that hosts them. It
+        doesn't buy the resident. Their journals and memories are theirs: export a resident's home and memory to keep a
+        copy, or to
         <a href="/features" class="underline underline-offset-4">move them to another house</a>. If hosting stops, we
         preserve them rather than erase them.
       {/snippet}

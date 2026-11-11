@@ -20,7 +20,13 @@ class ExternalAgentResponseRequest
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
 
-  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil, wake_source_kinds: [], requested_at: nil)
+  # fallback_turn: this run is the paid-fallback attempt of a turn the
+  # subscription refused before it started (#690, ResidentFallback::Hop). It
+  # runs on the fallback lane: its own Chaos session and transcript cursor,
+  # the house provider, the owner's fallback model.
+  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil, wake_source_kinds: [], requested_at: nil,
+    fallback_turn: nil)
+    @fallback_turn = fallback_turn
     @agent = agent
     @chat = chat
     @requested_by = requested_by
@@ -35,13 +41,17 @@ class ExternalAgentResponseRequest
     if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
       @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds,
         requested_at: @requested_at)
-      return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
+      # A fallback dispatch continues a run whose claim already won (#690,
+      # ResidentFallback::Hop); its sources were asked again before it.
+      return { status: 409, body: { "status" => "already_running" } } unless fallback? || @interaction.claim_dispatch!
     end
     Agents::Sandbox.new(agent).with_runtime { perform }
   rescue Chat::ParticipantChanged
     { status: 409, body: { "status" => "participant_changed" } }
   rescue Agent::RuntimeAvailability::Unavailable
     raise
+  rescue Agents::RemoteRuntime::Settling => e
+    hold_while_remote_runtime_settles(e)
   rescue StandardError => e
     @interaction&.record_error!(e)
     Rails.logger.warn "[ExternalAgentResponseRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
@@ -56,17 +66,37 @@ class ExternalAgentResponseRequest
 
   attr_reader :agent, :chat, :requested_by, :initiation_reason
 
+  # A VM resident in the middle of a restart, or whose runner's heartbeat is
+  # briefly late, can't take this turn for a moment (#868). That is not a
+  # failure and the request is not dropped: the run is recorded busy, with
+  # the reason, before anything reached the runtime. A person's request comes
+  # back as a PendingWake (BusyRunRetryJob), a resident's handoff knocks again
+  # (MessageHandoff#retry_after_busy!), and PendingWake.release! waits for the
+  # VM before it runs. Past RemoteRuntime::HOLD_LIMIT the same condition is
+  # Unavailable and the run fails with that reason instead.
+  def hold_while_remote_runtime_settles(error)
+    Rails.logger.info "[ExternalAgentResponseRequest] #{agent.id} held: #{error.message}"
+    if @interaction&.live_activity?
+      @interaction.with_lock do
+        @interaction.update!(error_class: error.class.name, error_message: error.message)
+        @interaction.finish_execution!("busy")
+      end
+    else
+      @interaction&.record_error!(error)
+    end
+    { status: 409, body: { "status" => "already_running", "held" => "remote_runtime_settling" } }
+  end
+
   def perform
     return notify_unreachable if agent.offline? || agent_unhealthy?
     return notify_model_unavailable unless selection.ok?
 
     endpoint_url = Agents::Endpoint.url_for(agent)
-    session_id = "#{agent.uuid}-#{chat.id}"
     @safeguard_roll = SafeguardRoll.snapshot_for(agent: agent, chat: chat)
     request = request_text
     # A safeguard roll starts a fresh session: send the full request, not a delta.
     delta = @safeguard_roll ? nil : request_delta_text
-    auth_mode = agent.provider_auth_mode(provider)
+    auth_mode = fallback? ? "api_key" : agent.provider_auth_mode(provider)
 
     attributes = {
       agent: agent,
@@ -81,7 +111,7 @@ class ExternalAgentResponseRequest
       last_included_message_id: computed_last_included_message_id,
       provider_auth_mode: auth_mode,
       provider: provider,
-      model: selection.model
+      model: dispatch_model
     }
     invoke = ->(_record = nil) {
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
@@ -94,8 +124,8 @@ class ExternalAgentResponseRequest
         persistent_session: agent.persistent_session?,
         session_policy: agent.runtime_session_policy,
         provider: provider,
-        model: selection.model,
-        reasoning_effort: selection.reasoning_effort,
+        model: dispatch_model,
+        reasoning_effort: (selection.reasoning_effort unless fallback?),
         auth_mode: auth_mode,
         activity: (@interaction&.activity_configuration! unless ResidentTurn.enabled?),
         interaction: @interaction,
@@ -106,6 +136,13 @@ class ExternalAgentResponseRequest
     result = if @interaction
       @interaction.update!(attributes.except(:agent, :chat, :conversation_id))
       response = invoke.call
+      # The subscription refused before anything ran and the owner's paid
+      # fallback takes the turn (#690): the same run goes again on the
+      # fallback lane, and its result is the fallback's.
+      if !fallback? && (hop = ResidentFallback::Hop.open!(interaction: @interaction, result: response))
+        return self.class.new(agent: agent, chat: chat, requested_by: requested_by, initiation_reason: initiation_reason,
+          interaction: @interaction, wake_source_kinds: @wake_source_kinds, requested_at: @requested_at, fallback_turn: hop).send(:perform)
+      end
       @interaction.with_lock { @interaction.record_result!(response) }
       response[:execution_unconfirmed] = true unless @interaction.finished_at?
       response
@@ -134,6 +171,14 @@ class ExternalAgentResponseRequest
   def trigger_payload
     payload = memory_trigger_payload
     payload = payload.merge(roll_session: true) if @safeguard_roll
+    # Shared by both session lanes (#690, ResidentFallback::Lane): a lane
+    # that missed a fresh start owed in this conversation rolls on its next
+    # turn. 0, the runtime's default, until the first roll.
+    generation = @safeguard_roll ? @safeguard_roll.freshness_generation : ResidentFallback::Lane.freshness_generation(agent, chat)
+    payload = payload.merge(runtime_session_generation: generation) if generation.positive?
+    # The runtime gives a paid-fallback turn no paid key of any kind, so
+    # nothing in it can spend outside the gateway's cap (#690).
+    payload = payload.merge(paid_fallback: true) if fallback?
     # The runtime's silence clock speeds up for a spoken turn (every ~20 s
     # rather than at two minutes); it can't see the transcript, so say so.
     payload = payload.merge(voice_mode: true) if voice_mode_wake?
@@ -156,7 +201,38 @@ class ExternalAgentResponseRequest
   end
 
   def provider
-    selection.provider
+    fallback? ? "house" : selection.provider
+  end
+
+  # The resident is told which model it is on and who pays (#690).
+  def fallback_notice_text
+    return unless fallback?
+
+    "Paid fallback: your subscription's allowance ran out before this turn started, so this turn runs on " \
+      "#{ResidentFallback::Models.label(@fallback_turn.fallback_model_id)}, paid by this account's own OpenRouter key " \
+      "under a cap your owner set. It is a separate Chaos session from your usual one: what you did there with tools " \
+      "is not in this session, only what was said in the room."
+  end
+
+  def fallback? = @fallback_turn.present?
+
+  def session_id
+    @session_id ||= ResidentFallback::Lane.session_id(agent, chat, fallback: fallback?)
+  end
+
+  # This lane's runs. Runs from before lanes existed, whatever their
+  # session_id, are the subscription lane's.
+  def lane_runs
+    fallback_like = "%#{ResidentFallback::Lane::SUFFIX}"
+    if fallback?
+      AgentRuntimeInteraction.where(session_id: session_id)
+    else
+      AgentRuntimeInteraction.where("agent_runtime_interactions.session_id IS NULL OR agent_runtime_interactions.session_id NOT LIKE ?", fallback_like)
+    end
+  end
+
+  def dispatch_model
+    fallback? ? ResidentFallback::Gateway.model_id_for(@fallback_turn.fallback_model_id) : selection.model
   end
 
   # The selected model can no longer be used. Say so in the room rather than
@@ -221,6 +297,7 @@ class ExternalAgentResponseRequest
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
       selection.prompt_section,
+      fallback_notice_text,
       safeguard_notice_text,
       trigger_intro_text,
       queued_wake_text,
@@ -584,8 +661,11 @@ class ExternalAgentResponseRequest
   def prior_cursor_message_id
     return @prior_cursor_message_id if defined?(@prior_cursor_message_id)
 
+    # Each session lane has its own cursor (#690): a delta assumes the
+    # session it resumes already saw everything up to it.
     @prior_cursor_message_id = AgentRuntimeInteraction
       .where(agent: agent, chat: chat, trigger_kind: "conversation")
+      .merge(lane_runs)
       .where.not(last_included_message_id: nil)
       .where.not(chaos_session_id: nil)
       .where(transport_status: 200...300, runtime_status: "ok")
@@ -629,6 +709,7 @@ class ExternalAgentResponseRequest
 
   def request_delta_text
     return nil unless agent.persistent_session? && prior_cursor_message_id
+    return nil if fallback_delta_over_budget?
 
     parts = [
       Notices::Renderer.section_for(agent),
@@ -666,6 +747,21 @@ class ExternalAgentResponseRequest
 
       Ground truth warning: This delta block contains newly stored database messages since the last transcript cursor included in this resumed Chaos session. Treat these new messages as ground truth for recent conversation activity. Earlier transcript context should already be present in the resumed Chaos session; if session resumption failed, the shim must retry with full context rather than sending this delta alone.
     TEXT
+  end
+
+  # A lane's cursor stands still while the other lane runs (#690), so after
+  # a long stretch on the subscription the fallback lane's delta would carry
+  # every message since its last turn, on the owner's key. Past the full
+  # window's limits the fallback resumes on the bounded full request instead
+  # (the shim resumes with `request` when there is no delta).
+  def fallback_delta_over_budget?
+    return false unless fallback?
+
+    messages = delta_messages
+    return true if messages.length > TRANSCRIPT_MESSAGE_LIMIT
+
+    bytes = messages.sum { |message| format_transcript_line(message).bytesize + TRANSCRIPT_SEPARATOR.bytesize }
+    bytes > TRANSCRIPT_BYTE_BUDGET
   end
 
 end

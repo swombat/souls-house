@@ -25,6 +25,13 @@
 #                by the next confirm or webhook; a born order is linked again
 #                until its plan is in force.
 #
+# A free-trial order (Billing::Trial) is the same order with trial: true. It
+# needs no card: instead of opening the subscription itself, start_trial!
+# opens a Stripe Checkout (the order's pinned payload, its own idempotency
+# key) that makes a trialing subscription, card optional. Its subscription is
+# found through the Checkout session; from there payment, complete!, the
+# webhook and the sweeper treat it as any other order, trialing being paid.
+#
 # Nothing is born before money has cleared. A paid order is never replaced by
 # a new one: asking to create another resident while one is paid finishes the
 # paid one and says so. Unpaid orders are abandoned by the sweeper after
@@ -70,16 +77,57 @@ module Billing
       # the same idempotency key, so its parameters must not move when the
       # catalogue is re-costed in between (#619).
       order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
-        stripe_price_id: offer.price_id, billing_code_redemption: account.grant_for(offer.rate),
+        stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+        billing_code_redemption: account.grant_for(offer.rate),
         birth_attributes: attributes.to_h, open_beginning: open_beginning)
       order.update!(stripe_payment_method_id: payment_method.id)
       subscription = open_subscription!(order)
       [ order, client_secret(subscription), payment_method.id ]
     end
 
+    # The free trial: a small resident, standard rate, no card. Records the
+    # draft as a trial order under the account's one claim (Billing::Trial)
+    # and opens its Stripe Checkout. success_url may be a callable given the
+    # order (Stripe returns the browser to the order). Returns
+    # [order, checkout_url].
+    def start_trial!(account:, creator:, attributes:, open_beginning:, success_url:, cancel_url:)
+      offer = Trial.offer
+      refuse!(account, creator, offer)
+      Agents::VmBirthPolicy.current.refuse!(kind: :birth)
+      raise Refused, "Give the resident a name first." if attributes[:name].to_s.strip.empty?
+      if attributes[:system_prompt].to_s.strip.empty? && !open_beginning
+        raise Refused, "Write a soul seed, or choose an open beginning."
+      end
+      raise Refused, "The free trial isn't offered here." unless Trial.offered?(account)
+      # A trial that was spent is refused before an earlier order is touched.
+      # One still waiting in another tab is this person's to replace.
+      unless Trial.unspent?(account) || ResidentBirthOrder.pending.exists?(account: account, creator: creator, trial: true)
+        raise Refused, Trial::SPENT
+      end
+
+      settle_earlier!(account, creator)
+      customer = BillingCustomer.for!(account, client: @client)
+      order = nil
+      Trial.claim!(account) do
+        order = ResidentBirthOrder.create!(account: account, creator: creator, tier: offer.tier.id, rate: offer.rate,
+          stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+          birth_attributes: attributes.to_h, open_beginning: open_beginning, trial: true)
+        success_url = success_url.call(order) if success_url.respond_to?(:call)
+        order.update!(checkout_create_params: trial_checkout_params(order, customer, success_url, cancel_url))
+      end
+      session = resolve_checkout!(order)
+      raise Refused, "Stripe didn't open the free trial. Try again in a moment." unless session.status == "open"
+
+      [ order, session.url ]
+    end
+
     # Returns { client_secret:, payment_method_id: } to pay the first invoice,
-    # or { paid: true } when it is already paid (the order is completed).
+    # or { paid: true } when it is already paid (the order is completed). A
+    # trial order has no invoice to pay: { checkout_url: } while its Checkout
+    # is open.
     def payment(order)
+      return trial_payment(order) if order.trial?
+
       # Born already: the payment went through and only the answer (or the
       # link to Stripe) was lost. Finish linking; the browser then confirms.
       if order.born?
@@ -116,9 +164,11 @@ module Billing
 
         remote = remote_subscription(order)
         next false if remote && remote.status.in?(PAID)
+        next false if order.trial? && !close_checkout!(order)
 
         @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
         order.abandon!
+        Trial.release!(order)
         true
       end
       complete!(order) unless abandoned
@@ -179,7 +229,7 @@ module Billing
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
         automatic_tax: { enabled: true },
-        description: "#{offer.name} hosting for #{order.resident_name}",
+        description: order.stripe_description.presence || legacy_description(order),
         metadata: metadata,
         expand: [ "latest_invoice.confirmation_secret" ]
       }, { idempotency_key: "souls-house-birth-order-#{order.reference}" })
@@ -188,6 +238,16 @@ module Billing
     rescue Stripe::APIConnectionError, Stripe::APIError, Stripe::RateLimitError => error
       order.update!(last_error: "Opening the subscription: #{error.class.name.demodulize}")
       raise Uncertain.new(order)
+    end
+
+    # Orders opened before the description was pinned (2026-11-10) used the
+    # sizes' old names; a replay must send exactly that.
+    LEGACY_NAMES = { "conversation" => "Conversation", "life" => "Life", "work" => "Work" }.freeze
+
+    def legacy_description(order)
+      name = LEGACY_NAMES.fetch(order.tier)
+      name = "#{name} at cost" unless order.offer.standard?
+      "#{name} hosting for #{order.resident_name}"
     end
 
     # The order's subscription for certain: retrieved by its id, or, if
@@ -209,7 +269,7 @@ module Billing
         # Resolved for certain (replayed if it was uncertain): a search miss
         # is not proof that Stripe made nothing.
         remote = begin
-          resolve_subscription!(earlier)
+          earlier.trial? ? trial_subscription!(earlier) : resolve_subscription!(earlier)
         rescue Uncertain
           raise Refused, "Stripe is still confirming your earlier request. Try again in a minute."
         end
@@ -226,9 +286,13 @@ module Billing
 
         earlier.with_lock do
           next unless earlier.pending?
+          if earlier.trial? && !close_checkout!(earlier)
+            raise Refused, "Stripe is still confirming your earlier request. Try again in a minute."
+          end
 
           @client.v1.subscriptions.cancel(remote.id) if remote && remote.status == "incomplete"
           earlier.abandon!
+          Trial.release!(earlier)
         end
       end
     end
@@ -240,6 +304,9 @@ module Billing
     def remote_subscription(order)
       if order.stripe_subscription_id.present?
         return @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
+      end
+      if order.trial? && order.stripe_checkout_session_id.present?
+        return subscription_of(order, @client.v1.checkout.sessions.retrieve(order.stripe_checkout_session_id))
       end
 
       found = @client.v1.subscriptions.search({ query: "metadata['birth_order']:'#{order.reference}'" }).data.first
@@ -289,6 +356,98 @@ module Billing
       Rails.error.report(error, handled: true,
         context: { subsystem: "billing", birth_order_id: order.id, stripe_subscription_id: remote&.id })
       raise error
+    end
+
+    # A trial order's Checkout: the session Stripe made for it, or, if
+    # creating it had no certain answer, the same create replayed from the
+    # pinned payload under the same key, which returns the session Stripe
+    # made the first time. Read live afterwards: a replay can return the
+    # cached open response of a session that has since completed.
+    def resolve_checkout!(order)
+      if order.stripe_checkout_session_id.blank?
+        session = @client.v1.checkout.sessions.create(order.checkout_create_params.deep_symbolize_keys,
+          { idempotency_key: "souls-house-birth-trial-#{order.reference}" })
+        order.update!(stripe_checkout_session_id: session.id, last_error: nil)
+      end
+      @client.v1.checkout.sessions.retrieve(order.stripe_checkout_session_id)
+    rescue Stripe::APIConnectionError, Stripe::APIError, Stripe::RateLimitError => error
+      order.update!(last_error: "Opening the free trial: #{error.class.name.demodulize}")
+      raise Uncertain.new(order)
+    end
+
+    # The trial order's subscription once its Checkout completed (nil before),
+    # recording its id on the order.
+    def trial_subscription!(order)
+      return @client.v1.subscriptions.retrieve(order.stripe_subscription_id) if order.stripe_subscription_id.present?
+
+      subscription_of(order, resolve_checkout!(order))
+    end
+
+    def subscription_of(order, session)
+      id = session.subscription.respond_to?(:id) ? session.subscription.id : session.subscription
+      return nil unless session.status == "complete" && id.present?
+
+      order.update!(stripe_subscription_id: id) if order.stripe_subscription_id.blank?
+      @client.v1.subscriptions.retrieve(id)
+    end
+
+    def trial_payment(order)
+      if order.born?
+        complete!(order)
+        return { paid: true }
+      end
+      raise Refused, "This resident is no longer waiting for its free trial." unless order.pending? || order.failed?
+
+      remote = trial_subscription!(order)
+      if remote&.status&.in?(PAID) || order.failed?
+        complete!(order)
+        return { paid: true }
+      end
+      session = @client.v1.checkout.sessions.retrieve(order.stripe_checkout_session_id)
+      raise Refused, "This free trial's checkout has closed. Start again." unless session.status == "open"
+
+      { checkout_url: session.url }
+    end
+
+    # Makes sure a trial order's Checkout can no longer make a subscription:
+    # true once its session is expired (or was never created, the replay
+    # window having passed). False if it completed after all: the order is
+    # then paid and must be born, not abandoned.
+    def close_checkout!(order)
+      return true if order.stripe_checkout_session_id.blank? && order.created_at < Checkout::REPLAY_WINDOW.ago
+
+      session = resolve_checkout!(order)
+      if session.status == "open"
+        begin
+          session = @client.v1.checkout.sessions.expire(session.id)
+        rescue Stripe::InvalidRequestError
+          session = @client.v1.checkout.sessions.retrieve(session.id)
+        end
+      end
+      session.status == "expired"
+    rescue Uncertain
+      false
+    end
+
+    # The trial's Checkout, pinned on the order before Stripe hears of it. A
+    # paid order's subscription payload and key are untouched by this.
+    def trial_checkout_params(order, customer, success_url, cancel_url)
+      metadata = { birth_order: order.reference, account_id: order.account_id.to_s, tier: order.tier, trial: "1" }
+      {
+        mode: "subscription", customer: customer.stripe_customer_id, client_reference_id: "birth-order-#{order.reference}",
+        line_items: [ { price: order.stripe_price_id, quantity: 1 } ],
+        payment_method_collection: "if_required",
+        subscription_data: {
+          trial_period_days: Trial::DAYS,
+          trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
+          metadata: metadata, description: order.stripe_description
+        },
+        metadata: metadata, automatic_tax: { enabled: true }, tax_id_collection: { enabled: true },
+        billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
+        # Stripe closes it itself when the order would be abandoned.
+        expires_at: order.expires_at.to_i,
+        success_url: success_url, cancel_url: cancel_url
+      }
     end
 
     def client_secret(subscription)

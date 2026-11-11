@@ -31,16 +31,16 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
     assert_equal "sub_1", id
     assert_equal [ { id: "si_sub_1", price: LIFE_PRICE } ], params[:items]
     assert_equal "create_prorations", params[:proration_behavior]
-    assert_equal "Life hosting for #{@agent.name}", params[:description]
+    assert_equal "Medium hosting for #{@agent.name}", params[:description]
     assert_equal "life", subscription.tier
     assert_equal "standard", subscription.rate
     assert_equal LIFE_PRICE, subscription.stripe_price_id
     assert_equal "life", entitlement.reload.tier
-    assert_equal BigDecimal("25"), entitlement.allowance_limit
+    assert_equal BigDecimal("10"), entitlement.allowance_limit, "the allowance is the account's, whatever the size"
 
     change!("conversation")
     assert_equal "conversation", entitlement.reload.tier
-    assert_equal BigDecimal("25"), entitlement.allowance_limit, "the month keeps its high-water mark"
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
   end
 
   test "the rate stays what it was: an at-cost plan moves to the other plan's at-cost price" do
@@ -58,7 +58,7 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
 
     paid!(LIFE_PRICE)
     error = assert_raises(Billing::PlanChange::Refused) { change!("life") }
-    assert_match(/already on Life/, error.message)
+    assert_match(/already on Medium/, error.message)
     assert_empty @stripe.subscription_updates
   end
 
@@ -142,10 +142,10 @@ class Billing::PlanChangeTest < ActiveSupport::TestCase
 
     @stripe.instance_variable_set(:@recovered, true)
     error = assert_raises(Billing::PlanChange::Refused) { change!("life") }
-    assert_match(/already on Life/, error.message)
+    assert_match(/already on Medium/, error.message)
     entitlement = ResidentEntitlement.find_by!(agent: @agent)
     assert_equal "life", entitlement.tier, "the reconciliation stands"
-    assert_equal BigDecimal("25"), entitlement.allowance_limit
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
     assert_equal 1, @stripe.subscription_updates.size, "Stripe was not updated again"
   end
 

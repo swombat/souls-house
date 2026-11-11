@@ -155,4 +155,28 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, '[DONE]'
   end
 
+
+  test 'a paid fallback refusal is recorded on the fallback run, and the fallback model is listed only when on (#690)' do
+    @agent.account.update_columns(openrouter_api_key: 'sk-or-own')
+    chat = @agent.account.chats.create!(title: 'Fallback', manual_responses: true, agents: [ @agent ])
+    ResidentFallbackPolicy.create!(agent: @agent, enabled: true, model_id: 'anthropic/claude-sonnet-5', cap_usd: 0.01,
+      enabled_by_user: @user, enabled_at: Time.current)
+    get '/api/v1/house_inference/models', headers: @headers
+    assert_equal [ @agent.model_id ], response.parsed_body['data'].pluck('id'), 'switch off: not listed'
+
+    Setting.instance.update!(paid_fallback_enabled: true)
+    get '/api/v1/house_inference/models', headers: @headers
+    assert_equal [ @agent.model_id, 'fallback/anthropic/claude-sonnet-5' ], response.parsed_body['data'].pluck('id')
+
+    run = AgentRuntimeInteraction.reserve!(agent: @agent, chat: chat)
+    ResidentFallbackTurn.create!(agent: @agent, chat: chat, fallback_interaction: run, primary_provider: 'openai',
+      primary_model: 'openai/gpt-5', fallback_model_id: 'anthropic/claude-sonnet-5', upstream_model: 'anthropic/claude-sonnet-5')
+    post @path, params: @input.merge(model: 'fallback/anthropic/claude-sonnet-5', stream: false, max_tokens: 32_000),
+      headers: @headers.merge('X-Soulshouse-Run' => run.id.to_s), as: :json
+    assert_response :payment_required
+    assert_equal 'fallback_cap_reached', response.parsed_body.dig('error', 'code')
+    assert_equal 'fallback_cap_reached', run.reload.inference_refusal
+    assert_equal 0, ResidentFallbackCall.count
+  end
+
 end

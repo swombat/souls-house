@@ -32,4 +32,22 @@ class Admin::BillingSwitchesTest < ActionDispatch::IntegrationTest
     assert_predicate Setting.instance.billing_enabled_at, :present?
   end
 
+  test "the free trial is offered by default and switched in Site Admin" do
+    sign_in(users(:site_admin_user))
+    assert Setting.instance.free_trial_enabled?
+
+    get admin_settings_path
+    assert_equal true, inertia_shared_props.fetch("billing").fetch("free_trial_enabled")
+    assert_equal true, inertia_shared_props.fetch("setting").fetch("free_trial_enabled")
+
+    patch admin_settings_path, params: { setting: { free_trial_enabled: false } }
+    assert_not Setting.instance.reload.free_trial_enabled?
+    @inertia_props = nil
+    get admin_settings_path
+    assert_equal false, inertia_shared_props.fetch("billing").fetch("free_trial_enabled")
+
+    patch admin_settings_path, params: { setting: { billing_enabled: true } }
+    assert_not Setting.instance.reload.free_trial_enabled?, "another switch's save leaves it alone"
+  end
+
 end

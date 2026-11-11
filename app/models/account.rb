@@ -6,7 +6,7 @@ class Account < ApplicationRecord
 
   # Broadcasting configuration
   broadcasts_to :all # Admin collection
-  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files, :field_songs
+  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files, :field_songs, :field_tables
 
   # Enums
   enum :account_type, { personal: 0, team: 1 }
@@ -65,6 +65,8 @@ class Account < ApplicationRecord
   has_many :account_imports, dependent: :destroy
   has_many :resident_birth_orders, dependent: :destroy
   has_many :billing_code_redemptions, dependent: :destroy
+  has_many :account_subscriptions, dependent: :restrict_with_error
+  has_many :account_plan_checkout_attempts, dependent: :delete_all
   has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.
@@ -75,6 +77,7 @@ class Account < ApplicationRecord
   has_many :metered_action_events, dependent: :destroy
   has_many :whiteboards, dependent: :destroy
   has_many :field_files, dependent: :destroy
+  has_many :field_tables, dependent: :destroy
   has_many :field_tweets, dependent: :delete_all
   has_many :field_songs, dependent: :destroy
   has_one :field_tweet_source, -> { live }
@@ -108,6 +111,7 @@ class Account < ApplicationRecord
   validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
+  validates :granted_plan, inclusion: { in: Billing::AccountPlan::IDS }, allow_nil: true
 
   # Callbacks
   # Blank or the default spelling stores nil, so "Main" stays the default.
@@ -443,8 +447,8 @@ class Account < ApplicationRecord
   end
 
   # Field swarm search: a site admin's per-account test switch (unmetered beyond
-  # FieldSwarm's daily cap), or a resident of this account on a plan that
-  # includes it (Life or Work), metered per calendar month by the plan.
+  # FieldSwarm's daily cap), or an account plan that includes it (Partners or
+  # Colleagues), metered per calendar month by the plan.
   def field_swarm_allowed?
     field_swarm_enabled? || field_swarm_plan_searches.positive?
   end
@@ -454,11 +458,51 @@ class Account < ApplicationRecord
     field_swarm_enabled? ? nil : field_swarm_plan_searches
   end
 
-  def field_swarm_plan_searches
-    tiers = ResidentEntitlement.where(account: self, state: Billing::Tier::IN_FORCE_STATES,
-      tier: Billing::Tier.with_swarm_search.map(&:id)).pluck(:tier)
-    tiers.sum { |id| Billing::Tier.find(id)&.swarm_searches.to_i }
+  def field_swarm_plan_searches = plan.swarm_searches
+
+  # What the account can do (Billing::AccountPlan): the higher of a site
+  # admin's grant and a paid plan in force, Companions otherwise.
+  def plan(now = Time.current)
+    Billing::AccountPlan.highest(granted_plan, paid_plan_subscription(now)&.plan)
   end
+
+  # Where the plan comes from: "subscription" when a paid plan in force is at
+  # least the grant, "grant" when the grant is higher or the only one,
+  # "default" for Companions with neither.
+  def plan_source(now = Time.current)
+    subscription = paid_plan_subscription(now)
+    granted = Billing::AccountPlan.find(granted_plan)
+    if subscription && (granted.nil? || subscription.plan_record >= granted)
+      "subscription"
+    elsif granted
+      "grant"
+    else
+      "default"
+    end
+  end
+
+  # The live account subscription, in force or not (past_due past grace,
+  # incomplete); nil when there is none.
+  def live_plan_subscription = account_subscriptions.live.order(:id).last
+
+  # For the Billing tab: the plan, where it comes from, and the live
+  # subscription as Stripe has it.
+  def account_plan_json(now = Time.current)
+    { id: plan(now).id, source: plan_source(now), subscription: live_plan_subscription&.as_json }
+  end
+
+  # Why this account can't take another member, or nil when it can. Members
+  # already in the account are never removed; this only stops new ones.
+  # Guests in conversations are not members and are not counted.
+  def member_limit_refusal(adding: nil)
+    return nil if plan.several_members?
+    return nil unless memberships.where.not(id: adding&.id).exists?
+
+    MEMBER_LIMIT_MESSAGE
+  end
+
+  MEMBER_LIMIT_MESSAGE = "An account on the Companions plan is for one person. Move it to the Partners plan " \
+                         "to invite someone.".freeze
 
   # The rates this account may buy plans at: standard always, plus any rate a
   # live billing-code redemption grants (docs/proposals/2026-10-28-billing-codes-at-cost.md).
@@ -573,7 +617,19 @@ class Account < ApplicationRecord
   end
 
   def can_invite_members
-    errors.add(:base, "Personal accounts cannot invite members") if personal?
+    return errors.add(:base, "Personal accounts cannot invite members") if personal?
+
+    new_members = memberships.select(&:new_record?)
+    return if new_members.empty? || plan.several_members?
+    # One person: the first membership of a new account is the owner's.
+    return if new_members.one? && !memberships.exists?
+
+    errors.add(:base, MEMBER_LIMIT_MESSAGE)
+  end
+
+  # Paid and in force (see AccountSubscription#in_force?).
+  def paid_plan_subscription(now)
+    account_subscriptions.live.order(:id).to_a.reverse.find { |subscription| subscription.in_force?(now) }
   end
 
   def default_personal_name?

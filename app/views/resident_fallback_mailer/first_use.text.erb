@@ -1,0 +1,20 @@
+Hello,
+
+<%= @agent.name %>'s subscription allowance ran out before a turn started, so <%= @agent.name %> has started answering on the paid fallback you turned on: its first paid call this <%= @policy.cap_period %> has gone to the provider.
+
+- Model: <%= @model_label %>, through OpenRouter.
+- Paid by: this account's own OpenRouter key. It is not on your <%= Setting.instance.site_name %> plan.
+- Cap: $<%= @cap %> a <%= @policy.cap_period %>. No call starts unless its worst case fits inside what is left of the cap.
+
+Posts the resident makes while running on the fallback carry a label in the conversation saying so.
+<% if @conversation_url %>
+The conversation whose turn made that call:
+<%= @conversation_url %>
+<% end %>
+
+You can change the model or the cap, or turn the fallback off, in <%= @agent.name %>'s settings:
+<%= @settings_url %>
+
+You'll get this email again on the first paid call of the next <%= @policy.cap_period %>, or if you turn the fallback off and on.
+
+<%= Setting.instance.site_name %>

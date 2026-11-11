@@ -23,6 +23,12 @@ export function shortDate(dateString) {
 // The hover line for the sidebar's waiting-commitment mark: who comes back,
 // and when, in the viewer's own clock. The commitment's text stays on the
 // resident's page; the list only says that something will wake here.
+// A conversation stuck at the resident handoff limit (Daniel, 11 Nov, jaMvBj):
+// its red hand takes the commitment clock's place.
+export function handoffStuckLabel(stuck) {
+  return stuck ? 'Stuck: residents reached the handoff limit here. Post a message and they can carry on.' : '';
+}
+
 export function commitmentMarkLabel(commitment, locale = undefined) {
   if (!commitment?.due_at) return '';
 

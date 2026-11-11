@@ -2,6 +2,9 @@ require "test_helper"
 
 # Paid plan allowances (docs/proposals/2026-10-07-stripe-billing.md,
 # "Allowance and ledger"; acceptance cases 2, 7, 8, 13 and the second half of 14).
+# Since 2026-11-10 the paid allowance is the account's: $10 a month shared by
+# its standard-rate residents, whatever their size (the account-wide cases are
+# in AccountAllowanceTest).
 class PaidHouseAllowanceTest < ActiveSupport::TestCase
 
   setup do
@@ -14,12 +17,17 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     travel_to @now
   end
 
+  # As Billing::SubscriptionSync applies it.
   def pay!(agent, tier, id: "sub_#{agent.id}_#{tier}", now: Time.current)
     sub = ResidentSubscription.find_or_initialize_by(stripe_subscription_id: id)
     sub.update!(agent: agent, account: agent.account, tier: tier, stripe_status: "active")
-    entitlement = ResidentEntitlement.for_agent!(agent)
-    entitlement.apply_subscription!(sub, now: now)
-    [ entitlement.reload, sub ]
+    apply!(sub, now: now)
+    [ ResidentEntitlement.find_by!(agent: agent), sub.reload ]
+  end
+
+  def apply!(sub, now: Time.current)
+    ResidentEntitlement.for_agent!(sub.agent).apply_subscription!(sub, now: now)
+    sub.reload
   end
 
   # Settled spend so far this month. One real call can't settle above its
@@ -46,10 +54,10 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("10"), entitlement.allowance_limit
   end
 
-  test "two paid residents on one account have independent ledgers and need no free grant" do
+  test "two paid residents on one account share one allowance and need no free grant" do
     [ @agent, @other ].each { |agent| agent.update!(model_id: @model) }
     first, = pay!(@agent, "conversation")
-    second, = pay!(@other, "conversation")
+    second, = pay!(@other, "work")
     # The one-free-resident-per-user rule doesn't apply to paid residents.
     assert_nil HouseInferenceGrant.assign!(@agent, @user)
     assert_nil HouseInferenceGrant.assign!(@other, @user)
@@ -57,7 +65,10 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     configured do
       spend!(first, @agent, 7.5)
       assert_equal BigDecimal("2.5"), first.allowance_remaining
-      assert_equal BigDecimal("10"), second.allowance_remaining
+      assert_equal BigDecimal("10"), second.allowance_limit, "the account's $10, not a second one"
+      assert_equal BigDecimal("2.5"), second.allowance_remaining
+      assert second.reserve_house_call!(@offering, @model, agent_id: @other.id)
+      assert_equal BigDecimal("1.75"), first.allowance_remaining
     end
   end
 
@@ -134,55 +145,54 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     end
   end
 
-  test "a mid-month downgrade keeps the month's higher limit and spend; the lower limit starts on the 1st" do
+  test "resizing a resident down keeps the account's $10 and the month's spend; next month starts fresh" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "life")
-    configured { spend!(entitlement, @agent, 20) }
+    configured { spend!(entitlement, @agent, 6) }
 
     travel_to Time.utc(2026, 10, 20)
     sub.update!(tier: "conversation")
-    entitlement.apply_subscription!(sub, now: Time.current)
+    apply!(sub)
     entitlement.reload
     assert_equal "conversation", entitlement.tier
-    assert_equal BigDecimal("25"), entitlement.allowance_limit
-    assert_equal BigDecimal("5"), entitlement.allowance_remaining
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
+    assert_equal BigDecimal("4"), entitlement.allowance_remaining
 
     travel_to Time.utc(2026, 11, 2)
     assert_equal BigDecimal("10"), entitlement.allowance_limit
     assert_equal BigDecimal("10"), entitlement.allowance_remaining
   end
 
-  test "an upgrade raises the limit at once, but spend so far still counts" do
+  test "resizing a resident up adds no allowance, and spend so far still counts" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "conversation")
     configured { spend!(entitlement, @agent, 7) }
-    sub.update!(tier: "life")
-    entitlement.apply_subscription!(sub, now: Time.current)
-    assert_equal BigDecimal("25"), entitlement.reload.allowance_limit
-    assert_equal BigDecimal("18"), entitlement.allowance_remaining
+    sub.update!(tier: "work")
+    apply!(sub)
+    assert_equal BigDecimal("10"), entitlement.reload.allowance_limit
+    assert_equal BigDecimal("3"), entitlement.allowance_remaining
   end
 
   # At cost: the plan funds calls (it is paid) but includes no allowance. The
-  # two-clock rule (docs/proposals/2026-10-28-billing-codes-at-cost.md): a
-  # switch mid-month keeps the month's ceiling; zero starts on the 1st.
-  test "at cost includes no allowance; a mid-month switch keeps the month's ceiling until the 1st" do
+  # two-clock rule (docs/proposals/2026-10-28-billing-codes-at-cost.md) kept a
+  # switching resident's ceiling until the 1st; since the allowance became the
+  # account's (2026-11-10) only residents at the standard rate draw on it, so a
+  # resident moving to at cost stops drawing at once.
+  test "at cost includes no allowance; a resident moving to at cost stops drawing on the account's at once" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "conversation")
     configured { spend!(entitlement, @agent, 4) }
 
     travel_to Time.utc(2026, 10, 20)
     sub.update!(rate: "at_cost")
-    entitlement.apply_subscription!(sub, now: Time.current)
+    apply!(sub)
     entitlement.reload
     assert_equal "at_cost", entitlement.rate
     assert entitlement.paid?
-    assert_equal BigDecimal("10"), entitlement.allowance_limit
-    assert_equal BigDecimal("6"), entitlement.allowance_remaining
+    assert_equal BigDecimal("0"), entitlement.allowance_limit
     configured do
-      error = assert_raises(HouseInference::Error) do
-        entitlement.reserve_house_call!(@offering.merge(reservation_usd: BigDecimal("7")), @model, agent_id: @agent.id)
-      end
-      assert_match(/used up for this month/, error.message)
+      error = assert_raises(HouseInference::Error) { entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
+      assert_match(/includes no house-model allowance/, error.message)
     end
 
     travel_to Time.utc(2026, 11, 2)
@@ -216,41 +226,43 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     entitlement.apply_subscription!(sub, now: Time.current)
     assert entitlement.reload.held?
 
-    replacement, = pay!(@agent, "conversation", id: "sub_replacement")
+    replacement, sub = pay!(@agent, "conversation", id: "sub_replacement")
     assert replacement.active?
     assert_equal BigDecimal("3"), replacement.allowance_remaining
   end
 
-  test "a downgrade after the month rolled over still counts the outgoing tier for the new month" do
+  test "a resize after the month rolled over keeps the account's $10 and the new month's spend" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "life")
     travel_to Time.utc(2026, 11, 15)
-    configured { spend!(entitlement, @agent, 12) }
+    configured { spend!(entitlement, @agent, 4) }
     sub.update!(tier: "conversation")
-    entitlement.apply_subscription!(sub, now: Time.current)
-    assert_equal BigDecimal("25"), entitlement.reload.allowance_limit
-    assert_equal BigDecimal("13"), entitlement.allowance_remaining
+    apply!(sub)
+    entitlement.reload
+    assert_equal BigDecimal("10"), entitlement.allowance_limit
+    assert_equal BigDecimal("6"), entitlement.allowance_remaining
   end
 
-  test "a plan carried into a new month marks that month before it lapses, so a cheaper replacement doesn't lower it" do
+  test "a plan that lapses in a new month can't have that month refilled by its replacement" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "life")
     travel_to Time.utc(2026, 11, 10)
-    configured { spend!(entitlement, @agent, 20) }
+    configured { spend!(entitlement, @agent, 8) }
     sub.update!(stripe_status: "canceled")
-    entitlement.apply_subscription!(sub, now: Time.current)
+    apply!(sub)
     assert entitlement.reload.held?
 
     travel_to Time.utc(2026, 11, 11)
     replacement, = pay!(@agent, "conversation", id: "sub_replacement")
-    assert_equal BigDecimal("25"), replacement.allowance_limit
-    assert_equal BigDecimal("5"), replacement.allowance_remaining
+    assert_equal BigDecimal("10"), replacement.allowance_limit
+    assert_equal BigDecimal("2"), replacement.allowance_remaining
 
     travel_to Time.utc(2026, 12, 1)
     assert_equal BigDecimal("10"), replacement.allowance_limit
+    assert_equal BigDecimal("10"), replacement.allowance_remaining
   end
 
-  test "grace expiry in a new month also marks the month before the plan ends" do
+  test "after grace expiry in a new month a replacement draws on the account's $10" do
     @agent.update!(model_id: @model)
     entitlement, sub = pay!(@agent, "life")
     travel_to Time.utc(2026, 11, 3)
@@ -262,7 +274,7 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     sub.update!(stripe_status: "unpaid") # Stripe gives up later; only then can a replacement be live
 
     replacement, = pay!(@agent, "conversation", id: "sub_replacement")
-    assert_equal BigDecimal("25"), replacement.allowance_limit
+    assert_equal BigDecimal("10"), replacement.allowance_limit
   end
 
   test "a member without credential rights can still edit a paid resident on a house model" do

@@ -10,6 +10,16 @@ class CompanionEnrollmentGrant < ApplicationRecord
 
   class InvalidPolicy < StandardError; end
 
+  EXECUTE_WARNING = "Execute grants allow arbitrary code execution with the service user's OS authority. " \
+    "Executed programs can rewrite state.json, including the local ceiling. The companion is not a " \
+    "sandbox, and the local ceiling is not an enforceable limit against an execute-granted actor.".freeze
+  DESKTOP_WARNING = "Desktop grants let a resident operate the apps the computer's owner lists locally, while the " \
+    "owner's timed switch is on. Operating an app that can run commands (Terminal, an editor, a browser " \
+    "console) is shell authority through the user interface.".freeze
+  WRITE_WARNING = "Write access to a volume containing the service user's home must be treated as deferred " \
+    "arbitrary code execution as that user (for example, by modifying .bashrc or other startup files), " \
+    "even without an execute grant.".freeze
+
   belongs_to :account
   belongs_to :minting_agent, class_name: "Agent"
   belongs_to :created_by_user, class_name: "User"
@@ -72,19 +82,13 @@ class CompanionEnrollmentGrant < ApplicationRecord
     residents = policy.fetch("residents")
     warnings = []
     if residents.any? { |resident| resident.fetch("volumes").any? { |volume| volume["access"] == "write" } }
-      warnings << "Write access to a volume containing the service user's home must be treated as deferred " \
-        "arbitrary code execution as that user (for example, by modifying .bashrc or other startup files), " \
-        "even without an execute grant."
+      warnings << WRITE_WARNING
     end
     if residents.any? { |resident| resident["execute"] }
-      warnings << "Execute grants allow arbitrary code execution with the service user's OS authority. " \
-        "Executed programs can rewrite state.json, including the local ceiling. The companion is not a " \
-        "sandbox, and the local ceiling is not an enforceable limit against an execute-granted actor."
+      warnings << EXECUTE_WARNING
     end
     if residents.any? { |resident| resident["desktop"] }
-      warnings << "Desktop grants let a resident operate the apps the computer's owner lists locally, while the " \
-        "owner's timed switch is on. Operating an app that can run commands (Terminal, an editor, a browser " \
-        "console) is shell authority through the user interface."
+      warnings << DESKTOP_WARNING
     end
     warnings
   end

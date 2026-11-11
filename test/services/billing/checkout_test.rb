@@ -36,7 +36,7 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_equal "life", params.dig(:metadata, :tier)
     assert_equal pin.idempotency_key, params.dig(:metadata, :checkout_attempt)
     assert_nil params.dig(:metadata, :rate)
-    assert_equal "Life hosting for #{@agent.name}", params.dig(:subscription_data, :description)
+    assert_equal "Medium hosting for #{@agent.name}", params.dig(:subscription_data, :description)
     assert_not params.key?(:expires_at), "Expiry must be relative to Stripe execution, not the intent commit"
     assert_equal JSON.parse(params.to_json), pin.create_params
   end

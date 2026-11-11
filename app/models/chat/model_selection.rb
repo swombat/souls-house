@@ -274,6 +274,13 @@ module Chat::ModelSelection
 
     # Google
     {
+      model_id: "google/gemini-4-carbon",
+      label: "Gemini 4 Carbon",
+      group: "Google",
+      provider_model_id: "gemini-4-carbon",
+      thinking: { supported: true }
+    },
+    {
       model_id: "google/gemini-4-argon",
       label: "Gemini 4 Argon",
       group: "Google",
@@ -494,6 +501,7 @@ module Chat::ModelSelection
     # Meta
     { model_id: "meta/muse-wonder", label: "Muse Wonder", group: "Meta", thinking: { supported: true } },
     { model_id: "meta/muse-spark-open", label: "Muse Spark Open", group: "Meta", thinking: { supported: true } },
+    { model_id: "meta/muse-ember", label: "Muse Ember", group: "Meta", thinking: { supported: true } },
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Meta" },
     { model_id: "meta-llama/llama-4-scout", label: "Llama 4 Scout", group: "Meta" },
     { model_id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct", group: "Meta" },
@@ -719,7 +727,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:anthropic]
       when %r{\Agoogle/gemini-(?:3\.[5-8]-flash|3\.1-flash|3-flash)}
         REASONING_PROFILES[:gemini_full]
-      when %r{\Agoogle/gemini-(?:4-argon|3\.1-pro|3-pro)}
+      when %r{\Agoogle/gemini-(?:4-carbon|4-argon|3\.1-pro|3-pro)}
         REASONING_PROFILES[:gemini_pro]
       when %r{\Ax-ai/grok-.*multi-agent}
         REASONING_PROFILES[:grok_multi_agent]

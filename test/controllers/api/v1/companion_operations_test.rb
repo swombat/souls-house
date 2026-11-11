@@ -67,6 +67,28 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_response :gone
   end
 
+  test "refusal classes from the companion are kept only when allowlisted" do
+    {
+      "protected" => "protected", "symlink" => "symlink", "not_found" => "not_found",
+      "linuxfs: symlink refused" => "failed", "Users/someone/Library" => "failed",
+      "no such file or directory" => "failed", "PROTECTED" => "failed"
+    }.each do |sent, stored|
+      operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "stat",
+        arguments: { "volume" => "fixture-volume", "path" => "fixture-#{stored}" })
+      operation.dispatch!
+
+      post "/api/v1/companion/operations/#{operation.to_param}/result", params: "",
+        headers: bearer(@credential).merge("CONTENT_TYPE" => "application/octet-stream",
+          "X-Companion-Epoch" => "epoch", "X-Companion-Revision" => "1",
+          "X-Companion-Format" => "json", "X-Companion-Error" => sent)
+
+      assert_response :created
+      assert_equal "failed", operation.reload.state, sent
+      assert_equal stored, operation.outcome, sent
+      assert_nil operation.body
+    end
+  end
+
   test "device uploads a successful empty raw read result for single use delivery" do
     operation = CompanionOperation.start!(device: @device, agent: @agent, kind: "read",
       arguments: { "volume" => "fixture-volume", "path" => "empty-fixture" })

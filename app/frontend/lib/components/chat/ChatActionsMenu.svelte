@@ -16,6 +16,7 @@
     UsersThree,
     CaretRight,
     ArrowLeft,
+    CalendarCheck,
   } from 'phosphor-svelte';
   import { tick } from 'svelte';
   import { page } from '@inertiajs/svelte';
@@ -32,6 +33,7 @@
     showAllMessages = $bindable(false),
     debugMode = $bindable(false),
     showCosts = $bindable(false),
+    showCommitments = $bindable(false),
     showMessageTelemetry = $bindable(false),
     onToggleWebAccess = () => {},
     onAssignAgent = () => {},
@@ -128,6 +130,11 @@
           <ChartBar size={16} class="mr-2" weight="duotone" />
           View costs
         </DropdownMenu.CheckboxItem>
+
+        <DropdownMenu.Item onclick={() => (showCommitments = true)} data-testid="show-commitments">
+          <CalendarCheck size={16} class="mr-2" weight="duotone" />
+          Show commitments
+        </DropdownMenu.Item>
 
         {#if chat?.active_whiteboard}
           <DropdownMenu.Item onclick={onWhiteboardOpen}>

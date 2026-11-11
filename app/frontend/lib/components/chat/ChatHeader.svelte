@@ -7,6 +7,8 @@
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
+  import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
+  import { commitmentMarkLabel, handoffStuckLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -28,6 +30,7 @@
     showAllMessages = $bindable(false),
     debugMode = $bindable(false),
     showCosts = $bindable(false),
+    showCommitments = $bindable(false),
     showMessageTelemetry = $bindable(false),
     onsidebaropen,
     onassignagent,
@@ -45,6 +48,26 @@
 
   // Check if user can delete chats (account admin or site admin)
   const canDeleteChat = $derived(isAccountAdmin || isSiteAdmin);
+
+  // Reading replies aloud needs only the speech side of voice mode, which the
+  // house offers whenever voice mode is offered (no transcription key needed).
+  const readAloudOffered = $derived(Boolean($page.props?.voice_mode?.offered));
+
+  // The same waiting-commitment clock the sidebar row shows (Daniel, 10 Nov, jNwmwJ).
+  // The sidebar list is what the account broadcast refreshes when a commitment is
+  // made or delivered, so its row for this chat is the live value; the chat's own
+  // next_commitment covers a conversation filtered out of the list.
+  const commitmentLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return commitmentMarkLabel(row ? row.next_commitment : chat.next_commitment);
+  });
+  // The red hand for a conversation stuck at the handoff limit, read the same way.
+  const stuckLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return handoffStuckLabel(row ? row.handoff_stuck : chat.handoff_stuck);
+  });
 
   // Token warning level — based on active context, not lifetime cost
   const tokenWarningLevel = $derived(getTokenWarningLevel(contextTokens, thresholds));
@@ -191,32 +214,44 @@
     <div class="flex shrink-0 flex-col items-center self-start" data-testid="chat-header-controls">
       {#if chat}
         <span data-testid="chat-header-tag">
-          <VisualTagPicker {chat} accountId={account.id} tags={$page.props.visual_tags || []} faintEmpty={false} />
+          <VisualTagPicker
+            {chat}
+            accountId={account.id}
+            tags={$page.props.visual_tags || []}
+            faintEmpty={false}
+            {commitmentLabel}
+            {stuckLabel} />
         </span>
       {/if}
-      <ChatActionsMenu
-        replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
-        onDismissReply={dismissReplyRequest}
-        {chat}
-        {availableAgents}
-        {agents}
-        {addableAgents}
-        {canDeleteChat}
-        {isSiteAdmin}
-        bind:showAllMessages
-        bind:debugMode
-        bind:showCosts
-        bind:showMessageTelemetry
-        onToggleWebAccess={toggleWebAccess}
-        onAssignAgent={() => onassignagent?.()}
-        onManageResidents={() => onmanageresidents?.()}
-        onFork={forkConversation}
-        onWhiteboardOpen={() => onwhiteboardopen?.()}
-        onArchive={archiveChat}
-        rooms={$page.props?.rooms || []}
-        onMoveToRoom={moveToRoom}
-        onDelete={deleteChat}
-        onModerateAll={moderateAllMessages} />
+      <div class="flex items-center">
+        {#if chat && readAloudOffered}
+          <ReadAloudToggle chatId={chat.id} messages={allMessages} />
+        {/if}
+        <ChatActionsMenu
+          replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
+          onDismissReply={dismissReplyRequest}
+          {chat}
+          {availableAgents}
+          {agents}
+          {addableAgents}
+          {canDeleteChat}
+          {isSiteAdmin}
+          bind:showAllMessages
+          bind:debugMode
+          bind:showCosts
+          bind:showCommitments
+          bind:showMessageTelemetry
+          onToggleWebAccess={toggleWebAccess}
+          onAssignAgent={() => onassignagent?.()}
+          onManageResidents={() => onmanageresidents?.()}
+          onFork={forkConversation}
+          onWhiteboardOpen={() => onwhiteboardopen?.()}
+          onArchive={archiveChat}
+          rooms={$page.props?.rooms || []}
+          onMoveToRoom={moveToRoom}
+          onDelete={deleteChat}
+          onModerateAll={moderateAllMessages} />
+      </div>
     </div>
   </div>
 </header>

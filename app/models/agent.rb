@@ -34,6 +34,9 @@ class Agent < ApplicationRecord
   has_many :import_stages, class_name: "AgentImportStage", dependent: :delete_all, inverse_of: :agent
   belongs_to :github_resident_import, optional: true, inverse_of: :agent
   has_one :house_inference_grant, dependent: :nullify
+  has_one :fallback_policy, class_name: "ResidentFallbackPolicy", dependent: :destroy
+  has_many :fallback_turns, class_name: "ResidentFallbackTurn", dependent: :delete_all
+  has_many :fallback_calls, class_name: "ResidentFallbackCall", dependent: :delete_all
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
   belongs_to :created_by_user, class_name: "User", optional: true

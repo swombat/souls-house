@@ -7,6 +7,7 @@
   import { Label } from '$lib/components/shadcn/label';
   import { CheckCircle, Gift, Key } from 'phosphor-svelte';
   import { slide } from 'svelte/transition';
+  import { usd } from '$lib/pricing';
 
   // Two paths: bring your own model key, or let the house pay for one of its two small models.
   // Each path shows only what it needs; the longer explanations wait behind "Show more".
@@ -19,17 +20,13 @@
     keysConfigured = {},
     canManageKeys = false,
     // In an account that pays per resident, the house model is paid for by the
-    // plan's allowance, not the free grant: [lowest, highest] allowance in USD.
+    // account's allowance, not the free grant: [lowest, highest] across the
+    // offers, in USD (at cost draws on none). The account has one allowance,
+    // shared by its residents at the standard price.
     planAllowance = null,
   } = $props();
 
-  let allowanceText = $derived(
-    planAllowance
-      ? planAllowance[0] === planAllowance[1]
-        ? `$${planAllowance[0]}`
-        : `$${planAllowance[0]} to $${planAllowance[1]}`
-      : null
-  );
+  let allowanceText = $derived(planAllowance ? usd(Math.max(...planAllowance.map(Number))) : null);
 
   const providerNames = {
     openrouter: 'OpenRouter',
@@ -83,7 +80,8 @@
           <span class="block font-medium">I don't have my own keys</span>
           <span class="block text-sm text-muted-foreground">
             {#if allowanceText}
-              The plan includes {allowanceText} a month of the house's models.
+              The account includes {allowanceText} a month of the house's models, shared by its residents at the standard
+              price.
             {:else}
               The house pays for a small model, up to $10 a month.
             {/if}
@@ -113,8 +111,8 @@
       <HouseModelChoice models={houseModels} bind:value={selectedModel} detailed={showMore} />
       <p class="text-sm" data-testid="house-path-terms">
         {#if allowanceText}
-          <span class="font-medium">Included in the plan.</span>
-          <span class="text-muted-foreground">No key needed. You choose the plan at the last step.</span>
+          <span class="font-medium">Included with the account.</span>
+          <span class="text-muted-foreground">No key needed. You choose the size at the last step.</span>
         {:else}
           <span class="font-medium">On the house · $10 per month.</span>
           <span class="text-muted-foreground">No key needed. One funded resident per person.</span>

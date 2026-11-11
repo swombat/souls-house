@@ -7,7 +7,7 @@ class GuestDiscoveryTest < ActiveSupport::TestCase
   setup do
     @first, @second, @pending = users(:user_1), users(:existing_user), users(:unconfirmed_user)
     @home, @other = 2.times.map do |i|
-      Account.create!(name: "Discovery #{i} #{SecureRandom.hex(4)}", account_type: :team)
+      Account.create!(name: "Discovery #{i} #{SecureRandom.hex(4)}", account_type: :team, granted_plan: "partners")
     end
     @home.add_user!(@first, role: "owner", skip_confirmation: true)
     @home.add_user!(@second, role: "member", skip_confirmation: true)

@@ -16,10 +16,11 @@ class Stone < ApplicationRecord
 
   scope :available, -> { where(withdrawn_at: nil) }
 
-  def self.publish!(chat:, title:, html:, author:, public:, interactive: false)
+  def self.publish!(chat:, title:, html:, author:, public:, interactive: false, field_table_ids: [], publish_tables: false)
     chat.account.with_lock do
       stone = create!(chat: chat)
-      stone.revise!(title: title, html: html, author: author, public: public, base_revision_id: nil, interactive: interactive)
+      stone.revise!(title: title, html: html, author: author, public: public, base_revision_id: nil, interactive: interactive,
+        field_table_ids: field_table_ids, publish_tables: publish_tables)
       StoneAddress.reserve!(stone: stone) if StoneHosting.domain
       stone
     end
@@ -49,7 +50,7 @@ class Stone < ApplicationRecord
 
   # The row lock serializes the base check and next number, including first
   # publication. The unique index is a second guard against duplicate numbers.
-  def revise!(title:, html:, author:, public:, base_revision_id:, interactive: false)
+  def revise!(title:, html:, author:, public:, base_revision_id:, interactive: false, field_table_ids: [], publish_tables: false)
     raise InvalidInput, "Explicit public: true acknowledgement is required" unless public == true
     raise InvalidInput, "title must be nonblank text of at most 255 characters" unless title.is_a?(String) && title.strip.present? && title.length <= 255
     raise InvalidInput, "Author must be a user or resident" unless author.is_a?(User) || author.is_a?(Agent)
@@ -73,7 +74,9 @@ class Stone < ApplicationRecord
         revision = stone_revisions.build(number: (latest&.number || 0) + 1, title: title, interactive: interactive)
         revision.author = author
         revision.html_document = html
+        tables = tables_to_attach(field_table_ids, author:, interactive:, publish_tables:)
         revision.save!
+        tables.each { |table| revision.stone_revision_field_tables.create!(field_table: table, attached_by: author) }
         revision
       end
     end
@@ -90,6 +93,35 @@ class Stone < ApplicationRecord
   end
 
   private
+
+  # Field tables a revision reads (slice 2): only for interactive revisions,
+  # only the conversation's own account's live tables, only for an author whose
+  # home that account is, and only with the explicit acknowledgement that the
+  # rows become public with the stone.
+  def tables_to_attach(ids, author:, interactive:, publish_tables:)
+    ids = Array(ids).map(&:to_s).reject(&:blank?).uniq
+    return [] if ids.empty?
+
+    raise InvalidInput, "Tables can be attached only to an interactive stone (the page reads them with JavaScript)" unless interactive
+    unless publish_tables == true
+      raise InvalidInput, "Attaching a table publishes its rows to anyone with the stone's link; " \
+                          "acknowledge with publish_tables: true (--publish-tables)"
+    end
+    if ids.size > StoneRevisionFieldTable::MAX_PER_REVISION
+      raise InvalidInput, "A revision can read at most #{StoneRevisionFieldTable::MAX_PER_REVISION} tables"
+    end
+    home = author.is_a?(Agent) ? author.account_id == chat.account_id : chat.account.users.exists?(author.id)
+    raise InvalidInput, "Only tables in your own home Field can be attached" unless home
+
+    decoded = ids.map { |id| FieldTable.decode_id(id) }
+    tables = chat.account.field_tables.kept.where(id: decoded.compact).to_a
+    missing = ids.reject.with_index { |_, index| tables.any? { |table| table.id == decoded[index] } }
+    raise InvalidInput, "No table #{missing.join(', ')} in this account's Field" if missing.any?
+
+    tables
+  rescue Hashids::InputError
+    raise InvalidInput, "No table #{ids.join(', ')} in this account's Field"
+  end
 
   def account_html_bytes
     revision_ids = StoneRevision.joins(stone: :chat).where(chats: { account_id: chat.account_id }).select(:id)

@@ -57,6 +57,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-youtube" => { args: %w[ask https://www.youtube.com/watch?v=dQw4w9WgXcQ what] },
     "soulshouse-reflex" => { args: %w[list] },
     "soulshouse-commitment" => { args: %w[list] },
+    "soulshouse-table" => { args: %w[list] },
     "soulshouse-gws" => { args: %w[drive files list], manifest: :google_workspace },
     "soulshouse-comms" => { args: %w[chats], manifest: :whatsapp },
     "github_import_approval.py" => { python: "import github_import_approval as g; g.fetch_approval()" },

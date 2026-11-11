@@ -68,6 +68,16 @@ class Accounts::NoticesControllerTest < ActionDispatch::IntegrationTest
     assert_equal Time.zone.local(2026, 8, 15, 12), notice.expires_at
   end
 
+  test "an expiry outside the offered choices falls back to the default week" do
+    travel_to Time.zone.local(2026, 8, 1, 12) do
+      post account_notices_path(@account), params: {
+        notice: { body: "Forever, please.", expires_in_days: "365" }
+      }
+    end
+
+    assert_equal Time.zone.local(2026, 8, 8, 12), Notice.last.expires_at
+  end
+
   test "blank account notice is rejected" do
     assert_no_difference "Notice.count" do
       post account_notices_path(@account), params: {

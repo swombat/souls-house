@@ -32,8 +32,8 @@ class Accounts::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     offers = inertia_shared_props["offers"]
     assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost], offers.map { |offer| offer["id"] }
     at_cost = offers.find { |offer| offer["id"] == "conversation_at_cost" }
-    assert_equal 8, at_cost["monthly_usd"]
-    assert_equal 0, at_cost.dig("features", "allowance_usd")
+    assert_equal "8.00", at_cost["monthly_usd"]
+    assert_equal "0.00", at_cost.dig("features", "allowance_usd")
     assert_equal "PEPE-AT-COST", inertia_shared_props.dig("codes", "redemptions", 0, "code")
   end
 

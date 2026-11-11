@@ -74,7 +74,7 @@
     <AgentVoicePicker {voice} />
     {#if voice.speech_engine !== 'elevenlabs'}
       <p class="text-xs text-muted-foreground max-w-xl" data-testid="elevenlabs-plan-note">
-        This resident's plan doesn't include ElevenLabs (Life and Work do), so it speaks with its Phonon voice above.
+        A small resident doesn't include ElevenLabs (medium and large do), so it speaks with its Phonon voice above.
       </p>
     {/if}
   {/if}

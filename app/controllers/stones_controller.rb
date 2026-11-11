@@ -37,11 +37,15 @@ class StonesController < ActionController::Base
 
     @viewer_nonce = SecureRandom.base64(24)
     @interactive = @revision.interactive? && hosted?
+    # Only the trusted viewer may fetch the revision's table data, and only
+    # from its own origin; the authored frame keeps connect-src 'none'.
+    @reads_tables = @interactive && @revision.field_tables.kept.exists?
     response.headers["Content-Security-Policy"] = [
       "default-src 'none'", @interactive ? "script-src 'nonce-#{@viewer_nonce}'" : "script-src 'none'", "style-src 'unsafe-inline'",
+      ("connect-src 'self'" if @reads_tables),
       "frame-src 'self'", "base-uri 'none'", "form-action 'none'",
       "frame-ancestors 'none'"
-    ].join("; ")
+    ].compact.join("; ")
     @latest = @stone.stone_revisions.order(number: :desc).first
     render layout: false
   end
@@ -60,7 +64,25 @@ class StonesController < ActionController::Base
     end
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Content-Disposition"] = "inline"
-    render body: @revision.html_document, content_type: "text/html; charset=utf-8"
+    html = @revision.html_document
+    if @revision.interactive? && @revision.field_tables.kept.exists?
+      html = FieldTableStoneShim.inject(html, @revision, params[:k])
+    end
+    render body: html, content_type: "text/html; charset=utf-8"
+  end
+
+  # The rows of the tables this exact revision reads, for the trusted viewer
+  # to hand into the frame. Bound to the stone (by hostname) and the revision
+  # (by number); never an account-wide door. Only interactive, hosted
+  # revisions read tables; anything else is 404.
+  def data
+    raise ActiveRecord::RecordNotFound unless hosted? && @revision.interactive?
+
+    payload = @revision.field_table_payload
+    raise ActiveRecord::RecordNotFound if payload.empty?
+
+    response.headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    render json: { tables: payload }
   end
 
   private

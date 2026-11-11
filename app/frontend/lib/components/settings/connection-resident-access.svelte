@@ -102,6 +102,14 @@
 
 <div class="space-y-3 border-t pt-4">
   <h4 class="text-sm font-semibold">Resident access</h4>
+  {#if connection.provider === 'monzo'}
+    <!-- Monzo's OAuth consent is only half of it: until the person also
+         approves in the Monzo app, every read is refused with a 403. -->
+    <p class="text-sm text-amber-700" data-testid="monzo-app-approval-note">
+      Monzo also asks you to approve access in the Monzo app. Until you do, residents you turn on here get every read
+      refused. Look for the notification in the app (Monzo asks again from time to time).
+    </p>
+  {/if}
   {#if connection.comms_sends_url}
     <!-- Owner only: the controller sets comms_sends_url for the owner alone. -->
     <p class="text-xs text-muted-foreground">

@@ -3,6 +3,7 @@ Rails.application.routes.draw do
     get "/", to: "stones#show"
     get "/revisions/:number", to: "stones#show", as: :hosted_stone_revision
     get "/revisions/:number/content", to: "stones#content", as: :hosted_stone_content
+    get "/revisions/:number/data", to: "stones#data", as: :hosted_stone_data
   end
   # Same-origin, uncached text for attachment previews (AttachmentPreviewsController).
   get "attachment_previews/:signed_id/*filename", to: "attachment_previews#show", as: :attachment_preview, format: false
@@ -25,6 +26,7 @@ Rails.application.routes.draw do
         post :cleanup, to: "/test_support/e2e#cleanup"
         post :stone_fixture, to: "/test_support/e2e#stone_fixture"
         post :interactive_stone_fixture, to: "/test_support/e2e#interactive_stone_fixture"
+        post :field_table_row_fixture, to: "/test_support/e2e#field_table_row_fixture"
         post :song_card_fixture, to: "/test_support/e2e#song_card_fixture"
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :field_voice_lifecycle_fixture, to: "/test_support/e2e#field_voice_lifecycle_fixture"
@@ -34,6 +36,7 @@ Rails.application.routes.draw do
         post :guest_directory_fixture, to: "/test_support/e2e#guest_directory_fixture"
         post :account_cost_fixture, to: "/test_support/e2e#account_cost_fixture"
         post :glossary_fixture, to: "/test_support/e2e#glossary_fixture"
+        post :companion_download_fixture, to: "/test_support/e2e#companion_download_fixture"
         post :provider_presentation_fixture, to: "/test_support/e2e#provider_presentation_fixture"
         post :comms_count_fixture, to: "/test_support/e2e#comms_count_fixture"
         post :telegram_presentation_fixture, to: "/test_support/e2e#telegram_presentation_fixture"
@@ -152,6 +155,8 @@ Rails.application.routes.draw do
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
+      post :account_plan_checkout
+      post :account_plan_change
       post :portal
       resources :codes, only: :create, controller: "billing_codes"
     end
@@ -162,6 +167,8 @@ Rails.application.routes.draw do
       member do
         post :payment
         post :confirm
+        # Where Stripe's free-trial Checkout returns the browser.
+        get :trial_return
       end
     end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
@@ -171,6 +178,8 @@ Rails.application.routes.draw do
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
     resource :interface, only: %i[show update], module: :accounts
+    # Computers enrolled through the companion app, and the owner's switches.
+    resources :companion_devices, path: "computers", only: %i[index update], module: :accounts
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :rooms, only: [ :index, :create, :update, :destroy ], module: :accounts
     resource :resident_room, only: :update, module: :accounts
@@ -208,6 +217,7 @@ Rails.application.routes.draw do
 
     resources :chats, except: :destroy do
       get :activity, on: :member
+      get :commitments, on: :member
       collection do
         get :search
         post :transcription, to: "chats/transcriptions#create"
@@ -276,6 +286,8 @@ Rails.application.routes.draw do
           post :code
         end
         resource :provider_subscription_usage, only: :show
+        # #690: paid API-key fallback when the subscription allowance runs out.
+        resource :fallback_policy, only: [ :show, :update ]
         resources :service_accesses, only: :update do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"
@@ -332,6 +344,15 @@ Rails.application.routes.draw do
       post :prepare_samples, on: :collection
       patch :recognition, on: :collection
       post :retry_conversion, on: :collection
+    end
+    resources :field_tables, path: "field/tables", only: [ :index, :show, :create, :update, :destroy ] do
+      member do
+        get :export
+        post :import
+      end
+      resources :rows, controller: "field_table_rows", only: [ :create, :update, :destroy ]
+      resources :columns, controller: "field_table_columns", only: [ :create, :update, :destroy ], param: :key
+      delete "stones/:stone_id", to: "field_tables#detach_stone", as: :stone
     end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
@@ -635,6 +656,12 @@ Rails.application.routes.draw do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
         resource :tags, only: :update, controller: "field/item_tags"
       end
+      resources :field_tables, only: %i[index show create update destroy] do
+        resources :rows, controller: "field_table_rows", only: %i[index show create update destroy] do
+          post :bulk, on: :collection
+        end
+        resources :columns, controller: "field_table_columns", only: %i[create update destroy], param: :key
+      end
       namespace :field do
         resource :limits, only: :show
         resource :search, only: :show
@@ -716,6 +743,7 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   get "features" => "pages#features", as: :features
+  get "companion" => "pages#companion", as: :companion
   get "changelog" => "pages#changelog", as: :changelog
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host

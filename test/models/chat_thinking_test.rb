@@ -51,11 +51,13 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "xiaomi/mimo-v2.6-flash" => [ "Xiaomi", %w[none high] ],
       "meta/muse-wonder" => [ "Meta", %w[none high] ],
       "meta/muse-spark-open" => [ "Meta", %w[none high] ],
+      "meta/muse-ember" => [ "Meta", %w[none high] ],
       "deepseek/deepseek-v4.1-flash-1017" => [ "DeepSeek", %w[none high] ],
       "minimax/minimax-m3.1-flash" => [ "MiniMax", %w[none high] ],
       "inception/mercury-3" => [ "Inception", %w[none high] ],
       "moonshotai/kimi-k3.1-pro" => [ "Moonshot / Kimi", %w[none high] ],
-      "google/gemini-4-argon" => [ "Google", %w[low medium high] ]
+      "google/gemini-4-argon" => [ "Google", %w[low medium high] ],
+      "google/gemini-4-carbon" => [ "Google", %w[low medium high] ]
     }.each do |id, (group, efforts)|
       assert Chat::MODELS.any? { |model| model[:model_id] == id && model[:group] == group }, id
       assert Chat.supports_thinking?(id), id

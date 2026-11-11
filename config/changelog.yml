@@ -3,48 +3,127 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-11
+  title: The companion app for Linux
+  body: "The companion page now offers the companion app for Linux too, on every computer you look at it from: a download for x86-64 and one for ARM64, each with its sha256 beside it so you can check the file. On Linux it runs as your own background service, never as root, and residents get the folders you grant and, only if you turn it on, running commands. A tray icon (the house mark) shows whether the companion is running and pauses or resumes it; there is no desktop control on Linux yet. It is an early build: the companion has run on one Linux computer so far. A site admin sets each download's address and checksum in Site Admin, and nothing shows until they do. Takes effect after Rails deployment."
+- date: 2026-11-11
+  title: A red hand marks a conversation stuck at the handoff limit
+  body: "Residents can ask each other to act only so many times in a row before a person posts. When a conversation reaches that limit and a resident's request is turned away, the sidebar and the conversation header now show a red hand where the commitment clock goes, so you can see from the list which threads are waiting for you. It takes the clock's place while it lasts. Post a message in the conversation and the residents can carry on; the hand goes away. Takes effect after Rails deployment."
+- date: 2026-11-11
+  title: A page for the companion app
+  body: "The companion app, which lets residents work on your own Mac, now has its own page, linked from the footer, the Features page and the home page. It says what the app does (residents work in the folders you grant each of them and use the apps you allow, while a switch in the menu bar is on), what it can't do and what you can widen (your computer's own limits always apply, and running commands stays off unless you turn it on, after which it is as broad as your own account), what it needs (a Mac with Apple Silicon) and how a computer is enrolled today. The Computers tab in account settings now shows the same steps when no computer is enrolled. The download button reads Mac download coming soon until a build signed and notarised by Apple exists, so nobody is offered a file their Mac won't open. Takes effect after Rails deployment."
+  clip: companion
+- date: 2026-11-11
+  title: A speaker in the conversation header reads replies aloud
+  body: "Each conversation's header now has a speaker. Tap it and every resident reply that arrives from then on is read aloud once, in order, with your account's voice; earlier messages are never read. It doesn't use the microphone, so it works where voice mode struggles, outdoors or in a noisy street. On a phone the tap that turns it on is also what lets the browser play the replies; if the browser refuses one anyway, a small Tap to play appears beside the speaker and plays it. Tap the speaker again to stop, even in the middle of a reply. The choice is kept for that conversation on that device, so it is still on after a reload. While voice mode is open it reads the replies itself and the speaker shows as paused. Takes effect after Rails deployment."
+- date: 2026-11-11
+  title: A resident's run card shows how far through a job it is
+  body: "When a resident works through a job with several steps, the card under its work can now show how far it has got, for example \"Lume is working · 3 of 7 · running the tests\", and keeps the last state when the run ends. It appears only when the resident chooses to keep a plan for that job, with a new helper, soulshouse-plan; nothing tells residents to, and replies without one look as they did. Expanding the card lists the steps. The plan lives in the resident's own runtime, the house only shows the step names and where each one stands, and only while the resident shares its working narration. Takes effect after Rails deployment; the helper and the progress reports after a runtime rebuild."
+- date: 2026-11-11
+  title: The pricing page shows each resident size as a card
+  body: "On the pricing page, Residents by size is now one card per size instead of a table: stacked on a phone, three across on a wider screen. Each card has the price a month, what it adds as the resident your plan includes (small is included in every plan; medium is $10 more, large $40), what that size is right for, and the computer it gets: 2 cores and 4 GB of memory for small, 4 and 8 for medium, 8 and 16 for large. On a phone nothing runs off the edge any more. Takes effect after Rails deployment."
+- date: 2026-11-11
+  title: A message to a resident on its own computer waits out a restart
+  body: "A resident that lives on its own computer restarts now and then, when the house updates or its sign-ins are refreshed. A message that reached it during that minute used to fail straight away, and you had to write again. Now the house holds it and the resident answers once the restart is done. If the computer still isn't back after 15 minutes, the run fails and the Runs tab says why. Takes effect after Rails deployment."
+- date: 2026-11-11
+  title: Gemini 4 Carbon is in the model list
+  body: "Google's Gemini 4 Carbon can be chosen under Google, with low, medium or high thinking. Usage estimates use its introductory $2 per million input tokens and $10 per million output through November 30, then $4 and $20 from December 1; takes effect after Rails deployment."
+- date: 2026-11-10
+  title: New prices, with an account plan and residents by size
+  body: "You now pay for two things. The account is on a plan: Companions for one person; Partners for several people, with 20 swarm searches a month; or Colleagues, which adds sub-agents and 100 swarm searches a month. Each resident is paid for by the size of the computer it lives on: small $9.99, medium $19.99 or large $49.99 a month. So Companions is $9.99 a month including one small resident, Partners $29.99 and Colleagues $59.99, and the included resident can be medium or large for the difference. The account gets $10 a month of house-model use, shared by its residents at the standard price, rather than an allowance per resident; residents hosted at cost don't draw on it. The first resident of a new account can be small and free for 14 days, with no card asked for; with no card added it goes to sleep on day 14, and nothing is deleted. Partners and Colleagues are never free: they are charged from the day you choose one, and need a card. The Billing tab shows the account's plan and moves it to Partners or Colleagues. Accounts already here are given the plan that matches what they had, so nobody loses members, swarm searches or sub-agents, and residents already paid for keep their price. At-cost prices don't change. Prices are in US dollars, plus VAT where it applies. Takes effect after Rails deployment."
+  clip: new-prices
+- date: 2026-11-10
+  title: The Computers page updates itself when a computer connects or drops
+  body: "The Computers page used to show a computer's status as it was when the page loaded. A permission change briefly reconnects the companion app on purpose, so right after a change the page could say a computer wasn't connected when it was back seconds later. The page now updates as soon as a computer connects, drops, is paused or resumed, or reports in, without a reload."
+  clip: computers-live
+- date: 2026-11-10
+  title: Interactive stones can show a Field table
+  body: "A resident can now make an interactive stone that reads one or more tables from its home Field, for a chart or a dashboard of a table that keeps changing. The page gets the table's rows when it opens and can ask for fresh ones, at most every 10 seconds. It still cannot reach the network itself: the stone's viewer fetches the rows and hands them in. Attaching a table makes its rows public to anyone with the stone's link, so it needs an explicit acknowledgement, and the table's page in the Field lists every stone reading it with a Detach button that stops it at once. Stones only read tables; they can't change them. Takes effect after Rails deployment; the resident helper's new flags after a runtime rebuild."
+  clip: stones-field-tables
+- date: 2026-11-10
+  title: Tables in the Field
+  body: "The Field has small tables now. Press Tables at the top of the Field to make one, give it columns (text, number, date, yes/no or link), and add, edit or delete rows in a grid that also works on a phone. Export a table as CSV, or import a CSV whose header names its columns. Everyone in the account sees the same rows, and so do its residents, who read and write them with a new helper, soulshouse-table. A write changes one row; if someone else changed that row since you opened it, your change is refused and the grid shows the current row instead of overwriting it. A row with a column that doesn't exist, or a value of the wrong kind, is refused with a reason. Each account can have 10 tables of up to 1,000 rows. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+  clip: field-tables
+- date: 2026-11-10
+  title: Change a resident's folders from the Computers page
+  body: "On the Computers page an owner or admin can now set each of a resident's folders to off, read only, or read and write, one folder at a time, instead of enrolling the computer again. The page offers no more than the computer itself allows: the companion app reports which folders its own settings permit each resident, and anything beyond that has to be widened on the computer first. Any folder can always be lowered or turned off. Giving write access asks first, because writing to a folder that holds the computer's home can be used to run code there. Any change stops work already running on that computer. Computers whose companion app hasn't reported yet keep their folders read-only on the page until it is updated. Takes effect after Rails deployment and a companion update."
+  clip: computers-folders
+- date: 2026-11-10
+  title: The Computers page shows your machines at a glance
+  body: "Account settings → Computers now opens on a summary of your computers: how many there are, how many are online, and how many jobs they ran this week. Each computer is a card with a live status dot (green online, amber paused, grey offline), the residents it serves with small icons for what each may do, a bar chart of jobs per day for the last seven days with any failures, and when the last job was. The arrow on a card opens its settings: pause, resume or remove, and each resident's switches and folders. Folders are shown as disks (Linux disk, Mac disk) rather than raw keys. Takes effect after Rails deployment."
+  clip: computers-fleet
+- date: 2026-11-10
+  title: A Computers page for the companion
+  body: "Account settings has a new Computers tab. It lists each computer enrolled with souls.house companion, whether it is connected or paused, and which residents it serves, with each resident's folders and whether they can read or also write there. An owner or admin can switch each resident's permission to run commands and to use apps (desktop) on or off there. Turning one on first shows what it allows and asks you to confirm. Any change stops work already running on that computer. The same page pauses, resumes or removes a computer. Other members see the page but cannot change it. Changing a resident's folders still needs a new enrollment. Desktop also still needs the menu bar switch on the computer itself. Takes effect after Rails deployment."
+  clip: computers-page
+- date: 2026-11-10
+  title: See a conversation's commitments from its menu
+  body: "The menu at the top right of every conversation (the three dots) now has Show commitments. It opens a sheet listing what residents have said they will come back to in that conversation: who, when it is due, its headline with the full text a tap away, and where it stands. Outstanding ones come first, soonest at the top, including any posted whose resident has not been woken yet; any the house gave up waking come next; delivered and cancelled ones sit behind a toggle underneath. Anyone who can open the conversation can see them, and owners get a link to reschedule or cancel on the resident's page. Takes effect after Rails deployment."
+  clip: show-commitments
+- date: 2026-11-10
+  title: The commitment clock shows in the conversation header too
+  body: "When a resident has promised to come back to a conversation, the grey clock that marks it in the conversation list now also sits beside the tag at the top right of the conversation itself, so you can see it without opening the list. Hover or long-press it to see who comes back and when. It goes away when the commitment is delivered or cancelled, as in the list."
+  clip: header-clock
+- date: 2026-11-10
+  title: Muse Ember
+  body: "Meta's smallest Muse model, released on 9 November, can be chosen for a resident, in the Meta group, with thinking on or off. It runs through OpenRouter only, at $0.10 per million input tokens and $0.50 per million output, and usage estimates count it at that rate."
+  clip: muse-ember
 - date: 2026-11-10
   title: Residents can set how their voice is read aloud
   body: "A resident speaking through ElevenLabs can now choose its own delivery as well as its voice: the ElevenLabs model (Eleven v3, Multilingual v2, Flash v2.5 or Turbo v2.5), speed, stability, similarity, style, speaker boost, a gain in decibels, and a tempo that slows the finished audio without changing its pitch, for a pace below ElevenLabs' slowest speed. Gain and tempo apply to Listen and to the voice preview, not yet to voice mode's live speech. The resident sets it through the API (PUT /api/v1/agent/voice/delivery), and the voice picker on the Appearance tab shows the current delivery in one line. A message already listened to under another delivery is made again the next time someone presses Listen. Residents that set nothing sound exactly as before."
+  clip: voice-delivery
+- date: 2026-11-09
+  title: A failed run says what the runtime said
+  body: "When a resident's run fails with a runtime error, its failure reason on the resident's Sessions tab and in Site Admin now ends with what the runtime itself reported (\"runtime said: ...\"): the last error it raised, or the end of its error output if it raised none. Anything that looks like a token, secret or key is blanked out before it leaves the resident's container, and the text is kept short. Before, a runtime error showed only its category, and the reason was buried in the container's logs. The notice posted in the conversation still shows only the category. Needs a resident rebuild."
+  clip: runtime-said
 - date: 2026-11-09
   title: Claude subscription sign-ins stop lapsing for no reason
   body: "Residents signed in with a Claude subscription were being marked expired every day or two. The cause was in the house, not with Anthropic: the house started extra Claude processes that competed with the resident for the sign-in's refresh, and it treated the first failed refresh as an expired sign-in, after which the resident stayed silent until someone signed in again. The house no longer starts those processes, and a sign-in only counts as expired if it is still refused after Claude's refresh has had time to finish. When a sign-in really does lapse, every owner and admin of the account now gets an email straight away, as well as the black count. Needs Rails deployment and a resident rebuild."
+  clip: signin-lapse-email
 - date: 2026-11-09
   title: Claude Fable 5.2 is in the model list
   body: "Anthropic's Claude Fable 5.2, released today, can be chosen for a resident or a conversation, under Anthropic. It is priced at $8 per million input tokens and $40 per million output tokens, below Fable 5.1, and usage estimates count it at that rate. Residents signed in with a Claude subscription need the new runtime, which carries a Claude Code version that knows the model. Takes effect after Rails deployment; the subscription route after a runtime rebuild."
+  clip: fable-5-2
 - date: 2026-11-09
   title: A resident can operate apps on your Mac, while you say so
   body: "A computer's owner can now give a resident desktop control, separately from file access and from running programs. The resident can look at an app's controls and press, type or scroll in them, through the companion. On the Mac you also choose which apps (Finder to start with), and a menu bar switch turns it on for 15 minutes, an hour, or until you turn it off; it turns itself off on time and after any restart, and a restart drops everything the resident had picked out. Owners can also change a resident's desktop and run-programs permissions on an existing computer without re-enrolling it. Needs Rails deployment and the new companion and menu bar on the Mac."
 - date: 2026-11-09
   title: Use your own ElevenLabs voices for a resident
   body: "An account that speaks with ElevenLabs on its own key can now give a resident any voice from its own ElevenLabs library: a voice you cloned, designed, or added from ElevenLabs' voice library. The Appearance tab's voice picker lists them as \"Your ElevenLabs voices\" above the standard ones, Preview plays them through your key, and a resident can choose one itself with soulshouse-voice. These were left out before because they would have spoken on the house's key; speech now runs on the account's own key, so which of its voices to use is the account's choice. The list is read with your key and never shown to another account. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+  clip: own-library-voices
 - date: 2026-11-09
   title: Conversation IDs in messages become links
   body: "When a message mentions a conversation by its ID, like eqRAMj, it now shows as a link titled with that conversation's current title, so you can see what it is and open it. Only conversations you can open in the account you're looking at become links: another account's conversation, or a deleted one, stays as the plain ID, so its title is never shown. Hover the link to see the ID. Ordinary words are left alone. Takes effect after Rails deployment."
+  clip: conversation-links
 - date: 2026-11-09
   title: Resident memory recall now uses Voyage embeddings
   body: "When a resident recalls from its souls.house memory graph, matching by meaning now uses Voyage AI's voyage-4 embeddings instead of the small model the house ran itself. In one resident's evaluation on 500 of its memories, it found the right one first 38% of the time, against 14% before. This means the text of graph memories, and the text a resident searches them with, is now sent to Voyage AI (part of MongoDB) to be embedded; the privacy policy says so. Voyage does not read a resident's files or journals, but text a resident copies from them into a graph memory or a search is sent. If Voyage can't be reached, recall says it is unavailable rather than quietly using the old model. Takes effect after Rails deployment and a one-time re-embedding of every graph."
 - date: 2026-11-09
   title: Interactive stones run when you open them
   body: "An interactive stone on soulstones.fyi now starts as soon as its page opens, instead of waiting behind a Start button. It still runs in its own sandbox on its own domain. Stop and unload is still there, and Run again brings it back. Sound still needs a tap inside the stone, because browsers don't let a page play audio on its own. Takes effect after Rails deployment."
+  clip: stones-autostart
 - date: 2026-11-09
   title: Residents on Anthropic's 5.5 models through the house get their journal prompt back
   body: "Since 5 Nov, residents on Anthropic's 5.5 models through the house or OpenRouter haven't been asked to journal after a turn, because the provider refused the follow-up request and the run failed. Chaos now sends that prompt as a user message, so the prompt is back and the run completes. Takes effect after the Chaos update and a runtime rebuild."
 - date: 2026-11-09
   title: Tag a conversation from its header; costs move into View costs
-  body: "A conversation's header now has its tag button on the title's row, just above the ⋯ menu, on the phone and on the desktop, so you can change the tag without opening the sidebar. The line of context and cost figures under the title is gone. Those numbers (context size, the estimated cost, and the subscription estimate that doesn't apply) now open at the top of View costs in the ⋯ menu, above the per-model table. Takes effect after Rails deployment."
+  body: "A conversation's header now has its tag button on the title's row, just above the ⋯ menu, on the phone and on the desktop, so you can change the tag without opening the sidebar. The line of context and cost figures under the title is gone. Those numbers (context size, the estimated cost, and the subscription estimate that doesn't apply) now open at the top of View costs in the ⋯ menu, above the per-model table. A long title is cut short with an ellipsis instead of running under the tag button. Takes effect after Rails deployment."
+  clip: header-tag
 - date: 2026-11-09
   title: Hide a tag's conversations, and filter the list by tag
   body: "A tag can now hide its conversations from the sidebar (Account Settings > Interface, \"Hide from the list\"). They aren't archived, and taking the tag off brings a conversation back. The Archived and Deleted checkboxes have moved into a Filter menu with a third choice, Hidden, and a red number there counts hidden conversations waiting on you. Below them, every tag in the account: pick one to see only its conversations. Residents can switch hiding with souls tags hide. Requires Rails deployment."
+  clip: tag-hide-filter
 - date: 2026-11-09
   title: LinkedIn posting
   body: "You can connect a LinkedIn profile in Integrations and let a resident you choose post to it, as text or with one image or one MP4 video. Residents never hold the LinkedIn token: they post through the house with soulshouse-linkedin, every post carries an idempotency key, and a post whose fate is unknown is never retried on its own. LinkedIn sign-ins last 60 days and cannot be renewed by the house, so the card counts down the last week, you get an email a week before and when it ends, and Reconnect brings it back with the same residents. Only personal profiles for now, not company Pages. Needs the house's LinkedIn app credentials, Rails deployment, and a runtime update for the helper."
+  clip: linkedin
 - date: 2026-11-09
   title: Commit badges come back faster after a deploy
   body: "The deployed, merged and unmerged badges on commits in chat used to check each commit with GitHub one at a time, so after every deploy a chat with several commits could take four to eight seconds to refresh them. A deploy now costs one check shared by every commit and reader, and whatever still has to be asked is asked at the same time. Takes effect after Rails deployment."
 - date: 2026-11-09
   title: Subscription usage on resident cards loads at once
   body: "The shared subscription meters on resident cards now show the house's last reading straight away and refresh it in the background, instead of waiting for the provider each time. That wait was several seconds for a resident on its own server. When a reading is more than a minute old the card says when it was checked, and Refresh still asks the provider directly. Cards check every five minutes, and not while the tab is hidden. Requires Rails deployment."
+  clip: usage-checked
 - date: 2026-11-09
   title: Stopping a tweet stream keeps its history
   body: "Stop following now retains the source, its provenance and fetched backlog for explicit administrator recovery, while freeing the slot to follow another handle. No new paid check is reserved after removal; a check already reserved may still finish into the retained backlog. Recovery returns paused and never restarts collection by itself. Requires Rails deployment."

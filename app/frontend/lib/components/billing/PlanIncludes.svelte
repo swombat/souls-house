@@ -1,33 +1,29 @@
 <script>
-  // What a plan includes, from the catalogue (Billing::Tier#features), as short
-  // lines with icons. Shared by /pricing and the Billing tab so the two can't
-  // describe a plan differently. Only what a plan delivers today: a line comes
-  // back here when the catalogue starts sending it. The longer explanations
-  // live in the FAQ.
-  import { House, Sparkle, MagnifyingGlass, UsersThree } from 'phosphor-svelte';
+  // What an account plan includes, from the catalogue (Billing::AccountPlan
+  // #features), as short lines with icons. Shared by /pricing and the Billing
+  // tab so the two can't describe a plan differently. Only what a plan
+  // delivers today; the longer explanations live in the FAQ.
+  import { House, MagnifyingGlass, User, UsersThree, CheckCircle } from 'phosphor-svelte';
+  import { accountPlanLines } from '$lib/pricing';
 
-  // omit: line keys to leave out, e.g. ['allowance'] where it is listed elsewhere.
-  let { features, class: className = '', iconClass = 'text-muted-foreground', omit = [] } = $props();
+  // plan: one entry of the account_plans prop. withResident: the public cards
+  // count the small resident every plan comes with; the Billing tab lists
+  // residents on their own.
+  let { plan, withResident = true, class: className = '', iconClass = 'text-muted-foreground' } = $props();
+
+  const ICONS = { members: User, everything: CheckCircle, subagents: UsersThree, swarm: MagnifyingGlass };
 
   const lines = $derived([
-    ...(features.hosting ? [{ key: 'hosting', icon: House, text: 'Hosting for one resident' }] : []),
-    {
-      key: 'allowance',
-      icon: Sparkle,
-      text:
-        features.allowance_usd > 0
-          ? `$${features.allowance_usd} a month of house model`
-          : 'No house model included: runs on its own subscription or key',
-    },
-    ...(features.swarm_searches > 0
-      ? [{ key: 'swarm', icon: MagnifyingGlass, text: `Swarm search, ${features.swarm_searches} a month` }]
-      : []),
-    ...(features.subagents ? [{ key: 'subagents', icon: UsersThree, text: 'Sub-agents' }] : []),
-  ].filter((line) => !omit.includes(line.key)));
+    ...accountPlanLines(plan).map((line) => ({
+      ...line,
+      icon: line.key === 'members' && plan?.features?.members === 'several' ? UsersThree : ICONS[line.key],
+    })),
+    ...(withResident ? [{ key: 'resident', icon: House, text: 'One small resident included' }] : []),
+  ]);
 </script>
 
 <ul class="space-y-3 {className}">
-  {#each lines as line (line.text)}
+  {#each lines as line (line.key)}
     {@const Icon = line.icon}
     <li class="flex items-center gap-3">
       <Icon size={18} class="shrink-0 {iconClass}" />

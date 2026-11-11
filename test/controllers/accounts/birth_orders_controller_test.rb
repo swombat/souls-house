@@ -30,12 +30,68 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert billing.fetch("can_pay")
     assert_equal({ "brand" => "visa", "last4" => "4242", "exp_month" => 10, "exp_year" => 2030 }, billing.fetch("payment_method"))
     assert_equal %w[conversation life work], billing.fetch("tiers").map { |tier| tier["id"] }
+    assert_equal %w[companions partners colleagues], billing.fetch("account_plans").map { |plan| plan["id"] }
+    # The Plan step names the account's plan.
+    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, billing.fetch("account_plan"))
+    refute billing.key?("trial"), "the trial is one top-level prop, as on the Billing tab"
     assert_equal account_birth_orders_path(@account), billing.fetch("birth_orders_url")
 
     @account.update!(billing_required: false)
     get new_account_agent_path(@account)
     @inertia_props = nil
     assert_nil inertia_shared_props.fetch("billing")
+  end
+
+  test "the free trial: offered on the Plan step, no card, Stripe Checkout, and Stripe's return bears the resident" do
+    Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
+    assert_equal({ "eligible" => true, "days" => 14 }, inertia_shared_props.fetch("trial"))
+
+    Billing.stub(:client, @stripe) do
+      assert_no_difference "Agent.count" do
+        post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation", trial: true }, as: :json
+      end
+      assert_response :created
+      body = response.parsed_body
+      assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", body.fetch("checkout_url")
+      assert_nil body.fetch("client_secret")
+      assert body.dig("order", "trial")
+      order = ResidentBirthOrder.sole
+      params, = @stripe.checkout_sessions.sole
+      assert_equal trial_return_account_birth_order_url(@account, order), params[:success_url]
+      assert_equal new_account_agent_url(@account), params[:cancel_url]
+      assert AuditLog.exists?(action: "start_trial_birth")
+
+      post body.fetch("payment_url"), as: :json
+      assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", response.parsed_body.fetch("checkout_url")
+
+      get trial_return_account_birth_order_path(@account, order)
+      assert_redirected_to new_account_agent_path(@account), "not complete yet: Stripe is still confirming"
+
+      @stripe.complete_checkout_session("cs_test_1", subscription_id: "sub_trial")
+      assert_difference "Agent.count", 1 do
+        get trial_return_account_birth_order_path(@account, order)
+      end
+      agent = @account.agents.find_by!(name: "Aria")
+      assert_redirected_to onboarding_account_agent_path(@account, agent)
+    end
+
+    @inertia_props = nil
+    Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
+    assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props.fetch("trial"))
+  end
+
+  test "the free trial is for a small resident at the standard rate, once" do
+    Billing.stub(:client, @stripe) do
+      post account_birth_orders_path(@account), params: { agent: draft, tier: "life", trial: true }, as: :json
+      assert_response :unprocessable_entity
+      assert_match "small resident", response.parsed_body.fetch("error")
+
+      @account.update!(trial_started_at: 1.day.ago)
+      post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation", trial: true }, as: :json
+      assert_response :unprocessable_entity
+      assert_match "already had its free trial", response.parsed_body.fetch("error")
+    end
+    assert_empty @stripe.checkout_sessions
   end
 
   test "saving a card from the wizard" do

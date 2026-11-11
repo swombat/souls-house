@@ -48,6 +48,7 @@ class AgentsController < ApplicationController
       ai_api_keys_configured: current_account.ai_api_keys_configured,
       can_manage_ai_credentials: current_account.ai_credentials_manageable_by?(Current.user),
       billing: -> { birth_billing_props },
+      trial: -> { Billing::Trial.as_json_for(current_account) },
       account: current_account.as_json
     }
   end
@@ -128,6 +129,9 @@ class AgentsController < ApplicationController
       shared_connections: -> { shared_connections_for_agent },
       can_decide_guest_access: -> { current_account.owned_by?(Current.user) },
       can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+      # #690: the owner's paid-fallback card; the card hides itself while the
+      # house hasn't switched the feature on.
+      paid_fallback_url: -> { current_account.owned_by?(Current.user) ? account_agent_fallback_policy_path(current_account, @agent) : nil },
       interactions: -> { interactions_props(load_interactions.call.last) },
       interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
       cost_report: -> { AgentInteractionCostReport.new(agent: @agent).call },
@@ -270,6 +274,8 @@ class AgentsController < ApplicationController
       test_mode: Billing.test_mode?,
       publishable_key: Billing.publishable_key,
       tiers: Billing::Tier.all.select(&:purchasable?).as_json,
+      account_plans: Billing::AccountPlan.all.as_json,
+      account_plan: current_account.account_plan_json,
       offers: current_account.purchasable_offers.as_json,
       payment_method: payment_method,
       payment_method_error: payment_method_error,

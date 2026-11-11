@@ -85,6 +85,7 @@ test.each([
   'GuestDiscovery',
   'RhythmActivity',
   'IntegrationStatus',
+  'ComputerStatus',
   'ProviderPresentation',
   'TelegramPresentation',
   'HomeResidentRoster',
@@ -245,5 +246,19 @@ test('a field recording that finished during a disconnect is caught up on reconn
   vi.advanceTimersByTime(60_000);
   expect(router.reload).not.toHaveBeenCalled();
   unsubscribe();
+  vi.useRealTimers();
+});
+
+test('a computer that reconnects while the Computers page is subscribed reloads only its devices', () => {
+  vi.useFakeTimers();
+  router.reload.mockReset();
+  const unsubscribe = subscribeToModel('ComputerStatus', 'account', ['devices']);
+  const callbacks = create.mock.calls.at(-1)[1];
+  callbacks.received({ action: 'refresh' });
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['devices'] }));
+  unsubscribe();
+  router.reload.mockReset();
   vi.useRealTimers();
 });
