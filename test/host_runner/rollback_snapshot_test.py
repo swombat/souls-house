@@ -17,7 +17,11 @@ UUID = "12345678-1234-1234-1234-123456789012"
 SNAPSHOT = "e" * 64
 NAME = "agent-rollback"
 SHAPES = {role: {"entries": index + 1, "shape": "abcde"[index] * 64} for index, role in enumerate(rs.ROLES)}
-STOPPED = {"Running": False, "Paused": False, "Restarting": False, "Dead": False, "Status": "exited"}
+CONTAINER = "c" * 64
+STOPPED = {"Running": False, "Paused": False, "Restarting": False, "Dead": False, "Status": "exited",
+           "StartedAt": "2026-11-11T10:00:00.000000001Z", "FinishedAt": "2026-11-11T12:00:00.000000001Z"}
+LATER_STOP = {**STOPPED, "StartedAt": "2026-11-11T12:30:00.000000001Z", "FinishedAt": "2026-11-11T12:40:00.000000001Z"}
+RUNNING = {**STOPPED, "Running": True, "Status": "running", "FinishedAt": "0001-01-01T00:00:00Z"}
 
 
 def payload(**overrides):
@@ -51,6 +55,8 @@ class FakeDocker:
         self.fail = set()  # "backup", "snapshots", "check", "ps"
         self.leftover_tools = False
         self.after_backup = None
+        self.container = CONTAINER
+        self.tags = []
 
     def state(self):
         if not self.states:
@@ -61,8 +67,11 @@ class FakeDocker:
         self.calls.append(list(argv))
         assert timeout is None or timeout > 0
         if argv[:2] == ["docker", "inspect"]:
+            assert argv[2:4] == ["--format", "{{json .Id}} {{json .State}}"], argv
             state = self.state()
-            return (state is not None), json.dumps(state) if state is not None else "No such object"
+            if state is None:
+                return False, "No such object"
+            return True, f"{json.dumps(self.container)} {json.dumps(state)}"
         if argv[:3] == ["docker", "volume", "inspect"]:
             return argv[3] in self.volumes, ""
         if argv[:3] == ["docker", "image", "inspect"]:
@@ -170,11 +179,13 @@ class RollbackSnapshotTest(unittest.TestCase):
             self.assertIn(f"RESTIC_REPOSITORY={FakeProxy.repository}\n", env)
         marker = self.marker()
         self.assertEqual({"state": "verified", "agent_uuid": UUID, "runner_id": "runner-one", "generation": 3,
-                          "snapshot_id": SNAPSHOT, "shapes": SHAPES}, marker)
+                          "snapshot_id": SNAPSHOT, "shapes": SHAPES,
+                          "interval": {"container_id": CONTAINER, "started_at": STOPPED["StartedAt"],
+                                       "finished_at": STOPPED["FinishedAt"]}}, marker)
 
     def test_refuses_a_running_paused_restarting_or_missing_resident(self):
         cases = {
-            "running": {**STOPPED, "Running": True, "Status": "running"},
+            "running": RUNNING,
             "paused": {**STOPPED, "Running": True, "Paused": True, "Status": "paused"},
             "restarting": {**STOPPED, "Restarting": True, "Status": "restarting"},
             "dead": {**STOPPED, "Dead": True, "Status": "dead"},
@@ -196,9 +207,24 @@ class RollbackSnapshotTest(unittest.TestCase):
         self.assertEqual((SNAPSHOT, SHAPES), (again["snapshot_id"], again["shapes"]))
         self.assertEqual([], self.docker.restic_commands())
         self.fresh()
-        self.docker.states = [{**STOPPED, "Running": True, "Status": "running"}]
+        self.docker.states = [RUNNING]
         with self.assertRaises(BadCommand):
             self.run_it()
+
+    def test_a_start_write_stop_at_the_same_generation_takes_a_fresh_snapshot(self):
+        """Mira's P1 on 06164cdd: stopped now is not the same stopped interval."""
+        self.run_it()
+        self.fresh()
+        self.docker.states = [LATER_STOP]
+        self.docker.shapes["identity"] = {"entries": 999, "shape": "f" * 64}
+        result = self.run_it()
+        self.assertFalse(result["already"])
+        self.assertEqual({"entries": 999, "shape": "f" * 64}, result["shapes"]["identity"])
+        self.assertEqual(["backup", "snapshots", "check"], self.docker.restic_commands())
+        self.assertEqual(LATER_STOP["FinishedAt"], self.marker()["interval"]["finished_at"])
+        self.fresh()
+        self.docker.container = "d" * 64  # recreated container, same name
+        self.assertFalse(self.run_it()["already"])
 
     def test_a_marker_for_another_generation_or_runner_is_never_reused(self):
         self.run_it()
@@ -269,12 +295,20 @@ class RollbackSnapshotTest(unittest.TestCase):
 
     def test_a_resident_that_started_during_the_snapshot_fails(self):
         def start():
-            self.docker.states = [{**STOPPED, "Running": True, "Status": "running"}]
+            self.docker.states = [RUNNING]
         self.docker.after_backup = start
         with self.assertRaises(rs.RollbackSnapshotFailed) as caught:
             self.run_it()
         self.assertIn("started during", str(caught.exception))
         self.assertEqual("claimed", self.marker()["state"])
+
+    def test_a_start_and_stop_during_the_snapshot_fails(self):
+        def bounce():
+            self.docker.states = [LATER_STOP]
+        self.docker.after_backup = bounce
+        with self.assertRaises(rs.RollbackSnapshotFailed) as caught:
+            self.run_it()
+        self.assertIn("started during", str(caught.exception))
 
     def test_tools_that_cannot_be_proved_stopped_fail(self):
         self.docker.leftover_tools = True
@@ -287,6 +321,66 @@ class RollbackSnapshotTest(unittest.TestCase):
         with self.assertRaises(CommandFailed) as caught:
             self.run_it(clock=lambda: next(ticks))
         self.assertIn("deadline", str(caught.exception))
+
+
+class DispatcherReplayTest(unittest.TestCase):
+    """Mira's P2 on 06164cdd: the runner's own lost-answer replay
+    (execute_command's remembered result) must not hand back a rollback
+    snapshot that is no longer true. Real dispatcher, real CommandState, real
+    ResidentHost; only docker and the proxy are fakes."""
+
+    def setUp(self):
+        import souls_house_runner as runner
+        from unittest import mock
+        self.runner = runner
+        self.temp = tempfile.TemporaryDirectory()
+        self.docker = FakeDocker()
+        self.host = runner.ResidentHost(self.temp.name, docker=self.docker, backup_request="signed")
+        self.host.runner_id = "runner-one"
+        self.state = runner.CommandState(self.temp.name)
+        self.patches = [mock.patch.object(rs, "bounded_docker", lambda *a, **k: self.docker(*a, **k)),
+                        mock.patch.object(rs, "BackupProxy", FakeProxy),
+                        mock.patch.object(rs, "SHAPE_SCRIPT", os.path.join(self.temp.name, "shape.sh"))]
+        with open(os.path.join(self.temp.name, "shape.sh"), "w") as handle:
+            handle.write("echo shape")
+        for patch in self.patches:
+            patch.start()
+        self.command = {"id": "b" * 32, "kind": "rollback_snapshot", "generation": 1, "payload": payload()}
+
+    def tearDown(self):
+        for patch in self.patches:
+            patch.stop()
+        self.temp.cleanup()
+
+    def execute(self, command=None):
+        return self.runner.execute_command(command or self.command, self.state, self.host)[1]
+
+    def test_a_replay_is_the_remembered_answer_only_while_it_is_still_true(self):
+        first = self.execute()
+        self.assertEqual("done", first["outcome"], first)
+        self.assertEqual(SNAPSHOT, first["result"]["snapshot_id"])
+        restic = len(self.docker.restic_commands())
+
+        self.assertEqual(first, self.execute(), "unchanged stopped interval: same snapshot")
+        self.docker.states = [RUNNING]
+        replay = self.execute()
+        self.assertEqual("failed", replay["outcome"])
+        self.assertIn("has run since", replay["error"])
+        self.docker.states = [LATER_STOP]
+        self.assertEqual("failed", self.execute()["outcome"], "a start and stop since the snapshot")
+        self.docker.states = [STOPPED]
+        self.docker.container = "d" * 64
+        self.assertEqual("failed", self.execute()["outcome"], "a recreated container")
+        self.assertEqual(restic, len(self.docker.restic_commands()), "a replay never runs restic")
+
+    def test_a_replay_of_another_generation_or_a_superseded_marker_fails(self):
+        self.assertEqual("done", self.execute()["outcome"])
+        newer = {**self.command, "id": "c" * 32, "payload": payload(generation=4)}
+        self.assertEqual("done", self.execute(newer)["outcome"])
+        replay = self.execute()
+        self.assertEqual("failed", replay["outcome"], "the marker now names generation 4")
+        self.state.data["highest_generation"] = 2
+        self.assertEqual("refused", self.execute()["outcome"], "a stale placement generation")
 
 
 if __name__ == "__main__":

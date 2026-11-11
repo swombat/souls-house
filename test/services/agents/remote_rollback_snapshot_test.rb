@@ -64,6 +64,22 @@ module Agents
       end
     end
 
+    test "a reservation that lands while the command is being enqueued sends nothing" do
+      answered("stop_resident")
+      enqueue = RunnerCommand.method(:enqueue!)
+      superseding = lambda do |**args|
+        VmMigration::RollbackPlan.reserve!(Agent.find(@agent.id))
+        enqueue.call(**args)
+      end
+      full do
+        RunnerCommand.stub(:enqueue!, superseding) do
+          error = assert_raises(RemoteRuntime::Unavailable) { RemoteRuntime.rollback_snapshot!(@agent, generation: @generation) }
+          assert_match(/latest reservation/, error.message)
+        end
+      end
+      assert_not RunnerCommand.where(kind: "rollback_snapshot").exists?, "the enqueue rolled back with the refusal"
+    end
+
     test "refuses a resident without a well-formed uuid" do
       answered("stop_resident")
       @agent.update_columns(uuid: nil)
@@ -125,6 +141,7 @@ module Agents
         "an extra shape field" => good_result(shapes: good_result["shapes"].merge("repo" => { "entries" => 1, "shape" => HEX, "x" => 1 })),
         "no shapes" => good_result(shapes: nil)
       }
+      [ "bad", true, 7, [ 1 ], nil ].each { |bad| mismatches["a result of #{bad.inspect}"] = bad }
       mismatches.each do |label, result|
         command = answered("rollback_snapshot", result:)
         assert_equal :mismatch, RemoteRuntime.rollback_snapshot_outcome(command, agent: @agent, generation: @generation), label
@@ -139,6 +156,12 @@ module Agents
       %w[failed refused unknown].each do |outcome|
         failed = answered("rollback_snapshot", outcome:, result: good_result)
         assert_equal :failed, RemoteRuntime.rollback_snapshot_outcome(failed, agent: @agent, generation: @generation), outcome
+      end
+      envelope = answered("rollback_snapshot", result: good_result)
+      [ "bad", 7, [ 1 ], nil ].each do |bad|
+        envelope.stub(:result, bad) do
+          assert_equal :mismatch, RemoteRuntime.rollback_snapshot_outcome(envelope, agent: @agent, generation: @generation), "an envelope of #{bad.inspect}"
+        end
       end
       other = answered("backup_resident", result: good_result)
       assert_equal :failed, RemoteRuntime.rollback_snapshot_outcome(other, agent: @agent, generation: @generation), "another kind's answer"

@@ -1202,6 +1202,13 @@ class ResidentHost:
             raise BadCommand("rollback_snapshot needs the full runner package")
         return run_rollback_snapshot(payload, self)
 
+    def replay_rollback_snapshot(self, payload, remembered):
+        try:
+            from rollback_snapshot import revalidate_replay
+        except ImportError:
+            return {"outcome": "failed", "error": "rollback_snapshot needs the full runner package"}
+        return revalidate_replay(payload, remembered, self)
+
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
     # house by digest, is checked against that digest, and is unpacked into a
@@ -1337,6 +1344,13 @@ def execute_command(command, state, host):
         return command_id, {"outcome": "refused", "error": str(error)}
     remembered = state.result_for(command["id"])
     if remembered is not None:
+        # A remembered rollback snapshot is only replayed while it is still
+        # true (#426 3C): current generation, and the resident still in the
+        # stopped interval it was taken in. Every other answer replays as is.
+        if command["kind"] == "rollback_snapshot" and remembered.get("outcome") == "done":
+            if state.stale(command["generation"]):
+                return command["id"], {"outcome": "refused", "error": "stale generation"}
+            return command["id"], host.replay_rollback_snapshot(command["payload"], remembered)
         return command["id"], remembered
     if state.started(command["id"]):
         result = {"outcome": "unknown", "error": "runner restarted while this command was running"}
@@ -1393,7 +1407,7 @@ RUNNER_BUNDLE_DEADLINE = 2 * 60
 RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
 # The full package (#426 3C) adds these beside the pair, for a migration's
 # restore; the pair alone is the birth package. Nothing else is accepted.
-RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644}
+RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644, "rollback_snapshot.py": 0o644}
 RUNNER_PACKAGE_FILES = {**RUNNER_BUNDLE_FILES, **RUNNER_CARRY_FILES}
 RUNNER_BUNDLE_MARKER = "bundle.sha256"
 RUNNER_VERSIONS = "versions"

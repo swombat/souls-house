@@ -98,18 +98,28 @@ def write_marker(host, name, data):
     host._write_private(_marker_path(host, name), json.dumps(data, sort_keys=True))
 
 
-def stopped(docker, name, timeout):
-    """The container exists and is stopped: not running, not paused, not
-    restarting or dead, and docker calls it exited or created."""
-    ok, output = docker(["docker", "inspect", "--format", "{{json .State}}", name], timeout=timeout)
+def stopped_interval(docker, name, timeout):
+    """The stopped interval the container is in, or None when it is not
+    stopped: missing, running, paused, restarting or dead. The interval is the
+    container's id and the StartedAt/FinishedAt of its last run; any start
+    after it, even one followed by another stop, gives a different interval."""
+    ok, output = docker(["docker", "inspect", "--format", "{{json .Id}} {{json .State}}", name], timeout=timeout)
     if not ok:
-        return False
+        return None
     try:
-        state = json.loads(output)
+        container_id, state = output.strip().split(" ", 1)
+        container_id, state = json.loads(container_id), json.loads(state)
     except ValueError:
-        return False
-    return (isinstance(state, dict) and state.get("Running") is False and state.get("Paused") is False and
-            not state.get("Restarting") and not state.get("Dead") and state.get("Status") in ("exited", "created"))
+        return None
+    if not (isinstance(container_id, str) and re.fullmatch(r"[0-9a-f]{64}", container_id) and isinstance(state, dict)):
+        return None
+    if not (state.get("Running") is False and state.get("Paused") is False and not state.get("Restarting") and
+            not state.get("Dead") and state.get("Status") in ("exited", "created")):
+        return None
+    started, finished = state.get("StartedAt"), state.get("FinishedAt")
+    if not (isinstance(started, str) and started and isinstance(finished, str) and finished):
+        return None
+    return {"container_id": container_id, "started_at": started, "finished_at": finished}
 
 
 def shape_argv(name, role, tool, script):
@@ -194,7 +204,7 @@ def _valid_remembered(remembered):
                 for shape in shapes.values()))
 
 
-def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, proxy_factory=BackupProxy,
+def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, proxy_factory=None,
                           clock=time.monotonic, script=None):
     """host is the runner's ResidentHost: its backup_request transport, the
     current command id, runner_id, state_dir (the marker lives there) and docker."""
@@ -208,6 +218,7 @@ def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, pr
     spec = validate(payload)
     name = spec["container_name"]
     docker = docker or bounded_docker
+    proxy_factory = proxy_factory or BackupProxy
     if script is None:
         with open(SHAPE_SCRIPT, encoding="utf-8") as handle:
             script = handle.read()
@@ -231,9 +242,12 @@ def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, pr
         if not all(remembered.get(key) == value for key, value in binding.items()):
             remembered = None  # another generation or runner: stale, never reused
     # Even a remembered snapshot is only handed back while the resident is
-    # still stopped: a cached answer never stands in for the check.
-    _require(stopped(docker, name, min(10, remaining())), NOT_STOPPED)
-    if remembered is not None and remembered.get("state") == "verified" and _valid_remembered(remembered):
+    # still in the same stopped interval it was taken in: stopped now is not
+    # enough, since a start, a write and a stop would leave it stale.
+    interval = stopped_interval(docker, name, min(10, remaining()))
+    _require(interval is not None, NOT_STOPPED)
+    if (remembered is not None and remembered.get("state") == "verified" and _valid_remembered(remembered) and
+            remembered.get("interval") == interval):
         result.update(snapshot_id=remembered["snapshot_id"], shapes=remembered["shapes"], tools_stopped=True,
                       already=True, duration_ms=round((clock() - started) * 1000))
         return result
@@ -242,7 +256,7 @@ def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, pr
         ok, _ = docker(["docker", "volume", "inspect", volume_name(name, role)], timeout=min(10, remaining()))
         if not ok:
             raise CommandFailed(f"missing resident volume {role}")
-    write_marker(host, name, {"state": "claimed", **binding})
+    write_marker(host, name, {"state": "claimed", **binding, "interval": interval})
 
     tools = []
     error = None
@@ -285,7 +299,7 @@ def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, pr
                 ok, _ = restic(["check"])
                 if not ok:
                     raise CommandFailed("restic check failed")
-        if not stopped(docker, name, min(10, remaining())):
+        if stopped_interval(docker, name, min(10, remaining())) != interval:
             raise CommandFailed("resident started during the rollback snapshot")
         result["snapshot_id"] = snapshot_id
     except BadCommand:
@@ -320,6 +334,32 @@ def run_rollback_snapshot(payload, host, *, signed_request=None, docker=None, pr
     if error:
         result["snapshot_id"] = None
         raise RollbackSnapshotFailed(error, result)
-    write_marker(host, name, {"state": "verified", **binding, "snapshot_id": result["snapshot_id"],
-                              "shapes": result["shapes"]})
+    write_marker(host, name, {"state": "verified", **binding, "interval": interval,
+                              "snapshot_id": result["snapshot_id"], "shapes": result["shapes"]})
     return result
+
+
+def revalidate_replay(payload, remembered, host, *, docker=None):
+    """The dispatcher remembers every answer by command id and replays it when
+    the house asks again after a lost answer. For a done rollback_snapshot that
+    replay must still be true: the same resident, runner and generation, the
+    marker still naming that snapshot, and the resident still in the stopped
+    interval it was taken in. Returns the remembered answer or a failure."""
+    docker = docker or bounded_docker
+    try:
+        spec = validate(payload)
+        result = remembered.get("result")
+        name = spec["container_name"]
+        marker = read_marker(host, name)
+        runner_id = getattr(host, "runner_id", None)
+        same = (isinstance(result, dict) and isinstance(marker, dict) and marker.get("state") == "verified" and
+                marker.get("agent_uuid") == spec["agent_uuid"] and marker.get("generation") == spec["generation"] and
+                marker.get("runner_id") == runner_id and marker.get("snapshot_id") == result.get("snapshot_id") and
+                marker.get("shapes") == result.get("shapes"))
+        if not same:
+            return {"outcome": "failed", "error": "this rollback snapshot is no longer the one remembered"}
+        if stopped_interval(docker, name, 10) != marker.get("interval"):
+            return {"outcome": "failed", "error": "the resident has run since this rollback snapshot"}
+        return remembered
+    except (BadCommand, CommandFailed) as error:
+        return {"outcome": "failed", "error": str(error)}

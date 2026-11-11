@@ -329,20 +329,28 @@ module Agents
 
     def rollback_snapshot!(agent, generation:)
       raise ArgumentError, "generation must be a positive Integer" unless generation.is_a?(Integer) && generation.positive?
-      unless Agent.uncached { Agent.where(id: agent.id).pick(:volume_rollback_generation) } == generation
-        raise Unavailable, "this rollback is no longer this resident's latest reservation"
-      end
-
       raise Unavailable, "this resident has no well-formed uuid to tag its snapshot with" unless UUID.match?(agent.uuid.to_s)
 
       enrollment = live_enrollment!(agent)
       raise Unavailable, "its server's runner is not running the full package yet" unless RunnerBundle.full_running?(enrollment)
-      raise Unavailable, "the resident has not been stopped on its server" unless stop_answered?(enrollment)
 
-      RunnerCommand.enqueue!(enrollment:, kind: "rollback_snapshot", payload: {
-        "container_name" => agent.container_name, "agent_uuid" => agent.uuid, "restic_password" => agent.restic_password,
-        "generation" => generation, "deadline_seconds" => ROLLBACK_DEADLINE_SECONDS
-      })
+      # Under the row lock RollbackPlan.reserve! takes, so no newer
+      # reservation can land between the check and the enqueue; and checked
+      # again before commit, so a command for a superseded reservation is
+      # never sent.
+      agent.with_lock do
+        raise Unavailable, "this rollback is no longer this resident's latest reservation" unless agent.volume_rollback_generation == generation
+        raise Unavailable, "the resident has not been stopped on its server" unless stop_answered?(enrollment)
+
+        command = RunnerCommand.enqueue!(enrollment:, kind: "rollback_snapshot", payload: {
+          "container_name" => agent.container_name, "agent_uuid" => agent.uuid, "restic_password" => agent.restic_password,
+          "generation" => generation, "deadline_seconds" => ROLLBACK_DEADLINE_SECONDS
+        })
+        unless Agent.uncached { Agent.where(id: agent.id).pick(:volume_rollback_generation) } == generation
+          raise Unavailable, "this rollback is no longer this resident's latest reservation"
+        end
+        command
+      end
     end
 
     # The newest lifecycle command, answered or not, is a stop that answered
@@ -361,7 +369,10 @@ module Agents
       return :pending if %w[queued delivered].include?(command.state)
       return :failed unless command.kind == "rollback_snapshot" && command.state == "done"
 
-      result = command.result.to_h["result"].to_h
+      envelope = command.result
+      result = envelope["result"] if envelope.is_a?(Hash)
+      return :mismatch unless result.is_a?(Hash)
+
       roles = VmMigration::RollbackPlan::ROLES.map(&:to_s)
       shapes = result["shapes"]
       matches = result["agent_uuid"] == agent.uuid && result["container_name"] == agent.container_name &&
