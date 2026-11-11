@@ -10,6 +10,11 @@
   // the feature.
   let { url, agentName = 'This resident' } = $props();
 
+  // The card sits inside the resident settings form but saves on its own:
+  // its fields name a form that doesn't exist, so they have no form owner and
+  // "Update Resident" neither validates nor submits them.
+  const DETACHED = 'paid-fallback-detached';
+
   let policy = $state(null);
   let loadError = $state('');
   let saveError = $state('');
@@ -103,13 +108,13 @@
         such as image generation, are ordinary key usage and are not counted against it.
       </p>
       <p class="text-muted-foreground">
-        Every reply on the fallback is labelled in the conversation with the model and who pays, and the first one after
-        you turn it on sends you an email.
+        Everything {agentName} posts in a conversation while running on the fallback is labelled with the model and who pays.
+        The first paid call in each {capPeriod} (and the first after you turn it on) sends you an email.
       </p>
     </div>
 
     <label class="flex items-start gap-3">
-      <input type="checkbox" class="mt-1" bind:checked={enabled} data-testid="paid-fallback-enabled" />
+      <input form={DETACHED} type="checkbox" class="mt-1" bind:checked={enabled} data-testid="paid-fallback-enabled" />
       <span class="text-sm">
         <span class="font-medium">Answer on the paid fallback when the allowance runs out</span>
         <span class="block text-muted-foreground">Off by default. Only the account's owner can change this.</span>
@@ -119,7 +124,11 @@
     <div class="grid gap-4 sm:grid-cols-3">
       <label class="space-y-1 text-sm sm:col-span-1">
         <span class="font-medium">Model</span>
-        <select class="w-full rounded border bg-background p-2" bind:value={modelId} data-testid="paid-fallback-model">
+        <select
+          form={DETACHED}
+          class="w-full rounded border bg-background p-2"
+          bind:value={modelId}
+          data-testid="paid-fallback-model">
           {#each policy.model_choices as choice (choice.model_id)}
             <option value={choice.model_id}>{choice.label}</option>
           {/each}
@@ -128,8 +137,9 @@
       <label class="space-y-1 text-sm">
         <span class="font-medium">Cap (USD)</span>
         <input
+          form={DETACHED}
           type="number"
-          min="1"
+          min="0.01"
           step="0.01"
           class="w-full rounded border bg-background p-2"
           bind:value={capUsd}
@@ -137,7 +147,7 @@
       </label>
       <label class="space-y-1 text-sm">
         <span class="font-medium">Per</span>
-        <select class="w-full rounded border bg-background p-2" bind:value={capPeriod}>
+        <select form={DETACHED} class="w-full rounded border bg-background p-2" bind:value={capPeriod}>
           <option value="week">week (from Monday, UTC)</option>
           <option value="month">month (from the 1st, UTC)</option>
         </select>
@@ -149,8 +159,8 @@
         ${policy.committed_usd} committed this {policy.cap_period}{policy.cap_usd ? ` of $${policy.cap_usd}` : ''},
         until
         {date(policy.period_ends_at)}.
-        {#if policy.first_used_at}
-          First used {date(policy.first_used_at)}.
+        {#if policy.use_notice_at}
+          First used {date(policy.use_notice_at)}.
         {/if}
       </p>
     {/if}

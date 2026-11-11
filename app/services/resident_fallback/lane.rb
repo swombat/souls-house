@@ -24,6 +24,17 @@ module ResidentFallback
 
     def fallback_session?(session_id) = session_id.to_s.end_with?(SUFFIX)
 
+    # The resident's paid-fallback run that is live now (dispatched, not
+    # finished, its activity window open), newest first; nil if none.
+    def live_fallback_run(agent, at: Time.current)
+      agent.agent_runtime_interactions
+        .where(finished_at: nil, provider: "house")
+        .where("model LIKE ?", "#{Gateway::PREFIX}%")
+        .where.not(dispatch_claimed_at: nil)
+        .where("activity_token_expires_at > ?", at)
+        .order(id: :desc).first
+    end
+
     def freshness_generation(agent, chat)
       ChatAgent.where(agent_id: agent.id, chat_id: chat.id).pick(:runtime_freshness_generation).to_i
     end

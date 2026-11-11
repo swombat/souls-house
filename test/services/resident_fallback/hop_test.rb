@@ -82,13 +82,13 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     assert_equal 1, @chat.agent_runtime_interactions.count
   end
 
-  test "the reply carries the label from its own run, and the owner is told once on first use" do
+  test "the reply carries the label from its own run; opening a hop alone sends the owner nothing" do
     policy = opt_in!
-    assert_enqueued_emails 1 do
+    assert_no_enqueued_emails do
       ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
     end
+    assert_nil policy.reload.use_notice_at, "the notice waits for a paid call that reached the provider"
     run = ResidentFallbackTurn.sole.fallback_interaction
-    assert_not_nil policy.reload.first_used_at
 
     reply = @chat.messages.create!(role: "assistant", agent: @agent, content: "On the fallback.", runtime_interaction: run)
     label = reply.paid_fallback
@@ -100,16 +100,6 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     # Changing the policy afterwards doesn't relabel the answer.
     policy.update!(model_id: "anthropic/claude-opus-5.5")
     assert_equal "Claude Sonnet 5", reply.reload.paid_fallback[:model_label]
-
-    # A second hop, in another conversation, sends no second email.
-    other = @agent.account.chats.create!(model_id: "x-ai/grok-build-0.1", title: "Fallback 2")
-    other.messages.create!(role: "user", user: users(:user_1), content: "Hello again")
-    other.agents << @agent
-    other.update!(manual_responses: true)
-    assert_no_enqueued_emails do
-      ExternalAgentResponseRequest.new(agent: @agent, chat: other).call
-    end
-    assert_equal 2, ResidentFallbackTurn.count
 
     # A reply on the subscription carries no label.
     plain = @chat.messages.create!(role: "assistant", agent: @agent, content: "On the plan.",
@@ -299,6 +289,53 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     assert_includes p2["request_delta"], "between turns"
     assert_includes p2["request_delta"], mid_run.content
     assert_not_equal first_mid.id, mid_run.id
+  end
+
+  test "after a long stretch on the subscription the fallback lane resumes on the bounded window, not the whole gap" do
+    opt_in!
+    @agent.update!(persistent_session: true)
+    limited = true
+    WebMock.reset!
+    @triggers = []
+    stub_request(:post, "https://agent.example.com/trigger").to_return do |request|
+      body = JSON.parse(request.body)
+      @triggers << body
+      if body["provider"] == "house" || !limited
+        { status: 200, body: { status: "ok", returncode: 0, chaos_session_id: body["provider"] }.to_json }
+      else
+        { status: 429, body: LIMITED.to_json }
+      end
+    end
+    respond = -> { ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call }
+
+    respond.call # P refused -> F, which sets the fallback lane's cursor
+    limited = false
+    respond.call # P's first success sets the subscription lane's cursor
+    limited = true
+
+    # A short gap: the fallback resumes with its delta.
+    @chat.messages.create!(role: "assistant", agent: agents(:code_reviewer), content: "short gap")
+    respond.call
+    short = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", short["session_id"]
+    assert_includes short["request_delta"], "short gap"
+
+    # A long stretch on the subscription: more messages than the window holds.
+    limited = false
+    (ExternalAgentResponseRequest::TRANSCRIPT_MESSAGE_LIMIT + 5).times do |i|
+      @chat.messages.create!(role: "assistant", agent: agents(:code_reviewer), content: "while on the plan #{i}")
+    end
+    respond.call # P resumes as usual: the bound is the fallback lane's only
+    assert_includes @triggers.last["request_delta"], "while on the plan 0"
+
+    limited = true
+    respond.call # P refused -> F, whose cursor is now far behind
+    long = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", long["session_id"]
+    assert_nil long["request_delta"], "no unbounded delta on the owner's key"
+    assert_includes long["request"], "while on the plan #{ExternalAgentResponseRequest::TRANSCRIPT_MESSAGE_LIMIT + 4}"
+    assert_not_includes long["request"], "while on the plan 0\n", "the bounded window, not the whole gap"
+    assert_operator long["request"].bytesize, :<, short["request"].bytesize + ExternalAgentResponseRequest::TRANSCRIPT_BYTE_BUDGET
   end
 
   test "a reset taken on the fallback lane reaches the subscription lane on its return, and neither lane resumes a pre-reset session" do

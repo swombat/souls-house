@@ -77,28 +77,15 @@ module ResidentFallback
       return unless eligible?
 
       policy = agent.fallback_policy
-      turn = ResidentFallbackTurn.create!(
+      ResidentFallbackTurn.create!(
         agent: agent, chat: @interaction.chat, primary_interaction: @interaction, fallback_interaction: @interaction,
         primary_provider: @interaction.provider, primary_model: @interaction.model,
         fallback_model_id: policy.model_id, upstream_model: policy.model_config.fetch(:upstream_model),
         primary_resets_at: resets_at, primary_result: @result.to_h.deep_stringify_keys
       )
-      self.class.notify_first_use(policy, turn)
-      turn
     rescue StandardError => e
       Rails.logger.warn("[ResidentFallback::Hop] #{agent&.id} not hopped: #{e.class}")
       nil
-    end
-
-    # The first hop after the owner turned the fallback on tells the owner,
-    # once (#690 slice C): which resident, which model, who pays, the cap,
-    # and where to turn it off. The conditional update makes it once even
-    # when two conversations hop at the same moment.
-    def self.notify_first_use(policy, turn)
-      claimed = ResidentFallbackPolicy.where(id: policy.id, first_used_at: nil).update_all(first_used_at: Time.current)
-      ResidentFallbackMailer.first_use(turn).deliver_later if claimed == 1
-    rescue StandardError => e
-      Rails.logger.warn("[ResidentFallback::Hop] first-use notice not sent for #{policy.agent_id}: #{e.class}")
     end
 
     private

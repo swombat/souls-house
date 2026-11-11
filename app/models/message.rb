@@ -40,6 +40,8 @@ class Message < ApplicationRecord
   belongs_to :user, optional: true
   belongs_to :agent, optional: true
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
+  # #690: the live paid-fallback run a resident's unlinked post was made during.
+  belongs_to :paid_fallback_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
   has_one :message_dispatch
   has_many :handoffs, class_name: "MessageHandoff", dependent: :delete_all
@@ -257,11 +259,11 @@ class Message < ApplicationRecord
   # record of its turn. It is fixed when the turn runs, so later changes to the
   # conversation's selection never relabel an earlier answer.
   def runtime_model_label
-    return unless role == "assistant" && agent_id && runtime_interaction
-
+    return unless role == "assistant" && agent_id
     if (fallback = paid_fallback)
       return fallback[:model_label]
     end
+    return unless runtime_interaction
 
     AgentRuntimeInteraction.model_label_for(runtime_interaction.model)
   end
@@ -271,10 +273,14 @@ class Message < ApplicationRecord
   # fallback/<id>), never from the resident's current settings or anything
   # the model wrote, so the label can't drift after the fact.
   def paid_fallback
-    return unless role == "assistant" && agent_id && runtime_interaction
-    return unless runtime_interaction.provider == "house" && ResidentFallback::Gateway.fallback_model?(runtime_interaction.model)
+    return unless role == "assistant" && agent_id
 
-    model_id = runtime_interaction.model.delete_prefix(ResidentFallback::Gateway::PREFIX)
+    run = [ runtime_interaction, paid_fallback_interaction ].compact.find do |candidate|
+      candidate.provider == "house" && ResidentFallback::Gateway.fallback_model?(candidate.model)
+    end
+    return unless run
+
+    model_id = run.model.delete_prefix(ResidentFallback::Gateway::PREFIX)
     {
       model_label: ResidentFallback::Models.label(model_id),
       provider_label: "OpenRouter",

@@ -17,8 +17,9 @@ class ResidentFallbackMailerTest < ActionMailer::TestCase
     text = mail.text_part.body.to_s
 
     assert_equal [ @owner.email_address ], mail.to
-    assert_equal "#{@agent.name} is answering on your paid fallback", mail.subject
+    assert_equal "#{@agent.name} has started using your paid fallback", mail.subject
     assert_includes text, "Model: Claude Opus 5.5, through OpenRouter."
+    assert_includes text, "first paid call this week has gone to the provider"
     assert_includes text, "this account's own OpenRouter key"
     assert_includes text, "Cap: $25.00 a week."
     assert_includes text, "tab=settings"

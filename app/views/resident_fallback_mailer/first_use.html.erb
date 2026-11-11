@@ -1,10 +1,10 @@
 <p>Hello,</p>
-<p><%= @agent.name %>'s subscription allowance ran out, so <%= @agent.name %> has just answered on the paid fallback you turned on. This is the first time since you turned it on.</p>
+<p><%= @agent.name %>'s subscription allowance ran out before a turn started, so <%= @agent.name %> has started answering on the paid fallback you turned on: its first paid call this <%= @policy.cap_period %> has gone to the provider.</p>
 <ul>
   <li>Model: <strong><%= @model_label %></strong>, through OpenRouter.</li>
   <li>Paid by: this account's own OpenRouter key. It is not on your <%= Setting.instance.site_name %> plan.</li>
   <li>Cap: $<%= @cap %> a <%= @policy.cap_period %>. No call starts unless its worst case fits inside what is left of the cap.</li>
 </ul>
-<p>Replies on the fallback carry a label in the conversation saying so.<% if @conversation_url %> <a href="<%= @conversation_url %>">This is the conversation it answered in.</a><% end %></p>
-<p>You can change the model or the cap, or turn the fallback off, in <a href="<%= @settings_url %>"><%= @agent.name %>'s settings</a>. You won't get this email again unless you turn it off and on.</p>
+<p>Posts the resident makes while running on the fallback carry a label in the conversation saying so.<% if @conversation_url %> <a href="<%= @conversation_url %>">This is the conversation it answered in.</a><% end %></p>
+<p>You can change the model or the cap, or turn the fallback off, in <a href="<%= @settings_url %>"><%= @agent.name %>'s settings</a>. You'll get this email again on the first paid call of the next <%= @policy.cap_period %>, or if you turn the fallback off and on.</p>
 <p><%= Setting.instance.site_name %></p>
