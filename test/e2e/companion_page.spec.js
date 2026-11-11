@@ -104,7 +104,9 @@ test('Linux downloads show beside the Mac one on every OS, each with its checksu
       // The compact placement at the foot of the page links up to the downloads.
       await expect(page.getByTestId('companion-linux-link')).toHaveAttribute('href', '/companion#download');
       await expect(page.getByText('or a Linux computer (x86-64 or ARM64)')).toBeVisible();
-      await expect(page.getByText('On Linux there is no menu bar and no desktop control')).toBeVisible();
+      await expect(page.getByText('On Linux there is no desktop control')).toBeVisible();
+      await expect(page.getByTestId('companion-linux')).toContainText('the house mark in your tray');
+      await expect(page.getByText('macOS on Apple Silicon')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (process.env.FEATURES_SCREENSHOTS) {
         await page.screenshot({

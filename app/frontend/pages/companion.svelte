@@ -72,7 +72,9 @@
     </p>
     <div id="download" class="mt-8 flex scroll-mt-20 flex-wrap items-start gap-3">
       <CompanionDownload />
-      <span class="py-2.5 text-sm text-muted-foreground">macOS on Apple Silicon</span>
+      {#if !linuxOffered}
+        <span class="py-2.5 text-sm text-muted-foreground">macOS on Apple Silicon</span>
+      {/if}
     </div>
   </header>
 
@@ -112,8 +114,9 @@
           Intel Macs aren't offered yet.
         </li>
         <li>
-          On Linux there is no menu bar and no desktop control: residents get the folders you grant and, only if you
-          turn it on, running commands. The Linux build is early: the companion has run on one Linux computer so far.
+          On Linux there is no desktop control: residents get the folders you grant and, only if you turn it on, running
+          commands. A tray icon shows whether the companion is running, and pauses or resumes it. The Linux build is
+          early: the companion has run on one Linux computer so far.
         </li>
       {:else}
         <li>A Mac with Apple Silicon (M1 or later). Intel Macs and Linux aren't offered yet.</li>

@@ -74,7 +74,8 @@
       <div class="max-w-xl rounded-xl border p-4 text-left text-sm" data-testid="companion-linux">
         <p class="flex items-center gap-2 font-medium"><LinuxLogo size={16} weight="fill" /> Linux, early build</p>
         <p class="mt-1 text-muted-foreground">
-          A command-line companion that runs as your own systemd user service, no root. Pick your processor.
+          Runs as your own systemd user service, never as root, with the house mark in your tray to pause or resume it.
+          Pick your processor.
         </p>
         <div class="mt-3 space-y-3">
           {#each linux as item (item.key)}
