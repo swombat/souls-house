@@ -139,6 +139,7 @@ module Billing
       private
 
       def start_item!(account:, creator:, attributes:, open_beginning:, offer:)
+        BillInFlight.refuse_add!(account)
         quoter = ItemQuote.new(account: account, offer: offer, client: @client)
         parent = quoter.parent!
         order = ResidentBirthOrder.create!(kind: ITEM, account: account, creator: creator, tier: offer.tier.id,
@@ -167,6 +168,7 @@ module Billing
       # Before anything is sent: the draft, the offer and the quote still
       # hold, or the order is re-pinned and the owner sees the new quote.
       def recheck_item!(order, digest)
+        BillInFlight.refuse_add!(order.account)
         offer = order.offer
         refuse!(order.account, order.creator, offer)
         refuse_house_model_at_cost!(offer, order.birth_attributes.symbolize_keys, account: order.account, creator: order.creator)

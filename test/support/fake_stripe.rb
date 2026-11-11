@@ -286,6 +286,14 @@ class FakeStripe
           end
           item = planned.find { |row| row[:id] == change[:id] } ||
             raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
+          if change[:deleted]
+            # Billing::EndItem: the item goes; its unused time is a
+            # proration credit waiting for the next invoice.
+            planned.delete(item)
+            shown -= 1
+            put_pending_invoice_item(stored[:customer], -(@proration_amount || 500)) if params[:proration_behavior] == "create_prorations"
+            next
+          end
           item[:price] = { id: change[:price] } if change[:price]
           item[:price] = { price_data: change[:price_data] } if change[:price_data]
           item[:metadata] = (item[:metadata] || {}).merge(change[:metadata].transform_keys(&:to_s)) if change[:metadata]
@@ -300,6 +308,11 @@ class FakeStripe
         stored[:metadata] = stored[:metadata].merge(params[:metadata].transform_keys(&:to_s)) if params[:metadata]
         stored[:default_payment_method] = params[:default_payment_method] if params.key?(:default_payment_method)
         stored[:description] = params[:description] if params.key?(:description)
+        if params.key?(:cancel_at_period_end)
+          # As Stripe does, cancel_at follows: the period's end, or nothing.
+          stored[:cancel_at_period_end] = params[:cancel_at_period_end]
+          stored[:cancel_at] = params[:cancel_at_period_end] ? stored[:items][:data].first&.dig(:current_period_end) : nil
+        end
         response = construct(with_invoice(stored))
         if opts[:idempotency_key]
           @update_responses[opts[:idempotency_key]] = response
@@ -472,7 +485,21 @@ class FakeStripe
 
     items = (stored[:all_items] || stored[:items][:data]).map(&:deep_dup)
     added = []
+    credits = []
+    if details[:cancel_at_period_end]
+      # The invoice at the period's end when the subscription won't renew:
+      # only charges already waiting.
+      lines = Array(@pending_items&.dig(params[:customer])).map { |pending| { amount: pending, proration: false } }
+      return construct(object: "invoice", currency: "usd", subtotal: lines.sum { |line| line[:amount] },
+        total: lines.sum { |line| line[:amount] }, next_payment_attempt: (stored[:items][:data].first || {})[:current_period_end],
+        lines: { object: "list", data: lines, has_more: false })
+    end
     Array(details[:items]).each do |change|
+      if change[:deleted]
+        items.reject! { |item| item[:id] == change[:id] }
+        credits << { amount: -(@proration_amount || 500), proration: true } if details[:proration_behavior] == "create_prorations"
+        next
+      end
       price = if change[:price_data]
         { id: "price_preview", unit_amount: change[:price_data][:unit_amount] }
       elsif change[:price]
@@ -489,6 +516,7 @@ class FakeStripe
     lines = (items + added).map { |item| { amount: amount.(item[:price]), proration: false } }
     unless recurring
       lines += added.map { { amount: @proration_amount || 500, proration: true } } if details[:proration_behavior] == "create_prorations"
+      lines += credits
       lines += Array(@pending_items&.dig(params[:customer])).map { |pending| { amount: pending, proration: false } }
     end
     subtotal = lines.sum { |line| line[:amount] }

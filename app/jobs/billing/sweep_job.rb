@@ -44,6 +44,23 @@ module Billing
       rescue StandardError => error
         Rails.error.report(error, handled: true, context: { subsystem: "billing", birth_order_id: order.id })
       end
+
+      # An End plan sent with no answer finishes with no browser; an unsent
+      # quote left open is dropped. One that can't be settled is reported
+      # and left for the next pass.
+      BillingCheckoutAttempt.unresolved.where(kind: EndItem::KIND).find_each do |attempt|
+        EndItem.new(agent: attempt.agent, now: now).resume!(attempt)
+      rescue StandardError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
+      end
+
+      # A Keep whose answer or sync was lost: finished from what the
+      # subscription shows.
+      BillingCheckoutAttempt.unresolved.where(kind: EndItem::KEEP).find_each do |attempt|
+        EndItem.new(agent: attempt.agent, now: now).resume_keep!(attempt)
+      rescue StandardError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
+      end
     end
 
   end
