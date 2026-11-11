@@ -8,7 +8,7 @@
 # house (RunnerBirthBundle) before the runner first starts.
 #
 # The VM opens no inbound runner port. Host input is dropped except loopback,
-# established traffic, ICMP and SSH; SSH uses the souls.house management key
+# established traffic, ICMP and SSH; SSH uses the house management key
 # for Mira and Lume to administer customers' VMs. Rails stays root-equivalent
 # over the VM through the Hetzner project token (rebuild, rescue, user_data at
 # create); this firewall limits the network, not Rails.
