@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Keep a plan for a job with several steps, so the room can see it move.
+"""Show the room where you are in a job with several steps, if you want to.
 
-The run card under your reply then shows one line while you work, for
+With a plan, the run card under your work shows one line while you go, for
 example "3 of 7 · running the tests", and keeps the last state when the run
-ends. Use it for jobs, not for conversation: a reply with no plan shows what
-it always showed.
+ends. Without one it shows what it always showed. Nothing asks you to use it.
 
 Usage:
   soulshouse-plan start "Title" "first step" "second step" ...

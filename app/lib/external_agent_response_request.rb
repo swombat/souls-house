@@ -257,7 +257,6 @@ class ExternalAgentResponseRequest
       "SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN are already present in your shell environment. The bearer token is already authorized for you to read this conversation and post your own messages; do not ask Daniel to paste it or re-authorize it.",
       "Do not rely on stdout as the response channel; stdout is diagnostic only. If you choose not to respond, explain your reason briefly on stdout and then exit without posting.",
       quiet_reason_text,
-      plan_text,
       conversation_metadata,
       conversation_context
     ]
@@ -649,15 +648,6 @@ class ExternalAgentResponseRequest
       "It is public: everyone in this conversation can expand it under your run's \"completed without posting a reply\" card, " \
       "shown as your own account, not a verified explanation. It is not a message, wakes nobody, and does not excuse work you have said you will do. " \
       "Leave private things out of it. Without one the card stays neutral; nothing is taken from stdout."
-  end
-
-  # #864: the run card shows a plan's progress; the helper needs the live run.
-  def plan_text
-    return unless @interaction&.live_activity?
-
-    "When a job here has more than a few steps, keep a plan with `soulshouse-plan` " \
-      "(`start \"Title\" \"step\" ...`, then `tick` as each step finishes, `done` at the end): " \
-      "your run card shows \"3 of 7 · the current step\" to the room. Not for conversation."
   end
 
   def request_delta_text

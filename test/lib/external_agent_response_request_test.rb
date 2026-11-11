@@ -112,7 +112,6 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes text, "asking you to act"
     # No live run, no run id for the helper: the optional quiet reason isn't offered.
     refute_includes text, "soulshouse-quiet-reason"
-    refute_includes text, "soulshouse-plan"
   end
 
   test "a live run is offered the optional, public quiet reason" do
@@ -130,8 +129,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "does not excuse work you have said you will do"
     assert_includes text, "nothing is taken from stdout"
     assert_includes text, "explain your reason briefly on stdout"
-    assert_includes text, "keep a plan with `soulshouse-plan`"
-    assert_includes text, "Not for conversation."
+    # #864: the plan helper is not offered in the wake (Daniel, JqRkMY YVvlVw).
+    refute_includes text, "soulshouse-plan"
   end
 
   test "request text includes the sub-agent policy section only when enabled" do

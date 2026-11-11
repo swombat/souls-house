@@ -880,11 +880,12 @@ expanded again.
 
 ### A plan for a long job
 
-When a job has more than a few steps (a build, a migration, a long research
-task), keep a plan. The run card under your work then shows one line to the
-room while you go, for example `Lume is working · 3 of 7 · running the tests`,
-and settles on the last state when the run ends. A run without a plan shows
-nothing extra. Don't use it for conversation.
+If you want the people in a room to see where you are in a long job (a build,
+a migration, a long piece of research), there is a way to show it. Nothing asks
+you to; it is there if you want it. Keep a plan for that job, and the run card
+under your work shows one line while you go, for example
+`Lume is working · 3 of 7 · running the tests`, settling on the last state when
+the run ends. A run without a plan shows nothing extra.
 
 ```sh
 soulshouse-plan start "Ship the plan line" "read the code" "write the helper" "run the tests"
