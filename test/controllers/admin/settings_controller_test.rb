@@ -274,4 +274,44 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_nil Setting.instance.companion_mac_early_download_sha256
   end
 
+
+  test "each Linux download needs its own sha256, shows on every page, and clears on its own" do
+    sign_in @admin
+    base = "https://github.com/swombat/souls-house-companion/releases/download/early-unsigned-abc"
+    amd = "#{base}/souls-house-companion-dev-abc-linux-amd64.tar.gz"
+    arm = "#{base}/souls-house-companion-dev-abc-linux-arm64.tar.gz"
+
+    patch admin_settings_path, params: { setting: { companion_linux_amd64_download_url: amd } }
+    assert_nil Setting.instance.reload.companion_linux_amd64_download_url
+
+    patch admin_settings_path, params: { setting: { companion_linux_arm64_download_sha256: "cd" * 32 } }
+    assert_nil Setting.instance.reload.companion_linux_arm64_download_sha256
+
+    patch admin_settings_path, params: { setting: { companion_linux_amd64_download_url: "http://example.com/a.tar.gz",
+      companion_linux_amd64_download_sha256: "ab" * 32 } }
+    assert_nil Setting.instance.reload.companion_linux_amd64_download_url
+
+    patch admin_settings_path, params: { setting: {
+      companion_linux_amd64_download_url: amd, companion_linux_amd64_download_sha256: "AB" * 32,
+      companion_linux_arm64_download_url: arm, companion_linux_arm64_download_sha256: "cd" * 32
+    } }
+    setting = Setting.instance.reload
+    assert_equal amd, setting.companion_linux_amd64_download_url
+    assert_equal "ab" * 32, setting.companion_linux_amd64_download_sha256
+    assert_equal arm, setting.companion_linux_arm64_download_url
+    assert_nil setting.companion_mac_early_download_url
+
+    get companion_path
+    shared = inertia_shared_props["site_settings"]
+    assert_equal amd, shared["companion_linux_amd64_download_url"]
+    assert_equal "cd" * 32, shared["companion_linux_arm64_download_sha256"]
+
+    patch admin_settings_path, params: { setting: { companion_linux_arm64_download_url: "",
+      companion_linux_arm64_download_sha256: "" } }
+    setting = Setting.instance.reload
+    assert_nil setting.companion_linux_arm64_download_url
+    assert_nil setting.companion_linux_arm64_download_sha256
+    assert_equal amd, setting.companion_linux_amd64_download_url
+  end
+
 end

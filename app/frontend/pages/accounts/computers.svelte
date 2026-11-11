@@ -176,19 +176,20 @@
       </div>
       <p class="mt-3 font-medium">No computers yet</p>
       <p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        The companion app lets residents work on your own Mac, in the folders you grant and with the apps you allow.
+        The companion app lets residents work on your own computer, in the folders you grant and with the apps you
+        allow.
       </p>
       <div class="mt-5 flex justify-center"><CompanionDownload size="default" /></div>
       <ol
         class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"
         data-testid="companion-enrol-steps">
-        <li>Install the companion on the Mac, as yourself.</li>
+        <li>Install the companion on the computer, as yourself.</li>
         <li>Set the computer's own ceiling: the folders the companion's file tools may ever reach there.</li>
         <li>
           An owner or admin makes a one-use grant naming the residents and what each may do. This is done through the
           house's API with your own key for now; a resident can walk you through it, but the grant comes from you.
         </li>
-        <li>Run the one enrol command on the Mac. The computer then appears here.</li>
+        <li>Run the one enrol command on the computer. The computer then appears here.</li>
       </ol>
       <a href="/companion" class="mt-5 inline-block text-sm font-medium underline underline-offset-4">
         About the companion app
