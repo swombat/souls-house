@@ -39,10 +39,12 @@ class AsyncTurnHTTPTest(unittest.TestCase):
         self.url = "/turns/" + self.turn_id
         self.payload = {"session_id": "synthetic", "request": "synthetic prompt"}
         self.release = threading.Event()
+        self.started = threading.Event()
         self.executions = []
 
         def run(payload, cancel):
             self.executions.append(payload)
+            self.started.set()
             self.release.wait(3)
             return {"status": 200, "body": {"status": "ok"}}
 
@@ -70,6 +72,9 @@ class AsyncTurnHTTPTest(unittest.TestCase):
         self.assertEqual(202, response.status_code)
         self.assertLess(time.monotonic() - before, 1)
         self.assertEqual(202, self.client.post(self.url, json=self.payload, headers=self.headers).status_code)
+        # Execution runs on a background thread after the 202; wait for it to
+        # start instead of racing it (failed CI on 404eec44, 2026-11-11).
+        self.assertTrue(self.started.wait(2))
         self.assertEqual(1, len(self.executions))
         self.assertEqual(200, self.client.get(self.url, headers=self.headers).status_code)
 
