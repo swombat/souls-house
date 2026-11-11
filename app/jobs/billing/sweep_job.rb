@@ -30,6 +30,13 @@ module Billing
         end
       end
 
+      # A sent item order is never abandoned: it is born, or tried again.
+      ResidentBirthOrder.items_unborn(now).find_each do |order|
+        PaidBirth.new.resume_item!(order)
+      rescue StandardError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", birth_order_id: order.id })
+      end
+
       ResidentBirthOrder.expired(now).find_each do |order|
         PaidBirth.new.abandon_expired!(order)
       rescue Stripe::StripeError => error

@@ -6,8 +6,12 @@
   import BeginningStep from '$lib/components/agents/birth/beginning-step.svelte';
   import BirthScene from '$lib/components/agents/birth/birth-scene.svelte';
   import PlanStep from '$lib/components/agents/birth/plan-step.svelte';
+  import BirthProgress from '$lib/components/agents/birth/birth-progress.svelte';
+  import PaidPendingAlert from '$lib/components/agents/birth/paid-pending-alert.svelte';
+  import CreateButtonLabel from '$lib/components/agents/birth/create-button-label.svelte';
   import { payForResident, payAgain, openCheckout, trialOrderState } from '$lib/paid-birth';
-  import { trialApplies, usd } from '$lib/pricing';
+  import { WizardPay, draftFingerprint, isItemPayment, staleQuote } from '$lib/item-order.svelte.js';
+  import { trialApplies } from '$lib/pricing';
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { useForm, router } from '@inertiajs/svelte';
@@ -15,7 +19,7 @@
 
   import { Card, CardFooter } from '$lib/components/shadcn/card';
   import { Alert, AlertDescription, AlertTitle } from '$lib/components/shadcn/alert';
-  import { ArrowLeft, ArrowRight, Check } from 'phosphor-svelte';
+  import { ArrowLeft, ArrowRight } from 'phosphor-svelte';
 
   import { accountAgentsPath } from '@/routes';
 
@@ -37,7 +41,8 @@
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
   // In an account that pays per resident, a sixth step chooses the size and
-  // pays for it; the resident is created only once the payment clears.
+  // pays for it; the resident is created only once the payment clears, or,
+  // in an account with a live subscription, once the owner confirms the quote.
   const steps = billing
     ? ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review', 'Plan']
     : ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review'];
@@ -54,15 +59,10 @@
 
   let tier = $state(null);
   let paymentMethod = $state(billing?.payment_method || null);
-  let payPhase = $state(null);
-  let payError = $state(null);
-  let lastPayment = $state(null);
   let paidPending = $state(null);
-  // An item order (the resident is added to the account's existing Stripe
-  // subscription, nothing charged today) waiting for the owner to read its quote.
-  let itemPayment = $state(null);
-  const isItemPayment = (payment) => Boolean(payment && (payment.order?.kind === 'item' || payment.item_quote));
-  let deferred = $derived(isItemPayment(lastPayment));
+  // The pay state: phase, error, the order kept for retries, and an item
+  // order's quote waiting for the owner (see $lib/item-order.svelte.js).
+  const pay = new WizardPay(finish);
   // The plans on offer: offers (a tier at a rate) when the server sends
   // them, else the standard tiers.
   let planOptions = $derived(billing?.offers?.length ? billing.offers : billing?.tiers || []);
@@ -138,14 +138,14 @@
       (step === 3 && Boolean(selectedModel) && (!houseOffered || keyPath !== null) && ownKeyReady) ||
       (step === reviewStep && Boolean(billing) && formComplete && acknowledged)
   );
-  let paying = $derived(payPhase !== null);
+  let paying = $derived(pay.phase !== null);
   let canCreate = $derived(
     step === lastStep &&
       formComplete &&
       acknowledged &&
       !$form.processing &&
       !atCostNeedsOwnModel &&
-      !itemPayment &&
+      !pay.itemPayment &&
       (!billing ||
         (billing.can_pay && Boolean(chosenTier) && (free || Boolean(paymentMethod)) && !paying && !paidPending))
   );
@@ -165,12 +165,12 @@
         localStorage.removeItem(draftKey);
         draft = null;
       } else if (state === 'open') {
-        lastPayment = draft.trial_payment;
+        pay.lastPayment = draft.trial_payment;
       }
     }
     // An item order kept with a draft resumes through its payment URL: the
     // house says whether it still waits for the quote or is already accepted.
-    if (draft?.item_payment?.payment_url) lastPayment = draft.item_payment;
+    if (draft?.item_payment?.payment_url) pay.lastPayment = draft.item_payment;
     if (draft) {
       $form.agent.name = draft.name || '';
       $form.agent.system_prompt = draft.system_prompt || '';
@@ -200,11 +200,25 @@
         key_path: keyPath,
         open_beginning: openBeginning,
         step,
-        trial_payment: lastPayment?.order?.trial ? lastPayment : null,
-        item_payment: isItemPayment(lastPayment) ? lastPayment : null,
+        trial_payment: pay.lastPayment?.order?.trial ? pay.lastPayment : null,
+        item_payment: isItemPayment(pay.lastPayment) ? pay.lastPayment : null,
       })
     );
   });
+
+  // What an item order's quote is for. An edit that changes it while the
+  // quote is unsent forgets the order (an accepted one is always resumed).
+  let fingerprint = $derived(
+    draftFingerprint({
+      tier: chosenPlan?.tier ?? tier,
+      rate: chosenPlan?.rate,
+      trial: free,
+      agent: $form.agent,
+      selectedModel,
+      openBeginning,
+    })
+  );
+  $effect(() => pay.check(fingerprint));
 
   function next() {
     if (canContinue && step < steps.length - 1) step += 1;
@@ -233,76 +247,58 @@
     } else {
       paidPending = {
         ...(result.order || { resident_name: $form.agent.name }),
-        item: isItemPayment(lastPayment),
+        item: isItemPayment(pay.lastPayment),
       };
-      payPhase = null;
+      pay.phase = null;
     }
-  }
-
-  function itemConfirmed(result) {
-    itemPayment = null;
-    finish(result);
-  }
-
-  function itemConfirmFailed(error) {
-    if (error.payment) lastPayment = error.payment;
-    payPhase = null;
-    // A changed price is shown by the panel itself, with the new quote.
-    if (error.itemQuote) {
-      payError = null;
-      return;
-    }
-    // Anything else resumes through the order's payment URL.
-    itemPayment = null;
-    payError = error.message;
   }
 
   async function payAndCreate() {
-    payError = null;
+    pay.error = null;
     const key = keyPath !== 'house' ? providerKey.trim() : '';
-    const onPhase = (phase) => (payPhase = phase);
+    const onPhase = (phase) => (pay.phase = phase);
+    const quotedFor = fingerprint;
+    const start = () =>
+      payForResident({
+        billing,
+        agent: draftAgent(),
+        tier: chosenPlan?.tier ?? tier,
+        rate: chosenPlan?.rate ?? 'standard',
+        trial: free,
+        providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
+        onPhase,
+      });
     try {
-      // Once an order exists, retries resume it; only an unpaid one may be
-      // replaced by choosing a different plan.
-      const retrying =
-        lastPayment &&
-        (lastPayment.paid ||
-          lastPayment.accepted ||
-          (lastPayment.order?.tier === chosenPlan?.tier &&
-            (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate &&
-            Boolean(lastPayment.order?.trial) === free));
-      const result = retrying
-        ? await payAgain({ billing, payment: lastPayment, onPhase })
-        : await payForResident({
-            billing,
-            agent: draftAgent(),
-            tier: chosenPlan?.tier ?? tier,
-            rate: chosenPlan?.rate ?? 'standard',
-            trial: free,
-            providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
-            onPhase,
-          });
-      if (result.itemQuote) {
-        // Nothing is charged until the owner confirms the quote.
-        lastPayment = result.payment;
-        itemPayment = result.payment;
-        payPhase = null;
-        return;
+      // Once an order exists, retries resume it; only an unpaid card order
+      // may be replaced by choosing a different plan.
+      const retrying = pay.resumes(chosenPlan, free);
+      let result = retrying ? await payAgain({ billing, payment: pay.lastPayment, onPhase }) : await start();
+      // The house says a kept item order is still unsent, but it was quoted
+      // for another draft: it is abandoned and a fresh one made.
+      if (
+        retrying &&
+        result.itemQuote &&
+        staleQuote({ ...result.payment, quoted_for: pay.lastPayment.quoted_for }, quotedFor)
+      ) {
+        pay.invalidate();
+        result = await start();
       }
+      // Nothing is charged until the owner confirms the quote.
+      if (result.itemQuote) return pay.quoted(result.payment, quotedFor);
       if (result.checkoutUrl) {
         // The draft stays until Stripe has started the trial (see onMount).
-        lastPayment = result.payment;
-        payPhase = 'leaving';
+        pay.lastPayment = result.payment;
+        pay.phase = 'leaving';
         return openCheckout(result.checkoutUrl);
       }
       finish(result);
     } catch (error) {
-      if (error.payment) lastPayment = error.payment;
+      if (error.payment) pay.lastPayment = { ...error.payment, quoted_for: pay.lastPayment?.quoted_for };
       // A trial order the house refused to resume (its Checkout closed) is
       // replaced by a new one on the next try.
-      if (lastPayment?.order?.trial && error.data?.error && !error.data.order) lastPayment = null;
-      payError = error.message;
-      payPhase = null;
+      if (pay.lastPayment?.order?.trial && error.data?.error && !error.data.order) pay.lastPayment = null;
+      pay.error = error.message;
+      pay.phase = null;
     }
   }
 
@@ -337,7 +333,7 @@
 </svelte:head>
 
 <!-- Back from Stripe's Checkout through the browser's history: the button works again. -->
-<svelte:window onpageshow={(event) => event.persisted && payPhase === 'leaving' && (payPhase = null)} />
+<svelte:window onpageshow={(event) => event.persisted && pay.phase === 'leaving' && (pay.phase = null)} />
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-8">
   <header class="mb-8 text-center">
@@ -355,47 +351,7 @@
     </div>
   </header>
 
-  <nav class="mb-10" aria-label="Creation progress">
-    <ol class="flex items-start">
-      {#each steps as label, index}
-        {#if index > 0}
-          <div
-            class="mt-4 h-0.5 min-w-4 flex-1 rounded-full transition-colors {index <= step
-              ? 'bg-primary'
-              : 'bg-border'}">
-          </div>
-        {/if}
-        <li class="flex flex-col items-center gap-1.5">
-          <button
-            type="button"
-            class="flex size-8 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors
-              {index < step
-              ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
-              : index === step
-                ? 'border-primary bg-background text-primary'
-                : 'border-border bg-background text-muted-foreground/60'}"
-            onclick={() => {
-              if (index < step) step = index;
-            }}
-            disabled={index >= step}
-            aria-label="Go to step {index + 1}: {label}"
-            aria-current={index === step ? 'step' : undefined}>
-            {#if index < step}
-              <Check class="size-4" weight="bold" />
-            {:else}
-              {index + 1}
-            {/if}
-          </button>
-          <span
-            class="max-w-20 truncate px-1 text-xs {index === step
-              ? 'font-semibold text-foreground'
-              : 'text-muted-foreground'}">
-            {label}
-          </span>
-        </li>
-      {/each}
-    </ol>
-  </nav>
+  <BirthProgress {steps} bind:step />
 
   {#if vmBirthRefusal && !$form.errors.base}
     <Alert class="mb-6" data-testid="vm-birth-refusal">
@@ -404,22 +360,7 @@
     </Alert>
   {/if}
 
-  {#if paidPending}
-    <Alert class="mb-6" data-testid="paid-pending">
-      <AlertTitle>
-        {paidPending.item ? "On the account's bill" : paidPending.trial ? 'Free trial started' : 'Payment received'}
-      </AlertTitle>
-      <AlertDescription>
-        {#if paidPending.item}
-          {paidPending.resident_name || 'Your resident'} is on the account's bill and is being created; it will appear with
-          your residents in a moment.
-        {:else}
-          Stripe is still confirming it. {paidPending.resident_name || 'Your resident'} will be created as soon as it does,
-          and will appear with your residents. You can leave this page.
-        {/if}
-      </AlertDescription>
-    </Alert>
-  {/if}
+  <PaidPendingAlert pending={paidPending} />
 
   {#if $form.errors.base}
     <Alert variant="destructive" class="mb-6">
@@ -462,16 +403,16 @@
             residentName={$form.agent.name}
             bind:tier
             bind:paymentMethod
-            {payError}
+            payError={pay.error}
             {trial}
             billingUrl={`/accounts/${account.id}/billing`}
-            payPaid={Boolean(lastPayment?.paid || lastPayment?.accepted)}
-            {itemPayment}
-            {deferred}
-            onphase={(phase) => (payPhase = phase)}
-            onconfirmed={itemConfirmed}
-            onconfirmfailed={itemConfirmFailed}
-            ondismiss={() => (itemPayment = null)}
+            payPaid={pay.settled}
+            itemPayment={pay.itemPayment}
+            deferred={pay.deferred}
+            onphase={(phase) => (pay.phase = phase)}
+            onconfirmed={pay.confirmed}
+            onconfirmfailed={pay.confirmFailed}
+            ondismiss={pay.dismiss}
             blocked={atCostNeedsOwnModel
               ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose the standard price.`
               : null}
@@ -499,28 +440,13 @@
         </Button>
       {:else}
         <Button type="button" onclick={createAgent} disabled={!canCreate}>
-          {#if $form.processing}
-            Preparing…
-          {:else if payPhase === 'starting'}
-            Starting…
-          {:else if payPhase === 'leaving'}
-            Opening Stripe…
-          {:else if payPhase === 'adding'}
-            Adding to the bill…
-          {:else if payPhase === 'paying'}
-            Confirming payment…
-          {:else if payPhase === 'confirming'}
-            Preparing {$form.agent.name}…
-          {:else if billing && chosenTier && free}
-            <Check class="mr-2 size-4" />
-            Start free
-          {:else if billing && chosenTier}
-            <Check class="mr-2 size-4" />
-            Create {$form.agent.name} · {usd(chosenTier.monthly_usd)} a month + VAT
-          {:else}
-            <Check class="mr-2 size-4" />
-            Create resident and commit this seed
-          {/if}
+          <CreateButtonLabel
+            processing={$form.processing}
+            phase={pay.phase}
+            {billing}
+            {chosenTier}
+            {free}
+            name={$form.agent.name} />
         </Button>
       {/if}
     </CardFooter>

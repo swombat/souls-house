@@ -35,6 +35,7 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, billing.fetch("account_plan"))
     refute billing.key?("trial"), "the trial is one top-level prop, as on the Billing tab"
     assert_equal account_birth_orders_path(@account), billing.fetch("birth_orders_url")
+    assert_equal false, billing.fetch("adds_to_bill"), "no live subscription: the card path"
 
     @account.update!(billing_required: false)
     get new_account_agent_path(@account)
@@ -190,6 +191,9 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: first, price: LIFE_PRICE, id: "si_first" } ])
     Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+
+    Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
+    assert inertia_shared_props.fetch("billing").fetch("adds_to_bill"), "the Plan step shows no card terms"
 
     Billing.stub(:client, @stripe) do
       assert_no_difference "Agent.count" do

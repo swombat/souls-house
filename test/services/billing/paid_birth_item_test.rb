@@ -307,4 +307,112 @@ class Billing::PaidBirthItemTest < ActiveSupport::TestCase
     assert_equal 1, @stripe.created_subscriptions.size
   end
 
+  test "an order needing attention is brought back by the sweep alone, with no webhook and no browser" do
+    order = start!
+    accepted_without_answer!(order)
+    @stripe.set_subscription_status("sub_acct", "past_due")
+    paid_birth.complete!(order)
+    assert order.reload.failed?
+
+    @stripe.set_subscription_status("sub_acct", "active")
+    Billing.stub(:client, @stripe) do
+      assert_no_difference("Agent.count") { Billing::SweepJob.perform_now(now: order.item_submitted_at + 1.minute) }
+      assert_difference("Agent.count", 1) { Billing::SweepJob.perform_now(now: 10.minutes.from_now) }
+    end
+    assert order.reload.born?
+    assert_equal order.agent_id.to_s, item_for(order)[:metadata]["agent_id"]
+  end
+
+  test "a sent order whose answer was lost is finished by the sweep before it expires" do
+    order = start!
+    accepted_without_answer!(order)
+    Billing.stub(:client, @stripe) do
+      assert_difference("Agent.count", 1) { Billing::SweepJob.perform_now(now: 10.minutes.from_now) }
+    end
+    assert order.reload.born?
+  end
+
+  test "the sweep settles a sent order whose update never reached Stripe, by replaying it under its key" do
+    order = start!
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::PaidBirth::Uncertain) { confirm!(order) }
+    assert_equal 1, items.size, "Stripe added nothing"
+
+    Billing.stub(:client, @stripe) do
+      assert_difference("Agent.count", 1) { Billing::SweepJob.perform_now(now: 10.minutes.from_now) }
+    end
+    assert order.reload.born?
+    assert_equal [ "souls-house-birth-item-#{order.reference}" ],
+      @stripe.subscription_updates.map { |_id, _params, opts| opts[:idempotency_key] }.uniq.first(1)
+    assert_equal 2, items.size
+  end
+
+  test "expiry and confirmation share the account lock: an order being sent is never dropped" do
+    order = start!
+    order.update_columns(expires_at: 1.minute.from_now)
+    held = Hash.new(0)
+    owner = {}
+    # pg_try_advisory_lock, per account and per session: re-entrant for its
+    # holder, busy for anyone else.
+    lock = lambda do |account, &operation|
+      session = Thread.current[:billing_session] || :browser
+      raise Billing::NotReady, "busy" if held[account.id].positive? && owner[account.id] != session
+
+      owner[account.id] = session
+      held[account.id] += 1
+      begin
+        operation.call
+      ensure
+        held[account.id] -= 1
+      end
+    end
+    sweep = lambda do
+      Thread.current[:billing_session] = :sweeper
+      paid_birth.abandon_expired!(order.reload)
+    rescue Billing::NotReady
+      :busy
+    ensure
+      Thread.current[:billing_session] = nil
+    end
+    swept = nil
+    original = Billing::ItemQuote.instance_method(:stale?)
+    Billing::CheckoutLock.define_singleton_method(:synchronize_residents) { |account, &op| lock.call(account, &op) }
+    Billing::ItemQuote.define_method(:stale?) do |*args, **kw|
+      # The sweep arrives at expiry while confirm is previewing.
+      swept ||= sweep.call
+      original.bind_call(self, *args, **kw)
+    end
+    begin
+      confirm!(order)
+    ensure
+      Billing::ItemQuote.define_method(:stale?, original)
+    end
+
+    assert_equal :busy, swept, "the sweep found the account busy"
+    assert order.reload.born?, "the order being sent was not dropped"
+    assert_equal 1, @stripe.subscription_updates.count { |_id, _params, opts| opts[:idempotency_key].to_s.include?("birth-item") }
+  end
+
+  test "an unsent quote past its expiry is not sent" do
+    order = start!
+    order.update_columns(expires_at: 1.minute.ago)
+    assert_raises(Billing::PaidBirth::Refused) { confirm!(order) }
+    assert order.reload.abandoned?
+    assert_empty @stripe.subscription_updates
+  end
+
+  test "before the first birth the item must carry the price the order pinned, not another of the same offer" do
+    @stripe.put_price("price_old_conversation", product: "prod_test_conversation", unit_amount: 1999)
+    ENV["STRIPE_PRICE_CONVERSATION"] = "#{CONVERSATION_PRICE},price_old_conversation"
+    order = start!
+    assert_equal CONVERSATION_PRICE, order.item_create_params["items"].last["price"]
+    accepted_without_answer!(order)
+    item_for(order)[:price] = @stripe.price_object("price_old_conversation")
+
+    assert_no_difference "Agent.count" do
+      error = assert_raises(Billing::InvalidSubscription) { paid_birth.complete!(order) }
+      assert_match "pinned", error.message
+    end
+  end
+
 end

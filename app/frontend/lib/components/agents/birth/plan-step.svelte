@@ -9,9 +9,10 @@
   //
   // In an account with a live Stripe subscription a new resident is added to
   // that subscription instead of being paid by card. The page then passes the
-  // order (payment, with its item_quote) and this step shows the quote in a
-  // panel; confirming it calls confirmAddToBill, and the outcome goes back to
-  // the page through onconfirmed or onconfirmfailed. Nothing is charged today.
+  // order (payment, with its item_quote) and this step shows the quote in
+  // AddToBillPanel; the outcome goes back to the page through onconfirmed or
+  // onconfirmfailed. Nothing is charged today, so the card terms ("Today: the
+  // first month") are not shown for an item order.
   import { onDestroy } from 'svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { Button } from '$lib/components/shadcn/button';
@@ -19,9 +20,10 @@
   import { Badge } from '$lib/components/shadcn/badge';
   import { CreditCard, LockSimple } from 'phosphor-svelte';
   import SizePicker from './size-picker.svelte';
+  import AddToBillPanel from './add-to-bill-panel.svelte';
+  import PayErrorAlert from './pay-error-alert.svelte';
   import { sizeOf, trialApplies, usd } from '$lib/pricing';
   import { loadStripe, postJson, createEmbeddedCheckout } from '$lib/stripe';
-  import { confirmAddToBill } from '$lib/paid-birth';
 
   let {
     billing,
@@ -46,8 +48,8 @@
     onconfirmfailed = () => {},
     // The owner chose "Not now": the order stays and can be resumed.
     ondismiss = () => {},
-    // The wizard's pay state for an item order, so a failure reads as "not
-    // added yet" and never as a declined card.
+    // The wizard's pay state is an item order: a failure never reads as a
+    // declined card ("Not added yet", or "Still being created" once accepted).
     deferred = false,
   } = $props();
 
@@ -74,37 +76,8 @@
   let cardContainer = $state(null);
   let checkout = null;
 
-  // The quote on screen. It starts as the order's and is replaced when the house
-  // answers that the price changed.
-  let shownPayment = $state(null);
-  let priceChanged = $state(false);
-  let adding = $state(false);
-  $effect(() => {
-    shownPayment = itemPayment;
-    priceChanged = false;
-  });
-  let quote = $derived(shownPayment?.item_quote || null);
-
-  function cents(amount, currency) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: (currency || 'usd').toUpperCase() }).format(
-      (amount ?? 0) / 100
-    );
-  }
-
-  async function confirmAdd() {
-    adding = true;
-    try {
-      onconfirmed(await confirmAddToBill({ payment: shownPayment, onPhase: onphase }));
-    } catch (error) {
-      if (error.itemQuote) {
-        shownPayment = error.payment;
-        priceChanged = true;
-      }
-      onconfirmfailed(error);
-    } finally {
-      adding = false;
-    }
-  }
+  // An item order is charged on the next bill, not today.
+  let itemOrder = $derived(deferred || Boolean(itemPayment) || Boolean(billing.adds_to_bill));
 
   // Small, at the standard price, unless the draft already chose.
   if (!tier && tiers.length > 0) {
@@ -272,7 +245,7 @@
           )} + VAT a month. With no card, {name} goes to sleep on day {trialDays}. Nothing is deleted.
         </p>
       </section>
-    {:else if chosen}
+    {:else if chosen && !itemOrder}
       <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p>
           <span class="font-medium">Today:</span>
@@ -301,50 +274,10 @@
       </Alert>
     {/if}
 
-    {#if payError}
-      <Alert variant="destructive" data-testid="plan-pay-error">
-        {#if free && !payPaid}
-          <AlertTitle>The free trial didn't start</AlertTitle>
-          <AlertDescription>{payError} Nothing was created.</AlertDescription>
-        {:else if deferred}
-          <AlertTitle>Not added yet</AlertTitle>
-          <AlertDescription>{payError}</AlertDescription>
-        {:else if payPaid}
-          <AlertTitle>Almost there</AlertTitle>
-          <AlertDescription>{payError}</AlertDescription>
-        {:else}
-          <AlertTitle>The payment didn't go through</AlertTitle>
-          <AlertDescription>
-            {payError} Nothing was created. You can try again, or use a different card.
-          </AlertDescription>
-        {/if}
-      </Alert>
-    {/if}
+    <PayErrorAlert {payError} {free} {payPaid} {deferred} />
 
-    {#if quote}
-      <div
-        class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm"
-        data-testid="birth-add-confirm">
-        {#if priceChanged}
-          <p class="font-medium" data-testid="birth-add-changed">
-            The price changed since it was shown. Here is the new one; nothing was charged.
-          </p>
-        {/if}
-        <p>
-          Nothing is charged today. Your next bill{quote.next_at ? `, on ${quote.next_at},` : ''} goes up by about
-          {cents(quote.added_cents, quote.currency)} for {shownPayment.order?.resident_name || name}: the rest of this
-          period and the next month. That bill comes to about {cents(quote.next_total_cents, quote.currency)} in all, including
-          anything else already due on it. After that, the account pays about
-          {cents(quote.recurring_cents, quote.currency)} a month for all its residents together. These are Stripe's totals,
-          with tax and discounts in.
-        </p>
-        <div class="flex gap-2">
-          <Button size="sm" onclick={confirmAdd} disabled={adding || busy}>
-            {adding ? 'Adding…' : `Create ${shownPayment.order?.resident_name || name} and add to the account's bill`}
-          </Button>
-          <Button size="sm" variant="outline" onclick={ondismiss} disabled={adding || busy}>Not now</Button>
-        </div>
-      </div>
+    {#if itemPayment}
+      <AddToBillPanel {itemPayment} {name} {busy} {onphase} {onconfirmed} {onconfirmfailed} {ondismiss} />
     {/if}
   {/if}
 </CardContent>

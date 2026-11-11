@@ -65,7 +65,13 @@ module Billing
           next complete!(order) if order.born?
           raise Refused, "This resident is no longer waiting to be created." unless order.pending? || order.failed?
 
-          recheck_item!(order, digest) unless order.item_submitted_at?
+          unless order.item_submitted_at?
+            if order.expires_at <= Time.current
+              order.with_lock { order.abandon! if order.pending? }
+              raise Refused, "This quote has expired. Nothing was added; start again."
+            end
+            recheck_item!(order, digest)
+          end
           submit_item!(order)
           complete!(order)
         end
@@ -86,6 +92,48 @@ module Billing
           complete!(order)
         end
         { accepted: true }
+      end
+
+      # Born (and linked) once the accepted item is verified; the account's
+      # resident-billing lock first, then the order's row, as everywhere.
+      def complete_item!(order)
+        CheckoutLock.synchronize_residents(order.account) do
+          bear_if_paid!(order)
+          link_item!(order.reload) if order.born?
+          order
+        end
+      end
+
+      # The sweep's, for a sent item order still pending or needing
+      # attention, whatever Stripe sends: an outcome never heard is settled
+      # first (the pinned update replayed under its key within the replay
+      # window, looked for after it; none raises NotReady for an operator),
+      # then the order is born or stays needing attention.
+      def resume_item!(order)
+        CheckoutLock.synchronize_residents(order.account) do
+          order.reload
+          next order unless order.item? && (order.pending? || order.failed?) && order.item_submitted_at?
+
+          submit_item!(order) if order.stripe_subscription_item_id.blank?
+          complete!(order)
+        end
+      end
+
+      # The sweep's, at expires_at, under the same account-first lock as
+      # confirm_item!, so an order can't be dropped while it is being sent.
+      # Unsent: dropped (nothing exists at Stripe). Sent: never dropped or
+      # cancelled; resumed.
+      def expire_item!(order)
+        CheckoutLock.synchronize_residents(order.account) do
+          order.reload
+          if order.pending? && !order.item_submitted_at?
+            order.with_lock { order.abandon! if order.pending? && !order.item_submitted_at? }
+            next order
+          end
+          next order unless order.pending? || order.failed?
+
+          resume_item!(order)
+        end
       end
 
       private
@@ -198,6 +246,8 @@ module Billing
           "quantity #{item[:quantity].inspect}"
         elsif (offer = ItemPrice.new(client: @client).offer_for(item)).nil? || offer.tier.id != order.tier || offer.rate != order.rate
           "its price isn't the order's #{order.offer.name}"
+        elsif !order.born? && !pinned_price?(order, item)
+          "its price isn't the one the order pinned"
         elsif (named = item_meta(item)["agent_id"].presence) && named != order.agent_id.to_s
           "it names resident #{named}"
         end
@@ -254,6 +304,24 @@ module Billing
         end
         raise Refused, "#{name} is already on the account's bill and is being created; it will appear with your " \
                        "residents. Nothing more was added."
+      end
+
+      # Before the first birth the item must carry exactly the price the
+      # order pinned: that catalogue price, or an inline price equal to the
+      # pinned price_data. (After birth, plan changes legitimately move it.)
+      def pinned_price?(order, item)
+        pinned = order.item_create_params["items"].last
+        price = item.price
+        if pinned["price"]
+          return stripe_id(price) == pinned["price"]
+        end
+
+        data = pinned["price_data"] || {}
+        recurring = price[:recurring] || {}
+        stripe_id(price[:product]) == data["product"] && price[:currency] == data["currency"] &&
+          price[:unit_amount] == data["unit_amount"] && price[:tax_behavior] == data["tax_behavior"] &&
+          recurring[:interval] == data.dig("recurring", "interval") &&
+          recurring[:interval_count] == data.dig("recurring", "interval_count")
       end
 
       def parent_state(parent)

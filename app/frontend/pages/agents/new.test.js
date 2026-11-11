@@ -271,7 +271,9 @@ describe('the Plan step button', () => {
       await fireEvent.click(screen.getByRole('button', { name: confirmName }));
 
       await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/accounts/account/agents/aria/onboarding'));
-      expect(confirmAddToBill).toHaveBeenCalledWith(expect.objectContaining({ payment: itemPayment }));
+      expect(confirmAddToBill).toHaveBeenCalledWith(
+        expect.objectContaining({ payment: expect.objectContaining(itemPayment) })
+      );
     });
 
     test('still being confirmed says it is on the bill, never "Payment received"', async () => {
@@ -296,7 +298,7 @@ describe('the Plan step button', () => {
       expect(screen.queryByTestId('birth-add-confirm')).toBeNull();
       await fireEvent.click(await screen.findByRole('button', { name: createName }));
       await screen.findByTestId('birth-add-confirm');
-      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: itemPayment }));
+      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: expect.objectContaining(itemPayment) }));
       expect(payForResident).toHaveBeenCalledTimes(1);
     });
 
@@ -313,12 +315,120 @@ describe('the Plan step button', () => {
       await fireEvent.click(screen.getByRole('button', { name: confirmName }));
 
       const alert = await screen.findByTestId('plan-pay-error');
-      expect(alert).toHaveTextContent('Not added yet');
-      expect(alert).not.toHaveTextContent(/payment didn't go through|different card/);
+      expect(alert).toHaveTextContent('Still being created');
+      expect(alert).not.toHaveTextContent(/Not added yet|payment didn't go through|different card/);
       await fireEvent.click(await screen.findByRole('button', { name: createName }));
 
       await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/born'));
-      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: accepted }));
+      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: expect.objectContaining(accepted) }));
+      expect(payForResident).toHaveBeenCalledTimes(1);
+    });
+
+    test('a failure before the owner accepted says Not added yet', async () => {
+      confirmAddToBill.mockRejectedValue(
+        Object.assign(new Error('Stripe could not be reached.'), { payment: itemPayment })
+      );
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+
+      const alert = await screen.findByTestId('plan-pay-error');
+      expect(alert).toHaveTextContent('Not added yet');
+      expect(alert).not.toHaveTextContent(/Still being created|payment didn't go through/);
+    });
+
+    test('the card terms are not shown with the quote', async () => {
+      await reachPlanStep({ billing: { ...billing, payment_method: card }, trial: { eligible: false, days: 14 } });
+      expect(screen.getByTestId('plan-terms')).toHaveTextContent('Today:');
+      payForResident.mockResolvedValue({ itemQuote: quote, payment: itemPayment });
+
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+      await screen.findByTestId('birth-add-confirm');
+
+      expect(screen.queryByTestId('plan-terms')).toBeNull();
+      expect(screen.queryByText(/first month/)).toBeNull();
+    });
+
+    test('choosing Large after a Small quote forgets it: the next Create starts a fresh order', async () => {
+      const large = { ...small, id: 'business', tier: 'business', size: 'large', name: 'Large', monthly_usd: '49.99' };
+      const largePayment = {
+        ...itemPayment,
+        order: { ...itemPayment.order, id: 'o4', tier: 'business' },
+        item_quote: { ...quote, digest: 'd4' },
+        confirm_item_url: '/accounts/account/birth_orders/o4/confirm_item',
+      };
+      payForResident
+        .mockResolvedValueOnce({ itemQuote: quote, payment: itemPayment })
+        .mockResolvedValueOnce({ itemQuote: largePayment.item_quote, payment: largePayment });
+      confirmAddToBill.mockResolvedValue({ redirectTo: '/born' });
+      await reachPlanStep({
+        billing: { ...billing, offers: [small, large], payment_method: card },
+        trial: { eligible: false, days: 14 },
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+      await screen.findByTestId('birth-add-confirm');
+
+      await fireEvent.click(screen.getByRole('radio', { name: 'Large' }));
+
+      await waitFor(() => expect(screen.queryByTestId('birth-add-confirm')).toBeNull());
+      await fireEvent.click(await screen.findByRole('button', { name: 'Create Aria · $49.99 a month + VAT' }));
+      await screen.findByTestId('birth-add-confirm');
+      expect(payAgain).not.toHaveBeenCalled();
+      expect(payForResident).toHaveBeenLastCalledWith(expect.objectContaining({ tier: 'business' }));
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+      await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/born'));
+      expect(confirmAddToBill).toHaveBeenCalledTimes(1);
+      expect(confirmAddToBill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment: expect.objectContaining({ confirm_item_url: largePayment.confirm_item_url }),
+        })
+      );
+    });
+
+    test('editing the seed after a quote forgets it: the next Create starts a fresh order', async () => {
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Go to step 3: Soul seed' }));
+      await fireEvent.input(await screen.findByRole('textbox'), { target: { value: 'Be brave.' } });
+      await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Go to step 4: Runtime' })).toHaveAttribute('aria-current', 'step')
+      );
+      await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Go to step 5: Review' })).toHaveAttribute('aria-current', 'step')
+      );
+      const checkbox = screen.getByRole('checkbox');
+      if (!checkbox.checked) await fireEvent.click(checkbox);
+      await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+
+      expect(screen.queryByTestId('birth-add-confirm')).toBeNull();
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+      await screen.findByTestId('birth-add-confirm');
+      expect(payAgain).not.toHaveBeenCalled();
+      expect(payForResident).toHaveBeenCalledTimes(2);
+      expect(payForResident).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agent: expect.objectContaining({ system_prompt: 'Be brave.' }) })
+      );
+      expect(confirmAddToBill).not.toHaveBeenCalled();
+    });
+
+    test('a kept order still unsent but quoted for another draft is replaced after a reload', async () => {
+      payAgain.mockResolvedValue({ itemQuote: quote, payment: itemPayment });
+      await reachPlanStep(
+        { billing: { ...billing, payment_method: card }, trial: { eligible: false, days: 14 } },
+        { item_payment: { ...itemPayment, quoted_for: 'another draft' } }
+      );
+      payForResident.mockResolvedValue({
+        itemQuote: quote,
+        payment: { ...itemPayment, order: { ...itemPayment.order, id: 'o5' } },
+      });
+
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+
+      await screen.findByTestId('birth-add-confirm');
+      expect(payAgain).toHaveBeenCalledTimes(1);
       expect(payForResident).toHaveBeenCalledTimes(1);
     });
 

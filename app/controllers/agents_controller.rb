@@ -282,7 +282,10 @@ class AgentsController < ApplicationController
       contact_email: Billing.contact_email,
       card_setup_url: account_billing_card_path(current_account),
       card_setup_complete_url: complete_account_billing_card_path(current_account),
-      birth_orders_url: account_birth_orders_path(current_account)
+      birth_orders_url: account_birth_orders_path(current_account),
+      # A new resident joins the account's live subscription (eoXAEj 2b):
+      # no card terms, the quote comes after Create.
+      adds_to_bill: Billing::AddItem.applies?(current_account)
     }
   end
 

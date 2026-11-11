@@ -45,6 +45,12 @@ const itemPayment = {
 
 beforeEach(() => postJson.mockReset());
 
+test('an account that adds to its bill shows no card terms, even before a quote', () => {
+  render(PlanStep, { billing: { ...billing, adds_to_bill: true }, residentName: 'Aria', tier: 'conversation' });
+  expect(screen.queryByText(/Today:/)).toBeNull();
+  expect(screen.queryByText(/first month/)).toBeNull();
+});
+
 test('shows no panel without an item order', () => {
   render(PlanStep, { billing, residentName: 'Aria' });
   expect(screen.queryByTestId('birth-add-confirm')).toBeNull();

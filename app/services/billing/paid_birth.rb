@@ -170,22 +170,17 @@ module Billing
 
     # Returns the order: born (and linked) once its subscription is paid.
     def complete!(order)
+      return complete_item!(order) if order.item?
+
       bear_if_paid!(order)
-      order.reload
-      order.item? ? link_item!(order) : link!(order) if order.born?
+      link!(order.reload) if order.born?
       order
     end
 
     # The sweeper's: an order still unpaid at expires_at is abandoned. One
     # paid at the last moment is born instead.
     def abandon_expired!(order)
-      if order.item?
-        # Unsent: nothing exists at Stripe. Sent: never dropped, never
-        # cancelled; it is born, or needs attention.
-        abandoned = order.with_lock { order.pending? && !order.item_submitted_at? ? (order.abandon! || true) : false }
-        complete!(order) unless abandoned || !order.reload.pending?
-        return order
-      end
+      return expire_item!(order) if order.item?
 
       abandoned = order.with_lock do
         next false unless order.pending?

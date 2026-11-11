@@ -46,6 +46,11 @@ class ResidentBirthOrder < ApplicationRecord
 
   scope :pending, -> { where(state: "pending") }
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }
+  # Sent item orders not yet born: waiting on a lost answer, or needing
+  # attention (Billing::PaidBirth::ItemOrders). The sweep tries them again.
+  scope :items_unborn, ->(now = Time.current) {
+    where(kind: "item", state: %w[pending failed]).where(item_submitted_at: ..(now - 5.minutes))
+  }
 
   before_validation { self.expires_at ||= LIFETIME.from_now }
   # The order's name at Stripe (see the migration that added it): random, so
