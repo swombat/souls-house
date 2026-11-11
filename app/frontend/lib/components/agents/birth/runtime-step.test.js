@@ -81,16 +81,20 @@ describe('Runtime step', () => {
   });
 });
 
-test('in an account that pays per resident, the house path says the plan pays for it', async () => {
+test('in an account that pays per resident, the house path says the account pays for it', async () => {
   render(RuntimeStep, {
     grouped_models: { 'On the house': [{ model_id: 'house/claude-haiku-5.5', label: 'Claude Haiku 5.5' }] },
     houseOffered: true,
     selectedModel: 'house/claude-haiku-5.5',
     keyPath: 'house',
-    planAllowance: [10, 45],
+    planAllowance: ['0.00', '10.00'],
   });
-  expect(screen.getByText("The plan includes $10 to $45 a month of the house's models.")).toBeInTheDocument();
-  expect(screen.getByTestId('house-path-terms')).toHaveTextContent('Included in the plan.');
+  expect(
+    screen.getByText(
+      "The account includes $10 a month of the house's models, shared by its residents at the standard price."
+    )
+  ).toBeInTheDocument();
+  expect(screen.getByTestId('house-path-terms')).toHaveTextContent('Included with the account.');
   expect(screen.queryByText(/One funded resident per person/)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
 });

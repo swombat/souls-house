@@ -27,6 +27,45 @@ describe('House allowance', () => {
     expect(screen.queryByText(/One funded model call runs at a time/)).toBeNull();
     expect(screen.getByText(/\$4.50 remaining/)).toBeTruthy();
   });
+  it('during the free trial says $10 for the trial, not a month, and until when', () => {
+    render(HouseAllowance, {
+      selectedModel: 'house/claude-haiku-5.5',
+      allowance: {
+        source: 'plan',
+        plan: 'Small',
+        rate: 'standard',
+        limit_usd: 10,
+        remaining_usd: 6.5,
+        resets_at: '2026-12-01',
+        trial_ends_at: '2026-11-24T12:00:00Z',
+        configured: true,
+      },
+    });
+    expect(screen.getByRole('heading', { name: 'Small · $10 for the free trial' })).toBeTruthy();
+    expect(screen.getByText(/\$10 in all until 24 Nov 2026,\s+not \$10 a month/)).toBeTruthy();
+    expect(screen.getByText('$6.50 remaining · until 24 Nov 2026')).toBeTruthy();
+    expect(screen.queryByText(/this month/)).toBeNull();
+    expect(screen.queryByText(/resets 2026-12-01/)).toBeNull();
+  });
+  it('says a paid resident shares the account allowance, even once it is used up', () => {
+    render(HouseAllowance, {
+      selectedModel: 'house/claude-haiku-5.5',
+      allowance: {
+        source: 'plan',
+        plan: 'Medium',
+        rate: 'standard',
+        limit_usd: 10,
+        remaining_usd: 0,
+        resets_at: '2026-12-01',
+        configured: true,
+      },
+    });
+    expect(
+      screen.getByText(/\$10 a month of house-model use, shared by its residents at the standard price/)
+    ).toBeTruthy();
+    expect(screen.queryByText(/carr/)).toBeNull();
+    expect(screen.getByText('$0.00 remaining · resets 2026-12-01 (UTC)')).toBeTruthy();
+  });
   it('does not label personal models as funded', () => {
     render(HouseAllowance, { selectedModel: 'anthropic/claude-haiku-5.5' });
     expect(screen.queryByLabelText('House inference allowance')).toBeNull();

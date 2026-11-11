@@ -9,7 +9,7 @@ class Accounts::BirthOrdersController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_account_owner!
-  before_action :set_order, only: %i[payment confirm]
+  before_action :set_order, only: %i[payment confirm trial_return]
 
   rescue_from Billing::PaidBirth::Refused, Agents::HostedProvisioning::ConfigurationError, Billing::NotConfigured do |error|
     render json: { error: error.message }, status: :unprocessable_entity
@@ -35,6 +35,7 @@ class Accounts::BirthOrdersController < ApplicationController
     rate = params[:rate].presence || "standard"
     raise Billing::PaidBirth::Refused, "Choose a plan." unless Billing::Tier::RATES.include?(rate)
     return if provider_key_refused?
+    return create_trial(attrs, open_beginning, tier, rate) if ActiveModel::Type::Boolean.new.cast(params[:trial])
 
     order, client_secret, payment_method_id = Billing::PaidBirth.new.start!(account: current_account,
       creator: Current.user, attributes: attrs, open_beginning: open_beginning, tier: tier, rate: rate)
@@ -47,9 +48,29 @@ class Accounts::BirthOrdersController < ApplicationController
     result = Billing::PaidBirth.new.payment(@order)
     if result[:paid]
       render json: payment_json(@order, nil, nil).merge(paid: true)
+    elsif result[:checkout_url]
+      render json: payment_json(@order, nil, nil).merge(checkout_url: result[:checkout_url])
     else
       render json: payment_json(@order, result[:client_secret], result[:payment_method_id])
     end
+  end
+
+  # Stripe's free-trial Checkout sends the browser back here. The resident is
+  # born now if Stripe says the trial started (or by the webhook, whichever
+  # is first).
+  def trial_return
+    Billing::PaidBirth.new.complete!(@order) if @order.trial?
+    @order.reload
+    if @order.born?
+      redirect_to onboarding_account_agent_path(current_account, @order.agent)
+    else
+      redirect_to new_account_agent_path(current_account),
+        notice: "Stripe is confirming the free trial. #{@order.resident_name} will appear with your residents in a moment."
+    end
+  rescue ActiveRecord::RecordInvalid, Agents::HostedProvisioning::ConfigurationError, Stripe::StripeError => error
+    Rails.error.report(error, handled: true, context: { subsystem: "billing", birth_order_id: @order.id })
+    redirect_to new_account_agent_path(current_account),
+      alert: "#{@order.resident_name} couldn't be created just yet. Nothing was charged; try again in a moment."
   end
 
   def confirm
@@ -60,6 +81,21 @@ class Accounts::BirthOrdersController < ApplicationController
   end
 
   private
+
+  # The free trial (Billing::Trial): a small resident at the standard rate,
+  # no card. The browser goes to checkout_url.
+  def create_trial(attrs, open_beginning, tier, rate)
+    unless tier.id == Billing::Trial::TIER && rate == Billing::Trial::RATE
+      raise Billing::PaidBirth::Refused, "The free trial is for a small resident."
+    end
+
+    order, checkout_url = Billing::PaidBirth.new.start_trial!(account: current_account, creator: Current.user,
+      attributes: attrs, open_beginning: open_beginning,
+      success_url: ->(order) { trial_return_account_birth_order_url(current_account, order) },
+      cancel_url: new_account_agent_url(current_account))
+    audit("start_trial_birth", order, tier: tier.id, rate: rate, resident_name: order.resident_name)
+    render json: payment_json(order, nil, nil).merge(checkout_url: checkout_url), status: :created
+  end
 
   def set_order
     @order = current_account.resident_birth_orders.where(creator: Current.user).find(params[:id])

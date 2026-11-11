@@ -93,7 +93,7 @@ class SiteDashboardTest < ActiveSupport::TestCase
     owner = @public_agent.account.memberships.find_by!(role: "owner").user
     joiner = User.where.not(id: @public_agent.account.memberships.select(:user_id)).first!
     joiner.update_columns(created_at: 1.minute.ago)
-    @public_agent.account.update_columns(account_type: Account.account_types[:team])
+    @public_agent.account.update_columns(account_type: Account.account_types[:team], granted_plan: "partners")
     Membership.create!(account: @public_agent.account, user: joiner, role: "member", confirmed_at: Time.current)
 
     signups = SiteDashboard.new.call[:latest_signups]

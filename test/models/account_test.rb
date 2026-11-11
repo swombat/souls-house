@@ -109,8 +109,10 @@ class AccountTest < ActiveSupport::TestCase
     end
   end
 
+  # Several people need the Partners plan or above (Billing::AccountPlan);
+  # AccountPlanTest covers Companions refusing a second member.
   test "team accounts allow multiple users" do
-    account = Account.create!(name: "Team Test", account_type: :team)
+    account = Account.create!(name: "Team Test", account_type: :team, granted_plan: "partners")
     user1 = User.create!(email_address: "teamuser1@example.com")
     user2 = User.create!(email_address: "teamuser2@example.com")
 
@@ -458,7 +460,7 @@ class AccountTest < ActiveSupport::TestCase
   end
 
   test "last_owner? correctly identifies single owner" do
-    account = Account.create!(name: "Single Owner", account_type: :team)
+    account = Account.create!(name: "Single Owner", account_type: :team, granted_plan: "partners")
     user = User.create!(email_address: "onlyowner@example.com")
 
     Membership.create!(
@@ -483,7 +485,7 @@ class AccountTest < ActiveSupport::TestCase
   end
 
   test "member and pending-invitation counts separate confirmed members from invitees" do
-    account = Account.create!(name: "Counting Team", account_type: :team)
+    account = Account.create!(name: "Counting Team", account_type: :team, granted_plan: "partners")
     owner = User.create!(email_address: "counting-owner@example.com")
     account.add_user!(owner, role: "owner", skip_confirmation: true)
     account.add_user!(User.create!(email_address: "counting-member@example.com"), role: "member", skip_confirmation: true)
@@ -494,7 +496,7 @@ class AccountTest < ActiveSupport::TestCase
   end
 
   test "members_with_details preloads users and inviters" do
-    account = Account.create!(name: "Preload Team", account_type: :team)
+    account = Account.create!(name: "Preload Team", account_type: :team, granted_plan: "partners")
     owner = User.create!(email_address: "preload-owner@example.com")
     account.add_user!(owner, role: "owner", skip_confirmation: true)
     account.invite_member(email: "preload-invitee@example.com", role: "member", invited_by: owner).save!

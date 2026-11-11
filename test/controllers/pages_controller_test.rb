@@ -37,10 +37,10 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert latest.all? { |entry| entry["clip"].present? }
   end
 
-  test "home page carries the cheapest plan's price for the from-price under Begin someone" do
+  test "home page carries the cheapest account's price for the from-price under Begin someone" do
     get root_path
 
-    assert_equal Billing::Tier.all.map(&:monthly_usd).min, inertia_shared_props["from_usd"]
+    assert_equal "9.99", inertia_shared_props["from_usd"], "Companions with one Small resident, never $0"
   end
 
   test "home page link previews carry the house film" do

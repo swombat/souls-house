@@ -4,7 +4,8 @@ class SubagentPolicyRendererTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
-    @agent.account.assign_attributes(use_system_ai_credentials: false)
+    # Sub-agents come with the account's Colleagues plan.
+    @agent.account.assign_attributes(use_system_ai_credentials: false, granted_plan: "colleagues")
     Account::AI_PROVIDERS.each_key { |provider| @agent.account.public_send("#{provider}_api_key=", nil) }
     @agent.account.save!
     @agent.provider_auth_modes = {}
@@ -80,11 +81,11 @@ class SubagentPolicyRendererTest < ActiveSupport::TestCase
     refute_includes section, "model: sonnet"
   end
 
-  test "a resident whose plan drops below Work is told the permission is gone" do
+  test "a resident whose account drops below Colleagues is told the permission is gone" do
     @agent.account.openrouter_api_key = "sk-or-test"
     @agent.update!(subagents_enabled: true, subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
-    ResidentEntitlement.create!(agent: @agent, account: @agent.account, source: "stripe", state: "active",
-      tier: "conversation")
+    @agent.account.update!(granted_plan: "partners")
+    @agent.reload
 
     section = SubagentPolicyRenderer.section_for(@agent)
 

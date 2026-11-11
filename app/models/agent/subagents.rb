@@ -6,20 +6,21 @@
 # Keys are "provider:model", e.g. "anthropic:claude-sonnet-5" or
 # "openrouter:deepseek/deepseek-v4-flash".
 #
-# Only for residents on the Work plan, or on the house: a complimentary
-# entitlement, or no plan at all in an account that doesn't pay per resident.
-# A paid birth has no entitlement for a moment (between the birth committing
-# and billing linking it, retried until it succeeds), so a resident with a
-# birth order is never taken for one on the house. Lower plans can't switch it
-# on, and a resident that drops below Work stops carrying the permission even
-# if the switch was left on.
+# Sub-agents come with the account's plan (Billing::AccountPlan, Colleagues),
+# not the resident's size (2026-11-10). A resident of a Colleagues account has
+# them while its own entitlement is in force (active, grace or complimentary),
+# or when it has no entitlement and no birth order (on the house). A paid
+# birth has no entitlement for a moment (between the birth committing and
+# billing linking it, retried until it succeeds), so a resident with a birth
+# order is never taken for one on the house. Other plans can't switch it on,
+# and a resident whose account drops below Colleagues, or whose own plan
+# lapses, stops carrying the permission even if the switch was left on.
 module Agent::Subagents
 
   extend ActiveSupport::Concern
 
   MAX_SUBAGENT_MODELS = 50
   SUBAGENT_MODEL_KEY = %r{\A[a-z]+:[A-Za-z0-9][A-Za-z0-9._/:\[\]@-]{0,199}\z}
-  SUBAGENT_TIERS = %w[work].freeze
 
   included do
     before_validation :normalize_subagent_models
@@ -32,13 +33,15 @@ module Agent::Subagents
     Agents::SubagentCatalog.new(self)
   end
 
-  # Whether this resident's plan includes sub-agents.
+  # Whether this resident may use sub-agents: its account's plan includes
+  # them and its own hosting is in force.
   def subagents_available?
+    return false unless account&.plan&.subagents?
+
     entitlement = ResidentEntitlement.find_by(agent_id: id)
     return !ResidentBirthOrder.exists?(agent_id: id) if entitlement.nil?
-    return true if entitlement.complimentary? || entitlement.complimentary_granted_at.present?
 
-    entitlement.tier.in?(SUBAGENT_TIERS) && entitlement.state.in?(Billing::Tier::IN_FORCE_STATES)
+    entitlement.state.in?(Billing::Tier::IN_FORCE_STATES)
   end
 
   # The switch is on and the plan allows it.
@@ -75,7 +78,7 @@ module Agent::Subagents
   end
 
   def subagents_allowed_by_plan
-    errors.add(:subagents_enabled, "Sub-agents come with the Work plan") unless subagents_available?
+    errors.add(:subagents_enabled, "Sub-agents come with the Colleagues plan") unless subagents_available?
   end
 
 end

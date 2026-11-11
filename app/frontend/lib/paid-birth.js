@@ -8,22 +8,29 @@
 // reload, never starts a second subscription. Errors carry .payment, the
 // order to resume, whenever one exists; .payment.paid is true once Stripe has
 // taken the money.
+//
+// The free trial (trial: true) asks for no card here: the order comes back
+// with checkout_url, Stripe's own Checkout page, where the trial starts. The
+// browser goes there (openCheckout) and Stripe brings it back to the house,
+// which creates the resident. Resuming a trial order goes to the same page.
 import { loadStripe, postJson } from '$lib/stripe';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Returns { redirectTo } once born, or { redirectTo: null, order } when Stripe
-// is still confirming.
+// Returns { redirectTo } once born, { redirectTo: null, order } when Stripe
+// is still confirming, or { checkoutUrl, payment } for a trial, whose
+// browser goes to Stripe's Checkout next.
 export async function payForResident({
   billing,
   agent,
   tier,
   rate = 'standard',
+  trial = false,
   providerKey,
   onPhase = () => {},
   pollMs = 1500,
 }) {
-  const stripe = await loadStripe(billing.publishable_key);
+  const stripe = trial ? null : await loadStripe(billing.publishable_key);
   onPhase('starting');
   let payment;
   try {
@@ -31,19 +38,21 @@ export async function payForResident({
       agent,
       tier,
       rate,
+      ...(trial ? { trial: true } : {}),
       ...(providerKey ? { provider_key: providerKey } : {}),
     });
   } catch (error) {
     if (error.data?.payment_url) error.payment = error.data;
     throw error;
   }
+  if (payment.checkout_url) return { checkoutUrl: payment.checkout_url, payment };
   return settle({ stripe, payment, onPhase, pollMs });
 }
 
 // Resume an order: pay its open first invoice (with the card now on the
-// account), or, if it is already paid, go straight to confirming.
+// account), or, if it is already paid, go straight to confirming. A trial
+// order whose Checkout is still open returns { checkoutUrl, payment }.
 export async function payAgain({ billing, payment, onPhase = () => {}, pollMs = 1500 }) {
-  const stripe = await loadStripe(billing.publishable_key);
   onPhase('starting');
   let fresh;
   try {
@@ -53,7 +62,25 @@ export async function payAgain({ billing, payment, onPhase = () => {}, pollMs = 
     throw error;
   }
   if (fresh.paid) return confirm({ payment: { ...fresh, paid: true }, onPhase, pollMs });
-  return settle({ stripe, payment: fresh, onPhase, pollMs });
+  if (fresh.checkout_url) return { checkoutUrl: fresh.checkout_url, payment: fresh };
+  return settle({ stripe: await loadStripe(billing.publishable_key), payment: fresh, onPhase, pollMs });
+}
+
+// Leaves the house for Stripe's Checkout page.
+export function openCheckout(url) {
+  window.location.assign(url);
+}
+
+// Where a trial order kept with a draft stands when the wizard reopens:
+// 'done' once Stripe has started the trial (the resident is born, or will be),
+// 'gone' when the house refuses it (its Checkout closed: start again), else
+// 'open', to resume.
+export async function trialOrderState(payment) {
+  try {
+    return (await postJson(payment.payment_url)).paid ? 'done' : 'open';
+  } catch (error) {
+    return error.data?.error ? 'gone' : 'open';
+  }
 }
 
 async function settle({ stripe, payment, onPhase, pollMs }) {

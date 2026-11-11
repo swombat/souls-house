@@ -5,7 +5,7 @@ class GuestDiscoveryControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:user_1)
     @viewed = accounts(:personal_account)
-    @home = Account.create!(name: "Unknown candidate home", account_type: :team)
+    @home = Account.create!(name: "Unknown candidate home", account_type: :team, granted_plan: "partners")
     @home.add_user!(users(:existing_user), role: "owner", skip_confirmation: true)
     @membership = @home.memberships.create!(user: @user, role: "member", invited_by: users(:existing_user))
     @agent = @home.agents.create!(name: "Discovered resident", runtime: "external", model_id: "openrouter/auto")

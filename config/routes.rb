@@ -154,6 +154,8 @@ Rails.application.routes.draw do
     resource :billing, only: :show, module: :accounts do
       post :checkout
       post :plan_change
+      post :account_plan_checkout
+      post :account_plan_change
       post :portal
       resources :codes, only: :create, controller: "billing_codes"
     end
@@ -164,6 +166,8 @@ Rails.application.routes.draw do
       member do
         post :payment
         post :confirm
+        # Where Stripe's free-trial Checkout returns the browser.
+        get :trial_return
       end
     end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts

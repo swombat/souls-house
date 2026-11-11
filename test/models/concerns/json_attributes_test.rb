@@ -640,7 +640,7 @@ class JsonAttributesTest < ActiveSupport::TestCase
 
   test "json_attributes handles large collections efficiently" do
     # Create an account with many members to test performance
-    team_account = Account.create!(name: "Large Team", account_type: :team)
+    team_account = Account.create!(name: "Large Team", account_type: :team, granted_plan: "partners")
 
     # Add multiple users (but keep it reasonable for test speed)
     5.times do |i|

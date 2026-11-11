@@ -381,7 +381,7 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal [ { price: CONVERSATION_AT_COST_PRICE } ], params[:items]
     assert_equal "at_cost", params[:metadata][:rate]
     assert_equal grant.id.to_s, params[:metadata][:redemption_id]
-    assert_equal "Conversation at cost hosting for Aria", params[:description]
+    assert_equal "Small at cost hosting for Aria", params[:description]
   end
 
   # Cross-deploy replay: an uncertain order opened by the deploy before rates
@@ -399,7 +399,7 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
       payment_behavior: "default_incomplete",
       payment_settings: { save_default_payment_method: "on_subscription" },
       automatic_tax: { enabled: true },
-      description: "Conversation hosting for Aria",
+      description: "Small hosting for Aria",
       metadata: { birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation" },
       expand: [ "latest_invoice.confirmation_secret" ]
     }, first)
@@ -407,6 +407,25 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     # The fake refuses a replay whose payload differs from the first call.
     paid_birth.payment(order)
     assert_equal 1, @stripe.created_subscriptions.size
+  end
+
+  # The sizes were renamed (2026-11-10) while orders may be uncertain: an
+  # order opened before then has no pinned description, and its replay must
+  # send the old name byte for byte.
+  test "an order from before the rename replays with its old description" do
+    @stripe.fail_next_subscription_create(created: true)
+    assert_raises(Billing::PaidBirth::Uncertain) { start! }
+    order = ResidentBirthOrder.sole
+    first, = @stripe.created_subscriptions.sole
+    assert_equal "Small hosting for Aria", first[:description]
+    assert_equal "Small hosting for Aria", order.stripe_description
+
+    # As an older deploy would have opened it.
+    order.update_columns(stripe_description: nil)
+    @stripe.subscription(@stripe.created_subscriptions.size.then { |n| "sub_new_#{n}" })[:create_params][:description] =
+      "Conversation hosting for Aria"
+    paid_birth.payment(order)
+    assert_equal 1, @stripe.created_subscriptions.size, "replayed, not refused or made again"
   end
 
   test "an at-cost order needs a grant the account holds" do

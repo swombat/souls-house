@@ -228,6 +228,8 @@ areas:
       - billing_checkout_attempts
       - resident_birth_orders
       - resident_subscriptions
+      - account_subscriptions
+      - account_plan_checkout_attempts
       - resident_entitlements
       - house_inference_grants
       - house_inference_calls

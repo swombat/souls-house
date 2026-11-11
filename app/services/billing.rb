@@ -45,6 +45,14 @@ module Billing
     ::Mail::Address.new(from).address
   end
 
+  # Money in JSON and copy: a two-place decimal string, "9.99", "20.00".
+  def self.usd(amount) = format("%.2f", BigDecimal(amount.to_s))
+
+  # Money in prose: "$9.99", "$20".
+  def self.usd_label(amount)
+    "$#{ActiveSupport::NumberHelper.number_to_rounded(BigDecimal(amount.to_s), precision: 2, strip_insignificant_zeros: true)}"
+  end
+
   def self.test_mode?
     secret_key.to_s.start_with?("sk_test_", "rk_test_")
   end

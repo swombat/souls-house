@@ -6,7 +6,8 @@
   import BeginningStep from '$lib/components/agents/birth/beginning-step.svelte';
   import BirthScene from '$lib/components/agents/birth/birth-scene.svelte';
   import PlanStep from '$lib/components/agents/birth/plan-step.svelte';
-  import { payForResident, payAgain } from '$lib/paid-birth';
+  import { payForResident, payAgain, openCheckout, trialOrderState } from '$lib/paid-birth';
+  import { trialApplies, usd } from '$lib/pricing';
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { useForm, router } from '@inertiajs/svelte';
@@ -30,10 +31,12 @@
     ai_api_keys_configured: keysConfigured = {},
     can_manage_ai_credentials: canManageKeys = false,
     billing = null,
+    // The account's free 14 days: { eligible, days }.
+    trial = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
-  // In an account that pays per resident, a sixth step chooses the plan and
+  // In an account that pays per resident, a sixth step chooses the size and
   // pays for it; the resident is created only once the payment clears.
   const steps = billing
     ? ['Welcome', 'Appearance', 'Soul seed', 'Runtime', 'Review', 'Plan']
@@ -43,8 +46,8 @@
     'A name and a colour to start with. Both can change later.',
     'A few words for them to grow from.',
     'The model they think with.',
-    billing ? 'Look it over before choosing their plan.' : 'Everything is ready when you are.',
-    'Their plan, and how it is paid.',
+    billing ? 'Look it over before choosing their size.' : 'Everything is ready when you are.',
+    'Their size, and how it is paid.',
   ];
   const reviewStep = 4;
   const lastStep = steps.length - 1;
@@ -67,6 +70,8 @@
       : null
   );
   let chosenTier = $derived(planOptions.find((candidate) => candidate.id === tier) || null);
+  // The free 14 days ask for no card: Stripe's Checkout starts them.
+  let free = $derived(trialApplies(trial, chosenTier));
   let chosenPlan = $derived(
     chosenTier ? { tier: chosenTier.tier ?? chosenTier.id, rate: chosenTier.rate ?? 'standard' } : null
   );
@@ -135,27 +140,39 @@
       acknowledged &&
       !$form.processing &&
       !atCostNeedsOwnModel &&
-      (!billing || (billing.can_pay && Boolean(chosenTier) && Boolean(paymentMethod) && !paying && !paidPending))
+      (!billing ||
+        (billing.can_pay && Boolean(chosenTier) && (free || Boolean(paymentMethod)) && !paying && !paidPending))
   );
 
-  onMount(() => {
-    const saved = localStorage.getItem(draftKey);
-    if (saved) {
-      try {
-        const draft = JSON.parse(saved);
-        $form.agent.name = draft.name || '';
-        $form.agent.system_prompt = draft.system_prompt || '';
-        $form.agent.colour = draft.colour || null;
-        $form.agent.icon = draft.icon || null;
-        selectedModel = draft.model_id || default_model_id;
-        keyPath = draft.key_path === 'house' || draft.key_path === 'own' ? draft.key_path : null;
-        openBeginning = draft.open_beginning === true;
-        $form.agent.open_beginning = openBeginning;
-        // A draft never reopens past Review: the seed is acknowledged afresh each visit.
-        step = Math.min(Math.max(draft.step || 0, 0), reviewStep);
-      } catch {
+  onMount(async () => {
+    let draft = null;
+    try {
+      draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    } catch {
+      localStorage.removeItem(draftKey);
+    }
+    // A draft that went to Stripe for its free trial is spent once the trial
+    // has started; one whose Checkout is still open resumes it.
+    if (draft?.trial_payment) {
+      const state = await trialOrderState(draft.trial_payment);
+      if (state === 'done') {
         localStorage.removeItem(draftKey);
+        draft = null;
+      } else if (state === 'open') {
+        lastPayment = draft.trial_payment;
       }
+    }
+    if (draft) {
+      $form.agent.name = draft.name || '';
+      $form.agent.system_prompt = draft.system_prompt || '';
+      $form.agent.colour = draft.colour || null;
+      $form.agent.icon = draft.icon || null;
+      selectedModel = draft.model_id || default_model_id;
+      keyPath = draft.key_path === 'house' || draft.key_path === 'own' ? draft.key_path : null;
+      openBeginning = draft.open_beginning === true;
+      $form.agent.open_beginning = openBeginning;
+      // A draft never reopens past Review: the seed is acknowledged afresh each visit.
+      step = Math.min(Math.max(draft.step || 0, 0), reviewStep);
     }
     draftReady = true;
   });
@@ -174,6 +191,7 @@
         key_path: keyPath,
         open_beginning: openBeginning,
         step,
+        trial_payment: lastPayment?.order?.trial ? lastPayment : null,
       })
     );
   });
@@ -206,7 +224,9 @@
       const retrying =
         lastPayment &&
         (lastPayment.paid ||
-          (lastPayment.order?.tier === chosenPlan?.tier && (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate));
+          (lastPayment.order?.tier === chosenPlan?.tier &&
+            (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate &&
+            Boolean(lastPayment.order?.trial) === free));
       const result = retrying
         ? await payAgain({ billing, payment: lastPayment, onPhase })
         : await payForResident({
@@ -214,9 +234,16 @@
             agent: draftAgent(),
             tier: chosenPlan?.tier ?? tier,
             rate: chosenPlan?.rate ?? 'standard',
+            trial: free,
             providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
             onPhase,
           });
+      if (result.checkoutUrl) {
+        // The draft stays until Stripe has started the trial (see onMount).
+        lastPayment = result.payment;
+        payPhase = 'leaving';
+        return openCheckout(result.checkoutUrl);
+      }
       localStorage.removeItem(draftKey);
       if (result.redirectTo) {
         router.visit(result.redirectTo);
@@ -226,6 +253,9 @@
       }
     } catch (error) {
       if (error.payment) lastPayment = error.payment;
+      // A trial order the house refused to resume (its Checkout closed) is
+      // replaced by a new one on the next try.
+      if (lastPayment?.order?.trial && error.data?.error && !error.data.order) lastPayment = null;
       payError = error.message;
       payPhase = null;
     }
@@ -260,6 +290,9 @@
 <svelte:head>
   <title>A new resident</title>
 </svelte:head>
+
+<!-- Back from Stripe's Checkout through the browser's history: the button works again. -->
+<svelte:window onpageshow={(event) => event.persisted && payPhase === 'leaving' && (payPhase = null)} />
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-8">
   <header class="mb-8 text-center">
@@ -328,7 +361,7 @@
 
   {#if paidPending}
     <Alert class="mb-6" data-testid="paid-pending">
-      <AlertTitle>Payment received</AlertTitle>
+      <AlertTitle>{paidPending.trial ? 'Free trial started' : 'Payment received'}</AlertTitle>
       <AlertDescription>
         Stripe is still confirming it. {paidPending.resident_name || 'Your resident'} will be created as soon as it does,
         and will appear with your residents. You can leave this page.
@@ -378,9 +411,11 @@
             bind:tier
             bind:paymentMethod
             {payError}
+            {trial}
+            billingUrl={`/accounts/${account.id}/billing`}
             payPaid={Boolean(lastPayment?.paid)}
             blocked={atCostNeedsOwnModel
-              ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose a standard plan.`
+              ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose the standard price.`
               : null}
             busy={paying} />
         {/if}
@@ -409,14 +444,19 @@
           {#if $form.processing}
             Preparing…
           {:else if payPhase === 'starting'}
-            Starting the plan…
+            Starting…
+          {:else if payPhase === 'leaving'}
+            Opening Stripe…
           {:else if payPhase === 'paying'}
             Confirming payment…
           {:else if payPhase === 'confirming'}
             Preparing {$form.agent.name}…
+          {:else if billing && chosenTier && free}
+            <Check class="mr-2 size-4" />
+            Start free
           {:else if billing && chosenTier}
             <Check class="mr-2 size-4" />
-            Create {$form.agent.name} · ${chosenTier.monthly_usd}/month + VAT
+            Create {$form.agent.name} · {usd(chosenTier.monthly_usd)} a month + VAT
           {:else}
             <Check class="mr-2 size-4" />
             Create resident and commit this seed
