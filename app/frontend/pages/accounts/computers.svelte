@@ -18,6 +18,7 @@
   import { Label } from '$lib/components/shadcn/label/index.js';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
+  import CompanionDownload from '$lib/components/companion/CompanionDownload.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
   import { diskName } from '$lib/companion-volumes.js';
@@ -160,6 +161,12 @@
   active="computers"
   title="Computers"
   description="Computers enrolled with the companion app, which residents each one serves, and what they may do there.">
+  {#if devices.length > 0}
+    <div class="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="companion-header">
+      <CompanionDownload size="sm" early={false} />
+      <a href="/companion" class="underline underline-offset-4">About the companion app</a>
+    </div>
+  {/if}
   <FlashMessages />
 
   {#if devices.length === 0}
@@ -168,7 +175,24 @@
         <Desktop size={26} />
       </div>
       <p class="mt-3 font-medium">No computers yet</p>
-      <p class="mt-1 text-sm text-muted-foreground">A resident can help you enrol one with the companion app.</p>
+      <p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+        The companion app lets residents work on your own Mac, in the folders you grant and with the apps you allow.
+      </p>
+      <div class="mt-5 flex justify-center"><CompanionDownload size="default" /></div>
+      <ol
+        class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"
+        data-testid="companion-enrol-steps">
+        <li>Install the companion on the Mac, as yourself.</li>
+        <li>Set the computer's own ceiling: the folders the companion's file tools may ever reach there.</li>
+        <li>
+          An owner or admin makes a one-use grant naming the residents and what each may do. This is done through the
+          house's API with your own key for now; a resident can walk you through it, but the grant comes from you.
+        </li>
+        <li>Run the one enrol command on the Mac. The computer then appears here.</li>
+      </ol>
+      <a href="/companion" class="mt-5 inline-block text-sm font-medium underline underline-offset-4">
+        About the companion app
+      </a>
     </div>
   {:else}
     <div class="mb-5 grid grid-cols-3 overflow-hidden rounded-2xl border bg-card" data-testid="fleet-summary">

@@ -7,6 +7,7 @@
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
+  import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
   import { commitmentMarkLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
@@ -47,6 +48,10 @@
 
   // Check if user can delete chats (account admin or site admin)
   const canDeleteChat = $derived(isAccountAdmin || isSiteAdmin);
+
+  // Reading replies aloud needs only the speech side of voice mode, which the
+  // house offers whenever voice mode is offered (no transcription key needed).
+  const readAloudOffered = $derived(Boolean($page.props?.voice_mode?.offered));
 
   // The same waiting-commitment clock the sidebar row shows (Daniel, 10 Nov, jNwmwJ).
   // The sidebar list is what the account broadcast refreshes when a commitment is
@@ -211,30 +216,35 @@
             {commitmentLabel} />
         </span>
       {/if}
-      <ChatActionsMenu
-        replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
-        onDismissReply={dismissReplyRequest}
-        {chat}
-        {availableAgents}
-        {agents}
-        {addableAgents}
-        {canDeleteChat}
-        {isSiteAdmin}
-        bind:showAllMessages
-        bind:debugMode
-        bind:showCosts
-        bind:showCommitments
-        bind:showMessageTelemetry
-        onToggleWebAccess={toggleWebAccess}
-        onAssignAgent={() => onassignagent?.()}
-        onManageResidents={() => onmanageresidents?.()}
-        onFork={forkConversation}
-        onWhiteboardOpen={() => onwhiteboardopen?.()}
-        onArchive={archiveChat}
-        rooms={$page.props?.rooms || []}
-        onMoveToRoom={moveToRoom}
-        onDelete={deleteChat}
-        onModerateAll={moderateAllMessages} />
+      <div class="flex items-center">
+        {#if chat && readAloudOffered}
+          <ReadAloudToggle chatId={chat.id} messages={allMessages} />
+        {/if}
+        <ChatActionsMenu
+          replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
+          onDismissReply={dismissReplyRequest}
+          {chat}
+          {availableAgents}
+          {agents}
+          {addableAgents}
+          {canDeleteChat}
+          {isSiteAdmin}
+          bind:showAllMessages
+          bind:debugMode
+          bind:showCosts
+          bind:showCommitments
+          bind:showMessageTelemetry
+          onToggleWebAccess={toggleWebAccess}
+          onAssignAgent={() => onassignagent?.()}
+          onManageResidents={() => onmanageresidents?.()}
+          onFork={forkConversation}
+          onWhiteboardOpen={() => onwhiteboardopen?.()}
+          onArchive={archiveChat}
+          rooms={$page.props?.rooms || []}
+          onMoveToRoom={moveToRoom}
+          onDelete={deleteChat}
+          onModerateAll={moderateAllMessages} />
+      </div>
     </div>
   </div>
 </header>

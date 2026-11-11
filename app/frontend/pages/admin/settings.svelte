@@ -9,6 +9,7 @@
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
   import SpeechEngineSettingsCard from '$lib/components/admin/SpeechEngineSettingsCard.svelte';
+  import CompanionDownloadSettingsCard from '$lib/components/admin/CompanionDownloadSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
@@ -57,6 +58,9 @@
     formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'disabled');
     formData.append('setting[voice_mode_scope]', form.voice_mode_scope ?? 'account_choice');
     formData.append('setting[speech_engine_scope]', form.speech_engine_scope ?? 'disabled');
+    formData.append('setting[companion_mac_download_url]', form.companion_mac_download_url ?? '');
+    formData.append('setting[companion_mac_early_download_url]', form.companion_mac_early_download_url ?? '');
+    formData.append('setting[companion_mac_early_download_sha256]', form.companion_mac_early_download_sha256 ?? '');
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
@@ -144,6 +148,7 @@
       <ReflexesSettingsCard {form} />
       <VoiceModeSettingsCard {form} />
       <SpeechEngineSettingsCard {form} />
+      <CompanionDownloadSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />

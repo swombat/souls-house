@@ -7,6 +7,8 @@ class RuntimeActivityIngestion
     "tool" => "Use an external tool", "search" => "Search the web",
     "delegation" => "Delegate work"
   }.freeze
+  # Chaos task states (#864); a Codex todo_list only ever sends the first three.
+  PLAN_STEP_STATUSES = %w[pending in_progress blocked completed cancelled].freeze
   TYPES = %w[attempt.started turn.started turn.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
   OUTCOMES = %w[completed failed timed_out outcome_unknown].freeze
 
@@ -162,10 +164,16 @@ class RuntimeActivityIngestion
     when "plan.updated"
       raise Invalid unless data["steps"].is_a?(Array) && data["steps"].size <= 100
       steps = data["steps"].map do |step|
-        raise Invalid unless step.is_a?(Hash) && step["status"].in?(%w[pending in_progress completed])
+        raise Invalid unless step.is_a?(Hash) && step["status"].in?(PLAN_STEP_STATUSES)
         { "text" => text(step["text"]), "status" => step["status"] }
       end
-      shared_narration? ? { "steps" => steps } : {}
+      plan = { "steps" => steps }
+      plan["title"] = text(data["title"], 200) if data.key?("title")
+      if data.key?("status")
+        raise Invalid unless data["status"].in?(%w[active completed cancelled])
+        plan["status"] = data["status"]
+      end
+      shared_narration? ? plan : {}
     when "supervisor.finished"
       raise Invalid unless data["outcome"].in?(OUTCOMES)
       # Accounting is validated separately and never placed in public event data.
@@ -248,7 +256,11 @@ class RuntimeActivityIngestion
     when "commentary.completed"
       snapshot["commentary"] = data["text"] if data["text"]
     when "plan.updated"
-      snapshot["plan"] = data["steps"] if data["steps"]
+      if data["steps"]
+        snapshot["plan"] = data["steps"]
+        snapshot["plan_title"] = data["title"]
+        snapshot["plan_status"] = data["status"]
+      end
     when "fallback"
       @subagents.gap!
       snapshot["fallback"] = true

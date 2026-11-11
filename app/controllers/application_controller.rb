@@ -132,7 +132,10 @@ class ApplicationController < ActionController::Base
       allow_signups: Setting.feature_enabled?(:signups) && settings.account_creation_allowed?,
       allow_account_creation: settings.account_creation_allowed?,
       allow_chats: Setting.feature_enabled?(:chats),
-      allow_agents: Setting.feature_enabled?(:agents)
+      allow_agents: Setting.feature_enabled?(:agents),
+      companion_mac_download_url: settings.companion_mac_download_url,
+      companion_mac_early_download_url: settings.companion_mac_early_download_url,
+      companion_mac_early_download_sha256: settings.companion_mac_early_download_sha256
     }
   end
 

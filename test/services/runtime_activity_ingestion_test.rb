@@ -197,6 +197,34 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_not_includes @run.as_chat_activity_json.to_json, "Revoked"
   end
 
+  test "a resident plan carries chaos task states and a title into the snapshot, only while narration is shared" do
+    @run.update!(narration_shared: true)
+    ingest(1, "attempt.started", { "narration_capability" => "supported" })
+    steps = [
+      { "text" => "read", "status" => "completed" }, { "text" => "build", "status" => "in_progress" },
+      { "text" => "wait", "status" => "blocked" }, { "text" => "skip", "status" => "cancelled" },
+      { "text" => "ship", "status" => "pending" }
+    ]
+    ingest(2, "plan.updated", { "title" => "Ship it", "status" => "active", "steps" => steps })
+    snapshot = @run.as_chat_activity_json[:snapshot]
+    assert_equal steps, snapshot["plan"]
+    assert_equal "Ship it", snapshot["plan_title"]
+    assert_equal "active", snapshot["plan_status"]
+
+    # A Codex todo_list sends steps alone; that still works.
+    ingest(3, "plan.updated", { "steps" => [ { "text" => "only", "status" => "pending" } ] })
+    assert_equal [ { "text" => "only", "status" => "pending" } ], @run.as_chat_activity_json[:snapshot]["plan"]
+    assert_nil @run.as_chat_activity_json[:snapshot]["plan_title"]
+
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(4, "plan.updated", { "steps" => [ { "text" => "x", "status" => "weird" } ] }) }
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(4, "plan.updated", { "status" => "paused", "steps" => [] }) }
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(4, "plan.updated", { "title" => "x" * 201, "steps" => [] }) }
+
+    @agent.update!(share_working_narration: false)
+    ingest(4, "plan.updated", { "title" => "Hidden", "steps" => [ { "text" => "secret", "status" => "pending" } ] })
+    assert_not_includes @run.as_chat_activity_json.to_json, "Hidden"
+  end
+
   test "terminal callback recovers accounting without fabricating successful transport" do
     ingest(1, "attempt.started", { "narration_capability" => "unknown" })
     ingest(2, "supervisor.finished", {
