@@ -440,6 +440,8 @@ NAME_RE = re.compile(r"\A[a-z0-9][a-z0-9-]{0,62}\Z")
 IMAGE_RE = re.compile(r"\Asha256:[0-9a-f]{64}\Z")
 # At most this many old runtime images go per healthy start (#803).
 PRUNE_MAX_IMAGES = 64
+# Set on every resident runtime build (agent-runtime/Dockerfile).
+RUNTIME_IMAGE_LABEL = "house.souls.chaos-ref"
 COMMAND_ID_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 DISPATCH_ID_RE = re.compile(r"\A[0-9a-f-]{36}\Z")
 LEDGER_ID_RE = re.compile(r"\A[0-9A-Za-z_\-]{1,64}\Z")
@@ -969,7 +971,8 @@ class ResidentHost:
 
     # #803: every runtime roll loads a ~2 GB image by ID and the old one stays
     # behind untagged, so a 38 GB VM filled within days. After a healthy start
-    # this removes untagged images except the one just started, the pinned
+    # this removes untagged runtime images (those carrying RUNTIME_IMAGE_LABEL)
+    # except the one just started, the pinned
     # restic image (untagged too when pulled by digest, so a blanket `docker
     # image prune` would take it), any image a container (running or stopped)
     # was made from, and any image a resident record on this host names.
@@ -1002,7 +1005,7 @@ class ResidentHost:
                 keep.add(image_id)
             candidates.append(image_id)
         if not candidates:
-            return {"removed": [], "bytes_freed": 0}
+            return {"removed": [], "logical_bytes": 0, "refused": 0, "not_runtime": 0}
         ok, containers = self.docker(["docker", "container", "ls", "--all", "--quiet", "--no-trunc"])
         if not ok:
             return {"skipped": "container list failed"}
@@ -1017,19 +1020,32 @@ class ResidentHost:
             if entry.endswith(".json"):
                 with open(os.path.join(residents, entry)) as handle:
                     keep.add(json.load(handle).get("image"))
-        removed, freed, failed = [], 0, 0
-        for image_id in sorted(set(candidates) - keep)[:PRUNE_MAX_IMAGES]:
-            ok, size = self.docker(["docker", "image", "inspect", "--format", "{{.Size}}", image_id])
+        removed, logical, failed, foreign = [], 0, 0, 0
+        for image_id in sorted(set(candidates) - keep):
+            if len(removed) + failed >= PRUNE_MAX_IMAGES:
+                break
+            # Only a positively identified runtime image goes: the resident
+            # Dockerfile has labelled every build with its Chaos ref since
+            # 26 Sep, before the first VM. Anything else untagged is not ours.
+            ok, facts = self.docker(["docker", "image", "inspect", "--format",
+                                     '{{index .Config.Labels "%s"}}|{{.Size}}' % RUNTIME_IMAGE_LABEL, image_id])
+            label, _, size = facts.strip().rpartition("|") if ok else ("", "", "")
+            if not label or label == "<no value>":
+                foreign += 1
+                continue
             ok, _ = self.docker(["docker", "image", "rm", image_id])
             if not ok:
                 failed += 1
                 continue
             removed.append(image_id)
-            freed += int(size) if size.strip().isdigit() else 0
+            logical += int(size) if size.isdigit() else 0
         if removed or failed:
-            print(f"image prune: removed {len(removed)} ({freed} bytes): "
+            print(f"image prune: removed {len(removed)} ({logical} logical bytes, shared layers included): "
                   f"{', '.join(i[7:19] for i in removed)}; {failed} refused", file=sys.stderr)
-        return {"removed": [i[7:19] for i in removed], "bytes_freed": freed, "refused": failed}
+        # logical_bytes sums docker's .Size, which counts layers an image
+        # shares with others; the disk actually freed can be much less.
+        return {"removed": [i[7:19] for i in removed], "logical_bytes": logical, "refused": failed,
+                "not_runtime": foreign}
 
     def _image_present(self, image_id):
         ok, found = self.docker(["docker", "image", "inspect", "--format", "{{.Id}}", image_id])

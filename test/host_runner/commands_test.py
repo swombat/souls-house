@@ -410,8 +410,9 @@ OTHER_RESIDENT = "sha256:" + "9" * 64
 class PruneDocker(FakeDocker):
     """FakeDocker plus the image store a VM shows after a few rolls."""
 
-    def __init__(self, dangling, containers=None, **kwargs):
+    def __init__(self, dangling, containers=None, foreign=(), **kwargs):
         super().__init__(**kwargs)
+        self.foreign = set(foreign)
         from backup_proxy import RESTIC_IMAGE
         repo, digest = RESTIC_IMAGE.split("@", 1)
         self.rows = {image: ("<none>", "<none>") for image in dangling}
@@ -432,9 +433,10 @@ class PruneDocker(FakeDocker):
         if argv[1:3] == ["container", "inspect"] and "--format" in argv:
             self.calls.append(argv)
             return True, "\n".join(self.containers[c] for c in argv[5:])
-        if argv[1:3] == ["image", "inspect"] and argv[4] == "{{.Size}}":
+        if argv[1:3] == ["image", "inspect"] and argv[4].endswith("|{{.Size}}"):
             self.calls.append(argv)
-            return True, "1950000000"
+            label = "" if argv[-1] in self.foreign else "47.14.8"
+            return True, f"{label}|1950000000"
         if argv[1:3] == ["image", "rm"]:
             self.calls.append(argv)
             if "image rm" in self.fail:
@@ -456,7 +458,8 @@ class PruneAfterRollTest(unittest.TestCase):
         result = self.host(docker).start_resident(spec())
         self.assertEqual(sorted(docker.removed), [OLD, OLDER])
         self.assertEqual(result["images_pruned"]["removed"], [OLD[7:19], OLDER[7:19]])
-        self.assertEqual(result["images_pruned"]["bytes_freed"], 2 * 1950000000)
+        self.assertEqual(result["images_pruned"]["logical_bytes"], 2 * 1950000000)
+        self.assertNotIn("bytes_freed", result["images_pruned"])
         self.assertFalse(any("-f" in argv for argv in docker.calls if argv[1:3] == ["image", "rm"]))
 
     def test_the_active_image_stays(self):
@@ -470,6 +473,13 @@ class PruneAfterRollTest(unittest.TestCase):
         host = self.host(docker)
         self.assertEqual(host.prune_runtime_images(IMAGE)["removed"], [OLD[7:19]])
         self.assertEqual(docker.removed, [OLD])
+
+    def test_an_unrelated_dangling_image_without_the_runtime_label_stays(self):
+        unrelated = "sha256:" + "3" * 64
+        docker = PruneDocker([OLD, unrelated], foreign={unrelated})
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(docker.removed, [OLD])
+        self.assertEqual(result["images_pruned"]["not_runtime"], 1)
 
     def test_the_pinned_restic_image_stays_by_its_digest(self):
         docker = PruneDocker([OLD, RESTIC_ID])
