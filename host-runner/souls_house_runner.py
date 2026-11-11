@@ -438,6 +438,10 @@ NAME_RE = re.compile(r"\A[a-z0-9][a-z0-9-]{0,62}\Z")
 # Resident images are built on the house host and pushed to no registry, so
 # the runner fetches one from the house by image ID and checks it after load.
 IMAGE_RE = re.compile(r"\Asha256:[0-9a-f]{64}\Z")
+# At most this many old runtime images go per healthy start (#803).
+PRUNE_MAX_IMAGES = 64
+# Set on every resident runtime build (agent-runtime/Dockerfile).
+RUNTIME_IMAGE_LABEL = "house.souls.chaos-ref"
 COMMAND_ID_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 DISPATCH_ID_RE = re.compile(r"\A[0-9a-f-]{36}\Z")
 LEDGER_ID_RE = re.compile(r"\A[0-9A-Za-z_\-]{1,64}\Z")
@@ -953,11 +957,95 @@ class ResidentHost:
         for _ in range(60):
             try:
                 if self.http("GET", self._trigger_url(name) + "/health", token, timeout=3)["status"] == 200:
-                    return {"state": "running", "container_name": name, "image": spec["image"]}
+                    result = {"state": "running", "container_name": name, "image": spec["image"]}
+                    # Only after the new container answered: a failed roll
+                    # keeps every image it might need to try again.
+                    pruned = self.prune_runtime_images(spec["image"])
+                    if pruned is not None:
+                        result["images_pruned"] = pruned
+                    return result
             except CommandFailed:
                 pass
             self.sleep(2)
         raise CommandFailed("resident started but never answered /health")
+
+    # #803: every runtime roll loads a ~2 GB image by ID and the old one stays
+    # behind untagged, so a 38 GB VM filled within days. After a healthy start
+    # this removes untagged runtime images (those carrying RUNTIME_IMAGE_LABEL)
+    # except the one just started, the pinned
+    # restic image (untagged too when pulled by digest, so a blanket `docker
+    # image prune` would take it), any image a container (running or stopped)
+    # was made from, and any image a resident record on this host names.
+    # Never `-f`, so docker itself still refuses an image in use. Never raises:
+    # a prune failure must not fail the start it follows. No rollback runs an
+    # older runtime image from this host's store: start_resident fetches any
+    # image it lacks from the house by ID, so nothing older is kept.
+    def prune_runtime_images(self, active_image):
+        try:
+            return self._prune_runtime_images(active_image)
+        except Exception as error:  # noqa: BLE001 — the start already succeeded
+            print(f"image prune skipped: {type(error).__name__}: {error}", file=sys.stderr)
+            return {"skipped": f"{type(error).__name__}"}
+
+    def _prune_runtime_images(self, active_image):
+        from backup_proxy import RESTIC_IMAGE
+        restic_repo, restic_digest = RESTIC_IMAGE.split("@", 1)
+        ok, listing = self.docker(["docker", "image", "ls", "--filter", "dangling=true", "--no-trunc", "--digests",
+                                   "--format", "{{.ID}}\t{{.Repository}}\t{{.Digest}}"])
+        if not ok:
+            return {"skipped": "image list failed"}
+        keep = {active_image}
+        candidates = []
+        for line in listing.splitlines():
+            fields = line.split("\t")
+            if len(fields) != 3 or not IMAGE_RE.match(fields[0]):
+                continue
+            image_id, repository, digest = fields
+            if repository == restic_repo and digest == restic_digest:
+                keep.add(image_id)
+            candidates.append(image_id)
+        if not candidates:
+            return {"removed": [], "logical_bytes": 0, "refused": 0, "not_runtime": 0}
+        ok, containers = self.docker(["docker", "container", "ls", "--all", "--quiet", "--no-trunc"])
+        if not ok:
+            return {"skipped": "container list failed"}
+        container_ids = containers.split()
+        if container_ids:
+            ok, used = self.docker(["docker", "container", "inspect", "--format", "{{.Image}}", *container_ids])
+            if not ok:
+                return {"skipped": "container inspect failed"}
+            keep.update(used.split())
+        residents = os.path.join(self.state_dir, "residents")
+        for entry in sorted(os.listdir(residents)) if os.path.isdir(residents) else []:
+            if entry.endswith(".json"):
+                with open(os.path.join(residents, entry)) as handle:
+                    keep.add(json.load(handle).get("image"))
+        removed, logical, failed, foreign = [], 0, 0, 0
+        for image_id in sorted(set(candidates) - keep):
+            if len(removed) + failed >= PRUNE_MAX_IMAGES:
+                break
+            # Only a positively identified runtime image goes: the resident
+            # Dockerfile has labelled every build with its Chaos ref since
+            # 26 Sep, before the first VM. Anything else untagged is not ours.
+            ok, facts = self.docker(["docker", "image", "inspect", "--format",
+                                     '{{index .Config.Labels "%s"}}|{{.Size}}' % RUNTIME_IMAGE_LABEL, image_id])
+            label, _, size = facts.strip().rpartition("|") if ok else ("", "", "")
+            if not label or label == "<no value>":
+                foreign += 1
+                continue
+            ok, _ = self.docker(["docker", "image", "rm", image_id])
+            if not ok:
+                failed += 1
+                continue
+            removed.append(image_id)
+            logical += int(size) if size.isdigit() else 0
+        if removed or failed:
+            print(f"image prune: removed {len(removed)} ({logical} logical bytes, shared layers included): "
+                  f"{', '.join(i[7:19] for i in removed)}; {failed} refused", file=sys.stderr)
+        # logical_bytes sums docker's .Size, which counts layers an image
+        # shares with others; the disk actually freed can be much less.
+        return {"removed": [i[7:19] for i in removed], "logical_bytes": logical, "refused": failed,
+                "not_runtime": foreign}
 
     def _image_present(self, image_id):
         ok, found = self.docker(["docker", "image", "inspect", "--format", "{{.Id}}", image_id])

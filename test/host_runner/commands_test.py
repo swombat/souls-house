@@ -282,7 +282,8 @@ class ResidentHostTest(unittest.TestCase):
         self.assertEqual(self.loaded, [IMAGE])
         self.assertFalse(any(argv[1] == "pull" for argv in self.docker.calls))
         self.assertIn("create", verbs)
-        self.assertEqual(verbs[-2:], ["start", "inspect"])
+        started = verbs.index("start")
+        self.assertEqual(verbs[started:started + 2], ["start", "inspect"])
         self.assertEqual(self.http.calls[-1]["url"], "http://172.18.0.2:4000/health")
         env_path = os.path.join(self.dir, "residents", "agent-pilot-1.env")
         self.assertEqual(os.stat(env_path).st_mode & 0o777, 0o600)
@@ -397,6 +398,181 @@ class ResidentHostTest(unittest.TestCase):
         self.host.start_resident(spec())
         self.assertEqual(self.host.stop_resident({"container_name": "agent-pilot-1"})["state"], "stopped")
         self.assertIn(["docker", "stop", "--time", "30", "agent-pilot-1"], self.docker.calls)
+
+
+OLD = "sha256:" + "0" * 64
+OLDER = "sha256:" + "1" * 64
+RESTIC_ID = "sha256:" + "5" * 64
+USED_BY_STOPPED = "sha256:" + "7" * 64
+OTHER_RESIDENT = "sha256:" + "9" * 64
+
+
+class PruneDocker(FakeDocker):
+    """FakeDocker plus the image store a VM shows after a few rolls."""
+
+    def __init__(self, dangling, containers=None, foreign=(), stopped=(), **kwargs):
+        super().__init__(**kwargs)
+        self.stopped = set(stopped)
+        self.foreign = set(foreign)
+        from backup_proxy import RESTIC_IMAGE
+        repo, digest = RESTIC_IMAGE.split("@", 1)
+        self.rows = {image: ("<none>", "<none>") for image in dangling}
+        if RESTIC_ID in dangling:
+            self.rows[RESTIC_ID] = (repo, digest)
+        self.containers = containers or {}
+        self.removed = []
+
+    def __call__(self, argv, timeout=120):
+        if argv[1:3] == ["image", "ls"]:
+            self.calls.append(argv)
+            if "image ls" in self.fail:
+                return False, "boom"
+            if "dangling=true" not in argv:
+                raise AssertionError("listing without dangling=true would offer tagged images")
+            return True, "\n".join(f"{i}\t{r}\t{d}" for i, (r, d) in self.rows.items())
+        if argv[1:3] == ["container", "ls"]:
+            self.calls.append(argv)
+            if "container ls" in self.fail:
+                return False, "boom"
+            # Without --all docker lists running containers only.
+            shown = self.containers if "--all" in argv else {c: i for c, i in self.containers.items()
+                                                              if c not in self.stopped}
+            return True, "\n".join(shown)
+        if argv[1:3] == ["container", "inspect"] and "--format" in argv:
+            self.calls.append(argv)
+            if "container inspect" in self.fail:
+                return False, "boom"
+            return True, "\n".join(self.containers[c] for c in argv[5:])
+        if argv[1:3] == ["image", "inspect"] and argv[4].endswith("|{{.Size}}"):
+            self.calls.append(argv)
+            label = "" if argv[-1] in self.foreign else "47.14.8"
+            return True, f"{label}|1950000000"
+        if argv[1:3] == ["image", "rm"]:
+            self.calls.append(argv)
+            if "image rm" in self.fail:
+                return False, "image is being used"
+            self.removed.append(argv[3])
+            return True, ""
+        return super().__call__(argv, timeout)
+
+
+class PruneAfterRollTest(unittest.TestCase):
+    def host(self, docker, http=None):
+        self.dir = tempfile.mkdtemp()
+        docker.images.add(IMAGE)
+        return runner.ResidentHost(self.dir, docker=docker, http=http or FakeHttp(), sleep=lambda s: None,
+                                   load_image=lambda image_id: (True, ""))
+
+    def test_a_healthy_roll_removes_old_runtime_images_and_reports_them(self):
+        docker = PruneDocker([OLD, OLDER, IMAGE])
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(sorted(docker.removed), [OLD, OLDER])
+        self.assertEqual(result["images_pruned"]["removed"], [OLD[7:19], OLDER[7:19]])
+        self.assertEqual(result["images_pruned"]["logical_bytes"], 2 * 1950000000)
+        self.assertNotIn("bytes_freed", result["images_pruned"])
+        self.assertFalse(any("-f" in argv for argv in docker.calls if argv[1:3] == ["image", "rm"]))
+
+    def test_the_active_image_stays(self):
+        docker = PruneDocker([OLD, IMAGE])
+        self.host(docker).start_resident(spec())
+        self.assertNotIn(IMAGE, docker.removed)
+        self.assertEqual(docker.removed, [OLD])
+
+    def test_the_active_image_stays_even_with_no_resident_record(self):
+        docker = PruneDocker([OLD, IMAGE])
+        host = self.host(docker)
+        self.assertEqual(host.prune_runtime_images(IMAGE)["removed"], [OLD[7:19]])
+        self.assertEqual(docker.removed, [OLD])
+
+    def test_an_unrelated_dangling_image_without_the_runtime_label_stays(self):
+        unrelated = "sha256:" + "3" * 64
+        docker = PruneDocker([OLD, unrelated], foreign={unrelated})
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(docker.removed, [OLD])
+        self.assertEqual(result["images_pruned"]["not_runtime"], 1)
+
+    def test_the_pinned_restic_image_stays_by_its_digest(self):
+        docker = PruneDocker([OLD, RESTIC_ID])
+        self.host(docker).start_resident(spec())
+        self.assertEqual(docker.removed, [OLD])
+
+    def test_an_image_a_stopped_container_was_made_from_stays(self):
+        docker = PruneDocker([OLD, USED_BY_STOPPED], containers={"c" * 64: USED_BY_STOPPED}, stopped={"c" * 64})
+        self.host(docker).start_resident(spec())
+        self.assertEqual(docker.removed, [OLD])
+
+    def test_an_image_another_resident_record_names_stays(self):
+        docker = PruneDocker([OLD, OTHER_RESIDENT])
+        host = self.host(docker)
+        os.makedirs(os.path.join(self.dir, "residents"))
+        with open(os.path.join(self.dir, "residents", "agent-other-2.json"), "w") as handle:
+            json.dump({"container_name": "agent-other-2", "image": OTHER_RESIDENT}, handle)
+        host.start_resident(spec())
+        self.assertEqual(docker.removed, [OLD])
+
+    def test_a_failed_roll_removes_nothing(self):
+        docker = PruneDocker([OLD, OLDER])
+        with self.assertRaises(runner.CommandFailed):
+            self.host(docker, http=FakeHttp(status=503)).start_resident(spec())
+        self.assertEqual(docker.removed, [])
+        self.assertFalse(any(argv[1:3] == ["image", "ls"] for argv in docker.calls))
+
+    def test_a_refused_removal_does_not_fail_the_start(self):
+        docker = PruneDocker([OLD], fail={"image rm"})
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = self.host(docker).start_resident(spec())
+        self.assertEqual(result["state"], "running")
+        self.assertEqual(result["images_pruned"]["refused"], 1)
+
+    def test_a_prune_that_cannot_list_removes_nothing_and_the_start_stands(self):
+        docker = PruneDocker([OLD], fail={"image ls"})
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(result["state"], "running")
+        self.assertEqual(result["images_pruned"], {"skipped": "image list failed"})
+        self.assertEqual(docker.removed, [])
+
+    def test_a_failed_container_list_removes_nothing(self):
+        docker = PruneDocker([OLD], fail={"container ls"})
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(result["images_pruned"], {"skipped": "container list failed"})
+        self.assertEqual(docker.removed, [])
+
+    def test_a_failed_container_inspect_removes_nothing(self):
+        docker = PruneDocker([OLD, USED_BY_STOPPED], containers={"c" * 64: USED_BY_STOPPED},
+                             fail={"container inspect"})
+        result = self.host(docker).start_resident(spec())
+        self.assertEqual(result["images_pruned"], {"skipped": "container inspect failed"})
+        self.assertEqual(docker.removed, [])
+
+    def test_an_unreadable_resident_record_removes_nothing(self):
+        docker = PruneDocker([OLD])
+        host = self.host(docker)
+        os.makedirs(os.path.join(self.dir, "residents"))
+        with open(os.path.join(self.dir, "residents", "agent-other-2.json"), "w") as handle:
+            handle.write("{not json")
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = host.start_resident(spec())
+        self.assertEqual(result["state"], "running")
+        self.assertIn("skipped", result["images_pruned"])
+        self.assertEqual(docker.removed, [])
+
+    def test_a_prune_that_raises_does_not_fail_the_start(self):
+        docker = PruneDocker([OLD])
+        host = self.host(docker)
+        def broken(active):
+            raise PermissionError("residents dir unreadable")
+        host._prune_runtime_images = broken
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = host.start_resident(spec())
+        self.assertEqual(result["state"], "running")
+        self.assertEqual(result["images_pruned"], {"skipped": "PermissionError"})
+
+    def test_removals_are_bounded(self):
+        many = ["sha256:" + f"{n:064x}" for n in range(2, runner.PRUNE_MAX_IMAGES + 12)]
+        docker = PruneDocker(many)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.host(docker).start_resident(spec())
+        self.assertEqual(len(docker.removed), runner.PRUNE_MAX_IMAGES)
 
 
 class PollTest(unittest.TestCase):
