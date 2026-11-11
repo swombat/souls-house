@@ -142,6 +142,18 @@ class ChatWorkStatusTest < ActiveSupport::TestCase
     end
   end
 
+  test "needs me filter is strict: only needs your input and ready for review" do
+    chats = Chat::WorkStatus::STATES.index_with do |state|
+      @agent.account.chats.create!(title: state, model_id: "openrouter/auto", agents: [ @agent ], manual_responses: true)
+        .tap { |chat| chat.update_columns(work_status: state) }
+    end
+    scope = Chat.where(id: chats.values.map(&:id) + [ @chat.id ])
+
+    shown = Chat.filter_work_status(scope, state: "needs_me", replied: nil)
+
+    assert_equal chats.values_at("needs_input", "ready_for_review").map(&:id).sort, shown.pluck(:id).sort
+  end
+
   private
 
   def change(state, reason = nil)

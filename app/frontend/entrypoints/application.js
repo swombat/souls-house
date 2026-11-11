@@ -26,3 +26,13 @@ logging.debug('Vite ⚡️ Rails');
 
 // Example: Import a stylesheet in app/frontend/index.css
 // import '~/index.css'
+
+// Installable app: register the shell-only service worker (app/views/pwa/service-worker.js).
+// It caches fingerprinted build assets and an offline page, never conversations.
+if ('serviceWorker' in navigator && window.isSecureContext && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
+      logging.debug('Service worker registration failed', error);
+    });
+  });
+}

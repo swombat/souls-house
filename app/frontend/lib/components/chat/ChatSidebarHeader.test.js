@@ -30,3 +30,26 @@ test('member filter has archived and hidden but not deleted', async () => {
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Archived' }));
   expect(onToggleArchived).toHaveBeenCalledOnce();
 });
+
+test('All / Needs me switch asks for the strict needs_me filter and back', async () => {
+  const onSelectWorkStatus = vi.fn();
+  const { rerender } = render(ChatSidebarHeader, { onSelectWorkStatus });
+  const all = screen.getByRole('button', { name: /All/ });
+  const needsMe = screen.getByRole('button', { name: /Needs me/ });
+  expect(all).toHaveAttribute('aria-pressed', 'true');
+  expect(needsMe).toHaveAttribute('aria-pressed', 'false');
+  await fireEvent.click(needsMe);
+  expect(onSelectWorkStatus).toHaveBeenLastCalledWith('needs_me');
+
+  await rerender({ onSelectWorkStatus, selectedWorkStatus: 'needs_me' });
+  expect(screen.getByRole('button', { name: /Needs me/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByTestId('chat-filter-trigger')).not.toHaveTextContent('·');
+  await fireEvent.click(screen.getByRole('button', { name: /All/ }));
+  expect(onSelectWorkStatus).toHaveBeenLastCalledWith(null);
+});
+
+test('another work status shows under All, never as Needs me', () => {
+  render(ChatSidebarHeader, { selectedWorkStatus: 'blocked' });
+  expect(screen.getByRole('button', { name: /Needs me/ })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('button', { name: /All/ })).toHaveAttribute('aria-pressed', 'true');
+});

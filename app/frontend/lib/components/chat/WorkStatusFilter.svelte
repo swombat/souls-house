@@ -12,13 +12,14 @@
       onchange={(event) => onSelect(event.currentTarget.value)}
       class="mt-1 w-full rounded border border-input bg-background p-1.5 text-sm text-foreground">
       <option value="">All statuses</option>
+      <option value="needs_me">Needs me (your input or review)</option>
       {#each WORK_STATUSES as status (status.state)}
         <option value={status.state}>{status.label}</option>
       {/each}
       <option value="untracked">Not declared</option>
     </select>
   </label>
-  {#if selected && selected !== 'untracked'}
+  {#if selected && selected !== 'untracked' && selected !== 'needs_me'}
     <div class="flex items-center gap-1.5 px-1 text-xs">
       <WorkStatusIcon state={selected} />
       <span>{WORK_STATUSES.find((status) => status.state === selected)?.label}</span>

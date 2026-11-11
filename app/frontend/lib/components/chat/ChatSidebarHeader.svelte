@@ -32,6 +32,9 @@
   } = $props();
 
   let open = $state(false);
+  // "Needs me" is strict: Needs your input and Ready for review only. Any other
+  // status picked in the filter shows under All, so the switch never overstates.
+  const needsMe = $derived(selectedWorkStatus === 'needs_me');
   const selectedTag = $derived(visualTags.find((tag) => tag.id === selectedTagId) || null);
   const activeCount = $derived(
     [
@@ -39,7 +42,7 @@
       canSeeDeleted && showDeleted,
       showHidden,
       Boolean(selectedTag),
-      Boolean(selectedWorkStatus),
+      Boolean(selectedWorkStatus) && !needsMe,
       workReplied,
     ].filter(Boolean).length
   );
@@ -77,12 +80,39 @@
       </Button>
     </div>
   </div>
+  <div
+    class="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]"
+    role="group"
+    aria-label="Show"
+    data-testid="needs-me-switch">
+    <button
+      type="button"
+      aria-pressed={!needsMe}
+      onclick={() => needsMe && onSelectWorkStatus(null)}
+      class="touch-target inline-flex h-8 items-center justify-center gap-1 rounded-md text-xs font-medium focus-visible:outline focus-visible:outline-2 {needsMe
+        ? 'text-muted-foreground'
+        : 'btn-tactile-quiet bg-background text-foreground'}">
+      {#if !needsMe}<Check size={12} aria-hidden="true" />{/if}
+      All
+    </button>
+    <button
+      type="button"
+      aria-pressed={needsMe}
+      title="Needs your input or Ready for review"
+      onclick={() => !needsMe && onSelectWorkStatus('needs_me')}
+      class="touch-target inline-flex h-8 items-center justify-center gap-1 rounded-md text-xs font-medium focus-visible:outline focus-visible:outline-2 {needsMe
+        ? 'btn-tactile-quiet bg-background text-foreground'
+        : 'text-muted-foreground'}">
+      {#if needsMe}<Check size={12} aria-hidden="true" />{/if}
+      Needs me
+    </button>
+  </div>
   <div class="flex flex-wrap items-center gap-2">
     <Popover.Root bind:open>
       <Popover.Trigger
         aria-label={triggerLabel}
         data-testid="chat-filter-trigger"
-        class="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs hover:bg-muted focus-visible:outline focus-visible:outline-2 {activeCount >
+        class="touch-target inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs hover:bg-muted focus-visible:outline focus-visible:outline-2 {activeCount >
         0
           ? 'text-foreground font-medium'
           : 'text-muted-foreground'}">
@@ -162,7 +192,7 @@
         type="button"
         onclick={() => onSelectTag(null)}
         aria-label={`Stop showing only ${selectedTag.label}`}
-        class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted">
+        class="touch-target inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted">
         <VisualTagIcon icon={selectedTag.icon} size={12} class={visualTagColour(selectedTag.colour)} />
         <span class="max-w-32 truncate">{selectedTag.label}</span>
         <X size={10} />
