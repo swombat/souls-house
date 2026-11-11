@@ -134,4 +134,15 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "http://www.example.com#{root_path}", @response.headers["X-Inertia-Location"]
   end
 
+  test "the companion page is public and says the Mac download is coming until a signed build is set" do
+    get companion_path
+    assert_response :success
+    assert_equal "companion", inertia_component
+    assert_nil inertia_shared_props.dig("site_settings", "companion_mac_download_url")
+
+    Setting.instance.update!(companion_mac_download_url: "https://example.com/companion.zip")
+    get companion_path
+    assert_equal "https://example.com/companion.zip", inertia_shared_props.dig("site_settings", "companion_mac_download_url")
+  end
+
 end

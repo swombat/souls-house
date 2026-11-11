@@ -223,4 +223,55 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_not setting.update(follow_through_scope: "most")
   end
 
+  test "a site admin sets, clears and cannot give a non-https companion download address" do
+    sign_in @admin
+    assert_nil Setting.instance.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "  https://example.com/c.zip " } }
+    assert_redirected_to admin_settings_path
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "http://example.com/c.zip" } }
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "javascript:alert(1)" } }
+    assert_equal "https://example.com/c.zip", Setting.instance.reload.companion_mac_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "" } }
+    assert_nil Setting.instance.reload.companion_mac_download_url
+  end
+
+  test "a non-admin cannot set the companion download address" do
+    sign_in @user
+    patch admin_settings_path, params: { setting: { companion_mac_download_url: "https://example.com/c.zip" } }
+    assert_nil Setting.instance.reload.companion_mac_download_url
+  end
+
+  test "the early companion download needs its sha256 beside it, and both clear together" do
+    sign_in @admin
+    url = "https://github.com/swombat/souls-house-companion/releases/download/early-unsigned-abc/x.zip"
+    sha = "AB" * 32
+
+    patch admin_settings_path, params: { setting: { companion_mac_early_download_url: url } }
+    assert_nil Setting.instance.reload.companion_mac_early_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_early_download_url: url,
+      companion_mac_early_download_sha256: "abc" } }
+    assert_nil Setting.instance.reload.companion_mac_early_download_url
+
+    patch admin_settings_path, params: { setting: { companion_mac_early_download_url: url,
+      companion_mac_early_download_sha256: sha } }
+    setting = Setting.instance.reload
+    assert_equal url, setting.companion_mac_early_download_url
+    assert_equal "ab" * 32, setting.companion_mac_early_download_sha256
+    assert_nil setting.companion_mac_download_url
+
+    get companion_path
+    assert_equal url, inertia_shared_props.dig("site_settings", "companion_mac_early_download_url")
+
+    patch admin_settings_path, params: { setting: { companion_mac_early_download_url: "",
+      companion_mac_early_download_sha256: "" } }
+    assert_nil Setting.instance.reload.companion_mac_early_download_url
+    assert_nil Setting.instance.companion_mac_early_download_sha256
+  end
+
 end

@@ -16,6 +16,10 @@
         <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{feature.side}</p>
         <h3 class="mt-2 text-lg font-semibold tracking-tight">{feature.title}</h3>
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
+        {#if feature.link}
+          <a href={feature.link} class="mt-3 inline-block text-sm font-medium underline underline-offset-4"
+            >Read more</a>
+        {/if}
       </div>
     </article>
   {/snippet}

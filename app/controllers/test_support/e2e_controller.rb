@@ -12,6 +12,13 @@ module TestSupport
     PASSWORD = "password123"
 
     # Synthetic persisted names only; no inference or resident wake.
+    # Sets (or clears, with no params) the companion's early-download pair.
+    def companion_download_fixture
+      Setting.instance.update!(companion_mac_early_download_url: params[:early_url].presence,
+        companion_mac_early_download_sha256: params[:early_sha256].presence)
+      head :ok
+    end
+
     def glossary_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

@@ -14,6 +14,10 @@ class PagesController < ApplicationController
     render inertia: "features", props: { changelog: Changelog.recent }
   end
 
+  def companion
+    render inertia: "companion"
+  end
+
   def changelog
     render inertia: "changelog", props: { changelog: Changelog.entries }
   end
