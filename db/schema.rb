@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2900,6 +2900,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
     t.boolean "free_trial_enabled", default: true, null: false
     t.string "voice_mode_scope", default: "account_choice", null: false
     t.string "speech_engine_scope", default: "disabled", null: false
+    t.string "companion_mac_download_url", limit: 500
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

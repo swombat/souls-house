@@ -78,6 +78,7 @@ class Admin::SettingsController < ApplicationController
       :reflexes_scope,
       :voice_mode_scope,
       :speech_engine_scope,
+      :companion_mac_download_url,
       :stalled_sweep_minutes,
       :stalled_sweep_wake,
       :new_residents_on_vm,

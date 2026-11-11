@@ -742,6 +742,7 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   get "features" => "pages#features", as: :features
+  get "companion" => "pages#companion", as: :companion
   get "changelog" => "pages#changelog", as: :changelog
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host
