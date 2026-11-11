@@ -3,10 +3,13 @@
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
   import { commitmentMarkLabel, handoffStuckLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
+  import { Alarm, Archive, ChatText, HandPalm, PushPin, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
+  import WorkStatusIcon from './WorkStatusIcon.svelte';
+  import WorkStatusSummary from './WorkStatusSummary.svelte';
+  import { workStatusDescription } from '$lib/work-status';
 
   let { chat, accountId, activeChatId = null, visualTags = [], rooms = [], filterParams = {} } = $props();
   const chatPath = $derived(
@@ -52,6 +55,11 @@
           <Spinner size={12} class="animate-spin text-muted-foreground flex-shrink-0" />
         {/if}
       </div>
+      {#if chat.work_status?.state}
+        <div class="pl-8 pt-1 pb-1">
+          <WorkStatusSummary status={chat.work_status} compact showIcon={false} />
+        </div>
+      {/if}
       <div class="flex items-center gap-2 w-full group">
         {#if chat.manual_responses && chat.participants_json?.length > 0}
           <ChatParticipantAvatars participants={chat.participants_json} workingAgentIds={chat.working_agent_ids} />
@@ -75,7 +83,16 @@
       </div>
     </Link>
     <div class="absolute left-2 top-1.5">
-      <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} />
+      {#if chat.work_status?.state}
+        <span
+          class="inline-flex h-8 w-8 items-center justify-center"
+          role="img"
+          aria-label={workStatusDescription(chat.work_status)}>
+          <WorkStatusIcon state={chat.work_status.state} />
+        </span>
+      {:else}
+        <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} />
+      {/if}
     </div>
     <div class="absolute right-2 top-2 flex items-center gap-1">
       <!-- Desktop only, on hover or keyboard focus; on a phone the conversation menu does this. -->
@@ -84,7 +101,29 @@
         class="relative hidden md:inline-flex md:opacity-0 md:group-hover/card:opacity-100 md:focus-within:opacity-100 md:has-[[data-state=open]]:opacity-100 transition-opacity">
         <ChatRowActions {chat} {accountId} {rooms} />
       </span>
-      <ReplyAttentionEye chatId={chat.id} {accountId} />
+      <ReplyAttentionEye chatId={chat.id} {accountId} badge={Boolean(chat.work_status?.state)} />
     </div>
+    {#if chat.work_status?.state && (chat.visual_tag?.pins_to_top || stuckLabel || commitmentLabel)}
+      <div class="absolute left-3 bottom-2 flex items-center gap-1">
+        {#if chat.visual_tag?.pins_to_top}
+          <span title="Pinned by visual tag" aria-label="Pinned by visual tag" role="img"><PushPin size={12} /></span>
+        {/if}
+        {#if stuckLabel}
+          <span
+            title={stuckLabel}
+            aria-label={stuckLabel}
+            role="img"
+            data-testid="handoff-stuck-mark"
+            class="text-red-600"><HandPalm size={12} /></span>
+        {:else if commitmentLabel}
+          <span
+            title={commitmentLabel}
+            aria-label={commitmentLabel}
+            role="img"
+            data-testid="commitment-mark"
+            class="text-muted-foreground"><Alarm size={12} /></span>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>

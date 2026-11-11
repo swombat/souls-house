@@ -1,16 +1,37 @@
 <script>
   import { tick, untrack } from 'svelte';
-  import { Link, page } from '@inertiajs/svelte';
+  import { Link, page, router } from '@inertiajs/svelte';
   import { accountChatPath } from '@/routes';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import RoomWorkingSpinner from './RoomWorkingSpinner.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
+  import WorkStatusSummary from './WorkStatusSummary.svelte';
+  import WorkStatusIcon from './WorkStatusIcon.svelte';
+  import WorkStatusFilter from './WorkStatusFilter.svelte';
+  import { workStatusDescription, workStatusInfo } from '$lib/work-status';
 
   // On a phone, offer as many recent conversations as fit on the screen,
   // up to MAX_RECENT. One that would be cut off is not shown at all.
   const MAX_RECENT = 10;
 
   let { chats = [], accountId } = $props();
+  const query = $derived(new URLSearchParams(($page.url || '').split('?')[1] || ''));
+  const selectedWorkStatus = $derived(query.get('work_status') || '');
+  const workReplied = $derived(query.get('work_replied') === 'true');
+  const filterParams = $derived(
+    Object.fromEntries(
+      [...query].filter(([key]) =>
+        ['room', 'tag', 'show_archived', 'show_hidden', 'show_deleted', 'work_status', 'work_replied'].includes(key)
+      )
+    )
+  );
+
+  function filterWork(name, value) {
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set(name, value);
+    else url.searchParams.delete(name);
+    router.visit(url.toString(), { preserveState: true });
+  }
   const recentChats = $derived(
     chats
       .filter((chat) => !chat.archived && !chat.discarded)
@@ -21,6 +42,7 @@
   let scroller = $state();
   let list = $state();
   let fitCount = $state(MAX_RECENT);
+  let filtersOpen = $state(false);
   const shownChats = $derived(recentChats.slice(0, fitCount));
 
   // Lay out every candidate, then keep the ones whose bottom edge is inside
@@ -68,20 +90,48 @@
   class="flex-1 min-h-0 overflow-y-auto flex items-start md:items-center justify-center px-4 md:px-6 py-4">
   <div class="w-full text-center text-muted-foreground max-w-md">
     <h2 class="hidden md:block text-xl font-semibold">Start a new conversation</h2>
-    {#if shownChats.length > 0}
+    {#if shownChats.length > 0 || selectedWorkStatus || workReplied || filtersOpen}
       <nav aria-label="Recent conversations" class="md:hidden">
-        <p>Or pick an existing conversation:</p>
+        <details bind:open={filtersOpen} ontoggle={() => measure()} class="mb-2 rounded border border-border text-left">
+          <summary class="cursor-pointer px-2 py-1 text-sm text-foreground">
+            Filter conversations{selectedWorkStatus
+              ? ` · ${workStatusInfo(selectedWorkStatus)?.label || selectedWorkStatus}`
+              : ''}{workReplied ? ' · Human replied' : ''}
+          </summary>
+          <div class="px-2 pb-2">
+            <WorkStatusFilter
+              selected={selectedWorkStatus}
+              replied={workReplied}
+              onSelect={(state) => filterWork('work_status', state)}
+              onToggleReplied={() => filterWork('work_replied', workReplied ? null : 'true')} />
+          </div>
+        </details>
+        {#if shownChats.length > 0}<p>Or pick an existing conversation:</p>{/if}
         <ul bind:this={list} class="mt-3 space-y-2">
           {#each shownChats as chat (chat.id)}
             {@const working = workingIn(chat)}
             <li class="relative">
               <Link
-                href={accountChatPath(accountId, chat.id)}
-                class="block rounded-md border border-border pl-11 {working.length ? 'pr-20' : 'pr-10'} py-3 text-foreground hover:bg-accent break-words">
+                href={accountChatPath(accountId, chat.id, filterParams)}
+                class="block rounded-md border border-border pl-11 {working.length
+                  ? 'pr-20'
+                  : 'pr-10'} py-3 text-foreground hover:bg-accent break-words">
                 {chat.title_or_default || chat.title || 'New Conversation'}
+                {#if chat.work_status?.state}
+                  <WorkStatusSummary status={chat.work_status} compact showIcon={false} />
+                {/if}
               </Link>
               <div class="absolute left-2 top-2">
-                <VisualTagPicker {chat} {accountId} tags={$page.props.visual_tags || []} />
+                {#if chat.work_status?.state}
+                  <span
+                    class="inline-flex h-8 w-8 items-center justify-center"
+                    role="img"
+                    aria-label={workStatusDescription(chat.work_status)}>
+                    <WorkStatusIcon state={chat.work_status.state} />
+                  </span>
+                {:else}
+                  <VisualTagPicker {chat} {accountId} tags={$page.props.visual_tags || []} />
+                {/if}
               </div>
               <div class="absolute right-2 top-2 flex items-center gap-1">
                 {#if working.length}
@@ -89,7 +139,7 @@
                     <RoomWorkingSpinner agents={working} />
                   </span>
                 {/if}
-                <ReplyAttentionEye chatId={chat.id} {accountId} />
+                <ReplyAttentionEye chatId={chat.id} {accountId} badge={Boolean(chat.work_status?.state)} />
               </div>
             </li>
           {/each}

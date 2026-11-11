@@ -93,7 +93,7 @@ class LivePartialEvaluationTest < ActionDispatch::IntegrationTest
 
   def partial(component, props)
     {
-      "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia" => "true", "X-Inertia-Version" => InertiaRails.configuration.version,
       "X-Inertia-Partial-Component" => component, "X-Inertia-Partial-Data" => props
     }
   end

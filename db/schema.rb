@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -810,6 +810,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_180000) do
     t.integer "title_sweep_attempts", default: 0, null: false
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
+    t.string "work_status"
+    t.text "work_status_reason"
+    t.integer "work_status_revision", default: 0, null: false
+    t.datetime "work_status_since"
     t.bigint "visual_tag_id"
     t.bigint "room_id"
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"

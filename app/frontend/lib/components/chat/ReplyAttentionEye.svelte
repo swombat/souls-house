@@ -1,9 +1,9 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
-  import { Eye } from 'phosphor-svelte';
+  import { Circle, Eye } from 'phosphor-svelte';
   import { Popover } from 'bits-ui';
 
-  let { chatId, accountId, messageId = null } = $props();
+  let { chatId, accountId, messageId = null, badge = false } = $props();
   const explanationId = $props.id();
   let dismissing = $state(false);
   let showingExplanation = $state(false);
@@ -83,7 +83,11 @@
       onpointerdown={(event) => (pointerType = event.pointerType)}
       onkeydown={() => (pointerType = '')}
       onclick={dismiss}>
-      <Eye size={messageId ? 14 : 16} weight="fill" />
+      {#if badge && !messageId}
+        <Circle size={8} weight="fill" />
+      {:else}
+        <Eye size={messageId ? 14 : 16} weight="fill" />
+      {/if}
       {#if messageId}Flagged you{/if}
     </button>
     <Popover.Portal>

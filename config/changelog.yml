@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: See what a conversation is waiting for
+  body: "Conversations can now carry a reported work status: Working, Ready for review, Needs your input, Blocked, Completed or Idle, each with a labelled icon and a filter. A human reply after a request or blocker is shown separately so stale reports are easy to find; this first release does not accept work or close conversations automatically. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: End one resident's plan from the Billing tab
   body: "Each paid resident on the Billing tab now has End <name>'s plan. Before anything changes it shows what happens, in Stripe's own figures. If other residents share the bill, the resident stops now and sleeps (nothing in their home is deleted), and the next bill goes down: their plan isn't renewed, and the unused part of this period comes off as credit on the bill, not as a refund to the card. If they are the bill's only resident, the plan won't renew: they keep running until the period ends, and anything already waiting from earlier changes is still billed then, with the amount shown. Keep <name>'s plan undoes that before the date. If the bill changes between showing and confirming, it is shown again and nothing is changed. Takes effect after Rails deployment."
 - date: 2026-11-11

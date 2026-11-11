@@ -6,6 +6,7 @@
   import VisualTagIcon from './VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
+  import WorkStatusFilter from './WorkStatusFilter.svelte';
 
   let {
     accountId,
@@ -18,6 +19,10 @@
     hiddenAttentionCount = 0,
     visualTags = [],
     selectedTagId = null,
+    selectedWorkStatus = '',
+    workReplied = false,
+    onSelectWorkStatus = () => {},
+    onToggleWorkReplied = () => {},
     onCreate,
     onClose,
     onToggleArchived,
@@ -29,7 +34,14 @@
   let open = $state(false);
   const selectedTag = $derived(visualTags.find((tag) => tag.id === selectedTagId) || null);
   const activeCount = $derived(
-    [showArchived, canSeeDeleted && showDeleted, showHidden, Boolean(selectedTag)].filter(Boolean).length
+    [
+      showArchived,
+      canSeeDeleted && showDeleted,
+      showHidden,
+      Boolean(selectedTag),
+      Boolean(selectedWorkStatus),
+      workReplied,
+    ].filter(Boolean).length
   );
   const triggerLabel = $derived(
     [
@@ -114,6 +126,11 @@
             {/if}
           </label>
         </div>
+        <WorkStatusFilter
+          selected={selectedWorkStatus}
+          replied={workReplied}
+          onSelect={onSelectWorkStatus}
+          onToggleReplied={onToggleWorkReplied} />
         {#if visualTags.length > 0}
           <div class="my-2 h-px bg-border"></div>
           <p class="px-1 pb-1 text-xs text-muted-foreground">Only conversations tagged</p>

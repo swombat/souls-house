@@ -8,6 +8,7 @@ module ApiConversationJson
       id: chat.to_param,
       title: chat.title_or_default,
       visual_tag: chat.visual_tag&.as_json,
+      work_status: chat.work_status_json,
       summary: chat.discarded? ? nil : chat.summary,
       summary_stale: chat.summary_stale?,
       model: chat.model_label,
