@@ -19,13 +19,15 @@ module Agents
       end
     end
 
+    # #868: a remote placement is refused by RemoteRuntime with its own reason,
+    # never by the local-runtime guard, and never with a local URL.
     test "remote placements never fall back to a stale local or development endpoint" do
       @agent.update!(endpoint_url: "http://127.0.0.1:4567")
       AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready",
         provider_server_id: 123, runtime_endpoint: "https://resident.example.test")
       [ true, false ].each do |published|
         Config.stub(:publish_ports?, published) do
-          assert_raises(RuntimeLocation::Unavailable) { Endpoint.url_for(@agent) }
+          assert_raises(RemoteRuntime::Unavailable) { Endpoint.url_for(@agent) }
         end
       end
     end
@@ -62,7 +64,7 @@ module Agents
         assert_raises(RuntimeLocation::Unavailable) { sandbox.recreate! }
       end
       Config.stub(:cold_start?, false) do
-        assert_raises(RuntimeLocation::Unavailable) do
+        assert_raises(RemoteRuntime::Unavailable) do
           sandbox.with_runtime { flunk "remote runtime must not be yielded" }
         end
       end
