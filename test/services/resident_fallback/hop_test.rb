@@ -56,43 +56,123 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     assert_includes @chat.messages.order(:id).last.content, "subscription limit has been reached"
   end
 
-  test "a pre-dispatch refusal hops the turn to the fallback lane on the house provider" do
+  test "a pre-dispatch refusal sends the same run again on the fallback lane, and the run's result is the fallback's" do
     opt_in!
     assert_no_difference -> { @chat.messages.count } do
       ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
     end
     turn = ResidentFallbackTurn.sole
-    primary = turn.primary_interaction
-    assert_equal [ "xai", primary.model, "anthropic/claude-sonnet-5" ], [ turn.primary_provider, turn.primary_model, turn.fallback_model_id ]
-    assert primary.model.present?
+    run = turn.fallback_interaction
+    assert_equal run, turn.primary_interaction, "one logical turn, one run"
+    assert_equal [ "xai", "grok-build-0.1", "anthropic/claude-sonnet-5" ], [ turn.primary_provider, turn.primary_model, turn.fallback_model_id ]
     assert_equal Time.utc(2026, 11, 11, 14), turn.primary_resets_at
-    assert primary.finished_at?
+    assert_equal 429, turn.primary_result["status"]
 
-    perform_enqueued_jobs(only: ResidentFallbackHopJob)
     assert_equal 2, @triggers.size
-    hop = @triggers.last
-    assert_equal [ "house", "fallback/anthropic/claude-sonnet-5", "api_key" ], hop.values_at("provider", "model", "auth_mode")
+    first, hop = @triggers
+    assert_equal [ "xai", "oauth_account", "#{@agent.uuid}-#{@chat.id}" ], first.values_at("provider", "auth_mode", "session_id")
+    assert_equal [ "house", "fallback/anthropic/claude-sonnet-5", "api_key", true ], hop.values_at("provider", "model", "auth_mode", "paid_fallback")
     assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", hop["session_id"]
     assert_nil hop["reasoning_effort"]
     assert_includes hop["request"], "Paid fallback: your subscription's allowance ran out"
-    fallback = turn.reload.fallback_interaction
-    assert_equal fallback.id.to_s, hop["inference_run"]
-    assert_equal [ "house", "#{@agent.uuid}-#{@chat.id}-fallback" ], [ fallback.provider, fallback.session_id ]
-    assert_equal "#{@agent.uuid}-#{@chat.id}", primary.session_id
+    assert_equal run.id.to_s, hop["inference_run"]
+    run.reload
+    assert_equal [ "house", "#{@agent.uuid}-#{@chat.id}-fallback", 200, "ok" ], [ run.provider, run.session_id, run.transport_status, run.runtime_status ]
+    assert_equal 1, @chat.agent_runtime_interactions.count
   end
 
-  test "a fallback turn never hops again, and a refusal after the run started doesn't hop" do
+  test "asynchronous: the refused turn is retired as hopped and the same run gets a fallback turn" do
+    opt_in!
+    sandbox = Object.new
+    sandbox.define_singleton_method(:with_runtime) { |&block| block.call }
+    ResidentTurn.stub(:enabled?, true) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        assert_equal 202, ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call[:status]
+        run = @chat.agent_runtime_interactions.sole
+        first = run.resident_turn
+        first.finish!({ "status" => 429, "body" => LIMITED.deep_stringify_keys })
+        assert first.reload.hopped_at
+        assert_nil run.reload.finished_at, "the run stays open for its fallback"
+        assert_nil run.resident_turn
+
+        perform_enqueued_jobs(only: ResidentFallbackHopJob)
+        second = run.reload.resident_turn
+        payload = JSON.parse(second.payload)
+        assert_equal [ "house", "fallback/anthropic/claude-sonnet-5", true ], payload.values_at("provider", "model", "paid_fallback")
+        assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", second.session_id
+        assert_equal [ first.id ], run.hopped_resident_turns.pluck(:id)
+
+        second.finish!({ "status" => 200, "body" => { "status" => "ok", "returncode" => 0 } })
+        assert_equal [ 200, "ok" ], run.reload.values_at(:transport_status, :runtime_status)
+        assert run.finished_at
+      end
+    end
+    assert_no_match(/subscription limit/, @chat.messages.order(:id).last.content)
+    assert_not_requested :post, "https://agent.example.com/trigger"
+  end
+
+  test "asynchronous: a source withdrawn before the fallback dispatch ends the run with the subscription's refusal" do
+    opt_in!
+    sandbox = Object.new
+    sandbox.define_singleton_method(:with_runtime) { |&block| block.call }
+    ResidentTurn.stub(:enabled?, true) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+        run = @chat.agent_runtime_interactions.sole
+        run.resident_turn.finish!({ "status" => 429, "body" => LIMITED.deep_stringify_keys })
+        # The owner pauses the resident before the fallback dispatch.
+        @agent.update!(paused: true)
+        assert_difference -> { @chat.messages.count }, 1 do
+          perform_enqueued_jobs(only: ResidentFallbackHopJob)
+        end
+        assert_equal [ 429, "xai" ], run.reload.values_at(:transport_status, :provider)
+        assert run.finished_at
+        assert_nil run.resident_turn
+      end
+    end
+    assert_includes @chat.messages.order(:id).last.content, "subscription limit has been reached"
+  end
+
+  test "a source that would no longer start the run keeps the hop from opening" do
+    opt_in!
+    run = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
+    run.update!(provider_auth_mode: "oauth_account", provider: "xai", model: "grok-build-0.1", session_id: "#{@agent.uuid}-#{@chat.id}")
+    dispatch = Object.new
+    dispatch.define_singleton_method(:with_lock) { |&block| block.call }
+    dispatch.define_singleton_method(:source_invalid_reason) { "discarded" }
+    run.stub(:message_dispatch, dispatch) do
+      assert_equal "message_dispatch:discarded", ResidentFallback::Hop.source_refusal(run)
+      assert_nil ResidentFallback::Hop.open!(interaction: run, result: { status: 429, body: LIMITED.deep_stringify_keys })
+    end
+    assert_nil ResidentFallback::Hop.source_refusal(run)
+  end
+
+  test "a commitment's cue rides the fallback dispatch even when it is outside the transcript" do
+    opt_in!
+    run = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
+    commitment = Commitment.create!(agent: @agent, source_chat: @chat, text: "Check the receipt for run 42795010627", due_at: 1.hour.from_now)
+    commitment.update_columns(status: "activated", wake_state: "woken", wake_interaction_id: run.id)
+    turn = ResidentFallbackTurn.create!(agent: @agent, chat: @chat, primary_interaction: run, fallback_interaction: run, primary_provider: "xai",
+      primary_model: "grok-build-0.1", fallback_model_id: "anthropic/claude-sonnet-5", upstream_model: "anthropic/claude-sonnet-5")
+    request = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, interaction: run, fallback_turn: turn)
+    assert_includes request.send(:request_text), "Check the receipt for run 42795010627"
+    assert_nil ResidentFallback::Hop.source_refusal(run)
+    commitment.update_columns(status: "cancelled")
+    assert_equal "commitment:commitment_cancelled", ResidentFallback::Hop.source_refusal(run)
+  end
+
+  test "a fallback dispatch never hops again, a refusal after the run started doesn't hop, and a run hops once" do
     opt_in!
     interaction = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
     interaction.update!(provider_auth_mode: "oauth_account", provider: "xai", model: "grok-build-0.1",
       session_id: "#{@agent.uuid}-#{@chat.id}-fallback")
-    assert_nil ResidentFallback::Hop.after_refusal(interaction: interaction, result: { status: 429, body: LIMITED.deep_stringify_keys })
+    limited = { status: 429, body: LIMITED.deep_stringify_keys }
+    assert_nil ResidentFallback::Hop.open!(interaction: interaction, result: limited)
     interaction.update!(session_id: "#{@agent.uuid}-#{@chat.id}")
     post_run = { status: 200, body: { "status" => "error", "error_kind" => "subscription_limit" } }
-    assert_nil ResidentFallback::Hop.after_refusal(interaction: interaction, result: post_run)
-    assert ResidentFallback::Hop.after_refusal(interaction: interaction, result: { status: 429, body: LIMITED.deep_stringify_keys })
-    assert_nil ResidentFallback::Hop.after_refusal(interaction: interaction, result: { status: 429, body: LIMITED.deep_stringify_keys }),
-      "one hop per refused attempt"
+    assert_nil ResidentFallback::Hop.open!(interaction: interaction, result: post_run)
+    assert ResidentFallback::Hop.open!(interaction: interaction, result: limited)
+    assert_nil ResidentFallback::Hop.open!(interaction: interaction, result: limited), "one hop per run"
   end
 
   test "a policy that can't admit a call (no own key) doesn't hop" do
@@ -100,17 +180,6 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     @agent.account.update_columns(openrouter_api_key: nil)
     ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
     assert_equal 0, ResidentFallbackTurn.count
-  end
-
-  test "if the hop can no longer run when its job does, the room is told the subscription's refusal" do
-    opt_in!
-    ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
-    Setting.instance.update!(paid_fallback_enabled: false)
-    assert_difference -> { @chat.messages.count }, 1 do
-      perform_enqueued_jobs(only: ResidentFallbackHopJob)
-    end
-    assert_includes @chat.messages.order(:id).last.content, "subscription limit has been reached"
-    assert_equal 1, @triggers.size
   end
 
   test "each lane keeps its own transcript cursor" do
@@ -127,6 +196,59 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     turn = ResidentFallbackTurn.create!(agent: @agent, chat: @chat, primary_provider: "xai", primary_model: "x", fallback_model_id: "anthropic/claude-sonnet-5", upstream_model: "anthropic/claude-sonnet-5")
     fallback = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, fallback_turn: turn)
     assert_equal first.id, fallback.send(:prior_cursor_message_id)
+  end
+
+  test "P, F, P, F with messages arriving mid-run: each lane resumes from its own cursor and sees everything after it" do
+    opt_in!
+    @agent.update!(persistent_session: true)
+    limited = true
+    mid_run = nil
+    WebMock.reset!
+    @triggers = []
+    stub_request(:post, "https://agent.example.com/trigger").to_return do |request|
+      body = JSON.parse(request.body)
+      @triggers << body
+      if body["provider"] == "house"
+        # A message lands while the fallback runs; its cursor was fixed before dispatch.
+        mid_run = @chat.messages.create!(role: "assistant", agent: agents(:code_reviewer), content: "mid-run #{@triggers.size}")
+        { status: 200, body: { status: "ok", returncode: 0, chaos_session_id: "f" }.to_json }
+      elsif limited
+        { status: 429, body: LIMITED.to_json }
+      else
+        { status: 200, body: { status: "ok", returncode: 0, chaos_session_id: "p" }.to_json }
+      end
+    end
+    respond = -> { ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call }
+
+    respond.call # P refused -> F (fresh: full transcript)
+    f1 = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", f1["session_id"]
+    assert_nil f1["request_delta"], "the fallback lane's first turn has no cursor"
+    first_mid = mid_run
+
+    limited = false
+    respond.call # P runs: its own lane has no successful run yet, so the full transcript
+    p1 = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}", p1["session_id"]
+    assert_nil p1["request_delta"]
+    assert_includes p1["request"], "mid-run 2"
+
+    @chat.messages.create!(role: "assistant", agent: agents(:code_reviewer), content: "between turns")
+    limited = true
+    respond.call # P refused -> F resumes from its own cursor
+    f2 = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}-fallback", f2["session_id"]
+    assert_includes f2["request_delta"], "mid-run 2", "the message that arrived during F's first run"
+    assert_includes f2["request_delta"], "between turns"
+    assert_not_includes f2["request_delta"], "Hello\n", "nothing before F's cursor"
+
+    limited = false
+    respond.call # P resumes from its cursor: sees F's mid-run message and what followed
+    p2 = @triggers.last
+    assert_equal "#{@agent.uuid}-#{@chat.id}", p2["session_id"]
+    assert_includes p2["request_delta"], "between turns"
+    assert_includes p2["request_delta"], mid_run.content
+    assert_not_equal first_mid.id, mid_run.id
   end
 
   test "a fresh start owed in the room reaches both lanes through the shared generation" do

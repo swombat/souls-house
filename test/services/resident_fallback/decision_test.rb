@@ -196,4 +196,16 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     end
   end
 
+  test "a call built for a model the owner has since changed is refused under the lock, not priced at the new one (Mira #887)" do
+    @account.update_columns(openrouter_api_key: "sk-or-own")
+    policy = enable!(cap: 10)
+    built_for = policy.model_id
+    ResidentFallbackPolicy.find(policy.id).update!(model_id: "anthropic/claude-opus-5.5")
+    error = assert_raises(ResidentFallback::Decision::Refused) do
+      ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 1_000, max_output_tokens: 1_000, model_id: built_for, at: @now)
+    end
+    assert_equal "fallback_model_unavailable", error.code
+    assert_equal 0, ResidentFallbackCall.count
+  end
+
 end

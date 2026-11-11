@@ -41,7 +41,9 @@ class ExternalAgentResponseRequest
     if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
       @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds,
         requested_at: @requested_at)
-      return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
+      # A fallback dispatch continues a run whose claim already won (#690,
+      # ResidentFallback::Hop); its sources were asked again before it.
+      return { status: 409, body: { "status" => "already_running" } } unless fallback? || @interaction.claim_dispatch!
     end
     Agents::Sandbox.new(agent).with_runtime { perform }
   rescue Chat::ParticipantChanged
@@ -134,6 +136,13 @@ class ExternalAgentResponseRequest
     result = if @interaction
       @interaction.update!(attributes.except(:agent, :chat, :conversation_id))
       response = invoke.call
+      # The subscription refused before anything ran and the owner's paid
+      # fallback takes the turn (#690): the same run goes again on the
+      # fallback lane, and its result is the fallback's.
+      if !fallback? && (hop = ResidentFallback::Hop.open!(interaction: @interaction, result: response))
+        return self.class.new(agent: agent, chat: chat, requested_by: requested_by, initiation_reason: initiation_reason,
+          interaction: @interaction, wake_source_kinds: @wake_source_kinds, requested_at: @requested_at, fallback_turn: hop).send(:perform)
+      end
       @interaction.with_lock { @interaction.record_result!(response) }
       response[:execution_unconfirmed] = true unless @interaction.finished_at?
       response
@@ -142,12 +151,7 @@ class ExternalAgentResponseRequest
     end
     # A queued resident turn (202) is acknowledged by ResidentTurnCompletion.
     SafeguardRoll.acknowledge_conversation!(@safeguard_roll.completion_context, result) if @safeguard_roll
-    # The subscription refused before anything ran and the owner's paid
-    # fallback takes the turn (#690): the hop says what happened instead.
-    hopped = !fallback? && @interaction && ResidentFallback::Hop.after_refusal(interaction: @interaction, result: result)
-    if hopped
-      # Nothing to surface here.
-    elsif provider == "kimi"
+    if provider == "kimi"
       if (text = KimiCodeNotice.text(result.dig(:body, "error_kind")))
         chat.messages.create!(role: "assistant", agent: agent, content: "_#{text}_")
       end
@@ -172,6 +176,9 @@ class ExternalAgentResponseRequest
     # turn. 0, the runtime's default, until the first roll.
     generation = @safeguard_roll ? @safeguard_roll.freshness_generation : ResidentFallback::Lane.freshness_generation(agent, chat)
     payload = payload.merge(runtime_session_generation: generation) if generation.positive?
+    # The runtime gives a paid-fallback turn no paid key of any kind, so
+    # nothing in it can spend outside the gateway's cap (#690).
+    payload = payload.merge(paid_fallback: true) if fallback?
     # The runtime's silence clock speeds up for a spoken turn (every ~20 s
     # rather than at two minutes); it can't see the transcript, so say so.
     payload = payload.merge(voice_mode: true) if voice_mode_wake?

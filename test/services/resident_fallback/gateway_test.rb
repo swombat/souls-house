@@ -110,4 +110,24 @@ class ResidentFallback::GatewayTest < ActiveSupport::TestCase
     assert_equal 0, ResidentFallbackCall.count
   end
 
+  test "an owner's model change between building the body and admission refuses before anything is sent (Mira #887)" do
+    @policy.update!(model_id: "anthropic/claude-opus-5.5")
+    @turn.update!(fallback_model_id: "anthropic/claude-opus-5.5")
+    @input["model"] = "fallback/anthropic/claude-opus-5.5"
+    build = HouseInference::Request.method(:build)
+    edit = lambda do |input, offering|
+      body = build.call(input, offering)
+      # The owner switches to the cheaper model while this call is prepared.
+      ResidentFallbackPolicy.find(@policy.id).update!(model_id: "anthropic/claude-sonnet-5")
+      body
+    end
+    sent = nil
+    error = HouseInference::Request.stub(:build, edit) do
+      assert_raises(HouseInference::Error) { sent = upstream(body: completion) { gateway.call } }
+    end
+    assert_equal "fallback_model_unavailable", error.code
+    assert_equal 0, ResidentFallbackCall.count
+    assert_nil sent&.dig(:body), "nothing reached the provider"
+  end
+
 end

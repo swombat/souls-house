@@ -149,6 +149,12 @@ PROVIDER_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "xai": "XAI_API_KEY",
 }
+# Every paid provider key a Chaos invocation could otherwise use (the
+# model_providers defaults in runtime_settings.py, plus the API-key routes).
+PAID_FALLBACK_STRIPPED_ENV = (
+    "OPENROUTER_API_KEY", "GEMINI_API_KEY", "MOONSHOT_API_KEY",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
+)
 AUTH_CODE_TTL_SECS = 15 * 60
 SUBSCRIPTION_USAGE_TTL_SECS = 60
 SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
@@ -413,6 +419,10 @@ def trigger():
     # provider's env_http_headers) so a refusal lands on this run only.
     inference_run = str(payload.get("inference_run") or "")
     _activity_context.inference_run = inference_run if inference_run.isdigit() else None
+    # A paid-fallback turn (#690) may spend only through the house gateway,
+    # which meters every call against the owner's cap. Only on the house
+    # provider: anything else never carries the flag's guarantee.
+    _activity_context.paid_fallback = payload.get("paid_fallback") is True and provider == "house"
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
@@ -461,6 +471,7 @@ def trigger():
         _activity_context.reporter = None
         _activity_context.telegram_run = None
         _activity_context.inference_run = None
+        _activity_context.paid_fallback = False
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         if not lock_released:
@@ -980,6 +991,13 @@ def _run_chaos_once(
     inference_run = getattr(_activity_context, "inference_run", None)
     if inference_run:
         env[INFERENCE_RUN_ENV] = inference_run
+    if getattr(_activity_context, "paid_fallback", False):
+        # No paid key reaches a paid-fallback invocation: a subagent or a
+        # tool that switches provider can't spend the owner's key (or any
+        # other) outside the gateway's cap. A subscription provider would only
+        # meet the allowance that already refused this turn.
+        for key in PAID_FALLBACK_STRIPPED_ENV:
+            env.pop(key, None)
     telegram_run = getattr(_activity_context, "telegram_run", None)
     if telegram_run and telegram_run[0]:
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])

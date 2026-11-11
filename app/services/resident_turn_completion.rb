@@ -40,9 +40,6 @@ class ResidentTurnCompletion
   def surface_provider_failure(context)
     interaction = @turn.agent_runtime_interaction
     body = @result["body"]
-    # The subscription refused before anything ran and the owner's paid
-    # fallback takes the turn (#690): the hop says what happened instead.
-    return if ResidentFallback::Hop.after_refusal(interaction: interaction, result: @result)
     if interaction.provider == "kimi"
       text = KimiCodeNotice.text(body["error_kind"])
     elsif interaction.provider_auth_mode == "oauth_account"

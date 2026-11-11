@@ -51,7 +51,7 @@ module ResidentFallback
 
     def reserve!(_offering, body)
       call = Decision.admit_call!(@agent, input_bound_tokens: HouseInference::Request.input_bound(@input),
-        max_output_tokens: body.fetch("max_tokens"), turn: @turn)
+        max_output_tokens: body.fetch("max_tokens"), turn: @turn, model_id: @policy.model_id)
       LedgerCall.new(call, sent: -> { sent? })
     rescue Decision::Refused => e
       refuse!(e.code, e.message)
