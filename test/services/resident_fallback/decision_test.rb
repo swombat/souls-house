@@ -43,13 +43,13 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
   test "admits a call only while its worst case fits under the cap" do
     @account.update_columns(openrouter_api_key: "sk-or-own")
     enable!(cap: 1)
-    # Sonnet 5 caps: $4/M in, $20/M out. 100k in + 20k out = 0.4 + 0.4 = $0.80.
+    # Sonnet 5 reserves $4.24/M in, $10.60/M out. 100k in + 20k out = 0.424 + 0.212 = $0.636.
     call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
-    assert_equal BigDecimal("0.8"), call.reservation_usd
+    assert_equal BigDecimal("0.636"), call.reservation_usd
     assert_equal "pending", call.status
-    assert_equal({ "prompt" => 4, "completion" => 20 }, call.max_price)
+    assert_equal({ "prompt" => 2, "completion" => 10 }, call.max_price)
 
-    # $0.20 left; a second identical call can't fit while the first is pending.
+    # $0.364 left; a second identical call can't fit while the first is pending.
     error = assert_raises(ResidentFallback::Decision::Refused) do
       ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
     end
@@ -58,7 +58,7 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     # Settled at the provider's charge, the room returns.
     call.settle!(BigDecimal("0.05"), source: "openrouter_usage_cost")
     second = ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
-    assert_equal BigDecimal("0.85"), @agent.fallback_policy.committed_usd(@now)
+    assert_equal BigDecimal("0.686"), @agent.fallback_policy.committed_usd(@now)
     second.not_sent!
     assert_equal BigDecimal("0.05"), @agent.fallback_policy.committed_usd(@now)
   end
@@ -68,10 +68,10 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     enable!(cap: 1)
     call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
     call.unresolved!(http_status: 502)
-    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    assert_equal BigDecimal("0.636"), @agent.fallback_policy.committed_usd(@now)
     assert_equal false, call.not_sent!
     assert_equal "unresolved", call.reload.status
-    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    assert_equal BigDecimal("0.636"), @agent.fallback_policy.committed_usd(@now)
     # Billing resolved later: the known charge replaces the reservation.
     assert call.settle!(BigDecimal("0.3"), source: "openrouter_generation_lookup")
     assert_equal BigDecimal("0.3"), @agent.fallback_policy.committed_usd(@now)
@@ -84,7 +84,7 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { call.settle!(nil, source: "openrouter_usage_cost") }
     assert_raises(ArgumentError) { call.settle!(BigDecimal("-0.01"), source: "openrouter_usage_cost") }
     assert_equal "pending", call.reload.status
-    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    assert_equal BigDecimal("0.636"), @agent.fallback_policy.committed_usd(@now)
     # Nor can a write that bypasses the model leave a settled NULL behind.
     assert_raises(ActiveRecord::StatementInvalid) { call.update_columns(status: "settled", charge_usd: nil) }
   end
@@ -98,7 +98,7 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     end
     assert_equal "pending", call.reload.status
     # The reservation stays held, and a second call still can't fit.
-    assert_equal BigDecimal("0.8"), @agent.fallback_policy.committed_usd(@now)
+    assert_equal BigDecimal("0.636"), @agent.fallback_policy.committed_usd(@now)
     error = assert_raises(ResidentFallback::Decision::Refused) do
       ResidentFallback::Decision.admit_call!(@agent, input_bound_tokens: 100_000, max_output_tokens: 20_000, at: @now)
     end
@@ -154,7 +154,7 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     enable!(cap: 100)
     call = ResidentFallback::Decision.admit_call!(@agent.reload, input_bound_tokens: 0, max_output_tokens: 10_000_000, at: @now)
     assert_equal 32_000, call.max_output_tokens
-    assert_equal BigDecimal("0.64"), call.reservation_usd
+    assert_equal BigDecimal("0.3392"), call.reservation_usd
   end
 
   test "the cap is per period: last month's spend doesn't count, this week's does" do
@@ -182,12 +182,17 @@ class ResidentFallback::DecisionTest < ActiveSupport::TestCase
     assert_includes policy.errors[:enabled_by_user], "must be recorded to turn fallback on"
   end
 
-  test "every eligible model has reviewed list and cap rates, with caps at or above list" do
+  test "every eligible model pins its vendor at list price, and its reservation covers the route's dearest rates plus the fee" do
     ResidentFallback::Models::ELIGIBLE.each do |id, config|
       assert Chat.model_config(id), "#{id} is in the catalogue"
-      %i[prompt completion].each do |side|
-        assert_operator config[:max_price][side], :>=, config[:list_price][side], "#{id} #{side}"
-      end
+      assert config[:provider].present?, "#{id} is pinned to a vendor"
+      # max_price at list keeps the dearer regional and "fast" endpoints out.
+      assert_equal config[:list_price], config[:max_price], id
+      prices = ResidentFallback::Models::ROUTE_PRICES.fetch(id)
+      fee = BigDecimal("1.05")
+      assert_operator config[:reservation_rate][:prompt], :>=, BigDecimal(prices[:input].max.to_s) * fee, "#{id} input"
+      assert_operator config[:reservation_rate][:completion], :>=, BigDecimal(prices[:output].max.to_s) * fee, "#{id} output"
+      assert_operator config[:max_output_tokens], :<=, 128_000, "#{id} output within the endpoint's limit"
     end
   end
 

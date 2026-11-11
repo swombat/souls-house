@@ -16,6 +16,9 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     %w[use_ssl open_timeout read_timeout write_timeout max_retries].each do |name|
       http.define_singleton_method("#{name}=") { |_| }
     end
+    http.define_singleton_method(:start) { @started = true }
+    http.define_singleton_method(:started?) { @started == true }
+    http.define_singleton_method(:finish) { @started = false }
     http.define_singleton_method(:request) do |request, &block|
       raise 'missing upstream bearer' unless request['Authorization'] == 'Bearer test-house-only'
       block.call(response)

@@ -10,10 +10,7 @@ module HouseInference
       unless messages.is_a?(Array) && messages.present? && messages.size <= 4096
         raise Error.new('A bounded messages array is required.', status: 422)
       end
-      # Byte count is deliberately conservative for this byte-tokenized model;
-      # include per-message/tool framing instead of trusting a client token count.
-      input_bound = JSON.generate(input).bytesize + messages.size * 32 + Array(input['tools']).size * 64 + 4096
-      if input_bound > offering.fetch(:context_tokens)
+      if input_bound(input) > offering.fetch(:context_tokens)
         raise Error.new('House inference input exceeds the safe context limit. Compact the conversation first.', status: 422)
       end
       messages.each do |message|
@@ -60,6 +57,13 @@ module HouseInference
         'usage' => { 'include' => true })
       body['stream_options'] = { 'include_usage' => true } if body['stream']
       body
+    end
+
+    # An upper bound on the request's input tokens. Byte count is deliberately
+    # conservative (no token is shorter than a byte); include per-message/tool
+    # framing instead of trusting a client token count.
+    def self.input_bound(input)
+      JSON.generate(input).bytesize + Array(input['messages']).size * 32 + Array(input['tools']).size * 64 + 4096
     end
 
     PREFILL_REASON = 'house check before sending: the request ends with an assistant message, which this model refuses (no prefill)'.freeze

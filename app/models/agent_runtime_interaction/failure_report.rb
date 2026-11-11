@@ -21,12 +21,18 @@ module AgentRuntimeInteraction::FailureReport
   # Every gateway refusal recorded on a run. house_provider_refused is the
   # house's pinned upstream answering a call with an error status: the
   # house's side, not the owner's (Soul Horse, 1 Nov 2026: every run).
-  INFERENCE_REFUSALS = (ALLOWANCE_REFUSALS + %w[house_provider_refused]).freeze
+  # The paid fallback's refusals (#690): the owner's cap, key or choice, or
+  # the fallback provider answering with an error status.
+  FALLBACK_REFUSALS = %w[
+    fallback_off fallback_cap_reached fallback_payer_key_missing fallback_model_unavailable fallback_provider_refused
+  ].freeze
+  INFERENCE_REFUSALS = (ALLOWANCE_REFUSALS + %w[house_provider_refused] + FALLBACK_REFUSALS).freeze
   # Categories that mean the resident can't pay for its model as set up:
   # the owner's fix is setup or money, not repair.
   SETUP_CATEGORIES = %w[needs_setup house_allowance_exhausted house_allowance_none].freeze
   FAILURE_CATEGORIES = %w[
     needs_setup house_allowance_exhausted house_allowance_none house_provider_refused subscription_limit
+    fallback_off fallback_cap_reached fallback_payer_key_missing fallback_model_unavailable fallback_provider_refused
     runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
   ].freeze
   # Runs the house starts on its own clock, with no room to fail in: the

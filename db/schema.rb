@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -766,6 +766,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
     t.integer "safeguard_reset_requested_generation", default: 0, null: false
     t.integer "safeguard_reset_acknowledged_generation", default: 0, null: false
     t.string "model_id"
+    t.integer "runtime_freshness_generation", default: 0, null: false
     t.index ["agent_id", "agent_summary_generated_at"], name: "index_chat_agents_on_agent_summary_recency"
     t.index ["agent_id", "closed_for_initiation_at"], name: "index_chat_agents_on_agent_closed_initiation"
     t.index ["agent_id"], name: "index_chat_agents_on_agent_id"
@@ -2900,6 +2901,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_190000) do
     t.boolean "free_trial_enabled", default: true, null: false
     t.string "voice_mode_scope", default: "account_choice", null: false
     t.string "speech_engine_scope", default: "disabled", null: false
+    t.boolean "paid_fallback_enabled", default: false, null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|
