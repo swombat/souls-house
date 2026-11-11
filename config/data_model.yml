@@ -255,6 +255,9 @@ areas:
       ones taken from a VM. Import stages hold an archived home until a VM is
       seeded from it. A runner birth bundle is the runner a new VM's
       first-boot document pins by digest, kept until that VM has fetched it.
+      A VM rollback is one attempt to bring a resident back from its server
+      to the house, with the server it came from and the receipt that its
+      container was recreated on the restored volumes.
     tables:
       - agent_placements
       - cloud_procurement_operations
@@ -264,6 +267,7 @@ areas:
       - runner_commands
       - runner_request_nonces
       - vm_backups
+      - vm_rollbacks
       - agent_backup_snapshots
       - agent_import_stages
 
