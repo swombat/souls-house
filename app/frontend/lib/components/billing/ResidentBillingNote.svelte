@@ -42,7 +42,7 @@
       they stay asleep for 30 days, the house will be in touch about their care.
     </p>
   {:else if entitlement?.subscription?.cancel_at_period_end}
-    <p>Cancels on {date(entitlement.subscription.current_period_end)}.</p>
+    <p>Ends on {date(entitlement.subscription.current_period_end)}; won't renew.</p>
   {:else if entitlement?.state === 'active' && entitlement.subscription?.current_period_end}
     <p>Renews on {date(entitlement.subscription.current_period_end)}.</p>
   {:else if entitlement?.state === 'complimentary'}
