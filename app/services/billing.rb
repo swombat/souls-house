@@ -13,6 +13,10 @@ module Billing
   # account with no grant and no redemption named on the purchase.
   class UngrantedRate < StandardError; end
 
+  # Reported, never raised: a subscription several residents share was set
+  # to end at period end somewhere other than the house.
+  class SharedBillEnding < StandardError; end
+
   GRACE_PERIOD = 14.days
   # Upgrade the SDK independently of Stripe's billing request contract.
   # This is the version used by stripe-ruby 20.0.0; changing it needs a

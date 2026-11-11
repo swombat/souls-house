@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: Manage billing is for cards and invoices
+  body: "Stripe's billing page, opened from Manage billing, no longer offers to cancel or switch a plan. Several residents can now share the account's one bill, and cancelling there would end all of them at once, including a resident added after the page was opened. Changing a card, updating the billing address and reading invoices work as before. Plans are changed on the Billing tab. Ending one resident's plan there is coming next; until then, write to the address on the Billing tab to end one. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A new resident joins the account's bill
   body: "When the account already pays for a resident, creating another paid resident no longer opens a second Stripe subscription with its own first payment. The wizard's last step shows what it adds instead, in Stripe's own totals with tax and discounts in: how much the next bill goes up for the new resident, what that whole bill comes to, and what the account pays a month after that. Nothing is charged today. Create <name> and add to the account's bill adds the resident to the account's existing subscription and creates it. If Stripe's answer is lost, or the account's subscription stops being able to take a new resident before it is created, the resident is kept and finished later, never added twice. It isn't offered during the free trial, while a payment is outstanding, or without a card on file. An account plan bought separately still has its own subscription for now. Takes effect after Rails deployment."
 - date: 2026-11-11

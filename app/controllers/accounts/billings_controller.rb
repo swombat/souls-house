@@ -90,7 +90,7 @@ class Accounts::BillingsController < ApplicationController
 
   def portal
     inertia_location Billing::Portal.new(account: current_account, return_url: account_billing_url(current_account)).url
-  rescue Billing::NotConfigured, Stripe::StripeError => error
+  rescue Billing::NotConfigured, Billing::Portal::Restricted, Stripe::StripeError => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 

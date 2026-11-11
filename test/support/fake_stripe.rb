@@ -407,14 +407,16 @@ class FakeStripe
   # default: the house's portal lets nobody switch plans). allowed: what the
   # switcher may change; products: nil for a plan list Stripe didn't send.
   def put_portal_configuration(prices: [], active: true, enabled: true, allowed: %w[price quantity], products: :from_prices,
-    card_update: true)
+    card_update: true, cancel: true, invoices: true)
     product_list = products == :from_prices ? (prices.empty? ? [] : [ { product: "prod_test", prices: prices } ]) : products
-    update = { enabled: enabled, default_allowed_updates: allowed }
+    update = { enabled: enabled, default_allowed_updates: allowed }.compact
     update[:products] = product_list unless product_list.nil?
+    # A flag given as nil is one Stripe didn't send.
+    features = { subscription_update: update, subscription_cancel: { enabled: cancel }.compact,
+                 payment_method_update: { enabled: card_update }, invoice_history: { enabled: invoices } }
     @portal_configurations << {
       id: "bpc_test_#{@portal_configurations.size + 1}", active: active, is_default: @portal_configurations.empty?,
-      features: { subscription_update: update, subscription_cancel: { enabled: true },
-                  payment_method_update: { enabled: card_update } }
+      features: features
     }
   end
 

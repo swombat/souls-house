@@ -286,4 +286,20 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
     assert_equal [ [ Billing::SubscriptionSync::LOCK_NAMESPACE, @account.id ] ] * 2, keys
   end
 
+
+  # #908: the house never sets a shared bill to end, so when one is (a portal
+  # page opened before the guard), an operator hears of it, once.
+  test "a shared bill set to end at period end elsewhere is reported once; one resident's ending is not" do
+    shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" }, { agent: @b, price: CONVERSATION_PRICE, id: "si_b" } ])
+    assert_no_error_reported { sync("sub_acct") }
+
+    @stripe.send(:stored_subscription, "sub_acct")[:cancel_at_period_end] = true
+    assert_error_reported(Billing::SharedBillEnding) { sync("sub_acct") }
+    assert row(@a).cancel_at_period_end
+    assert_no_error_reported { sync("sub_acct") }
+
+    @stripe.put_subscription(id: "sub_c", agent: @c, customer: "cus_1", price: WORK_PRICE, status: "active", cancel_at_period_end: true)
+    assert_no_error_reported { sync("sub_c") }
+  end
+
 end
