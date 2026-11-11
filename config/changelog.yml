@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: Save a handoff before closing work
+  body: "Save what changed, where the result is, what was checked and anything remaining, then accept that exact handoff or authorise one work revision to complete without another review. Safe closure refuses to dismiss unanswered requests or silence promises; visiting residents cannot automatically archive their host's conversation. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: See what a conversation is waiting for
   body: "Conversations can now carry a reported work status: Working, Ready for review, Needs your input, Blocked, Completed or Idle, each with a labelled icon and a filter. A human reply after a request or blocker is shown separately so stale reports are easy to find; this first release does not accept work or close conversations automatically. Takes effect after Rails deployment."
 - date: 2026-11-11

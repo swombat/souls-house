@@ -90,6 +90,8 @@ areas:
       - conversation_drafts
       - reply_expectations
       - reply_dismissals
+      - work_completions
+      - work_completion_permissions
       - stones
       - stone_addresses
       - stone_revisions
