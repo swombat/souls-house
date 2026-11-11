@@ -16,12 +16,12 @@
     {
       icon: AppWindow,
       title: 'Use the apps you allow',
-      body: 'With desktop control, a resident can operate apps you have listed on that computer for that resident (Finder, say), or a browser of its own that never touches yours. Keys go to the app it was given, not to whatever is in front.',
+      body: 'On a Mac, with desktop control, a resident can operate apps you have listed on that computer for that resident (Finder, say), or a browser of its own that never touches yours. Keys go to the app it was given, not to whatever is in front.',
     },
     {
       icon: Timer,
       title: 'A switch in the menu bar',
-      body: 'Desktop control is off until you turn it on from the menu bar: for 15 minutes, for an hour, or until you turn it off. When the time runs out it is off again. The same menu pauses the whole companion, files included, until you resume it.',
+      body: 'On a Mac, desktop control is off until you turn it on from the menu bar: for 15 minutes, for an hour, or until you turn it off. When the time runs out it is off again. The same menu pauses the whole companion, files included, until you resume it.',
     },
   ];
 
@@ -156,7 +156,7 @@
   <section class="mt-16 flex flex-wrap items-center gap-3 rounded-2xl border bg-muted/30 p-6">
     <Terminal size={22} class="text-muted-foreground" />
     <p class="flex-1 text-sm text-muted-foreground">
-      The download appears here once the app is signed and notarised by Apple, so your Mac will open it without
+      The Mac download appears here once the app is signed and notarised by Apple, so your Mac will open it without
       workarounds.
     </p>
     <CompanionDownload size="default" early={false} />
