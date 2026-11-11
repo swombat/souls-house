@@ -553,8 +553,17 @@ class FakeStripe
       base.setup do
         @saved_stripe_env = STRIPE_ENV.keys.index_with { |key| ENV[key] }
         ENV.update(STRIPE_ENV)
+        # The account's resident-billing session lock can't be taken inside
+        # the fixture transaction; unit contracts run as its holder. The key
+        # itself is CheckoutLockTest's and SharedSubscriptionSyncTest's.
+        @saved_residents_lock = Billing::CheckoutLock.method(:synchronize_residents)
+        Billing::CheckoutLock.define_singleton_method(:synchronize_residents) { |_account, &operation| operation.call }
       end
-      base.teardown { @saved_stripe_env.each { |key, value| ENV[key] = value } }
+      base.teardown do
+        @saved_stripe_env.each { |key, value| ENV[key] = value }
+        saved = @saved_residents_lock
+        Billing::CheckoutLock.define_singleton_method(:synchronize_residents, saved) if saved
+      end
     end
 
   end

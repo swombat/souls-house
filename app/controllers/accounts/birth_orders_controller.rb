@@ -3,16 +3,29 @@
 # invoice in the browser with Stripe.js, then confirm. The resident is born
 # on confirmation (or by the webhook, whichever is first) once Stripe says
 # the plan is paid. JSON, because the browser needs Stripe's client secret.
+#
+# In an account that already has a live subscription the order is an item
+# order: create answers with the quote (item_quote) instead of a secret, the
+# owner confirms it (confirm_item), and the resident is added to the
+# account's bill and born; nothing is charged in the browser.
 class Accounts::BirthOrdersController < ApplicationController
 
   include AgentSettingsParams
 
   require_feature_enabled :agents
   before_action :require_account_owner!
-  before_action :set_order, only: %i[payment confirm trial_return]
+  before_action :set_order, only: %i[payment confirm confirm_item trial_return]
 
-  rescue_from Billing::PaidBirth::Refused, Agents::HostedProvisioning::ConfigurationError, Billing::NotConfigured do |error|
+  rescue_from Billing::PaidBirth::Refused, Agents::HostedProvisioning::ConfigurationError, Billing::NotConfigured,
+    Billing::NotEligible, Billing::ItemQuote::Refused do |error|
     render json: { error: error.message }, status: :unprocessable_entity
+  end
+  rescue_from Billing::NotReady do |error|
+    render json: { error: error.message }, status: :service_unavailable
+  end
+  # The quote moved before anything was sent: the new one, to confirm again.
+  rescue_from Billing::PaidBirth::QuoteChanged do |error|
+    render json: { error: error.message, item_quote: item_quote_json(error.order) }, status: :conflict
   end
   # An uncertain answer from Stripe: the order and its draft are kept, and the
   # browser retries the same order through its payment URL.
@@ -39,14 +52,24 @@ class Accounts::BirthOrdersController < ApplicationController
 
     order, client_secret, payment_method_id = Billing::PaidBirth.new.start!(account: current_account,
       creator: Current.user, attributes: attrs, open_beginning: open_beginning, tier: tier, rate: rate)
-    audit("start_paid_birth", order, tier: tier.id, rate: rate, resident_name: order.resident_name)
+    audit("start_paid_birth", order, tier: tier.id, rate: rate, resident_name: order.resident_name, kind: order.kind)
     render json: payment_json(order, client_secret, payment_method_id), status: :created
+  end
+
+  # The owner confirms an item order's quote: the resident is added to the
+  # account's subscription, then born. The browser then polls confirm.
+  def confirm_item
+    Billing::PaidBirth.new.confirm_item!(@order, digest: params[:digest])
+    audit("confirm_item_birth", @order, resident_name: @order.resident_name)
+    render json: payment_json(@order.reload, nil, nil).merge(accepted: true)
   end
 
   # A fresh secret to pay again, after a decline or with a different card.
   def payment
     result = Billing::PaidBirth.new.payment(@order)
-    if result[:paid]
+    if result[:accepted]
+      render json: payment_json(@order.reload, nil, nil).merge(accepted: true)
+    elsif result[:paid]
       render json: payment_json(@order, nil, nil).merge(paid: true)
     elsif result[:checkout_url]
       render json: payment_json(@order, nil, nil).merge(checkout_url: result[:checkout_url])
@@ -102,9 +125,22 @@ class Accounts::BirthOrdersController < ApplicationController
   end
 
   def payment_json(order, client_secret, payment_method_id)
-    { order: order.as_json, client_secret: client_secret, payment_method_id: payment_method_id,
-      payment_url: payment_account_birth_order_path(current_account, order),
-      confirm_url: confirm_account_birth_order_path(current_account, order) }
+    json = { order: order.as_json, client_secret: client_secret, payment_method_id: payment_method_id,
+             payment_url: payment_account_birth_order_path(current_account, order),
+             confirm_url: confirm_account_birth_order_path(current_account, order) }
+    if order.item?
+      json[:confirm_item_url] = confirm_item_account_birth_order_path(current_account, order)
+      json[:item_quote] = item_quote_json(order) unless order.item_submitted_at?
+    end
+    json
+  end
+
+  # The quote as the wizard shows it; digest is what confirm_item checks.
+  def item_quote_json(order)
+    quote = order.item_quote.to_h
+    { digest: Billing::ItemQuote.digest(quote), currency: quote["currency"], added_cents: quote["added_next"],
+      next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
+      next_at: quote["next_at"] && Time.zone.at(quote["next_at"]).to_date.iso8601 }
   end
 
   def confirmation_json

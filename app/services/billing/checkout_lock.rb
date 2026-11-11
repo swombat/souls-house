@@ -9,6 +9,13 @@ module Billing
         "Billing for this account is busy. Please try again in a moment.", &)
     end
 
+    # The account's residents' billing, by account: the same key as
+    # synchronize, for work (a paid creation) that has no resident yet.
+    def self.synchronize_residents(account, &)
+      hold(SubscriptionSync::LOCK_NAMESPACE, account.id,
+        "Billing for this account is busy. Please try again in a moment.", &)
+    end
+
     # An account's plan: the same key as AccountSubscriptionSync's lock.
     def self.synchronize_account(account, &)
       hold(AccountSubscriptionSync::LOCK_NAMESPACE, account.id,

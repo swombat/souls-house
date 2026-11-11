@@ -6,6 +6,13 @@
   // here: one line names it and links to Billing. When the account's free 14
   // days apply (trial.eligible, a small resident at the standard price), no
   // card is asked for.
+  //
+  // In an account with a live Stripe subscription a new resident is added to
+  // that subscription instead of being paid by card. The page then passes the
+  // order (payment, with its item_quote) and this step shows the quote in
+  // AddToBillPanel; the outcome goes back to the page through onconfirmed or
+  // onconfirmfailed. Nothing is charged today, so the card terms ("Today: the
+  // first month") are not shown for an item order.
   import { onDestroy } from 'svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { Button } from '$lib/components/shadcn/button';
@@ -13,6 +20,8 @@
   import { Badge } from '$lib/components/shadcn/badge';
   import { CreditCard, LockSimple } from 'phosphor-svelte';
   import SizePicker from './size-picker.svelte';
+  import AddToBillPanel from './add-to-bill-panel.svelte';
+  import PayErrorAlert from './pay-error-alert.svelte';
   import { sizeOf, trialApplies, usd } from '$lib/pricing';
   import { loadStripe, postJson, createEmbeddedCheckout } from '$lib/stripe';
 
@@ -31,6 +40,17 @@
     trial = null,
     // The account's Billing tab, where its plan is changed.
     billingUrl = null,
+    // An item order waiting for the owner: the order as paid-birth returns it
+    // (payment, with payment.item_quote), or null.
+    itemPayment = null,
+    onphase = () => {},
+    onconfirmed = () => {},
+    onconfirmfailed = () => {},
+    // The owner chose "Not now": the order stays and can be resumed.
+    ondismiss = () => {},
+    // The wizard's pay state is an item order: a failure never reads as a
+    // declined card ("Not added yet", or "Still being created" once accepted).
+    deferred = false,
   } = $props();
 
   // Offers (a plan at a rate: standard, or at cost when the account holds a
@@ -55,6 +75,9 @@
   let cardError = $state(null);
   let cardContainer = $state(null);
   let checkout = null;
+
+  // An item order is charged on the next bill, not today.
+  let itemOrder = $derived(deferred || Boolean(itemPayment) || Boolean(billing.adds_to_bill));
 
   // Small, at the standard price, unless the draft already chose.
   if (!tier && tiers.length > 0) {
@@ -222,7 +245,7 @@
           )} + VAT a month. With no card, {name} goes to sleep on day {trialDays}. Nothing is deleted.
         </p>
       </section>
-    {:else if chosen}
+    {:else if chosen && !itemOrder}
       <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p>
           <span class="font-medium">Today:</span>
@@ -251,21 +274,10 @@
       </Alert>
     {/if}
 
-    {#if payError}
-      <Alert variant="destructive" data-testid="plan-pay-error">
-        {#if free && !payPaid}
-          <AlertTitle>The free trial didn't start</AlertTitle>
-          <AlertDescription>{payError} Nothing was created.</AlertDescription>
-        {:else if payPaid}
-          <AlertTitle>Almost there</AlertTitle>
-          <AlertDescription>{payError}</AlertDescription>
-        {:else}
-          <AlertTitle>The payment didn't go through</AlertTitle>
-          <AlertDescription>
-            {payError} Nothing was created. You can try again, or use a different card.
-          </AlertDescription>
-        {/if}
-      </Alert>
+    <PayErrorAlert {payError} {free} {payPaid} {deferred} />
+
+    {#if itemPayment}
+      <AddToBillPanel {itemPayment} {name} {busy} {onphase} {onconfirmed} {onconfirmfailed} {ondismiss} />
     {/if}
   {/if}
 </CardContent>

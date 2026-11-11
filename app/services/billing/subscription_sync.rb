@@ -26,6 +26,15 @@
 #
 # A recorded item missing from the complete item list was removed: its
 # resident's plan ends.
+#
+# An item added for a paid creation (Billing::PaidBirth::ItemOrders) names
+# its birth order and, until the resident is born and linked, no resident.
+# If that order is born (its recorded item, this subscription), the item
+# binds to the order's resident like any other, through the same checks. If
+# the order was sent and is waiting (pending, or failed and needing
+# attention), the item is not a problem: the order is handed to PaidBirth to
+# complete, after the outermost transaction commits (never on a rollback),
+# whatever its siblings did. Any other birth-order item is untrusted.
 module Billing
   class SubscriptionSync
 
@@ -53,6 +62,7 @@ module Billing
 
       account = account_for(first)
       @problems = []
+      @births = []
       rows = ApplicationRecord.transaction do
         self.class.lock!(account.id)
         remote = fetch
@@ -61,6 +71,7 @@ module Billing
         synced = sync_items!(remote, items, account)
         end_removed!(remote, items)
         point_account!(remote, account)
+        hand_over_births!(@births)
         synced
       end
       raise InvalidSubscription, @problems.join("; ") if @problems.any?
@@ -142,6 +153,15 @@ module Billing
       claimed = bindings.group_by { |_item, agent_id, _recorded| agent_id }
 
       bindings.filter_map do |item, agent_id, recorded|
+        if agent_id.is_a?(ResidentBirthOrder)
+          if agent_id.account_id == account.id
+            @births << agent_id.id
+          else
+            @problems << "#{item.id}: names a birth order of another account"
+          end
+          next
+        end
+
         problem = item_problem(remote, item, agent_id, recorded, account, claimed)
         if problem
           @problems << "#{item.id}: #{problem}"
@@ -159,11 +179,22 @@ module Billing
       end
     end
 
-    # [agent id (a string, :conflict or nil), the house's row for this item or nil]
+    # [agent id (a string, :conflict, nil, or the ResidentBirthOrder still
+    # waiting for this item), the house's row for this item or nil]
     def bind(remote, item, legacy)
       recorded = ResidentSubscription.find_by(stripe_subscription_item_id: item.id)
       recorded ||= ResidentSubscription.find_by(stripe_subscription_id: remote.id, stripe_subscription_item_id: nil) if legacy
       named = item_metadata(item)["agent_id"].presence || (legacy ? remote.metadata["agent_id"].to_s : nil)
+      if named.blank? && recorded.nil? && (reference = item_metadata(item)["birth_order"].presence)
+        order = ResidentBirthOrder.find_by(reference: reference, kind: "item")
+        on_this = order && order.stripe_subscription_id == remote.id && order.item_submitted_at? &&
+          [ nil, item.id ].include?(order.stripe_subscription_item_id)
+        if on_this && order.born? && order.stripe_subscription_item_id == item.id
+          named = order.agent_id.to_s
+        elsif on_this && (order.pending? || order.failed?)
+          return [ order, nil ]
+        end
+      end
       return [ :conflict, recorded ] if recorded && named && named != recorded.agent_id.to_s
 
       [ recorded ? recorded.agent_id.to_s : named, recorded ]
@@ -238,6 +269,22 @@ module Billing
 
         row.update!(stripe_status: "canceled", last_synced_at: @now)
         ResidentEntitlement.for_agent!(row.agent).apply_subscription!(row, now: @now)
+      end
+    end
+
+    # Waiting paid creations whose item is here are completed once the
+    # outermost transaction commits: a rollback completes nothing, and a
+    # completion that fails is reported without undoing this sync.
+    def hand_over_births!(ids)
+      return if ids.empty?
+
+      client = @client
+      ActiveRecord.after_all_transactions_commit do
+        ResidentBirthOrder.where(id: ids).find_each do |order|
+          PaidBirth.new(client: client).complete!(order)
+        rescue StandardError => error
+          Rails.error.report(error, handled: true, context: { subsystem: "billing", birth_order_id: order.id })
+        end
       end
     end
 

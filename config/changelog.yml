@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: A new resident joins the account's bill
+  body: "When the account already pays for a resident, creating another paid resident no longer opens a second Stripe subscription with its own first payment. The wizard's last step shows what it adds instead, in Stripe's own totals with tax and discounts in: how much the next bill goes up for the new resident, what that whole bill comes to, and what the account pays a month after that. Nothing is charged today. Create <name> and add to the account's bill adds the resident to the account's existing subscription and creates it. If Stripe's answer is lost, or the account's subscription stops being able to take a new resident before it is created, the resident is kept and finished later, never added twice. It isn't offered during the free trial, while a payment is outstanding, or without a card on file. An account plan bought separately still has its own subscription for now. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A second resident joins the account's subscription
   body: "When the account already pays for a resident, choosing a plan for another one on the Billing tab no longer opens a second Stripe checkout and a second subscription. The resident is added to the account's existing subscription, so the account keeps one bill. Before anything changes you see what it costs, in Stripe's own totals with tax and discounts in: how much the next bill goes up for the new resident (nothing is charged today), what that whole bill comes to, and what the account pays a month after that. It isn't offered during the free trial, while a payment is outstanding, or without a card on file, and it says which. Creating a new paid resident still makes its own subscription for now; that comes next. Takes effect after Rails deployment."
 - date: 2026-11-11
