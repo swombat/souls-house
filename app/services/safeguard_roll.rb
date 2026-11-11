@@ -9,7 +9,11 @@ class SafeguardRoll
 
   FRESH_OUTCOMES = %w[fresh rolled fresh_fallback].freeze
 
-  Snapshot = Data.define(:chat_agent_id, :detection_ids, :reset_generation) do
+  # freshness_generation: the ChatAgent's runtime_freshness_generation this
+  # roll moves it to (#690). The rolled session records it; acknowledging
+  # the roll stores it, so the resident's other session lane, which recorded
+  # an older one, starts fresh on its next turn too.
+  Snapshot = Data.define(:chat_agent_id, :detection_ids, :reset_generation, :freshness_generation) do
     def roll? = detection_ids.any? || reset_generation.positive?
     def notice? = detection_ids.any?
 
@@ -19,7 +23,8 @@ class SafeguardRoll
       {
         safeguard_chat_agent_id: chat_agent_id,
         safeguard_detection_ids: detection_ids,
-        safeguard_reset_generation: reset_generation
+        safeguard_reset_generation: reset_generation,
+        safeguard_freshness_generation: freshness_generation
       }
     end
   end
@@ -36,7 +41,8 @@ class SafeguardRoll
     Snapshot.new(
       chat_agent_id: chat_agent.id,
       detection_ids: detection_ids,
-      reset_generation: reset_owed ? chat_agent.safeguard_reset_requested_generation : 0
+      reset_generation: reset_owed ? chat_agent.safeguard_reset_requested_generation : 0,
+      freshness_generation: chat_agent.runtime_freshness_generation + 1
     )
   end
 
@@ -70,6 +76,11 @@ class SafeguardRoll
       if generation.positive?
         ChatAgent.where(id: context[:safeguard_chat_agent_id])
           .update_all([ "safeguard_reset_acknowledged_generation = GREATEST(safeguard_reset_acknowledged_generation, ?)", generation ])
+      end
+      freshness = context[:safeguard_freshness_generation].to_i
+      if freshness.positive?
+        ChatAgent.where(id: context[:safeguard_chat_agent_id])
+          .update_all([ "runtime_freshness_generation = GREATEST(runtime_freshness_generation, ?)", freshness ])
       end
     end
   end

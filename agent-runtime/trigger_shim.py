@@ -149,6 +149,12 @@ PROVIDER_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "xai": "XAI_API_KEY",
 }
+# Every paid provider key a Chaos invocation could otherwise use (the
+# model_providers defaults in runtime_settings.py, plus the API-key routes).
+PAID_FALLBACK_STRIPPED_ENV = (
+    "OPENROUTER_API_KEY", "GEMINI_API_KEY", "MOONSHOT_API_KEY",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY",
+)
 AUTH_CODE_TTL_SECS = 15 * 60
 SUBSCRIPTION_USAGE_TTL_SECS = 60
 SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
@@ -413,6 +419,10 @@ def trigger():
     # provider's env_http_headers) so a refusal lands on this run only.
     inference_run = str(payload.get("inference_run") or "")
     _activity_context.inference_run = inference_run if inference_run.isdigit() else None
+    # A paid-fallback turn (#690) may spend only through the house gateway,
+    # which meters every call against the owner's cap. Only on the house
+    # provider: anything else never carries the flag's guarantee.
+    _activity_context.paid_fallback = payload.get("paid_fallback") is True and provider == "house"
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
@@ -461,6 +471,7 @@ def trigger():
         _activity_context.reporter = None
         _activity_context.telegram_run = None
         _activity_context.inference_run = None
+        _activity_context.paid_fallback = False
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         if not lock_released:
@@ -980,11 +991,26 @@ def _run_chaos_once(
     inference_run = getattr(_activity_context, "inference_run", None)
     if inference_run:
         env[INFERENCE_RUN_ENV] = inference_run
+    if getattr(_activity_context, "paid_fallback", False):
+        # No paid key in the environment of a paid-fallback invocation (its
+        # stored logins are hidden below): a helper that selects another
+        # configured provider can't authenticate to it with the owner's key or
+        # any other. This covers Chaos's own provider resolution; it doesn't
+        # sandbox a resident's shell against credentials it wrote itself.
+        for key in PAID_FALLBACK_STRIPPED_ENV:
+            env.pop(key, None)
     telegram_run = getattr(_activity_context, "telegram_run", None)
     if telegram_run and telegram_run[0]:
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = str(telegram_run[0])
         env["SOULSHOUSE_RUNTIME_TELEGRAM_THREAD_ID"] = str(telegram_run[1])
     args = [CHAOS_BIN, "exec"]
+    if getattr(_activity_context, "paid_fallback", False):
+        # Removing the env keys isn't enough: Chaos also resolves a provider's
+        # stored login (auth.json or the vault) when a helper selects that
+        # provider. An empty per-process store hides every stored login, so
+        # only env-authenticated providers work: the house gateway, which
+        # meters the call (#690, Mira #887).
+        args += ["-c", 'cli_auth_credentials_store="ephemeral"']
     if json_output:
         # Machine-readable JSONL: process.started carries the process_id we
         # map for resume; turn.completed carries token usage.

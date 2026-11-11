@@ -18,7 +18,10 @@ class AgentRuntimeInteraction < ApplicationRecord
   belongs_to :agent
   belongs_to :chat, optional: true
   has_many :linked_telegram_messages, class_name: "TelegramMessage", dependent: :nullify
-  has_one :resident_turn, dependent: :destroy
+  # The live one. A run whose subscription refused before it started and
+  # which hopped to the paid fallback (#690) also keeps the retired turn.
+  has_one :resident_turn, -> { where(hopped_at: nil) }, dependent: :destroy
+  has_many :hopped_resident_turns, -> { where.not(hopped_at: nil) }, class_name: "ResidentTurn", dependent: :destroy
   # A follow-through nudge points at the run it continues (FollowThroughCheck).
   belongs_to :follow_through_of, class_name: "AgentRuntimeInteraction", optional: true
   belongs_to :stalled_thread_sweep, optional: true

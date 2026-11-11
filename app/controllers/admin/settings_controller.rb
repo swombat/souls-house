@@ -87,6 +87,7 @@ class Admin::SettingsController < ApplicationController
       :vm_resident_limit,
       :billing_enabled,
       :free_trial_enabled,
+      :paid_fallback_enabled,
       :field_ocr_enabled,
       :field_ocr_daily_usd_ceiling,
       :field_tweets_enabled,

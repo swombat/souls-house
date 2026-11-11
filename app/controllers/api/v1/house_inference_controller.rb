@@ -8,9 +8,11 @@ module Api
         return head :forbidden unless current_api_agent
         model = current_api_agent.model_id
         offering = HouseInference::Offering.find(model)
-        render json: { object: 'list', data: offering ? [
-          { id: model, object: 'model', owned_by: 'house', context_length: offering.fetch(:context_tokens) }
-        ] : [] }
+        data = offering ? [ { id: model, object: 'model', owned_by: 'house', context_length: offering.fetch(:context_tokens) } ] : []
+        if (fallback = fallback_model_entry)
+          data << fallback
+        end
+        render json: { object: 'list', data: data }
       end
 
       def create
@@ -27,7 +29,12 @@ module Api
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Last-Modified'] = Time.current.httpdate # bypass Rack::ETag buffering
         response.headers['X-Accel-Buffering'] = 'no'
-        result = HouseInference::Gateway.new(agent: current_api_agent, input: input).call do |chunk|
+        gateway = if ResidentFallback::Gateway.fallback_model?(input['model'])
+          ResidentFallback::Gateway.new(agent: current_api_agent, input: input, run_id: request.headers['X-Soulshouse-Run'])
+        else
+          HouseInference::Gateway.new(agent: current_api_agent, input: input)
+        end
+        result = gateway.call do |chunk|
           response.stream.write(chunk)
         end
         render json: result unless input['stream']
@@ -56,6 +63,19 @@ module Api
       end
 
       private
+
+      # A resident with a paid fallback switched on can be dispatched on it
+      # (#690); the gateway still serves it only inside a fallback turn.
+      def fallback_model_entry
+        return unless Setting.instance.paid_fallback_enabled?
+
+        policy = current_api_agent.fallback_policy
+        config = policy&.enabled? && ResidentFallback::Models.find(policy.model_id)
+        return unless config
+
+        { id: ResidentFallback::Gateway.model_id_for(policy.model_id), object: 'model', owned_by: 'house',
+          context_length: config.fetch(:context_tokens) }
+      end
 
       # A refused call says why on the run that made it (#678), so the owner
       # reads "allowance used up" instead of a generic runtime error. Only

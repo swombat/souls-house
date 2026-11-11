@@ -25,7 +25,10 @@ class ResidentHealthMailer < ApplicationMailer
     "house_allowance_none" => [ "Choose a plan that includes a house-model allowance in the Billing tab, or give %{name} their own key in Settings.", :billing ],
     "authentication_error" => [ "Check the key, or reconnect the subscription, in %{name}'s Settings tab.", :settings ],
     "subscription_limit" => [ "Runs should complete again when the subscription's limit resets. To use a different subscription or a key, open %{name}'s Settings tab.", :settings ],
-    "model_unavailable" => [ "Choose a model their subscription includes in %{name}'s Settings tab.", :settings ]
+    "model_unavailable" => [ "Choose a model their subscription includes in %{name}'s Settings tab.", :settings ],
+    "fallback_cap_reached" => [ "Raise the paid fallback's cap in %{name}'s Settings tab, or wait for the next period.", :settings ],
+    "fallback_payer_key_missing" => [ "Add the account's own OpenRouter key, or turn the paid fallback off, in %{name}'s Settings tab.", :settings ],
+    "fallback_model_unavailable" => [ "Choose another paid fallback model in %{name}'s Settings tab.", :settings ]
   }.freeze
 
   # Failures whose recorded fields don't say whose side they are on: the

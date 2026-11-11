@@ -62,11 +62,18 @@ module ResidentFallback
     # worst case fits in what is left of the cap, then hold that worst case
     # as a pending call. Concurrent calls from every conversation queue on
     # the same lock and see each other's reservations.
-    def self.admit_call!(agent, input_bound_tokens:, max_output_tokens:, turn: nil, at: Time.current)
+    #
+    # model_id: the model the caller built its request for. Checked under the
+    # lock, so a request built before the owner changed the model is never
+    # priced at (or counted against) the new one.
+    def self.admit_call!(agent, input_bound_tokens:, max_output_tokens:, turn: nil, model_id: nil, at: Time.current)
       policy = agent.fallback_policy or raise Refused.new("fallback_off", "Paid fallback is off.")
       policy.with_lock do
         code = new(agent, at: at).code
         raise Refused.new(code, reason_for(code, agent: agent, policy: policy, at: at)) if code
+        if model_id && policy.model_id != model_id
+          raise Refused.new("fallback_model_unavailable", "#{agent.name}'s paid fallback model changed while this call was being prepared.")
+        end
 
         config = policy.model_config
         max_output = [ max_output_tokens.to_i, config.fetch(:max_output_tokens) ].min

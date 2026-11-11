@@ -766,6 +766,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.integer "safeguard_reset_requested_generation", default: 0, null: false
     t.integer "safeguard_reset_acknowledged_generation", default: 0, null: false
     t.string "model_id"
+    t.integer "runtime_freshness_generation", default: 0, null: false
     t.index ["agent_id", "agent_summary_generated_at"], name: "index_chat_agents_on_agent_summary_recency"
     t.index ["agent_id", "closed_for_initiation_at"], name: "index_chat_agents_on_agent_closed_initiation"
     t.index ["agent_id"], name: "index_chat_agents_on_agent_id"
@@ -2526,6 +2527,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.datetime "primary_resets_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "primary_result"
     t.index ["agent_id"], name: "index_resident_fallback_turns_on_agent_id"
     t.index ["chat_id"], name: "index_resident_fallback_turns_on_chat_id"
     t.index ["fallback_interaction_id"], name: "index_resident_fallback_turns_on_fallback_interaction_id", unique: true
@@ -2571,8 +2573,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.string "session_id", null: false
     t.string "state", default: "queued", null: false
     t.datetime "updated_at", null: false
+    t.datetime "hopped_at"
     t.index ["agent_id"], name: "index_resident_turns_on_agent_id"
-    t.index ["agent_runtime_interaction_id"], name: "index_resident_turns_on_agent_runtime_interaction_id", unique: true
+    t.index ["agent_runtime_interaction_id"], name: "one_live_resident_turn_per_run", unique: true, where: "(hopped_at IS NULL)"
     t.index ["dispatch_id"], name: "index_resident_turns_on_dispatch_id", unique: true
     t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY (ARRAY[('starting'::character varying)::text, ('running'::character varying)::text, ('unknown'::character varying)::text]))"
     t.index ["state", "created_at"], name: "index_resident_turns_on_state_and_created_at"
@@ -2903,6 +2906,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.string "companion_mac_download_url", limit: 500
     t.string "companion_mac_early_download_url", limit: 500
     t.string "companion_mac_early_download_sha256", limit: 64
+    t.boolean "paid_fallback_enabled", default: false, null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

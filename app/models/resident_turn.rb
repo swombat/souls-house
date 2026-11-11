@@ -188,9 +188,21 @@ class ResidentTurn < ApplicationRecord
   end
 
   def finish!(result, cancelled: false)
+    hop = nil
     with_lock do
       return if finished_at?
       interaction = agent_runtime_interaction
+      # The subscription refused before anything ran and the owner's paid
+      # fallback may take the turn (#690): this turn is retired as hopped and
+      # the run stays open for its fallback dispatch (ResidentFallbackHopJob).
+      unless cancelled
+        hop = interaction.with_lock { ResidentFallback::Hop.open!(interaction: interaction, result: result, check_sources: false) }
+      end
+      if hop
+        now = Time.current
+        update!(state: "finished", finished_at: now, hopped_at: now, payload: "{}")
+        next
+      end
       body = result["body"].is_a?(Hash) ? result["body"].deep_dup : {}
       unless body["status"].in?(%w[ok error timeout already_running])
         body["status"] = "error"
@@ -209,8 +221,9 @@ class ResidentTurn < ApplicationRecord
       ResidentTurnCompletion.new(self, result.merge("body" => body)).call
       update!(state: cancelled ? "cancelled" : "finished", finished_at: Time.current, payload: "{}")
     end
+    ResidentFallbackHopJob.perform_later(hop.id) if hop
     ResidentTurnDispatchJob.perform_later
-    ResidentTurnCleanupJob.perform_later(agent_id) if Agents::Config.cold_start?
+    ResidentTurnCleanupJob.perform_later(agent_id) if Agents::Config.cold_start? && !hop
   end
 
 end
