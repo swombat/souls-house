@@ -8,10 +8,10 @@
 # house (RunnerBirthBundle) before the runner first starts.
 #
 # The VM opens no inbound runner port. Host input is dropped except loopback,
-# established traffic, ICMP and SSH; SSH is for Daniel's offline break-glass
-# key only. Rails stays root-equivalent over the VM through the Hetzner
-# project token (rebuild, rescue, user_data at create); this firewall limits
-# the network, not Rails.
+# established traffic, ICMP and SSH; SSH uses the house management key
+# for Mira and Lume to administer customers' VMs. Rails stays root-equivalent
+# over the VM through the Hetzner project token (rebuild, rescue, user_data at
+# create); this firewall limits the network, not Rails.
 require "rubygems/package"
 require "open3"
 

@@ -109,7 +109,8 @@ only; the transport for resident turns is still undecided.
   anything else locally. Enrollment and health never make a placement ready or
   permit dispatch.
 - **Network.** Host input is dropped except loopback, established traffic,
-  ICMP and SSH. SSH exists for Daniel's offline break-glass key; Rails holds
+  ICMP and SSH. SSH uses the souls.house management key so Mira and Lume can
+  administer customers' VMs; it is not Daniel's offline recovery key. Rails holds
   only the public half or its Hetzner key ID. Rails stays root-equivalent over
   the VM through the Hetzner project token (rebuild, rescue, user_data at
   create). The firewall limits the network, not Rails.
