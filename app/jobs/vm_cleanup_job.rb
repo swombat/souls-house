@@ -26,6 +26,14 @@ class VmCleanupJob < ApplicationJob
   def clean(placement_id)
     placement = AgentPlacement.find_by(id: placement_id)
     return if placement.nil? || !placement.cleanup_requested?
+    # A placement that a rollback switched back to the house (#426) is local
+    # and ready: retiring it would take the resident off the local runtime.
+    # Its old server is released by the rollback's own release step, which
+    # targets that server alone, never by this job.
+    if placement.backend == "local"
+      Rails.logger.warn("[vm_cleanup] placement=#{placement.id} is local; refusing (a rollback's server is released separately)")
+      return
+    end
     # Retired, but a transient failure may have interrupted the release.
     return release_backup_holds(placement) if placement.state == "retired"
 

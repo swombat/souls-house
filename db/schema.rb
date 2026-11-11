@@ -3286,6 +3286,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_004500) do
     t.index ["runner_command_id"], name: "index_vm_backups_on_runner_command_id", unique: true
   end
 
+  create_table "vm_rollbacks", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "agent_placement_id", null: false
+    t.bigint "requested_by_id"
+    t.integer "generation", null: false
+    t.string "phase", default: "stopping", null: false
+    t.bigint "stop_command_id"
+    t.bigint "snapshot_command_id"
+    t.jsonb "source", default: {}, null: false
+    t.string "swap_token"
+    t.jsonb "volume_map"
+    t.jsonb "recovery"
+    t.text "error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "generation"], name: "index_vm_rollbacks_on_agent_id_and_generation", unique: true
+    t.index ["agent_id"], name: "index_vm_rollbacks_one_open_per_agent", unique: true, where: "((phase)::text = ANY ((ARRAY['stopping'::character varying, 'snapshotting'::character varying, 'restoring'::character varying, 'committed'::character varying])::text[]))"
+    t.index ["agent_placement_id"], name: "index_vm_rollbacks_on_agent_placement_id"
+    t.index ["requested_by_id"], name: "index_vm_rollbacks_on_requested_by_id"
+  end
+
   create_table "watched_repositories", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "service_connection_id", null: false
@@ -3717,6 +3738,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_004500) do
   add_foreign_key "vm_backups", "agent_backup_snapshots"
   add_foreign_key "vm_backups", "agents"
   add_foreign_key "vm_backups", "runner_commands"
+  add_foreign_key "vm_rollbacks", "agent_placements"
+  add_foreign_key "vm_rollbacks", "agents"
+  add_foreign_key "vm_rollbacks", "users", column: "requested_by_id"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
   add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
