@@ -181,6 +181,32 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     assert_response :not_found, "an answered restore authorises nothing"
   end
 
+  test "a delivered rollback_snapshot writes into the existing repository but can never init it" do
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "rollback_snapshot", payload: {})
+    command.deliver!(now: Time.current)
+    @client.stub_responses(:head_object, { content_length: 3 })
+    @client.stub_responses(:get_object, { body: "abc", content_length: 3 })
+    fetch("#{BASE}/config")
+    assert_response :ok
+    fetch("#{BASE}/?create=true", method: "POST")
+    assert_response :not_found, "a rollback snapshot never creates a repository"
+    @client.stub_responses(:head_object, "NotFound")
+    fetch("#{BASE}/locks/#{ID}", method: "POST", body: "lock")
+    assert_response :ok
+    fetch("#{BASE}/data/#{ID}", method: "POST", body: "pack")
+    assert_response :ok
+    fetch("#{BASE}/snapshots/#{ID}", method: "POST", body: "snapshot")
+    assert_response :ok
+    fetch("#{BASE}/locks/#{ID}", method: "DELETE")
+    assert_response :ok
+    keys = @client.api_requests.select { |request| request[:operation_name] == :put_object }.map { |request| request[:params][:key] }
+    assert_equal %W[agents/#{AGENT_UUID}/locks/#{ID} agents/#{AGENT_UUID}/data/aa/#{ID} agents/#{AGENT_UUID}/snapshots/#{ID}], keys
+
+    command.record_result!({ "outcome" => "done" }, now: Time.current)
+    fetch("#{BASE}/data/#{ID}", method: "POST", body: "pack")
+    assert_response :not_found, "an answered rollback snapshot authorises nothing"
+  end
+
   test "queued answered stale generation and absent backup commands do not authorize storage" do
     fetch("#{BASE}/config")
     assert_response :not_found

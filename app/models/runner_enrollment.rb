@@ -200,14 +200,22 @@ class RunnerEnrollment < ApplicationRecord
 
   # A delivered backup_resident authorises the whole restic protocol; a
   # delivered restore_carry (#426 slice 3C) authorises reads only, so a
-  # restore can never write, lock or delete in the repository.
+  # restore can never write, lock or delete in the repository. A delivered
+  # rollback_snapshot (#426 3C rollback) writes one snapshot of a stopped
+  # resident into a repository that already exists: everything but init.
   BACKUP_READS = %i[read head list].freeze
 
   def authorize_backup!(nonce:, operation:, now: Time.current)
     with_lock do
       placement = require_live!
       raise Refused.new(:placement_unavailable, 409) if placement.state == "failed"
-      kinds = BACKUP_READS.include?(operation) ? %w[backup_resident restore_carry] : %w[backup_resident]
+      kinds = if BACKUP_READS.include?(operation)
+        %w[backup_resident restore_carry rollback_snapshot]
+      elsif operation == :init
+        %w[backup_resident]
+      else
+        %w[backup_resident rollback_snapshot]
+      end
       wanted = commands.where(kind: kinds, state: "delivered", generation: placement.generation).exists?
       raise Refused.new(:backup_not_requested, 404) unless wanted
       consume_nonce!(nonce, now)

@@ -66,7 +66,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
-                           "update_runner", "reboot_host", "restore_carry"})
+                           "update_runner", "reboot_host", "restore_carry", "rollback_snapshot"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -769,6 +769,9 @@ class ResidentHost:
                  self_check=None, running_dir=None, reboot_required_path=REBOOT_REQUIRED_PATH,
                  chaos_running=chaos_exec_running, kernel=None):
         self.state_dir = state_dir
+        # This runner's enrollment id (config runner_id); main() sets it. A
+        # rollback snapshot's retry marker is bound to it.
+        self.runner_id = None
         # reboot_host: answered first; main() reboots once the answer is sent.
         self.reboot_required_path = reboot_required_path
         self.chaos_running = chaos_running
@@ -1189,6 +1192,23 @@ class ResidentHost:
             raise BadCommand("restore_carry needs the full runner package")
         return run_restore_carry(payload, self)
 
+    # rollback_snapshot (#426 slice 3C, rollback): the server's final snapshot
+    # of a stopped resident before it rolls back to the house. The work and
+    # its refusals are in rollback_snapshot.py.
+    def rollback_snapshot(self, payload):
+        try:
+            from rollback_snapshot import run_rollback_snapshot
+        except ImportError:
+            raise BadCommand("rollback_snapshot needs the full runner package")
+        return run_rollback_snapshot(payload, self)
+
+    def replay_rollback_snapshot(self, payload, remembered):
+        try:
+            from rollback_snapshot import revalidate_replay
+        except ImportError:
+            return {"outcome": "failed", "error": "rollback_snapshot needs the full runner package"}
+        return revalidate_replay(payload, remembered, self)
+
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
     # house by digest, is checked against that digest, and is unpacked into a
@@ -1324,6 +1344,13 @@ def execute_command(command, state, host):
         return command_id, {"outcome": "refused", "error": str(error)}
     remembered = state.result_for(command["id"])
     if remembered is not None:
+        # A remembered rollback snapshot is only replayed while it is still
+        # true (#426 3C): current generation, and the resident still in the
+        # stopped interval it was taken in. Every other answer replays as is.
+        if command["kind"] == "rollback_snapshot" and remembered.get("outcome") == "done":
+            if state.stale(command["generation"]):
+                return command["id"], {"outcome": "refused", "error": "stale generation"}
+            return command["id"], host.replay_rollback_snapshot(command["payload"], remembered)
         return command["id"], remembered
     if state.started(command["id"]):
         result = {"outcome": "unknown", "error": "runner restarted while this command was running"}
@@ -1380,7 +1407,7 @@ RUNNER_BUNDLE_DEADLINE = 2 * 60
 RUNNER_BUNDLE_FILES = {"souls_house_runner.py": 0o755, "backup_proxy.py": 0o644}
 # The full package (#426 3C) adds these beside the pair, for a migration's
 # restore; the pair alone is the birth package. Nothing else is accepted.
-RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644}
+RUNNER_CARRY_FILES = {"carry_restore.py": 0o644, "carry_shape.sh": 0o644, "rollback_snapshot.py": 0o644}
 RUNNER_PACKAGE_FILES = {**RUNNER_BUNDLE_FILES, **RUNNER_CARRY_FILES}
 RUNNER_BUNDLE_MARKER = "bundle.sha256"
 RUNNER_VERSIONS = "versions"
@@ -1901,6 +1928,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
                                 fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
         else:
             host = host_factory(config, key)
+        host.runner_id = config.get("runner_id")
         host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:

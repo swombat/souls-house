@@ -208,6 +208,7 @@ class AllowlistTest(unittest.TestCase):
             "report_facts", "heartbeat",
             "start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home", "backup_resident", "provider_auth",
             "check_runtime_trust", "tailnet", "home_stats", "update_runner", "reboot_host", "restore_carry",
+            "rollback_snapshot",
         })
         for action in ("shell", "start_container", "docker_run", "", "REPORT_FACTS"):
             with self.assertRaises(runner.RefusedAction):

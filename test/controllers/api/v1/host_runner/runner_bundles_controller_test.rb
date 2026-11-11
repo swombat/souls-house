@@ -126,8 +126,18 @@ class Api::V1::HostRunner::RunnerBundlesControllerTest < ActionDispatch::Integra
   test "the birth package is the two files; the full one adds the carry modules" do
     names = ->(bundle) { IO.popen(%w[tar -tJf -], "r+b") { |io| io.write(bundle.bytes); io.close_write; io.read.split } }
     assert_equal %w[souls_house_runner.py backup_proxy.py], names.(@bundle)
-    assert_equal %w[souls_house_runner.py backup_proxy.py carry_restore.py carry_shape.sh], names.(RunnerBundle.full)
+    assert_equal %w[souls_house_runner.py backup_proxy.py carry_restore.py carry_shape.sh rollback_snapshot.py], names.(RunnerBundle.full)
     assert_not_equal @bundle.sha256, RunnerBundle.full.sha256
+  end
+
+  # The runner refuses a bundle with any file it does not list
+  # (unpack_runner_bundle), so a module the house adds to the full package
+  # must be listed there too, or every update to the full package is refused.
+  test "the runner accepts exactly the files the house packs" do
+    source = Rails.root.join("host-runner/souls_house_runner.py").read
+    listed = ->(constant) { source[/^#{constant} = \{([^}]*)\}/, 1].to_s.scan(/"([^"]+)":/).flatten.sort }
+    assert_equal RunnerUserData::BIRTH_FILES.sort, listed.("RUNNER_BUNDLE_FILES")
+    assert_equal RunnerUserData::CARRY_FILES.sort, listed.("RUNNER_CARRY_FILES")
   end
 
   test "a moving resident's runner reaches the full package in two legs, without waiting an hour" do

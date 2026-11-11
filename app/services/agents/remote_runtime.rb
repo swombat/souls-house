@@ -312,6 +312,81 @@ module Agents
       matches ? :restored : :mismatch
     end
 
+    # rollback_snapshot (#426 3C rollback): before a resident rolls back from
+    # its VM to the house, the server takes one final restic snapshot of all
+    # five homes with the resident stopped (paths /rollback/<role>, host
+    # souls-house-rollback, tags agent/generation/rollback=v1), reads it back,
+    # runs restic check and measures each home with carry_shape.sh. The house
+    # restores exactly that snapshot (VmMigration::RollbackHome).
+    #
+    # Sent only for the rollback generation the caller has just reserved
+    # (RollbackPlan.reserve!), only to a runner on the full package, and only
+    # when the newest lifecycle command on this enrollment is a stop that
+    # answered done. The runner checks the container is stopped again, before
+    # and after the snapshot; the house's check is that it asked for a stop.
+    ROLLBACK_DEADLINE_SECONDS = 900
+    UUID = /\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/
+
+    def rollback_snapshot!(agent, generation:)
+      raise ArgumentError, "generation must be a positive Integer" unless generation.is_a?(Integer) && generation.positive?
+      raise Unavailable, "this resident has no well-formed uuid to tag its snapshot with" unless UUID.match?(agent.uuid.to_s)
+
+      enrollment = live_enrollment!(agent)
+      raise Unavailable, "its server's runner is not running the full package yet" unless RunnerBundle.full_running?(enrollment)
+
+      # Under the row lock RollbackPlan.reserve! takes, so no newer
+      # reservation can land between the check and the enqueue; and checked
+      # again before commit, so a command for a superseded reservation is
+      # never sent.
+      agent.with_lock do
+        raise Unavailable, "this rollback is no longer this resident's latest reservation" unless agent.volume_rollback_generation == generation
+        raise Unavailable, "the resident has not been stopped on its server" unless stop_answered?(enrollment)
+
+        command = RunnerCommand.enqueue!(enrollment:, kind: "rollback_snapshot", payload: {
+          "container_name" => agent.container_name, "agent_uuid" => agent.uuid, "restic_password" => agent.restic_password,
+          "generation" => generation, "deadline_seconds" => ROLLBACK_DEADLINE_SECONDS
+        })
+        unless Agent.uncached { Agent.where(id: agent.id).pick(:volume_rollback_generation) } == generation
+          raise Unavailable, "this rollback is no longer this resident's latest reservation"
+        end
+        command
+      end
+    end
+
+    # The newest lifecycle command, answered or not, is a stop that answered
+    # done. A start queued after it, or a stop still waiting, is not stopped.
+    def stop_answered?(enrollment)
+      last = enrollment.commands.where(kind: %w[start_resident stop_resident]).order(:created_at, :id).last
+      last&.kind == "stop_resident" && last.state == "done"
+    end
+
+    # What a rollback_snapshot came to, judged against the house's own
+    # expectations rather than the runner's say-so: :pending, :failed,
+    # :mismatch (done, but for another resident or generation, a malformed
+    # id, tools not proved stopped, or not exactly five well-formed shapes),
+    # or the RollbackHome::Snapshot the executor restores.
+    def rollback_snapshot_outcome(command, agent:, generation:)
+      return :pending if %w[queued delivered].include?(command.state)
+      return :failed unless command.kind == "rollback_snapshot" && command.state == "done"
+
+      envelope = command.result
+      result = envelope["result"] if envelope.is_a?(Hash)
+      return :mismatch unless result.is_a?(Hash)
+
+      roles = VmMigration::RollbackPlan::ROLES.map(&:to_s)
+      shapes = result["shapes"]
+      matches = result["agent_uuid"] == agent.uuid && result["container_name"] == agent.container_name &&
+                result["generation"] == generation && HEX64.match?(result["snapshot_id"].to_s) &&
+                result["tools_stopped"] == true && shapes.is_a?(Hash) && shapes.keys.sort == roles.sort &&
+                shapes.values.all? do |shape|
+                  shape.is_a?(Hash) && shape.keys.sort == %w[entries shape] && shape["entries"].is_a?(Integer) &&
+                    shape["entries"] >= 0 && HEX64.match?(shape["shape"].to_s)
+                end
+      return :mismatch unless matches
+
+      VmMigration::RollbackHome::Snapshot.new(snapshot_id: result["snapshot_id"], shapes: shapes.slice(*roles))
+    end
+
     # Agents::Sandbox#provider_env_args, for a VM: none for a house-funded
     # resident, otherwise the account's own keys.
     def provider_keys(agent)

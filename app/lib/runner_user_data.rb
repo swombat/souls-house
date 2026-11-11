@@ -184,7 +184,7 @@ module RunnerUserData
   # unpack. `full` adds the carry modules a migration's restore needs; only a
   # runner already on a birth package of this release accepts it.
   BIRTH_FILES = %w[souls_house_runner.py backup_proxy.py].freeze
-  CARRY_FILES = %w[carry_restore.py carry_shape.sh].freeze
+  CARRY_FILES = %w[carry_restore.py carry_shape.sh rollback_snapshot.py].freeze
 
   def source_bundle(full: false)
     io = StringIO.new("".b)
@@ -193,6 +193,7 @@ module RunnerUserData
     if full
       members["carry_restore.py"] = [ compact_source(File.read(Rails.root.join("host-runner/carry_restore.py"))), 0644 ]
       members["carry_shape.sh"] = [ File.read(CARRY_SHAPE_PATH), 0644 ]
+      members["rollback_snapshot.py"] = [ compact_source(File.read(Rails.root.join("host-runner/rollback_snapshot.py"))), 0644 ]
     end
     members.each do |name, (source, mode)|
       # Explicit mtime: TarWriter otherwise embeds the process's epoch.
