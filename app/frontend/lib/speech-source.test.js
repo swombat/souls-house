@@ -125,3 +125,13 @@ test('two overlapping resolves of one reply keep the first URL and leave none un
   source.close();
   expect(revoked.sort()).toEqual(made.sort());
 });
+
+test("Phonon's chunks reach the caller as they are made; a reply already made calls nothing (YNwVle)", async () => {
+  const { source, synthesize } = harness({ mode: 'listen' });
+  const onAudio = vi.fn();
+  await source.resolve('m1', { onAudio });
+  expect(synthesize).toHaveBeenCalledWith('Text of m1.', { voice: 'v1', signal: undefined, onAudio });
+  synthesize.mockClear();
+  await source.resolve('m1', { onAudio });
+  expect(synthesize).not.toHaveBeenCalled();
+});

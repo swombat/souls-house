@@ -196,3 +196,23 @@ test('failures are described by cause', () => {
   expect(describeFailure(new Error('GPU device was lost')).kind).toBe('device_lost');
   expect(describeFailure(new Error('NetworkError when attempting to fetch')).kind).toBe('download');
 });
+
+test('each chunk reaches onAudio as it is made, with the rate, and the WAV is those chunks joined (YNwVle)', async () => {
+  const heard = [];
+  const model = fakeModel({
+    speak: async (text, { onAudio }) => {
+      onAudio(new Float32Array([0.25, 0.25]));
+      onAudio(new Float32Array([0.5]));
+      return { audio: new Float32Array([0.25, 0.25, 0.5]), sampleRate: 24_000 };
+    },
+  });
+  const result = await synthesize('Hi.', {
+    onAudio: (samples, rate) => heard.push([...samples, rate]),
+    load: async () => model,
+  });
+  expect(heard).toEqual([
+    [0.25, 0.25, 24_000],
+    [0.5, 24_000],
+  ]);
+  expect(result.blob.size).toBe(44 + 3 * 2);
+});
