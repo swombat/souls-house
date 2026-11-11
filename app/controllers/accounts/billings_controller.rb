@@ -1,5 +1,6 @@
 # The account's Billing tab: each hosted resident's plan, a Stripe Checkout
-# button per plan, and Stripe's Customer Portal for everything after that.
+# button per plan, plan changes and End plan, and Stripe's Customer Portal for
+# cards and invoices.
 # Members can see it; only the account owner can pay or change billing.
 class Accounts::BillingsController < ApplicationController
 
