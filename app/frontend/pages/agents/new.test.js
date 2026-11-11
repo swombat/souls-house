@@ -414,6 +414,50 @@ describe('the Plan step button', () => {
       expect(confirmAddToBill).not.toHaveBeenCalled();
     });
 
+    test('an edit while the confirm is still out keeps the order: the draft holds it through a lost answer', async () => {
+      let loseAnswer;
+      confirmAddToBill.mockImplementation(({ payment, onPhase }) => {
+        onPhase('adding');
+        return new Promise((_resolve, reject) => {
+          loseAnswer = () => reject(Object.assign(new Error('Stripe could not be reached.'), { payment }));
+        });
+      });
+      payAgain.mockResolvedValue({ redirectTo: '/born' });
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+      await waitFor(() => expect(loseAnswer).toBeDefined());
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(draftKey)).item_payment.sent).toBe(true));
+
+      // The seed is edited while the answer is still out.
+      await fireEvent.click(screen.getByRole('button', { name: 'Go to step 3: Soul seed' }));
+      await fireEvent.input(await screen.findByRole('textbox'), { target: { value: 'Be brave.' } });
+      const kept = JSON.parse(localStorage.getItem(draftKey));
+      expect(kept.system_prompt).toBe('Be brave.');
+      expect(kept.item_payment.order.id).toBe('o3');
+      expect(kept.item_payment.payment_url).toBe(itemPayment.payment_url);
+
+      loseAnswer();
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(draftKey)).item_payment.order.id).toBe('o3'));
+      expect(payForResident).toHaveBeenCalledTimes(1);
+    });
+
+    test('a sent order kept in the draft is resumed after a reload, never replaced', async () => {
+      payAgain.mockResolvedValue({ redirectTo: '/born' });
+      await reachPlanStep(
+        { billing: { ...billing, payment_method: card }, trial: { eligible: false, days: 14 } },
+        { item_payment: { ...itemPayment, sent: true, quoted_for: 'another draft' } }
+      );
+
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+
+      await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/born'));
+      expect(payAgain).toHaveBeenCalledWith(
+        expect.objectContaining({ payment: expect.objectContaining({ sent: true }) })
+      );
+      expect(payForResident).not.toHaveBeenCalled();
+    });
+
     test('a kept order still unsent but quoted for another draft is replaced after a reload', async () => {
       payAgain.mockResolvedValue({ itemQuote: quote, payment: itemPayment });
       await reachPlanStep(

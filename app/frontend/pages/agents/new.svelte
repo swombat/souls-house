@@ -409,7 +409,7 @@
             payPaid={pay.settled}
             itemPayment={pay.itemPayment}
             deferred={pay.deferred}
-            onphase={(phase) => (pay.phase = phase)}
+            onphase={pay.setPhase}
             onconfirmed={pay.confirmed}
             onconfirmfailed={pay.confirmFailed}
             ondismiss={pay.dismiss}

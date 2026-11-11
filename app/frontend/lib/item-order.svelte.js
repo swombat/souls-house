@@ -10,10 +10,13 @@
 // the order is known to be unsent (its quote came this visit and was not
 // confirmed), an edit that changes the fingerprint makes the quote stale: the
 // wizard forgets the order, and the next Create starts a fresh one (the house
-// abandons the unsent one). An order whose fate is unknown (kept in the draft,
-// or a confirm that failed) is resumed first; if the house answers with a
-// quote for another draft, it is replaced then. An accepted order is never
-// replaced: it is always resumed.
+// abandons the unsent one). From the moment the confirm is sent, the order's
+// fate is unknown until the house answers: it is marked sent (and kept in the
+// draft) before the request goes, so no edit or reload in between can forget
+// it. An order whose fate is unknown (sent, kept in the draft, or a confirm
+// that failed) is resumed first; if the house answers with a quote for another
+// draft, it is replaced then. An accepted order is never replaced: it is
+// always resumed.
 
 export function isItemPayment(payment) {
   return Boolean(payment && (payment.order?.kind === 'item' || payment.item_quote || payment.confirm_item_url));
@@ -41,6 +44,7 @@ export function staleQuote(payment, fingerprint) {
     isItemPayment(payment) &&
       !payment.accepted &&
       !payment.paid &&
+      !payment.sent &&
       payment.quoted_for &&
       payment.quoted_for !== fingerprint
   );
@@ -85,6 +89,19 @@ export class WizardPay {
     this.phase = null;
   };
 
+  // The panel's phases. 'adding' comes before the confirm request is sent.
+  setPhase = (phase) => {
+    if (phase === 'adding') this.sending();
+    this.phase = phase;
+  };
+
+  // The confirm is about to go: from here the order may exist at Stripe, so it
+  // is never forgotten by an edit, and the draft keeps it for a reload.
+  sending() {
+    this.unsent = false;
+    if (this.lastPayment) this.lastPayment = { ...this.lastPayment, sent: true };
+  }
+
   confirmed = (result) => {
     this.itemPayment = null;
     this.unsent = false;
@@ -94,12 +111,15 @@ export class WizardPay {
   confirmFailed = (error) => {
     const quotedFor = this.lastPayment?.quoted_for;
     this.phase = null;
-    if (error.payment) this.lastPayment = { ...error.payment, quoted_for: quotedFor };
-    // A changed price is shown by the panel itself, with the new quote.
+    // A changed price was refused before anything was sent: unsent again,
+    // shown by the panel itself with the new quote.
     if (error.itemQuote) {
+      this.lastPayment = { ...error.payment, quoted_for: quotedFor, sent: false };
+      this.unsent = true;
       this.error = null;
       return;
     }
+    if (error.payment) this.lastPayment = { ...error.payment, quoted_for: quotedFor, sent: true };
     // It may have reached Stripe: resume it through its payment URL.
     this.unsent = false;
     this.itemPayment = null;

@@ -74,4 +74,38 @@ describe('WizardPay', () => {
     expect(pay.resumes({ tier: 'conversation', rate: 'standard' }, false)).toBe(true);
     expect(pay.resumes({ tier: 'business', rate: 'standard' }, false)).toBe(false);
   });
+
+  it('never forgets an order once its confirm is sent, even before the answer', () => {
+    const pay = new WizardPay(vi.fn());
+    pay.quoted(itemPayment, 'a');
+    // The panel says 'adding' just before the confirm request goes.
+    pay.setPhase('adding');
+    expect(pay.phase).toBe('adding');
+    expect(pay.unsent).toBe(false);
+    expect(pay.lastPayment.sent).toBe(true);
+
+    // An edit while the answer is still out keeps the order and its resume URL.
+    pay.check('b');
+    expect(pay.lastPayment.payment_url).toBe('/o1/payment');
+    expect(staleQuote(pay.lastPayment, 'b')).toBe(false);
+    expect(pay.resumes({ tier: 'business', rate: 'standard' }, false)).toBe(true);
+
+    // A lost answer keeps it too.
+    pay.confirmFailed(Object.assign(new Error('timeout'), { payment: itemPayment }));
+    pay.check('c');
+    expect(pay.lastPayment.sent).toBe(true);
+    expect(pay.lastPayment.order.id).toBe('o1');
+  });
+
+  it('a moved price refused before sending is unsent again', () => {
+    const pay = new WizardPay(vi.fn());
+    pay.quoted(itemPayment, 'a');
+    pay.setPhase('adding');
+    const changed = { ...itemPayment, item_quote: { digest: 'd2' } };
+    pay.confirmFailed(Object.assign(new Error('changed'), { itemQuote: changed.item_quote, payment: changed }));
+    expect(pay.unsent).toBe(true);
+    expect(pay.lastPayment.sent).toBe(false);
+    pay.check('b');
+    expect(pay.lastPayment).toBeNull();
+  });
 });

@@ -393,6 +393,29 @@ class Billing::PaidBirthItemTest < ActiveSupport::TestCase
     assert_equal 1, @stripe.subscription_updates.count { |_id, _params, opts| opts[:idempotency_key].to_s.include?("birth-item") }
   end
 
+  test "one expired order the sweep can't settle doesn't stop the others expiring" do
+    stuck = start!
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::PaidBirth::Uncertain) { confirm!(stuck) }
+    # Past the replay window and no item at Stripe: only an operator can settle it.
+    stuck.update_columns(item_submitted_at: 2.days.ago, expires_at: 1.minute.ago)
+    later = ResidentBirthOrder.create!(account: @account, creator: @owner, tier: "conversation", rate: "standard",
+      stripe_price_id: CONVERSATION_PRICE, birth_attributes: { name: "Bea", system_prompt: "Be curious." })
+    later.update_columns(expires_at: 1.minute.ago)
+    assert stuck.id < later.id, "the stuck order comes first"
+
+    reported = []
+    Rails.error.stub(:report, ->(error, **) { reported << error }) do
+      Billing.stub(:client, @stripe) { Billing::SweepJob.perform_now }
+    end
+
+    assert later.reload.abandoned?, "the later order still expired"
+    assert stuck.reload.item_submitted_at?, "the stuck order is kept for an operator"
+    assert_not stuck.abandoned?
+    assert(reported.any? { |error| error.is_a?(Billing::NotReady) && error.message.include?("reconciliation") })
+    assert_equal 1, items.size, "nothing was added"
+  end
+
   test "an unsent quote past its expiry is not sent" do
     order = start!
     order.update_columns(expires_at: 1.minute.ago)
