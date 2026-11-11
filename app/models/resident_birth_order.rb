@@ -39,6 +39,7 @@ class ResidentBirthOrder < ApplicationRecord
 
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
   validates :rate, inclusion: { in: Billing::Tier::RATES }
+  validates :kind, inclusion: { in: %w[subscription item] }
   # The free trial is a small resident at the standard rate (Billing::Trial).
   validates :tier, inclusion: { in: [ Billing::Trial::TIER ] }, if: :trial?
   validates :rate, inclusion: { in: [ Billing::Trial::RATE ] }, if: :trial?
@@ -67,6 +68,10 @@ class ResidentBirthOrder < ApplicationRecord
     update!(last_error: message.first(500))
   end
 
+  # Added to the account's live subscription as an item (eoXAEj slice 2b),
+  # not given a subscription of its own.
+  def item? = kind == "item"
+
   def tier_record = Billing::Tier.find!(tier)
 
   def offer = tier_record.offer(rate)
@@ -74,7 +79,7 @@ class ResidentBirthOrder < ApplicationRecord
   def resident_name = birth_attributes["name"]
 
   def as_json(*)
-    { id: to_param, state: state, tier: tier, rate: rate, trial: trial?, resident_name: resident_name,
+    { id: to_param, state: state, kind: kind, tier: tier, rate: rate, trial: trial?, resident_name: resident_name,
       expires_at: expires_at&.iso8601,
       last_error: last_error }
   end

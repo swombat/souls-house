@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { vi } from 'vitest';
 import { useForm, router } from '@inertiajs/svelte';
-import { payForResident, payAgain, openCheckout, trialOrderState } from '$lib/paid-birth';
+import { payForResident, payAgain, confirmAddToBill, openCheckout, trialOrderState } from '$lib/paid-birth';
 import NewResident from './new.svelte';
 
 vi.mock('$lib/paid-birth', () => ({
   payForResident: vi.fn(),
   payAgain: vi.fn(),
+  confirmAddToBill: vi.fn(),
   openCheckout: vi.fn(),
   trialOrderState: vi.fn(async () => 'open'),
 }));
@@ -218,5 +219,120 @@ describe('the Plan step button', () => {
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem(draftKey)).name).toBe(''));
     expect(screen.getByRole('button', { name: 'Go to step 1: Welcome' })).toHaveAttribute('aria-current', 'step');
+  });
+  describe('an account with a live subscription (item order)', () => {
+    const card = { brand: 'visa', last4: '4242', exp_month: 10, exp_year: 2030 };
+    const quote = {
+      added_cents: 1200,
+      next_total_cents: 3400,
+      recurring_cents: 2200,
+      currency: 'usd',
+      next_at: '2026-12-01',
+      digest: 'd1',
+    };
+    const itemPayment = {
+      order: {
+        id: 'o3',
+        kind: 'item',
+        tier: 'conversation',
+        rate: 'standard',
+        state: 'pending',
+        resident_name: 'Aria',
+      },
+      item_quote: quote,
+      confirm_item_url: '/accounts/account/birth_orders/o3/confirm_item',
+      payment_url: '/accounts/account/birth_orders/o3/payment',
+      confirm_url: '/accounts/account/birth_orders/o3/confirm',
+    };
+    const createName = 'Create Aria · $9.99 a month + VAT';
+    const confirmName = "Create Aria and add to the account's bill";
+
+    async function reachQuote() {
+      payForResident.mockResolvedValue({ itemQuote: quote, payment: itemPayment });
+      await reachPlanStep({ billing: { ...billing, payment_method: card }, trial: { eligible: false, days: 14 } });
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+      await screen.findByTestId('birth-add-confirm');
+    }
+
+    test('a quote shows the panel and charges and creates nothing yet', async () => {
+      await reachQuote();
+
+      expect(screen.getByTestId('birth-add-confirm')).toHaveTextContent('Nothing is charged today.');
+      expect(router.visit).not.toHaveBeenCalled();
+      expect(openCheckout).not.toHaveBeenCalled();
+      expect(confirmAddToBill).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: createName })).toBeDisabled();
+    });
+
+    test('confirming adds the resident and goes the way a card order does, and the draft is dropped', async () => {
+      confirmAddToBill.mockResolvedValue({ redirectTo: '/accounts/account/agents/aria/onboarding' });
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+
+      await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/accounts/account/agents/aria/onboarding'));
+      expect(confirmAddToBill).toHaveBeenCalledWith(expect.objectContaining({ payment: itemPayment }));
+    });
+
+    test('still being confirmed says it is on the bill, never "Payment received"', async () => {
+      confirmAddToBill.mockResolvedValue({ redirectTo: null, order: itemPayment.order });
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+
+      const pending = await screen.findByTestId('paid-pending');
+      expect(pending).toHaveTextContent(
+        "Aria is on the account's bill and is being created; it will appear with your residents in a moment."
+      );
+      expect(pending).not.toHaveTextContent(/Payment received|Stripe is still confirming/);
+    });
+
+    test('Not now closes the panel and keeps the order, so the button resumes it with payAgain', async () => {
+      payAgain.mockResolvedValue({ itemQuote: quote, payment: itemPayment });
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+
+      expect(screen.queryByTestId('birth-add-confirm')).toBeNull();
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+      await screen.findByTestId('birth-add-confirm');
+      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: itemPayment }));
+      expect(payForResident).toHaveBeenCalledTimes(1);
+    });
+
+    test('an accepted order that could not be finished resumes the same order, with no card wording', async () => {
+      const accepted = { ...itemPayment, accepted: true };
+      const stuck = Object.assign(
+        new Error("Aria is on the account's bill, but the house could not finish creating it just now."),
+        { payment: accepted }
+      );
+      confirmAddToBill.mockRejectedValue(stuck);
+      payAgain.mockResolvedValue({ redirectTo: '/born' });
+      await reachQuote();
+
+      await fireEvent.click(screen.getByRole('button', { name: confirmName }));
+
+      const alert = await screen.findByTestId('plan-pay-error');
+      expect(alert).toHaveTextContent('Not added yet');
+      expect(alert).not.toHaveTextContent(/payment didn't go through|different card/);
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+
+      await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/born'));
+      expect(payAgain).toHaveBeenCalledWith(expect.objectContaining({ payment: accepted }));
+      expect(payForResident).toHaveBeenCalledTimes(1);
+    });
+
+    test('an item order kept with the draft is resumed after a reload', async () => {
+      payAgain.mockResolvedValue({ redirectTo: '/born' });
+      await reachPlanStep(
+        { billing: { ...billing, payment_method: card }, trial: { eligible: false, days: 14 } },
+        { item_payment: { ...itemPayment, accepted: true } }
+      );
+
+      await fireEvent.click(await screen.findByRole('button', { name: createName }));
+
+      await waitFor(() => expect(router.visit).toHaveBeenCalledWith('/born'));
+      expect(payForResident).not.toHaveBeenCalled();
+    });
   });
 });

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2446,6 +2446,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_170000) do
     t.boolean "trial", default: false, null: false
     t.string "stripe_checkout_session_id"
     t.jsonb "checkout_create_params"
+    t.string "kind", default: "subscription", null: false
+    t.string "stripe_subscription_item_id"
+    t.jsonb "item_create_params"
+    t.jsonb "item_quote"
+    t.datetime "item_submitted_at"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY ((ARRAY['pending'::character varying, 'born'::character varying, 'failed'::character varying])::text[])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
@@ -2454,7 +2459,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_170000) do
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
     t.index ["state", "expires_at"], name: "index_resident_birth_orders_on_state_and_expires_at"
     t.index ["stripe_checkout_session_id"], name: "index_resident_birth_orders_on_stripe_checkout_session_id", unique: true
-    t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true
+    t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
+    t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
+    t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'born'::character varying, 'abandoned'::character varying, 'failed'::character varying]::text[])", name: "resident_birth_orders_state_known"
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying]::text[])", name: "resident_birth_orders_rate_known"
   end

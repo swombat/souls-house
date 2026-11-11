@@ -6,6 +6,12 @@
   // here: one line names it and links to Billing. When the account's free 14
   // days apply (trial.eligible, a small resident at the standard price), no
   // card is asked for.
+  //
+  // In an account with a live Stripe subscription a new resident is added to
+  // that subscription instead of being paid by card. The page then passes the
+  // order (payment, with its item_quote) and this step shows the quote in a
+  // panel; confirming it calls confirmAddToBill, and the outcome goes back to
+  // the page through onconfirmed or onconfirmfailed. Nothing is charged today.
   import { onDestroy } from 'svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { Button } from '$lib/components/shadcn/button';
@@ -15,6 +21,7 @@
   import SizePicker from './size-picker.svelte';
   import { sizeOf, trialApplies, usd } from '$lib/pricing';
   import { loadStripe, postJson, createEmbeddedCheckout } from '$lib/stripe';
+  import { confirmAddToBill } from '$lib/paid-birth';
 
   let {
     billing,
@@ -31,6 +38,17 @@
     trial = null,
     // The account's Billing tab, where its plan is changed.
     billingUrl = null,
+    // An item order waiting for the owner: the order as paid-birth returns it
+    // (payment, with payment.item_quote), or null.
+    itemPayment = null,
+    onphase = () => {},
+    onconfirmed = () => {},
+    onconfirmfailed = () => {},
+    // The owner chose "Not now": the order stays and can be resumed.
+    ondismiss = () => {},
+    // The wizard's pay state for an item order, so a failure reads as "not
+    // added yet" and never as a declined card.
+    deferred = false,
   } = $props();
 
   // Offers (a plan at a rate: standard, or at cost when the account holds a
@@ -55,6 +73,38 @@
   let cardError = $state(null);
   let cardContainer = $state(null);
   let checkout = null;
+
+  // The quote on screen. It starts as the order's and is replaced when the house
+  // answers that the price changed.
+  let shownPayment = $state(null);
+  let priceChanged = $state(false);
+  let adding = $state(false);
+  $effect(() => {
+    shownPayment = itemPayment;
+    priceChanged = false;
+  });
+  let quote = $derived(shownPayment?.item_quote || null);
+
+  function cents(amount, currency) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: (currency || 'usd').toUpperCase() }).format(
+      (amount ?? 0) / 100
+    );
+  }
+
+  async function confirmAdd() {
+    adding = true;
+    try {
+      onconfirmed(await confirmAddToBill({ payment: shownPayment, onPhase: onphase }));
+    } catch (error) {
+      if (error.itemQuote) {
+        shownPayment = error.payment;
+        priceChanged = true;
+      }
+      onconfirmfailed(error);
+    } finally {
+      adding = false;
+    }
+  }
 
   // Small, at the standard price, unless the draft already chose.
   if (!tier && tiers.length > 0) {
@@ -256,6 +306,9 @@
         {#if free && !payPaid}
           <AlertTitle>The free trial didn't start</AlertTitle>
           <AlertDescription>{payError} Nothing was created.</AlertDescription>
+        {:else if deferred}
+          <AlertTitle>Not added yet</AlertTitle>
+          <AlertDescription>{payError}</AlertDescription>
         {:else if payPaid}
           <AlertTitle>Almost there</AlertTitle>
           <AlertDescription>{payError}</AlertDescription>
@@ -266,6 +319,32 @@
           </AlertDescription>
         {/if}
       </Alert>
+    {/if}
+
+    {#if quote}
+      <div
+        class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm"
+        data-testid="birth-add-confirm">
+        {#if priceChanged}
+          <p class="font-medium" data-testid="birth-add-changed">
+            The price changed since it was shown. Here is the new one; nothing was charged.
+          </p>
+        {/if}
+        <p>
+          Nothing is charged today. Your next bill{quote.next_at ? `, on ${quote.next_at},` : ''} goes up by about
+          {cents(quote.added_cents, quote.currency)} for {shownPayment.order?.resident_name || name}: the rest of this
+          period and the next month. That bill comes to about {cents(quote.next_total_cents, quote.currency)} in all, including
+          anything else already due on it. After that, the account pays about
+          {cents(quote.recurring_cents, quote.currency)} a month for all its residents together. These are Stripe's totals,
+          with tax and discounts in.
+        </p>
+        <div class="flex gap-2">
+          <Button size="sm" onclick={confirmAdd} disabled={adding || busy}>
+            {adding ? 'Adding…' : `Create ${shownPayment.order?.resident_name || name} and add to the account's bill`}
+          </Button>
+          <Button size="sm" variant="outline" onclick={ondismiss} disabled={adding || busy}>Not now</Button>
+        </div>
+      </div>
     {/if}
   {/if}
 </CardContent>

@@ -183,4 +183,43 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "with a live account subscription: the quote, a moved quote refused with the new one, then the resident on the account's bill" do
+    @stripe.put_payment_method("pm_visa")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_visa")
+    first = agents(:research_assistant)
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: first, price: LIFE_PRICE, id: "si_first" } ])
+    Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+
+    Billing.stub(:client, @stripe) do
+      assert_no_difference "Agent.count" do
+        post account_birth_orders_path(@account), params: { agent: draft, tier: "conversation" }, as: :json
+      end
+      assert_response :created
+      body = response.parsed_body
+      assert_nil body.fetch("client_secret")
+      assert_equal "item", body.dig("order", "kind")
+      quote = body.fetch("item_quote")
+      assert_equal %w[added_cents currency digest next_at next_total_cents recurring_cents], quote.keys.sort
+      order = ResidentBirthOrder.sole
+      assert_equal confirm_item_account_birth_order_path(@account, order), body.fetch("confirm_item_url")
+      assert_empty @stripe.subscription_updates
+
+      post body.fetch("confirm_item_url"), params: { digest: "0" * 64 }, as: :json
+      assert_response :conflict
+      fresh = response.parsed_body.fetch("item_quote")
+      assert_empty @stripe.subscription_updates, "a moved quote sends nothing"
+
+      assert_difference "Agent.count", 1 do
+        post body.fetch("confirm_item_url"), params: { digest: fresh.fetch("digest") }, as: :json
+      end
+      assert_response :success
+      assert response.parsed_body.fetch("accepted")
+      assert_not response.parsed_body.key?("item_quote")
+
+      post body.fetch("confirm_url"), as: :json
+      assert_equal onboarding_account_agent_path(@account, order.reload.agent), response.parsed_body.fetch("redirect_to")
+    end
+  end
+
 end

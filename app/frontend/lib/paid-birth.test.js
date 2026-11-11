@@ -4,7 +4,7 @@ const stripe = { confirmCardPayment: vi.fn() };
 const postJson = vi.fn();
 vi.mock('$lib/stripe', () => ({ loadStripe: vi.fn(async () => stripe), postJson: (...args) => postJson(...args) }));
 
-const { payForResident, payAgain, trialOrderState } = await import('./paid-birth.js');
+const { payForResident, payAgain, confirmAddToBill, trialOrderState } = await import('./paid-birth.js');
 
 const billing = { publishable_key: 'pk_test_1', birth_orders_url: '/accounts/a/birth_orders' };
 const started = {
@@ -206,5 +206,132 @@ describe('the free trial', () => {
     expect(await trialOrderState(trialStarted)).toBe('gone');
     postJson.mockRejectedValueOnce(new Error('Failed to fetch'));
     expect(await trialOrderState(trialStarted)).toBe('open');
+  });
+});
+
+describe('an item order on an account with a live subscription', () => {
+  const quote = {
+    added_cents: 1200,
+    next_total_cents: 3400,
+    recurring_cents: 2200,
+    currency: 'usd',
+    next_at: '2026-12-01',
+    digest: 'd1',
+  };
+  const itemOrder = {
+    order: { id: 'o2', kind: 'item', state: 'pending', resident_name: 'Aria' },
+    item_quote: quote,
+    confirm_item_url: '/accounts/a/birth_orders/o2/confirm_item',
+    payment_url: '/accounts/a/birth_orders/o2/payment',
+    confirm_url: '/accounts/a/birth_orders/o2/confirm',
+    client_secret: null,
+    payment_method_id: null,
+  };
+
+  test('hands back the quote, and never loads Stripe or pays', async () => {
+    const { loadStripe } = await import('$lib/stripe');
+    loadStripe.mockClear();
+    postJson.mockResolvedValueOnce(itemOrder);
+
+    const result = await payForResident({ billing, agent: { name: 'Aria' }, tier: 'conversation', pollMs: 0 });
+
+    expect(result).toEqual({ itemQuote: quote, payment: itemOrder });
+    expect(loadStripe).not.toHaveBeenCalled();
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+    expect(postJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('confirming sends the digest, then polls the confirm url until born', async () => {
+    postJson
+      .mockResolvedValueOnce({ order: itemOrder.order, accepted: true })
+      .mockResolvedValueOnce({ order: { state: 'pending' }, redirect_to: null })
+      .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/accounts/a/agents/aria/onboarding' });
+    const phases = [];
+
+    const result = await confirmAddToBill({ payment: itemOrder, onPhase: (p) => phases.push(p), pollMs: 0 });
+
+    expect(postJson).toHaveBeenNthCalledWith(1, itemOrder.confirm_item_url, { digest: 'd1' });
+    expect(postJson).toHaveBeenNthCalledWith(2, itemOrder.confirm_url);
+    expect(result.redirectTo).toBe('/accounts/a/agents/aria/onboarding');
+    expect(phases).toEqual(['adding', 'confirming']);
+  });
+
+  test('a changed price surfaces the new quote and sends nothing further', async () => {
+    const newQuote = { ...quote, added_cents: 1500, digest: 'd2' };
+    postJson.mockRejectedValueOnce(
+      Object.assign(new Error('The price changed.'), { data: { error: 'The price changed.', item_quote: newQuote } })
+    );
+
+    const error = await confirmAddToBill({ payment: itemOrder, pollMs: 0 }).catch((e) => e);
+
+    expect(error.itemQuote).toEqual(newQuote);
+    expect(error.payment.item_quote.digest).toBe('d2');
+    expect(error.payment.confirm_item_url).toBe(itemOrder.confirm_item_url);
+    expect(postJson).toHaveBeenCalledTimes(1);
+  });
+
+  test('an uncertain answer keeps the order to retry through its payment url', async () => {
+    postJson.mockRejectedValueOnce(
+      Object.assign(new Error('Stripe is slow.'), {
+        data: { error: 'Stripe is slow.', order: itemOrder.order, payment_url: '/p2', confirm_url: '/c2' },
+      })
+    );
+
+    const error = await confirmAddToBill({ payment: itemOrder, pollMs: 0 }).catch((e) => e);
+
+    expect(error.payment.payment_url).toBe('/p2');
+    expect(error.itemQuote).toBeUndefined();
+  });
+
+  test('resuming an order not yet accepted shows the quote again', async () => {
+    postJson.mockResolvedValueOnce({ ...itemOrder, item_quote: { ...quote, digest: 'd3' } });
+
+    const result = await payAgain({ billing, payment: itemOrder, pollMs: 0 });
+
+    expect(result.itemQuote.digest).toBe('d3');
+    expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  });
+
+  test('resuming an order already accepted goes straight to confirming', async () => {
+    postJson
+      .mockResolvedValueOnce({
+        order: itemOrder.order,
+        accepted: true,
+        payment_url: itemOrder.payment_url,
+        confirm_url: itemOrder.confirm_url,
+      })
+      .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/born' });
+
+    const result = await payAgain({ billing, payment: itemOrder, pollMs: 0 });
+
+    expect(postJson).toHaveBeenNthCalledWith(2, itemOrder.confirm_url);
+    expect(result.redirectTo).toBe('/born');
+    expect(postJson).not.toHaveBeenCalledWith(itemOrder.confirm_item_url, expect.anything());
+  });
+
+  test('a failed item order never says a payment went through', async () => {
+    postJson
+      .mockResolvedValueOnce({ order: itemOrder.order, accepted: true })
+      .mockResolvedValueOnce({ order: { state: 'failed', resident_name: 'Aria' } });
+
+    const error = await confirmAddToBill({ payment: itemOrder, pollMs: 0 }).catch((e) => e);
+
+    expect(error.message).toBe(
+      "Aria was added to the account's bill but couldn't be created just yet. The house has been told and will put it right; nothing more will be added."
+    );
+    expect(error.message).not.toMatch(/payment went through/);
+    expect(error.payment.confirm_url).toBe(itemOrder.confirm_url);
+  });
+
+  test('a stuck item order says it is on the bill, and falls back to "The resident"', async () => {
+    const nameless = { ...itemOrder, order: { ...itemOrder.order, resident_name: undefined } };
+    postJson.mockResolvedValueOnce({ order: nameless.order, accepted: true }).mockRejectedValue(new Error('offline'));
+
+    const error = await confirmAddToBill({ payment: nameless, pollMs: 0 }).catch((e) => e);
+
+    expect(error.message).toBe(
+      "The resident is on the account's bill, but the house could not finish creating it just now. Press the button again to finish: nothing more will be added."
+    );
+    expect(error.message).not.toMatch(/payment went through/);
   });
 });

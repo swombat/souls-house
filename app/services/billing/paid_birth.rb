@@ -32,7 +32,12 @@
 # found through the Checkout session; from there payment, complete!, the
 # webhook and the sweeper treat it as any other order, trialing being paid.
 #
-# Nothing is born before money has cleared. A paid order is never replaced by
+# In an account that already has a live subscription, the order is an item
+# order instead (Billing::PaidBirth::ItemOrders): the resident is added to
+# that subscription on credit, born once the accepted item is verified.
+#
+# Nothing is born before money has cleared, or, for an item order, before the
+# account's subscription has accepted the item. A paid order is never replaced by
 # a new one: asking to create another resident while one is paid finishes the
 # paid one and says so. Unpaid orders are abandoned by the sweeper after
 # expires_at, their subscriptions cancelled and drafts cleared.
@@ -54,13 +59,17 @@ module Billing
 
     end
 
+    include ItemOrders
+
     PAID = ResidentSubscription::PAID_STATUSES
 
     def initialize(client: Billing.client)
       @client = client
     end
 
-    # Returns [order, client_secret, payment_method_id].
+    # Returns [order, client_secret, payment_method_id]; for an item order
+    # (the account already has a live subscription) [order, nil, nil], the
+    # order carrying the quote to confirm.
     def start!(account:, creator:, attributes:, open_beginning:, tier:, rate: "standard")
       offer = tier&.offer(rate)
       refuse!(account, creator, offer)
@@ -72,17 +81,26 @@ module Billing
         raise Refused, "Write a soul seed, or choose an open beginning."
       end
 
-      settle_earlier!(account, creator)
-      # The price is pinned on the order: an uncertain create is replayed with
-      # the same idempotency key, so its parameters must not move when the
-      # catalogue is re-costed in between (#619).
-      order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
-        stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
-        billing_code_redemption: account.grant_for(offer.rate),
-        birth_attributes: attributes.to_h, open_beginning: open_beginning)
-      order.update!(stripe_payment_method_id: payment_method.id)
-      subscription = open_subscription!(order)
-      [ order, client_secret(subscription), payment_method.id ]
+      # The kind is decided once, under the account's resident-billing lock
+      # and after earlier orders are settled, and never inferred again.
+      CheckoutLock.synchronize_residents(account) do
+        settle_earlier!(account, creator)
+        if AddItem.applies?(account)
+          next [ start_item!(account: account, creator: creator, attributes: attributes, open_beginning: open_beginning,
+            offer: offer), nil, nil ]
+        end
+
+        # The price is pinned on the order: an uncertain create is replayed with
+        # the same idempotency key, so its parameters must not move when the
+        # catalogue is re-costed in between (#619).
+        order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
+          stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+          billing_code_redemption: account.grant_for(offer.rate),
+          birth_attributes: attributes.to_h, open_beginning: open_beginning)
+        order.update!(stripe_payment_method_id: payment_method.id)
+        subscription = open_subscription!(order)
+        [ order, client_secret(subscription), payment_method.id ]
+      end
     end
 
     # The free trial: a small resident, standard rate, no card. Records the
@@ -127,6 +145,7 @@ module Billing
     # is open.
     def payment(order)
       return trial_payment(order) if order.trial?
+      return item_payment(order) if order.item?
 
       # Born already: the payment went through and only the answer (or the
       # link to Stripe) was lost. Finish linking; the browser then confirms.
@@ -152,13 +171,22 @@ module Billing
     # Returns the order: born (and linked) once its subscription is paid.
     def complete!(order)
       bear_if_paid!(order)
-      link!(order.reload) if order.born?
+      order.reload
+      order.item? ? link_item!(order) : link!(order) if order.born?
       order
     end
 
     # The sweeper's: an order still unpaid at expires_at is abandoned. One
     # paid at the last moment is born instead.
     def abandon_expired!(order)
+      if order.item?
+        # Unsent: nothing exists at Stripe. Sent: never dropped, never
+        # cancelled; it is born, or needs attention.
+        abandoned = order.with_lock { order.pending? && !order.item_submitted_at? ? (order.abandon! || true) : false }
+        complete!(order) unless abandoned || !order.reload.pending?
+        return order
+      end
+
       abandoned = order.with_lock do
         next false unless order.pending?
 
@@ -266,6 +294,8 @@ module Billing
     # pays twice for one intention.
     def settle_earlier!(account, creator)
       ResidentBirthOrder.where(account: account, creator: creator, state: %w[pending failed]).find_each do |earlier|
+        next settle_item_order!(earlier) if earlier.item?
+
         # Resolved for certain (replayed if it was uncertain): a search miss
         # is not proof that Stripe made nothing.
         remote = begin
@@ -320,8 +350,19 @@ module Billing
     def bear_if_paid!(order)
       failure = nil
       remote = nil
+      attention = nil
       order.with_lock do
         next unless order.pending? || order.failed?
+
+        if order.item?
+          begin
+            _outcome, attention = bear_item!(order)
+          rescue ActiveRecord::RecordInvalid, Agents::HostedProvisioning::ConfigurationError => error
+            failure = error
+            raise ActiveRecord::Rollback
+          end
+          next
+        end
 
         remote = remote_subscription(order)
         next unless remote && remote.status.in?(PAID)
@@ -336,6 +377,17 @@ module Billing
         end
       end
       fail!(order, remote, failure) if failure
+      needs_attention!(order, attention) if attention
+    end
+
+    # An accepted item order that can't be born just now: kept, with its
+    # draft, marked failed with what is wrong, and the house told. Every
+    # later confirm, webhook or sweep tries again.
+    def needs_attention!(order, message)
+      order.reload
+      order.record_failure!(message) unless order.failed? && order.last_error == message
+      Rails.error.report(NotReady.new(message), handled: true,
+        context: { subsystem: "billing", birth_order_id: order.id, stripe_subscription_id: order.stripe_subscription_id })
     end
 
     # Step 2, after the birth has committed: Stripe names the resident, and

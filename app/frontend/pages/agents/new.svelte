@@ -58,6 +58,11 @@
   let payError = $state(null);
   let lastPayment = $state(null);
   let paidPending = $state(null);
+  // An item order (the resident is added to the account's existing Stripe
+  // subscription, nothing charged today) waiting for the owner to read its quote.
+  let itemPayment = $state(null);
+  const isItemPayment = (payment) => Boolean(payment && (payment.order?.kind === 'item' || payment.item_quote));
+  let deferred = $derived(isItemPayment(lastPayment));
   // The plans on offer: offers (a tier at a rate) when the server sends
   // them, else the standard tiers.
   let planOptions = $derived(billing?.offers?.length ? billing.offers : billing?.tiers || []);
@@ -140,6 +145,7 @@
       acknowledged &&
       !$form.processing &&
       !atCostNeedsOwnModel &&
+      !itemPayment &&
       (!billing ||
         (billing.can_pay && Boolean(chosenTier) && (free || Boolean(paymentMethod)) && !paying && !paidPending))
   );
@@ -162,6 +168,9 @@
         lastPayment = draft.trial_payment;
       }
     }
+    // An item order kept with a draft resumes through its payment URL: the
+    // house says whether it still waits for the quote or is already accepted.
+    if (draft?.item_payment?.payment_url) lastPayment = draft.item_payment;
     if (draft) {
       $form.agent.name = draft.name || '';
       $form.agent.system_prompt = draft.system_prompt || '';
@@ -192,6 +201,7 @@
         open_beginning: openBeginning,
         step,
         trial_payment: lastPayment?.order?.trial ? lastPayment : null,
+        item_payment: isItemPayment(lastPayment) ? lastPayment : null,
       })
     );
   });
@@ -214,6 +224,39 @@
     };
   }
 
+  // A resident born, or still being confirmed. Shared by the card path and
+  // the item path (confirmed from the quote panel).
+  function finish(result) {
+    localStorage.removeItem(draftKey);
+    if (result.redirectTo) {
+      router.visit(result.redirectTo);
+    } else {
+      paidPending = {
+        ...(result.order || { resident_name: $form.agent.name }),
+        item: isItemPayment(lastPayment),
+      };
+      payPhase = null;
+    }
+  }
+
+  function itemConfirmed(result) {
+    itemPayment = null;
+    finish(result);
+  }
+
+  function itemConfirmFailed(error) {
+    if (error.payment) lastPayment = error.payment;
+    payPhase = null;
+    // A changed price is shown by the panel itself, with the new quote.
+    if (error.itemQuote) {
+      payError = null;
+      return;
+    }
+    // Anything else resumes through the order's payment URL.
+    itemPayment = null;
+    payError = error.message;
+  }
+
   async function payAndCreate() {
     payError = null;
     const key = keyPath !== 'house' ? providerKey.trim() : '';
@@ -224,6 +267,7 @@
       const retrying =
         lastPayment &&
         (lastPayment.paid ||
+          lastPayment.accepted ||
           (lastPayment.order?.tier === chosenPlan?.tier &&
             (lastPayment.order?.rate ?? 'standard') === chosenPlan?.rate &&
             Boolean(lastPayment.order?.trial) === free));
@@ -238,19 +282,20 @@
             providerKey: key && keyProvider ? { provider: keyProvider, value: key } : null,
             onPhase,
           });
+      if (result.itemQuote) {
+        // Nothing is charged until the owner confirms the quote.
+        lastPayment = result.payment;
+        itemPayment = result.payment;
+        payPhase = null;
+        return;
+      }
       if (result.checkoutUrl) {
         // The draft stays until Stripe has started the trial (see onMount).
         lastPayment = result.payment;
         payPhase = 'leaving';
         return openCheckout(result.checkoutUrl);
       }
-      localStorage.removeItem(draftKey);
-      if (result.redirectTo) {
-        router.visit(result.redirectTo);
-      } else {
-        paidPending = result.order || { resident_name: $form.agent.name };
-        payPhase = null;
-      }
+      finish(result);
     } catch (error) {
       if (error.payment) lastPayment = error.payment;
       // A trial order the house refused to resume (its Checkout closed) is
@@ -361,10 +406,17 @@
 
   {#if paidPending}
     <Alert class="mb-6" data-testid="paid-pending">
-      <AlertTitle>{paidPending.trial ? 'Free trial started' : 'Payment received'}</AlertTitle>
+      <AlertTitle>
+        {paidPending.item ? "On the account's bill" : paidPending.trial ? 'Free trial started' : 'Payment received'}
+      </AlertTitle>
       <AlertDescription>
-        Stripe is still confirming it. {paidPending.resident_name || 'Your resident'} will be created as soon as it does,
-        and will appear with your residents. You can leave this page.
+        {#if paidPending.item}
+          {paidPending.resident_name || 'Your resident'} is on the account's bill and is being created; it will appear with
+          your residents in a moment.
+        {:else}
+          Stripe is still confirming it. {paidPending.resident_name || 'Your resident'} will be created as soon as it does,
+          and will appear with your residents. You can leave this page.
+        {/if}
       </AlertDescription>
     </Alert>
   {/if}
@@ -413,7 +465,13 @@
             {payError}
             {trial}
             billingUrl={`/accounts/${account.id}/billing`}
-            payPaid={Boolean(lastPayment?.paid)}
+            payPaid={Boolean(lastPayment?.paid || lastPayment?.accepted)}
+            {itemPayment}
+            {deferred}
+            onphase={(phase) => (payPhase = phase)}
+            onconfirmed={itemConfirmed}
+            onconfirmfailed={itemConfirmFailed}
+            ondismiss={() => (itemPayment = null)}
             blocked={atCostNeedsOwnModel
               ? `At cost includes no house model, and ${$form.agent.name || 'this resident'} is set to think on the house. Go back to the model step and connect a subscription or key, or choose the standard price.`
               : null}
@@ -447,6 +505,8 @@
             Starting…
           {:else if payPhase === 'leaving'}
             Opening Stripe…
+          {:else if payPhase === 'adding'}
+            Adding to the bill…
           {:else if payPhase === 'paying'}
             Confirming payment…
           {:else if payPhase === 'confirming'}
