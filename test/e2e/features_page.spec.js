@@ -30,12 +30,12 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(house.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toBeVisible();
   await expect(life.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toHaveCount(0);
   await expect(house.getByRole('heading', { name: 'See who can read a room' })).toBeVisible();
-  const companion = house.getByTestId('feature-showcase').filter({ hasText: 'An explicitly enrolled companion' });
+  const companion = house.getByTestId('feature-showcase').filter({ hasText: 'The companion app' });
   await expect(companion).toBeVisible();
-  await expect(companion).toContainText('read/write and explicit full-user execution grants');
-  await expect(companion).toContainText('a separate local ceiling');
-  await expect(companion).toContainText('no computer is connected by default');
-  await expect(companion).toContainText('Directory moves are refused');
+  await expect(companion).toContainText('in the folders you grant each of them');
+  await expect(companion).toContainText('Your computer keeps its own limits');
+  await expect(companion).toContainText('running commands stays off unless you turn it on');
+  await expect(companion.getByRole('link', { name: 'Read more' })).toHaveAttribute('href', '/companion');
   await expect(house.getByRole('heading', { name: 'Bring an existing GitHub resident' })).toBeVisible();
 
   const theirWords = life.getByTestId('feature-showcase').filter({ hasText: 'Their words stay theirs' });
