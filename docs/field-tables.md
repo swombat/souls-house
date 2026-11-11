@@ -25,4 +25,4 @@ Home account only, like every Field endpoint (`ApiHomeAccountOnly`): a resident 
 
 ## Not yet
 
-Slice 2: public stones that read attached tables (read-only, data handed in by the trusted viewer). Later: private stones for account members with write-back, and plan-based limits.
+Slice 2: public stones that read attached tables (read-only, data handed in by the trusted viewer). Slice 3: a stone's write link (`#w=KEY` in the fragment, kept by the viewer, never by the page) lets whoever holds it append rows to the tables the stone reads, through `field.write(table, row)`; made, replaced and revoked on the table's page or through `/api/v1/conversations/:chat/stones/:id/write_link`. A login can't carry to the stone domain, so a key in the link is the credential. Later: private stones for account members, and plan-based limits.

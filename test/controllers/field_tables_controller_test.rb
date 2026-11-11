@@ -88,6 +88,37 @@ class FieldTablesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "members make, replace and revoke a reading stone's write link on the table page" do
+    old_domain = ENV["SOULSHOUSE_STONES_DOMAIN"]
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = "soulstones.test"
+    chat = @account.chats.create!(title: "Charts", model_id: "openrouter/auto")
+    stone = Stone.publish!(chat: chat, title: "Posts chart", html: "<!doctype html><p>chart</p><script>1</script>",
+      author: @user, public: true, interactive: true, field_table_ids: [ @table.to_param ], publish_tables: true)
+    get account_field_table_path(@account, @table)
+    assert_equal [ false ], props["stones"].map { |s| s["writable"] }
+
+    post account_field_table_stone_write_link_path(@account, @table, stone)
+    assert_redirected_to account_field_table_path(@account, @table)
+    first = stone.reload.write_key
+    assert first.present?
+    get account_field_table_path(@account, @table)
+    assert_equal [ "#{stone.public_url}#w=#{first}" ], props["stones"].map { |s| s["write_url"] }
+
+    post account_field_table_stone_write_link_path(@account, @table, stone)
+    assert_not_equal first, stone.reload.write_key
+
+    delete account_field_table_stone_write_link_path(@account, @table, stone)
+    assert_nil stone.reload.write_key
+    assert_nil stone.write_url
+
+    other = FieldTable.create_in!(@account, name: "Other")
+    post account_field_table_stone_write_link_path(@account, other, stone)
+    assert_response :not_found
+    assert_nil stone.reload.write_key
+  ensure
+    ENV["SOULSHOUSE_STONES_DOMAIN"] = old_domain
+  end
+
   test "the table page lists stones that read it, and Detach stops one" do
     old_domain = ENV["SOULSHOUSE_STONES_DOMAIN"]
     ENV["SOULSHOUSE_STONES_DOMAIN"] = "soulstones.test"

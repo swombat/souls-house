@@ -48,6 +48,20 @@ class FieldTablesController < ApplicationController
     redirect_to account_field_table_path(current_account, field_table), notice: "Detached. That stone no longer reads #{field_table.name}."
   end
 
+  # A write link lets whoever holds it add rows to every table the stone
+  # reads. Making one again replaces the key, so the old link stops working.
+  def issue_write_link
+    stone = field_table.reading_stones.find(params[:stone_id])
+    stone.issue_write_key!
+    redirect_to account_field_table_path(current_account, field_table), notice: "Write link made. Anyone holding it can add rows."
+  end
+
+  def revoke_write_link
+    stone = field_table.reading_stones.find(params[:stone_id])
+    stone.revoke_write_key!
+    redirect_to account_field_table_path(current_account, field_table), notice: "Write link revoked. The stone is read-only again."
+  end
+
   def export
     filename = "#{field_table.name.parameterize.presence || 'table'}.csv"
     send_data field_table.to_csv, filename: filename, type: "text/csv"
@@ -68,7 +82,7 @@ class FieldTablesController < ApplicationController
 
   def stone_json(stone)
     latest = stone.stone_revisions.max_by(&:number)
-    { id: stone.to_param, title: latest&.title, public_url: stone.public_url }
+    { id: stone.to_param, title: latest&.title, public_url: stone.public_url, **stone.write_json }
   end
 
   def summary_json(table, row_count)

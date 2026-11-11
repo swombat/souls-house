@@ -163,6 +163,108 @@ class StoneFieldTablesTest < ActionDispatch::IntegrationTest
     assert_equal [ { "id" => @table.to_param, "name" => "Posts" } ], JSON.parse(response.body)["stone"]["latest_revision"]["field_tables"]
   end
 
+  # -- Writing through a write link (slice 3) --------------------------------
+
+  def write(row, key: @stone.write_key, table: "Posts", number: 1)
+    host! @host
+    headers = { "Content-Type" => "application/json" }
+    headers["X-Stone-Write-Key"] = key if key
+    post "/revisions/#{number}/rows", params: { table: table, row: row }.to_json, headers: headers
+  end
+
+  test "a write link appends one row to a table the revision reads, written by the stone" do
+    @stone.issue_write_key!
+    assert_difference -> { @table.live_rows.count }, 1 do
+      write({ "platform" => "bsky", "views" => "12" })
+    end
+    assert_response :created
+    assert_equal({ "platform" => "bsky", "views" => 12 }, JSON.parse(response.body)["row"])
+    row = @table.live_rows.last
+    assert_equal @stone, row.last_written_by
+    assert_equal "Stone: Posts chart", row.writer_name
+    refute response.headers.key?("Set-Cookie")
+
+    get "/revisions/1/data"
+    assert_includes JSON.parse(response.body)["tables"]["Posts"]["rows"], { "platform" => "bsky", "views" => 12 }
+  end
+
+  test "no key, a wrong key, an old key or a revoked key writes nothing" do
+    old = @stone.issue_write_key!
+    @stone.issue_write_key!
+    assert_no_difference -> { FieldTableRow.count } do
+      write({ "platform" => "x" }, key: nil)
+      assert_response :forbidden
+      write({ "platform" => "x" }, key: "A" * 43)
+      assert_response :forbidden
+      write({ "platform" => "x" }, key: old)
+      assert_response :forbidden
+      key = @stone.write_key
+      @stone.revoke_write_key!
+      write({ "platform" => "x" }, key: key)
+      assert_response :forbidden
+    end
+  end
+
+  test "a write link reaches only the tables this revision reads, under the table's rules" do
+    @stone.issue_write_key!
+    assert_no_difference -> { FieldTableRow.count } do
+      write({ "secret" => "x" }, table: "Private")
+      assert_response :not_found
+      write({ "nope" => "x" })
+      assert_response :unprocessable_entity
+      assert_match "not a column", JSON.parse(response.body)["error"]
+      write({ "platform" => "x" * 5000 })
+      assert_response :unprocessable_entity
+      write("not an object")
+      assert_response :unprocessable_entity
+      write({ "platform" => "x" }, number: 9)
+      assert_response :not_found
+    end
+
+    @table.detach_stone!(@stone)
+    write({ "platform" => "x" })
+    assert_response :not_found
+  end
+
+  test "a withdrawn stone or a non-interactive revision can't write" do
+    @stone.issue_write_key!
+    @stone.withdraw!
+    write({ "platform" => "x" })
+    assert_response :not_found
+    assert_equal 1, @table.live_rows.count
+  end
+
+  test "the viewer offers writes only to a revision that reads tables, and never puts the key in the page" do
+    @stone.issue_write_key!
+    host! @host
+    get "/"
+    assert_select "#stone-container[data-writes=?]", "/revisions/1/rows"
+    assert_select "#stone-writes[hidden]"
+    assert_not_includes response.body, @stone.write_key
+    get "/revisions/1/content"
+    assert_not_includes response.body, @stone.write_key
+    assert_includes response.body, "write,"
+  end
+
+  test "the API makes and revokes a write link for a stone that reads tables" do
+    key = ApiKey.generate_for(@user, name: "Stones", account: @account)
+    headers = { "Authorization" => "Bearer #{key.raw_token}" }
+    path = "/api/v1/conversations/#{@chat.to_param}/stones/#{@stone.to_param}/write_link"
+    post path, headers: headers, as: :json
+    assert_response :created
+    body = JSON.parse(response.body)["stone"]
+    assert body["writable"]
+    assert_equal @stone.reload.write_url, body["write_url"]
+
+    delete path, headers: headers
+    assert_response :no_content
+    assert_not @stone.reload.writable?
+
+    bare = Stone.publish!(chat: @chat, title: "Bare", html: CHART, author: @user, public: true, interactive: true)
+    post "/api/v1/conversations/#{@chat.to_param}/stones/#{bare.to_param}/write_link", headers: headers, as: :json
+    assert_response :unprocessable_entity
+  end
+
   test "the boundary still refuses anything but GET on the stone paths" do
     host! @host
     post "/revisions/1/data"

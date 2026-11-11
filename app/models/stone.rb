@@ -16,6 +16,10 @@ class Stone < ApplicationRecord
 
   scope :available, -> { where(withdrawn_at: nil) }
 
+  # The write link's key. Never shown to the stone's own page: the trusted
+  # viewer reads it from the link's fragment and sends it with each write.
+  encrypts :write_key
+
   def self.publish!(chat:, title:, html:, author:, public:, interactive: false, field_table_ids: [], publish_tables: false)
     chat.account.with_lock do
       stone = create!(chat: chat)
@@ -32,6 +36,37 @@ class Stone < ApplicationRecord
 
   def withdrawn?
     withdrawn_at.present?
+  end
+
+  # -- Write link -----------------------------------------------------------
+
+  # Makes (or replaces) the key, so any older write link stops working.
+  def issue_write_key!
+    update!(write_key: SecureRandom.urlsafe_base64(32), write_key_created_at: Time.current)
+    write_key
+  end
+
+  def revoke_write_key!
+    update!(write_key: nil, write_key_created_at: nil)
+  end
+
+  def writable?
+    write_key.present?
+  end
+
+  def write_key_matches?(candidate)
+    writable? && candidate.is_a?(String) && candidate.bytesize == write_key.bytesize &&
+      ActiveSupport::SecurityUtils.secure_compare(write_key, candidate)
+  end
+
+  # The stone's link with the key in its fragment: browsers don't send a
+  # fragment to the server, so the key stays out of request logs.
+  def write_url
+    "#{public_url}#w=#{write_key}" if writable?
+  end
+
+  def write_json
+    { writable: writable?, write_url: write_url, write_link_created_at: write_key_created_at&.iso8601 }
   end
 
   def public_param

@@ -62,10 +62,7 @@ module StoneHosting
       end
 
       name = StoneHosting.name(host)
-      unless name && %w[GET HEAD].include?(request.request_method) &&
-          request.path.match?(%r{\A/(?:revisions/[1-9][0-9]*(?:/content|/data)?)?\z})
-        return not_found
-      end
+      return not_found unless name && (reading?(request) || writing?(request))
 
       env["souls_house.stone_name"] = name
       env.delete("HTTP_X_FORWARDED_HOST")
@@ -80,6 +77,22 @@ module StoneHosting
     end
 
     private
+
+    def reading?(request)
+      %w[GET HEAD].include?(request.request_method) &&
+        request.path.match?(%r{\A/(?:revisions/[1-9][0-9]*(?:/content|/data)?)?\z})
+    end
+
+    # The one write: a small JSON row from a stone's write link. The key comes
+    # in X-Stone-Write-Key (Authorization and cookies are still dropped below),
+    # and a custom header means another site can't send it without a CORS
+    # preflight, which nothing here answers.
+    def writing?(request)
+      request.request_method == "POST" && request.path.match?(%r{\A/revisions/[1-9][0-9]*/rows\z}) &&
+        request.media_type == "application/json" && request.content_length.to_i.between?(1, WRITE_BODY_LIMIT)
+    end
+
+    WRITE_BODY_LIMIT = 16_384
 
     def not_found
       [ 404, { "content-type" => "text/plain", "cache-control" => "no-store",

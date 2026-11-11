@@ -40,8 +40,9 @@
         <button id="stone-stop" type="button">Stop and unload</button>
         <button id="stone-start" type="button" hidden>Run again</button>
         <p id="stone-status" role="status">Running</p>
+        <% if @reads_tables %><p id="stone-writes" hidden>Write link · this page can add rows to its tables. Anyone you give this link to can too.</p><% end %>
       </div>
-      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"<% if @reads_tables %> data-tables="<%= hosted_stone_data_path(@revision.number) %>" data-revision="<%= @revision.number %>"<% end %>>
+      <div id="stone-container" data-source="<%= content_path %>" data-title="<%= @revision.title %>"<% if @reads_tables %> data-tables="<%= hosted_stone_data_path(@revision.number) %>" data-writes="<%= hosted_stone_rows_path(@revision.number) %>" data-revision="<%= @revision.number %>"<% end %>>
         <% unless @reads_tables %>
         <iframe
         title="<%= @revision.title %>"
@@ -89,6 +90,16 @@
           // in-flight refresh can't reach it. Loads are counted as a second
           // check. At most one fetch per 10 s; asks in between fold into one.
           const dataPath = container.dataset.tables;
+          const writePath = container.dataset.writes;
+          // The write link carries its key in the fragment (#w=...), which the
+          // browser never sends to a server. Only this script holds it; the
+          // frame asks over its port and never sees the key.
+          const writeKey = (() => {
+            const match = /(?:^#|&)w=([A-Za-z0-9_-]{20,128})(?:&|$)/.exec(location.hash);
+            return match ? match[1] : null;
+          })();
+          let writesInFlight = 0;
+          if (writeKey && writePath) document.getElementById("stone-writes").hidden = false;
           const MIN_GAP = 10000;
           const revision = Number(container.dataset.revision);
           let lastFetch = 0, pending = null, port = null;
@@ -113,6 +124,37 @@
               if (bound === port && live(frame)) bound.postMessage({ souls_field: 1, type: "tables", tables: body.tables });
             } catch (error) { /* the frame keeps its last rows */ }
           };
+          const schedule = (frame, bound) => {
+            if (pending) return;
+            const wait = Math.max(0, lastFetch + MIN_GAP - Date.now());
+            pending = setTimeout(() => send(frame, bound), wait);
+          };
+          const write = async (frame, bound, ask) => {
+            const answer = (reply) => {
+              if (bound === port && live(frame)) bound.postMessage({ souls_field: 1, type: "written", id: ask.id, ...reply });
+            };
+            if (!writeKey || !writePath) return answer({ ok: false, error: "This link can't write to tables; open the stone's write link" });
+            if (writesInFlight >= 4) return answer({ ok: false, error: "Too many writes at once; wait for the last ones" });
+            writesInFlight += 1;
+            try {
+              const response = await fetch(writePath, {
+                method: "POST", credentials: "omit", cache: "no-store",
+                headers: { "Content-Type": "application/json", "X-Stone-Write-Key": writeKey },
+                body: JSON.stringify({ table: ask.table, row: ask.row })
+              });
+              const body = await response.json().catch(() => ({}));
+              if (response.ok) {
+                answer({ ok: true, row: body.row });
+                if (bound === port && live(frame)) schedule(frame, bound);
+              } else {
+                answer({ ok: false, error: typeof body.error === "string" ? body.error : "The house refused the row (" + response.status + ")" });
+              }
+            } catch (error) {
+              answer({ ok: false, error: "Couldn't reach the house; the row was not confirmed" });
+            } finally {
+              writesInFlight -= 1;
+            }
+          };
           if (dataPath) {
             window.addEventListener("message", (event) => {
               const frame = container.querySelector("iframe");
@@ -124,10 +166,14 @@
               port = bound;
               bound.onmessage = (message) => {
                 const ask = message.data;
-                if (bound !== port || !ask || ask.souls_field !== 1 || ask.type !== "refresh" || pending) return;
-                const wait = Math.max(0, lastFetch + MIN_GAP - Date.now());
-                pending = setTimeout(() => send(frame, bound), wait);
+                if (bound !== port || !ask || ask.souls_field !== 1) return;
+                if (ask.type === "write") {
+                  if (Number.isInteger(ask.id) && typeof ask.table === "string") write(frame, bound, ask);
+                  return;
+                }
+                if (ask.type === "refresh") schedule(frame, bound);
               };
+              bound.postMessage({ souls_field: 1, type: "ready", can_write: Boolean(writeKey && writePath) });
             });
             // Made here rather than in the markup, so its first load is
             // always counted and a later navigation is always noticed.

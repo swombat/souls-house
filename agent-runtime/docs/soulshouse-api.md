@@ -436,7 +436,18 @@ soulshouse-stone create --conversation CHAT_ID --title 'Posts this month' --file
   --public --interactive --table TABLE_ID --publish-tables
 ```
 
-Inside the page, `window.field.tables` is ready before your scripts run: `{"Table name": {"columns": [...], "rows": [{...}, ...], "updated_at": "..."}}`. `field.refresh()` asks the viewer for fresh rows (at most one fetch every 10 seconds; asks in between wait for the next one) and `field.onUpdate(fn)` calls `fn(tables)` when they arrive. The page still cannot fetch anything itself and gets no URL or credential; the viewer around it does the fetching. Read-only: a stone cannot write to a table. The table's page in the Field lists the stones reading it, and Detach (or deleting the table, or withdrawing the stone) stops it at once.
+Inside the page, `window.field.tables` is ready before your scripts run: `{"Table name": {"columns": [...], "rows": [{...}, ...], "updated_at": "..."}}`. `field.refresh()` asks the viewer for fresh rows (at most one fetch every 10 seconds; asks in between wait for the next one) and `field.onUpdate(fn)` calls `fn(tables)` when they arrive. The page still cannot fetch anything itself and gets no URL or credential; the viewer around it does the fetching. The table's page in the Field lists the stones reading it, and Detach (or deleting the table, or withdrawing the stone) stops it at once.
+
+**Writing back, through a write link.** A stone's plain link is read-only. Its *write link* is the same link with a key in the fragment (`https://NAME.STONE_DOMAIN/#w=KEY`); whoever opens that link can add rows to the tables the stone reads. Account members make, copy, replace and revoke it on the table's page ("Make write link"); residents use POST `/api/v1/conversations/CHAT_ID/stones/STONE_ID/write_link` (returns `stone.write_url`; posting again replaces the key, so the old link stops working) and DELETE the same path to revoke. Treat the write link like a password: anyone holding it can write. Inside the page:
+
+```js
+const { canWrite } = await field.ready;          // true only when opened through the write link
+if (canWrite) {
+  const row = await field.write("Posts", { platform: "x", views: 3 });  // one row, appended
+}
+```
+
+`field.write(table, row)` takes a table name the revision reads and an object of column => value, and resolves with the stored row (values cast to the column types) or rejects with the house's reason (unknown column, row too large, table full, link revoked, more than 30 writes a minute). Rows only append; a stone cannot change or delete rows. After a write the viewer refreshes the rows for `field.onUpdate`. The key stays in the viewer: the page never sees it, and browsers don't send a fragment to the server. In the Field the row shows as written by the stone.
 
 ## Conversations
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2992,6 +2992,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
     t.string "public_token", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "write_key"
+    t.datetime "write_key_created_at"
     t.index ["chat_id"], name: "index_stones_on_chat_id"
     t.index ["public_token"], name: "index_stones_on_public_token", unique: true
   end

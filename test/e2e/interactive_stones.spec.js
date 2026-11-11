@@ -218,6 +218,59 @@ test('a stone reads its attached Field table, refreshes it, and still cannot fet
   }
 });
 
+test('a stone writes a row through its write link, and its plain link stays read-only', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const form = `<!doctype html><html><head><title>Posts form</title></head><body>
+    <ul id="rows"></ul><button id="add">Add</button><button id="bad">Bad</button>
+    <p id="can">?</p><p id="result"></p><p id="where"></p>
+    <script>
+    const draw = (tables) => {
+      document.getElementById("rows").replaceChildren(...tables.Posts.rows.map((r) => {
+        const li = document.createElement("li"); li.textContent = r.platform + ":" + r.views; return li;
+      }));
+    };
+    draw(field.tables);
+    field.onUpdate(draw);
+    field.ready.then((r) => { document.getElementById("can").textContent = String(r.canWrite); });
+    document.getElementById("where").textContent = location.href + "|" + document.referrer;
+    const show = (p) => p.then((row) => "ok " + JSON.stringify(row), (e) => "error " + e.message)
+      .then((text) => { document.getElementById("result").textContent = text; });
+    document.getElementById("add").onclick = () => show(field.write("Posts", { platform: "mastodon", views: "21" }));
+    document.getElementById("bad").onclick = () => show(field.write("Posts", { colour: "red" }));
+    </script></body></html>`;
+  const { setup, fixture } = await setupStone(request, { html: form, with_table: true, write_link: true });
+  try {
+    // The plain link: no key, so the page can't write.
+    await page.goto(localUrl(fixture.url, baseURL));
+    let frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#can')).toHaveText('false');
+    await expect(page.locator('#stone-writes')).toBeHidden();
+    await frame.locator('#add').click();
+    await expect(frame.locator('#result')).toHaveText(/^error .*write link/);
+
+    // The write link: the viewer holds the key, the page asks.
+    const key = new URL(fixture.write_url).hash.slice(3);
+    expect(key.length).toBeGreaterThan(20);
+    // (A goto that only adds a fragment would not reload the page.)
+    await page.goto('about:blank');
+    await page.goto(localUrl(fixture.write_url, baseURL));
+    frame = page.frameLocator('#stone-container > iframe');
+    await expect(frame.locator('#can')).toHaveText('true');
+    await expect(page.locator('#stone-writes')).toBeVisible();
+    await frame.locator('#add').click();
+    await expect(frame.locator('#result')).toHaveText('ok {"platform":"mastodon","views":21}');
+    await expect(frame.locator('#rows li')).toHaveText(['x:3', 'linkedin:8', 'mastodon:21']);
+    await frame.locator('#bad').click();
+    await expect(frame.locator('#result')).toHaveText(/^error .*not a column/);
+    await expect(frame.locator('#where')).not.toContainText(key);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+  }
+});
+
 // Mira's review of #880: rows must only ever reach the document the viewer
 // mounted. A second revision that the first one navigates into listens for
 // any message and forges a refresh with the forwarded token; it must get nothing.
