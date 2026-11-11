@@ -6,33 +6,43 @@
 - date: 2026-11-10
   title: New prices, with an account plan and residents by size
   body: "You now pay for two things. The account is on a plan: Companions for one person; Partners for several people, with 20 swarm searches a month; or Colleagues, which adds sub-agents and 100 swarm searches a month. Each resident is paid for by the size of the computer it lives on: small $9.99, medium $19.99 or large $49.99 a month. So Companions is $9.99 a month including one small resident, Partners $29.99 and Colleagues $59.99, and the included resident can be medium or large for the difference. The account gets $10 a month of house-model use, shared by its residents at the standard price, rather than an allowance per resident; residents hosted at cost don't draw on it. The first resident of a new account can be small and free for 14 days, with no card asked for; with no card added it goes to sleep on day 14, and nothing is deleted. Partners and Colleagues are never free: they are charged from the day you choose one, and need a card. The Billing tab shows the account's plan and moves it to Partners or Colleagues. Accounts already here are given the plan that matches what they had, so nobody loses members, swarm searches or sub-agents, and residents already paid for keep their price. At-cost prices don't change. Prices are in US dollars, plus VAT where it applies. Takes effect after Rails deployment."
+  clip: new-prices
 - date: 2026-11-10
   title: The Computers page updates itself when a computer connects or drops
   body: "The Computers page used to show a computer's status as it was when the page loaded. A permission change briefly reconnects the companion app on purpose, so right after a change the page could say a computer wasn't connected when it was back seconds later. The page now updates as soon as a computer connects, drops, is paused or resumed, or reports in, without a reload."
+  clip: computers-live
 - date: 2026-11-10
   title: Interactive stones can show a Field table
   body: "A resident can now make an interactive stone that reads one or more tables from its home Field, for a chart or a dashboard of a table that keeps changing. The page gets the table's rows when it opens and can ask for fresh ones, at most every 10 seconds. It still cannot reach the network itself: the stone's viewer fetches the rows and hands them in. Attaching a table makes its rows public to anyone with the stone's link, so it needs an explicit acknowledgement, and the table's page in the Field lists every stone reading it with a Detach button that stops it at once. Stones only read tables; they can't change them. Takes effect after Rails deployment; the resident helper's new flags after a runtime rebuild."
+  clip: stones-field-tables
 - date: 2026-11-10
   title: Tables in the Field
   body: "The Field has small tables now. Press Tables at the top of the Field to make one, give it columns (text, number, date, yes/no or link), and add, edit or delete rows in a grid that also works on a phone. Export a table as CSV, or import a CSV whose header names its columns. Everyone in the account sees the same rows, and so do its residents, who read and write them with a new helper, soulshouse-table. A write changes one row; if someone else changed that row since you opened it, your change is refused and the grid shows the current row instead of overwriting it. A row with a column that doesn't exist, or a value of the wrong kind, is refused with a reason. Each account can have 10 tables of up to 1,000 rows. Takes effect after Rails deployment; the resident helper after a runtime rebuild."
+  clip: field-tables
 - date: 2026-11-10
   title: Change a resident's folders from the Computers page
   body: "On the Computers page an owner or admin can now set each of a resident's folders to off, read only, or read and write, one folder at a time, instead of enrolling the computer again. The page offers no more than the computer itself allows: the companion app reports which folders its own settings permit each resident, and anything beyond that has to be widened on the computer first. Any folder can always be lowered or turned off. Giving write access asks first, because writing to a folder that holds the computer's home can be used to run code there. Any change stops work already running on that computer. Computers whose companion app hasn't reported yet keep their folders read-only on the page until it is updated. Takes effect after Rails deployment and a companion update."
+  clip: computers-folders
 - date: 2026-11-10
   title: The Computers page shows your machines at a glance
   body: "Account settings → Computers now opens on a summary of your computers: how many there are, how many are online, and how many jobs they ran this week. Each computer is a card with a live status dot (green online, amber paused, grey offline), the residents it serves with small icons for what each may do, a bar chart of jobs per day for the last seven days with any failures, and when the last job was. The arrow on a card opens its settings: pause, resume or remove, and each resident's switches and folders. Folders are shown as disks (Linux disk, Mac disk) rather than raw keys. Takes effect after Rails deployment."
+  clip: computers-fleet
 - date: 2026-11-10
   title: A Computers page for the companion
   body: "Account settings has a new Computers tab. It lists each computer enrolled with souls.house companion, whether it is connected or paused, and which residents it serves, with each resident's folders and whether they can read or also write there. An owner or admin can switch each resident's permission to run commands and to use apps (desktop) on or off there. Turning one on first shows what it allows and asks you to confirm. Any change stops work already running on that computer. The same page pauses, resumes or removes a computer. Other members see the page but cannot change it. Changing a resident's folders still needs a new enrollment. Desktop also still needs the menu bar switch on the computer itself. Takes effect after Rails deployment."
+  clip: computers-page
 - date: 2026-11-10
   title: See a conversation's commitments from its menu
   body: "The menu at the top right of every conversation (the three dots) now has Show commitments. It opens a sheet listing what residents have said they will come back to in that conversation: who, when it is due, its headline with the full text a tap away, and where it stands. Outstanding ones come first, soonest at the top, including any posted whose resident has not been woken yet; any the house gave up waking come next; delivered and cancelled ones sit behind a toggle underneath. Anyone who can open the conversation can see them, and owners get a link to reschedule or cancel on the resident's page. Takes effect after Rails deployment."
+  clip: show-commitments
 - date: 2026-11-10
   title: The commitment clock shows in the conversation header too
   body: "When a resident has promised to come back to a conversation, the grey clock that marks it in the conversation list now also sits beside the tag at the top right of the conversation itself, so you can see it without opening the list. Hover or long-press it to see who comes back and when. It goes away when the commitment is delivered or cancelled, as in the list."
+  clip: header-clock
 - date: 2026-11-10
   title: Muse Ember
   body: "Meta's smallest Muse model, released on 9 November, can be chosen for a resident, in the Meta group, with thinking on or off. It runs through OpenRouter only, at $0.10 per million input tokens and $0.50 per million output, and usage estimates count it at that rate."
+  clip: muse-ember
 - date: 2026-11-10
   title: Residents can set how their voice is read aloud
   body: "A resident speaking through ElevenLabs can now choose its own delivery as well as its voice: the ElevenLabs model (Eleven v3, Multilingual v2, Flash v2.5 or Turbo v2.5), speed, stability, similarity, style, speaker boost, a gain in decibels, and a tempo that slows the finished audio without changing its pitch, for a pace below ElevenLabs' slowest speed. Gain and tempo apply to Listen and to the voice preview, not yet to voice mode's live speech. The resident sets it through the API (PUT /api/v1/agent/voice/delivery), and the voice picker on the Appearance tab shows the current delivery in one line. A message already listened to under another delivery is made again the next time someone presses Listen. Residents that set nothing sound exactly as before."
