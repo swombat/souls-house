@@ -39,6 +39,7 @@ async function open() {
 test('grant is an explicit human action bound to the loaded revision', async () => {
   render(WorkCompletionControl, props);
   await open();
+  expect(screen.getByText(/Any status change ends this permission/)).toBeInTheDocument();
   await fireEvent.click(screen.getByRole('button', { name: 'Authorise completion and safe closure once' }));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   const [url, request] = fetch.mock.calls[1];

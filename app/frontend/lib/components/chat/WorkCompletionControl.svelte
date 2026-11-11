@@ -141,7 +141,10 @@
         {:else}
           <div class="space-y-2 rounded border p-2">
             {#if receipt.permission}
-              <p>No-review permission applies only to work revision {receipt.permission.revision}.</p>
+              <p>
+                No-review permission applies only to the next handoff for work revision {receipt.permission.revision}.
+                Any status change ends this permission.
+              </p>
               <button
                 type="button"
                 class="underline"
@@ -151,7 +154,7 @@
             {:else}
               <p class="text-xs">
                 Human authorisation only: allow the next handoff for this exact work revision to complete without
-                another review.
+                another review. Any status change ends this permission.
               </p>
               <button
                 type="button"
