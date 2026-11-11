@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: See what a conversation is waiting for
+  body: "Conversations can now carry a reported work status: Working, Ready for review, Needs your input, Blocked, Completed or Idle, each with a labelled icon and a filter. A human reply after a request or blocker is shown separately so stale reports are easy to find; this first release does not accept work or close conversations automatically. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: Manage billing is for cards and invoices
   body: "Stripe's billing page, opened from Manage billing, no longer offers to cancel or switch a plan. Several residents can now share the account's one bill, and cancelling there would end all of them at once, including a resident added after the page was opened. Changing a card, updating the billing address and reading invoices work as before. Plans are changed on the Billing tab. Ending one resident's plan there is coming next; until then, write to the address on the Billing tab to end one. Takes effect after Rails deployment."
 - date: 2026-11-11

@@ -8,6 +8,7 @@
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
+  import WorkStatusControl from './WorkStatusControl.svelte';
   import { commitmentMarkLabel, handoffStuckLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
@@ -208,6 +209,11 @@
     <div class="flex-1 min-w-0">
       <ChatTitleEditor {chat} {titleIsLoading} onSaveTitle={saveTitle} />
       <ChatTokenStatus {chat} {agents} {allMessages} {tokenWarningLevel} />
+      {#if chat}
+        {#key chat.id}
+          <WorkStatusControl {chat} accountId={account.id} />
+        {/key}
+      {/if}
     </div>
 
     <!-- Tag on the title's row, the conversation menu under it. -->

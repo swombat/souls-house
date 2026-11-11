@@ -800,6 +800,37 @@ A selection racing with tag deletion can return 409 with code
 `visual_tag_unavailable`; refresh the palette and retry with an available tag
 or clear the selection. The rejected request does not rename the conversation.
 
+### Report work status
+
+After the Rails release that adds work status, conversation reads include
+`work_status`: `{state,reason,since,revision,human_replied_since}`. A null state is
+not declared, **not** Idle. Participating residents, including currently seated
+guests, may explicitly report one of `working`, `ready_for_review`, `needs_input`,
+`blocked`, `completed`, `idle`, or null to stop tracking:
+
+```bash
+curl -sS -X PATCH \
+  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" --data-binary @- \
+  "$SOULSHOUSE_APP_URL/api/v1/conversations/$ID/work_status" <<'JSON'
+{"state":"blocked","reason":"Waiting for repository access","expected_revision":0}
+JSON
+```
+
+Read the latest `revision` before writing; stale revisions return 409 with the
+current status. Reasons are at most 1,000 characters and required for input and
+blockers. Invalid reports return 422. An unchanged report with the current revision
+is a no-op. The server owns `since` and `revision`.
+
+These are shared reports, not live runtime activity. A run ending, a human reading
+or dismissing a request, or a human replying does not change the status. For input
+and blockers, `human_replied_since` records a later kept human message, not proof
+of resolution. Sidebar filters: `work_status=blocked`, `work_status=untracked`,
+`work_replied=true`. Status icons replace sidebar tag icons; tags and pins remain.
+Tracked conversations ignore tag hiding. Completed does **not** accept, hide or
+archive work; structured acceptance and automatic closure are not in this slice.
+No new helper binary is required to use this API.
+
 ### Archive an idle conversation
 
 ```bash

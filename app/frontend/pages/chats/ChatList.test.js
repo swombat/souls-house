@@ -150,3 +150,67 @@ test('counts hidden conversations with an open red eye, and only those', async (
   await tick();
   expect(screen.queryByTestId('hidden-attention-count')).not.toBeInTheDocument();
 });
+
+test('status and human-replied filters compose with room/tag/archive and survive links', async () => {
+  visit('/accounts/house/chats?room=all&tag=work&show_archived=true&work_status=blocked&work_replied=true', {
+    current_room: 'all',
+    visual_tags: [{ id: 'work', label: 'Project', icon: 'Wrench', colour: 'blue' }],
+  });
+  render(ChatList, {
+    accountId: 'house',
+    chats: [
+      {
+        id: 'c1',
+        title: 'One',
+        work_status: { state: 'blocked', revision: 1, human_replied_since: '2026-11-11T20:00:00Z' },
+      },
+    ],
+  });
+  const link = new URL(screen.getByRole('link', { name: /One/ }).href);
+  expect(Object.fromEntries(link.searchParams)).toEqual({
+    room: 'all',
+    tag: 'work',
+    show_archived: 'true',
+    work_status: 'blocked',
+    work_replied: 'true',
+  });
+  await openFilter();
+  expect(screen.getByLabelText('Work status', { exact: true })).toHaveValue('blocked');
+  expect(screen.getByRole('checkbox', { name: 'Human replied since request or blocker' })).toBeChecked();
+  await fireEvent.change(screen.getByLabelText('Work status', { exact: true }), { target: { value: 'idle' } });
+  const target = new URL(router.visit.mock.calls.at(-1)[0]);
+  expect(Object.fromEntries(target.searchParams)).toEqual({
+    room: 'all',
+    tag: 'work',
+    show_archived: 'true',
+    work_status: 'idle',
+    work_replied: 'true',
+  });
+});
+
+test('tracked rows replace tag icons, keep pin indicators and keep attention independent', async () => {
+  visit('/accounts/house/chats', {
+    reply_attention: { chats: { c1: 1 }, through_messages: { c1: 'm1' } },
+  });
+  render(ChatList, {
+    accountId: 'house',
+    chats: [
+      {
+        id: 'c1',
+        title: 'One',
+        visual_tag: { id: 'pin', label: 'Pin', icon: 'PushPin', colour: 'amber', pins_to_top: true },
+        work_status: { state: 'ready_for_review', revision: 1 },
+      },
+    ],
+  });
+  expect(screen.queryByRole('button', { name: /Change visual tag/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('img', { name: 'Pinned by visual tag' })).toBeInTheDocument();
+  expect(screen.getByTestId('work-status-summary')).toHaveTextContent('Ready for review');
+  await fireEvent.click(screen.getByRole('button', { name: /You have a mention or request/ }));
+  expect(router.post).toHaveBeenCalledWith(
+    '/accounts/house/chats/c1/reply_dismissal',
+    { through_message_id: 'm1' },
+    expect.any(Object)
+  );
+  expect(screen.getByTestId('work-status-summary')).toHaveTextContent('Ready for review');
+});

@@ -59,6 +59,7 @@ module Api
         chats = paginated_conversations(scope).limit(PAGE_SIZE + 1).to_a
         next_cursor = chats.length > PAGE_SIZE ? chats[PAGE_SIZE - 1].to_param : nil
         chats = chats.first(PAGE_SIZE)
+        Chat.preload_work_status_replies(chats)
 
         render json: {
           conversations: chats.map { |chat| conversation_json(chat) },
@@ -73,6 +74,7 @@ module Api
             id: chat.to_param,
             title: chat.title_or_default,
             visual_tag: chat.visual_tag&.as_json,
+            work_status: chat.work_status_json,
             model: chat.model_label,
             group_chat: chat.group_chat?,
             agents: chat.group_chat? ? chat.agents.map { |a| { id: a.to_param, name: a.name } } : [],
