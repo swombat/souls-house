@@ -66,7 +66,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
-                           "update_runner", "reboot_host", "restore_carry"})
+                           "update_runner", "reboot_host", "restore_carry", "rollback_snapshot"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -769,6 +769,9 @@ class ResidentHost:
                  self_check=None, running_dir=None, reboot_required_path=REBOOT_REQUIRED_PATH,
                  chaos_running=chaos_exec_running, kernel=None):
         self.state_dir = state_dir
+        # This runner's enrollment id (config runner_id); main() sets it. A
+        # rollback snapshot's retry marker is bound to it.
+        self.runner_id = None
         # reboot_host: answered first; main() reboots once the answer is sent.
         self.reboot_required_path = reboot_required_path
         self.chaos_running = chaos_running
@@ -1188,6 +1191,16 @@ class ResidentHost:
         except ImportError:
             raise BadCommand("restore_carry needs the full runner package")
         return run_restore_carry(payload, self)
+
+    # rollback_snapshot (#426 slice 3C, rollback): the server's final snapshot
+    # of a stopped resident before it rolls back to the house. The work and
+    # its refusals are in rollback_snapshot.py.
+    def rollback_snapshot(self, payload):
+        try:
+            from rollback_snapshot import run_rollback_snapshot
+        except ImportError:
+            raise BadCommand("rollback_snapshot needs the full runner package")
+        return run_rollback_snapshot(payload, self)
 
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
@@ -1901,6 +1914,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
                                 fetch_runner_bundle=lambda digest, write: fetch_runner_bundle(config, key, digest, write))
         else:
             host = host_factory(config, key)
+        host.runner_id = config.get("runner_id")
         host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:

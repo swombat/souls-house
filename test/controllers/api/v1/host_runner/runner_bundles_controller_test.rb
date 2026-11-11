@@ -126,7 +126,7 @@ class Api::V1::HostRunner::RunnerBundlesControllerTest < ActionDispatch::Integra
   test "the birth package is the two files; the full one adds the carry modules" do
     names = ->(bundle) { IO.popen(%w[tar -tJf -], "r+b") { |io| io.write(bundle.bytes); io.close_write; io.read.split } }
     assert_equal %w[souls_house_runner.py backup_proxy.py], names.(@bundle)
-    assert_equal %w[souls_house_runner.py backup_proxy.py carry_restore.py carry_shape.sh], names.(RunnerBundle.full)
+    assert_equal %w[souls_house_runner.py backup_proxy.py carry_restore.py carry_shape.sh rollback_snapshot.py], names.(RunnerBundle.full)
     assert_not_equal @bundle.sha256, RunnerBundle.full.sha256
   end
 

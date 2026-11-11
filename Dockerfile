@@ -90,6 +90,7 @@ COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
 COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
 COPY host-runner/carry_restore.py host-runner/carry_restore.py
 COPY host-runner/carry_shape.sh host-runner/carry_shape.sh
+COPY host-runner/rollback_snapshot.py host-runner/rollback_snapshot.py
 COPY host-runner/birth_fetch.py host-runner/birth_fetch.py
 COPY bin/ bin/
 COPY *.config.js .
