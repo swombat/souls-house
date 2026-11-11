@@ -22,6 +22,14 @@ module Billing
 
       ResidentEntitlement.grace_expired(now).find_each { |entitlement| entitlement.expire_grace!(now: now) }
 
+      # An unreadable item's hold runs out even if Stripe sends nothing more.
+      ResidentSubscription.untrusted_expired(now).find_each do |row|
+        ApplicationRecord.transaction do
+          SubscriptionSync.lock!(row.account_id)
+          ResidentEntitlement.for_agent!(row.agent).expire_untrusted!(row, now: now)
+        end
+      end
+
       ResidentBirthOrder.expired(now).find_each do |order|
         PaidBirth.new.abandon_expired!(order)
       rescue Stripe::StripeError => error

@@ -382,12 +382,12 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
           SELECT count(*) FROM pg_locks
           WHERE pid = #{Integer(pid)} AND locktype = 'advisory' AND NOT granted
             AND classid = #{Billing::SubscriptionSync::LOCK_NAMESPACE}
-            AND objid = #{@agent.id} AND objsubid = 2
+            AND objid = #{@agent.account_id} AND objsubid = 2
         SQL
       end
       return assert_equal(1, waiting) if waiting.positive?
 
-      flunk "worker #{pid} never waited on this resident's billing advisory lock" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      flunk "worker #{pid} never waited on this account's billing advisory lock" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
       sleep 0.01
     end
   end
