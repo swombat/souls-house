@@ -64,8 +64,9 @@ for (const mobile of [false, true]) {
         const nav = mobile
           ? page.getByRole('navigation', { name: 'Recent conversations' })
           : page.locator('aside').first();
-        await nav.getByTestId('chat-filter-trigger').click();
-        await page.getByRole('combobox', { name: 'Work status', exact: true }).selectOption('ready_for_review');
+        if (!mobile) await nav.getByTestId('chat-filter-trigger').click();
+        const filter = mobile ? nav : page;
+        await filter.getByRole('combobox', { name: 'Work status', exact: true }).selectOption('ready_for_review');
         await expect(page).toHaveURL(/work_status=ready_for_review/);
         await expect(nav.getByRole('link', { name: /Notification readiness/ })).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath('status-filter.png'), fullPage: true });
@@ -76,7 +77,9 @@ for (const mobile of [false, true]) {
         // The active ready-for-review filter excludes it, but the default list must not.
         await page.goto(`${base}/chats/new?room=all`);
         await expect(nav.getByRole('link', { name: /Notification readiness/ })).toBeVisible();
-        await expect(nav.getByText('Completed', { exact: true })).toBeVisible();
+        await expect(
+          nav.getByRole('link', { name: /Notification readiness/ }).getByText('Completed', { exact: true })
+        ).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: testInfo.outputPath('completed-listed.png'), fullPage: true });
       } finally {

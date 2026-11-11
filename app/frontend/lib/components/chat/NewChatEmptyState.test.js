@@ -1,5 +1,36 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { page, router } from '@inertiajs/svelte';
 import NewChatEmptyState from './NewChatEmptyState.svelte';
+
+vi.mock('@inertiajs/svelte', async (importOriginal) => {
+  const original = await importOriginal();
+  const { writable } = await import('svelte/store');
+  return { ...original, page: writable({ url: '/', props: {} }) };
+});
+
+beforeEach(() => {
+  page.set({ url: '/', props: {} });
+  window.history.replaceState({}, '', '/');
+});
+
+test('mobile reports replace tags and retain work filters on conversation links', () => {
+  page.set({ url: '/?work_status=completed', props: {} });
+  render(NewChatEmptyState, {
+    accountId: 'account',
+    chats: [{ id: 'finished', title: 'Finished', work_status: { state: 'completed', revision: 1 } }],
+  });
+  expect(screen.getByRole('link')).toHaveAttribute('href', '/accounts/account/chats/finished?work_status=completed');
+  expect(within(screen.getByRole('link')).getByText('Completed')).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Change visual tag/ })).not.toBeInTheDocument();
+});
+
+test('a phone can clear a work filter even when no conversations match', async () => {
+  page.set({ url: '/?work_status=blocked', props: {} });
+  window.history.replaceState({}, '', '/?work_status=blocked');
+  render(NewChatEmptyState, { accountId: 'account', chats: [] });
+  await fireEvent.change(screen.getByRole('combobox', { name: 'Work status' }), { target: { value: '' } });
+  expect(router.visit).toHaveBeenCalledWith('http://localhost:3000/', { preserveState: true });
+});
 
 test('offers active conversations in recency order', () => {
   render(NewChatEmptyState, {
@@ -79,7 +110,16 @@ test('offers at most ten conversations even when the screen has room', () => {
 
 describe('fitting the screen', () => {
   let rectSpy, parentSpy;
-  const rect = (bottom) => ({ top: bottom - 50, bottom, left: 0, right: 300, width: 300, height: 50, x: 0, y: bottom - 50 });
+  const rect = (bottom) => ({
+    top: bottom - 50,
+    bottom,
+    left: 0,
+    right: 300,
+    width: 300,
+    height: 50,
+    x: 0,
+    y: bottom - 50,
+  });
 
   beforeEach(() => {
     // jsdom has no layout: give the scroller a bottom edge at 300px and stack
