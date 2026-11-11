@@ -2034,6 +2034,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
     t.jsonb "notice_link"
     t.boolean "voice_mode", default: false, null: false
     t.jsonb "rich_ui"
+    t.bigint "paid_fallback_interaction_id"
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
@@ -2510,6 +2511,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
     t.datetime "enabled_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "use_notice_at"
+    t.datetime "use_notice_period_start"
     t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
     t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
     t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric AND cap_usd <> 'NaN'::numeric", name: "fallback_policies_positive_cap"

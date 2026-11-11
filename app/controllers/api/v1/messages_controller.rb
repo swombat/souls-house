@@ -57,6 +57,12 @@ module Api
             interaction.activity_token_expires_at&.future?
           message.runtime_interaction = interaction
         end
+        # A post not linked to a run of this conversation, made while the
+        # resident is running on its paid fallback (#690): labelled from that
+        # run, so a fallback post is labelled wherever it lands.
+        if current_api_agent && message.runtime_interaction.nil?
+          message.paid_fallback_interaction = ResidentFallback::Lane.live_fallback_run(current_api_agent)
+        end
 
         content = current_api_agent ? message.content : params[:content]
         if content.blank? && (current_api_agent ? !message.attachments.attached? : params[:files].blank?)

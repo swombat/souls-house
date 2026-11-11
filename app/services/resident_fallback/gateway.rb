@@ -81,15 +81,17 @@ module ResidentFallback
 
       def settle!(usage, upstream_id: nil)
         cost, = HouseInference::UsageCost.call(usage)
-        return @call.unresolved!(upstream_id: upstream_id) if cost.nil?
-
-        @call.settle!(cost, source: SOURCE, upstream_id: upstream_id)
+        result = cost.nil? ? @call.unresolved!(upstream_id: upstream_id) : @call.settle!(cost, source: SOURCE, upstream_id: upstream_id)
+        UseNotice.after_paid_call(@call)
+        result
       end
 
       def release!(http_status: nil, upstream_id: nil, refusal_reason: nil)
-        return @call.unresolved!(http_status: http_status, upstream_id: upstream_id) if @sent.call
+        return @call.not_sent! unless @sent.call
 
-        @call.not_sent!
+        result = @call.unresolved!(http_status: http_status, upstream_id: upstream_id)
+        UseNotice.after_paid_call(@call)
+        result
       end
 
     end

@@ -709,6 +709,7 @@ class ExternalAgentResponseRequest
 
   def request_delta_text
     return nil unless agent.persistent_session? && prior_cursor_message_id
+    return nil if fallback_delta_over_budget?
 
     parts = [
       Notices::Renderer.section_for(agent),
@@ -746,6 +747,21 @@ class ExternalAgentResponseRequest
 
       Ground truth warning: This delta block contains newly stored database messages since the last transcript cursor included in this resumed Chaos session. Treat these new messages as ground truth for recent conversation activity. Earlier transcript context should already be present in the resumed Chaos session; if session resumption failed, the shim must retry with full context rather than sending this delta alone.
     TEXT
+  end
+
+  # A lane's cursor stands still while the other lane runs (#690), so after
+  # a long stretch on the subscription the fallback lane's delta would carry
+  # every message since its last turn, on the owner's key. Past the full
+  # window's limits the fallback resumes on the bounded full request instead
+  # (the shim resumes with `request` when there is no delta).
+  def fallback_delta_over_budget?
+    return false unless fallback?
+
+    messages = delta_messages
+    return true if messages.length > TRANSCRIPT_MESSAGE_LIMIT
+
+    bytes = messages.sum { |message| format_transcript_line(message).bytesize + TRANSCRIPT_SEPARATOR.bytesize }
+    bytes > TRANSCRIPT_BYTE_BUDGET
   end
 
 end

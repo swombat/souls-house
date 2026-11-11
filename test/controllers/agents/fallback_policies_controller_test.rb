@@ -35,6 +35,35 @@ class Agents::FallbackPoliciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, audit.data["enabled"]
   end
 
+  test "turning it on again clears the first-use notice, so the owner is told again" do
+    sign_in(users(:user_1))
+    policy = ResidentFallbackPolicy.create!(agent: @agent, enabled: true, model_id: "anthropic/claude-sonnet-5", cap_usd: 5,
+      enabled_by_user: users(:user_1), enabled_at: 1.day.ago, use_notice_at: 1.hour.ago,
+      use_notice_period_start: Time.current.utc.beginning_of_week(:monday))
+    patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { cap_usd: "6" } }, as: :json
+    assert_not_nil policy.reload.use_notice_at, "an edit while on keeps the notice sent"
+    assert_not_nil policy.use_notice_period_start
+
+    patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { enabled: false } }, as: :json
+    patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { enabled: true } }, as: :json
+    assert_response :success
+    assert_nil policy.reload.use_notice_at
+    assert_nil policy.use_notice_period_start
+    assert_nil response.parsed_body["use_notice_at"]
+  end
+
+  test "the card learns whether the house has the feature on" do
+    sign_in(users(:user_1))
+    Setting.instance.update!(paid_fallback_enabled: false)
+    get account_agent_fallback_policy_path(@account, @agent), as: :json
+    assert_equal false, response.parsed_body["available"]
+    assert_equal account_agent_api_keys_path(@account), response.parsed_body["api_keys_url"]
+
+    Setting.instance.update!(paid_fallback_enabled: true)
+    get account_agent_fallback_policy_path(@account, @agent), as: :json
+    assert_equal true, response.parsed_body["available"]
+  end
+
   test "a member who isn't the owner can't change it" do
     sign_in(users(:existing_user))
     patch account_agent_fallback_policy_path(@account, @agent),

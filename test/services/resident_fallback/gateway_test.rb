@@ -2,6 +2,8 @@ require "test_helper"
 
 class ResidentFallback::GatewayTest < ActiveSupport::TestCase
 
+  include ActionMailer::TestHelper
+
   setup do
     @agent = agents(:research_assistant)
     @agent.account.update_columns(openrouter_api_key: "sk-or-own")
@@ -128,6 +130,73 @@ class ResidentFallback::GatewayTest < ActiveSupport::TestCase
     assert_equal "fallback_model_unavailable", error.code
     assert_equal 0, ResidentFallbackCall.count
     assert_nil sent&.dig(:body), "nothing reached the provider"
+  end
+
+  test "the owner is told on the first paid call that reached the provider, once a cap period, and again after off and on" do
+    assert_no_enqueued_emails do
+      assert_raises(HouseInference::Error) { upstream(body: completion, connect: Errno::ECONNREFUSED) { gateway.call } }
+    end
+    assert_nil @policy.reload.use_notice_at, "a call that never left the house isn't use"
+
+    assert_enqueued_emails(1) { upstream(body: completion(cost: 0.01)) { gateway.call } }
+    assert_not_nil @policy.reload.use_notice_at
+    assert_no_enqueued_emails { upstream(body: completion(cost: 0.01)) { gateway.call } }
+
+    travel_to(@policy.period_end + 1.minute) do
+      assert_enqueued_emails(1) { upstream(body: completion(cost: 0.01)) { gateway.call } }
+      assert_no_enqueued_emails { upstream(body: completion(cost: 0.01)) { gateway.call } }
+      @policy.reload.update!(use_notice_at: nil, use_notice_period_start: nil) # what turning it off and on does
+      assert_enqueued_emails(1) { upstream(body: completion(cost: 0.01)) { gateway.call } }
+    end
+  end
+
+  # A paid call as UseNotice sees it: admitted at one time, finishing at another.
+  PaidCall = Struct.new(:resident_fallback_turn, :agent, :agent_id, :admitted_at, keyword_init: true)
+
+  def finish_paid_call(admitted_at:, finished_at:)
+    call = PaidCall.new(resident_fallback_turn: @turn, agent: @agent, agent_id: @agent.id, admitted_at: admitted_at)
+    travel_to(finished_at) { ResidentFallback::UseNotice.after_paid_call(call) }
+  end
+
+  test "a call admitted before midnight that finishes after it belongs to the earlier period" do
+    @policy.update!(cap_period: "week")
+    sunday = @policy.period_end - 1.minute # Sunday 23:59 UTC
+    monday = @policy.period_end + 1.minute # Monday 00:01 UTC
+
+    assert_enqueued_emails(1) { finish_paid_call(admitted_at: sunday, finished_at: monday) }
+    assert_equal @policy.period_start(sunday), @policy.reload.use_notice_period_start
+    # Monday's first call still gets Monday's notice.
+    assert_enqueued_emails(1) do
+      finish_paid_call(admitted_at: monday, finished_at: monday + 1.minute)
+    end
+    assert_no_enqueued_emails { finish_paid_call(admitted_at: monday + 2.minutes, finished_at: monday + 3.minutes) }
+  end
+
+  test "a late-finishing call from the earlier period doesn't claim over the later period's notice" do
+    @policy.update!(cap_period: "week")
+    sunday = @policy.period_end - 1.minute
+    monday = @policy.period_end + 1.minute
+
+    # Monday's call finishes first; Sunday's call, admitted earlier, finishes after it.
+    assert_enqueued_emails(1) { finish_paid_call(admitted_at: monday, finished_at: monday + 1.minute) }
+    assert_no_enqueued_emails { finish_paid_call(admitted_at: sunday, finished_at: monday + 2.minutes) }
+    assert_equal @policy.period_start(monday), @policy.reload.use_notice_period_start
+    assert_no_enqueued_emails { finish_paid_call(admitted_at: monday + 3.minutes, finished_at: monday + 4.minutes) }
+  end
+
+  test "an unpriced call still counts as use: its reservation is held, so the owner hears" do
+    unpriced = JSON.generate({ "id" => "gen-fb", "choices" => [ { "message" => { "role" => "assistant", "content" => "hi" } } ] })
+    assert_enqueued_emails(1) { upstream(body: unpriced) { gateway.call } }
+    assert_equal "unresolved", ResidentFallbackCall.sole.status
+  end
+
+  test "if the notice can't be queued, the claim rolls back and the next paid call tries again" do
+    ResidentFallbackMailer.stub(:first_use, ->(*) { raise "queue down" }) do
+      upstream(body: completion(cost: 0.01)) { gateway.call }
+    end
+    assert_equal "settled", ResidentFallbackCall.sole.status, "the call itself is unaffected"
+    assert_nil @policy.reload.use_notice_at
+    assert_enqueued_emails(1) { upstream(body: completion(cost: 0.01)) { gateway.call } }
   end
 
 end

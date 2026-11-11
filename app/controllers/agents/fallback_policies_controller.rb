@@ -18,6 +18,9 @@ class Agents::FallbackPoliciesController < ApplicationController
     if policy.enabled? && (policy.will_save_change_to_enabled? || policy.enabled_by_user_id.nil?)
       policy.enabled_by_user = Current.user
       policy.enabled_at = Time.current
+      # Each time it is turned on, the owner is told again on first use.
+      policy.use_notice_at = nil
+      policy.use_notice_period_start = nil
     end
     if policy.save
       audit("update_resident_fallback", @agent, **policy.slice(:enabled, :model_id, :cap_usd, :cap_period).symbolize_keys)
@@ -43,6 +46,10 @@ class Agents::FallbackPoliciesController < ApplicationController
       committed_usd: policy && policy.committed_usd.round(2).to_s,
       period_ends_at: policy&.period_end&.iso8601,
       enabled_at: policy&.enabled_at&.iso8601,
+      use_notice_at: policy&.use_notice_at&.iso8601,
+      available: Setting.instance.paid_fallback_enabled?,
+      imported_home: @agent.imported_home?,
+      api_keys_url: account_agent_api_keys_path(@agent.account),
       status: decision.code || "ready",
       status_reason: decision.reason,
       model_choices: ResidentFallback::Models.choices
