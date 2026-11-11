@@ -38,14 +38,17 @@ class Agents::FallbackPoliciesControllerTest < ActionDispatch::IntegrationTest
   test "turning it on again clears the first-use notice, so the owner is told again" do
     sign_in(users(:user_1))
     policy = ResidentFallbackPolicy.create!(agent: @agent, enabled: true, model_id: "anthropic/claude-sonnet-5", cap_usd: 5,
-      enabled_by_user: users(:user_1), enabled_at: 1.day.ago, use_notice_at: 1.hour.ago)
+      enabled_by_user: users(:user_1), enabled_at: 1.day.ago, use_notice_at: 1.hour.ago,
+      use_notice_period_start: Time.current.utc.beginning_of_week(:monday))
     patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { cap_usd: "6" } }, as: :json
     assert_not_nil policy.reload.use_notice_at, "an edit while on keeps the notice sent"
+    assert_not_nil policy.use_notice_period_start
 
     patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { enabled: false } }, as: :json
     patch account_agent_fallback_policy_path(@account, @agent), params: { fallback_policy: { enabled: true } }, as: :json
     assert_response :success
     assert_nil policy.reload.use_notice_at
+    assert_nil policy.use_notice_period_start
     assert_nil response.parsed_body["use_notice_at"]
   end
 

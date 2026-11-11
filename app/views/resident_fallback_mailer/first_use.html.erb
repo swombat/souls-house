@@ -5,6 +5,6 @@
   <li>Paid by: this account's own OpenRouter key. It is not on your <%= Setting.instance.site_name %> plan.</li>
   <li>Cap: $<%= @cap %> a <%= @policy.cap_period %>. No call starts unless its worst case fits inside what is left of the cap.</li>
 </ul>
-<p>Posts the resident makes while running on the fallback carry a label in the conversation saying so.<% if @conversation_url %> <a href="<%= @conversation_url %>">This is the conversation it answered in.</a><% end %></p>
+<p>Posts the resident makes while running on the fallback carry a label in the conversation saying so.<% if @conversation_url %> <a href="<%= @conversation_url %>">This is the conversation whose turn made that call.</a><% end %></p>
 <p>You can change the model or the cap, or turn the fallback off, in <a href="<%= @settings_url %>"><%= @agent.name %>'s settings</a>. You'll get this email again on the first paid call of the next <%= @policy.cap_period %>, or if you turn the fallback off and on.</p>
 <p><%= Setting.instance.site_name %></p>

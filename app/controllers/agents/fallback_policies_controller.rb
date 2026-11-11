@@ -20,6 +20,7 @@ class Agents::FallbackPoliciesController < ApplicationController
       policy.enabled_at = Time.current
       # Each time it is turned on, the owner is told again on first use.
       policy.use_notice_at = nil
+      policy.use_notice_period_start = nil
     end
     if policy.save
       audit("update_resident_fallback", @agent, **policy.slice(:enabled, :model_id, :cap_usd, :cap_period).symbolize_keys)

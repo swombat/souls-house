@@ -4,9 +4,16 @@
 # reached the provider (settled, or unresolved with its reservation held),
 # not a hop that was opened and then refused before anything was sent.
 #
-# The claim (policy.use_notice_at) and the enqueue commit together: if the
-# enqueue raises, the claim rolls back and the next paid call tries again.
-# The conditional update makes it once even when two calls finish at once.
+# The claim is keyed on the cap period the call was admitted in
+# (policy.use_notice_period_start), never on when the call finished, so a call
+# admitted Sunday 23:59 that completes Monday 00:01 claims Sunday's week and
+# leaves Monday's notice for Monday's first call. A late-finishing call from an
+# earlier period never claims over a later one. use_notice_at is only when the
+# owner was told, for display.
+#
+# The claim and the enqueue commit together: if the enqueue raises, the claim
+# rolls back and the next paid call tries again. The conditional update makes
+# it once even when two calls finish at once.
 module ResidentFallback
   module UseNotice
 
@@ -20,8 +27,8 @@ module ResidentFallback
       period_start = policy.period_start(call.admitted_at || Time.current)
       ResidentFallbackPolicy.transaction(requires_new: true) do
         claimed = ResidentFallbackPolicy.where(id: policy.id)
-          .where("use_notice_at IS NULL OR use_notice_at < ?", period_start)
-          .update_all(use_notice_at: Time.current)
+          .where("use_notice_period_start IS NULL OR use_notice_period_start < ?", period_start)
+          .update_all(use_notice_period_start: period_start, use_notice_at: Time.current)
         ResidentFallbackMailer.first_use(turn).deliver_later if claimed == 1
       end
     rescue StandardError => e

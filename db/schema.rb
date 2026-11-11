@@ -2512,6 +2512,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_110000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "use_notice_at"
+    t.datetime "use_notice_period_start"
     t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
     t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
     t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric AND cap_usd <> 'NaN'::numeric", name: "fallback_policies_positive_cap"
