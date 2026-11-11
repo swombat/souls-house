@@ -16,6 +16,7 @@ import phononVoices from '$lib/phonon-voices.json';
 // reason. The library's own CPU tier is not used (backend 'webgpu').
 
 export const PHONON_MODEL = 'phonon-31m-en';
+export const PHONON_SAMPLE_RATE = 24000;
 export const DEFAULT_VOICE_NAME = 'Delia';
 export const voices = phononVoices;
 
@@ -125,11 +126,18 @@ export function loadPhonon({
 
 // Speaks text in a voice and resolves to { blob, duration } (a WAV). Aborting
 // the signal stops the synthesis itself. Rejects with a PhononError.
-export async function synthesize(text, { voice, signal, load = loadPhonon } = {}) {
+// onAudio(samples, sampleRate), when given, hears each chunk as soon as it is
+// made (YNwVle: Listen plays while the rest is still being made); the WAV is
+// those same chunks joined.
+export async function synthesize(text, { voice, signal, onAudio, load = loadPhonon } = {}) {
   const tts = await load();
   signal?.throwIfAborted?.();
   try {
-    const { audio, sampleRate } = await tts.speak(text, { voice: voiceFor(voice).id, signal });
+    const { audio, sampleRate } = await tts.speak(text, {
+      voice: voiceFor(voice).id,
+      signal,
+      ...(onAudio ? { onAudio: (samples) => onAudio(samples, PHONON_SAMPLE_RATE) } : {}),
+    });
     return { blob: encodeWav(audio, sampleRate), duration: audio.length / sampleRate };
   } catch (error) {
     if (error instanceof PhononError) throw error;

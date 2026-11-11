@@ -69,7 +69,9 @@ export function createSpeechSource({
 
   return {
     // Resolves to { url, engine }. Rejects with SpeechError (or an AbortError).
-    async resolve(id, { signal } = {}) {
+    // onAudio(samples, sampleRate) hears Phonon's chunks as they are made; a
+    // reply already made resolves at once and calls it never.
+    async resolve(id, { signal, onAudio } = {}) {
       if (closed) throw new SpeechError('Stopped.');
       if (made.has(id)) return { url: made.get(id), engine: 'phonon' };
       const answer = await fetchText(id, { mode, signal });
@@ -80,7 +82,7 @@ export function createSpeechSource({
       if (answer.engine === 'elevenlabs')
         return { url: mode === 'voice_mode' ? streamUrl(id) : null, engine: 'elevenlabs' };
       if (!answer.text) throw new SpeechError('There is nothing in this message to read aloud.', { reason: 'empty' });
-      const { blob } = await synthesize(answer.text, { voice: answer.voice, signal });
+      const { blob } = await synthesize(answer.text, { voice: answer.voice, signal, ...(onAudio ? { onAudio } : {}) });
       if (closed) throw new SpeechError('Stopped.');
       return { url: keep(id, createUrl(blob)), engine: 'phonon' };
     },

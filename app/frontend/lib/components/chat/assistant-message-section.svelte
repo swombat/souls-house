@@ -10,6 +10,7 @@
   import ThinkingBlock from '$lib/components/chat/ThinkingBlock.svelte';
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
+  import StreamingAudioPlayer from '$lib/components/chat/StreamingAudioPlayer.svelte';
   import PhononStatus from '$lib/components/chat/PhononStatus.svelte';
   import { listenState } from '$lib/listen';
   import MessageTelemetry from '$lib/components/chat/MessageTelemetry.svelte';
@@ -185,8 +186,10 @@
 {#if message.voice_available && !message.streaming}
   {@const heard = $listenState[message.id]}
   <div class="mt-1">
-    {#if heard?.url}
-      <AudioPlayer src={heard.url} autoplay />
+    {#if heard?.stream}
+      <StreamingAudioPlayer stream={heard.stream} />
+    {:else if heard?.url}
+      <AudioPlayer src={heard.url} autoplay={!heard.heard} />
     {:else if message.voice_audio_url}
       <AudioPlayer src={message.voice_audio_url} />
     {:else if heard?.status === 'loading' || heard?.status === 'pending' || message._voice_loading}
