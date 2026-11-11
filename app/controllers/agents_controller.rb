@@ -129,6 +129,9 @@ class AgentsController < ApplicationController
       shared_connections: -> { shared_connections_for_agent },
       can_decide_guest_access: -> { current_account.owned_by?(Current.user) },
       can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+      # #690: the owner's paid-fallback card; the card hides itself while the
+      # house hasn't switched the feature on.
+      paid_fallback_url: -> { current_account.owned_by?(Current.user) ? account_agent_fallback_policy_path(current_account, @agent) : nil },
       interactions: -> { interactions_props(load_interactions.call.last) },
       interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
       cost_report: -> { AgentInteractionCostReport.new(agent: @agent).call },

@@ -4,6 +4,7 @@ require "webmock/minitest"
 class ResidentFallback::HopTest < ActiveSupport::TestCase
 
   include ActiveJob::TestHelper
+  include ActionMailer::TestHelper
 
   LIMITED = {
     status: "error", error_kind: "subscription_limit",
@@ -79,6 +80,42 @@ class ResidentFallback::HopTest < ActiveSupport::TestCase
     run.reload
     assert_equal [ "house", "#{@agent.uuid}-#{@chat.id}-fallback", 200, "ok" ], [ run.provider, run.session_id, run.transport_status, run.runtime_status ]
     assert_equal 1, @chat.agent_runtime_interactions.count
+  end
+
+  test "the reply carries the label from its own run, and the owner is told once on first use" do
+    policy = opt_in!
+    assert_enqueued_emails 1 do
+      ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+    end
+    run = ResidentFallbackTurn.sole.fallback_interaction
+    assert_not_nil policy.reload.first_used_at
+
+    reply = @chat.messages.create!(role: "assistant", agent: @agent, content: "On the fallback.", runtime_interaction: run)
+    label = reply.paid_fallback
+    assert_equal [ "Claude Sonnet 5", "OpenRouter", "paid by this account's OpenRouter key" ],
+      label.values_at(:model_label, :provider_label, :payer_label)
+    assert_equal "Claude Sonnet 5", reply.runtime_model_label
+    assert_equal label.stringify_keys, JSON.parse(reply.as_json.to_json)["paid_fallback"]
+
+    # Changing the policy afterwards doesn't relabel the answer.
+    policy.update!(model_id: "anthropic/claude-opus-5.5")
+    assert_equal "Claude Sonnet 5", reply.reload.paid_fallback[:model_label]
+
+    # A second hop, in another conversation, sends no second email.
+    other = @agent.account.chats.create!(model_id: "x-ai/grok-build-0.1", title: "Fallback 2")
+    other.messages.create!(role: "user", user: users(:user_1), content: "Hello again")
+    other.agents << @agent
+    other.update!(manual_responses: true)
+    assert_no_enqueued_emails do
+      ExternalAgentResponseRequest.new(agent: @agent, chat: other).call
+    end
+    assert_equal 2, ResidentFallbackTurn.count
+
+    # A reply on the subscription carries no label.
+    plain = @chat.messages.create!(role: "assistant", agent: @agent, content: "On the plan.",
+      runtime_interaction: AgentRuntimeInteraction.create!(agent: @agent, chat: @chat, trigger_kind: "conversation",
+        provider: "xai", model: "grok-build-0.1", started_at: Time.current))
+    assert_nil plain.paid_fallback
   end
 
   test "asynchronous: the refused turn is retired as hopped and the same run gets a fallback turn" do

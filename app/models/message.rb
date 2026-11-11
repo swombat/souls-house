@@ -236,7 +236,7 @@ class Message < ApplicationRecord
                   :audio_source, :audio_url, :voice_mode,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link,
+                  :runtime_model_label, :paid_fallback, :handoff_receipts, :handoff_receipts_version, :notice_link,
                   :author_agent_id do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
@@ -259,7 +259,27 @@ class Message < ApplicationRecord
   def runtime_model_label
     return unless role == "assistant" && agent_id && runtime_interaction
 
+    if (fallback = paid_fallback)
+      return fallback[:model_label]
+    end
+
     AgentRuntimeInteraction.model_label_for(runtime_interaction.model)
+  end
+
+  # An answer the resident gave on its owner's paid fallback (#690): read
+  # from the attempt that was dispatched (provider house, model
+  # fallback/<id>), never from the resident's current settings or anything
+  # the model wrote, so the label can't drift after the fact.
+  def paid_fallback
+    return unless role == "assistant" && agent_id && runtime_interaction
+    return unless runtime_interaction.provider == "house" && ResidentFallback::Gateway.fallback_model?(runtime_interaction.model)
+
+    model_id = runtime_interaction.model.delete_prefix(ResidentFallback::Gateway::PREFIX)
+    {
+      model_label: ResidentFallback::Models.label(model_id),
+      provider_label: "OpenRouter",
+      payer_label: "paid by this account's OpenRouter key"
+    }
   end
 
   def rhythm_provenance

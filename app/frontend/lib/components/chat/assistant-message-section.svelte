@@ -140,6 +140,15 @@
       <span data-testid="answer-model" title="The model that produced this answer">{message.runtime_model_label}</span>
       <span>·</span>
     {/if}
+    {#if message.paid_fallback}
+      <span
+        data-testid="paid-fallback-label"
+        class="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-amber-800 dark:text-amber-300"
+        title="The subscription's allowance had run out, so this answer ran on the paid fallback the account's owner turned on.">
+        Paid fallback · via {message.paid_fallback.provider_label} · {message.paid_fallback.payer_label}
+      </span>
+      <span>·</span>
+    {/if}
     {#if message.interaction_cost?.amount_usd}
       <span
         class:line-through={message.interaction_cost.applies_to_billing === false}

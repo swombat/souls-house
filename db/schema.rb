@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2510,6 +2510,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.datetime "enabled_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "first_used_at"
     t.index ["agent_id"], name: "index_resident_fallback_policies_on_agent_id", unique: true
     t.index ["enabled_by_user_id"], name: "index_resident_fallback_policies_on_enabled_by_user_id"
     t.check_constraint "cap_usd IS NULL OR cap_usd > 0::numeric AND cap_usd <> 'NaN'::numeric", name: "fallback_policies_positive_cap"
