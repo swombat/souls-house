@@ -1,12 +1,13 @@
 # The account's Billing tab: each hosted resident's plan, a Stripe Checkout
-# button per plan, and Stripe's Customer Portal for everything after that.
+# button per plan, plan changes and End plan, and Stripe's Customer Portal for
+# cards and invoices.
 # Members can see it; only the account owner can pay or change billing.
 class Accounts::BillingsController < ApplicationController
 
   require_feature_enabled :agents
   before_action :require_account_manager!
   before_action :require_account_owner!, only: [ :checkout, :add_resident, :plan_change, :portal, :account_plan_checkout,
-    :account_plan_change ]
+    :account_plan_change, :end_plan, :confirm_end_plan, :keep_plan ]
 
   def show
     if params[:checkout] == "success"
@@ -36,7 +37,8 @@ class Accounts::BillingsController < ApplicationController
       # keeps the resident's own rate.
       change_offers: Billing::Tier.all.flat_map(&:offers).select(&:purchasable?).as_json,
       residents: residents_json,
-      pending_add: pending_add_json
+      pending_add: pending_add_json,
+      pending_end: pending_end_json
     }
   end
 
@@ -91,6 +93,43 @@ class Accounts::BillingsController < ApplicationController
   def portal
     inertia_location Billing::Portal.new(account: current_account, return_url: account_billing_url(current_account)).url
   rescue Billing::NotConfigured, Billing::Portal::Restricted, Stripe::StripeError => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
+  # Ending one resident's plan (Billing::EndItem): the owner is shown what
+  # it does, and confirms it with confirm_end_plan.
+  def end_plan
+    agent = billable_agents.find(params[:agent_id])
+    attempt = Billing::EndItem.new(agent: agent).quote
+    redirect_to account_billing_path(current_account, end: attempt.id)
+  rescue *END_ERRORS => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
+  def confirm_end_plan
+    attempt = BillingCheckoutAttempt.where(account: current_account, kind: Billing::EndItem::KIND).find(params[:attempt_id])
+    agent = billable_agents.find(attempt.agent_id)
+    Billing::EndItem.new(agent: agent).confirm!(attempt, digest: params[:digest].to_s)
+    audit("end_resident_plan", agent, operation: attempt.quote["operation"], stripe_subscription_id: attempt.stripe_subscription_id,
+      stripe_subscription_item_id: attempt.stripe_subscription_item_id)
+    redirect_to account_billing_path(current_account), notice: ended_notice(agent, attempt)
+  rescue Billing::EndItem::QuoteChanged => error
+    begin
+      fresh = Billing::EndItem.new(agent: agent).quote
+      redirect_to account_billing_path(current_account, end: fresh.id), alert: error.message
+    rescue *END_ERRORS => again
+      redirect_to account_billing_path(current_account), alert: billing_error_message(again)
+    end
+  rescue *END_ERRORS => error
+    redirect_to account_billing_path(current_account), alert: billing_error_message(error)
+  end
+
+  def keep_plan
+    agent = billable_agents.find(params[:agent_id])
+    Billing::EndItem.new(agent: agent).keep!
+    audit("keep_resident_plan", agent)
+    redirect_to account_billing_path(current_account), notice: "#{agent.name}'s plan will renew as usual."
+  rescue *END_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
@@ -155,6 +194,35 @@ class Accounts::BillingsController < ApplicationController
       plan: Billing::Tier.find(attempt.tier)&.name || attempt.tier, rate: attempt.rate, currency: quote["currency"],
       added_cents: quote["added_next"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
       next_at: quote["next_at"] && Time.zone.at(quote["next_at"]).to_date.iso8601 }
+  end
+
+  END_ERRORS = [ Billing::EndItem::Refused, Billing::NotConfigured, Billing::NotEligible, Billing::NotReady,
+                 Billing::InvalidSubscription, Stripe::StripeError ].freeze
+
+  # What ending a resident's plan will do, if the owner just asked.
+  def pending_end_json
+    return nil if params[:end].blank?
+
+    attempt = BillingCheckoutAttempt.unresolved.find_by(id: params[:end], account: current_account,
+      kind: Billing::EndItem::KIND, submitted_at: nil)
+    return nil unless attempt
+
+    quote = attempt.quote
+    at = ->(key) { quote[key] && Time.zone.at(quote[key]).to_date.iso8601 }
+    { attempt_id: attempt.id, digest: Billing::EndItem.digest(quote), resident_name: attempt.agent.name,
+      operation: quote["operation"], currency: quote["currency"], ends_at: at.("ends_at"), next_at: at.("next_at"),
+      next_change_cents: quote["next_change"], next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
+      final_total_cents: quote["final_total"] }
+  end
+
+  def ended_notice(agent, attempt)
+    if attempt.quote["operation"] == Billing::EndItem::DELETE
+      "#{agent.name}'s plan has ended. The unused part of this period comes off the next bill as credit."
+    else
+      ends = attempt.quote["ends_at"]
+      date = ends ? I18n.l(Time.zone.at(ends).to_date, format: :long) : "the end of this period"
+      "#{agent.name}'s plan won't renew. #{agent.name} keeps running until #{date}."
+    end
   end
 
   # Disabled residents don't appear and can't be paid for: re-enable one first.

@@ -68,3 +68,19 @@ test('a trialing subscription without trial_ends_at in the props still reads sen
       'sleep then and nothing is deleted.'
   );
 });
+
+test('a trial whose plan has been ended says it ends, and never offers a card to keep it', () => {
+  const ending = {
+    ...trialing,
+    subscription: { ...trialing.subscription, cancel_at_period_end: true, current_period_end: '2026-11-24T12:00:00Z' },
+  };
+  render(ResidentBillingNote, {
+    resident: { id: 'r', name: 'Aria', entitlement: ending, trial_ends_at: '2026-11-24T12:00:00Z' },
+    price: '$9.99 a month',
+    trial: true,
+    canManage: true,
+  });
+  expect(screen.getByText("Ends on 24 Nov 2026; won't renew.")).toBeVisible();
+  expect(screen.queryByText(/Add a card/)).toBeNull();
+  expect(screen.queryByTestId('resident-trial')).toBeNull();
+});

@@ -288,3 +288,75 @@ describe('adding a resident to the account subscription', () => {
     expect(screen.queryByTestId('billing-add-confirm')).not.toBeInTheDocument();
   });
 });
+
+describe('ending a resident plan', () => {
+  const sub = (overrides = {}) => ({
+    status: 'active',
+    tier: 'life',
+    current_period_end: '2026-12-01',
+    cancel_at_period_end: false,
+    ...overrides,
+  });
+  const resident = (subscription, name = 'Second') => ({
+    id: name === 'Second' ? 'r2' : name.toLowerCase(),
+    name,
+    entitlement: { source: 'stripe', state: 'active', tier: 'life', subscription },
+  });
+
+  it('offers End only for a live paid plan, and posts the resident', async () => {
+    render(
+      Billing,
+      props({ residents: [resident(sub()), resident(sub({ status: 'canceled' }), 'Gone'), resident(null, 'Free')] })
+    );
+    expect(screen.getAllByRole('button', { name: /^End .*'s plan$/ })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: "End Second's plan" }));
+    expect(router.post).toHaveBeenCalledWith('/accounts/home/billing/end_plan', { agent_id: 'r2' }, expect.any(Object));
+  });
+
+  it('offers End for a trialing plan', () => {
+    render(Billing, props({ residents: [resident(sub({ status: 'trialing' }))] }));
+    expect(screen.getByRole('button', { name: "End Second's plan" })).toBeInTheDocument();
+  });
+
+  it('hides End and Keep from someone who cannot pay', () => {
+    const billing = { configured: true, can_pay: false };
+    render(
+      Billing,
+      props({ billing, residents: [resident(sub()), resident(sub({ cancel_at_period_end: true }), 'Other')] })
+    );
+    expect(screen.queryByTestId('end-plan-controls')).not.toBeInTheDocument();
+  });
+
+  it('shows the end date and Keep only when the plan is set to end, and posts the resident', async () => {
+    render(Billing, props({ residents: [resident(sub({ cancel_at_period_end: true }))] }));
+    expect(screen.getByText("Ends on 1 Dec 2026; won't renew.")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "End Second's plan" })).not.toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: "Keep Second's plan" }));
+    expect(router.post).toHaveBeenCalledWith(
+      '/accounts/home/billing/keep_plan',
+      { agent_id: 'r2' },
+      expect.any(Object)
+    );
+  });
+
+  it('shows no Keep button for a plan that is not ending', () => {
+    render(Billing, props({ residents: [resident(sub())] }));
+    expect(screen.queryByRole('button', { name: /Keep/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the confirmation panel for a pending end, only to someone who can pay', () => {
+    const pending_end = {
+      attempt_id: 3,
+      digest: 'd',
+      resident_name: 'Second',
+      operation: 'period_end',
+      ends_at: '2026-12-01',
+      final_total_cents: 0,
+    };
+    const { unmount } = render(Billing, props({ pending_end }));
+    expect(screen.getByTestId('billing-end-confirm')).toBeInTheDocument();
+    unmount();
+    render(Billing, props({ pending_end, billing: { configured: true, can_pay: false } }));
+    expect(screen.queryByTestId('billing-end-confirm')).not.toBeInTheDocument();
+  });
+});

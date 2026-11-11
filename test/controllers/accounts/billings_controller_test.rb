@@ -298,6 +298,65 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @stripe.portal_sessions
   end
 
+  test "End plan: the owner sees what it does, confirms, and the resident's item goes; a moved bill is shown again" do
+    second = agents(:code_reviewer)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" }, { agent: second, price: CONVERSATION_PRICE, id: "si_b" } ])
+    with_stripe do
+      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      post end_plan_account_billing_path(@account), params: { agent_id: second.to_param }
+    end
+
+    attempt = BillingCheckoutAttempt.find_by!(agent: second, kind: "end")
+    assert_redirected_to account_billing_path(@account, end: attempt.id)
+    assert_empty @stripe.subscription_updates, "nothing changes before the owner confirms"
+
+    get account_billing_path(@account, end: attempt.id)
+    shown = inertia_shared_props["pending_end"]
+    assert_equal [ second.name, "delete", Billing::EndItem.digest(attempt.quote) ], shown.values_at("resident_name", "operation", "digest")
+    assert shown["next_change_cents"].negative?
+
+    sign_in(users(:regular_user))
+    with_stripe { post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: shown["digest"] } }
+    assert_empty @stripe.subscription_updates, "only the owner ends a plan"
+
+    sign_in(@user)
+    with_stripe { post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: "moved" } }
+    fresh = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "end")
+    assert_redirected_to account_billing_path(@account, end: fresh.id)
+    assert_empty @stripe.subscription_updates
+
+    with_stripe do
+      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: fresh.id, digest: Billing::EndItem.digest(fresh.quote) }
+    end
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/comes off the next bill as credit/, flash[:notice])
+    assert_not ResidentEntitlement.find_by!(agent: second).active?
+    assert ResidentEntitlement.find_by!(agent: @agent).active?
+    assert AuditLog.exists?(action: "end_resident_plan", user: @user)
+  end
+
+  test "End plan on the bill's only resident: it won't renew, and Keep undoes it" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    with_stripe do
+      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      post end_plan_account_billing_path(@account), params: { agent_id: @agent.to_param }
+    end
+    attempt = BillingCheckoutAttempt.find_by!(agent: @agent, kind: "end")
+    with_stripe do
+      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: Billing::EndItem.digest(attempt.quote) }
+    end
+    assert_match(/won't renew/, flash[:notice])
+    assert ResidentEntitlement.find_by!(agent: @agent).current_subscription.cancel_at_period_end
+
+    with_stripe { post keep_plan_account_billing_path(@account), params: { agent_id: @agent.to_param } }
+    assert_match(/renew as usual/, flash[:notice])
+    assert_not ResidentEntitlement.find_by!(agent: @agent).current_subscription.cancel_at_period_end
+  end
+
   test "another account's residents and billing are out of reach" do
     get account_billing_path(accounts(:other))
     assert_response :not_found

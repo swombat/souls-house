@@ -6,6 +6,7 @@
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import AccountPlanCard from '$lib/components/billing/AccountPlanCard.svelte';
   import ResidentBillingNote from '$lib/components/billing/ResidentBillingNote.svelte';
+  import EndPlanPanel from '$lib/components/billing/EndPlanPanel.svelte';
   import { sizeLines, sizeOf, usd } from '$lib/pricing';
 
   let {
@@ -23,6 +24,8 @@
     // A resident about to join the account's subscription (Billing::AddItem):
     // the server's quote, confirmed as-is or not at all.
     pending_add: pendingAdd = null,
+    // A resident's plan about to end (Billing::EndItem), quoted by the server.
+    pending_end: pendingEnd = null,
   } = $props();
 
   let busy = $state(null);
@@ -152,6 +155,20 @@
     busy = 'portal';
     router.post(`/accounts/${account.id}/billing/portal`, {}, { onFinish: () => (busy = null) });
   }
+
+  function liveSubscription(resident) {
+    const sub = resident.entitlement?.subscription;
+    return sub && ['active', 'trialing'].includes(sub.status) ? sub : null;
+  }
+
+  function planAction(resident, action) {
+    busy = `${resident.id}:${action}`;
+    router.post(
+      `/accounts/${account.id}/billing/${action}`,
+      { agent_id: resident.id },
+      { onFinish: () => (busy = null) }
+    );
+  }
 </script>
 
 <svelte:head>
@@ -203,6 +220,10 @@
           <Button size="sm" variant="outline" onclick={cancelAdd} disabled={busy !== null}>Not now</Button>
         </div>
       </div>
+    {/if}
+
+    {#if pendingEnd && billing.can_pay}
+      <EndPlanPanel {account} pending={pendingEnd} />
     {/if}
 
     <AccountPlanCard
@@ -281,6 +302,29 @@
               canManage={billing.has_customer && billing.can_pay}
               onmanage={openPortal}
               busy={busy !== null} />
+            {#if billing.can_pay && liveSubscription(resident)}
+              {@const sub = liveSubscription(resident)}
+              <div class="mt-2 flex flex-wrap items-center gap-2" data-testid="end-plan-controls">
+                {#if sub.cancel_at_period_end}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onclick={() => planAction(resident, 'keep_plan')}
+                    disabled={busy !== null}>
+                    Keep {resident.name}'s plan
+                  </Button>
+                {:else}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    class="text-destructive"
+                    onclick={() => planAction(resident, 'end_plan')}
+                    disabled={busy !== null}>
+                    End {resident.name}'s plan
+                  </Button>
+                {/if}
+              </div>
+            {/if}
           </div>
 
           {#if billing.can_pay && canSubscribe(entitlement)}
