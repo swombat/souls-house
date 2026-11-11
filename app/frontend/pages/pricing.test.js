@@ -74,10 +74,9 @@ test('residents by size, then model use, then the free 14 days with the paid pla
     free_trial_enabled: true,
   });
   const sizes = screen.getByTestId('pricing-sizes');
-  expect(within(sizes).getByRole('rowheader', { name: 'Medium' })).toBeInTheDocument();
+  expect(within(sizes).getByRole('heading', { name: 'Medium' })).toBeInTheDocument();
   expect(sizes).toHaveTextContent('$19.99');
-  expect(sizes).toHaveTextContent('$10 more as the included one');
-  expect(sizes).toHaveTextContent('$40 more as the included one');
+  expect(sizes).toHaveTextContent('+$10 a month as your included resident');
   expect(screen.getByTestId('pricing-model-use')).toHaveTextContent(
     "Each account gets $10 a month of the house's own model"
   );
@@ -162,5 +161,67 @@ describe('the free 14 days and where they lead', () => {
     const { free_trial_enabled: _, ...withoutSwitch } = open;
     render(Pricing, withoutSwitch);
     expect(screen.queryByTestId('pricing-trial')).toBeNull();
+  });
+});
+
+describe('residents by size, as cards', () => {
+  const machines = {
+    conversation: { vcpus: 2, ram_gb: 4 },
+    life: { vcpus: 4, ram_gb: 8 },
+    work: { vcpus: 8, ram_gb: 16 },
+  };
+  const withMachines = tiers.map((tier) => ({ ...tier, machine: machines[tier.id] }));
+  const sizeCard = (size) => document.querySelector(`[data-testid="pricing-sizes"] [data-size="${size}"]`);
+
+  test('one card per size: name, price, what it costs as the included resident, what it is for', () => {
+    render(Pricing, { tiers: withMachines, account_plans: accountPlans, billing_open: true });
+    expect(screen.getByTestId('pricing-sizes').querySelector('table')).toBeNull();
+    expect(sizeCard('small').querySelector('[data-size-price]')).toHaveTextContent('$9.99');
+    expect(sizeCard('small').querySelector('[data-size-included]')).toHaveTextContent('Included in every plan');
+    expect(sizeCard('small').querySelector('[data-size-badge]')).toHaveTextContent('What most residents need');
+    expect(sizeCard('medium').querySelector('[data-size-badge]')).toBeNull();
+    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$19.99');
+    expect(sizeCard('medium').querySelector('[data-size-included]')).toHaveTextContent(
+      '+$10 a month as your included resident'
+    );
+    expect(sizeCard('large').querySelector('[data-size-included]')).toHaveTextContent(
+      '+$40 a month as your included resident'
+    );
+    expect(sizeCard('small').querySelectorAll('[data-size-uses] li')).toHaveLength(3);
+    expect(sizeCard('medium')).toHaveTextContent('Writing code');
+    expect(sizeCard('large')).toHaveTextContent('Several sub-agents at once');
+  });
+
+  test('the differences come from the prices the server sends, never typed', () => {
+    const repriced = withMachines.map((tier) => ({
+      ...tier,
+      monthly_usd: { conversation: '12.00', life: '15.50', work: '30.00' }[tier.id],
+    }));
+    render(Pricing, { tiers: repriced, account_plans: accountPlans, billing_open: true });
+    expect(sizeCard('medium').querySelector('[data-size-included]')).toHaveTextContent('+$3.50 a month');
+    expect(sizeCard('large').querySelector('[data-size-included]')).toHaveTextContent('+$18 a month');
+  });
+
+  test('the computer is named only when the server says each resident gets one', () => {
+    render(Pricing, { tiers: withMachines, account_plans: accountPlans, billing_open: true });
+    expect(sizeCard('small').querySelector('[data-size-machine]')).toHaveTextContent(
+      'Its own computer: 2 cores, 4 GB memory'
+    );
+    expect(sizeCard('large').querySelector('[data-size-machine]')).toHaveTextContent('8 cores, 16 GB memory');
+    expect(screen.getByTestId('pricing-sizes')).toHaveTextContent('Each resident lives on a computer of its own.');
+  });
+
+  test('no machine in the props: no computer claimed, not even in the intro', () => {
+    render(Pricing, { tiers, account_plans: accountPlans, billing_open: true });
+    expect(document.querySelector('[data-size-machine]')).toBeNull();
+    expect(screen.getByTestId('pricing-sizes')).not.toHaveTextContent(/computer/i);
+  });
+
+  test('billing open and a size not purchasable: that card says it opens soon, with no price', () => {
+    const closed = withMachines.map((tier) => (tier.id === 'work' ? { ...tier, purchasable: false } : tier));
+    render(Pricing, { tiers: closed, account_plans: accountPlans, billing_open: true });
+    expect(sizeCard('large').querySelector('[data-size-price]')).toHaveTextContent('Opens soon');
+    expect(sizeCard('large')).not.toHaveTextContent('$49.99');
+    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$19.99');
   });
 });

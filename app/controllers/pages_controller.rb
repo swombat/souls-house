@@ -81,7 +81,16 @@ class PagesController < ApplicationController
       allowance_usd: Billing.usd(tier.allowance_usd),
       purchasable: tier.purchasable?,
       features: tier.features
-    }
+    }.merge(pricing_machine(tier))
+  end
+
+  # The computer a size runs on, only while new residents are born on a VM of
+  # their own, of their size's type (CloudProcurement#vm_birth_server_type).
+  # A house that keeps residents on its own server doesn't claim it.
+  def pricing_machine(tier)
+    return {} unless Setting.instance.new_residents_on_vm?
+
+    { machine: tier.machine.slice(:vcpus, :ram_gb) }
   end
 
 end

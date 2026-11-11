@@ -3,8 +3,10 @@ import {
   accountPlanLines,
   accountPlanTaglines,
   planAction,
+  machineLine,
   sizeLines,
   sizeOf,
+  sizeUses,
   trialAction,
   trialApplies,
   trialShown,
@@ -98,6 +100,15 @@ describe('copy', () => {
       colleagues: 'Does serious work beside you.',
     });
     expect(Object.keys(sizeLines)).toEqual(['small', 'medium', 'large']);
+    expect(Object.keys(sizeUses)).toEqual(Object.keys(sizeLines));
+  });
+});
+
+describe('machineLine', () => {
+  it('says the computer in plain words, and nothing without both numbers', () => {
+    expect(machineLine({ vcpus: 2, ram_gb: 4 })).toBe('Its own computer: 2 cores, 4 GB memory');
+    expect(machineLine(undefined)).toBeNull();
+    expect(machineLine({ vcpus: 2 })).toBeNull();
   });
 });
 
