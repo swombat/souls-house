@@ -15,9 +15,9 @@ vi.mock('$lib/speech-source', () => ({
     const urls = [];
     return {
       keep,
-      resolve: (id, { signal }) => {
+      resolve: (id, { signal, onAudio }) => {
         signals.push(signal);
-        return answers(id, signal).then((answer) => {
+        return answers(id, signal, onAudio).then((answer) => {
           if (answer.engine === 'phonon') {
             const url = `blob:${id}:${made.length}`;
             made.push(url);
@@ -101,4 +101,124 @@ test('a failure is shown with its reason and Listen can be pressed again', async
   answers = async () => ({ engine: 'phonon' });
   await listen('m1');
   expect(get(listenState).m1.status).toBe('ready');
+});
+
+// Playing as it is made (YNwVle). A fake stream player records what Listen
+// does with it; the real one is tested in stream-player.test.js.
+function fakeStream() {
+  const made = [];
+  return {
+    made,
+    factory: ({ onended }) => {
+      const player = {
+        pushed: [],
+        finished: false,
+        stopped: false,
+        push: vi.fn((samples, rate) => player.pushed.push([samples, rate])),
+        finish: vi.fn(() => (player.finished = true)),
+        stop: vi.fn(() => (player.stopped = true)),
+        end: () => onended(),
+      };
+      made.push(player);
+      return player;
+    },
+  };
+}
+
+test('a Phonon Listen plays from the first chunk, in order, and keeps the WAV for afterwards', async () => {
+  const streams = fakeStream();
+  let more;
+  answers = (id, signal, onAudio) => {
+    onAudio(new Float32Array([0.1]), 24000);
+    return new Promise((resolve) => {
+      more = () => {
+        onAudio(new Float32Array([0.2]), 24000);
+        onAudio(new Float32Array([0.3]), 24000);
+        resolve({ engine: 'phonon' });
+      };
+    });
+  };
+  const pending = listen('m1', { stream: streams.factory });
+  const [player] = streams.made;
+  // Sounding before the message is all made: no URL yet, the stream is the player.
+  expect(get(listenState).m1).toEqual({ status: 'streaming', stream: player });
+  expect(player.finished).toBe(false);
+  more();
+  await pending;
+  expect(player.pushed.map(([samples, rate]) => [samples[0], rate])).toEqual([
+    [Math.fround(0.1), 24000],
+    [Math.fround(0.2), 24000],
+    [Math.fround(0.3), 24000],
+  ]);
+  expect(get(listenState).m1).toEqual({ status: 'streaming', stream: player, url: 'blob:m1:0' });
+  expect(player.finish).toHaveBeenCalled();
+
+  // Heard to the end: the ordinary player takes the kept WAV, not starting by itself.
+  player.end();
+  expect(get(listenState).m1).toEqual({ status: 'ready', url: 'blob:m1:0', heard: true });
+  // Listen again replays that WAV: nothing is made a second time.
+  await listen('m1', { stream: streams.factory });
+  expect(made).toHaveLength(1);
+  expect(streams.made).toHaveLength(1);
+});
+
+test('a reset mid-stream stops the sound and aborts the making, and late chunks go nowhere', async () => {
+  const streams = fakeStream();
+  let onAudioLater;
+  let finish;
+  answers = (id, signal, onAudio) => {
+    onAudio(new Float32Array([0.1]), 24000);
+    onAudioLater = onAudio;
+    return new Promise((resolve) => (finish = resolve));
+  };
+  const pending = listen('m1', { stream: streams.factory });
+  const [player] = streams.made;
+  expect(get(listenState).m1.status).toBe('streaming');
+
+  resetListen();
+  expect(player.stop).toHaveBeenCalled();
+  expect(signals[0].aborted).toBe(true);
+  onAudioLater(new Float32Array([0.2]), 24000);
+  finish({ engine: 'phonon' });
+  await pending;
+  expect(player.pushed).toHaveLength(1);
+  expect(player.finish).not.toHaveBeenCalled();
+  expect(get(listenState)).toEqual({});
+});
+
+test('a failure mid-stream stops the sound and says why', async () => {
+  const streams = fakeStream();
+  answers = async (id, signal, onAudio) => {
+    onAudio(new Float32Array([0.1]), 24000);
+    throw new Error('The graphics device Phonon was using went away.');
+  };
+  await listen('m1', { stream: streams.factory });
+  expect(streams.made[0].stop).toHaveBeenCalled();
+  expect(get(listenState).m1).toEqual({ status: 'error', error: 'The graphics device Phonon was using went away.' });
+});
+
+test('audio already made (no chunks) plays through the ordinary player, and the unused stream is released', async () => {
+  const streams = fakeStream();
+  await listen('m1', { stream: streams.factory });
+  expect(streams.made[0].stop).toHaveBeenCalled();
+  expect(get(listenState).m1).toEqual({ status: 'ready', url: 'blob:m1:0' });
+});
+
+test('under ElevenLabs the stream made in the tap is released unused', async () => {
+  const streams = fakeStream();
+  answers = async () => ({ engine: 'elevenlabs', url: null });
+  await listen('a', { postVoice: async () => ({ pending: true }), stream: streams.factory });
+  expect(streams.made[0].stop).toHaveBeenCalled();
+  expect(streams.made[0].pushed).toEqual([]);
+});
+
+test('without Web Audio, Listen waits for the whole message as before', async () => {
+  let given;
+  answers = async (id, signal, onAudio) => {
+    given = onAudio;
+    return { engine: 'phonon' };
+  };
+  await listen('m1', { stream: () => null });
+  expect(given).toBeUndefined();
+  expect(get(listenState).m1).toEqual({ status: 'ready', url: 'blob:m1:0' });
 });

@@ -49,11 +49,17 @@ module Agents
 
       attr_reader :port, :failures, :requests
 
-      def initialize(agent, deadline:, repository_factory: REPOSITORY_FACTORY, host: "127.0.0.1")
+      # Operations a read-only adapter refuses: a rollback restore (#426 3C
+      # checkpoint 3) reads the resident's repository and must never write
+      # to it, not even a lock (restic runs it with --no-lock).
+      WRITES = %i[init create delete].freeze
+
+      def initialize(agent, deadline:, repository_factory: REPOSITORY_FACTORY, host: "127.0.0.1", read_only: false)
         @resident = Resident.new(id: agent.id, uuid: agent.uuid.to_s)
         @deadline = deadline
         @repository_factory = repository_factory
         @host = host
+        @read_only = read_only
         @password = SecureRandom.hex(32)
         @probe = SecureRandom.hex(16)
         @failures = []
@@ -275,6 +281,7 @@ module Agents
         wire_path, query = request[:target].split("?", 2)
         path = wire_path.delete_prefix("/")
         operation = Backup::VmRepository.operation(method: request[:method], path:, query: query.to_s)
+        return Response.new(403, {}, "carry_read_only") if @read_only && WRITES.include?(operation)
         raise Backup::VmRepository::Refused.new(:unexpected_backup_body, 400) if operation != :create && request[:body].present?
 
         Rails.application.executor.wrap do
@@ -334,7 +341,7 @@ module Agents
         end
       end
 
-      REASONS = { 200 => "OK", 206 => "Partial Content", 400 => "Bad Request", 401 => "Unauthorized", 404 => "Not Found",
+      REASONS = { 200 => "OK", 206 => "Partial Content", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found",
                   409 => "Conflict", 413 => "Content Too Large", 416 => "Range Not Satisfiable", 429 => "Too Many Requests",
                   500 => "Internal Server Error", 503 => "Service Unavailable", 504 => "Gateway Timeout",
                   507 => "Insufficient Storage" }.freeze

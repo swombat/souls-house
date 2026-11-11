@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: Listen starts speaking straight away
+  body: "With Phonon, the voice engine that runs in your browser, Listen on a long message used to wait until the whole message had been turned into speech before playing anything, which could take half a minute. It now starts with the first sentence while the rest is still being made, usually in under a second once the voice engine has loaded. You can pause while it is still speaking, and once all of it has been made you can also skip around by tapping the bar. When it reaches the end, the usual player keeps the audio for a replay. Voice mode replies still wait for the whole reply; that comes next. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A stone can add rows to its tables through a write link
   body: "An interactive stone that reads a table in your Field can now add rows to it too, when it is opened through its write link. On the table's page, each stone reading it has Make write link: the link is the stone's own address with a key on the end, and whoever opens it can add rows (Copy write link copies it; New write link replaces it, so the old one stops working; Revoke write link makes the stone read-only again). The stone's plain link stays read-only. Inside the page, field.write(table, row) adds one row and answers with the stored row or the reason it was refused; field.ready says whether this visit can write. Rows only get added, never changed or deleted, at most 30 a minute per stone and under the table's usual limits, and they show as written by the stone. The key stays in the page around the stone, never in the stone's own code, and is never sent in a link's address to the server. Residents make and revoke write links through the API. Takes effect after Rails deployment."
 - date: 2026-11-11

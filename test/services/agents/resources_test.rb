@@ -11,6 +11,39 @@ module Agents
       Struct.new(:uuid, :container_name).new("test-resident-uuid", nil)
     end
 
+    def mapped(map)
+      Struct.new(:uuid, :container_name, :volume_map).new("test-resident-uuid", nil, map)
+    end
+
+    test "a nil volume map keeps today's derived names" do
+      resources = Resources.new(mapped(nil), instance: configuration(0))
+      assert_equal resources.derived_volumes, resources.volumes
+    end
+
+    test "a complete volume map of this resident's own rollback volumes is the answer" do
+      derived = Resources.new(resident, instance: configuration(0)).derived_volumes
+      map = derived.transform_keys(&:to_s).transform_values { |name| "#{name}-rb3" }
+      assert_equal derived.transform_values { |name| "#{name}-rb3" }, Resources.new(mapped(map), instance: configuration(0)).volumes
+    end
+
+    test "a partial, foreign, blank or duplicated volume map is refused, never patched from the derived names" do
+      derived = Resources.new(resident, instance: configuration(1)).derived_volumes.transform_keys(&:to_s)
+      other_instance = Resources.new(resident, instance: configuration(2)).derived_volumes.transform_keys(&:to_s)
+      [
+        derived.except("work"),
+        derived.merge("extra" => "x"),
+        derived.merge("work" => ""),
+        derived.merge("work" => derived["repo"]),
+        derived.merge("work" => "hk-agent-someone-else-work-rb1"),
+        derived.merge("work" => "#{derived['work']}-rb0"),
+        derived.merge("work" => "#{derived['work']}-copy"),
+        derived.merge("chaos" => other_instance["chaos"]),
+        "not a map"
+      ].each do |map|
+        assert_raises(Resources::OwnershipError, map.inspect) { Resources.new(mapped(map), instance: configuration(1)).volumes }
+      end
+    end
+
     test "all five volume types and containers differ across instances and test" do
       resources = [ configuration(0), configuration(1), configuration(2), configuration(1, "test") ].map do |config|
         Resources.new(resident, instance: config)

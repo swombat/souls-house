@@ -30,7 +30,28 @@ module Agents
       name
     end
 
+    ROLES = %i[identity chaos repo work state].freeze
+    ROLLBACK_SUFFIX = /\A-rb[1-9][0-9]{0,8}\z/
+
+    # The five volumes the resident runs on. When the agent carries a
+    # volume_map (set by a rollback swap, #426 3C checkpoint 3) that map is
+    # the answer, and it must be complete and this resident's own: exactly the
+    # five roles, distinct names, each either the derived name for its role or
+    # that name plus a rollback suffix (so the namespace and the agent UUID
+    # bound it). Anything else raises: there is no partial fallback, because
+    # a container started on a mix of old and new volumes is the failure the
+    # map exists to prevent.
     def volumes
+      map = agent.respond_to?(:volume_map) ? agent.volume_map : nil
+      return derived_volumes if map.nil?
+
+      validated_map(map)
+    end
+
+    # The names derived from the instance and the agent UUID alone: what every
+    # resident without a volume_map runs on, and the base a rollback's fresh
+    # names are built from.
+    def derived_volumes
       {
         identity: "#{container}-identity",
         chaos: instance.namespace ? "#{container}-chaos" : "chaos-home-#{uuid}",
@@ -76,6 +97,31 @@ module Agents
     end
 
     private
+
+    def validated_map(map)
+      raise OwnershipError, "Volume map is not a map" unless map.is_a?(Hash)
+
+      roles = map.keys.map(&:to_s)
+      unless roles.sort == ROLES.map(&:to_s).sort
+        raise OwnershipError, "Volume map must name exactly #{ROLES.join(', ')}"
+      end
+
+      derived = derived_volumes
+      result = ROLES.to_h do |role|
+        name = map[role.to_s] || map[role]
+        raise OwnershipError, "Volume map has a blank name for #{role}" unless name.is_a?(String) && name.present?
+
+        base = derived.fetch(role)
+        unless name == base || (name.start_with?(base) && ROLLBACK_SUFFIX.match?(name.delete_prefix(base)))
+          raise OwnershipError, "Volume map names a volume that is not this resident's #{role} volume"
+        end
+        [ role, name ]
+      end
+      # Distinct names follow from the line above: each name is bound to its
+      # own role's derived name, and no two roles share one (a mutation that
+      # removed an explicit uniqueness check here left every test green).
+      result
+    end
 
     def uuid
       value = agent.uuid.to_s
