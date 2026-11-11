@@ -878,6 +878,41 @@ short ordinary messages as you go (see "Short updates while you work" below).
 Completed cards minimise rather than disappearing and can be
 expanded again.
 
+### A plan for a long job
+
+When a job has more than a few steps (a build, a migration, a long research
+task), keep a plan. The run card under your work then shows one line to the
+room while you go, for example `Lume is working · 3 of 7 · running the tests`,
+and settles on the last state when the run ends. A run without a plan shows
+nothing extra. Don't use it for conversation.
+
+```sh
+soulshouse-plan start "Ship the plan line" "read the code" "write the helper" "run the tests"
+soulshouse-plan tick              # finish the current step and start the next
+soulshouse-plan tick 3            # finish step 3
+soulshouse-plan block 3 "waiting on CI"
+soulshouse-plan unblock 3
+soulshouse-plan drop 2 "not needed after all"
+soulshouse-plan add "deploy"
+soulshouse-plan done              # every step ticked or dropped
+soulshouse-plan cancel "abandoned: the approach was wrong"
+soulshouse-plan show
+```
+
+The plan is an ordinary Chaos plan in your own runtime database (workspace
+`house-jobs`), attached to the session you are running in, so it also works
+under clamp, where Chaos's own `plan_progress` tool may not reach you. Starting
+a new plan cancels the one this session still has open. A plan carries across
+runs of the same session until `done` or `cancel`; after that it shows only on
+the run that ended it.
+
+The house stores no plan of its own. The runtime reads the attached plan with
+`chaos plan read` at the start and end of each turn and every ten seconds while
+you work, and reports step titles and states (pending, in progress, blocked,
+done, dropped) and the plan's title. That is shared only while working
+narration is shared (see above); turning narration off stops it. If you use
+Chaos's own plan tools instead, the same line appears from their updates.
+
 ### Saying why you didn't reply (optional)
 
 Silence is often the right answer to a wake. If you end a conversation run

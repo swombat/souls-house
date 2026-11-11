@@ -29,6 +29,11 @@ _silence_spec.loader.exec_module(silence_nudge)
 # each one, and this bounds what the shim will read.
 ACK_MAX_BYTES = 262_144
 
+# soulshouse-plan keeps its pointers here (under the run's CHAOS_HOME).
+PLAN_POINTER_DIR = "house-plans"
+PLAN_TASK_STATUSES = frozenset(("pending", "in_progress", "blocked", "completed", "cancelled"))
+PLAN_READ_TIMEOUT = 5
+
 
 def is_work_event(event):
     """True for a Chaos event showing the model did something: any item other
@@ -93,6 +98,13 @@ class Reporter:
         self.silence = None
         # Set by the trigger shim from the payload: the waking turn was spoken.
         self.voice_mode = False
+        # The resident's plan (#864): which Chaos session this run is, the env
+        # its chaos ran with, and the last plan sent, so only changes are sent.
+        self.process_id = None
+        self.plan_env = None
+        self.plan_bin = "chaos"
+        self.last_plan = None
+        self.plan_reading = threading.Lock()
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -136,19 +148,28 @@ class Reporter:
             self.seq = 0
             self.operations = {}
             self.subagents = {}
+            # Each attempt has its own snapshot; send the plan again.
+            self.last_plan = None
             self.emit("attempt.started", {"narration_capability": self.capability})
             self.stream_gap("stream.started")
 
     def project(self, event):
         kind = event.get("type")
         if kind == "process.started":
+            if isinstance(event.get("process_id"), str):
+                self.process_id = event["process_id"]
             self.stream_gap("stream.started")
+        elif kind == "plan.updated":
+            # Chaos's own plan tool committed a change (non-clamped sessions).
+            self.send_plan(self.plan_payload(event))
         elif kind == "agent.status_changed":
             self.project_subagent(event)
         elif kind == "turn.started":
             self.emit("turn.started")
+            self.poll_plan()
         elif kind in ("turn.completed", "turn.failed"):
             self.emit("turn.finished")
+            self.poll_plan()
         elif kind in ("item.started", "item.updated", "item.completed"):
             item = event.get("item") or {}
             category = self.CATEGORIES.get(item.get("type"))
@@ -176,6 +197,82 @@ class Reporter:
                      "status": "completed" if step.get("completed") else "pending"}
                     for step in item.get("items", [])[:100] if isinstance(step, dict)
                 ]})
+
+    def plan_payload(self, plan):
+        """Titles and states of a Chaos plan's top-level tasks, nothing else.
+        Takes `chaos plan read` output or a Chaos plan.updated event."""
+        if not isinstance(plan, dict):
+            return None
+        head = plan.get("plan") if isinstance(plan.get("plan"), dict) else plan
+        tasks = plan.get("tasks")
+        if not isinstance(tasks, list):
+            return None
+        tasks = [task for task in tasks if isinstance(task, dict) and task.get("depth", 0) == 0
+                 and task.get("status") in PLAN_TASK_STATUSES]
+        if all("position" in task for task in tasks):
+            tasks.sort(key=lambda task: task["position"] if isinstance(task["position"], int) else 0)
+        return {
+            "title": self._text(head.get("title", ""))[:200],
+            "status": head.get("status") if head.get("status") in ("active", "completed", "cancelled") else "active",
+            "steps": [{"text": self._text(task.get("title", "")), "status": task["status"]} for task in tasks[:100]],
+        }
+
+    def send_plan(self, payload):
+        if not payload or not self.share:
+            return
+        with self.lock:
+            if payload == self.last_plan:
+                return
+            self.last_plan = payload
+        self.emit("plan.updated", payload)
+
+    def plan_pointer(self):
+        """The plan soulshouse-plan left for this run, else for this session.
+        A plan that ended is shown only on the run that ended it."""
+        env = self.plan_env or {}
+        home = Path(env.get("CHAOS_HOME") or Path.home() / ".chaos") / PLAN_POINTER_DIR
+        names = [f"run-{self.run_id}.json"]
+        if self.process_id and "/" not in self.process_id and not self.process_id.startswith("."):
+            names.append(f"thread-{self.process_id}.json")
+        for name in names:
+            try:
+                data = json.loads((home / name).read_text())
+            except (OSError, ValueError):
+                continue
+            if not isinstance(data, dict) or not isinstance(data.get("plan_id"), str):
+                continue
+            if "ended_run_id" in data and data["ended_run_id"] != self.run_id:
+                continue
+            return data["plan_id"]
+        return None
+
+    def poll_plan(self, wait=False):
+        """Read the pointed-to plan with `chaos plan read` and send it if it
+        changed. Command-line changes emit nothing on the stream, so this is
+        how a clamped resident's ticks reach the card. Never raises."""
+        if not self.share or self.plan_env is None:
+            return
+        plan_id = self.plan_pointer()
+        if not plan_id:
+            return
+        if not self.plan_reading.acquire(blocking=wait):
+            return
+
+        def read():
+            try:
+                proc = subprocess.run([self.plan_bin, "plan", "read", plan_id], capture_output=True,
+                                      env=self.plan_env, timeout=PLAN_READ_TIMEOUT, stdin=subprocess.DEVNULL)
+                if proc.returncode == 0 and len(proc.stdout) <= 1024 * 1024:
+                    self.send_plan(self.plan_payload(json.loads(proc.stdout)))
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
+            finally:
+                self.plan_reading.release()
+
+        if wait:
+            read()
+        else:
+            threading.Thread(target=read, daemon=True).start()
 
     def project_subagent(self, event):
         if not self.share:
@@ -225,6 +322,9 @@ class Reporter:
                 env.pop(key)
         timeout = max(0.1, min(timeout, self.deadline - time.time()))
         args = self._arm_silence_clock(args, env)
+        self.plan_env = {key: value for key, value in env.items()
+                         if key not in ("SOULSHOUSE_STEER_FILE",)}
+        self.plan_bin = env.get("SOULSHOUSE_CHAOS_BIN") or (args[0] if args else "chaos")
         proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, env=env, start_new_session=True)
         retained = collections.deque()
@@ -310,6 +410,7 @@ class Reporter:
                 except subprocess.TimeoutExpired:
                     if time.monotonic() - last_heartbeat >= 10:
                         self.emit("heartbeat")
+                        self.poll_plan()
                         last_heartbeat = time.monotonic()
         except subprocess.TimeoutExpired:
             try:
@@ -338,6 +439,8 @@ class Reporter:
                 thread.join(timeout=1)
             for pipe in (proc.stdin, proc.stdout, proc.stderr):
                 pipe.close()
+        # The run's last word on its plan, so the card settles where it ended.
+        self.poll_plan(wait=True)
         completed = subprocess.CompletedProcess(args, proc.returncode,
                                                 (process_started + b"".join(retained)).decode(errors="replace"),
                                                 stderr.decode(errors="replace"))
