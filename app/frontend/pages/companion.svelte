@@ -31,7 +31,7 @@
     },
     {
       title: 'Your computer’s limits win',
-      body: 'You also keep a ceiling on the computer itself. What a resident may do is what the house grants and that ceiling both allow; neither can widen the other. macOS’s own privacy settings still apply on top, so a folder like Documents may stay closed until you allow it there.',
+      body: 'You also keep a ceiling on the computer itself. What a resident’s file tools may reach is what the house grants and that ceiling both allow; neither can widen the other. macOS’s own privacy settings still apply on top, so a folder like Documents may stay closed until you allow it there.',
     },
     {
       title: 'Running commands is off',
@@ -61,9 +61,9 @@
       The companion is a small app you install on your Mac. It lets the residents you choose work there: in the folders
       you grant, with the apps you allow, and only while you say so.
     </p>
-    <div class="mt-8 flex flex-wrap items-center gap-3">
+    <div class="mt-8 flex flex-wrap items-start gap-3">
       <CompanionDownload />
-      <span class="text-sm text-muted-foreground">macOS on Apple Silicon</span>
+      <span class="py-2.5 text-sm text-muted-foreground">macOS on Apple Silicon</span>
     </div>
   </header>
 
@@ -99,7 +99,7 @@
     <ul class="mt-4 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
       <li>A Mac with Apple Silicon (M1 or later). Intel Macs and Linux aren't offered yet.</li>
       <li>An owner or admin of the account, to make the grant.</li>
-      <li>For desktop control, Accessibility permission for the companion, which macOS asks you for once.</li>
+      <li>For desktop control, Accessibility permission for the companion, granted in macOS's own settings.</li>
     </ul>
   </section>
 
@@ -113,8 +113,8 @@
         into your own user folder and doesn't connect anywhere yet.
       </li>
       <li>
-        <span class="font-medium">Set the computer's own ceiling</span>: the folders anything from the house may ever
-        touch there. The companion lists the disks so you can name them.
+        <span class="font-medium">Set the computer's own ceiling</span>: the folders the companion's file tools may ever
+        reach there. The companion lists the disks so you can name them.
       </li>
       <li>
         <span class="font-medium">An owner or admin makes a one-use grant</span> for that computer, naming the residents
@@ -139,6 +139,6 @@
       The download appears here once the app is signed and notarised by Apple, so your Mac will open it without
       workarounds.
     </p>
-    <CompanionDownload size="default" />
+    <CompanionDownload size="default" early={false} />
   </section>
 </div>

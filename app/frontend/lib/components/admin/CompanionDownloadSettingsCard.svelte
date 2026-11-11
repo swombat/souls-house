@@ -28,5 +28,29 @@
     {#if $page.props.errors?.companion_mac_download_url}
       <p class="text-sm text-destructive">{$page.props.errors.companion_mac_download_url.join(', ')}</p>
     {/if}
+    <div class="space-y-2 border-t pt-4">
+      <p class="text-sm text-muted-foreground">
+        Early build (unsigned, not notarised). Offered under the main button as "Download it early", with a notice of
+        what macOS will do and the checksum beside it. Set both or neither; leave blank to offer nothing early.
+      </p>
+      <Label for="companion_mac_early_download_url">Early download address (https)</Label>
+      <Input
+        id="companion_mac_early_download_url"
+        type="url"
+        bind:value={form.companion_mac_early_download_url}
+        placeholder="Blank: no early download" />
+      {#if $page.props.errors?.companion_mac_early_download_url}
+        <p class="text-sm text-destructive">{$page.props.errors.companion_mac_early_download_url.join(', ')}</p>
+      {/if}
+      <Label for="companion_mac_early_download_sha256">Its sha256</Label>
+      <Input
+        id="companion_mac_early_download_sha256"
+        class="font-mono"
+        bind:value={form.companion_mac_early_download_sha256}
+        placeholder="64 hex characters" />
+      {#if $page.props.errors?.companion_mac_early_download_sha256}
+        <p class="text-sm text-destructive">{$page.props.errors.companion_mac_early_download_sha256.join(', ')}</p>
+      {/if}
+    </div>
   </CardContent>
 </Card>

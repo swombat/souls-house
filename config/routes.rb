@@ -36,6 +36,7 @@ Rails.application.routes.draw do
         post :guest_directory_fixture, to: "/test_support/e2e#guest_directory_fixture"
         post :account_cost_fixture, to: "/test_support/e2e#account_cost_fixture"
         post :glossary_fixture, to: "/test_support/e2e#glossary_fixture"
+        post :companion_download_fixture, to: "/test_support/e2e#companion_download_fixture"
         post :provider_presentation_fixture, to: "/test_support/e2e#provider_presentation_fixture"
         post :comms_count_fixture, to: "/test_support/e2e#comms_count_fixture"
         post :telegram_presentation_fixture, to: "/test_support/e2e#telegram_presentation_fixture"

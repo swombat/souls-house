@@ -2901,6 +2901,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_100000) do
     t.string "voice_mode_scope", default: "account_choice", null: false
     t.string "speech_engine_scope", default: "disabled", null: false
     t.string "companion_mac_download_url", limit: 500
+    t.string "companion_mac_early_download_url", limit: 500
+    t.string "companion_mac_early_download_sha256", limit: 64
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

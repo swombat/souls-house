@@ -163,7 +163,7 @@
   description="Computers enrolled with the companion app, which residents each one serves, and what they may do there.">
   {#if devices.length > 0}
     <div class="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="companion-header">
-      <CompanionDownload size="sm" />
+      <CompanionDownload size="sm" early={false} />
       <a href="/companion" class="underline underline-offset-4">About the companion app</a>
     </div>
   {/if}
@@ -183,7 +183,7 @@
         class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"
         data-testid="companion-enrol-steps">
         <li>Install the companion on the Mac, as yourself.</li>
-        <li>Set the computer's own ceiling: the folders anything from the house may ever touch there.</li>
+        <li>Set the computer's own ceiling: the folders the companion's file tools may ever reach there.</li>
         <li>
           An owner or admin makes a one-use grant naming the residents and what each may do. This is done through the
           house's API with your own key for now; a resident can walk you through it, but the grant comes from you.
