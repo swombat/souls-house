@@ -1,6 +1,6 @@
 <script>
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
-  import { Alarm, Tag, Check } from 'phosphor-svelte';
+  import { Alarm, HandPalm, Tag, Check } from 'phosphor-svelte';
   import { reloadProps } from '$lib/cable';
   import { visualTagColour } from '$lib/visual-tags';
   import VisualTagIcon from './VisualTagIcon.svelte';
@@ -10,9 +10,12 @@
   // commitmentLabel: set when a resident has promised to come back to this conversation.
   // The clock then sits faint behind the tag, its right third hidden under it, or in the
   // tag's place when there is no tag. It is absolutely placed, so nothing else in the row moves.
+  // stuckLabel: set when the conversation is stuck at the resident handoff limit
+  // (Daniel, 11 Nov, jaMvBj). A red hand then takes the clock's slot, in the same
+  // place, and wins over a waiting commitment.
   // faintEmpty: in the sidebar an untagged row shows a barely-there tag outline; the
   // conversation header passes false so the button is findable there.
-  let { chat, accountId, tags = [], commitmentLabel = '', faintEmpty = true } = $props();
+  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', faintEmpty = true } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -41,7 +44,8 @@
     optimistic !== undefined ? optimistic : confirmed && !supersedes(chat, confirmed) ? confirmed.tag : chat.visual_tag
   );
   const label = $derived(current?.label || 'No tag');
-  const title = $derived(commitmentLabel ? `${label} · ${commitmentLabel}` : label);
+  const markLabel = $derived(stuckLabel || commitmentLabel);
+  const title = $derived(markLabel ? `${label} · ${markLabel}` : label);
 
   $effect(() => {
     if (confirmed && supersedes(chat, confirmed)) confirmed = null;
@@ -95,21 +99,28 @@
 </script>
 
 <span class="group/tag relative inline-block align-top">
-{#if commitmentLabel}
+{#if markLabel}
   <!-- The trigger is h-8 w-8 with a 16px icon centred, so the icon box starts at 8px.
        Behind a tag: 10px to the left with the right 6px clipped, so 10 of 16px show
        and the clipped edge meets the tag. With no tag: in the tag's place, giving way
-       to the tag outline on hover so the picker still reads as a picker. -->
+       to the tag outline on hover so the picker still reads as a picker. The stuck
+       hand sits in the same place, red rather than faint. -->
   <span
-    data-testid="commitment-mark"
+    data-testid={stuckLabel ? 'handoff-stuck-mark' : 'commitment-mark'}
     data-placement={current ? 'behind-tag' : 'in-place'}
     role="img"
-    aria-label={commitmentLabel}
-    title={commitmentLabel}
-    class="pointer-events-none absolute top-2 inline-flex text-muted-foreground/40 {current
+    aria-label={markLabel}
+    title={markLabel}
+    class="pointer-events-none absolute top-2 inline-flex {stuckLabel
+      ? 'text-red-600 dark:text-red-500'
+      : 'text-muted-foreground/40'} {current
       ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
       : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
-    <Alarm size={16} weight="bold" />
+    {#if stuckLabel}
+      <HandPalm size={16} weight="bold" />
+    {:else}
+      <Alarm size={16} weight="bold" />
+    {/if}
   </span>
 {/if}
 <DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
@@ -128,7 +139,7 @@
     disabled={chat.discarded}>
     {#if current}
       <VisualTagIcon icon={current.icon} size={16} />
-    {:else if commitmentLabel}
+    {:else if markLabel}
       <Tag size={16} class="opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-within/tag:opacity-100" />
     {:else}
       <Tag size={16} />
