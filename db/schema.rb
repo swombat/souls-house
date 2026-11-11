@@ -579,6 +579,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_120000) do
     t.bigint "telegram_unlinked_messages_count", default: 0, null: false
     t.datetime "telegram_unlinked_last_received_at"
     t.jsonb "voice_delivery"
+    t.jsonb "volume_map"
+    t.integer "volume_rollback_generation", default: 0, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"

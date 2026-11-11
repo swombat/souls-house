@@ -1,0 +1,7 @@
+{
+  "comment": "The exact restic invocation a rollback restore uses (#426 3C cp3). Pinned on the Rails side by rollback_restic_contract_test.rb and run for real against the pinned image by test/host_runner/rollback_verify_test.py.",
+  "image": "restic/restic@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
+  "flags": ["--no-cache", "--no-lock", "-o", "rest.connections=1"],
+  "restore": ["restore", "{snapshot}:/rollback/{role}", "--target", "/rollback/{role}", "--verify"],
+  "roles": ["identity", "chaos", "repo", "work", "state"]
+}
