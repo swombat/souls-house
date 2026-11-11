@@ -225,4 +225,126 @@ class Billing::EndItemTest < ActiveSupport::TestCase
     assert_empty @stripe.subscription_updates
   end
 
+  # Mira, #909 review: an add and an end are never both unsettled.
+  def adder(agent) = Billing::AddItem.new(agent: agent, tier: Billing::Tier.find!("conversation"), rate: "standard", client: @stripe)
+
+  def birth!
+    Setting.instance.update!(allow_agents: true)
+    @account.update!(billing_required: true)
+    Billing::PaidBirth.new(client: @stripe).start!(account: @account, creator: users(:user_1), open_beginning: false,
+      tier: Billing::Tier.find!("conversation"), attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+  end
+
+  test "a last-item End sent with no answer that never reached Stripe: no add or birth is sent until the sweep settles it" do
+    one
+    ending = quote(@a)
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::NotReady) { confirm(@a, ending) }
+    assert_not stored[:cancel_at_period_end], "the parent is still active"
+    @stripe.subscription_updates.clear
+
+    assert_equal Billing::BillInFlight::END_WAITING, assert_raises(Billing::NotReady) { locked { adder(@b).quote } }.message
+    assert_equal Billing::BillInFlight::END_WAITING, assert_raises(Billing::NotReady) { birth! }.message
+    assert_empty @stripe.subscription_updates, "nothing is added while the end is unsettled"
+    assert_not BillingCheckoutAttempt.exists?(kind: "item")
+    assert_not ResidentBirthOrder.exists?(kind: "item")
+
+    sweep
+
+    assert ending.reload.resolved_at.present?
+    assert_equal [ "si_a" ], item_ids, "the replayed ending reaches the one item it was quoted for"
+    assert stored[:cancel_at_period_end]
+    assert_equal [ ending.idempotency_key ], @stripe.subscription_updates.map { |_id, _params, opts| opts[:idempotency_key] }.uniq
+  end
+
+  test "an add quoted before the end was sent is not confirmed while the end is unsettled" do
+    two
+    added = locked { adder(@c).quote }
+    ending = quote(@b)
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::NotReady) { confirm(@b, ending) }
+    @stripe.subscription_updates.clear
+
+    assert_raises(Billing::NotReady) { locked { adder(@c).confirm!(added, digest: Billing::AddItem.digest(added.quote)) } }
+    assert_empty @stripe.subscription_updates
+    assert_nil added.reload.submitted_at, "the add's own key is kept, unsent"
+  end
+
+  test "an add sent with no answer and nothing at Stripe yet: End waits rather than deciding lastness without it" do
+    one
+    added = locked { adder(@b).quote }
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::NotReady) { locked { adder(@b).confirm!(added, digest: Billing::AddItem.digest(added.quote)) } }
+    @stripe.subscription_updates.clear
+
+    assert_equal Billing::BillInFlight::ADD_WAITING, assert_raises(Billing::NotReady) { quote(@a) }.message
+    assert_empty @stripe.subscription_updates
+    assert_not BillingCheckoutAttempt.exists?(kind: "end")
+  end
+
+  test "a birth's item sent with no answer and nothing at Stripe yet: End waits too" do
+    one
+    order, = birth!
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::PaidBirth::Uncertain) { Billing::PaidBirth.new(client: @stripe).confirm_item!(order, digest: Billing::ItemQuote.digest(order.reload.item_quote)) }
+    @stripe.subscription_updates.clear
+
+    assert_equal Billing::BillInFlight::ADD_WAITING, assert_raises(Billing::NotReady) { quote(@a) }.message
+    assert_empty @stripe.subscription_updates
+  end
+
+  test "an add whose answer was lost but whose item is at Stripe counts: ending the other resident is a removal" do
+    one
+    added = locked { adder(@b).quote }
+    @stripe.fail_next_subscription_update(applied: true)
+    assert_raises(Billing::NotReady) { locked { adder(@b).confirm!(added, digest: Billing::AddItem.digest(added.quote)) } }
+    assert_nil added.reload.resolved_at
+
+    assert_equal "delete", quote(@a).quote["operation"]
+  end
+
+  test "Keep applied at Stripe with its answer lost: the next Keep finishes it under the same key" do
+    one
+    confirm(@a, quote(@a))
+    @stripe.subscription_updates.clear
+    @stripe.fail_next_subscription_update(applied: true)
+    assert_raises(Billing::NotReady) { locked { ender(@a).keep! } }
+    assert_not stored[:cancel_at_period_end], "Stripe renews it"
+    assert row(@a).cancel_at_period_end, "not yet synced"
+
+    locked { ender(@a).keep! }
+
+    assert_not row(@a).cancel_at_period_end
+    assert BillingCheckoutAttempt.find_by!(kind: "keep", agent: @a).resolved_at.present?
+    assert_equal 1, @stripe.subscription_updates.map { |_id, _params, opts| opts[:idempotency_key] }.uniq.size
+  end
+
+  test "Keep applied but its sync failed: the sweep finishes it with no browser" do
+    one
+    confirm(@a, quote(@a))
+    Billing::SubscriptionSync.stub(:new, ->(*, **) { raise Stripe::APIConnectionError, "down" }) do
+      assert_raises(Billing::NotReady) { locked { ender(@a).keep! } }
+    end
+    assert_not stored[:cancel_at_period_end]
+    assert row(@a).cancel_at_period_end
+
+    sweep
+
+    assert_not row(@a).cancel_at_period_end
+    assert BillingCheckoutAttempt.find_by!(kind: "keep", agent: @a).resolved_at.present?
+  end
+
+  test "a recorded Keep doesn't undo an ending made elsewhere afterwards" do
+    one
+    confirm(@a, quote(@a))
+    @stripe.fail_next_subscription_update(applied: false)
+    assert_raises(Billing::NotReady) { locked { ender(@a).keep! } }
+    stored[:metadata] = (stored[:metadata] || {}).merge("ending_attempt" => "set-elsewhere")
+    @stripe.subscription_updates.clear
+
+    assert_raises(Billing::EndItem::Refused) { locked { ender(@a).keep! } }
+    assert_empty @stripe.subscription_updates
+    assert stored[:cancel_at_period_end]
+  end
+
 end

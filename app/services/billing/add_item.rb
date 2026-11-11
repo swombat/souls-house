@@ -57,6 +57,7 @@ module Billing
 
         grant = check_offer!
         settle_earlier!
+        BillInFlight.refuse_add!(@agent.account)
         raise AlreadySubscribed, "#{@agent.name} already has a subscription; change it from the Billing tab" if paid_for?
 
         parent = items.parent!
@@ -148,6 +149,7 @@ module Billing
 
     # The quote stands only if nothing it was made from has moved.
     def recheck!(attempt, digest)
+      BillInFlight.refuse_add!(@agent.account)
       quote = attempt.quote.to_h
       stale = digest.to_s != self.class.digest(quote) || !@offer.purchasable? || @offer.price_id != attempt.stripe_price_id ||
         (!@offer.standard? && @agent.account.grant_for(@offer.rate)&.id != attempt.billing_code_redemption_id)

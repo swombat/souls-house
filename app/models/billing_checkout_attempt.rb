@@ -18,8 +18,8 @@ class BillingCheckoutAttempt < ApplicationRecord
     :stripe_price_id, :idempotency_key, :create_params, :kind, :stripe_subscription_id, :quote
 
   validates :tier, :rate, :stripe_price_id, :idempotency_key, :create_params, presence: true
-  validates :kind, inclusion: { in: %w[checkout item end] }
-  validates :stripe_subscription_id, :quote, presence: true, if: -> { kind.in?(%w[item end]) }
+  validates :kind, inclusion: { in: %w[checkout item end keep] }
+  validates :stripe_subscription_id, :quote, presence: true, if: -> { kind.in?(%w[item end keep]) }
   validates :stripe_subscription_item_id, presence: true, if: -> { kind == "end" }
   scope :unresolved, -> { where(resolved_at: nil) }
 

@@ -53,6 +53,14 @@ module Billing
       rescue StandardError => error
         Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
       end
+
+      # A Keep whose answer or sync was lost: finished from what the
+      # subscription shows.
+      BillingCheckoutAttempt.unresolved.where(kind: EndItem::KEEP).find_each do |attempt|
+        EndItem.new(agent: attempt.agent, now: now).resume_keep!(attempt)
+      rescue StandardError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
+      end
     end
 
   end

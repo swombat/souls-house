@@ -28,6 +28,10 @@
 #
 # keep! undoes a period_end only when the subscription is ending under a key
 # this resident's own end attempt set, never an ending made elsewhere.
+# The undo is itself an attempt (kind "keep", keyed by the ending's key),
+# recorded before it is sent and resolved only once the sync has run, so a
+# Keep whose answer was lost after Stripe applied it, or whose sync failed,
+# is finished by the next Keep or by the sweep (resume_keep!).
 module Billing
   class EndItem
 
@@ -35,6 +39,7 @@ module Billing
     class QuoteChanged < StandardError; end
 
     KIND = "end".freeze
+    KEEP = "keep".freeze
     DELETE = "delete".freeze
     PERIOD_END = "period_end".freeze
     REPLAY_WINDOW = Checkout::REPLAY_WINDOW
@@ -54,6 +59,7 @@ module Billing
         settle_earlier!
         row = live_row!
         parent = parent!(row.stripe_subscription_id)
+        BillInFlight.refuse_end!(@agent.account, items.all_items(parent))
         item = item!(parent, row)
         operation = items.all_items(parent).one? ? PERIOD_END : DELETE
         key = "souls-house-end-item-#{SecureRandom.uuid}"
@@ -97,25 +103,71 @@ module Billing
     # Undoes this resident's own period_end, before the period ends.
     def keep!
       CheckoutLock.synchronize(@agent) do
+        earlier = BillingCheckoutAttempt.unresolved.find_by(kind: KEEP, agent: @agent)
+        next settle_keep!(earlier) if earlier
+
         row = live_row!
         parent = @client.v1.subscriptions.retrieve(row.stripe_subscription_id)
-        ending = BillingCheckoutAttempt.find_by(kind: KIND, agent: @agent, idempotency_key: metadata(parent)["ending_attempt"].to_s)
-        # Stripe sets cancel_at to the period's end alongside
-        # cancel_at_period_end; any other date was set elsewhere.
-        unless parent.cancel_at_period_end && [ nil, period_end(parent) ].include?(parent[:cancel_at]) && ending&.resolved_at? &&
-               ending.create_params["cancel_at_period_end"] == true && ending.stripe_subscription_id == parent.id
+        ending = own_ending(parent)
+        unless ending
           raise Refused, "#{@agent.name}'s plan wasn't set to end from here, so it can't be kept from here. " \
                          "Write to #{Billing.contact_email}."
         end
-        @client.v1.subscriptions.update(parent.id, { cancel_at_period_end: false, metadata: { ending_attempt: "", ending_agent: "" } },
-          { idempotency_key: "souls-house-keep-#{ending.idempotency_key}" })
-        SubscriptionSync.new(parent.id, client: @client).call(agent: @agent)
-      rescue *UNCERTAIN
-        raise NotReady, "Stripe didn't answer in time. Try Keep again; it is safe to repeat."
+        attempt = BillingCheckoutAttempt.create!(kind: KEEP, agent: @agent, account: @agent.account, tier: ending.tier,
+          rate: ending.rate, stripe_price_id: ending.stripe_price_id, idempotency_key: "souls-house-keep-#{ending.idempotency_key}",
+          create_params: { cancel_at_period_end: false, metadata: { ending_attempt: "", ending_agent: "" } },
+          quote: { "ending_attempt" => ending.idempotency_key }, stripe_subscription_id: parent.id,
+          stripe_subscription_item_id: ending.stripe_subscription_item_id, submitted_at: Time.current)
+        send_keep!(attempt)
+      end
+    end
+
+    # The sweep's, for a Keep with no settled outcome.
+    def resume_keep!(attempt)
+      CheckoutLock.synchronize(@agent) do
+        attempt.reload
+        next attempt unless attempt.kind == KEEP && attempt.resolved_at.nil?
+
+        settle_keep!(attempt)
       end
     end
 
     private
+
+    # The end attempt of this resident's whose ending the subscription
+    # carries now. Stripe sets cancel_at to the period's end alongside
+    # cancel_at_period_end; any other date was set elsewhere.
+    def own_ending(parent)
+      return unless parent.cancel_at_period_end && [ nil, period_end(parent) ].include?(parent[:cancel_at])
+
+      ending = BillingCheckoutAttempt.find_by(kind: KIND, agent: @agent, idempotency_key: metadata(parent)["ending_attempt"].to_s)
+      ending if ending&.resolved_at? && ending.create_params["cancel_at_period_end"] == true && ending.stripe_subscription_id == parent.id
+    end
+
+    # A recorded Keep, finished from what the subscription shows: still
+    # ending under its own ending's key, it is sent again under its key; no
+    # longer ending, it took effect and only the sync is left; ending under
+    # anything else, that ending was made elsewhere and isn't undone.
+    def settle_keep!(attempt)
+      parent = @client.v1.subscriptions.retrieve(attempt.stripe_subscription_id)
+      if !parent.cancel_at_period_end && parent[:cancel_at].blank?
+        land!(attempt)
+      elsif own_ending(parent)&.idempotency_key == attempt.quote["ending_attempt"]
+        send_keep!(attempt)
+      else
+        attempt.update!(resolved_at: Time.current)
+        raise Refused, "#{@agent.name}'s plan was set to end again elsewhere, so it can't be kept from here. " \
+                       "Write to #{Billing.contact_email}."
+      end
+    end
+
+    def send_keep!(attempt)
+      @client.v1.subscriptions.update(attempt.stripe_subscription_id, attempt.create_params.deep_symbolize_keys,
+        { idempotency_key: attempt.idempotency_key })
+      land!(attempt)
+    rescue *UNCERTAIN
+      raise NotReady, "Stripe didn't answer in time. Try Keep again; it is safe to repeat."
+    end
 
     def items = (@items ||= ItemQuote.new(account: @agent.account, offer: nil, client: @client, now: @now))
 
@@ -198,6 +250,7 @@ module Billing
       unless stale
         row = live_row!
         parent = parent!(attempt.stripe_subscription_id)
+        BillInFlight.refuse_end!(@agent.account, items.all_items(parent), except: attempt)
         item = item!(parent, row)
         operation = items.all_items(parent).one? ? PERIOD_END : DELETE
         fresh = preview(parent, item, operation, attempt.create_params.deep_symbolize_keys)
