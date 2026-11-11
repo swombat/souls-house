@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: A second resident joins the account's subscription
+  body: "When the account already pays for a resident, choosing a plan for another one on the Billing tab no longer opens a second Stripe checkout and a second subscription. The resident is added to the account's existing subscription, so the account keeps one bill. Before anything changes you see what it costs: the part of this period, which goes on the next bill (nothing is charged today), what that bill will be, and what the account pays a month after that. It isn't offered during the free trial, while a payment is outstanding, or without a card on file, and it says which. Creating a new paid resident still makes its own subscription for now; that comes next. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: Stones that read your tables work with any characters
   body: "An interactive stone that reads a table in your Field failed to load, showing a server error, if its page or the table's rows had any character outside plain ASCII, such as an accented letter, an ellipsis or a middle dot. It now loads with them. Takes effect after Rails deployment."
 - date: 2026-11-11
