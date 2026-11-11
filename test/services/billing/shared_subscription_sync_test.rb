@@ -21,6 +21,11 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: status, items: items, **)
   end
 
+  # An inline copy of a catalogue price on an item that names it: how a
+  # second resident on one tier is held (Stripe allows a price once per
+  # subscription).
+  def copy(price, **overrides) = { price: @stripe.inline_price(price, **overrides), metadata: { "catalogue_price" => price } }
+
   def row(agent) = ResidentSubscription.find_by!(agent: agent, stripe_subscription_id: "sub_acct")
   def entitlement(agent) = ResidentEntitlement.find_by!(agent: agent)
 
@@ -39,7 +44,7 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
   end
 
   test "a removed item ends its resident only" do
-    shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" }, { agent: @b, price: LIFE_PRICE, id: "si_b" } ])
+    shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" }, { agent: @b, id: "si_b", **copy(LIFE_PRICE) } ])
     sync("sub_acct")
 
     shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" } ])
@@ -51,7 +56,9 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
   end
 
   test "items past the embedded page are read before anything counts as removed" do
-    items = [ @a, @b, @c ].each_with_index.map { |agent, i| { agent: agent, price: CONVERSATION_PRICE, id: "si_#{i}" } }
+    items = [ @a, @b, @c ].each_with_index.map do |agent, i|
+      { agent: agent, id: "si_#{i}" }.merge(i.zero? ? { price: CONVERSATION_PRICE } : copy(CONVERSATION_PRICE))
+    end
     shared(items, page_size: 1)
     @stripe.subscription_item_page_size!(1)
     sync("sub_acct")
@@ -109,7 +116,7 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
     assert_equal "life", row(@b).tier
     assert_not ActionMailer::Base.deliveries.any? { |mail| mail.subject.to_s.match?(/payment/i) }
 
-    shared([ { agent: @a, price: LIFE_PRICE, id: "si_a" }, { agent: @b, price: LIFE_PRICE, id: "si_b" } ])
+    shared([ { agent: @a, id: "si_a", **copy(LIFE_PRICE) }, { agent: @b, price: LIFE_PRICE, id: "si_b" } ])
     at.(start + 20.days)
     assert_nil row(@a).untrusted_since
     assert entitlement(@a).active?, "readable again, the plan comes back"
@@ -137,7 +144,7 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
   end
 
   test "an item naming another account's resident is refused" do
-    shared([ { agent: agents(:other_account_agent), price: LIFE_PRICE }, { agent: @a, price: LIFE_PRICE } ])
+    shared([ { agent: agents(:other_account_agent), price: LIFE_PRICE }, { agent: @a, **copy(LIFE_PRICE) } ])
     assert_raises(Billing::InvalidSubscription) { sync("sub_acct") }
     assert_not ResidentSubscription.exists?(agent: agents(:other_account_agent))
     assert entitlement(@a).active?
@@ -160,7 +167,7 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
   end
 
   test "the subscription's own agent_id binds only a legacy single-item subscription" do
-    shared([ { price: LIFE_PRICE }, { agent: @b, price: LIFE_PRICE } ], metadata: { agent_id: @a.id.to_s })
+    shared([ { price: LIFE_PRICE }, { agent: @b, **copy(LIFE_PRICE) } ], metadata: { agent_id: @a.id.to_s })
     assert_raises(Billing::InvalidSubscription) { sync("sub_acct") }
     assert_not ResidentSubscription.exists?(agent: @a)
     assert entitlement(@b).active?
@@ -239,7 +246,7 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
   end
 
   test "a plan change on a shared subscription moves only that resident's item" do
-    shared([ { agent: @a, price: CONVERSATION_PRICE, id: "si_a" }, { agent: @b, price: CONVERSATION_PRICE, id: "si_b" } ])
+    shared([ { agent: @a, price: CONVERSATION_PRICE, id: "si_a" }, { agent: @b, id: "si_b", **copy(CONVERSATION_PRICE) } ])
     sync("sub_acct")
 
     changed = Billing::PlanChange.new(agent: @b, tier: Billing::Tier.find!("life"), client: @stripe).call
@@ -247,13 +254,14 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
     assert_equal [ @b.id, "life" ], [ changed.agent_id, changed.tier ]
     id, params, = @stripe.subscription_updates.last
     assert_equal "sub_acct", id
-    assert_equal [ { id: "si_b", price: LIFE_PRICE } ], params[:items]
+    assert_equal [ { id: "si_b", price: LIFE_PRICE, metadata: { "catalogue_price" => LIFE_PRICE } } ], params[:items],
+      "no sibling holds Life, so the catalogue price itself"
     assert_not params.key?(:metadata), "a shared subscription isn't described as one resident's"
     assert_equal "conversation", row(@a).reload.tier
   end
 
   test "two residents' identical first plan changes are two mutations, under two keys" do
-    shared([ { agent: @a, price: CONVERSATION_PRICE, id: "si_a" }, { agent: @b, price: CONVERSATION_PRICE, id: "si_b" } ])
+    shared([ { agent: @a, price: CONVERSATION_PRICE, id: "si_a" }, { agent: @b, id: "si_b", **copy(CONVERSATION_PRICE) } ])
     sync("sub_acct")
 
     Billing::PlanChange.new(agent: @a, tier: Billing::Tier.find!("life"), client: @stripe).call
@@ -263,7 +271,10 @@ class Billing::SharedSubscriptionSyncTest < ActiveSupport::TestCase
     assert_equal 2, keys.uniq.size
     assert_not @stripe.subscription_updates.any? { |_id, _params, opts| opts[:replayed] }
     assert_equal [ "life", "life" ], [ row(@a).reload.tier, row(@b).reload.tier ]
-    assert_equal [ LIFE_PRICE, LIFE_PRICE ], @stripe.subscription("sub_acct")[:items][:data].map { |item| item[:price][:id] }
+    a, b = @stripe.subscription("sub_acct")[:items][:data]
+    assert_equal LIFE_PRICE, a[:price][:id]
+    assert_match(/\Aprice_inline_/, b[:price][:id], "Life was taken, so the second change carries an inline copy")
+    assert_equal LIFE_PRICE, b[:metadata]["catalogue_price"]
   end
 
   test "Checkout and the sync share one lock per account" do
