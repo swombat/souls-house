@@ -57,7 +57,11 @@ class StoneRevision < ApplicationRecord
   def html_document
     raise Stone::Withdrawn, "Stone has been withdrawn" if stone.reload.withdrawn?
 
-    html.download
+    # Storage hands the bytes back as BINARY. They were checked as valid UTF-8
+    # on the way in (Stone::Document), so label them so: an interactive
+    # revision with non-ASCII text otherwise fails when the table shim (whose
+    # rows may be non-ASCII too) is inserted into it.
+    html.download.force_encoding(Encoding::UTF_8)
   end
 
   private

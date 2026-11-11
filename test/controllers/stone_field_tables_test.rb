@@ -27,8 +27,8 @@ class StoneFieldTablesTest < ActionDispatch::IntegrationTest
     ENV["SOULSHOUSE_STONES_DOMAIN"] = @old_domain
   end
 
-  def publish(**options)
-    Stone.publish!(chat: @chat, title: "Posts chart", html: CHART, author: @user, public: true, interactive: true,
+  def publish(html: CHART, **options)
+    Stone.publish!(chat: @chat, title: "Posts chart", html: html, author: @user, public: true, interactive: true,
       publish_tables: true, **options)
   end
 
@@ -41,6 +41,18 @@ class StoneFieldTablesTest < ActionDispatch::IntegrationTest
     assert_equal [ { "platform" => "x", "views" => 3 } ], tables["Posts"]["rows"]
     assert_not_includes response.body, "not for the stone"
     refute response.headers.key?("Set-Cookie")
+  end
+
+  test "a page and rows with non-ASCII text are served with the shim" do
+    @table.add_rows!([ { "platform" => "café…", "views" => 1 } ], by: @user)
+    html = CHART.sub("<title>Chart</title>", "<title>Chart · ça va…</title>")
+    stone = publish(field_table_ids: [ @table.to_param ], html: html)
+    host! URI.parse(stone.public_url).host
+    get "/revisions/1/content"
+    assert_response :success
+    body = response.body.force_encoding(Encoding::UTF_8)
+    assert_includes body, "Chart · ça va…"
+    assert_includes body, "café"
   end
 
   test "a revision without tables, another stone's revision, and an unknown number are 404" do

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: Stones that read your tables work with any characters
+  body: "An interactive stone that reads a table in your Field failed to load, showing a server error, if its page or the table's rows had any character outside plain ASCII, such as an accented letter, an ellipsis or a middle dot. It now loads with them. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: Listen starts speaking straight away
   body: "With Phonon, the voice engine that runs in your browser, Listen on a long message used to wait until the whole message had been turned into speech before playing anything, which could take half a minute. It now starts with the first sentence while the rest is still being made, usually in under a second once the voice engine has loaded. You can pause while it is still speaking, and once all of it has been made you can also skip around by tapping the bar. When it reaches the end, the usual player keeps the audio for a replay. Voice mode replies still wait for the whole reply; that comes next. Takes effect after Rails deployment."
 - date: 2026-11-11
