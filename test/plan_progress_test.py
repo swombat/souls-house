@@ -255,17 +255,53 @@ class ReporterPlanTest(unittest.TestCase):
                                                          {"type": "turn.started"}])
         self.assertEqual([], self.plans())
 
+    def native_plan(self, tasks, title="Native", status="active"):
+        """A plan made through Chaos's own tool: in the store, no helper pointer."""
+        path = Path(self.chaos.env["FAKE_CHAOS_STATE"])
+        state = json.loads(path.read_text()) if path.exists() else {"workspaces": [], "plans": {}, "attachments": {}}
+        plan = {"id": str(uuid.uuid4()), "reference": "000000/0000", "title": title, "status": status,
+                "revision": 3, "tasks": [dict(task, position=n, revision=1) for n, task in enumerate(tasks)]}
+        state["plans"][plan["id"]] = plan
+        path.write_text(json.dumps(state))
+        return plan
+
+    def native_event(self, plan, offset=0):
+        page = json.loads(subprocess.run([str(self.chaos.bin), "plan", "read", "--offset", str(offset), plan["id"]],
+                                         capture_output=True, text=True, env=self.chaos.env, timeout=30).stdout)
+        return {"type": "plan.updated", "plan_id": plan["id"], "reference": plan["reference"], "title": plan["title"],
+                "status": plan["status"], "revision": plan["revision"], "tasks": page["tasks"],
+                "next_offset": page["next_offset"]}
+
     def test_chaos_plan_tool_events_are_projected_to_titles_and_states_only(self):
-        reporter = self.reporter(str(uuid.uuid4()))
-        self.run_with(reporter, [{"type": "plan.updated", "plan_id": "p", "reference": "000000/0000",
-                                  "title": "Native", "status": "active", "revision": 3, "next_offset": None,
-                                  "tasks": [{"reference": "T1", "title": "one", "status": "blocked", "depth": 0},
-                                            {"reference": "T2", "title": "child", "status": "pending", "depth": 1},
-                                            {"reference": "T3", "title": "odd", "status": "weird", "depth": 0}]}])
-        self.assertEqual([{"title": "Native", "status": "active", "steps": [{"text": "one", "status": "blocked"}]}],
-                         self.plans())
+        plan = self.native_plan([{"reference": "T1", "title": "one", "status": "blocked", "depth": 0},
+                                 {"reference": "T2", "title": "child", "status": "pending", "depth": 1},
+                                 {"reference": "T3", "title": "odd", "status": "weird", "depth": 0}])
+        self.run_with(self.reporter(str(uuid.uuid4())), [{"type": "process.started", "process_id": "session-7"},
+                                                          self.native_event(plan)])
+        self.assertEqual({"title": "Native", "status": "active", "steps": [{"text": "one", "status": "blocked"}]},
+                         self.plans()[-1])
+        self.assertEqual(1, len({json.dumps(p) for p in self.plans()}))
         self.assertNotIn("000000/0000", json.dumps(self.packets))
 
+    def test_a_native_event_is_a_page_so_the_whole_plan_is_read(self):
+        tasks = [{"reference": f"T{n}", "title": f"step {n}", "status": "completed", "depth": 0} for n in range(1, 51)]
+        tasks.append({"reference": "T51", "title": "step 51", "status": "pending", "depth": 0})
+        plan = self.native_plan(tasks)
+        first, last = self.native_event(plan), self.native_event(plan, offset=50)
+        self.assertEqual(50, first["next_offset"], "the fake pages like Chaos")
+        self.run_with(self.reporter(str(uuid.uuid4())), [{"type": "process.started", "process_id": "session-7"},
+                                                          first, last])
+        for sent in self.plans():
+            self.assertEqual(51, len(sent["steps"]), "no page is ever sent as if it were the plan")
+        self.assertEqual("pending", self.plans()[-1]["steps"][-1]["status"])
+        self.assertFalse(list((self.chaos.home / "house-plans").glob("*")) if (self.chaos.home / "house-plans").exists()
+                         else [], "native plans leave no helper pointer")
+
+    def test_a_native_event_for_a_plan_that_cannot_be_read_sends_nothing(self):
+        event = {"type": "plan.updated", "plan_id": "--help", "title": "x", "status": "active", "revision": 1,
+                 "tasks": [{"title": "one", "status": "pending", "depth": 0}], "next_offset": None}
+        self.run_with(self.reporter(str(uuid.uuid4())), [event, dict(event, plan_id="missing-plan")])
+        self.assertEqual([], self.plans())
 
 if __name__ == "__main__":
     unittest.main()

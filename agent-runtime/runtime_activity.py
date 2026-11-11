@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import random
+import re
 import signal
 import subprocess
 import threading
@@ -36,6 +37,8 @@ PLAN_READ_TIMEOUT = 5
 # Chaos pages `plan read` at 50 tasks; the helper allows 100 steps, and
 # nested tasks take page slots too.
 PLAN_READ_PAGES = 10
+# A Chaos plan id or reference; never an option-shaped argument.
+PLAN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./-]{0,199}")
 
 
 def is_work_event(event):
@@ -109,6 +112,8 @@ class Reporter:
         self.last_plan = None
         self.plan_reading = threading.Lock()
         self.plans_seen_open = set()
+        self.native_plan_id = None
+        self.native_reading = threading.Lock()
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -165,7 +170,12 @@ class Reporter:
             self.stream_gap("stream.started")
         elif kind == "plan.updated":
             # Chaos's own plan tool committed a change (non-clamped sessions).
-            self.send_plan(self.plan_payload(event))
+            # The event carries one page of the plan, not the plan, so it is a
+            # nudge to read the whole plan it names (#886 review).
+            if self.plan_pointer():
+                self.poll_plan()
+            else:
+                self.read_native(event.get("plan_id"))
         elif kind == "agent.status_changed":
             self.project_subagent(event)
         elif kind == "turn.started":
@@ -292,6 +302,27 @@ class Reporter:
             os.replace(tmp, path)
         except (OSError, ValueError):
             pass
+
+    def read_native(self, plan_id, wait=False):
+        """Read and send the whole plan a native plan.updated named. Reads run
+        one at a time, in order, so the last one reflects the latest change.
+        Nothing is sent if the whole plan cannot be read. Never raises."""
+        if not self.share or self.plan_env is None or not isinstance(plan_id, str) \
+                or not PLAN_ID.fullmatch(plan_id):
+            return
+        self.native_plan_id = plan_id
+
+        def read():
+            with self.native_reading:
+                try:
+                    self.send_plan(self.plan_payload(self.read_plan(plan_id)))
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    pass
+
+        if wait:
+            read()
+        else:
+            threading.Thread(target=read, daemon=True).start()
 
     def poll_plan(self, wait=False):
         """Read the pointed-to plan with `chaos plan read` and send it if it
@@ -501,6 +532,8 @@ class Reporter:
                 pipe.close()
         # The run's last word on its plan, so the card settles where it ended.
         self.poll_plan(wait=True)
+        if self.native_plan_id and not self.plan_pointer():
+            self.read_native(self.native_plan_id, wait=True)
         completed = subprocess.CompletedProcess(args, proc.returncode,
                                                 (process_started + b"".join(retained)).decode(errors="replace"),
                                                 stderr.decode(errors="replace"))
