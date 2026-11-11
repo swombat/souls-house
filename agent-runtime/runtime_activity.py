@@ -113,7 +113,10 @@ class Reporter:
         self.plan_reading = threading.Lock()
         self.plans_seen_open = set()
         self.native_plan_id = None
-        self.native_reading = threading.Lock()
+        # Native nudges coalesce: one read in flight, one latest refresh pending.
+        self.native_cond = threading.Condition()
+        self.native_pending = None
+        self.native_running = False
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -304,25 +307,41 @@ class Reporter:
             pass
 
     def read_native(self, plan_id, wait=False):
-        """Read and send the whole plan a native plan.updated named. Reads run
-        one at a time, in order, so the last one reflects the latest change.
-        Nothing is sent if the whole plan cannot be read. Never raises."""
+        """Read and send the whole plan a native plan.updated named. Nudges
+        coalesce: at most one read runs and one refresh waits, and the waiting
+        refresh is always for the latest plan named, so a burst of events costs
+        two reads, not one each. With wait, return once a read that started
+        after this call has finished, or after a bounded wait. Never raises."""
         if not self.share or self.plan_env is None or not isinstance(plan_id, str) \
                 or not PLAN_ID.fullmatch(plan_id):
             return
         self.native_plan_id = plan_id
-
-        def read():
-            with self.native_reading:
-                try:
-                    self.send_plan(self.plan_payload(self.read_plan(plan_id)))
-                except (OSError, ValueError, subprocess.SubprocessError):
-                    pass
-
+        with self.native_cond:
+            self.native_pending = plan_id
+            if self.native_running:
+                if wait:
+                    deadline = time.monotonic() + 2 * PLAN_READ_TIMEOUT + 1
+                    while self.native_running and self.native_cond.wait(max(0, deadline - time.monotonic())):
+                        pass
+                return
+            self.native_running = True
         if wait:
-            read()
+            self._native_worker()
         else:
-            threading.Thread(target=read, daemon=True).start()
+            threading.Thread(target=self._native_worker, daemon=True).start()
+
+    def _native_worker(self):
+        while True:
+            with self.native_cond:
+                plan_id, self.native_pending = self.native_pending, None
+                if plan_id is None:
+                    self.native_running = False
+                    self.native_cond.notify_all()
+                    return
+            try:
+                self.send_plan(self.plan_payload(self.read_plan(plan_id)))
+            except Exception:  # the worker must always reach its exit to clear native_running
+                logging.getLogger(__name__).debug("native plan read failed", exc_info=True)
 
     def poll_plan(self, wait=False):
         """Read the pointed-to plan with `chaos plan read` and send it if it

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -296,6 +297,47 @@ class ReporterPlanTest(unittest.TestCase):
         self.assertEqual("pending", self.plans()[-1]["steps"][-1]["status"])
         self.assertFalse(list((self.chaos.home / "house-plans").glob("*")) if (self.chaos.home / "house-plans").exists()
                          else [], "native plans leave no helper pointer")
+
+    def test_a_burst_of_native_nudges_coalesces_to_one_read_and_the_latest_refresh(self):
+        reporter = self.reporter(str(uuid.uuid4()))
+        reporter.plan_env = dict(self.chaos.env)
+        held, reads = threading.Event(), []
+        first_started = threading.Event()
+
+        def slow_read(plan_id):
+            reads.append(plan_id)
+            first_started.set()
+            held.wait(10)
+            return None
+
+        reporter.read_plan = slow_read
+        baseline = threading.active_count()
+        reporter.project({"type": "plan.updated", "plan_id": "plan-a"})
+        self.assertTrue(first_started.wait(5))
+        for n in range(20):
+            reporter.project({"type": "plan.updated", "plan_id": f"plan-{n}"})
+        reporter.project({"type": "plan.updated", "plan_id": "plan-latest"})
+        self.assertEqual(1, threading.active_count() - baseline, "no thread per nudge")
+        held.set()
+        reporter.read_native("plan-latest", wait=True)
+        self.assertEqual(["plan-a", "plan-latest"], reads, "one in flight, then only the latest")
+        self.assertFalse(reporter.native_running)
+
+    def test_the_final_native_read_waits_a_bounded_time_behind_a_stuck_read(self):
+        reporter = self.reporter(str(uuid.uuid4()))
+        reporter.plan_env = dict(self.chaos.env)
+        stuck = threading.Event()
+        reporter.read_plan = lambda plan_id: stuck.wait(30)
+        original = module.PLAN_READ_TIMEOUT
+        module.PLAN_READ_TIMEOUT = 0.2
+        try:
+            reporter.project({"type": "plan.updated", "plan_id": "plan-a"})
+            began = time.monotonic()
+            reporter.read_native("plan-a", wait=True)
+            self.assertLess(time.monotonic() - began, 3)
+        finally:
+            module.PLAN_READ_TIMEOUT = original
+            stuck.set()
 
     def test_a_native_event_for_a_plan_that_cannot_be_read_sends_nothing(self):
         event = {"type": "plan.updated", "plan_id": "--help", "title": "x", "status": "active", "revision": 1,
