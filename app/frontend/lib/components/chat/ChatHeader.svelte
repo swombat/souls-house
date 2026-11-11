@@ -8,7 +8,7 @@
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
-  import { commitmentMarkLabel } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -61,6 +61,12 @@
     if (!chat) return '';
     const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
     return commitmentMarkLabel(row ? row.next_commitment : chat.next_commitment);
+  });
+  // The red hand for a conversation stuck at the handoff limit, read the same way.
+  const stuckLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return handoffStuckLabel(row ? row.handoff_stuck : chat.handoff_stuck);
   });
 
   // Token warning level — based on active context, not lifetime cost
@@ -213,7 +219,8 @@
             accountId={account.id}
             tags={$page.props.visual_tags || []}
             faintEmpty={false}
-            {commitmentLabel} />
+            {commitmentLabel}
+            {stuckLabel} />
         </span>
       {/if}
       <div class="flex items-center">

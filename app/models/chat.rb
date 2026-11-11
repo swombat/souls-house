@@ -249,11 +249,36 @@ class Chat < ApplicationRecord
       .where(chat_id: chats.map(&:id))
       .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
     waiting = waiting_commitments_for(chats)
+    stuck = handoff_stuck_ids_for(chats)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
       ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
-      json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id])
+      json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id],
+                 "handoff_stuck" => stuck.include?(chat.id))
     end
+  end
+
+  # A conversation stuck at the resident handoff limit (Daniel, 11 Nov,
+  # jaMvBj): since the last message from a person, a resident's request to
+  # another resident was refused as loop_cap and no later run has read it.
+  # Nothing in the room moves until someone posts, so the sidebar shows a red
+  # hand in the commitment clock's place. Clears when a person posts (the
+  # count restarts) or the refused request is delivered after all. Read as
+  # MessageHandoff.since_last_human_message reads it. One query for the list.
+  def self.handoff_stuck_ids_for(chats)
+    ids = chats.map(&:id)
+    return Set.new if ids.empty?
+
+    MessageHandoff
+      .where(chat_id: ids, status: "blocked", reason: MessageHandoff::LOOP_CAP_REASON)
+      .where(<<~SQL.squish)
+        message_handoffs.message_id > COALESCE((
+          SELECT MAX(human.id) FROM messages human
+          WHERE human.chat_id = message_handoffs.chat_id
+            AND human.role = 'user' AND human.user_id IS NOT NULL
+        ), 0)
+      SQL
+      .distinct.pluck(:chat_id).to_set
   end
 
   # A resident's scheduled promise to come back to this conversation
