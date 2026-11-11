@@ -107,4 +107,77 @@ test.describe('read replies aloud', () => {
     await page.getByTestId('read-aloud-toggle').click();
     await expect(page.getByTestId('read-aloud-toggle')).toHaveAttribute('data-state', 'off');
   });
+
+  // Mira's review of #888: a refused reply gets its own "Tap to play", and the
+  // speaker beside it still switches reading off at once.
+  test('a refused reply shows a separate "Tap to play"; the speaker still switches off', async ({ page, request }) => {
+    const voice = await request.post('/test/e2e/voice_mode_fixture', {
+      data: { account_id: setup.account_id, speech_engine: 'elevenlabs' },
+    });
+    expect(voice.ok()).toBe(true);
+    const fixture = await (
+      await request.post('/test/e2e/conversation_fixture', {
+        data: { account_id: setup.account_id, count: 1, prefix: 'Before refusals', resident_count: 1 },
+      })
+    ).json();
+
+    await page.route('**/messages/*/speech', (route) =>
+      route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav() })
+    );
+    // While window.__refuse is set, the browser refuses to start a reply, as
+    // a phone does when it wants a tap first.
+    await page.addInitScript(() => {
+      window.__plays = [];
+      window.__refuse = true;
+      const play = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        if (this.src.includes('/speech')) {
+          window.__plays.push(this.src);
+          if (window.__refuse) {
+            return Promise.reject(new DOMException('play() needs a tap', 'NotAllowedError'));
+          }
+        }
+        return play.call(this);
+      };
+    });
+
+    await page.setViewportSize({ width: 360, height: 760 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /sign in|log in/i }).click();
+    await expect(page).not.toHaveURL(/\/login/);
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+
+    const toggle = page.getByTestId('read-aloud-toggle');
+    const playButton = page.getByTestId('read-aloud-play');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('data-state', 'on');
+
+    await request.post('/test/e2e/assistant_message', {
+      data: { chat_id: fixture.chat_id, content: 'First refused reply' },
+    });
+    await expect(playButton).toBeVisible({ timeout: 10_000 });
+    await expect(toggle).toHaveAttribute('data-state', 'blocked');
+
+    // "Tap to play" plays the refused reply and leaves reading on.
+    await page.evaluate(() => (window.__refuse = false));
+    await playButton.click();
+    await expect.poll(() => page.evaluate(() => window.__plays.length), { timeout: 10_000 }).toBe(2);
+    await expect(playButton).toHaveCount(0);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    // Refused again: the speaker, not "Tap to play", is one tap from off.
+    await page.evaluate(() => (window.__refuse = true));
+    await request.post('/test/e2e/assistant_message', {
+      data: { chat_id: fixture.chat_id, content: 'Second refused reply' },
+    });
+    await expect(playButton).toBeVisible({ timeout: 10_000 });
+    const plays = await page.evaluate(() => window.__plays.length);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('data-state', 'off');
+    await expect(playButton).toHaveCount(0);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.__plays.length)).toBe(plays);
+  });
 });

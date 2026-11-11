@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { writable } from 'svelte/store';
-import { createReadAloud, readAloudStored } from './read-aloud';
+import { createReadAloud, pageStorage, readAloudStored } from './read-aloud';
 import { createEngineReader, createReplyReader } from './voice-mode-reader';
 
 // The real reader, picker and player, with a stand-in <audio> element and a
@@ -201,15 +201,80 @@ test('a reply the browser refuses waits behind "Tap to play"; that tap plays it'
   expect(t.control.state).toMatchObject({ on: true, blocked: true, note: '' });
 
   t.audio.refuse = false;
-  t.control.toggle();
+  t.control.playBlocked();
   await flush();
   expect(t.unlock).toHaveBeenCalledTimes(2);
   expect(t.control.state).toMatchObject({ on: true, blocked: false, speaking: 'a' });
   expect(played(t.audio)).toEqual(['/speech/a', '/speech/a']);
 
-  // The next tap switches it off as usual.
+  // The speaker switches it off as usual.
   t.control.toggle();
   expect(t.control.state.on).toBe(false);
+});
+
+test('while a refused reply waits and another plays, the speaker stops (Mira, #888)', async () => {
+  const t = setup();
+  t.control.toggle();
+  t.audio.refuse = true;
+  await t.land(reply('a'));
+  await flush();
+  t.audio.refuse = false;
+  await t.land(reply('b'));
+  await flush();
+  expect(t.control.state).toMatchObject({ on: true, blocked: true, speaking: 'b' });
+  const before = played(t.audio).length;
+
+  t.control.toggle();
+  await flush();
+  expect(t.control.state).toMatchObject({ on: false, blocked: false, speaking: null });
+  expect(t.audio.pause).toHaveBeenCalled();
+  expect(played(t.audio).length).toBe(before);
+});
+
+test('with every play refused, the speaker still switches off on the first tap', async () => {
+  const t = setup();
+  t.control.toggle();
+  t.audio.refuse = true;
+  await t.land(reply('a'));
+  await flush();
+  expect(t.control.state.blocked).toBe(true);
+
+  t.control.toggle();
+  await flush();
+  expect(t.control.state).toMatchObject({ on: false, blocked: false });
+  expect(played(t.audio)).toEqual(['/speech/a']);
+  // "Tap to play" does nothing once off.
+  t.control.playBlocked();
+  await flush();
+  expect(played(t.audio)).toEqual(['/speech/a']);
+});
+
+test('a storage policy that throws on reading localStorage leaves page-only state', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() {
+      throw Object.assign(new Error('The operation is insecure.'), { name: 'SecurityError' });
+    },
+  });
+  try {
+    expect(pageStorage()).toBe(null);
+    expect(readAloudStored('chat1')).toBe(false);
+    const control = createReadAloud({
+      chatId: 'chat1',
+      messages: () => [],
+      voiceOpen: writable(false),
+      unlock: () => {},
+      createReader: () => ({ take() {}, close() {}, replay() {} }),
+    });
+    expect(control.state.on).toBe(false);
+    control.toggle();
+    expect(control.state.on).toBe(true);
+    control.destroy();
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
 });
 
 test('a reply that cannot be read for another reason is a note, not "Tap to play"', async () => {

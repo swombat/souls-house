@@ -15,17 +15,30 @@ import { voiceModeOpen } from '$lib/voice-mode-open';
 // - Switching on is the tap that lets a phone play later replies: it starts
 //   the shared audio element on a silent clip (unlockAudio). If the browser
 //   refuses a reply anyway, the replies it refused are kept and the toggle
-//   says "Tap to play"; that tap unlocks again and asks for them.
+//   shows a separate "Tap to play" control beside it; that tap unlocks again
+//   and asks for them. The speaker itself always switches on and off, so
+//   stopping stays one tap away even while something is waiting (Mira's
+//   review of #888).
 // - Voice mode owns reading while its panel is open: the reader here is
 //   closed (paused), and a fresh one is made when the panel closes, so what
 //   voice mode read is not read twice and reading resumes from that moment.
 // - Switching off stops what is playing at once.
 // - The choice is per conversation and per device (localStorage), so it
 //   survives a reload; leaving the page closes the reader.
+//   A browser whose storage policy forbids localStorage throws on the bare
+//   property read; then the choice lasts for this page only.
 
 const key = (chatId) => `souls-house.read-aloud.${chatId}`;
 
-export function readAloudStored(chatId, storage = globalThis.localStorage) {
+export function pageStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function readAloudStored(chatId, storage = pageStorage()) {
   try {
     return Boolean(chatId) && storage?.getItem(key(chatId)) === 'on';
   } catch {
@@ -50,7 +63,7 @@ export function createReadAloud({
   voiceOpen = voiceModeOpen,
   createReader = createEngineReader,
   unlock = unlockAudio,
-  storage = globalThis.localStorage,
+  storage = pageStorage(),
 }) {
   let on = readAloudStored(chatId, storage);
   let paused = false;
@@ -104,17 +117,19 @@ export function createReadAloud({
     take(list) {
       reader?.take(list);
     },
-    // Call from inside the tap.
+    // "Tap to play": call from inside the tap. Asks again for the replies
+    // the browser refused; never switches reading off.
+    playBlocked() {
+      if (destroyed || !on || paused || !reader || !blocked.length) return;
+      if (!speaking) unlock();
+      const ids = blocked;
+      blocked = [];
+      ids.forEach((id) => reader.replay(id));
+      emit();
+    },
+    // The speaker: call from inside the tap. Always switches on or off.
     toggle() {
       if (destroyed) return;
-      if (on && blocked.length && reader) {
-        if (!speaking) unlock();
-        const ids = blocked;
-        blocked = [];
-        ids.forEach((id) => reader.replay(id));
-        emit();
-        return;
-      }
       on = !on;
       remember(chatId, on, storage);
       note = '';

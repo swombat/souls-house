@@ -42,17 +42,27 @@
       ? 'Read replies aloud'
       : view.paused
         ? 'Reading aloud is paused while voice mode is on'
-        : view.blocked
-          ? 'Tap to play the replies waiting to be read'
-          : view.speaking
-            ? 'Reading a reply aloud. Tap to stop'
-            : 'Reading replies aloud. Tap to stop'
+        : view.speaking
+          ? 'Reading a reply aloud. Tap to stop'
+          : 'Reading replies aloud. Tap to stop'
   );
   const status = $derived(
     !view.on ? 'off' : view.paused ? 'paused' : view.blocked ? 'blocked' : view.speaking ? 'speaking' : 'on'
   );
 </script>
 
+{#if view.on && view.blocked && !view.paused}
+  <button
+    type="button"
+    data-testid="read-aloud-play"
+    aria-label="Play the replies waiting to be read"
+    onclick={() => control?.playBlocked()}
+    class="inline-flex h-8 items-center rounded-md px-1.5 text-xs whitespace-nowrap text-primary transition-colors
+           hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-ring focus-visible:ring-offset-2">
+    Tap to play
+  </button>
+{/if}
 <button
   type="button"
   data-testid="read-aloud-toggle"
@@ -72,8 +82,5 @@
       class={view.speaking ? 'motion-safe:animate-pulse' : ''} />
   {:else}
     <SpeakerSlash size={20} />
-  {/if}
-  {#if view.on && view.blocked && !view.paused}
-    <span class="text-xs whitespace-nowrap">Tap to play</span>
   {/if}
 </button>
