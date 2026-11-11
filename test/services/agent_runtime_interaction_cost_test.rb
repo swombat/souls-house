@@ -278,6 +278,35 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "24.2", later[:amount_usd]
   end
 
+  test "Gemini 4 Carbon keeps introductory pricing through November 30 then doubles on December 1" do
+    [ [ "openrouter", "google/gemini-4-carbon", "0.1875" ],
+      [ "gemini", "gemini-4-carbon", "2.0" ] ].each do |provider, model, write_rate|
+      [ [ "2026-11-11 12:00", 1 ], [ "2026-11-30 23:59:59", 1 ],
+        [ "2026-12-01 00:00:00", 2 ] ].each do |started_at, multiplier|
+        cost = build_interaction(
+          provider: provider, model: model,
+          uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000,
+          started_at: Time.zone.parse(started_at)
+        ).estimated_cost
+        assert_equal "estimated", cost[:status], model
+        assert_equal "google/gemini-4-carbon", cost[:pricing_model], model
+        assert_equal "2026-11-11", cost[:pricing_as_of], model
+        assert_equal BigDecimal("2") * multiplier, BigDecimal(cost.dig(:components_usd, :uncached_input)), model
+        assert_equal BigDecimal("10") * multiplier, BigDecimal(cost.dig(:components_usd, :output)), model
+        assert_equal BigDecimal("0.1") * multiplier, BigDecimal(cost.dig(:components_usd, :cache_read_input)), model
+        assert_equal BigDecimal(write_rate) * multiplier, BigDecimal(cost.dig(:components_usd, :cache_creation_input)), model
+        assert_equal (BigDecimal("12.1") + BigDecimal(write_rate)) * multiplier, BigDecimal(cost[:amount_usd]), model
+      end
+    end
+  end
+
+  test "Gemini 4 Carbon price rule does not swallow other model IDs" do
+    %w[google/gemini-4-carbon-preview google/gemini-4-carbon-pro other/gemini-4-carbon].each do |model|
+      assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
+    end
+  end
+
   test "Muse Wonder is priced from the routed Meta endpoint" do
     cost = build_interaction(
       provider: "openrouter", model: "meta/muse-wonder",

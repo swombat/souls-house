@@ -45,6 +45,26 @@ output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
 creation tokens use the input rate. Text pricing only; audio/video input is not
 modelled.
 
+Gemini 4 Carbon (added November 11, 2026): input 2, cache read 0.1, output 10
+per million tokens through November 30, 2026; input 4, cache read 0.2, output
+20 from December 1, selected by the interaction's date, not today's date.
+Sources checked November 11: OpenRouter's public
+`api/v1/models/google/gemini-4-carbon/endpoints` (standard Google / Google AI
+Studio endpoints; flex and priority rates are not modelled) and Google's
+`blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-carbon-now-available/`
+announcement, which specifies the introductory-price expiry and $4/$20 rates.
+Google's `ai.google.dev/gemini-api/docs/pricing` Standard table confirms these
+dates, all input/output/cache-read rates, and implicit-only direct caching.
+Routed cache writes use OpenRouter's $0.1875/M introductory token rate, doubled
+from December, following the scheduled input-rate change as for Argon; that
+future routed write rate has not been independently quoted. Direct explicit
+caching is unsupported; unexpected creation tokens conservatively fall back to
+the input rate. Cache reads use $0.1/M introductory,
+$0.2/M thereafter, as for Argon. OpenRouter reports no implicit caching.
+The direct id `gemini-4-carbon` is explicitly listed as the model code and
+endpoint on `ai.google.dev/gemini-api/docs/models`; no authenticated direct
+request was made for this integration.
+
 Gemini 4 Argon (added October 13, 2026, its release day): input 2, cache read
 0.1, output 10 through November 30, 2026, then input 4, cache read 0.2, output
 20 from December 1, 2026, selected by the interaction's date. Source: the Gemini
