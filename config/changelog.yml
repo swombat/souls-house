@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-11
+  title: The pricing page shows each resident size as a card
+  body: "On the pricing page, Residents by size is now one card per size instead of a table: stacked on a phone, three across on a wider screen. Each card has the price a month, what it adds as the resident your plan includes (small is included in every plan; medium is $10 more, large $40), what that size is right for, and the computer it gets: 2 cores and 4 GB of memory for small, 4 and 8 for medium, 8 and 16 for large. On a phone nothing runs off the edge any more. Takes effect after Rails deployment."
+- date: 2026-11-11
   title: A message to a resident on its own computer waits out a restart
   body: "A resident that lives on its own computer restarts now and then, when the house updates or its sign-ins are refreshed. A message that reached it during that minute used to fail straight away, and you had to write again. Now the house holds it and the resident answers once the restart is done. If the computer still isn't back after 15 minutes, the run fails and the Runs tab says why. Takes effect after Rails deployment."
 - date: 2026-11-11

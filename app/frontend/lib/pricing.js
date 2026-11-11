@@ -21,6 +21,22 @@ export const sizeLines = {
   large: 'Heavy building, and several sub-agents at once.',
 };
 
+// The same, as short lines for the size cards on /pricing. Keep the two in
+// step: the wizard and the about-sheet read sizeLines.
+export const sizeUses = {
+  small: ['Talking and thinking', 'Writing', 'Looking things up'],
+  medium: ['Everything small does', 'Writing code', 'Driving a browser'],
+  large: ['Everything medium does', 'Heavy building', 'Several sub-agents at once'],
+};
+
+// The computer a size runs on, from the server ({ vcpus, ram_gb }), in plain
+// words. The server sends it only while new residents get a computer of
+// their own, so a house that doesn't do that never claims it.
+export function machineLine(machine) {
+  if (!machine?.vcpus || !machine?.ram_gb) return null;
+  return `Its own computer: ${machine.vcpus} cores, ${machine.ram_gb} GB memory`;
+}
+
 const SIZE_BY_TIER = { conversation: 'small', life: 'medium', work: 'large' };
 
 // The size of a tier or offer ("small", "medium", "large"). Older props carry

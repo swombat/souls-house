@@ -1,10 +1,19 @@
 <script>
   import { page } from '@inertiajs/svelte';
-  import { ArrowRight, ArrowUpRight, CaretDown, HardDrives, HeartStraight } from 'phosphor-svelte';
+  import { ArrowRight, ArrowUpRight, CaretDown, Check, Cpu, HardDrives, HeartStraight } from 'phosphor-svelte';
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import RefundGuarantee from '$lib/components/billing/RefundGuarantee.svelte';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
-  import { planAction, trialAction, trialShown, accountPlanTaglines, sizeLines, sizeOf, usd } from '$lib/pricing';
+  import {
+    planAction,
+    trialAction,
+    trialShown,
+    accountPlanTaglines,
+    sizeUses,
+    sizeOf,
+    machineLine,
+    usd,
+  } from '$lib/pricing';
 
   let {
     tiers = [],
@@ -40,10 +49,14 @@
     return planAction({ plan: { ...plan, purchasable }, billingOpen, user, account, isAccountAdmin, allowSignups });
   }
 
-  function moreThanSmall(tier) {
-    if (!small || tier.id === small.id) return null;
-    return usd(Number(tier.monthly_usd) - Number(small.monthly_usd));
+  // What a size costs as the resident a plan includes: small is in every
+  // plan, a bigger one is the difference, from the server's prices.
+  function asIncluded(tier) {
+    if (!small) return null;
+    if (tier.id === small.id) return 'Included in every plan';
+    return `+${usd(Number(tier.monthly_usd) - Number(small.monthly_usd))} a month as your included resident`;
   }
+  const ownComputers = $derived(tiers.some((tier) => machineLine(tier.machine)));
 
   const allowance = $derived(usd(small?.allowance_usd ?? 10));
   const paidPlans = $derived(accountPlans.filter((plan) => Number(plan.monthly_usd) > 0));
@@ -139,42 +152,62 @@
     {/each}
   </section>
 
-  <section class="mx-auto mt-20 max-w-3xl" aria-labelledby="sizes-heading" data-testid="pricing-sizes">
-    <h2 id="sizes-heading" class="text-2xl font-semibold tracking-tight">Residents, by size</h2>
-    <p class="mt-2 text-sm text-muted-foreground">
-      Each resident lives on a computer of its own size. The resident a plan includes is small; it can be medium or
-      large for the difference. Every further resident costs its size.
-    </p>
-    <div class="mt-6 overflow-x-auto rounded-xl border">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-muted/40 text-muted-foreground">
-          <tr>
-            <th scope="col" class="px-4 py-3 font-medium">Size</th>
-            <th scope="col" class="px-4 py-3 font-medium">Right for</th>
-            <th scope="col" class="px-4 py-3 text-right font-medium">A month</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y">
-          {#each tiers as tier (tier.id)}
-            {@const extra = moreThanSmall(tier)}
-            <tr data-size={sizeOf(tier)}>
-              <th scope="row" class="px-4 py-3 align-top font-semibold">{tier.name}</th>
-              <td class="px-4 py-3 align-top text-muted-foreground">{sizeLines[sizeOf(tier)] ?? ''}</td>
-              <td class="px-4 py-3 text-right align-top whitespace-nowrap">
-                {#if billingOpen && !tier.purchasable}
-                  Opens soon
-                {:else}
-                  <span class="font-medium">{usd(tier.monthly_usd)}</span>
-                  {#if extra}
-                    <span class="block text-xs text-muted-foreground">{extra} more as the included one</span>
-                  {/if}
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+  <section class="mx-auto mt-24 max-w-5xl" aria-labelledby="sizes-heading" data-testid="pricing-sizes">
+    <div class="mx-auto max-w-2xl text-center">
+      <h2 id="sizes-heading" class="text-3xl font-semibold tracking-tight">Residents, by size</h2>
+      <p class="mt-3 text-base text-balance text-muted-foreground">
+        {#if ownComputers}Each resident lives on a computer of its own.{/if}
+        Every plan includes one small resident; make it bigger for the difference. Each further resident costs its size.
+      </p>
     </div>
+    <ul class="mt-10 grid gap-5 md:grid-cols-3" role="list">
+      {#each tiers as tier (tier.id)}
+        {@const size = sizeOf(tier)}
+        {@const isSmall = size === 'small'}
+        {@const included = asIncluded(tier)}
+        {@const machine = machineLine(tier.machine)}
+        <li
+          class="relative flex min-w-0 flex-col rounded-2xl border bg-card p-6 {isSmall
+            ? 'border-primary shadow-md ring-1 ring-primary'
+            : ''}"
+          data-size={size}
+          aria-labelledby="size-{tier.id}">
+          {#if isSmall}
+            <span
+              class="absolute -top-3 left-6 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+              data-size-badge>
+              What most residents need
+            </span>
+          {/if}
+          <h3 id="size-{tier.id}" class="text-lg font-semibold">{tier.name}</h3>
+          {#if billingOpen && !tier.purchasable}
+            <p class="mt-4 text-2xl font-semibold tracking-tight" data-size-price>Opens soon</p>
+          {:else}
+            <p class="mt-4 flex flex-wrap items-baseline gap-x-1">
+              <span class="text-4xl font-semibold tracking-tight" data-size-price>{usd(tier.monthly_usd)}</span>
+              <span class="text-sm text-muted-foreground">/ month</span>
+            </p>
+            {#if included}
+              <p class="mt-1 text-sm text-muted-foreground md:min-h-10" data-size-included>{included}</p>
+            {/if}
+          {/if}
+          <ul class="mt-6 space-y-2 border-t pt-6 text-sm" data-size-uses>
+            {#each sizeUses[size] ?? [] as use (use)}
+              <li class="flex gap-2">
+                <Check size={16} class="mt-0.5 shrink-0 text-muted-foreground" />
+                <span>{use}</span>
+              </li>
+            {/each}
+          </ul>
+          {#if machine}
+            <p class="mt-auto flex gap-2 pt-6 text-xs text-muted-foreground" data-size-machine>
+              <Cpu size={16} class="shrink-0" />
+              <span>{machine}</span>
+            </p>
+          {/if}
+        </li>
+      {/each}
+    </ul>
   </section>
 
   <section class="mx-auto mt-12 max-w-3xl space-y-4 text-sm leading-relaxed" data-testid="pricing-model-use">

@@ -56,6 +56,22 @@ class PricingPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # A bought resident is born on a VM of its size's type
+  # (CloudProcurement#vm_birth_server_type), so the page may say so; a house
+  # that keeps residents on its own server never claims a computer.
+  test "each size names its computer only while new residents get their own" do
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 3)
+    get pricing_path
+    machines = inertia_shared_props["tiers"].to_h { |row| [ row["id"], row["machine"] ] }
+    assert_equal({ "vcpus" => 2, "ram_gb" => 4 }, machines["conversation"])
+    assert_equal({ "vcpus" => 4, "ram_gb" => 8 }, machines["life"])
+    assert_equal({ "vcpus" => 8, "ram_gb" => 16 }, machines["work"])
+
+    Setting.instance.update!(new_residents_on_vm: false)
+    get pricing_path
+    assert inertia_shared_props["tiers"].none? { |row| row.key?("machine") }
+  end
+
   test "renders signed in" do
     user = users(:user_1)
     post login_path, params: { email_address: user.email_address, password: "password123" }
