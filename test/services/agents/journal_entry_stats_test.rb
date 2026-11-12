@@ -46,7 +46,7 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
       root.join("2026-09-06.md").write("## Third\n```markdown\n## example\n```\n~~~\n## another example\n~~~\n### subsection\n")
       root.join("README.md").write("## Not an entry\n")
       File.symlink(root.join("2026-09-05.md"), root.join("2026-09-04.md"))
-      script = Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
+      script = reader_script(directory)
       stdout, stderr, status = Open3.capture3("python3", "-c", script)
       assert status.success?, stderr
       assert_equal 3, JSON.parse(stdout)["count"]
@@ -56,11 +56,21 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
 
   test "an empty journal directory is a measured zero" do
     Dir.mktmpdir do |directory|
-      script = Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
+      script = reader_script(directory)
       stdout, _, status = Open3.capture3("python3", "-c", script)
       assert status.success?
       assert_equal 0, JSON.parse(stdout)["count"]
     end
+  end
+
+  # The reader as the runner sends it, pointed at a scratch directory. Its du
+  # roots move too: on a resident's own box the real /home/agent volumes exist,
+  # and measuring them ran into the script's 10 s timeout.
+  def reader_script(directory)
+    script = Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
+    roots = '"/home/agent/" + name'
+    raise "the reader's volume roots moved" unless script.include?(roots)
+    script.sub(roots, "#{directory.to_s.inspect} + \"/\" + name")
   end
 
   # A resident on its own server has no container on the house host, so its
