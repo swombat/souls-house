@@ -55,7 +55,7 @@ module BoatSetupScript
 
     script = <<~BASH
       #!/bin/bash
-      # souls.house runner bootstrap for a Boat sandbox. Prints no secrets.
+      # Runner bootstrap for a Boat sandbox. Prints no secrets.
       set -euo pipefail
       umask 077
       if [[ ! "${BOAT_ID:-}" =~ ^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$ ]]; then
