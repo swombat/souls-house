@@ -35,6 +35,35 @@ class AgentPlacementTest < ActiveSupport::TestCase
     assert placement.errors.added?(:state, :inclusion, value: "running")
   end
 
+  test "a Boat placement names a sandbox, never a Hetzner server or location, and runs nowhere yet" do
+    agent = agents(:research_assistant)
+    placement = AgentPlacement.new(agent:, backend: "boat", state: "pending")
+    assert placement.valid?
+
+    placement.provider_server_id = 4242
+    assert_not placement.valid?
+    placement.provider_server_id = nil
+    placement.location = "fsn1"
+    assert_not placement.valid?
+    placement.location = nil
+
+    placement.state = "ready"
+    assert_not placement.valid?
+    placement.provider_sandbox_id = "not-a-sandbox-id"
+    assert_not placement.valid?
+    placement.provider_sandbox_id = "bx_23456789"
+    assert placement.valid?
+    placement.save!
+
+    assert_not Agents::RuntimeLocation.local?(agent.reload)
+    assert_not Agents::RemoteRuntime.dispatchable?(agent)
+    assert_not Agents::RuntimeLocation.dispatchable?(agent)
+
+    hetzner = AgentPlacement.new(agent: agents(:code_reviewer), backend: "hetzner_cloud", state: "pending",
+      provider_sandbox_id: "bx_33333333")
+    assert_not hetzner.valid?
+  end
+
   test "staged is only an unadmitted VM archive import with no server" do
     placement = @agent.build_placement(backend: "hetzner_cloud", kind: "archive_import", state: "staged")
     assert placement.valid?, placement.errors.full_messages.join(", ")

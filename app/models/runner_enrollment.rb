@@ -35,17 +35,23 @@ class RunnerEnrollment < ApplicationRecord
 
   validates :public_id, :token_digest, :expires_at, presence: true
   validates :expected_provider_server_id, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
+  validates :procurement_kind, inclusion: { in: %w[hetzner_cloud boat] }
+  validates :expected_provider_sandbox_id, format: { with: BoatClient::SANDBOX_ID }, allow_nil: true
   validate :public_key_is_raw_ed25519
 
   # Called by procurement inside the transaction that commits its create
   # intent. Returns [enrollment, plaintext token]. Only the digest is stored;
   # the plaintext belongs in that one create request's user_data and nowhere
   # else. There is no re-mint: a lost plaintext means operator review.
-  def self.mint!(placement:, operation_id: nil, now: Time.current)
+  def self.mint!(placement:, operation_id: nil, boat_operation_id: nil, now: Time.current)
+    raise ArgumentError, "one purchase, Hetzner or Boat" if operation_id && boat_operation_id
+
     token = SecureRandom.urlsafe_base64(32)
     enrollment = create!(
       agent_placement: placement,
       procurement_operation_id: operation_id,
+      boat_procurement_operation_id: boat_operation_id,
+      procurement_kind: boat_operation_id ? "boat" : "hetzner_cloud",
       public_id: "rnr_#{SecureRandom.hex(10)}",
       token_digest: digest(token),
       expires_at: now + TOKEN_TTL
@@ -61,11 +67,30 @@ class RunnerEnrollment < ApplicationRecord
   # operation. Until then, enrollment answers "pending" and burns nothing.
   def confirm_provider_server!(server_id)
     with_lock do
+      raise Refused.new(:wrong_provider, 409) unless procurement_kind == "hetzner_cloud"
       if expected_provider_server_id.present? && expected_provider_server_id != server_id
         raise Refused.new(:provider_server_already_confirmed, 409)
       end
       update!(expected_provider_server_id: server_id)
     end
+  end
+
+  # The Boat twin of confirm_provider_server!: a Boat runner reports the
+  # sandbox id Boat sets in its reserved BOAT_ID variable.
+  def confirm_provider_sandbox!(sandbox_id)
+    with_lock do
+      raise Refused.new(:wrong_provider, 409) unless procurement_kind == "boat"
+      if expected_provider_sandbox_id.present? && expected_provider_sandbox_id != sandbox_id
+        raise Refused.new(:provider_server_already_confirmed, 409)
+      end
+      update!(expected_provider_sandbox_id: sandbox_id)
+    end
+  end
+
+  # What this runner must report it is running on: a Hetzner server id or a
+  # Boat sandbox id, never one standing in for the other.
+  def expected_machine_id
+    procurement_kind == "boat" ? expected_provider_sandbox_id : expected_provider_server_id
   end
 
   def authenticate_token!(token)
@@ -93,17 +118,17 @@ class RunnerEnrollment < ApplicationRecord
 
       if enrolled_at
         raise Refused.new(:key_mismatch, 409) unless ActiveSupport::SecurityUtils.secure_compare(public_key.to_s, self.public_key.to_s)
-        raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_provider_server_id
+        raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_machine_id
 
         consume_nonce!(nonce, now)
         return :already_enrolled
       end
 
-      if expected_provider_server_id.nil?
+      if expected_machine_id.nil?
         consume_nonce!(nonce, now)
         return :pending
       end
-      raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_provider_server_id
+      raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_machine_id
 
       consume_nonce!(nonce, now)
       update!(public_key: public_key, enrolled_at: now, last_facts: facts)
@@ -116,7 +141,7 @@ class RunnerEnrollment < ApplicationRecord
     with_lock do
       raise Refused.new(:revoked, 403) if revoked_at
       raise Refused.new(:not_enrolled, 409) unless enrolled_at
-      raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_provider_server_id
+      raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_machine_id
 
       consume_nonce!(nonce, now)
       update!(last_heartbeat_at: now, last_facts: facts)

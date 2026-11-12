@@ -32,6 +32,33 @@ class Api::V1::HostRunner::EnrollmentsControllerTest < ActionDispatch::Integrati
     assert_equal({ "provider_server_id" => 4242, "docker_version" => "27.0" }, @enrollment.last_facts)
   end
 
+  test "a Boat runner proves its sandbox id, and a Hetzner server id never stands in for it" do
+    boat = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "boat", state: "pending")
+    operation = BoatProcurementOperation.create!(agent_placement: boat, requested_by: users(:site_admin_user),
+      public_id: "bpo-test", provider_name: "souls-house-bpo-test", approval_reference: "test", sandbox_size: "small",
+      state: "reconciling")
+    enrollment, token = RunnerEnrollment.mint!(placement: boat, boat_operation_id: operation.id)
+    enrollment.confirm_provider_sandbox!("bx_23456789")
+    attempt = lambda do |facts|
+      body = JSON.generate(token:, public_key: public_key_b64(@key), facts:)
+      post PATH, params: body, headers: signed_runner_headers(@key, path: PATH, body:, runner_id: enrollment.public_id)
+    end
+
+    attempt.call({ provider_server_id: 4242 })
+    assert_response :conflict
+    assert_equal "server_mismatch", response.parsed_body["error"]
+    attempt.call({ provider_sandbox_id: "bx_33333333" })
+    assert_response :conflict
+    attempt.call({ provider_sandbox_id: "not-a-sandbox-id" })
+    assert_response :conflict
+    assert_nil enrollment.reload.enrolled_at
+
+    attempt.call({ provider_server_id: nil, provider_sandbox_id: "bx_23456789" })
+    assert_response :ok
+    assert_equal "enrolled", response.parsed_body["status"]
+    assert_equal "bx_23456789", enrollment.reload.last_facts["provider_sandbox_id"]
+  end
+
   test "a lost reply recovers: same key again is already enrolled; a new key is refused" do
     @enrollment.confirm_provider_server!(4242)
     enroll

@@ -247,7 +247,8 @@ areas:
       A resident runs either in a container on the house or on its own VM. An
       agent placement is where a resident lives and what state that home is
       in. A cloud procurement operation is one request to the cloud provider
-      to create or delete a server, kept until it is reconciled. On the VM a
+      to create or delete a server, kept until it is reconciled; a Boat
+      procurement operation is the same for a Boat sandbox. On the VM a
       small runner enrols with the house, heartbeats, and receives commands:
       seed the home, start a turn, take a backup. Nonces stop a replayed
       request. Backups are restic snapshots, with vm_backups tracking the
@@ -257,6 +258,7 @@ areas:
     tables:
       - agent_placements
       - cloud_procurement_operations
+      - boat_procurement_operations
       - runner_enrollments
       - runner_birth_bundles
       - runner_commands

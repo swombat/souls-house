@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -310,11 +310,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
     t.string "kind"
     t.datetime "house_runtime_ready_at"
     t.jsonb "carry"
+    t.string "provider_sandbox_id"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
+    t.index ["provider_sandbox_id"], name: "index_agent_placements_on_provider_sandbox_id", unique: true, where: "(provider_sandbox_id IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
     t.check_constraint "kind IS NULL OR (kind::text = ANY (ARRAY['birth'::character varying::text, 'archive_import'::character varying::text, 'github_import'::character varying::text, 'migration'::character varying::text]))", name: "agent_placements_kind"
+    t.check_constraint "provider_sandbox_id IS NULL OR provider_server_id IS NULL", name: "agent_placements_one_provider_id"
+    t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "agent_placements_sandbox_id_shape"
     t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
   end
 
@@ -762,6 +766,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
     t.index ["account_id"], name: "index_billing_customers_on_account_id", unique: true
     t.index ["stripe_customer_id"], name: "index_billing_customers_on_stripe_customer_id", unique: true
     t.index ["stripe_subscription_id"], name: "index_billing_customers_on_stripe_subscription_id", unique: true, where: "(stripe_subscription_id IS NOT NULL)"
+  end
+
+  create_table "boat_procurement_operations", force: :cascade do |t|
+    t.bigint "agent_placement_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.integer "placement_generation", default: 1, null: false
+    t.string "public_id", null: false
+    t.string "state", default: "planned", null: false
+    t.string "approval_reference", null: false
+    t.string "sandbox_size", null: false
+    t.string "provider_name", null: false
+    t.string "provider_sandbox_id"
+    t.string "last_error_code"
+    t.string "review_reason"
+    t.datetime "create_sent_at"
+    t.datetime "provisioned_at"
+    t.datetime "delete_requested_at"
+    t.datetime "deleted_at"
+    t.datetime "last_reconciled_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_placement_id"], name: "index_boat_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL ((ARRAY['refused'::character varying, 'deleted'::character varying])::text[]))"
+    t.index ["provider_name"], name: "index_boat_procurement_operations_on_provider_name", unique: true
+    t.index ["provider_sandbox_id"], name: "index_boat_procurement_operations_on_provider_sandbox_id", unique: true, where: "(provider_sandbox_id IS NOT NULL)"
+    t.index ["public_id"], name: "index_boat_procurement_operations_on_public_id", unique: true
+    t.index ["requested_by_id"], name: "index_boat_procurement_operations_on_requested_by_id"
+    t.check_constraint "placement_generation >= 1", name: "boat_procurement_operations_positive_generation"
+    t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "boat_procurement_operations_sandbox_id_shape"
+    t.check_constraint "state::text = ANY (ARRAY['planned'::character varying, 'create_in_flight'::character varying, 'reconciling'::character varying, 'provisioned'::character varying, 'unknown'::character varying, 'refused'::character varying, 'needs_review'::character varying, 'deleting'::character varying, 'deleted'::character varying]::text[])", name: "boat_procurement_operations_state"
   end
 
   create_table "chat_agents", force: :cascade do |t|
@@ -2765,11 +2798,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
     t.datetime "updated_at", null: false
     t.string "birth_bundle_sha256"
     t.integer "birth_bundle_fetches", default: 0, null: false
+    t.bigint "boat_procurement_operation_id"
+    t.string "procurement_kind", default: "hetzner_cloud", null: false
+    t.string "expected_provider_sandbox_id"
     t.index ["agent_placement_id"], name: "index_runner_enrollments_on_agent_placement_id"
+    t.index ["boat_procurement_operation_id"], name: "index_runner_enrollments_on_boat_procurement_operation_id", unique: true, where: "(boat_procurement_operation_id IS NOT NULL)"
     t.index ["procurement_operation_id"], name: "index_runner_enrollments_on_procurement_operation_id", unique: true, where: "(procurement_operation_id IS NOT NULL)"
     t.index ["public_id"], name: "index_runner_enrollments_on_public_id", unique: true
     t.index ["token_digest"], name: "index_runner_enrollments_on_token_digest", unique: true
+    t.check_constraint "expected_provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "runner_enrollments_sandbox_id_shape"
     t.check_constraint "expected_provider_server_id > 0", name: "runner_enrollments_positive_server_id"
+    t.check_constraint "procurement_kind::text = 'boat'::text AND procurement_operation_id IS NULL AND expected_provider_server_id IS NULL OR procurement_kind::text = 'hetzner_cloud'::text AND boat_procurement_operation_id IS NULL AND expected_provider_sandbox_id IS NULL", name: "runner_enrollments_one_provider"
+    t.check_constraint "procurement_kind::text = ANY (ARRAY['hetzner_cloud'::character varying, 'boat'::character varying]::text[])", name: "runner_enrollments_procurement_kind"
   end
 
   create_table "runner_request_nonces", force: :cascade do |t|
@@ -3392,6 +3432,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
   add_foreign_key "billing_code_redemptions", "users", column: "withdrawn_by_id"
   add_foreign_key "billing_codes", "users", column: "created_by_id"
   add_foreign_key "billing_customers", "accounts"
+  add_foreign_key "boat_procurement_operations", "agent_placements"
+  add_foreign_key "boat_procurement_operations", "users", column: "requested_by_id"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
   add_foreign_key "chats", "accounts"
@@ -3614,6 +3656,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_220000) do
   add_foreign_key "runner_commands", "resident_turns"
   add_foreign_key "runner_commands", "runner_enrollments"
   add_foreign_key "runner_enrollments", "agent_placements"
+  add_foreign_key "runner_enrollments", "boat_procurement_operations"
   add_foreign_key "runner_enrollments", "cloud_procurement_operations", column: "procurement_operation_id"
   add_foreign_key "runner_request_nonces", "runner_enrollments", on_delete: :cascade
   add_foreign_key "safeguard_classifier_failures", "agents"

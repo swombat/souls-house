@@ -221,10 +221,34 @@ class AllowlistTest(unittest.TestCase):
             server_id_reader=lambda: 4242,
             command_runner=lambda argv: calls.append(argv) or "27.0",
             reboot_reader=lambda: {},
+            sandbox_id_reader=lambda: None,
         )
         self.assertEqual(facts["provider_server_id"], 4242)
+        self.assertIsNone(facts["provider_sandbox_id"])
         self.assertEqual(facts["docker_version"], "27.0")
         self.assertTrue(all(argv[0] == "docker" and argv[1] in ("image", "version") for argv in calls))
+
+    def test_a_boat_sandbox_reports_its_sandbox_id_and_never_asks_the_metadata_service(self):
+        asked = []
+        facts = runner.collect_facts(
+            server_id_reader=lambda: asked.append(True) or 4242,
+            command_runner=lambda argv: "27.0",
+            reboot_reader=lambda: {},
+            sandbox_id_reader=lambda: "bx_23456789",
+        )
+        self.assertEqual(facts["provider_sandbox_id"], "bx_23456789")
+        self.assertIsNone(facts["provider_server_id"])
+        self.assertEqual(asked, [])
+
+    def test_the_sandbox_id_file_must_hold_one_documented_boat_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "boat-sandbox-id")
+            self.assertIsNone(runner.provider_sandbox_id(path))
+            for value, expected in (("bx_23456789\n", "bx_23456789"), ("bx_0000000l", None),
+                                    ("not-a-sandbox-id", None), ("bx_23456789 bx_33333333", None), ("", None)):
+                with open(path, "w") as handle:
+                    handle.write(value)
+                self.assertEqual(runner.provider_sandbox_id(path), expected, value)
 
 
 if __name__ == "__main__":

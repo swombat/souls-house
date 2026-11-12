@@ -2,7 +2,10 @@ require "uri"
 
 class AgentPlacement < ApplicationRecord
 
-  BACKENDS = %w[local hetzner_cloud].freeze
+  # boat: a small, mostly-asleep resident's sandbox on Boat (ePokyY). Nothing
+  # dispatches to one yet: RuntimeLocation.local? needs "local" and
+  # RemoteRuntime needs "hetzner_cloud", so a boat placement runs nowhere.
+  BACKENDS = %w[local hetzner_cloud boat].freeze
   # staged: an archive import's or a migration's VM intent, waiting for
   # Activate. It has no server, no admission and no cap slot, and as a VM
   # placement it is never run by the local runtime (RuntimeLocation).
@@ -18,6 +21,7 @@ class AgentPlacement < ApplicationRecord
   belongs_to :birth_requested_by, class_name: "User", optional: true
   # Purchases are history: a placement that has had one is never deleted.
   has_many :cloud_procurement_operations, dependent: :restrict_with_exception
+  has_many :boat_procurement_operations, dependent: :restrict_with_exception
 
   validates :agent_id, uniqueness: true
   validates :backend, inclusion: { in: BACKENDS }
@@ -34,12 +38,18 @@ class AgentPlacement < ApplicationRecord
   validates :provider_server_id,
     numericality: { only_integer: true, greater_than: 0 }, uniqueness: true, allow_nil: true
   validates :provider_server_id, :runtime_endpoint, absence: true, if: -> { backend == "local" }
+  # A Boat sandbox is named by its own id and has no Hetzner location.
+  validates :provider_server_id, :location, absence: true, if: -> { backend == "boat" }
+  validates :provider_sandbox_id, absence: true, unless: -> { backend == "boat" }
+  validates :provider_sandbox_id, format: { with: BoatClient::SANDBOX_ID }, uniqueness: true, allow_nil: true
   # A ready VM placement needs its server. It needs no endpoint: the house
   # never calls the VM, whose runner polls for commands (#238).
   validates :provider_server_id, presence: true, if: -> { backend == "hetzner_cloud" && state == "ready" }
+  validates :provider_sandbox_id, presence: true, if: -> { backend == "boat" && state == "ready" }
   validate :runtime_endpoint_is_https
 
   def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
+  def boat? = backend == "boat"
   def staged? = state == "staged"
   def migration? = backend == "hetzner_cloud" && kind == "migration"
   def cleanup_requested? = cleanup_requested_at.present?
