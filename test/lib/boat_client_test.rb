@@ -12,7 +12,7 @@ class BoatClientTest < ActiveSupport::TestCase
   end
 
   def sandbox_json(id: "bx_23456789", state: "ready", labels: LABELS)
-    { "id" => id, "name" => "souls-house-bop-1", "state" => state, "size" => "small", "error" => nil,
+    { "id" => id, "name" => "souls-house-bop-1", "state" => state, "type" => "small", "error" => nil,
       "stoppedAt" => nil, "dataExpiredAt" => nil, "labels" => labels }
   end
 
@@ -29,12 +29,12 @@ class BoatClientTest < ActiveSupport::TestCase
     stub = stub_request(:post, "#{API}/sandboxes")
       .with(headers: { "Authorization" => "Bearer synthetic-token", "Idempotency-Key" => "bop-1" }) do |request|
         body = JSON.parse(request.body)
-        body["noEnv"] == true && body["size"] == "small" && body["labels"] == LABELS &&
-          body["setupScript"] == "echo runner"
+        body["noEnv"] == true && body["type"] == "small" && !body.key?("size") && body["labels"] == LABELS &&
+          body["setupScript"] == "echo runner" && body["ttlSeconds"] == 1800 && !body.key?("autoStopSeconds")
       end
       .to_return(status: 202, body: { sandbox: sandbox_json(state: "provisioning") }.to_json)
 
-    sandbox = create!
+    sandbox = create!(ttl_seconds: 1800)
 
     assert_requested stub
     assert_equal "bx_23456789", sandbox.id
@@ -59,6 +59,22 @@ class BoatClientTest < ActiveSupport::TestCase
     assert_equal first, second
     assert_equal %w[bop-1 bop-1], keys
     assert_equal 1, bodies.uniq.size
+  end
+
+  test "an accepted create without a usable sandbox id has an unknown outcome" do
+    [ { sandbox: sandbox_json.except("id") }, { sandbox: sandbox_json.merge("id" => nil) },
+      { sandbox: sandbox_json.merge("id" => "") }, { ok: true } ].each do |body|
+      stub_request(:post, "#{API}/sandboxes").to_return(status: 202, body: body.to_json)
+      error = assert_raises(BoatClient::CreateOutcomeUnknown) { create! }
+      assert_equal "outcome_unknown", error.code
+    end
+  end
+
+  test "a read of a sandbox without an id is an invalid response, not outcome-unknown" do
+    stub_request(:get, "#{API}/sandboxes/bx_23456789").to_return(status: 200, body: { sandbox: sandbox_json.merge("id" => nil) }.to_json)
+    error = assert_raises(BoatClient::Error) { @client.find_sandbox("bx_23456789") }
+    assert_not_kind_of BoatClient::CreateOutcomeUnknown, error
+    assert_equal "invalid_response", error.code
   end
 
   test "refuses unconfigured, keyless, off-allowlist and oversized creates before any request" do

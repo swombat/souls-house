@@ -87,15 +87,21 @@ class BoatClient
   Sandbox = Data.define(:id, :name, :state, :size, :error, :stopped_at, :data_expired_at, :labels) do
     def self.from_api(json)
       new(
-        id: json.fetch("id"),
+        id: usable_id(json.fetch("id")),
         name: json["name"],
         state: json["state"],
-        size: json["size"] || json["type"],
+        size: json["type"],
         error: json["error"],
         stopped_at: json["stoppedAt"],
         data_expired_at: json["dataExpiredAt"],
         labels: json["labels"].is_a?(Hash) ? json["labels"] : {}
       )
+    end
+
+    def self.usable_id(id)
+      raise KeyError, "sandbox id is missing" unless id.is_a?(String) && id.present?
+
+      id
     end
 
     def managed? = labels[MANAGED_LABEL] == "true"
@@ -130,7 +136,7 @@ class BoatClient
   # sandbox, never a second one. setup_script runs once the sandbox is ready
   # (it is Boat's only first-boot hook; there is no cloud-init).
   def create_sandbox(idempotency_key:, name:, placement_id:, operation_id:, size:, setup_script: nil,
-    auto_stop_seconds: nil, labels: {})
+    ttl_seconds: nil, labels: {})
     refuse!("an Idempotency-Key is required") if idempotency_key.blank?
     refuse!("size #{size} is not allowed") unless @allowed_sizes.include?(size.to_s)
     refuse!("a placement id is required") if placement_id.blank?
@@ -139,17 +145,25 @@ class BoatClient
 
     payload = {
       name:,
-      size:,
+      type: size.to_s,
       noEnv: true,
       labels: labels.transform_keys(&:to_s).merge(
         MANAGED_LABEL => "true", PLACEMENT_LABEL => placement_id.to_s, OPERATION_LABEL => operation_id.to_s
       )
     }
     payload[:setupScript] = setup_script if setup_script
-    payload[:autoStopSeconds] = auto_stop_seconds if auto_stop_seconds
+    # Omitted, Boat archives the sandbox after its default TTL (3600 s). The
+    # house runs the idle stop itself; the TTL is only a backstop.
+    payload[:ttlSeconds] = ttl_seconds if ttl_seconds
 
     body = request(:post, "/sandboxes", payload, headers: { "Idempotency-Key" => idempotency_key.to_s })
+    # A 2xx whose sandbox has no usable id means Boat may have made one we
+    # cannot name: that is outcome-unknown, reconciled by label, not an error.
     sandbox_from(body)
+  rescue Error => e
+    raise if e.is_a?(CreateOutcomeUnknown) || e.code != "invalid_response"
+
+    raise CreateOutcomeUnknown.new("Boat create returned no usable sandbox id", code: "outcome_unknown")
   end
 
   def find_sandbox(id)
