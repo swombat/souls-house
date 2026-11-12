@@ -36,7 +36,10 @@ class BoatClient
   AWAKE_STATES = %w[ready idle running].freeze
   STOPPED_STATE = "archived".freeze
   RETRYABLE_CODES = %w[rate_limited idempotency_in_progress sandbox_direct_failed unavailable].freeze
-  CAPACITY_CODES = %w[no_ready_machine active_sandbox_limit start_limit_exceeded].freeze
+  # Boat's documented capacity answers: 503 no_ready_machine / out_of_capacity
+  # (nothing started), 429 rate_limited / limit_reached / member_limit_reached
+  # (a start or concurrent-sandbox limit).
+  CAPACITY_CODES = %w[no_ready_machine out_of_capacity rate_limited limit_reached member_limit_reached].freeze
   NETWORK_ERRORS = [ SystemCallError, IOError, Timeout::Error, SocketError, OpenSSL::SSL::SSLError ].freeze
 
   class Error < StandardError

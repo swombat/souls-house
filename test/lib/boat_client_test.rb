@@ -125,11 +125,19 @@ class BoatClientTest < ActiveSupport::TestCase
   end
 
   test "no machine or an account limit is capacity, not a failure of the house" do
-    stub_request(:post, "#{API}/sandboxes").to_return(status: 503, body: { code: "no_ready_machine" }.to_json)
-    assert_raises(BoatClient::CapacityUnavailable) { create! }
+    { 503 => %w[no_ready_machine out_of_capacity], 429 => %w[rate_limited limit_reached member_limit_reached] }
+      .each do |status, codes|
+        codes.each do |code|
+          stub_request(:post, "#{API}/sandboxes").to_return(status:, body: { code: }.to_json)
+          assert_equal code, assert_raises(BoatClient::CapacityUnavailable) { create! }.code
+        end
+      end
+  end
 
+  test "an undocumented 429 code on create is not read as capacity" do
     stub_request(:post, "#{API}/sandboxes").to_return(status: 429, body: { code: "active_sandbox_limit" }.to_json)
-    assert_raises(BoatClient::CapacityUnavailable) { create! }
+    error = assert_raises(BoatClient::Error) { create! }
+    assert_not_kind_of BoatClient::CapacityUnavailable, error
   end
 
   test "find returns nil for a missing sandbox and raises on a server error" do
