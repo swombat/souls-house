@@ -223,15 +223,12 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertNotIn('CHAOS_DEFAULTS', text)
         self.assertNotIn('cat >> "$CHAOS_CONFIG"', text)
 
-    def test_existing_oauth_home_is_prepared_but_not_created(self):
+    def test_only_the_one_home_is_prepared_oauth_runtime_holds_credentials(self):
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'CHAOS_HOME':td}):
-            with patch.object(s, 'prepare') as prepare:
-                s.main()
-                self.assertEqual(prepare.call_count, 1)
             (Path(td)/'oauth-runtime').mkdir()
             with patch.object(s, 'prepare') as prepare:
                 s.main()
-                self.assertEqual(prepare.call_count, 2)
+            self.assertEqual([c.args[0] for c in prepare.call_args_list], [Path(td)])
 
 
 @unittest.skipUnless(os.environ.get('CHAOS_TEST_BIN'), 'set CHAOS_TEST_BIN for real SQLite migration tests')

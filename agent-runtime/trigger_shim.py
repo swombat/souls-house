@@ -135,6 +135,8 @@ CHAOS_AGY_HOME = Path(os.environ.get("CHAOS_AGY_HOME", "/home/agent/state/antigr
 CHAOS_TIMEOUT_SECS = int(os.environ.get("CHAOS_TIMEOUT_SECS", "600"))
 CHAOS_ANTHROPIC_CACHE_TTL = os.environ.get("CHAOS_ANTHROPIC_CACHE_TTL")
 SESSION_MAP_DIR = CHAOS_HOME / "helixkit-sessions"
+# Subscription credentials only (CHAOS_AUTH_HOME, seuros/chaos#152). Sessions,
+# history, settings, trust and hooks all live in CHAOS_HOME, for every run.
 OAUTH_CHAOS_HOME = CHAOS_HOME / "oauth-runtime"
 OAUTH_ACCOUNT_PROVIDERS = tuple(
     provider.strip()
@@ -978,16 +980,28 @@ def _run_chaos_once(
     if selected_provider == "kimi":
         reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
     env = os.environ.copy()
+    uses_auth_home = False
     if auth_mode == "oauth_account":
         if selected_provider == "anthropic":
             env = _anthropic_subscription_env()
         elif selected_provider == "gemini":
             env = _antigravity_subscription_env()
         else:
+            unready = single_home_unready()
+            if unready:
+                log.warning(f"subscription run refused: {unready}")
+                return subprocess.CompletedProcess(
+                    [CHAOS_BIN], 1, "", f"single_chaos_home_unready: {unready}\n")
             env = _oauth_account_env()
+            uses_auth_home = True
         api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
         if api_key_env:
             env.pop(api_key_env, None)
+    # Only openai/xai subscription runs read credentials from the separate
+    # auth directory. Strip it from the final env of every other run,
+    # including the anthropic/gemini branches, which rebuild env from os.environ.
+    if not uses_auth_home:
+        env.pop("CHAOS_AUTH_HOME", None)
     # Invocation-local correlation also exists without a conversation activity
     # reporter (Telegram). Never mutate the process-wide environment.
     for key in ("SOULSHOUSE_RUNTIME_RUN_ID", "SOULSHOUSE_RUNTIME_CHAT_ID",
@@ -2085,14 +2099,14 @@ def _is_protected(filename, protected):
 
 
 def protected_identity_files():
-    """Paths that every Chaos home this resident runs in will snapshot whole.
+    """Paths that the resident's one Chaos home will snapshot whole.
 
     A home whose settings cannot be read, whose list names a file that is
     missing, or whose files exceed its protected-context cap (Chaos would keep
     a truncated copy) protects nothing here. The fallback is a duplicate in
     the prompt, never a missing soul.
     """
-    homes = [CHAOS_HOME] + ([OAUTH_CHAOS_HOME] if OAUTH_CHAOS_HOME.is_dir() else [])
+    homes = [CHAOS_HOME]
     covered = None
     for home in homes:
         try:
@@ -3171,10 +3185,68 @@ def _line_names_provider(line, provider):
     return any(name in lowered for name in names)
 
 
+_auth_home_supported = False
+
+
+def chaos_reads_auth_home():
+    """Whether the installed Chaos honours CHAOS_AUTH_HOME (seuros/chaos#152).
+
+    Behavioural, not a version or string match: Chaos that reads the variable
+    refuses to open credentials when it names a missing directory ("CHAOS_AUTH_HOME
+    points to ..., but that path does not exist"); Chaos that does not ignores
+    it and reports the main home's account. Only a positive answer is cached, so a binary
+    upgraded under a running shim is probed again.
+    """
+    global _auth_home_supported
+    if _auth_home_supported:
+        return True
+    missing = CHAOS_HOME / "tmp" / f"auth-home-probe-{os.getpid()}-missing"
+    try:
+        result = subprocess.run(
+            [CHAOS_BIN, "--provider", "openai", "accounts", "status"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "CHAOS_HOME": str(CHAOS_HOME), "CHAOS_AUTH_HOME": str(missing)})
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0 and "CHAOS_AUTH_HOME" in (result.stderr or ""):
+        _auth_home_supported = True
+    return _auth_home_supported
+
+
+def single_home_unready():
+    """Why a subscription run cannot use the one Chaos home yet, or None.
+
+    Two things must hold. The binary must keep credentials apart (otherwise a
+    subscription run would read the main home's credentials). And the old
+    oauth-runtime store must have been merged into the main one by the
+    operator (ops/chaos-home/merge_oauth_store.py), which moves its config.toml
+    aside: while that file still names its own store, the resident's
+    subscription sessions are only there, and running against the main home
+    would quietly start them over.
+    """
+    bootstrap = OAUTH_CHAOS_HOME / "config.toml"
+    try:
+        names_store = "storage_url" in bootstrap.read_text()
+    except FileNotFoundError:
+        names_store = False
+    except OSError:
+        names_store = True
+    if names_store:
+        return ("subscription sessions are still in the separate oauth-runtime store; "
+                "the operator merge must run before subscription runs use the main home")
+    if not chaos_reads_auth_home():
+        return "the installed Chaos does not read CHAOS_AUTH_HOME; update Chaos first"
+    return None
+
+
 def _oauth_account_env():
+    """One Chaos home; subscription credentials alone come from oauth-runtime."""
+    if not chaos_reads_auth_home():
+        raise RuntimeError("the installed Chaos does not read CHAOS_AUTH_HOME; update Chaos first")
     OAUTH_CHAOS_HOME.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    env["CHAOS_HOME"] = str(OAUTH_CHAOS_HOME)
+    env["CHAOS_HOME"] = str(CHAOS_HOME)
+    env["CHAOS_AUTH_HOME"] = str(OAUTH_CHAOS_HOME)
     return env
 
 

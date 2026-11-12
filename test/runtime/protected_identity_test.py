@@ -58,8 +58,8 @@ class ProtectedIdentityTest(unittest.TestCase):
 
     def test_any_doubt_keeps_the_prompt_copy(self):
         cases = {
-            'oauth home opted out': lambda: self.settings[self.oauth].update(protected_context_files=[]),
-            'settings unreadable': lambda: self.settings.pop(self.oauth),
+            'home opted out': lambda: self.settings[self.home].update(protected_context_files=[]),
+            'settings unreadable': lambda: self.settings.pop(self.home),
             'over the cap (Chaos would truncate)': lambda: [s.update(protected_context_max_bytes=10)
                                                            for s in self.settings.values()],
             'cap of zero (Chaos snapshots nothing)': lambda: [s.update(protected_context_max_bytes=0)
@@ -74,6 +74,15 @@ class ProtectedIdentityTest(unittest.TestCase):
                 text = self.context()
                 self.assertIn(SOUL, text)
                 self.assertIn(NARRATIVE, text)
+
+    def test_oauth_runtime_settings_no_longer_count(self):
+        # oauth-runtime holds only credentials; whatever settings an old store
+        # there still has are never read by a run.
+        self.settings[self.oauth]['protected_context_files'] = []
+        text = self.context()
+        self.assertNotIn(SOUL, text)
+        self.settings.pop(self.oauth)
+        self.assertNotIn(SOUL, self.context())
 
     def test_only_the_protected_file_is_dropped(self):
         for s in self.settings.values():

@@ -341,17 +341,19 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "safeguard-detected", result["safeguard"]
   end
 
-  test "API key runs preserve the original Chaos home and subscription runs use an isolated home" do
+  test "API key and subscription runs share the one Chaos home; only subscription credentials move" do
     out = run_shim_python(<<~PY)
       import types
       calls = []
       def capture_run(*args, **kwargs):
           calls.append({
-            "home": kwargs["env"]["CHAOS_HOME"],
+            "home": kwargs["env"].get("CHAOS_HOME", mod.os.environ.get("CHAOS_HOME")),
+            "auth_home": kwargs["env"].get("CHAOS_AUTH_HOME"),
             "openai_key": kwargs["env"].get("OPENAI_API_KEY"),
           })
           return types.SimpleNamespace(stdout="", stderr="", returncode=0)
       mod.os.environ["OPENAI_API_KEY"] = "metered-key"
+      mod.os.environ["CHAOS_HOME"] = str(mod.CHAOS_HOME)
       mod.subprocess.run = capture_run
       mod.run_chaos("gpt-5", 5, "prompt", False, provider="openai", auth_mode="api_key")
       mod.run_chaos("gpt-5", 5, "prompt", False, provider="openai", auth_mode="oauth_account")
@@ -359,18 +361,19 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     PY
 
     calls = JSON.parse(out)
-    assert_equal File.dirname(calls.second.fetch("home")), calls.first.fetch("home")
+    assert_equal calls.first.fetch("home"), calls.second.fetch("home")
     assert_equal "metered-key", calls.first.fetch("openai_key")
-    assert calls.second.fetch("home").end_with?("/oauth-runtime")
+    assert_nil calls.first.fetch("auth_home")
+    assert calls.second.fetch("auth_home").end_with?("/oauth-runtime")
     assert_nil calls.second.fetch("openai_key")
   end
 
-  test "provider account commands use the isolated subscription Chaos home" do
+  test "provider account commands read subscription credentials from oauth-runtime in the one home" do
     out = run_shim_python(<<~PY)
       import types
       calls = []
       mod.subprocess.run = lambda *args, **kwargs: (
-          calls.append(kwargs["env"]["CHAOS_HOME"]) or
+          calls.append([kwargs["env"]["CHAOS_HOME"], kwargs["env"]["CHAOS_AUTH_HOME"]]) or
           types.SimpleNamespace(stdout="", stderr="Stored provider accounts: none", returncode=1)
       )
       mod._provider_account_status("openai")
@@ -379,7 +382,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
 
     homes = JSON.parse(out)
     assert_equal 1, homes.size
-    assert homes.first.end_with?("/oauth-runtime")
+    refute homes.first.first.end_with?("/oauth-runtime")
+    assert homes.first.second.end_with?("/oauth-runtime")
   end
 
   test "expired auth ceremony cannot be overwritten by its monitor thread" do
@@ -1845,6 +1849,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         mod.jsonify = lambda payload: payload
+        # The fake chaos stands for a current Chaos, which reads CHAOS_AUTH_HOME
+        # (seuros/chaos#152); test/runtime/single_chaos_home_test.py covers the probe.
+        mod._auth_home_supported = True
         #{snippet}
       PY
       env = {

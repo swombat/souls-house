@@ -61,6 +61,7 @@ class RunChaosTest(unittest.TestCase):
         if switch is not None:
             env[SWITCH] = switch
         with patch.dict(os.environ, env), patch.object(shim, 'OAUTH_CHAOS_HOME', self.root / 'oauth'), \
+                patch.object(shim, '_auth_home_supported', True), \
                 patch.object(shim, 'CLAUDE_CONFIG_DIR', self.claude), \
                 patch.object(imported_home, 'require_runtime_trust'), patch.object(shim.subprocess, 'run') as run:
             shim.run_chaos('test-model', 30, 'request', True, provider=provider, auth_mode=mode, resume_id=resume)
