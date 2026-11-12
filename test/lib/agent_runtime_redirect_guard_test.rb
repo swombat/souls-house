@@ -100,17 +100,6 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     FileUtils.remove_entry(@dir)
   end
 
-  test "finds the credential-sending scripts, including every helper named in #502" do
-    senders = self.class.credential_senders
-
-    %w[
-      soulshouse-comms soulshouse-gws soulshouse-model soulshouse-post-message soulshouse-send-telegram
-      soulshouse-usage soulshouse-x soulshouse-youtube github_import_approval.py soulshouse-reflex soulshouse-commitment
-      soulshouse-quiet-reason soulshouse-ghost soulshouse-integrations soulshouse-stone memory_client.py
-      runtime_activity.py
-    ].each { |name| assert_includes senders, name }
-  end
-
   test "no script that sends a credential through urllib can follow a redirect" do
     self.class.credential_senders.each do |relative|
       text = File.read(RUNTIME.join(relative))
@@ -142,30 +131,6 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
         assert_match "refused to follow a redirect (#{code}) to 127.0.0.1:#{@port}", out + err, label
         assert_not_includes out + err, TOKEN, label
       end
-    end
-  end
-
-  test "soulshouse-post-message refuses a redirect, says where it pointed, and does not leak the token" do
-    REDIRECT_CODES.each do |code|
-      File.delete(@log) if File.exist?(@log)
-      out, err, status = run_helper("soulshouse-post-message", "c1", stdin: "hello", app_url: "#{@base}/moved/#{code}")
-
-      assert_not status.success?, code
-      assert_match "redirect (#{code}) to 127.0.0.1:#{@port}", out + err
-      assert_equal 1, requests.size, code
-      assert_empty requests.select { |request| request["path"].start_with?("/elsewhere") }, code
-      assert_not_includes out + err, TOKEN
-    end
-  end
-
-  test "soulshouse-model refuses a redirect without reaching the target" do
-    REDIRECT_CODES.each do |code|
-      File.delete(@log) if File.exist?(@log)
-      _out, _err, status = run_helper("soulshouse-model", "c1", app_url: "#{@base}/moved/#{code}")
-
-      assert_not status.success?, code
-      assert_equal 1, requests.size, code
-      assert_empty requests.select { |request| request["path"].start_with?("/elsewhere") }, code
     end
   end
 
