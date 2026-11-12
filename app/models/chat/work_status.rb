@@ -4,6 +4,9 @@ module Chat::WorkStatus
 
   STATES = %w[working ready_for_review needs_input blocked completed idle].freeze
   WAITING_STATES = %w[needs_input blocked].freeze
+  # "Needs me": only what the person can move forward themselves. Waiting on
+  # others and blocked work stay under their own names, never in this count.
+  NEEDS_ME_STATES = %w[needs_input ready_for_review].freeze
   REASON_LIMIT = 1000
 
   class Invalid < StandardError; end
@@ -38,6 +41,7 @@ module Chat::WorkStatus
 
     def filter_work_status(scope, state:, replied:)
       scope = scope.where(work_status: nil) if state == "untracked"
+      scope = scope.where(work_status: NEEDS_ME_STATES) if state == "needs_me"
       scope = scope.where(work_status: state) if STATES.include?(state)
       replied == "true" ? scope.work_replied : scope
     end

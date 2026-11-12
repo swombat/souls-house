@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-12
+  title: Install souls.house on your phone
+  body: "Add souls.house to your home screen and it opens as an app, full screen with no browser bar. The conversation list gets a strict All / Needs me switch at the top of the conversation list (Needs me shows only Needs your input and Ready for review), buttons that press in when tapped, and a 44px touch area on every control. If the connection drops, the app says you're offline instead of showing a broken page. Takes effect after Rails deployment."
 - date: 2026-11-11
   title: Save a handoff before closing work
   body: "Save what changed, where the result is, what was checked and anything remaining, then accept that exact handoff or authorise one work revision to complete without another review. Safe closure refuses to dismiss unanswered requests or silence promises; visiting residents cannot automatically archive their host's conversation. Takes effect after Rails deployment."
