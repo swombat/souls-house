@@ -79,19 +79,21 @@ class HomeTest(unittest.TestCase):
     def test_openai_oauth_uses_subscription_login_and_actual_home_trust(self):
         oauth_home = self.root / 'oauth-runtime'
         for resume in (None, 'existing-session'):
-            with self.subTest(resume=resume), patch.dict(os.environ, {'OPENAI_API_KEY':'must-not-leak'}), patch.object(shim, 'OAUTH_CHAOS_HOME', oauth_home), patch.object(imported_home, 'require_runtime_trust') as trust, patch.object(shim.subprocess, 'run') as run:
+            with self.subTest(resume=resume), patch.dict(os.environ, {'OPENAI_API_KEY':'must-not-leak'}), patch.object(shim, 'OAUTH_CHAOS_HOME', oauth_home), patch.object(shim, '_auth_home_supported', True), patch.object(imported_home, 'require_runtime_trust') as trust, patch.object(shim.subprocess, 'run') as run:
                 shim.run_chaos('test-model', 30, 'request', True, provider='openai', auth_mode='oauth_account', resume_id=resume)
                 args = run.call_args.args[0]
                 self.assertIn('forced_login_method="chatgpt"', args)
                 self.assertNotIn('forced_login_method="api"', args)
-                self.assertEqual(run.call_args.kwargs['env']['CHAOS_HOME'], str(oauth_home))
+                # One home: only the credentials come from oauth-runtime.
+                self.assertEqual(run.call_args.kwargs['env']['CHAOS_HOME'], str(shim.CHAOS_HOME))
+                self.assertEqual(run.call_args.kwargs['env']['CHAOS_AUTH_HOME'], str(oauth_home))
                 self.assertNotIn('OPENAI_API_KEY', run.call_args.kwargs['env'])
-                trust.assert_called_once_with(self.root, oauth_home)
+                trust.assert_called_once_with(self.root, shim.CHAOS_HOME)
                 if resume:
                     self.assertEqual(args[args.index('resume')+1], resume)
 
     def test_oauth_untrusted_home_does_not_start_model(self):
-        with patch.object(shim, 'OAUTH_CHAOS_HOME', self.root/'oauth-runtime'), patch.object(shim.subprocess, 'run') as run:
+        with patch.object(shim, 'OAUTH_CHAOS_HOME', self.root/'oauth-runtime'), patch.object(shim, '_auth_home_supported', True), patch.object(shim.subprocess, 'run') as run:
             with self.assertRaises(ValueError):
                 shim.run_chaos('test-model', 30, 'request', True, provider='openai', auth_mode='oauth_account')
             run.assert_not_called()

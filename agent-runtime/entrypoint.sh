@@ -66,10 +66,9 @@ gosu agent sh -c 'soulshouse-tailnet boot >>"$HOME/state/tailnet-boot.log" 2>&1'
 # Migrate before provider/account commands, journald, or incoming work. Keep
 # preferences in the database; config.toml is bootstrap-only in Chaos 47.6.
 export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
-# A house resident's subscription home is created here, not on first
-# subscription use, so settings, hooks and workspace trust below are all
-# provisioned in it before its first turn (#636 review). Imported homes keep
-# their own reviewed oauth-runtime step.
+# Subscription credentials live in oauth-runtime (CHAOS_AUTH_HOME, which Chaos
+# requires to exist); sessions, settings, hooks and trust are in CHAOS_HOME for
+# every run. Imported homes create it on their first subscription run.
 if [ "$HOME_CLASS" != "imported" ]; then
     mkdir -p "$CHAOS_HOME/oauth-runtime"
 fi

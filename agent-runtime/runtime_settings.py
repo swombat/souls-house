@@ -190,11 +190,9 @@ def prepare(home, run=command):
 
 def main():
     home = Path(os.environ.get("CHAOS_HOME", str(Path.home() / ".chaos")))
+    # One home for every run. Subscription credentials sit in oauth-runtime
+    # (CHAOS_AUTH_HOME), which holds no settings of its own.
     prepare(home)
-    # Existing account-OAuth sessions have a separate settings/runtime home.
-    oauth = home / "oauth-runtime"
-    if oauth.is_dir():
-        prepare(oauth)
     print("Chaos database settings ready")
 
 

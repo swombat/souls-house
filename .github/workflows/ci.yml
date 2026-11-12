@@ -159,6 +159,21 @@ jobs:
     name: Python runtime tests
     runs-on: ubuntu-26.04
     timeout-minutes: 10
+    services:
+      postgres:
+        # Same image as the Rails jobs; its contrib modules include dblink,
+        # which ops/chaos-home/oauth_store_merge.sql needs.
+        image: mirror.gcr.io/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -180,6 +195,17 @@ jobs:
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s test/runtime -p '*_test.py'
+      - name: Operator Chaos-home merge against PostgreSQL
+        if: ${{ !cancelled() }}
+        # A missing server is a failure here, not a skip.
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          HOUSE_MERGE_TEST_REQUIRE_PG: '1'
+        run: |
+          command -v psql || { sudo apt-get update -q && sudo apt-get install -yq postgresql-client; }
+          python3 -m unittest discover -s test/ops -p '*_test.py'
       - name: Resident capability discovery contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s agent-runtime/runtime_capability -p 'test_*.py'

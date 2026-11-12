@@ -154,7 +154,7 @@ class HouseTrustTest(unittest.TestCase):
         self.db.unlink()
         self.assertIn('skipped', s.ensure_house_trust(self.home, self.project))
 
-    def test_entrypoint_creates_house_oauth_home_before_provisioning(self):
+    def test_entrypoint_creates_the_house_auth_dir_before_provisioning(self):
         text = (Path(s.__file__).with_name('entrypoint.sh')).read_text()
         mk = text.index('mkdir -p "$CHAOS_HOME/oauth-runtime"')
         self.assertIn('if [ "$HOME_CLASS" != "imported" ]; then', text[mk - 120:mk])
@@ -225,19 +225,19 @@ class RealRuntimeHooksTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'CHAOS_BIN': os.environ['CHAOS_TEST_BIN']}):
             home, project = Path(td) / 'home', Path(td) / 'repo'
             (project / '.chaos').mkdir(parents=True)
-            oauth = home / 'oauth-runtime'
-            oauth.mkdir(parents=True)
+            home.mkdir(parents=True)
             source = home / 'hooks.json'
             source.write_text(json.dumps({'_note': 'resident bookkeeping', 'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': 'true'}]}]}}))
-            config.prepare(oauth)
-            s.prepare(oauth, project, global_source=source)
-            self.assertEqual(json.loads((oauth / s.MANIFEST).read_text())['status'], 'complete')
-            rows = json.loads(s.command(oauth, project, 'list'))
+            config.prepare(home)
+            s.prepare(home, project)
+            self.assertEqual(json.loads((home / s.MANIFEST).read_text())['status'], 'complete')
+            rows = json.loads(s.command(home, project, 'list'))
             self.assertEqual([r['enabled'] for r in rows if r['id'].startswith('house-global-v1-')], [True])
     def test_fresh_birth_then_first_subscription_turn_has_trusted_hooks(self):
         """No oauth-runtime before boot. Boot as the entrypoint does for a house
-        home; the subscription home the shim then selects already has settings,
-        the project hook and trust, before its first turn."""
+        home; a subscription run uses the same home (oauth-runtime only holds
+        its credentials), which already has settings, the project hook and
+        trust before its first turn, and oauth-runtime gets no store."""
         import os
         import subprocess
         from unittest.mock import patch
@@ -258,9 +258,10 @@ class RealRuntimeHooksTest(unittest.TestCase):
                 s.main()                                   # runtime_hooks.py
                 with patch.object(s.sys, 'argv', ['runtime_hooks.py', '--house-trust']):
                     s.main()
-            oauth = home / 'oauth-runtime'                 # what _oauth_account_env selects
+            oauth = home / 'oauth-runtime'                 # CHAOS_AUTH_HOME only
+            self.assertEqual(sorted(p.name for p in oauth.iterdir()), [])
             with patch.dict(os.environ, {'CHAOS_BIN': os.environ['CHAOS_TEST_BIN']}):
-                rows = json.loads(s.command(oauth, project, 'list'))
+                rows = json.loads(s.command(home, project, 'list'))
             project_rows = [r for r in rows if r['definition'].get('project')]
             self.assertTrue(project_rows)
             for row in project_rows:

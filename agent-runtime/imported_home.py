@@ -257,11 +257,9 @@ def main(argv):
     if argv[1:] == ['--runtime-trust-check']:
         root, _manifest = validate()
         chaos_home = Path(os.environ.get('CHAOS_HOME') or '/home/agent/.chaos')
+        # Subscription runs share this home (CHAOS_AUTH_HOME moves only their
+        # credentials), so this one trust decision covers them too.
         require_runtime_trust(root, chaos_home)
-        if os.environ.get('SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST') == '1' and not (chaos_home / 'oauth-runtime').is_dir():
-            raise ValueError('Trust the imported root in the OAuth runtime before activation')
-        if (chaos_home / 'oauth-runtime').is_dir():
-            require_runtime_trust(root, chaos_home / 'oauth-runtime')
         print('imported runtime trust verified')
         return 0
     if enabled():

@@ -148,9 +148,8 @@ def ensure_house_trust(home, project):
 
 
 def homes():
-    home = Path(os.environ.get('CHAOS_HOME', str(Path.home() / '.chaos')))
-    oauth = home / 'oauth-runtime'
-    return [home] + ([oauth] if oauth.is_dir() else [])
+    # One Chaos home; oauth-runtime holds only subscription credentials.
+    return [Path(os.environ.get('CHAOS_HOME', str(Path.home() / '.chaos')))]
 
 
 def main():
@@ -161,9 +160,6 @@ def main():
         return
     home = Path(os.environ.get('CHAOS_HOME', str(Path.home() / '.chaos')))
     prepare(home, project)
-    oauth = home / 'oauth-runtime'
-    if oauth.is_dir():
-        prepare(oauth, project, global_source=home / 'hooks.json')
     print('Chaos database hooks ready')
 
 
