@@ -15,6 +15,34 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
     @enrollment.enroll!(token:, public_key: key, reported_server_id: server, facts: { "provider_server_id" => server }, nonce: SecureRandom.hex(16), now:)
   end
 
+  test "a Boat enrollment expects a sandbox id; each provider's confirm refuses the other kind" do
+    boat = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "boat", state: "pending")
+    operation = BoatProcurementOperation.create!(agent_placement: boat, requested_by: users(:site_admin_user),
+      public_id: "bpo-test", provider_name: "souls-house-bpo-test", approval_reference: "test", sandbox_size: "small",
+      state: "create_in_flight")
+    enrollment, = RunnerEnrollment.mint!(placement: boat, boat_operation_id: operation.id)
+    assert_equal "boat", enrollment.procurement_kind
+    assert_equal enrollment, operation.runner_enrollment
+    assert_equal @enrollment, @operation.runner_enrollment
+
+    assert_equal :wrong_provider, assert_raises(RunnerEnrollment::Refused) { enrollment.confirm_provider_server!(4242) }.code
+    assert_equal :wrong_provider, assert_raises(RunnerEnrollment::Refused) { @enrollment.confirm_provider_sandbox!("bx_23456789") }.code
+    assert_raises(ActiveRecord::RecordInvalid) { enrollment.confirm_provider_sandbox!("not-a-sandbox-id") }
+    assert_nil enrollment.reload.expected_provider_sandbox_id
+
+    enrollment.confirm_provider_sandbox!("bx_23456789")
+    assert_equal "bx_23456789", enrollment.expected_machine_id
+    assert_equal :provider_server_already_confirmed,
+      assert_raises(RunnerEnrollment::Refused) { enrollment.confirm_provider_sandbox!("bx_33333333") }.code
+    assert_raises(ArgumentError) { RunnerEnrollment.mint!(placement: boat, operation_id: @operation.id, boat_operation_id: operation.id) }
+  end
+
+  test "the database keeps an enrollment one provider's, whatever the model is told" do
+    assert_raises(ActiveRecord::StatementInvalid) do
+      @enrollment.update_columns(expected_provider_sandbox_id: "bx_23456789")
+    end
+  end
+
   test "mint stores only the digest and a 24 hour expiry" do
     assert_equal RunnerEnrollment.digest(@token), @enrollment.token_digest
     assert_not_includes @enrollment.reload.attributes.values.map(&:to_s), @token

@@ -80,13 +80,18 @@ module Api
           result
         end
 
+        # A Hetzner runner reports its server id; a Boat runner its sandbox
+        # id. The enrollment knows which one it expects.
         def reported_server_id
           value = payload.dig("facts", "provider_server_id")
-          value.is_a?(Integer) ? value : nil
+          return value if value.is_a?(Integer)
+
+          sandbox = payload.dig("facts", "provider_sandbox_id")
+          BoatClient.sandbox_id?(sandbox) ? sandbox : nil
         end
 
         FACT_KEYS = %w[
-          provider_server_id docker_version runtime_image_digest disk_total_bytes
+          provider_server_id provider_sandbox_id docker_version runtime_image_digest disk_total_bytes
           disk_free_bytes memory_total_kib uptime_seconds runner_version
         ].freeze
 

@@ -90,7 +90,8 @@ class BoatClient
 
   end
 
-  Sandbox = Data.define(:id, :name, :state, :size, :error, :stopped_at, :data_expired_at, :labels) do
+  Sandbox = Data.define(:id, :name, :state, :size, :error, :stopped_at, :data_expired_at, :labels,
+    :setup_status, :setup_error) do
     def self.from_api(json)
       new(
         id: usable_id(json.fetch("id")),
@@ -100,7 +101,11 @@ class BoatClient
         error: json["error"],
         stopped_at: json["stoppedAt"],
         data_expired_at: json["dataExpiredAt"],
-        labels: json["labels"].is_a?(Hash) ? json["labels"] : {}
+        labels: json["labels"].is_a?(Hash) ? json["labels"] : {},
+        # Outcome of the create-time setupScript: pending, running, done or
+        # failed; nil when the sandbox was created without one.
+        setup_status: json["setupStatus"],
+        setup_error: json["setupError"]
       )
     end
 

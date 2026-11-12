@@ -54,6 +54,10 @@ SIGNATURE_VERSION = "souls-house-runner-v1"
 CONFIG_PATH = "/etc/souls-house-runner/config.json"
 STATE_DIR = "/var/lib/souls-house-runner"
 METADATA_URL = "http://169.254.169.254/hetzner/v1/metadata/instance-id"
+# Written once by the Boat setup script from Boat's reserved BOAT_ID variable;
+# absent on a Hetzner VM. Boat has no metadata service to ask instead.
+BOAT_SANDBOX_ID_PATH = "/etc/souls-house-runner/boat-sandbox-id"
+BOAT_SANDBOX_ID = re.compile(r"\Abx_[23456789abcdefghjkmnpqrstuvwxyz]{8}\Z")
 ENROLL_PATH = "/api/v1/host_runner/enrollment"
 HEARTBEAT_PATH = "/api/v1/host_runner/heartbeat"
 COMMAND_NEXT_PATH = "/api/v1/host_runner/commands/next"
@@ -166,6 +170,15 @@ def provider_server_id(url=METADATA_URL):
         return None
 
 
+def provider_sandbox_id(path=BOAT_SANDBOX_ID_PATH):
+    try:
+        with open(path) as handle:
+            value = handle.read().strip()
+    except OSError:
+        return None
+    return value if BOAT_SANDBOX_ID.match(value) else None
+
+
 def memory_total_kib(path="/proc/meminfo"):
     try:
         with open(path) as handle:
@@ -236,14 +249,18 @@ def chaos_exec_running(proc="/proc"):
     return False
 
 
-def collect_facts(runtime_image=None, server_id_reader=provider_server_id, command_runner=_run, reboot_reader=None):
+def collect_facts(runtime_image=None, server_id_reader=provider_server_id, command_runner=_run, reboot_reader=None,
+                  sandbox_id_reader=provider_sandbox_id):
     require_allowed("report_facts")
+    # A Boat sandbox names itself; only a Hetzner VM asks the metadata service.
+    sandbox_id = sandbox_id_reader()
     disk = shutil.disk_usage("/")
     image_digest = None
     if runtime_image:
         image_digest = command_runner(["docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", runtime_image])
     return {
-        "provider_server_id": server_id_reader(),
+        "provider_server_id": None if sandbox_id else server_id_reader(),
+        "provider_sandbox_id": sandbox_id,
         "docker_version": command_runner(["docker", "version", "--format", "{{.Server.Version}}"]),
         "runtime_image_digest": image_digest,
         "disk_total_bytes": disk.total,
