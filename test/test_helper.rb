@@ -52,12 +52,11 @@ module ActiveSupport
 
     private
 
-    # Ensure that all fixture users have profiles
-    # since fixtures don't trigger callbacks
+    # Fixture users get their profiles from profiles.yml. This covers any user
+    # a non-transactional test committed without one, in a single query when
+    # there are none.
     def ensure_profiles_exist
-      User.find_each do |user|
-        next if user.profile.present?
-
+      User.where.missing(:profile).find_each do |user|
         # Create profile with some test data based on user email
         profile_data = case user.email_address
         when "test@example.com"
