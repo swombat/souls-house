@@ -1,8 +1,10 @@
 require "test_helper"
+require "support/whatsapp_comms_helpers"
 
 class IntegrationPresentationTest < ActiveSupport::TestCase
 
   include ActionCable::TestHelper
+  include WhatsappCommsHelpers
 
   setup do
     @account = accounts(:personal_account)
@@ -15,6 +17,12 @@ class IntegrationPresentationTest < ActiveSupport::TestCase
     assert_marker { @agent.update!(active: false) }
     assert_no_broadcasts(@stream) { @agent.update!(turn_timeout_minutes: 45) }
     assert_no_broadcasts(@stream) { @agent.touch }
+  end
+
+  test "connection names and masked WhatsApp identity refresh presentation" do
+    connection = whatsapp_connection
+    assert_marker { connection.update!(label: "Personal") }
+    assert_marker { connection.update!(external_subject_id: "447700900123") }
   end
 
   test "resident lifecycle refreshes an initially empty list" do

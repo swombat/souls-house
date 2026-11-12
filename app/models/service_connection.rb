@@ -46,6 +46,8 @@ class ServiceConnection < ApplicationRecord
   validates :provider, :management_scope, :credential_kind, :status, presence: true
   validates :management_scope, inclusion: { in: MANAGEMENT_SCOPES }
   validates :status, inclusion: { in: STATUSES }
+  normalizes :label, with: ->(value) { value.strip.presence }
+  validates :label, length: { maximum: 100 }, if: -> { persisted? && will_save_change_to_label? }
   validates :external_subject_id,
             uniqueness: { scope: [ :account_id, :provider ] },
             allow_nil: true,
@@ -75,7 +77,7 @@ class ServiceConnection < ApplicationRecord
   after_destroy :refresh_integration_status
 
   INTEGRATION_STATUS_COLUMNS = %w[
-    account_id provider status label external_identity management_scope
+    account_id provider status label external_identity external_subject_id management_scope
     connected_by_user_id connected_by_agent_id enabled_for_new_agents freely_provisionable
   ].freeze
   # as_connection_json's authority/strategy methods, ConnectionGoogleAuthority,
@@ -108,7 +110,16 @@ class ServiceConnection < ApplicationRecord
   end
 
   def display_label
-    label.presence || external_identity.presence || definition.name
+    label.presence || whatsapp_identity || external_identity.presence ||
+      (provider == "whatsapp" ? "#{definition.name} · #{public_id}" : definition.name)
+  end
+
+  # The connected event stores the phone JID's user part. Never expose the
+  # complete value or guess a phone number from a display name/pairing input.
+  def whatsapp_identity
+    return unless provider == "whatsapp" && external_subject_id.to_s.match?(/\A[0-9]{5,15}\z/)
+
+    "•••• #{external_subject_id.last(4)}"
   end
 
   # "Daniel", or "Lume for Daniel" when a resident set it up.
@@ -652,6 +663,8 @@ class ServiceConnection < ApplicationRecord
       provider_name: definition.name,
       identity: external_identity,
       label: display_label,
+      custom_label: label,
+      whatsapp_identity: whatsapp_identity,
       management_scope: management_scope,
       status: status,
       grant_expires_at: grant_expires_at&.utc&.iso8601,

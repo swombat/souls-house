@@ -10,7 +10,9 @@ const MAX_NAMES = 3;
 // identity the service reported is the account. A Telegram identity reads
 // "Name @handle"; the handle is the account.
 export function connectionTitle(connection) {
-  const identity = (connection.identity || '').trim();
+  const customLabel = (connection.custom_label || '').trim();
+  if (customLabel) return customLabel;
+  const identity = connectionIdentity(connection);
   if (connection.provider === 'google_workspace' && identity) return identity;
 
   const label = (connection.label || '').trim();
@@ -25,10 +27,16 @@ export function connectionTitle(connection) {
   return label || connection.provider_name || connection.provider;
 }
 
+// WhatsApp's safe account hint is supplied by the server; never derive a phone number here.
+export function connectionIdentity(connection) {
+  return ((connection.provider === 'whatsapp' && connection.whatsapp_identity) || connection.identity || '').trim();
+}
+
 // The service in small letters under the title, or null when the title
 // already is exactly the service's name.
 export function serviceLine(connection) {
   const name = (connection.provider_name || '').trim();
+  if (name && connection.custom_label?.trim()) return name;
   if (!name || sameName(name, connectionTitle(connection))) return null;
   return name;
 }
