@@ -15,10 +15,15 @@
 #   written where the runner reads it (Boat has no metadata service); a
 #   missing or malformed BOAT_ID stops the script before anything is
 #   installed, so the runner can never enroll under a guessed identity
-# * no nftables input firewall: the sandbox has no public address of its own
-#   (this key cannot even create host URLs), and Boat's own agent must keep
-#   reaching it. Rails is root-equivalent over the sandbox through the API
-#   key, as it is over a Hetzner VM through the project token.
+# * no nftables input firewall of our own. The sandbox does have an IP;
+#   what protects it is Boat's default ingress filtering (ports are closed
+#   unless published), and Boat's own agent must keep reaching it. Even
+#   with noEnv, the sandbox keeps a sandbox-scoped ASCII_TOKEN that can
+#   publish its own ports, so a process inside the sandbox that can read
+#   that token could open one. This is a property of Boat, not something
+#   this script adds; the live bootstrap proof should record it.
+#   Rails is root-equivalent over the sandbox through the API key, as it is
+#   over a Hetzner VM through the project token.
 module BoatSetupScript
 
   LIMIT = 64 * 1024
