@@ -19,19 +19,22 @@ At approximately **10:10 UTC on 12 November 2026**, a read-only check with the h
 
 Existing VMs are unchanged. No CPX allowlist, credentials, subscription prices or plan mapping has been changed by this comparison.
 
+**Larger births are blocked at the checked stock levels:** the current plans require CX33 or CX43, neither of which is orderable in our allowed locations. Daniel needs to choose an interim response: pause larger births, or explicitly approve an alternative and its price consequence. The current at-cost offers are **$8/$11/$20 per month** (`Billing::Tier::AT_COST_MONTHLY_USD`), costed against CX; substituting CPX32 or CPX42 at €30–70/month would leave the corresponding larger offers below provider cost.
+
 ### Current conventional-VM costs
 
 These are **provider costs, not house subscription prices**, before VAT, inference and optional extras. IPv4 is included in the Hetzner totals below. Dollar prices remain in their billing currency; CPU counts are not performance benchmarks.
 
-| Provider / size               | vCPU / RAM / included disk |                   Monthly price | Important qualification                                                     |
-| ----------------------------- | -------------------------- | ------------------------------: | --------------------------------------------------------------------------- |
-| Hetzner CX23                  | 2 / 4 GB / 40 GB           |                           €5.99 | Available in two checked EU locations, not a reliable larger-size fallback  |
-| Hetzner CPX22                 | 2 / 4 GB / 80 GB           | €16.99 Helsinki; €19.99 Germany | Roughly 2.8–3.3 times the old small-VM rental, with twice the disk          |
-| Hetzner CPX32                 | 4 / 8 GB / 160 GB          | €30.49 Helsinki; €35.99 Germany | Available at the check                                                      |
-| Hetzner CPX42                 | 8 / 16 GB / 320 GB         | €59.49 Helsinki; €69.99 Germany | Available at the check                                                      |
-| Vultr regular Cloud Compute   | 2 / 4 GB / 80 GB           |                             $20 | Fresh public plan API; region stock and our integration not tested          |
-| Akamai / Linode shared CPU    | 2 / 4 GB / 80 GB           |                             $24 | Fresh public plan API; no demonstrated price advantage over CPX in Helsinki |
-| AWS Lightsail Linux with IPv4 | 2 / 4 GB / 80 GB           |                             $24 | Still bills while stopped                                                   |
+| Provider / size               | vCPU / RAM / included disk |                   Monthly price | Important qualification                                                         |
+| ----------------------------- | -------------------------- | ------------------------------: | ------------------------------------------------------------------------------- |
+| Hetzner CX23                  | 2 / 4 GB / 40 GB           |                           €5.99 | Available in two checked EU locations, not a reliable larger-size fallback      |
+| Hetzner CPX12                 | 1 / 2 GB / 40 GB           |  €9.99 Helsinki; €11.99 Germany | Available, but half CX23's CPU/RAM; not an equivalent smallest-plan replacement |
+| Hetzner CPX22                 | 2 / 4 GB / 80 GB           | €16.99 Helsinki; €19.99 Germany | Roughly 2.8–3.3 times the old small-VM rental, with twice the disk              |
+| Hetzner CPX32                 | 4 / 8 GB / 160 GB          | €30.49 Helsinki; €35.99 Germany | Available at the check                                                          |
+| Hetzner CPX42                 | 8 / 16 GB / 320 GB         | €59.49 Helsinki; €69.99 Germany | Available at the check                                                          |
+| Vultr regular Cloud Compute   | 2 / 4 GB / 80 GB           |                             $20 | Fresh public plan API; region stock and our integration not tested              |
+| Akamai / Linode shared CPU    | 2 / 4 GB / 80 GB           |                             $24 | Fresh public plan API; no demonstrated price advantage over CPX in Helsinki     |
+| AWS Lightsail Linux with IPv4 | 2 / 4 GB / 80 GB           |                             $24 | Still bills while stopped                                                       |
 
 Vultr's checked 8 GB/160 GB and 16 GB/320 GB plans cost **$40 and $80**. Linode's cost **$48 and $96**. Lightsail's corresponding bundles are **$44 for 2 vCPU/8 GB/160 GB** and **$84 for 4 vCPU/16 GB/320 GB**; those are not matching CPU allocations.
 
@@ -53,7 +56,7 @@ Fresh Boat documentation still lists **2 vCPU/4 GB/51 GB at $0.018/hour**. At 73
 
 The previous two-resident activity reconstruction below remains a **7 November observation**, not a new simulation. Re-expressing its rounded one-hour-timeout result at the new exchange rate gives about **€291/month for 40 small VMs**, versus **€679.60 for 40 Helsinki CPX22s** or **€799.60 in Germany**. That excludes start overages, recovery overhead and extras, as before. The old statement that an hour's idle grace destroys the saving was true against CX23, **not against CPX22**.
 
-Boat is therefore worth reconsidering for small homes, even without aggressive sleeping. But **51 GB of user disk is not an 80 GB CPX22 disk**. Its 8 GB RAM size also has only 51 GB of user disk; the 16 GB size has 111 GB. A 251 GB workspace requires the $0.20/hour size: **$146/month at full use**, not the small-machine price. We have not established an independently expandable disk option.
+Boat is therefore worth reconsidering for small homes, even without aggressive sleeping. Its **51 GB user disk is larger than the 40 GB CX23 homes it would replace**, though smaller than CPX22's 80 GB. The disk constraint chiefly affects larger and development homes: its 8 GB RAM size also has only 51 GB of user disk; the 16 GB size has 111 GB. A 251 GB workspace requires the $0.20/hour size: **$146/month at full use**, not the small-machine price. We have not established an independently expandable disk option.
 
 The lifecycle constraints still matter. After the short same-machine grace, resume is a fresh boot with selected disk state restored, not guaranteed preservation of RAM or running processes. Docker build caches and some tool caches are excluded unless deliberately relocated. Long absence needs a saved snapshot beyond the ordinary minimum 14-day stopped retention. An integration must recover services, scheduled work and resident readiness, not merely receive an HTTP “ready” response. No Boat pilot or purchase has been made.
 
@@ -75,7 +78,7 @@ Moving a large development workspace to another host also does not fix unbounded
 
 ### Recommendation, not an approved migration
 
-1. **Do not replace CX with CPX by default yet.** Keep using verified available CX capacity where appropriate; do not silently downsize CPU/RAM or increase provider spend.
+1. **Do not replace CX with CPX by default yet.** Keep using verified available CX23 capacity for small births where appropriate. Larger births remain blocked pending an explicit interim choice and pricing decision; do not silently downsize CPU/RAM or increase provider spend.
 2. **Reconsider Boat for small homes**, because the old financial rejection no longer holds against CPX. A disposable compatibility test is the next useful evidence, not moving a resident first.
 3. **Keep OVH on the conventional-VM shortlist**, conditional on a real Linux quote and acceptable region stock. Vultr is a plausible conventional fallback, but its price is close to CPX, not a transformative saving.
 4. **Treat large development homes separately.** Compare a smaller VM plus storage with a properly costed dedicated pool, rather than extrapolating the smallest sandbox's price.
