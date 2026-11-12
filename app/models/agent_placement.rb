@@ -15,6 +15,8 @@ class AgentPlacement < ApplicationRecord
   KINDS = %w[birth archive_import github_import migration].freeze
   # Kinds seeded per role from AgentImportStage rows.
   STAGED_ROLE_KINDS = %w[archive_import migration].freeze
+  # A Boat sandbox's power, as far as the house has evidence (BoatPower).
+  POWER_STATES = %w[awake stopping stopped waking].freeze
 
   belongs_to :agent, inverse_of: :placement
   # Who created the resident whose birth admitted this placement (#246).
@@ -47,9 +49,18 @@ class AgentPlacement < ApplicationRecord
   validates :provider_server_id, presence: true, if: -> { backend == "hetzner_cloud" && state == "ready" }
   validates :provider_sandbox_id, presence: true, if: -> { backend == "boat" && state == "ready" }
   validate :runtime_endpoint_is_https
+  validates :power_state, inclusion: { in: POWER_STATES }, if: :boat?
+  validates :power_state, absence: true, unless: :boat?
+
+  # A new Boat placement starts awake; nothing else has a power state.
+  before_validation(if: :new_record?) { self.power_state = boat? ? (power_state || "awake") : nil }
 
   def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
   def boat? = backend == "boat"
+  # A command is waiting for this Boat placement's runner to be awake.
+  def wake_pending? = boat? && wake_request_version > wake_satisfied_version
+  # Every stop is off for this placement until an operator clears it.
+  def power_review? = power_review_at.present?
   def staged? = state == "staged"
   def migration? = backend == "hetzner_cloud" && kind == "migration"
   def cleanup_requested? = cleanup_requested_at.present?

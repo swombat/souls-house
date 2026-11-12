@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_12_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -311,15 +311,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_190000) do
     t.datetime "house_runtime_ready_at"
     t.jsonb "carry"
     t.string "provider_sandbox_id"
+    t.string "power_state"
+    t.integer "power_epoch", default: 0, null: false
+    t.integer "wake_request_version", default: 0, null: false
+    t.integer "wake_confirmed_version", default: 0, null: false
+    t.integer "wake_satisfied_version", default: 0, null: false
+    t.datetime "stop_sent_at"
+    t.string "stop_id"
+    t.integer "stop_epoch"
+    t.datetime "power_changed_at"
+    t.datetime "power_review_at"
+    t.string "power_review_reason"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_sandbox_id"], name: "index_agent_placements_on_provider_sandbox_id", unique: true, where: "(provider_sandbox_id IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
     t.check_constraint "kind IS NULL OR (kind::text = ANY (ARRAY['birth'::character varying::text, 'archive_import'::character varying::text, 'github_import'::character varying::text, 'migration'::character varying::text]))", name: "agent_placements_kind"
+    t.check_constraint "power_state IS NULL OR (power_state::text = ANY (ARRAY['awake'::character varying, 'stopping'::character varying, 'stopped'::character varying, 'waking'::character varying]::text[]))", name: "agent_placements_power_state"
+    t.check_constraint "power_state IS NULL OR backend::text = 'boat'::text", name: "agent_placements_power_state_boat_only"
     t.check_constraint "provider_sandbox_id IS NULL OR provider_server_id IS NULL", name: "agent_placements_one_provider_id"
     t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "agent_placements_sandbox_id_shape"
     t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
+    t.check_constraint "stop_sent_at IS NULL OR power_state IS NOT NULL", name: "agent_placements_stop_sent_boat_only"
+    t.check_constraint "wake_satisfied_version <= wake_confirmed_version AND wake_confirmed_version <= wake_request_version", name: "agent_placements_wake_versions"
   end
 
   create_table "agent_runtime_attempts", force: :cascade do |t|
@@ -2809,7 +2824,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_190000) do
     t.check_constraint "expected_provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "runner_enrollments_sandbox_id_shape"
     t.check_constraint "expected_provider_server_id > 0", name: "runner_enrollments_positive_server_id"
     t.check_constraint "procurement_kind::text = 'boat'::text AND procurement_operation_id IS NULL AND expected_provider_server_id IS NULL OR procurement_kind::text = 'hetzner_cloud'::text AND boat_procurement_operation_id IS NULL AND expected_provider_sandbox_id IS NULL", name: "runner_enrollments_one_provider"
-    t.check_constraint "procurement_kind::text = ANY (ARRAY['hetzner_cloud'::character varying, 'boat'::character varying]::text[])", name: "runner_enrollments_procurement_kind"
+    t.check_constraint "procurement_kind::text = ANY (ARRAY['hetzner_cloud'::character varying::text, 'boat'::character varying::text])", name: "runner_enrollments_procurement_kind"
   end
 
   create_table "runner_request_nonces", force: :cascade do |t|

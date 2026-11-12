@@ -113,6 +113,40 @@ class EnrollTest(unittest.TestCase):
         self.key.public_key().verify(base64.b64decode(headers["x-runner-signature"]), message)
 
 
+class PowerEpochTest(unittest.TestCase):
+    def setUp(self):
+        self.key = Ed25519PrivateKey.generate()
+        runner._POWER_EPOCH["value"] = None
+
+    def tearDown(self):
+        runner._POWER_EPOCH["value"] = None
+
+    def sent_facts(self, seen):
+        return json.loads(seen[-1].data)["facts"]
+
+    def test_stamps_the_epoch_the_house_last_named_on_the_next_heartbeat(self):
+        seen = []
+        runner.heartbeat_once(CONFIG, self.key, {"a": 1}, opener=opener_returning(200, {"status": "ok", "power_epoch": 4}, seen))
+        self.assertNotIn("power_epoch", self.sent_facts(seen))
+        runner.heartbeat_once(CONFIG, self.key, {"a": 1}, opener=opener_returning(200, {"status": "ok"}, seen))
+        self.assertEqual(self.sent_facts(seen)["power_epoch"], 4)
+
+    def test_ignores_a_malformed_or_refused_epoch(self):
+        seen = []
+        for status, payload in [(200, {"power_epoch": "4"}), (200, {"power_epoch": True}), (200, {"power_epoch": -1}),
+                                (409, {"power_epoch": 9})]:
+            runner.heartbeat_once(CONFIG, self.key, {}, opener=opener_returning(status, payload, seen))
+        runner.heartbeat_once(CONFIG, self.key, {}, opener=opener_returning(200, {}, seen))
+        self.assertNotIn("power_epoch", self.sent_facts(seen))
+
+    def test_a_failed_heartbeat_keeps_the_last_epoch(self):
+        seen = []
+        runner.heartbeat_once(CONFIG, self.key, {}, opener=opener_returning(200, {"power_epoch": 2}, seen))
+        self.assertIsNone(runner.heartbeat_once(CONFIG, self.key, {}, opener=failing_opener))
+        runner.heartbeat_once(CONFIG, self.key, {}, opener=opener_returning(200, {}, seen))
+        self.assertEqual(self.sent_facts(seen)["power_epoch"], 2)
+
+
 class MainLoopTest(unittest.TestCase):
     def run_main(self, outcomes):
         state = tempfile.mkdtemp()

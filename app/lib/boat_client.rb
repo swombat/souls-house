@@ -17,9 +17,13 @@
 # * labels (managed, placement, operation) support discovery, not proof
 # * stop, resume and delete check that the sandbox is managed by this house
 #   and belongs to the expected placement before sending anything
-# * Boat has no idle detection: auto-stop is a lifetime counted from create
-#   or resume. The house decides when a resident is idle and calls stop; the
-#   lifetime here is only a backstop
+# * Boat has no idle detection: its auto-stop is a lifetime counted from
+#   create or resume, which would stop a busy resident. Create and resume
+#   send ttlSeconds: null, which disables it; only the house stops a box
+#   (BoatPower), and only under its stop protocol
+# * a stop cannot be fenced (no idempotency key, no conditional form), so
+#   the client reports what Boat answered and BoatPower reads the box before
+#   trusting any outcome. force is never sent
 class BoatClient
 
   BASE_URL = "https://boat.dev/api/v1".freeze
@@ -35,6 +39,13 @@ class BoatClient
   TRANSITIONAL_STATES = %w[init provisioning provisioned cloning archiving].freeze
   AWAKE_STATES = %w[ready idle running].freeze
   STOPPED_STATE = "archived".freeze
+  # A stop operation's documented statuses. pending and failing are live:
+  # Boat retries a failing stop until the sandbox archives.
+  STOP_STATUSES = %w[pending failing completed superseded].freeze
+  LIVE_STOP_STATUSES = %w[pending failing].freeze
+  # Boat documents stop ids only by example (stop_3f9a1c2e7b4d5a60); this
+  # bounds what may go into a request path.
+  STOP_ID = /\Astop_[0-9a-z]{1,64}\z/
   RETRYABLE_CODES = %w[rate_limited idempotency_in_progress sandbox_direct_failed unavailable].freeze
   # Boat's documented capacity answers: 503 no_ready_machine / out_of_capacity
   # (nothing started), 429 rate_limited / limit_reached / member_limit_reached
@@ -44,12 +55,13 @@ class BoatClient
 
   class Error < StandardError
 
-    attr_reader :status, :code
+    attr_reader :status, :code, :retry_after
 
-    def initialize(message, status: nil, code: nil)
+    def initialize(message, status: nil, code: nil, retry_after: nil)
       super(message)
       @status = status
       @code = code
+      @retry_after = retry_after
     end
 
     def retryable?
@@ -81,6 +93,10 @@ class BoatClient
 
   class IncompleteListing < Error; end
 
+  # 409 sandbox_stopping: a stop holds the machine and this resume cannot
+  # take it over. Retry after retry_after seconds.
+  class SandboxStopping < Error; end
+
   # The create may or may not have made a sandbox. Unlike Hetzner, a retry
   # with the same Idempotency-Key and body is safe; a retry without them is
   # not, so this stays non-retryable here and the operation layer decides.
@@ -90,8 +106,38 @@ class BoatClient
 
   end
 
+  # One stop operation. requested_at is null on the sandbox once the stop
+  # has ended; read by id (find_stop) it is kept.
+  Stop = Data.define(:id, :status, :requested_at, :ended_at, :forced) do
+    def self.from_api(json)
+      return nil unless json.is_a?(Hash)
+      raise KeyError, "stop id is missing or malformed" unless BoatClient.stop_id?(json["id"])
+      raise KeyError, "stop status is not documented" unless STOP_STATUSES.include?(json["status"])
+
+      new(
+        id: json["id"], status: json["status"],
+        requested_at: time(json["requestedAt"]), ended_at: time(json["endedAt"]),
+        forced: json["forced"] == true
+      )
+    end
+
+    def self.time(value)
+      value.is_a?(String) ? Time.iso8601(value) : nil
+    rescue ArgumentError
+      raise KeyError, "stop time is malformed"
+    end
+
+    def live? = LIVE_STOP_STATUSES.include?(status)
+    def completed? = status == "completed"
+    def superseded? = status == "superseded"
+  end
+
+  # What a stop request got back: the stop Boat says it is working on (on a
+  # stopped sandbox, the last stop, which may be an old one).
+  StopAccepted = Data.define(:sandbox_id, :stop, :already_stopped)
+
   Sandbox = Data.define(:id, :name, :state, :size, :error, :stopped_at, :data_expired_at, :labels,
-    :setup_status, :setup_error) do
+    :setup_status, :setup_error, :stop, :ttl_seconds) do
     def self.from_api(json)
       new(
         id: usable_id(json.fetch("id")),
@@ -105,7 +151,10 @@ class BoatClient
         # Outcome of the create-time setupScript: pending, running, done or
         # failed; nil when the sandbox was created without one.
         setup_status: json["setupStatus"],
-        setup_error: json["setupError"]
+        setup_error: json["setupError"],
+        # The last stop requested, or nil if this sandbox was never stopped.
+        stop: Stop.from_api(json["stop"]),
+        ttl_seconds: json["ttlSeconds"]
       )
     end
 
@@ -122,6 +171,7 @@ class BoatClient
     def stopped? = state == STOPPED_STATE
     def transitional? = TRANSITIONAL_STATES.include?(state)
     def failed? = state == "error"
+    def live_stop? = stop&.live? || false
   end
 
   # Boat accepted the delete; deletion runs asynchronously as an operation.
@@ -131,6 +181,7 @@ class BoatClient
     :included_hours_remaining, :included_period_end)
 
   def self.sandbox_id?(id) = id.is_a?(String) && id.match?(SANDBOX_ID)
+  def self.stop_id?(id) = id.is_a?(String) && id.match?(STOP_ID)
 
   def self.from_credentials
     config = Rails.application.credentials.boat || {}
@@ -148,8 +199,7 @@ class BoatClient
   # durable public id: the same key with the same arguments returns the same
   # sandbox, never a second one. setup_script runs once the sandbox is ready
   # (it is Boat's only first-boot hook; there is no cloud-init).
-  def create_sandbox(idempotency_key:, name:, placement_id:, operation_id:, size:, setup_script: nil,
-    ttl_seconds: nil, labels: {})
+  def create_sandbox(idempotency_key:, name:, placement_id:, operation_id:, size:, setup_script: nil, labels: {})
     refuse!("an Idempotency-Key is required") if idempotency_key.blank?
     refuse!("size #{size} is not allowed") unless @allowed_sizes.include?(size.to_s)
     refuse!("a placement id is required") if placement_id.blank?
@@ -165,9 +215,9 @@ class BoatClient
       )
     }
     payload[:setupScript] = setup_script if setup_script
-    # Omitted, Boat archives the sandbox after its default TTL (3600 s). The
-    # house runs the idle stop itself; the TTL is only a backstop.
-    payload[:ttlSeconds] = ttl_seconds if ttl_seconds
+    # null disables auto-stop. Omitted, Boat would archive the sandbox an
+    # hour after create whether or not the resident was working.
+    payload[:ttlSeconds] = nil
 
     body = request(:post, "/sandboxes", payload, headers: { "Idempotency-Key" => idempotency_key.to_s })
     # A 2xx whose sandbox has no usable id means Boat may have made one we
@@ -193,16 +243,43 @@ class BoatClient
     list_sandboxes(OPERATION_LABEL => operation_id.to_s)
   end
 
-  # Wakes a stopped sandbox. Resuming one that is already awake is harmless.
+  # Wakes a stopped sandbox, or supersedes a stop still in progress. What
+  # resume does to an awake sandbox is not documented, so callers read the
+  # sandbox first and resume only one that is archived, archiving or holding
+  # a live stop. ttlSeconds: null keeps auto-stop off.
   def resume_sandbox(id, placement_id:)
     guard_owned!(id, placement_id)
-    sandbox_from(request(:post, "/sandboxes/#{path_id(id)}/resume", {}))
+    sandbox_from(request(:post, "/sandboxes/#{path_id(id)}/resume", { ttlSeconds: nil }))
   end
 
-  # Stops and archives a sandbox; the disk is kept. Archiving is not billed.
+  # Asks Boat to stop and archive a sandbox; the disk is saved first. Never
+  # forced. A 202 is a stop in progress (a repeat while one is pending gets
+  # the same id); a 200 means the sandbox was already stopped and the stop
+  # returned is its last one, possibly not this request's.
   def stop_sandbox(id, placement_id:)
     guard_owned!(id, placement_id)
-    sandbox_from(request(:post, "/sandboxes/#{path_id(id)}/stop", {}))
+    body = request(:post, "/sandboxes/#{path_id(id)}/stop", { force: false })
+    stop = Stop.from_api(body["operation"])
+    raise Error.new("Boat stop returned no stop operation", code: "invalid_response") if stop.nil?
+
+    StopAccepted.new(sandbox_id: id, stop:, already_stopped: body["status"] == STOPPED_STATE)
+  rescue KeyError, TypeError
+    raise Error.new("Boat stop returned a malformed stop operation", code: "invalid_response")
+  end
+
+  # Reads one stop by id; unlike the sandbox's copy, it keeps requestedAt.
+  def find_stop(sandbox_id, stop_id)
+    refuse!("malformed stop id") unless self.class.stop_id?(stop_id)
+
+    stop = Stop.from_api(request(:get, "/sandboxes/#{path_id(sandbox_id)}/stops/#{stop_id}")["stop"])
+    raise KeyError, "no stop in the answer" if stop.nil?
+    raise KeyError, "a different stop came back" unless stop.id == stop_id
+
+    stop
+  rescue NotFound
+    nil
+  rescue KeyError, TypeError
+    raise Error.new("Boat returned a malformed stop", code: "invalid_response")
   end
 
   def delete_sandbox(id, placement_id:)
@@ -304,12 +381,15 @@ class BoatClient
     raw = body["code"] || (body["error"].is_a?(Hash) ? body["error"]["code"] : nil)
     code = raw.to_s.match?(/\A[a-z_]{1,64}\z/) ? raw : "http_#{status}"
     message = "Boat #{code} (HTTP #{status})"
+    retry_after = response["Retry-After"].to_s.match?(/\A\d{1,6}\z/) ? response["Retry-After"].to_i : nil
     # Boat documents that a create answered 503 no_ready_machine (or refused
     # for an account limit) made nothing, so it is capacity, not unknown.
-    raise CapacityUnavailable.new(message, status:, code:) if CAPACITY_CODES.include?(code) && [ 429, 503 ].include?(status)
+    if CAPACITY_CODES.include?(code) && [ 429, 503 ].include?(status)
+      raise CapacityUnavailable.new(message, status:, code:, retry_after:)
+    end
     raise CreateOutcomeUnknown.new(message, status:, code: "outcome_unknown") if create && (status >= 500 || status == 408)
 
-    raise error_class(code, status).new(message, status:, code:)
+    raise error_class(code, status).new(message, status:, code:, retry_after:)
   rescue JSON::ParserError
     raise CreateOutcomeUnknown.new("Boat create returned an unreadable response (HTTP #{status})", status:, code: "outcome_unknown") if create
 
@@ -322,6 +402,7 @@ class BoatClient
     return Error unless status.between?(400, 499) && status != 408
     return NotFound if status == 404
     return SnapshotExpired if code == "snapshot_data_expired"
+    return SandboxStopping if status == 409 && code == "sandbox_stopping"
     return CapacityUnavailable if CAPACITY_CODES.include?(code)
 
     Error

@@ -40,6 +40,41 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
     assert_equal %w[identity repo work], @enrollment.reload.last_facts["seed_roles"]
   end
 
+  test "a Hetzner runner is told no power epoch" do
+    enroll!
+    beat
+    assert_not response.parsed_body.key?("power_epoch")
+  end
+
+  test "a Boat runner is told the power epoch, and a heartbeat stamped with it satisfies the waiting wake" do
+    placement = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "boat", state: "ready", provider_sandbox_id: "bx_23456789",
+      power_epoch: 3, wake_request_version: 2, wake_confirmed_version: 2, wake_satisfied_version: 1)
+    enrollment, token = RunnerEnrollment.mint!(placement:)
+    enrollment.update_columns(procurement_kind: "boat") # test-only: stands in for a Boat purchase
+    enrollment.confirm_provider_sandbox!("bx_23456789")
+    enrollment.enroll!(token:, public_key: public_key_b64(@key), reported_server_id: "bx_23456789", facts: {},
+      nonce: SecureRandom.hex(16))
+    send_beat = lambda do |facts|
+      body = JSON.generate(facts: { provider_sandbox_id: "bx_23456789" }.merge(facts))
+      post PATH, params: body, headers: signed_runner_headers(@key, path: PATH, body:, runner_id: enrollment.public_id)
+      assert_response :ok
+    end
+
+    send_beat.call({})
+    assert_equal 3, response.parsed_body["power_epoch"]
+    assert placement.reload.wake_pending?
+
+    send_beat.call(power_epoch: 2)
+    assert placement.reload.wake_pending?, "an older epoch satisfies nothing"
+
+    send_beat.call(power_epoch: "3")
+    assert placement.reload.wake_pending?, "only an integer epoch is kept"
+
+    send_beat.call(power_epoch: 3)
+    assert_not placement.reload.wake_pending?
+    assert_equal 3, enrollment.reload.last_facts["power_epoch"]
+  end
+
   test "the runtime trust check version is kept only as a small integer" do
     enroll!
     [ [ 1, 1 ], [ "1", nil ], [ true, nil ], [ 0, nil ], [ { "v" => 1 }, nil ] ].each do |sent, kept|

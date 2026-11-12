@@ -14,7 +14,11 @@ module Api
           RunnerBundle.offer!(enrollment)
           KernelReboot.observe!(enrollment)
           KernelReboot.offer!(enrollment)
-          render json: { status: "ok" }
+          # A Boat runner stamps the epoch it is told here on its next
+          # heartbeat; that is how a wake is known to have reached it.
+          placement = AgentPlacement.find_by(id: enrollment.agent_placement_id)
+          BoatPower.observe_heartbeat!(placement, facts)
+          render json: { status: "ok" }.merge(BoatPower.heartbeat_answer(placement&.reload))
         end
 
       end

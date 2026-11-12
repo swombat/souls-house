@@ -57,7 +57,7 @@ class BoatProcurementTest < ActiveSupport::TestCase
     @client = FakeClient.new
     @renderer = FakeRenderer.new
     @now = Time.zone.parse("2026-11-12 19:00:00")
-    @config = BoatProcurement::Config.new(rails_url: "https://souls.example", ttl_seconds: 7200)
+    @config = BoatProcurement::Config.new(rails_url: "https://souls.example")
     @placement = AgentPlacement.create!(agent: agents(:research_assistant), backend: "boat", state: "pending")
   end
 
@@ -76,7 +76,8 @@ class BoatProcurementTest < ActiveSupport::TestCase
       BoatClient::OPERATION_LABEL => operation.public_id
     }
     BoatClient::Sandbox.new(**{ id:, name: operation.provider_name, state:, size: "small", error: nil,
-      stopped_at: nil, data_expired_at: nil, labels:, setup_status:, setup_error: nil }.merge(overrides))
+      stopped_at: nil, data_expired_at: nil, labels:, setup_status:, setup_error: nil, stop: nil,
+      ttl_seconds: nil }.merge(overrides))
   end
 
   # Test-only: history is never deleted in the app.
@@ -117,7 +118,7 @@ class BoatProcurementTest < ActiveSupport::TestCase
     assert_equal operation.public_id, create[:idempotency_key]
     assert_equal operation.public_id, create[:operation_id]
     assert_equal @placement.id.to_s, create[:placement_id]
-    assert_equal 7200, create[:ttl_seconds]
+    assert_not create.key?(:ttl_seconds)
     assert_equal "reconciling", operation.reload.state
     assert_equal SANDBOX_ID, operation.provider_sandbox_id
 
