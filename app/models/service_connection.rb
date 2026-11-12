@@ -110,8 +110,14 @@ class ServiceConnection < ApplicationRecord
   end
 
   def display_label
-    label.presence || whatsapp_identity || external_identity.presence ||
+    custom_label || whatsapp_identity || external_identity.presence ||
       (provider == "whatsapp" ? "#{definition.name} · #{public_id}" : definition.name)
+  end
+
+  # Older pairing adapters stored the provider name as a placeholder.
+  # Treat it as automatic without rewriting existing connections.
+  def custom_label
+    label.presence unless label == definition.name
   end
 
   # The connected event stores the phone JID's user part. Never expose the
@@ -663,7 +669,7 @@ class ServiceConnection < ApplicationRecord
       provider_name: definition.name,
       identity: external_identity,
       label: display_label,
-      custom_label: label,
+      custom_label: custom_label,
       whatsapp_identity: whatsapp_identity,
       management_scope: management_scope,
       status: status,

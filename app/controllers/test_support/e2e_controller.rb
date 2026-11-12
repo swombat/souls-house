@@ -649,7 +649,7 @@ module TestSupport
         %w[447700900123 447700900456].each do |subject|
           fixture = whatsapp_fixture(account, primary_user)
           account.service_connections.find_by_public_id!(fixture[:id]).update!(
-            status: "connected", external_subject_id: subject, external_identity: "Sam"
+            status: "connected", label: "WhatsApp", external_subject_id: subject, external_identity: "Sam"
           )
         end
       end

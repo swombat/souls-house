@@ -19,7 +19,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
       params: { service_connection: { label: "  Personal  " } }
     assert_redirected_to account_integrations_path(@account)
     assert_equal "Personal", first.reload.label
-    assert_equal "WhatsApp", second.reload.label
+    assert_nil second.reload.label
 
     patch account_service_connection_path(@account, first.public_id),
       params: { service_connection: { label: "  " } }
@@ -32,7 +32,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     patch account_service_connection_path(@account, connection.public_id),
       params: { service_connection: { label: "x" * 101 } }
     assert_redirected_to account_integrations_path(@account)
-    assert_equal "WhatsApp", connection.reload.label
+    assert_nil connection.reload.label
     get account_integrations_path(@account),
       headers: { "X-Inertia" => "true", "X-Inertia-Version" => InertiaRails.configuration.version }
     assert_response :success
@@ -45,13 +45,13 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     sign_in users(:existing_user)
     patch account_service_connection_path(accounts(:team_account), connection.public_id),
       params: { service_connection: { label: "Not mine" } }
-    assert_equal "WhatsApp", connection.reload.label
+    assert_nil connection.reload.label
 
     sign_in @user
     patch account_service_connection_path(@account, connection.public_id),
       params: { service_connection: { label: "Wrong account" } }
     assert_response :not_found
-    assert_equal "WhatsApp", connection.reload.label
+    assert_nil connection.reload.label
   end
 
   test "creates multiple GitHub repository credentials for the same GitHub user" do

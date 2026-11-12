@@ -23,7 +23,8 @@ test('two WhatsApp connections can be named, reset and safely distinguished', as
       [personal, 'Personal'],
       [work, 'Work'],
     ]) {
-      await row.getByRole('button', { name: 'Show details for WhatsApp', exact: true }).click();
+      await row.getByRole('button', { name: /^Show details/ }).click();
+      await expect(row.getByLabel('Connection name', { exact: true })).toHaveValue('');
       await row.getByLabel('Connection name', { exact: true }).fill(name);
       await row.getByRole('button', { name: 'Save', exact: true }).click();
       await expect(row.getByRole('heading', { name, exact: true })).toBeVisible();

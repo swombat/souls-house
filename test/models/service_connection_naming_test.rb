@@ -5,6 +5,21 @@ class ServiceConnectionNamingTest < ActiveSupport::TestCase
 
   include WhatsappCommsHelpers
 
+  test "new and legacy adapter defaults use the linked account identity" do
+    connection = whatsapp_connection
+    assert_nil connection.label
+    connection.update!(external_subject_id: "447700900123", external_identity: "Sam")
+    assert_nil connection.custom_label
+    assert_equal "•••• 0123", connection.display_label
+    assert_nil connection.as_connection_json(current_user: users(:user_1))[:custom_label]
+    connection.update!(label: "WhatsApp")
+    assert_nil connection.custom_label
+    assert_equal "•••• 0123", connection.display_label
+    assert_nil connection.as_connection_json(current_user: users(:user_1))[:custom_label]
+    connection.update!(external_subject_id: nil, external_identity: nil)
+    assert_equal "WhatsApp · #{connection.public_id}", connection.display_label
+  end
+
   test "names are trimmed, bounded and resettable without changing authority" do
     connection = whatsapp_connection
     revision = connection.credential_revision
