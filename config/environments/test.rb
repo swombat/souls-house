@@ -15,6 +15,13 @@ Rails.application.configure do
   config.active_record.encryption.deterministic_key = "test-deterministic-key-not-for-real-data"
   config.active_record.encryption.key_derivation_salt = "test-salt-not-for-real-data"
 
+  # Rails validates every foreign key in the database after each fixture load,
+  # about half of a load's cost, and non-transactional tests load fixtures
+  # before every test. test/models/fixture_foreign_keys_test.rb runs the same
+  # check once against the loaded fixtures, which are the only rows inserted
+  # with the constraints switched off.
+  config.active_record.verify_foreign_keys_for_fixtures = false
+
   # Eager loading loads your entire application. When running a single test locally,
   # this is usually not necessary, and can slow down your test suite. However, it's
   # recommended that you enable it in continuous integration systems to ensure eager

@@ -1,3 +1,76 @@
-# Profiles are created dynamically in tests when needed
-# Rails fixtures with foreign key constraints are complex to manage
-# Tests should use the User.create! methods which trigger profile creation callbacks
+# One profile per fixture user, with the names ensure_profiles_exist used to
+# create in every test's setup. Those creations ran Profile's after_save
+# callbacks for twelve users before every test, which was most of the
+# per-test floor. users.yml sets explicit ids, so user_id is explicit too.
+
+user_1_profile:
+  user_id: 1
+  first_name: Test
+  last_name: User
+  theme: system
+
+unconfirmed_user_profile:
+  user_id: 2
+  first_name: Test
+  last_name: User
+  theme: system
+
+existing_user_profile:
+  user_id: 3
+  first_name: Existing
+  last_name: User
+  theme: system
+
+needsreset_user_profile:
+  user_id: 4
+  first_name: Test
+  last_name: User
+  theme: system
+
+no_password_user_profile:
+  user_id: 5
+  first_name: Test
+  last_name: User
+  theme: system
+
+site_admin_user_profile:
+  user_id: 6
+  first_name: Admin
+  last_name: User
+  theme: system
+
+regular_user_profile:
+  user_id: 7
+  first_name: Regular
+  last_name: User
+  theme: system
+
+confirmed_user_profile:
+  user_id: 8
+  first_name: Confirmed
+  last_name: User
+  theme: system
+
+owner_profile:
+  user_id: 9
+  first_name: Team
+  last_name: Owner
+  theme: system
+
+admin_profile:
+  user_id: 10
+  first_name: Team
+  last_name: Admin
+  theme: system
+
+member_profile:
+  user_id: 11
+  first_name: Team
+  last_name: Member
+  theme: system
+
+other_member_profile:
+  user_id: 12
+  first_name: Other
+  last_name: Member
+  theme: system
