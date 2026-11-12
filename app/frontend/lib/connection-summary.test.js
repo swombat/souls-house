@@ -3,6 +3,7 @@ import {
   accessSummary,
   attentionLabel,
   connectionTitle,
+  connectionIdentity,
   grantDaysLeft,
   serviceLine,
   startsOpen,
@@ -53,6 +54,31 @@ describe('attentionLabel', () => {
 });
 
 describe('connectionTitle', () => {
+  it('respects explicit custom names for Google and names identical to the service', () => {
+    expect(
+      connectionTitle({ provider: 'google_workspace', identity: 'a@b.c', label: 'Work', custom_label: 'Work' })
+    ).toBe('Work');
+    expect(
+      connectionTitle({ provider: 'whatsapp', provider_name: 'WhatsApp', identity: 'Daniel', custom_label: 'WhatsApp' })
+    ).toBe('WhatsApp');
+    expect(serviceLine({ provider_name: 'WhatsApp', custom_label: 'WhatsApp' })).toBe('WhatsApp');
+  });
+
+  it('uses only the supplied safe WhatsApp hint, falling back to reported identity', () => {
+    const connection = { provider: 'whatsapp', provider_name: 'WhatsApp', label: 'WhatsApp', identity: 'Daniel' };
+    expect(connectionIdentity({ ...connection, whatsapp_identity: 'Daniel (••••1234)' })).toBe('Daniel (••••1234)');
+    expect(connectionTitle({ ...connection, whatsapp_identity: 'Daniel (••••1234)' })).toBe('Daniel (••••1234)');
+    expect(connectionIdentity(connection)).toBe('Daniel');
+    expect(
+      connectionTitle({
+        ...connection,
+        custom_label: '',
+        label: 'Daniel (••••1234)',
+        whatsapp_identity: 'Daniel (••••1234)',
+      })
+    ).toBe('Daniel (••••1234)');
+  });
+
   it('uses the Google identity, and the label otherwise', () => {
     expect(connectionTitle({ provider: 'google_workspace', identity: 'a@b.c', label: 'Google' })).toBe('a@b.c');
     expect(connectionTitle({ provider: 'porkbun', label: 'Porkbun (swombat)' })).toBe('Porkbun (swombat)');

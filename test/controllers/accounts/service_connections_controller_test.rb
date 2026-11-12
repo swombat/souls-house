@@ -1,11 +1,57 @@
 require "test_helper"
+require "support/whatsapp_comms_helpers"
 
 class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTest
+
+  include WhatsappCommsHelpers
 
   setup do
     @user = users(:user_1)
     @account = accounts(:personal_account)
     sign_in @user
+  end
+
+  test "rename targets only the selected connection and clearing restores identity" do
+    first = whatsapp_connection
+    second = whatsapp_connection
+    first.update!(external_subject_id: "447700900123")
+    patch account_service_connection_path(@account, first.public_id),
+      params: { service_connection: { label: "  Personal  " } }
+    assert_redirected_to account_integrations_path(@account)
+    assert_equal "Personal", first.reload.label
+    assert_nil second.reload.label
+
+    patch account_service_connection_path(@account, first.public_id),
+      params: { service_connection: { label: "  " } }
+    assert_nil first.reload.label
+    assert_equal "•••• 0123", first.display_label
+  end
+
+  test "overlong names return Inertia errors and preserve the connection" do
+    connection = whatsapp_connection
+    patch account_service_connection_path(@account, connection.public_id),
+      params: { service_connection: { label: "x" * 101 } }
+    assert_redirected_to account_integrations_path(@account)
+    assert_nil connection.reload.label
+    get account_integrations_path(@account),
+      headers: { "X-Inertia" => "true", "X-Inertia-Version" => InertiaRails.configuration.version }
+    assert_response :success
+    assert_includes response.parsed_body.dig("props", "errors", "label").to_s, "100"
+  end
+
+  test "other members and other accounts cannot rename a personal connection" do
+    connection = whatsapp_connection
+    connection.update!(account: accounts(:team_account))
+    sign_in users(:existing_user)
+    patch account_service_connection_path(accounts(:team_account), connection.public_id),
+      params: { service_connection: { label: "Not mine" } }
+    assert_nil connection.reload.label
+
+    sign_in @user
+    patch account_service_connection_path(@account, connection.public_id),
+      params: { service_connection: { label: "Wrong account" } }
+    assert_response :not_found
+    assert_nil connection.reload.label
   end
 
   test "creates multiple GitHub repository credentials for the same GitHub user" do

@@ -4,18 +4,27 @@
   import { Button } from '$lib/components/shadcn/button';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
+  import ConnectionName from './connection-name.svelte';
   import ConnectionRepositories from './connection-repositories.svelte';
   import ConnectionResidentAccess from './connection-resident-access.svelte';
   import ConnectionTelegramLogin from './connection-telegram-login.svelte';
   import ConnectionTelegramStatus from './connection-telegram-status.svelte';
   import ConnectionWhatsappPairing from './connection-whatsapp-pairing.svelte';
   import ConnectionWhatsappStatus from './connection-whatsapp-status.svelte';
-  import { accessSummary, attentionLabel, connectionTitle, grantDaysLeft, serviceLine } from '$lib/connection-summary';
+  import {
+    accessSummary,
+    attentionLabel,
+    connectionIdentity,
+    connectionTitle,
+    grantDaysLeft,
+    serviceLine,
+  } from '$lib/connection-summary';
   import { submitNativePost } from '$lib/integration-forms';
   import { CaretDown, UsersThree, WarningCircle } from 'phosphor-svelte';
   let { connection, services, account, open = false, onToggle = () => {} } = $props();
   let title = $derived(connectionTitle(connection));
   let service = $derived(serviceLine(connection));
+  let identity = $derived(connectionIdentity(connection));
   let summary = $derived(accessSummary(connection));
   let attention = $derived(attentionLabel(connection));
   // LinkedIn's sign-in ends after 60 days and only a fresh Connect renews it;
@@ -40,6 +49,9 @@
   }
 
   function removeConnection(connection) {
+    const target = [connectionTitle(connection), connection.provider_name, connectionIdentity(connection)]
+      .filter((value, index, values) => value && values.indexOf(value) === index)
+      .join(' — ');
     const warning =
       connection.provider === 'github'
         ? `Disconnect ${connection.label}? This removes the token from residents but does not revoke it on GitHub.`
@@ -59,7 +71,7 @@
                       ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
                       : connection.provider === 'withings'
                         ? `Disconnect ${connection.label}? This removes the house's Withings tokens, but a token a resident already holds can still read your health data until it expires (up to three hours). To revoke access at Withings now, remove the app from your Withings account.`
-                        : `Disconnect ${connection.label}?`;
+                        : `Disconnect ${target}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }
@@ -90,6 +102,9 @@
         <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
         {#if service}
           <p class="truncate text-xs text-muted-foreground" data-testid="connection-service">{service}</p>
+        {/if}
+        {#if identity && identity !== title}
+          <p class="break-words text-xs text-muted-foreground" data-testid="connection-identity">{identity}</p>
         {/if}
       </div>
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -175,6 +190,10 @@
           <p class="text-sm text-muted-foreground sm:text-right">Managed by account admins</p>
         {/if}
       </div>
+
+      {#if connection.can_manage}
+        <ConnectionName {connection} {account} />
+      {/if}
 
       <ConnectionGoogleAuthority {connection} {services} {account} />
 

@@ -309,6 +309,13 @@ export const technicalFeatures = [
     icon: TelegramLogo,
   },
   {
+    key: 'connection-names',
+    title: 'Named integration connections',
+    description:
+      "Name individual connections Personal, Work or whatever helps you recognise them. The provider identity stays visible, and WhatsApp shows the linked number's last four digits when available, including in the disconnect confirmation.",
+    icon: WhatsappLogo,
+  },
+  {
     key: 'google',
     title: 'Google Workspace',
     description:

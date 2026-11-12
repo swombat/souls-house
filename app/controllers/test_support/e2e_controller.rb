@@ -645,6 +645,14 @@ module TestSupport
 
       telegram_fixtures(account, primary_user) if params[:telegram]
       whatsapp = whatsapp_fixture(account, primary_user) if params[:whatsapp]
+      if params[:connection_names]
+        %w[447700900123 447700900456].each do |subject|
+          fixture = whatsapp_fixture(account, primary_user)
+          account.service_connections.find_by_public_id!(fixture[:id]).update!(
+            status: "connected", label: "WhatsApp", external_subject_id: subject, external_identity: "Sam"
+          )
+        end
+      end
 
       github_imports = github_import_fixtures(account, primary_user, run_id) if params[:github_resident_onboarding]
 

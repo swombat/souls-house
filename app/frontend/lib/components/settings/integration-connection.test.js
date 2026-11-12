@@ -2,8 +2,11 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import IntegrationConnection from './integration-connection.svelte';
 import { submitNativePost } from '$lib/integration-forms';
+import { router } from '@inertiajs/svelte';
+import { tick } from 'svelte';
 
 vi.mock('$lib/integration-forms', () => ({ submitNativePost: vi.fn() }));
+vi.mock('@inertiajs/svelte', () => ({ router: { patch: vi.fn(), delete: vi.fn() } }));
 
 const base = {
   id: 'svc_test',
@@ -34,6 +37,7 @@ describe('existing integration permission controls', () => {
   it('shows account integrations read-only to ordinary members', () => {
     mount({ can_manage: false, can_provision: false });
     expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Connection name')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Turn on for new residents automatically')).toBeDisabled();
     expect(screen.queryByLabelText('Let account admins switch this on for residents')).not.toBeInTheDocument();
     for (const control of screen.getAllByRole('switch')) expect(control).toBeDisabled();
@@ -57,6 +61,99 @@ describe('existing integration permission controls', () => {
     expect(screen.getByLabelText('Let account admins switch this on for residents')).toBeEnabled();
     expect(screen.getByRole('switch', { name: /Disable Shared Dropbox/ })).toBeEnabled();
     expect(screen.getByRole('switch', { name: /Enable Shared Dropbox/ })).toBeDisabled();
+  });
+});
+
+describe('connection names', () => {
+  it('edits the raw name, cancels without saving, and limits input to 100 characters', async () => {
+    mount({ can_manage: true, custom_label: 'Work', label: 'Work' });
+    const input = screen.getByLabelText('Connection name');
+    expect(input).toHaveValue('Work');
+    expect(input).toHaveAttribute('maxlength', '100');
+    router.patch.mockClear();
+    await fireEvent.input(input, { target: { value: 'Other' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(input).toHaveValue('Work');
+    expect(router.patch).not.toHaveBeenCalled();
+  });
+
+  it('patches only the chosen connection name and shows server errors without losing the draft', async () => {
+    mount({ can_manage: true, custom_label: null });
+    const input = screen.getByLabelText('Connection name');
+    expect(input).toHaveValue('');
+    await fireEvent.input(input, { target: { value: ' Work phone ' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(router.patch).toHaveBeenLastCalledWith(
+      '/accounts/selected-house/service_connections/svc_test',
+      { service_connection: { label: 'Work phone' } },
+      expect.objectContaining({ preserveScroll: true })
+    );
+    expect(input).toBeDisabled();
+    const options = router.patch.mock.lastCall[2];
+    options.onError({ label: 'Name is too long' });
+    options.onFinish();
+    await tick();
+    expect(screen.getByRole('alert')).toHaveTextContent('Name is too long');
+    expect(input).toHaveValue(' Work phone ');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toBeEnabled();
+  });
+
+  it('sends blank to reset and uses refreshed server props after success', async () => {
+    const view = mount({ can_manage: true, custom_label: 'Work', label: 'Work' });
+    await fireEvent.input(screen.getByLabelText('Connection name'), { target: { value: '   ' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(router.patch.mock.lastCall[1]).toEqual({ service_connection: { label: '' } });
+    const options = router.patch.mock.lastCall[2];
+    await view.rerender({
+      open: true,
+      account: { id: 'selected-house' },
+      services: [],
+      connection: { ...base, can_manage: true, custom_label: null, label: 'Automatic' },
+    });
+    options.onSuccess();
+    options.onFinish();
+    await tick();
+    expect(screen.getByLabelText('Connection name')).toHaveValue('');
+    expect(screen.getByRole('heading', { name: 'Automatic' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('keeps WhatsApp service and masked account identity visible with a custom name', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mount({
+      provider: 'whatsapp',
+      provider_name: 'WhatsApp',
+      can_manage: true,
+      custom_label: 'Work phone',
+      label: 'Work phone',
+      identity: 'Daniel',
+      whatsapp_identity: 'Daniel (••••1234)',
+    });
+    expect(screen.getByRole('heading', { name: 'Work phone' })).toBeInTheDocument();
+    expect(screen.getByTestId('connection-service')).toHaveTextContent('WhatsApp');
+    expect(screen.getByTestId('connection-identity')).toHaveTextContent('Daniel (••••1234)');
+    expect(screen.getByTestId('whatsapp-status')).toHaveTextContent('Daniel (••••1234)');
+    await fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(confirm).toHaveBeenCalledWith('Disconnect Work phone — WhatsApp — Daniel (••••1234)?');
+    confirm.mockRestore();
+  });
+
+  it('shows the safe account hint on collapsed cards without a custom name', () => {
+    render(IntegrationConnection, {
+      account: { id: 'selected-house' },
+      services: [],
+      connection: {
+        ...base,
+        provider: 'whatsapp',
+        provider_name: 'WhatsApp',
+        label: 'WhatsApp',
+        identity: 'Daniel',
+        whatsapp_identity: 'Daniel (••••5678)',
+      },
+    });
+    expect(screen.getByRole('heading', { name: 'Daniel (••••5678)' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Connection name')).not.toBeInTheDocument();
   });
 });
 

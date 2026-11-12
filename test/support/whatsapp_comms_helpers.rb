@@ -5,6 +5,15 @@ require "support/telegram_comms_helpers"
 # TelegramCommsHelpers, and Net::HTTP stubbed to record each request.
 module WhatsappCommsHelpers
 
+  def whatsapp_connection(user: users(:user_1), account: accounts(:personal_account))
+    attributes = Services::Definition.fetch("whatsapp").adapter.connection_attributes(credentials: {}, user:)
+    account.service_connections.create!(
+      connected_by_user: user, provider: "whatsapp", management_scope: "personal", status: "connected",
+      **attributes.slice(:label, :credential_kind, :credential_fingerprint, :credential_metadata),
+      credential_payload_hash: attributes[:credential_payload]
+    )
+  end
+
   def with_whatsapp_connector(url: "https://souls-house-comms-whatsapp:8443", key: "test-command-key",
                               tls: TelegramCommsHelpers::TLS_ENV, status: 200, stub_http: true)
     names = CommsConnector::WHATSAPP_ENV

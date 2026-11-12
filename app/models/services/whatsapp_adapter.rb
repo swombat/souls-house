@@ -22,7 +22,7 @@ module Services
       {
         external_subject_id: nil,
         external_identity: nil,
-        label: definition.name,
+        label: nil,
         status: "pairing",
         credential_kind: "connector",
         credential_fingerprint: credential_fingerprint(secret),

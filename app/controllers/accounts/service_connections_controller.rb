@@ -63,6 +63,9 @@ class Accounts::ServiceConnectionsController < ApplicationController
           enabled_for_new_agents: @connection.enabled_for_new_agents?,
           freely_provisionable: @connection.freely_provisionable?)
     redirect_back fallback_location: account_integrations_path(current_account), notice: "Service connection updated"
+  rescue ActiveRecord::RecordInvalid => error
+    redirect_back_or_to account_integrations_path(current_account),
+      inertia: { errors: error.record.errors.to_hash }
   end
 
   def destroy

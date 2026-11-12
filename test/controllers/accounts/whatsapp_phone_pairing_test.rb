@@ -279,6 +279,7 @@ class Accounts::WhatsappPhonePairingTest < ActionDispatch::IntegrationTest
   end
 
   test "linking clears the code and the phone step, like the QR" do
+    @connection.update!(label: "Personal")
     request_phone!
     receive!(phone_code_event("ABCD2345", Time.current, 150.seconds))
     receive!({ "type" => "status.changed", "status" => "connected", "identity" => { "user_id" => "447700900123", "display_name" => "Ada" } })
@@ -287,6 +288,10 @@ class Accounts::WhatsappPhonePairingTest < ActionDispatch::IntegrationTest
     assert_nil @connection.pairing_phone_code
     assert_nil @connection.pairing_phone_code_expires_at
     assert_empty @connection.phone_pairing_state
+    assert_equal "Personal", @connection.label
+    assert_equal "447700900123", @connection.external_subject_id
+    assert_equal "Ada", @connection.external_identity
+    assert_equal "•••• 0123", @connection.as_connection_json(current_user: @user)[:whatsapp_identity]
   end
 
   test "restarting pairing or disconnecting clears the code and the phone step" do
