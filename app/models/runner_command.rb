@@ -42,16 +42,22 @@ class RunnerCommand < ApplicationRecord
     raise ArgumentError, "unknown command kind: #{kind}" unless KINDS.include?(kind)
     raise ArgumentError, "payload must be a hash" unless payload.is_a?(Hash)
 
-    create!(
-      public_id: SecureRandom.hex(16),
-      runner_enrollment: enrollment,
-      agent_placement: placement,
-      generation: placement.generation,
-      kind:,
-      payload_json: payload.to_json,
-      resident_turn:,
-      seed_role:
-    )
+    transaction do
+      command = create!(
+        public_id: SecureRandom.hex(16),
+        runner_enrollment: enrollment,
+        agent_placement: placement,
+        generation: placement.generation,
+        kind:,
+        payload_json: payload.to_json,
+        resident_turn:,
+        seed_role:
+      )
+      # A Boat box may be asleep: ask for it to be woken in the same
+      # transaction, so a command never waits without a wake request.
+      BoatPower.request_wake!(placement)
+      command
+    end
   end
 
   # Called under the enrollment's row lock. The oldest command that is still

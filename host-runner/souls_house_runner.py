@@ -418,9 +418,22 @@ def enroll_once(config, key, facts, opener=urllib.request.urlopen):
     return "refused"
 
 
+# The Boat power epoch the house last named in a heartbeat answer. Stamped on
+# the next heartbeat so the house knows a wake reached a live runner (a warm
+# Boat resume need not reboot, so boot identity cannot say so). In memory
+# only: after a restart the first answer names it again.
+_POWER_EPOCH = {"value": None}
+
+
 def heartbeat_once(config, key, facts, opener=urllib.request.urlopen):
     require_allowed("heartbeat")
-    status, _ = post(config["rails_url"], HEARTBEAT_PATH, {"facts": facts}, key, config["runner_id"], opener=opener)
+    facts = dict(facts)
+    if _POWER_EPOCH["value"] is not None:
+        facts["power_epoch"] = _POWER_EPOCH["value"]
+    status, body = post(config["rails_url"], HEARTBEAT_PATH, {"facts": facts}, key, config["runner_id"], opener=opener)
+    epoch = body.get("power_epoch") if status == 200 and isinstance(body, dict) else None
+    if isinstance(epoch, int) and not isinstance(epoch, bool) and 0 <= epoch < 2**31:
+        _POWER_EPOCH["value"] = epoch
     return status
 
 

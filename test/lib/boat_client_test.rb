@@ -11,9 +11,14 @@ class BoatClientTest < ActiveSupport::TestCase
     @client = BoatClient.new(token: "synthetic-token", allowed_sizes: %w[small])
   end
 
-  def sandbox_json(id: "bx_23456789", state: "ready", labels: LABELS)
+  def sandbox_json(id: "bx_23456789", state: "ready", labels: LABELS, stop: nil)
     { "id" => id, "name" => "souls-house-bop-1", "state" => state, "type" => "small", "error" => nil,
-      "stoppedAt" => nil, "dataExpiredAt" => nil, "labels" => labels }
+      "stoppedAt" => nil, "dataExpiredAt" => nil, "labels" => labels, "stop" => stop }
+  end
+
+  def stop_json(**overrides)
+    { "id" => "stop_3f9a1c2e7b4d5a60", "status" => "pending", "requestedAt" => "2026-11-12T10:00:00Z",
+      "lastAttemptAt" => nil, "error" => nil, "endedAt" => nil }.merge(overrides.transform_keys(&:to_s))
   end
 
   def create!(**overrides)
@@ -25,16 +30,17 @@ class BoatClientTest < ActiveSupport::TestCase
     stub_request(:get, "#{API}/sandboxes/#{id}").to_return(status: 200, body: { sandbox: sandbox_json(id:, **json) }.to_json)
   end
 
-  test "creates a labelled, no-env sandbox under the operation's idempotency key" do
+  test "creates a labelled, no-env sandbox with auto-stop off under the operation's idempotency key" do
     stub = stub_request(:post, "#{API}/sandboxes")
       .with(headers: { "Authorization" => "Bearer synthetic-token", "Idempotency-Key" => "bop-1" }) do |request|
         body = JSON.parse(request.body)
         body["noEnv"] == true && body["type"] == "small" && !body.key?("size") && body["labels"] == LABELS &&
-          body["setupScript"] == "echo runner" && body["ttlSeconds"] == 1800 && !body.key?("autoStopSeconds")
+          body["setupScript"] == "echo runner" && body.key?("ttlSeconds") && body["ttlSeconds"].nil? &&
+          !body.key?("autoStopSeconds")
       end
       .to_return(status: 202, body: { sandbox: sandbox_json(state: "provisioning") }.to_json)
 
-    sandbox = create!(ttl_seconds: 1800)
+    sandbox = create!
 
     assert_requested stub
     assert_equal "bx_23456789", sandbox.id
@@ -179,12 +185,17 @@ class BoatClientTest < ActiveSupport::TestCase
   test "resume and stop act only on this house's sandbox for the expected placement" do
     stub_find(state: "archived")
     resume = stub_request(:post, "#{API}/sandboxes/bx_23456789/resume")
+      .with { |request| body = JSON.parse(request.body); body.key?("ttlSeconds") && body["ttlSeconds"].nil? }
       .to_return(status: 202, body: { sandbox: sandbox_json(state: "provisioning") }.to_json)
     stop = stub_request(:post, "#{API}/sandboxes/bx_23456789/stop")
-      .to_return(status: 202, body: { sandbox: sandbox_json(state: "archiving") }.to_json)
+      .with { |request| JSON.parse(request.body) == { "force" => false } }
+      .to_return(status: 202, body: { status: "archiving", operation: stop_json, sandbox: sandbox_json(state: "archiving") }.to_json)
 
     assert @client.resume_sandbox("bx_23456789", placement_id: 7).transitional?
-    assert_equal "archiving", @client.stop_sandbox("bx_23456789", placement_id: 7).state
+    accepted = @client.stop_sandbox("bx_23456789", placement_id: 7)
+    assert_equal "stop_3f9a1c2e7b4d5a60", accepted.stop.id
+    assert accepted.stop.live?
+    assert_not accepted.already_stopped
     assert_requested resume
     assert_requested stop
 
@@ -194,6 +205,73 @@ class BoatClientTest < ActiveSupport::TestCase
     assert_raises(BoatClient::Refused) { @client.resume_sandbox("bx_23456789", placement_id: 7) }
     assert_requested resume, times: 1
     assert_requested stop, times: 1
+  end
+
+  test "a stop on a stopped sandbox says so and returns its last stop" do
+    stub_find(state: "archived")
+    stub_request(:post, "#{API}/sandboxes/bx_23456789/stop").to_return(status: 200, body: {
+      status: "archived", operation: stop_json(status: "completed", requestedAt: nil, endedAt: "2026-11-12T10:00:00Z")
+    }.to_json)
+
+    accepted = @client.stop_sandbox("bx_23456789", placement_id: 7)
+
+    assert accepted.already_stopped
+    assert accepted.stop.completed?
+    assert_nil accepted.stop.requested_at
+  end
+
+  test "a stop answer without a well-formed stop operation is an invalid response" do
+    stub_find
+    [ {}, { operation: { id: "stop_1", status: "cancelled" } }, { operation: { id: "../x", status: "pending" } },
+      { operation: stop_json(requestedAt: "yesterday") } ].each do |body|
+      stub_request(:post, "#{API}/sandboxes/bx_23456789/stop").to_return(status: 202, body: body.to_json)
+
+      error = assert_raises(BoatClient::Error) { @client.stop_sandbox("bx_23456789", placement_id: 7) }
+      assert_equal "invalid_response", error.code
+    end
+  end
+
+  test "a sandbox carries its last stop, and pending and failing stops are live" do
+    stub_find(stop: stop_json(status: "failing"))
+    assert @client.find_sandbox("bx_23456789").live_stop?
+
+    stub_find(state: "archived", stop: stop_json(status: "completed", requestedAt: nil))
+    sandbox = @client.find_sandbox("bx_23456789")
+    assert_not sandbox.live_stop?
+    assert sandbox.stop.completed?
+
+    stub_find
+    assert_nil @client.find_sandbox("bx_23456789").stop
+  end
+
+  test "find_stop reads one stop by id, with the requestedAt the sandbox drops" do
+    stub_request(:get, "#{API}/sandboxes/bx_23456789/stops/stop_3f9a1c2e7b4d5a60").to_return(status: 200, body: {
+      ok: true, type: "stop.status", id: "stop_3f9a1c2e7b4d5a60",
+      stop: stop_json(status: "completed", endedAt: "2026-11-12T10:01:00Z")
+    }.to_json)
+
+    stop = @client.find_stop("bx_23456789", "stop_3f9a1c2e7b4d5a60")
+
+    assert_equal Time.iso8601("2026-11-12T10:00:00Z"), stop.requested_at
+    assert stop.completed?
+    assert_raises(BoatClient::Refused) { @client.find_stop("bx_23456789", "../stops") }
+
+    stub_request(:get, "#{API}/sandboxes/bx_23456789/stops/stop_0000000000000000").to_return(status: 404, body: "{}")
+    assert_nil @client.find_stop("bx_23456789", "stop_0000000000000000")
+
+    stub_request(:get, "#{API}/sandboxes/bx_23456789/stops/stop_1111111111111111")
+      .to_return(status: 200, body: { stop: stop_json }.to_json)
+    error = assert_raises(BoatClient::Error) { @client.find_stop("bx_23456789", "stop_1111111111111111") }
+    assert_equal "invalid_response", error.code
+  end
+
+  test "a resume blocked by a stop holding the machine carries Retry-After" do
+    stub_find(state: "archiving")
+    stub_request(:post, "#{API}/sandboxes/bx_23456789/resume")
+      .to_return(status: 409, headers: { "Retry-After" => "20" }, body: { error: { code: "sandbox_stopping" } }.to_json)
+
+    error = assert_raises(BoatClient::SandboxStopping) { @client.resume_sandbox("bx_23456789", placement_id: 7) }
+    assert_equal 20, error.retry_after
   end
 
   test "a resume whose stopped disk has expired says so" do

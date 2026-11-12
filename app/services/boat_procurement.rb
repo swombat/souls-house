@@ -21,10 +21,11 @@ class BoatProcurement
   class NotAuthorized < StandardError; end
   class NotAllowed < StandardError; end
 
-  Config = Data.define(:rails_url, :runner_commands, :sandbox_size, :ttl_seconds) do
-    def initialize(rails_url:, runner_commands: false, sandbox_size: "small", ttl_seconds: nil)
-      super(rails_url:, runner_commands: runner_commands == true, sandbox_size: sandbox_size.presence || "small",
-        ttl_seconds: ttl_seconds.presence&.then { |value| Integer(value) })
+  # No TTL setting: BoatClient always creates with Boat's auto-stop off,
+  # because a lifetime would stop a resident in the middle of work.
+  Config = Data.define(:rails_url, :runner_commands, :sandbox_size) do
+    def initialize(rails_url:, runner_commands: false, sandbox_size: "small")
+      super(rails_url:, runner_commands: runner_commands == true, sandbox_size: sandbox_size.presence || "small")
     end
 
     def self.from_credentials
@@ -32,8 +33,7 @@ class BoatProcurement
       new(
         rails_url: ENV["SOULSHOUSE_DOMAIN"].presence&.then { |domain| "https://#{domain}" },
         runner_commands: settings[:runner_commands] == true,
-        sandbox_size: settings[:sandbox_size].to_s,
-        ttl_seconds: settings[:ttl_seconds]
+        sandbox_size: settings[:sandbox_size].to_s
       )
     end
   end
@@ -127,8 +127,7 @@ class BoatProcurement
         placement_id: operation.agent_placement_id.to_s,
         operation_id: operation.public_id,
         size: operation.sandbox_size,
-        setup_script: script,
-        ttl_seconds: @config.ttl_seconds
+        setup_script: script
       )
     rescue BoatClient::CreateOutcomeUnknown => e
       settle!(operation, "create_in_flight", "unknown", last_error_code: e.code)

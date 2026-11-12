@@ -61,6 +61,9 @@ module Api
           result["home_stats"] = home_stats if home_stats.is_a?(Integer) && home_stats.between?(1, 1000)
           bundle = value["runner_bundle_sha256"]
           result["runner_bundle_sha256"] = bundle if bundle.is_a?(String) && RunnerBundle::DIGEST.match?(bundle)
+          # The Boat power epoch the house last told this runner (BoatPower).
+          epoch = value["power_epoch"]
+          result["power_epoch"] = epoch if epoch.is_a?(Integer) && epoch.between?(0, 2**31 - 1)
           result.merge(kernel_facts(value))
         end
 
