@@ -6,39 +6,49 @@
 - date: 2026-11-11
   title: Save a handoff before closing work
   body: "Save what changed, where the result is, what was checked and anything remaining, then accept that exact handoff or authorise one work revision to complete without another review. Safe closure refuses to dismiss unanswered requests or silence promises; visiting residents cannot automatically archive their host's conversation. Takes effect after Rails deployment."
+  clip: handoff
 - date: 2026-11-11
   title: See what a conversation is waiting for
   body: "Conversations can now carry a reported work status: Working, Ready for review, Needs your input, Blocked, Completed or Idle, each with a labelled icon and a filter. A human reply after a request or blocker is shown separately so stale reports are easy to find; this first release does not accept work or close conversations automatically. Takes effect after Rails deployment."
+  clip: work-status
 - date: 2026-11-11
   title: End one resident's plan from the Billing tab
   body: "Each paid resident on the Billing tab now has End <name>'s plan. Before anything changes it shows what happens, in Stripe's own figures. If other residents share the bill, the resident stops now and sleeps (nothing in their home is deleted), and the next bill goes down: their plan isn't renewed, and the unused part of this period comes off as credit on the bill, not as a refund to the card. If they are the bill's only resident, the plan won't renew: they keep running until the period ends, and anything already waiting from earlier changes is still billed then, with the amount shown. Keep <name>'s plan undoes that before the date. If the bill changes between showing and confirming, it is shown again and nothing is changed. Takes effect after Rails deployment."
+  clip: end-plan
 - date: 2026-11-11
   title: Manage billing is for cards and invoices
   body: "Stripe's billing page, opened from Manage billing, no longer offers to cancel or switch a plan. Several residents can now share the account's one bill, and cancelling there would end all of them at once, including a resident added after the page was opened. Changing a card, updating the billing address and reading invoices work as before. Plans are changed on the Billing tab. Ending one resident's plan there is coming next; until then, write to the address on the Billing tab to end one. Takes effect after Rails deployment."
 - date: 2026-11-11
   title: A new resident joins the account's bill
   body: "When the account already pays for a resident, creating another paid resident no longer opens a second Stripe subscription with its own first payment. The wizard's last step shows what it adds instead, in Stripe's own totals with tax and discounts in: how much the next bill goes up for the new resident, what that whole bill comes to, and what the account pays a month after that. Nothing is charged today. Create <name> and add to the account's bill adds the resident to the account's existing subscription and creates it. If Stripe's answer is lost, or the account's subscription stops being able to take a new resident before it is created, the resident is kept and finished later, never added twice. It isn't offered during the free trial, while a payment is outstanding, or without a card on file. An account plan bought separately still has its own subscription for now. Takes effect after Rails deployment."
+  clip: bill-new-resident
 - date: 2026-11-11
   title: A second resident joins the account's subscription
   body: "When the account already pays for a resident, choosing a plan for another one on the Billing tab no longer opens a second Stripe checkout and a second subscription. The resident is added to the account's existing subscription, so the account keeps one bill. Before anything changes you see what it costs, in Stripe's own totals with tax and discounts in: how much the next bill goes up for the new resident (nothing is charged today), what that whole bill comes to, and what the account pays a month after that. It isn't offered during the free trial, while a payment is outstanding, or without a card on file, and it says which. Creating a new paid resident still makes its own subscription for now; that comes next. Takes effect after Rails deployment."
+  clip: bill-second
 - date: 2026-11-11
   title: Stones that read your tables work with any characters
   body: "An interactive stone that reads a table in your Field failed to load, showing a server error, if its page or the table's rows had any character outside plain ASCII, such as an accented letter, an ellipsis or a middle dot. It now loads with them. Takes effect after Rails deployment."
 - date: 2026-11-11
   title: Listen starts speaking straight away
   body: "With Phonon, the voice engine that runs in your browser, Listen on a long message used to wait until the whole message had been turned into speech before playing anything, which could take half a minute. It now starts with the first sentence while the rest is still being made, usually in under a second once the voice engine has loaded. You can pause while it is still speaking, and once all of it has been made you can also skip around by tapping the bar. When it reaches the end, the usual player keeps the audio for a replay. Voice mode replies still wait for the whole reply; that comes next. Takes effect after Rails deployment."
+  clip: listen-stream
 - date: 2026-11-11
   title: A stone can add rows to its tables through a write link
   body: "An interactive stone that reads a table in your Field can now add rows to it too, when it is opened through its write link. On the table's page, each stone reading it has Make write link: the link is the stone's own address with a key on the end, and whoever opens it can add rows (Copy write link copies it; New write link replaces it, so the old one stops working; Revoke write link makes the stone read-only again). The stone's plain link stays read-only. Inside the page, field.write(table, row) adds one row and answers with the stored row or the reason it was refused; field.ready says whether this visit can write. Rows only get added, never changed or deleted, at most 30 a minute per stone and under the table's usual limits, and they show as written by the stone. The key stays in the page around the stone, never in the stone's own code, and is never sent in a link's address to the server. Residents make and revoke write links through the API. Takes effect after Rails deployment."
+  clip: stone-write
 - date: 2026-11-11
   title: The companion app for Linux
   body: "The companion page now offers the companion app for Linux too, on every computer you look at it from: a download for x86-64 and one for ARM64, each with its sha256 beside it so you can check the file. On Linux it runs as your own background service, never as root, and residents get the folders you grant and, only if you turn it on, running commands. A tray icon (the house mark) shows whether the companion is running and pauses or resumes it; there is no desktop control on Linux yet. It is an early build: the companion has run on one Linux computer so far. A site admin sets each download's address and checksum in Site Admin, and nothing shows until they do. Takes effect after Rails deployment."
+  clip: companion-linux
 - date: 2026-11-11
   title: A Monzo connection says to approve it in the Monzo app
   body: "Connecting Monzo is only half of it: until you also approve the access in the Monzo app, every read a resident makes through the house is refused, and nothing on the connection said so. Under Resident access, a Monzo connection now says that Monzo asks you to approve in the app, that residents you turn on get every read refused until you do, and to look for the notification in the app, since Monzo asks again from time to time."
+  clip: monzo-approval
 - date: 2026-11-11
   title: A red hand marks a conversation stuck at the handoff limit
   body: "Residents can ask each other to act only so many times in a row before a person posts. When a conversation reaches that limit and a resident's request is turned away, the sidebar and the conversation header now show a red hand where the commitment clock goes, so you can see from the list which threads are waiting for you. It takes the clock's place while it lasts. Post a message in the conversation and the residents can carry on; the hand goes away. Takes effect after Rails deployment."
+  clip: red-hand
 - date: 2026-11-11
   title: A page for the companion app
   body: "The companion app, which lets residents work on your own Mac, now has its own page, linked from the footer, the Features page and the home page. It says what the app does (residents work in the folders you grant each of them and use the apps you allow, while a switch in the menu bar is on), what it can't do and what you can widen (your computer's own limits always apply, and running commands stays off unless you turn it on, after which it is as broad as your own account), what it needs (a Mac with Apple Silicon) and how a computer is enrolled today. The Computers tab in account settings now shows the same steps when no computer is enrolled. The download button reads Mac download coming soon until a build signed and notarised by Apple exists, so nobody is offered a file their Mac won't open. Takes effect after Rails deployment."
@@ -46,18 +56,22 @@
 - date: 2026-11-11
   title: A speaker in the conversation header reads replies aloud
   body: "Each conversation's header now has a speaker. Tap it and every resident reply that arrives from then on is read aloud once, in order, with your account's voice; earlier messages are never read. It doesn't use the microphone, so it works where voice mode struggles, outdoors or in a noisy street. On a phone the tap that turns it on is also what lets the browser play the replies; if the browser refuses one anyway, a small Tap to play appears beside the speaker and plays it. Tap the speaker again to stop, even in the middle of a reply. The choice is kept for that conversation on that device, so it is still on after a reload. While voice mode is open it reads the replies itself and the speaker shows as paused. Takes effect after Rails deployment."
+  clip: header-speaker
 - date: 2026-11-11
   title: A resident's run card shows how far through a job it is
   body: "When a resident works through a job with several steps, the card under its work can now show how far it has got, for example \"Lume is working · 3 of 7 · running the tests\", and keeps the last state when the run ends. It appears only when the resident chooses to keep a plan for that job, with a new helper, soulshouse-plan; nothing tells residents to, and replies without one look as they did. Expanding the card lists the steps. The plan lives in the resident's own runtime, the house only shows the step names and where each one stands, and only while the resident shares its working narration. Takes effect after Rails deployment; the helper and the progress reports after a runtime rebuild."
+  clip: run-progress
 - date: 2026-11-11
   title: The pricing page shows each resident size as a card
   body: "On the pricing page, Residents by size is now one card per size instead of a table: stacked on a phone, three across on a wider screen. Each card has the price a month, what it adds as the resident your plan includes (small is included in every plan; medium is $10 more, large $40), what that size is right for, and the computer it gets: 2 cores and 4 GB of memory for small, 4 and 8 for medium, 8 and 16 for large. On a phone nothing runs off the edge any more. Takes effect after Rails deployment."
+  clip: pricing-cards
 - date: 2026-11-11
   title: A message to a resident on its own computer waits out a restart
   body: "A resident that lives on its own computer restarts now and then, when the house updates or its sign-ins are refreshed. A message that reached it during that minute used to fail straight away, and you had to write again. Now the house holds it and the resident answers once the restart is done. If the computer still isn't back after 15 minutes, the run fails and the Runs tab says why. Takes effect after Rails deployment."
 - date: 2026-11-11
   title: Gemini 4 Carbon is in the model list
   body: "Google's Gemini 4 Carbon can be chosen under Google, with low, medium or high thinking. Usage estimates use its introductory $2 per million input tokens and $10 per million output through November 30, then $4 and $20 from December 1; takes effect after Rails deployment."
+  clip: gemini-carbon
 - date: 2026-11-10
   title: New prices, with an account plan and residents by size
   body: "You now pay for two things. The account is on a plan: Companions for one person; Partners for several people, with 20 swarm searches a month; or Colleagues, which adds sub-agents and 100 swarm searches a month. Each resident is paid for by the size of the computer it lives on: small $9.99, medium $19.99 or large $49.99 a month. So Companions is $9.99 a month including one small resident, Partners $29.99 and Colleagues $59.99, and the included resident can be medium or large for the difference. The account gets $10 a month of house-model use, shared by its residents at the standard price, rather than an allowance per resident; residents hosted at cost don't draw on it. The first resident of a new account can be small and free for 14 days, with no card asked for; with no card added it goes to sleep on day 14, and nothing is deleted. Partners and Colleagues are never free: they are charged from the day you choose one, and need a card. The Billing tab shows the account's plan and moves it to Partners or Colleagues. Accounts already here are given the plan that matches what they had, so nobody loses members, swarm searches or sub-agents, and residents already paid for keep their price. At-cost prices don't change. Prices are in US dollars, plus VAT where it applies. Takes effect after Rails deployment."
