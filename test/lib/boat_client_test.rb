@@ -63,7 +63,9 @@ class BoatClientTest < ActiveSupport::TestCase
 
   test "an accepted create without a usable sandbox id has an unknown outcome" do
     [ { sandbox: sandbox_json.except("id") }, { sandbox: sandbox_json.merge("id" => nil) },
-      { sandbox: sandbox_json.merge("id" => "") }, { ok: true } ].each do |body|
+      { sandbox: sandbox_json.merge("id" => "") }, { sandbox: sandbox_json.merge("id" => "not-a-sandbox-id") },
+      { sandbox: sandbox_json.merge("id" => "bx_0000000l") }, { sandbox: sandbox_json.merge("id" => 12_345_678) },
+      { ok: true } ].each do |body|
       stub_request(:post, "#{API}/sandboxes").to_return(status: 202, body: body.to_json)
       error = assert_raises(BoatClient::CreateOutcomeUnknown) { create! }
       assert_equal "outcome_unknown", error.code
@@ -75,6 +77,17 @@ class BoatClientTest < ActiveSupport::TestCase
     error = assert_raises(BoatClient::Error) { @client.find_sandbox("bx_23456789") }
     assert_not_kind_of BoatClient::CreateOutcomeUnknown, error
     assert_equal "invalid_response", error.code
+  end
+
+  test "an id the client accepts from Boat is one it can use in a path, and the reverse" do
+    [ "bx_23456789", "bx_f7k2q9hd" ].each { |id| assert BoatClient.sandbox_id?(id), id }
+    [ "not-a-sandbox-id", "bx_0000000l", "bx_2345678", "bx_234567890", "BX_23456789", "bx_23456789\n", nil, 1 ].each do |id|
+      assert_not BoatClient.sandbox_id?(id), id.inspect
+      assert_raises(BoatClient::Refused) { @client.find_sandbox(id) }
+    end
+    stub_request(:get, "#{API}/sandboxes/bx_23456789").to_return(status: 200,
+      body: { sandbox: sandbox_json.merge("id" => "not-a-sandbox-id") }.to_json)
+    assert_equal "invalid_response", assert_raises(BoatClient::Error) { @client.find_sandbox("bx_23456789") }.code
   end
 
   test "refuses unconfigured, keyless, off-allowlist and oversized creates before any request" do

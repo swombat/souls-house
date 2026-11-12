@@ -23,6 +23,9 @@
 class BoatClient
 
   BASE_URL = "https://boat.dev/api/v1".freeze
+  # Boat's documented sandbox id shape (every id field in the API reference).
+  # One check for ids Boat hands us and ids we put in a request path.
+  SANDBOX_ID = /\Abx_[23456789abcdefghjkmnpqrstuvwxyz]{8}\z/
   MANAGED_LABEL = "souls-house/managed".freeze
   PLACEMENT_LABEL = "souls-house/placement".freeze
   OPERATION_LABEL = "souls-house/operation".freeze
@@ -99,7 +102,7 @@ class BoatClient
     end
 
     def self.usable_id(id)
-      raise KeyError, "sandbox id is missing" unless id.is_a?(String) && id.present?
+      raise KeyError, "sandbox id is missing or malformed" unless BoatClient.sandbox_id?(id)
 
       id
     end
@@ -118,6 +121,8 @@ class BoatClient
 
   Limits = Data.define(:access_tier, :can_start, :max_active_sandboxes, :starts_per_day, :wallet_dollars,
     :included_hours_remaining, :included_period_end)
+
+  def self.sandbox_id?(id) = id.is_a?(String) && id.match?(SANDBOX_ID)
 
   def self.from_credentials
     config = Rails.application.credentials.boat || {}
@@ -221,7 +226,7 @@ class BoatClient
   end
 
   def path_id(id)
-    id.to_s.match?(/\Abx_[a-z0-9]{8}\z/) ? id.to_s : refuse!("malformed sandbox id")
+    self.class.sandbox_id?(id) ? id : refuse!("malformed sandbox id")
   end
 
   def sandbox_from(body)
