@@ -34,6 +34,9 @@
   title: The companion app for Linux
   body: "The companion page now offers the companion app for Linux too, on every computer you look at it from: a download for x86-64 and one for ARM64, each with its sha256 beside it so you can check the file. On Linux it runs as your own background service, never as root, and residents get the folders you grant and, only if you turn it on, running commands. A tray icon (the house mark) shows whether the companion is running and pauses or resumes it; there is no desktop control on Linux yet. It is an early build: the companion has run on one Linux computer so far. A site admin sets each download's address and checksum in Site Admin, and nothing shows until they do. Takes effect after Rails deployment."
 - date: 2026-11-11
+  title: A Monzo connection says to approve it in the Monzo app
+  body: "Connecting Monzo is only half of it: until you also approve the access in the Monzo app, every read a resident makes through the house is refused, and nothing on the connection said so. Under Resident access, a Monzo connection now says that Monzo asks you to approve in the app, that residents you turn on get every read refused until you do, and to look for the notification in the app, since Monzo asks again from time to time."
+- date: 2026-11-11
   title: A red hand marks a conversation stuck at the handoff limit
   body: "Residents can ask each other to act only so many times in a row before a person posts. When a conversation reaches that limit and a resident's request is turned away, the sidebar and the conversation header now show a red hand where the commitment clock goes, so you can see from the list which threads are waiting for you. It takes the clock's place while it lasts. Post a message in the conversation and the residents can carry on; the hand goes away. Takes effect after Rails deployment."
 - date: 2026-11-11
