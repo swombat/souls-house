@@ -2,6 +2,28 @@ class ExternalAgentMemoryAggregationRequest
 
   PERIODS = %w[daily weekly monthly].freeze
 
+  # One aggregation per resident, period and target: the session id is the key.
+  def self.session_id_for(agent, period, target)
+    "#{agent.uuid}-memory-#{period}-#{target}"
+  end
+
+  # The key is taken by a run that is still in flight or that finished
+  # cleanly. A refused, errored, timed-out or non-zero run leaves it free.
+  def self.accepted?(agent:, period:, target:)
+    AgentRuntimeInteraction
+      .where(agent: agent, trigger_kind: "memory_aggregation_#{period}", session_id: session_id_for(agent, period, target))
+      .any? { |interaction| holds_key?(interaction) }
+  end
+
+  def self.holds_key?(interaction)
+    return false if interaction.error_message.present?
+    return false if interaction.transport_status.present? && !interaction.transport_status.between?(200, 299)
+    return false if interaction.execution_state.in?(%w[failed timed_out busy])
+    return true if interaction.finished_at.nil?
+
+    interaction.runtime_status == "ok" && interaction.runtime_returncode.to_i.zero?
+  end
+
   def initialize(agent:, period:, target:, requested_by: "souls.house memory aggregation")
     @agent = agent
     @period = period.to_s
@@ -26,7 +48,7 @@ class ExternalAgentMemoryAggregationRequest
     raise ArgumentError, "target is required" if target.blank?
 
     endpoint_url = Agents::Endpoint.url_for(agent)
-    session_id = "#{agent.uuid}-memory-#{period}-#{target}"
+    session_id = self.class.session_id_for(agent, period, target)
     request = request_text
     auth_mode = agent.provider_auth_mode(provider)
 
