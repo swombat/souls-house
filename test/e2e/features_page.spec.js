@@ -17,7 +17,8 @@ test('the homepage links to a two-column features page with an expandable index'
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
   await expect(life.getByTestId('feature-showcase')).toHaveCount(11);
-  await expect(house.getByTestId('feature-showcase')).toHaveCount(20);
+  await expect(house.getByTestId('feature-showcase')).toHaveCount(21);
+  await expect(house.getByRole('heading', { name: 'Know when a tool dependency goes missing' })).toBeVisible();
   await expect(house.getByRole('heading', { name: 'Data you can explore in the conversation' })).toBeVisible();
   const speakerRecovery = house.getByTestId('feature-showcase').filter({ hasText: 'Recover a retired speaker naming' });
   await expect(speakerRecovery).toBeVisible();
