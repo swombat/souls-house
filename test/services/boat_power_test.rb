@@ -7,13 +7,16 @@ class BoatPowerTest < ActiveSupport::TestCase
   class FakeClient
 
     attr_reader :resumes
-    attr_accessor :sandbox, :on_resume
+    attr_accessor :sandbox, :on_resume, :on_find
 
     def initialize
       @resumes = []
     end
 
-    def find_sandbox(_id) = sandbox
+    def find_sandbox(_id)
+      on_find&.call
+      sandbox
+    end
 
     def resume_sandbox(id, placement_id:)
       @resumes << [ id, placement_id ]
@@ -144,16 +147,46 @@ class BoatPowerTest < ActiveSupport::TestCase
     assert_not reload.wake_pending?
   end
 
-  test "a wake clears only the requests the heartbeat's statement read" do
+  test "a wake clears only the requests a read has confirmed" do
     enqueue!
     enqueue!
     assert_equal [ 2, 1 ], [ reload.wake_request_version, reload.power_epoch ], "only the first waiting request moves the epoch"
+    assert_not heartbeat!(1), "no read has seen the box yet"
+
+    assert_equal :awake, power.reconcile!(@placement).outcome
+    assert_equal 2, reload.wake_confirmed_version
     assert heartbeat!(1)
     assert_equal 2, reload.wake_satisfied_version
 
     enqueue!
     assert reload.wake_pending?
     assert_equal 2, reload.power_epoch
+    assert_not heartbeat!(2), "the new request has not been read for"
+  end
+
+  test "a request made during the read is not confirmed by it" do
+    enqueue!
+    @client.on_find = -> { enqueue! }
+    power.reconcile!(@placement)
+    @client.on_find = nil
+
+    assert_equal [ 2, 1 ], [ reload.wake_request_version, reload.wake_confirmed_version ]
+    assert heartbeat!(reload.power_epoch)
+    assert_equal 1, reload.wake_satisfied_version
+    assert reload.wake_pending?, "the request made during the read waits for the next read"
+
+    power.reconcile!(@placement)
+    assert heartbeat!(reload.power_epoch)
+    assert_not reload.wake_pending?
+  end
+
+  test "a read made before the placement moved confirms nothing" do
+    enqueue!
+    stale = AgentPlacement.find(@placement.id)
+    AgentPlacement.where(id: @placement.id).update_all(power_epoch: stale.power_epoch + 1)
+
+    assert_equal :superseded, power.send(:wake!, stale).outcome
+    assert_equal 0, reload.wake_confirmed_version
   end
 
   test "a heartbeat stamped before a wake was requested cannot satisfy it" do
@@ -162,7 +195,27 @@ class BoatPowerTest < ActiveSupport::TestCase
     assert_not heartbeat!(epoch_before), "a delayed heartbeat from before the request proves nothing about the box now"
     assert reload.wake_pending?
     assert_equal({ "power_epoch" => epoch_before + 1 }, BoatPower.heartbeat_answer(reload))
+    assert_not heartbeat!(epoch_before + 1), "nor does a current one before the box is read"
+    power.reconcile!(@placement)
     assert heartbeat!(epoch_before + 1)
+  end
+
+  test "a runner heartbeating with the new epoch from a box whose stop is live satisfies nothing; the read resumes it" do
+    @client.sandbox = sandbox(state: "archiving", stop: stop(status: "pending"))
+    enqueue!
+    epoch = BoatPower.heartbeat_answer(reload)["power_epoch"]
+    assert_not heartbeat!(epoch), "the runner can still answer while its box archives"
+    assert_not heartbeat!(epoch)
+    assert reload.wake_pending?
+
+    assert_equal :waking, power.reconcile!(@placement).outcome
+    assert_equal 1, @client.resumes.size
+    assert_not heartbeat!(reload.power_epoch), "waking is not awake"
+
+    @client.sandbox = sandbox(state: "ready", stop: stop(status: "superseded"))
+    assert_equal :awake, power.reconcile!(@placement).outcome
+    assert heartbeat!(reload.power_epoch)
+    assert_not reload.wake_pending?
   end
 
   test "only the first waiting request starts a job chain" do

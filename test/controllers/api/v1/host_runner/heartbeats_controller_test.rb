@@ -48,7 +48,7 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
 
   test "a Boat runner is told the power epoch, and a heartbeat stamped with it satisfies the waiting wake" do
     placement = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "boat", state: "ready", provider_sandbox_id: "bx_23456789",
-      power_epoch: 3, wake_request_version: 2, wake_satisfied_version: 1)
+      power_epoch: 3, wake_request_version: 2, wake_confirmed_version: 2, wake_satisfied_version: 1)
     enrollment, token = RunnerEnrollment.mint!(placement:)
     enrollment.update_columns(procurement_kind: "boat") # test-only: stands in for a Boat purchase
     enrollment.confirm_provider_sandbox!("bx_23456789")

@@ -314,6 +314,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
     t.string "power_state"
     t.integer "power_epoch", default: 0, null: false
     t.integer "wake_request_version", default: 0, null: false
+    t.integer "wake_confirmed_version", default: 0, null: false
     t.integer "wake_satisfied_version", default: 0, null: false
     t.datetime "stop_sent_at"
     t.string "stop_id"
@@ -333,7 +334,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
     t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "agent_placements_sandbox_id_shape"
     t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
     t.check_constraint "stop_sent_at IS NULL OR power_state IS NOT NULL", name: "agent_placements_stop_sent_boat_only"
-    t.check_constraint "wake_satisfied_version <= wake_request_version", name: "agent_placements_wake_versions"
+    t.check_constraint "wake_satisfied_version <= wake_confirmed_version AND wake_confirmed_version <= wake_request_version", name: "agent_placements_wake_versions"
   end
 
   create_table "agent_runtime_attempts", force: :cascade do |t|

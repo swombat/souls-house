@@ -16,10 +16,15 @@
 # once that transaction has committed. A resume is sent only after a read
 # shows the sandbox archived, archiving or holding a live stop; what resume
 # does to an awake sandbox is not documented. A wake bumps the epoch. The
-# wake is satisfied only by a heartbeat stamped with the current epoch (the
-# runner learns it from the heartbeat response; a warm resume need not
-# reboot) while the house has read the sandbox awake, and then only up to
-# the request version read in the same statement.
+# wake is satisfied in two halves, and neither alone is enough:
+# - Read: the job reads the sandbox awake with no live stop and confirms the
+#   request version it held before that read (wake_confirmed_version). A
+#   request made after the read is not covered by it.
+# - Heartbeat: a heartbeat stamped with the current epoch (the runner learns
+#   it from the heartbeat answer; a warm resume need not reboot) moves
+#   wake_satisfied_version up to wake_confirmed_version, never further.
+# So a runner still heartbeating from a box whose stop is live, before any
+# read, satisfies nothing: the job reads the stop and resumes the box.
 class BoatPower
 
   class NotAuthorized < StandardError; end
@@ -65,9 +70,9 @@ class BoatPower
     placement&.boat? ? { "power_epoch" => placement.power_epoch } : {}
   end
 
-  # A heartbeat stamped with the current epoch, while the house has read the
-  # sandbox awake, satisfies every wake requested up to now. One statement,
-  # so the version it clears is the one it read.
+  # A heartbeat stamped with the current epoch satisfies the wakes a read has
+  # already confirmed, and no others. One statement, so the version it clears
+  # is the one it read.
   def self.observe_heartbeat!(placement, facts)
     return false unless placement&.boat?
 
@@ -75,8 +80,8 @@ class BoatPower
     return false unless epoch.is_a?(Integer)
 
     AgentPlacement.where(id: placement.id, power_state: "awake", power_epoch: epoch)
-      .where("wake_satisfied_version < wake_request_version")
-      .update_all([ "wake_satisfied_version = wake_request_version, updated_at = ?", Time.current ]) == 1
+      .where("wake_satisfied_version < wake_confirmed_version")
+      .update_all([ "wake_satisfied_version = wake_confirmed_version, updated_at = ?", Time.current ]) == 1
   end
 
   def initialize(client:, clock: -> { Time.current })
@@ -108,6 +113,9 @@ class BoatPower
   end
 
   def wake!(placement)
+    # Captured before the read: a confirmation covers only what was asked
+    # before the box was seen.
+    version = placement.wake_request_version
     sandbox = @client.find_sandbox(placement.provider_sandbox_id)
     return review!(placement, "sandbox_missing") if sandbox.nil?
     return review!(placement, "sandbox_failed") if sandbox.failed?
@@ -115,12 +123,25 @@ class BoatPower
     if sandbox.awake? && !sandbox.live_stop?
       # Out of waking the epoch is already the wake's own: only a heartbeat
       # answered after the resume can carry it.
-      move!(placement, "waking", "awake") if placement.power_state == "waking"
-      return Result.new(outcome: :awake)
+      confirmed = confirm_awake!(placement, version)
+      return Result.new(outcome: confirmed ? :awake : :superseded)
     end
     return resume!(placement) if sandbox.stopped? || sandbox.live_stop?
 
     Result.new(outcome: :settling)
+  end
+
+  # The read saw the box awake with no live stop. Unless something moved the
+  # placement since it was loaded, record that (waking becomes awake) and
+  # confirm the requests made before the read.
+  def confirm_awake!(placement, version)
+    AgentPlacement.where(id: placement.id, power_epoch: placement.power_epoch, power_state: placement.power_state)
+      .update_all([ <<~SQL.squish, version, now, now ]) == 1
+        power_state = 'awake',
+        wake_confirmed_version = GREATEST(wake_confirmed_version, LEAST(?, wake_request_version)),
+        power_changed_at = CASE WHEN power_state = 'awake' THEN power_changed_at ELSE ? END,
+        updated_at = ?
+      SQL
   end
 
   def resume!(placement)
@@ -140,12 +161,6 @@ class BoatPower
   rescue BoatClient::Error
     # Unknown: the next step reads the box before doing anything else.
     Result.new(outcome: :waking)
-  end
-
-  def move!(placement, from, to)
-    epoch = placement.power_epoch
-    AgentPlacement.where(id: placement.id, power_epoch: epoch, power_state: from)
-      .update_all(power_state: to, power_changed_at: now, updated_at: now) == 1
   end
 
   def review!(placement, reason)
