@@ -111,17 +111,18 @@ class RealChaosAuthHomeTest(unittest.TestCase):
     when the main home holds valid-looking credentials (no fallback)."""
 
     def test_probe_and_no_fallback(self):
+        chaos_bin = os.environ['CHAOS_TEST_BIN']
         with tempfile.TemporaryDirectory() as td:
             home = Path(td) / 'chaos'
             (home / 'tmp').mkdir(parents=True)
             (home / 'auth.json').write_text('{"OPENAI_API_KEY": "sk-main-home"}')
             env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': td, 'CHAOS_HOME': str(home)}
             with patch.dict(os.environ, env, clear=True), patch.object(shim, 'CHAOS_HOME', home), \
-                    patch.object(shim, 'CHAOS_BIN', os.environ['CHAOS_TEST_BIN']), \
+                    patch.object(shim, 'CHAOS_BIN', chaos_bin), \
                     patch.object(shim, '_auth_home_supported', False):
                 self.assertTrue(shim.chaos_reads_auth_home())
             result = subprocess.run(
-                [os.environ['CHAOS_TEST_BIN'], '--provider', 'openai', 'accounts', 'status'],
+                [chaos_bin, '--provider', 'openai', 'accounts', 'status'],
                 capture_output=True, text=True, timeout=60,
                 env={**env, 'CHAOS_AUTH_HOME': str(Path(td) / 'absent')})
             self.assertNotEqual(result.returncode, 0)
