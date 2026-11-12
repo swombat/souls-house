@@ -31,7 +31,10 @@ class SingleHomeTest(unittest.TestCase):
         self.home = Path(tmp.name) / 'chaos'
         self.oauth = self.home / 'oauth-runtime'
         self.oauth.mkdir(parents=True)
+        # Subscription env builders create their config dirs; keep them in tmp.
         for name, value in (('CHAOS_HOME', self.home), ('OAUTH_CHAOS_HOME', self.oauth),
+                            ('CLAUDE_CONFIG_DIR', Path(tmp.name) / 'claude'),
+                            ('CHAOS_AGY_HOME', Path(tmp.name) / 'agy'),
                             ('_auth_home_supported', True)):
             p = patch.object(shim, name, value);p.start();self.addCleanup(p.stop)
         p = patch.dict(os.environ, {'SOULSHOUSE_HOME_PROFILE': 'house', 'CHAOS_AUTH_HOME': '/inherited',
