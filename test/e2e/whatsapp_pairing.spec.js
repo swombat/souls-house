@@ -183,7 +183,8 @@ test('the owner scans rotating WhatsApp codes, restarts after expiry and sees th
     expect(linked.status()).toBe(200);
     const status = card.getByTestId('whatsapp-status');
     await expect(status).toContainText('Linked as');
-    await expect(status).toContainText('Ada Example');
+    await expect(status).toContainText('•••• 0123');
+    await expect(status).not.toContainText('447700900123');
     await expect(qr).toHaveCount(0);
     await expect(card.getByTestId('whatsapp-pairing')).toHaveCount(0);
     await expect(card.getByText('Waiting for pairing.')).toHaveCount(0);
@@ -386,7 +387,8 @@ test('on a phone, the owner links WhatsApp with a code instead of a QR', async (
     expect(linked.status()).toBe(200);
     const status = card.getByTestId('whatsapp-status');
     await expect(status).toContainText('Linked as');
-    await expect(status).toContainText('Ada Example');
+    await expect(status).toContainText('•••• 0555');
+    await expect(status).not.toContainText('447700900555');
     await expect(card.getByTestId('whatsapp-pairing')).toHaveCount(0);
     const after = await (await page.request.get(pairingUrl)).json();
     expect(after.phone_code).toBeNull();

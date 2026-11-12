@@ -26,7 +26,9 @@ test('the owner signs in to Telegram and sees the connection', async ({ page, re
     const before = await qrCard.getByTestId('telegram-qr-countdown').textContent();
     await expect(qrCard.getByTestId('telegram-qr-countdown')).not.toHaveText(before, { timeout: 3000 });
     await expect(qrCard.getByRole('button', { name: 'Restart sign-in' })).toBeVisible();
-    await expect(qrCard.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+    await expect(
+      qrCard.getByTestId('telegram-login').getByRole('button', { name: 'Cancel', exact: true })
+    ).toBeVisible();
 
     const passwordCard = page.getByRole('article').filter({ hasText: 'Telegram password' });
     const password = passwordCard.getByLabel('Telegram password', { exact: true });
