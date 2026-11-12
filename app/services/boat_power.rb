@@ -43,7 +43,15 @@ class BoatPower
     return unless placement.boat?
 
     scope = AgentPlacement.where(id: placement.id)
-    scope.update_all([ "wake_request_version = wake_request_version + 1, updated_at = ?", Time.current ])
+    # The first waiting request also moves the epoch on, so a heartbeat
+    # stamped before it (one delayed from a box that has since stopped)
+    # cannot satisfy it: only a runner that heard the new epoch in a
+    # heartbeat answer after this request can.
+    scope.update_all([ <<~SQL.squish, Time.current ])
+      wake_request_version = wake_request_version + 1,
+      power_epoch = CASE WHEN wake_request_version = wake_satisfied_version THEN power_epoch + 1 ELSE power_epoch END,
+      updated_at = ?
+    SQL
     requested, satisfied = scope.pick(:wake_request_version, :wake_satisfied_version)
     return unless requested - satisfied == 1
 

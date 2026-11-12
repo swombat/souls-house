@@ -73,11 +73,11 @@ class BoatPowerTest < ActiveSupport::TestCase
 
     assert_equal :waking, power.reconcile!(@placement).outcome
     assert_equal [ [ SANDBOX_ID, @placement.id ] ], @client.resumes
-    assert_equal [ "waking", 1 ], [ reload.power_state, reload.power_epoch ]
+    assert_equal [ "waking", 2 ], [ reload.power_state, reload.power_epoch ]
 
     @client.sandbox = sandbox(state: "ready", stop: stop(status: "superseded"))
     assert_equal :awake, power.reconcile!(@placement).outcome
-    assert_equal [ "awake", 1 ], [ reload.power_state, reload.power_epoch ]
+    assert_equal [ "awake", 2 ], [ reload.power_state, reload.power_epoch ]
     assert_equal 1, @client.resumes.size
   end
 
@@ -147,12 +147,22 @@ class BoatPowerTest < ActiveSupport::TestCase
   test "a wake clears only the requests the heartbeat's statement read" do
     enqueue!
     enqueue!
-    assert_equal 2, reload.wake_request_version
-    assert heartbeat!(0)
+    assert_equal [ 2, 1 ], [ reload.wake_request_version, reload.power_epoch ], "only the first waiting request moves the epoch"
+    assert heartbeat!(1)
     assert_equal 2, reload.wake_satisfied_version
 
     enqueue!
     assert reload.wake_pending?
+    assert_equal 2, reload.power_epoch
+  end
+
+  test "a heartbeat stamped before a wake was requested cannot satisfy it" do
+    epoch_before = reload.power_epoch
+    enqueue!
+    assert_not heartbeat!(epoch_before), "a delayed heartbeat from before the request proves nothing about the box now"
+    assert reload.wake_pending?
+    assert_equal({ "power_epoch" => epoch_before + 1 }, BoatPower.heartbeat_answer(reload))
+    assert heartbeat!(epoch_before + 1)
   end
 
   test "only the first waiting request starts a job chain" do
@@ -219,7 +229,7 @@ class BoatPowerTest < ActiveSupport::TestCase
       @client.sandbox = sandbox(state: "ready")
       assert_enqueued_with(job: BoatPowerJob, args: [ @placement.id ]) { BoatPowerJob.perform_now(@placement.id) }
 
-      heartbeat!(0)
+      heartbeat!(reload.power_epoch)
       assert_no_enqueued_jobs(only: BoatPowerJob) { BoatPowerJob.perform_now(@placement.id) }
 
       enqueue!
