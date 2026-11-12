@@ -27,6 +27,13 @@ require_relative "../config/environment"
 require "rails/test_help"
 require "minitest/mock"
 
+# Rails tests log warnings only. At debug every SQL statement went to
+# log/test.log, from every worker into one file with a stat per line for
+# rotation. Here, not in config/environments/test.rb: the browser tests run
+# the server in the test environment and read its request log.
+# RAILS_LOG_LEVEL=debug brings the full log back.
+Rails.logger.level = ENV.fetch("RAILS_LOG_LEVEL", "warn")
+
 module ActiveSupport
   class TestCase
 
