@@ -264,27 +264,27 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.assertEqual(self.read(), first)
         self.assertEqual(set(tomllib.loads((self.home/'config.toml').read_text())), {'storage_url'})
 
-    def test_resident_choices_survive_repeated_boots_in_both_homes(self):
+    def test_resident_choices_survive_repeated_boots_in_the_one_home(self):
+        # Since #925 there is one Chaos home; oauth-runtime holds credentials only
+        # and boot must leave it alone.
         oauth = self.home/'oauth-runtime'
         oauth.mkdir()
         with patch.dict(os.environ, {'CHAOS_HOME': str(self.home), 'SOULSHOUSE_HOME_PROFILE': ''}):
             s.main()
-            for home in (self.home, oauth):
-                s.command(home, 'set', 'protected_context_files', '[]')
-                s.command(home, 'set', 'model_auto_compact_token_limit', '150000')
-                s.command(home, 'set', 'protected_context_max_bytes', '0')
-                s.command(home, 'set', 'model_providers.kimi', json.dumps({
-                    'name': 'Resident Kimi', 'base_url': 'http://127.0.0.1:1/v1',
-                    'wire_api': 'responses'}))
+            s.command(self.home, 'set', 'protected_context_files', '[]')
+            s.command(self.home, 'set', 'model_auto_compact_token_limit', '150000')
+            s.command(self.home, 'set', 'protected_context_max_bytes', '0')
+            s.command(self.home, 'set', 'model_providers.kimi', json.dumps({
+                'name': 'Resident Kimi', 'base_url': 'http://127.0.0.1:1/v1',
+                'wire_api': 'responses'}))
             s.main()
             s.main()
-        for home in (self.home, oauth):
-            with self.subTest(home=home.name):
-                settings = json.loads(s.command(home, 'get'))
-                self.assertEqual(settings['protected_context_files'], [])
-                self.assertEqual(settings['model_auto_compact_token_limit'], 150000)
-                self.assertEqual(settings['protected_context_max_bytes'], 0)
-                self.assertEqual(settings['model_providers']['kimi']['name'], 'Resident Kimi')
+        settings = json.loads(s.command(self.home, 'get'))
+        self.assertEqual(settings['protected_context_files'], [])
+        self.assertEqual(settings['model_auto_compact_token_limit'], 150000)
+        self.assertEqual(settings['protected_context_max_bytes'], 0)
+        self.assertEqual(settings['model_providers']['kimi']['name'], 'Resident Kimi')
+        self.assertEqual(list(oauth.iterdir()), [])
 
     def test_legacy_choices_custom_provider_and_second_boot(self):
         # Only binaries that still import legacy TOML settings (before seuros/chaos#110).
