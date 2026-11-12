@@ -1,12 +1,19 @@
 // Listing only: no browser, backend, database or provider request is started.
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { plan, readTimings, specFiles, SPEC_DIR } from '../../scripts/e2e-shard.mjs';
 
-const E2E_SHARDS = 5;
+const E2E_SHARDS = 10;
+
+// The matrix in ci.yml is what actually runs; this contract must plan the same count.
+const ciShards = [...readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  .matchAll(/suite: e2e, shard: (\d+), total: (\d+)/g)];
+assert.equal(ciShards.length, E2E_SHARDS, `ci.yml runs ${ciShards.length} e2e shards, the contract plans ${E2E_SHARDS}`);
+assert(ciShards.every(([, shard, total], i) => Number(shard) === i + 1 && Number(total) === E2E_SHARDS),
+  'ci.yml e2e shards must be numbered 1..TOTAL with the same TOTAL');
 
 const home = mkdtempSync(join(tmpdir(), 'browser-shard-contract-'));
 const env = {
