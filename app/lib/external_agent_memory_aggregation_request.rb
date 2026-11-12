@@ -7,12 +7,21 @@ class ExternalAgentMemoryAggregationRequest
     "#{agent.uuid}-memory-#{period}-#{target}"
   end
 
-  # A run was accepted when an interaction exists for the key and it did not
-  # fail (still running, or finished without a transport/runtime failure).
+  # The key is taken by a run that is still in flight or that finished
+  # cleanly. A refused, errored, timed-out or non-zero run leaves it free.
   def self.accepted?(agent:, period:, target:)
     AgentRuntimeInteraction
       .where(agent: agent, trigger_kind: "memory_aggregation_#{period}", session_id: session_id_for(agent, period, target))
-      .any? { |interaction| interaction.send(:chat_activity_status) != "failed" }
+      .any? { |interaction| holds_key?(interaction) }
+  end
+
+  def self.holds_key?(interaction)
+    return false if interaction.error_message.present?
+    return false if interaction.transport_status.present? && !interaction.transport_status.between?(200, 299)
+    return false if interaction.execution_state.in?(%w[failed timed_out busy])
+    return true if interaction.finished_at.nil?
+
+    interaction.runtime_status == "ok" && interaction.runtime_returncode.to_i.zero?
   end
 
   def initialize(agent:, period:, target:, requested_by: "souls.house memory aggregation")

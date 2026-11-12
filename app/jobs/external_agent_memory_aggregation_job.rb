@@ -19,12 +19,17 @@ class ExternalAgentMemoryAggregationJob < ApplicationJob
          .where.not(trigger_bearer_token: [ nil, "" ])
   end
 
-  # Fans out only: the target is frozen here and passed to every child, so a
-  # run delayed past midnight still aggregates the day it was scheduled for.
-  # A retried parent re-enqueues; the child's key makes that harmless.
+  # The recurring entry passes only the period. That run freezes the target
+  # from its own original enqueue time (kept on the job row across Solid
+  # Queue retries, not the clock) and re-enqueues itself with it, so no
+  # retry can move the day. The frozen run only fans out; a retried fan-out
+  # re-enqueues children and the child's key makes that harmless.
   def perform(period, target = nil)
     period = period.to_s
-    target ||= default_target_for(period)
+    if target.nil?
+      self.class.perform_later(period, default_target_for(period, anchor: enqueued_at || Time.current))
+      return
+    end
 
     self.class.aggregatable_agents.find_each do |agent|
       ExternalAgentMemoryAggregationAgentJob
@@ -35,14 +40,15 @@ class ExternalAgentMemoryAggregationJob < ApplicationJob
 
   private
 
-  def default_target_for(period)
+  def default_target_for(period, anchor: Time.current)
+    anchor = anchor.in_time_zone
     case period
     when "daily"
-      1.day.ago.to_date.iso8601
+      (anchor - 1.day).to_date.iso8601
     when "weekly"
-      1.week.ago.to_date.beginning_of_week.iso8601
+      (anchor - 1.week).to_date.beginning_of_week.iso8601
     when "monthly"
-      1.month.ago.to_date.strftime("%Y-%m")
+      (anchor - 1.month).to_date.strftime("%Y-%m")
     else
       raise ArgumentError, "unknown memory aggregation period: #{period}"
     end
