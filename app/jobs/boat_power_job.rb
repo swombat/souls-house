@@ -25,10 +25,11 @@ class BoatPowerJob < ApplicationJob
   private
 
   def recheck_after(placement, result)
-    return nil unless %w[stopping waking].include?(placement.power_state) || placement.wake_pending?
+    return nil unless placement.power_state == "waking" || placement.wake_pending?
+    # A missing or failed box waits for an operator; clearing the review
+    # starts the chain again.
+    return nil if placement.power_review?
     return result.retry_after if result.retry_after
-    # An unresolved stop with nothing waiting: look for evidence now and then.
-    return BoatPower::REVIEW_RECHECK if placement.power_review? && !placement.wake_pending?
 
     BoatPower::RECHECK
   end
