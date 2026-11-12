@@ -193,14 +193,49 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
     @agent.update!(switchable_model_ids: [])
     stub = stub_request(:post, "https://agent.example.com/trigger")
+    interaction = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
 
-    result = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+    result = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, interaction: interaction).call
 
     assert_not_requested stub
     assert_equal 409, result[:status]
     line = @chat.messages.where(role: "system").last
     assert_match(/did not respond: the model selected for this conversation, Claude Fable 5.1/, line.content)
     assert_includes line.content, "Use resident default"
+    assert_equal line, interaction.reload.failure_notice_message
+    assert_equal "failed", interaction.execution_state
+  end
+
+  test "provider mismatch refusals give one explanation per run without hiding a later unknown failure" do
+    @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
+    @agent.update!(model_id: "openai/gpt-6.1-sol")
+
+    2.times do |attempt|
+      @chat.messages.create!(role: "user", user: users(:user_1), content: "Try the selected model, attempt #{attempt + 1}.",
+        suppress_automatic_dispatch: true)
+      interaction = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
+      assert_difference -> { @chat.messages.where(role: "system").count }, 1 do
+        result = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat, interaction: interaction).call
+        assert_equal 409, result[:status]
+        RunFailureNoticeJob.perform_now(interaction.id)
+        RunFailureNoticeJob.perform_now(interaction.id)
+      end
+
+      line = @chat.messages.where(role: "system").order(:id).last
+      assert_includes line.content, "Claude Fable 5.1, is from a different provider than the default model"
+      assert_includes line.content, "Use resident default"
+      assert_equal line, interaction.reload.failure_notice_message
+      assert_equal "failed", interaction.execution_state
+    end
+
+    unknown = AgentRuntimeInteraction.reserve!(agent: @agent, chat: @chat)
+    unknown.finish_execution!("failed")
+    assert_equal "unknown", unknown.failure_category
+    assert_difference -> { @chat.messages.where(role: "system").count }, 1 do
+      RunFailureNoticeJob.perform_now(unknown.id)
+      RunFailureNoticeJob.perform_now(unknown.id)
+    end
+    assert_includes unknown.reload.failure_notice_message.content, "the run failed and the cause isn't identified"
   end
 
   test "another room keeps the default" do

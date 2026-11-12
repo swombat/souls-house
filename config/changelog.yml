@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-12
+  title: One clear explanation when a conversation model cannot run
+  body: "When a conversation's selected model can no longer be used, its refusal notice no longer gets followed by a contradictory unknown-cause failure notice. The room keeps the explanation and how to choose a usable model. Takes effect after Rails deployment."
+- date: 2026-11-12
   title: Name each integration connection
   body: "Give individual connections names such as Personal and Work from their Integrations cards. WhatsApp cards and disconnect confirmations also show the linked number's last four digits when available, so multiple accounts are easier to tell apart. Takes effect after Rails deployment."
 - date: 2026-11-12

@@ -238,8 +238,13 @@ class ExternalAgentResponseRequest
   # The selected model can no longer be used. Say so in the room rather than
   # running on a model nobody chose.
   def notify_model_unavailable
-    @interaction&.finish_execution!("failed")
-    ConversationModelEvent.unavailable!(chat: chat, agent: agent, selection: selection)
+    AgentRuntimeInteraction.transaction do
+      notice = ConversationModelEvent.unavailable!(chat: chat, agent: agent, selection: selection)
+      # The refusal already explains this run in the room. Record it before
+      # finalizing, so the after-commit failure check cannot post a second line.
+      @interaction&.update!(failure_notice_message: notice)
+      @interaction&.finish_execution!("failed")
+    end
     { status: 409, error: "selected model unavailable", body: { "status" => "model_unavailable" } }
   end
 
