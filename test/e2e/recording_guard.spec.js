@@ -10,6 +10,12 @@ import { expect, test } from '@playwright/test';
 test.use({
   permissions: ['microphone'],
   launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },
+  // The deploy is simulated with page.route, and Playwright's routes never see requests the
+  // installable app's service worker answers (playwright#1090; Playwright recommends blocking
+  // workers when routing). The worker passes Inertia GETs straight to the network, so blocking
+  // it changes nothing these tests assert. service_worker.spec.js covers the same deploy 409
+  // with the worker in control.
+  serviceWorkers: 'block',
 });
 
 test.describe('recording survives a deploy', () => {
