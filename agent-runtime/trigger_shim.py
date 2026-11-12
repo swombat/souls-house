@@ -980,8 +980,7 @@ def _run_chaos_once(
     if selected_provider == "kimi":
         reasoning_effort = kimi_reasoning_effort(model, reasoning_effort)
     env = os.environ.copy()
-    # Only subscription runs read credentials from the separate auth directory.
-    env.pop("CHAOS_AUTH_HOME", None)
+    uses_auth_home = False
     if auth_mode == "oauth_account":
         if selected_provider == "anthropic":
             env = _anthropic_subscription_env()
@@ -994,9 +993,15 @@ def _run_chaos_once(
                 return subprocess.CompletedProcess(
                     [CHAOS_BIN], 1, "", f"single_chaos_home_unready: {unready}\n")
             env = _oauth_account_env()
+            uses_auth_home = True
         api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
         if api_key_env:
             env.pop(api_key_env, None)
+    # Only openai/xai subscription runs read credentials from the separate
+    # auth directory. Strip it from the final env of every other run,
+    # including the anthropic/gemini branches, which rebuild env from os.environ.
+    if not uses_auth_home:
+        env.pop("CHAOS_AUTH_HOME", None)
     # Invocation-local correlation also exists without a conversation activity
     # reporter (Telegram). Never mutate the process-wide environment.
     for key in ("SOULSHOUSE_RUNTIME_RUN_ID", "SOULSHOUSE_RUNTIME_CHAT_ID",

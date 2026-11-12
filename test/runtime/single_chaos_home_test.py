@@ -58,6 +58,15 @@ class SingleHomeTest(unittest.TestCase):
                 self.assertNotIn('CHAOS_AUTH_HOME', env)
                 self.assertEqual(env['CHAOS_HOME'], str(self.home))
 
+    def test_other_subscription_runs_never_inherit_the_auth_dir(self):
+        # anthropic and gemini subscriptions rebuild env from os.environ;
+        # their final env must still drop an inherited CHAOS_AUTH_HOME.
+        for provider in ('anthropic', 'gemini'):
+            with self.subTest(provider=provider):
+                _, run = self.run_env('oauth_account', provider=provider)
+                env = run.call_args.kwargs['env']
+                self.assertNotIn('CHAOS_AUTH_HOME', env)
+
     def test_unmerged_oauth_store_refuses_without_starting_chaos(self):
         (self.oauth / 'config.toml').write_text('storage_url = "postgres://x/y"\n')
         result, run = self.run_env('oauth_account')
