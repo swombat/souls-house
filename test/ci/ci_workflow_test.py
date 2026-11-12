@@ -20,8 +20,8 @@ class CiWorkflowTest(unittest.TestCase):
 
     def test_job_budget_and_partitions(self):
         matrix = self.jobs["application"]["strategy"]["matrix"]["include"]
-        self.assertEqual(len(matrix) + len(self.jobs) - 1, 13)
-        for suite, total in (("rails", 4), ("e2e", 5), ("components", 1)):
+        self.assertEqual(len(matrix) + len(self.jobs) - 1, 18)
+        for suite, total in (("rails", 4), ("e2e", 10), ("components", 1)):
             rows = [row for row in matrix if row["suite"] == suite]
             self.assertEqual(sorted(row["shard"] for row in rows), list(range(1, total + 1)))
             self.assertTrue(all(row["total"] == total for row in rows))

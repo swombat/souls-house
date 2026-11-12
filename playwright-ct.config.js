@@ -71,6 +71,7 @@ export default defineConfig({
   // Retry failed tests
   retries: process.env.CI ? 2 : 0,
 
-  // Limit workers on CI
-  workers: process.env.CI ? 1 : undefined,
+  // CI runners have 4 vCPUs. One worker made this the slowest CI job (259
+  // tests in 4.2 min); the tests are independent (fullyParallel above).
+  workers: process.env.CI ? 4 : undefined,
 });

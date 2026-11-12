@@ -32,11 +32,16 @@ jobs:
           - { suite: rails, shard: 2, total: 4 }
           - { suite: rails, shard: 3, total: 4 }
           - { suite: rails, shard: 4, total: 4 }
-          - { suite: e2e, shard: 1, total: 5 }
-          - { suite: e2e, shard: 2, total: 5 }
-          - { suite: e2e, shard: 3, total: 5 }
-          - { suite: e2e, shard: 4, total: 5 }
-          - { suite: e2e, shard: 5, total: 5 }
+          - { suite: e2e, shard: 1, total: 10 }
+          - { suite: e2e, shard: 2, total: 10 }
+          - { suite: e2e, shard: 3, total: 10 }
+          - { suite: e2e, shard: 4, total: 10 }
+          - { suite: e2e, shard: 5, total: 10 }
+          - { suite: e2e, shard: 6, total: 10 }
+          - { suite: e2e, shard: 7, total: 10 }
+          - { suite: e2e, shard: 8, total: 10 }
+          - { suite: e2e, shard: 9, total: 10 }
+          - { suite: e2e, shard: 10, total: 10 }
           - { suite: components, shard: 1, total: 1 }
     services:
       postgres:
