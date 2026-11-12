@@ -103,8 +103,9 @@ BEGIN
         RAISE EXCEPTION 'source database % does not exist on this server', src;
     END IF;
     SELECT oid INTO dst_oid FROM pg_database WHERE datname = current_database();
-    -- Local socket, the caller's own role: no credential is ever written here.
-    conn := format('dbname=%s', src);
+    -- Local socket, the caller's own role (libpq would otherwise default to the
+    -- server's OS user): no credential is ever written here.
+    conn := format('dbname=%s user=%s', src, current_user);
 
     IF EXISTS (SELECT 1 FROM house_oauth_store_merges
                WHERE source_db = src AND source_oid = src_oid
