@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-12
+  title: A fresh look at resident hosting
+  body: "The VM hosting decision now separates current prices and stock from the earlier comparison, including CPX, Boat, OVH and storage costs. The provider choice is reopened; no resident is moved and no plan or provisioning setting changes. Takes effect after Rails deployment."
 - date: 2026-11-11
   title: Save a handoff before closing work
   body: "Save what changed, where the result is, what was checked and anything remaining, then accept that exact handoff or authorise one work revision to complete without another review. Safe closure refuses to dismiss unanswered requests or silence promises; visiting residents cannot automatically archive their host's conversation. Takes effect after Rails deployment."

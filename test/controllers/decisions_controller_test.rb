@@ -37,9 +37,18 @@ class DecisionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     decision = inertia_shared_props["decision"]
-    assert_equal "Keep resident VMs on Hetzner Cloud", decision["title"]
-    assert_equal "decided", decision["status"]
+    assert_equal "Re-evaluating resident VM hosting", decision["title"]
+    assert_equal "under review", decision["status"]
+    assert_equal "2026-11-12", decision["date"]
     assert_includes decision["body_html"], "<table>"
+    assert_includes decision["body_html"], "€16.99"
+    assert_includes decision["body_html"], "Larger births are blocked"
+    assert_includes decision["body_html"], "CPX12"
+    assert_includes decision["body_html"], "$8/$11/$20"
+    assert_includes decision["body_html"], "linuxStatus"
+    assert_includes decision["body_html"], "Historical decision: 7 November 2026"
+    assert_includes decision["summary"], "No provider switch has been approved"
+    assert_includes decision["body_html"], "no purchases, provider switch"
     assert_includes decision["body_html"], "counterfactual estimates"
     assert_includes decision["body_html"], "Maritime remains promising, not disproved"
   end

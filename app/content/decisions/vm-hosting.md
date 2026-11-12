@@ -1,10 +1,110 @@
 ---
-title: Keep resident VMs on Hetzner Cloud
+title: Re-evaluating resident VM hosting
 slug: vm-hosting
-date: 2026-11-07
-status: decided
-summary: Small, always-on Hetzner Cloud VMs remain our default. Boat can save money with aggressive shutdowns, but a one-hour idle window makes it more expensive on the activity pattern we checked. Other providers remain options, not migration plans.
+date: 2026-11-12
+status: under review
+summary: CX stock shortages have reopened the provider choice. CPX is substantially more expensive, Boat's economics now deserve reconsideration, and cheap OVH prices come with their own stock constraints. No provider switch has been approved.
 ---
+
+## 12 November: the decision is reopened
+
+**We are comparing providers before changing procurement.** The 7 November decision below used a €5.99 CX23 baseline. That remains a real price when stock exists, but is not a dependable quote for every size and location. It must not be silently replaced with a much dearer CPX plan while retaining the old conclusion.
+
+At approximately **10:10 UTC on 12 November 2026**, a read-only check with the house's Hetzner account found:
+
+- **CX23**: €5.49 plus €0.50 IPv4, available in **Nürnberg and Helsinki**, unavailable in Falkenstein.
+- **CX33 and CX43**: unavailable in all three EU locations.
+- **CPX12/22/32/42**: available in all three EU locations.
+- The checked CX types have **no announced deprecation in the API**. A stock shortage does not establish that Hetzner is retiring CX. Stock already changed during this investigation; availability is an observation, not a reservation or a purchase guarantee.
+
+Existing VMs are unchanged. No CPX allowlist, credentials, subscription prices or plan mapping has been changed by this comparison.
+
+**Larger births are blocked at the checked stock levels:** the current plans require CX33 or CX43, neither of which is orderable in our allowed locations. Daniel needs to choose an interim response: pause larger births, or explicitly approve an alternative and its price consequence. The current at-cost offers are **$8/$11/$20 per month** (`Billing::Tier::AT_COST_MONTHLY_USD`), costed against CX; substituting CPX32 or CPX42 at €30–70/month would leave the corresponding larger offers below provider cost.
+
+### Current conventional-VM costs
+
+These are **provider costs, not house subscription prices**, before VAT, inference and optional extras. IPv4 is included in the Hetzner totals below. Dollar prices remain in their billing currency; CPU counts are not performance benchmarks.
+
+| Provider / size               | vCPU / RAM / included disk |                   Monthly price | Important qualification                                                         |
+| ----------------------------- | -------------------------- | ------------------------------: | ------------------------------------------------------------------------------- |
+| Hetzner CX23                  | 2 / 4 GB / 40 GB           |                           €5.99 | Available in two checked EU locations, not a reliable larger-size fallback      |
+| Hetzner CPX12                 | 1 / 2 GB / 40 GB           |  €9.99 Helsinki; €11.99 Germany | Available, but half CX23's CPU/RAM; not an equivalent smallest-plan replacement |
+| Hetzner CPX22                 | 2 / 4 GB / 80 GB           | €16.99 Helsinki; €19.99 Germany | Roughly 2.8–3.3 times the old small-VM rental, with twice the disk              |
+| Hetzner CPX32                 | 4 / 8 GB / 160 GB          | €30.49 Helsinki; €35.99 Germany | Available at the check                                                          |
+| Hetzner CPX42                 | 8 / 16 GB / 320 GB         | €59.49 Helsinki; €69.99 Germany | Available at the check                                                          |
+| Vultr regular Cloud Compute   | 2 / 4 GB / 80 GB           |                             $20 | Fresh public plan API; region stock and our integration not tested              |
+| Akamai / Linode shared CPU    | 2 / 4 GB / 80 GB           |                             $24 | Fresh public plan API; no demonstrated price advantage over CPX in Helsinki     |
+| AWS Lightsail Linux with IPv4 | 2 / 4 GB / 80 GB           |                             $24 | Still bills while stopped                                                       |
+
+Vultr's checked 8 GB/160 GB and 16 GB/320 GB plans cost **$40 and $80**. Linode's cost **$48 and $96**. Lightsail's corresponding bundles are **$44 for 2 vCPU/8 GB/160 GB** and **$84 for 4 vCPU/16 GB/320 GB**; those are not matching CPU allocations.
+
+DigitalOcean's previous $24/$48/$96 Basic quotes are retained only in the historical comparison below: its pricing pages refused this investigation's direct requests, so they were **not freshly verified**. Scaleway's pricing page was also inaccessible; zero-valued price fields in its public instance API are not evidence of free machines.
+
+### OVH: attractive prices, but check Linux stock and the actual basket
+
+OVH's current public VPS catalogue is materially cheaper on paper. Its website labels the line **VPS 2027**; that label alone does not mean a future delivery date. Monthly, no-commitment base prices in the Ireland catalogue are **€4.49 (2 vCPU/4 GB/40 GB), €8.49 (4/8/75), €12.24 (6/12/100) and €23.49 (8/24/200)**. Lower website “from” prices use twelve-month upfront commitment, not the monthly rate.
+
+These are **base prices, not verified all-in checkout totals**. The catalogue requires a backup option whose price does not simply match the website's “included” wording. Conservatively adding the cheapest mandatory backup gives **€4.84/€8.99/€12.84/€24.49** respectively, with the first IPv4 included. Additional 100 GB disk is listed at €4.31/month; the smallest plan plus 50 GB extra storage would be **€6.99 for 40 GB root plus 50 GB separate disk**, subject to an actual quote and stock.
+
+More importantly, the public stock endpoint marked the checked **EU Linux** offers unavailable. The 8 GB model had Linux availability in **Canada**, not a verified EU substitute. A region's generic `status: available` can reflect Windows stock while `linuxStatus` is unavailable. A provider shortlist must use the latter, not just the headline availability.
+
+OVH merits follow-up, but an out-of-stock quote does not solve an out-of-stock procurement problem. It has public ordering and VPS lifecycle APIs; we have not built or tested a house integration, boot/recovery path or workload benchmark.
+
+### Boat: the old cost conclusion no longer applies to CPX
+
+Fresh Boat documentation still lists **2 vCPU/4 GB/51 GB at $0.018/hour**. At 730 hours that is **$13.14/month of compute**, approximately **€11.81** using the latest available ECB observation at this check: **11 November, $1.1127 per euro**. The account has a **$20 minimum**, credited towards usage rather than added to it; one small VM alone therefore does not produce a $13.14 invoice.
+
+The previous two-resident activity reconstruction below remains a **7 November observation**, not a new simulation. Re-expressing its rounded one-hour-timeout result at the new exchange rate gives about **€291/month for 40 small VMs**, versus **€679.60 for 40 Helsinki CPX22s** or **€799.60 in Germany**. That excludes start overages, recovery overhead and extras, as before. The old statement that an hour's idle grace destroys the saving was true against CX23, **not against CPX22**.
+
+Boat is therefore worth reconsidering for small homes, even without aggressive sleeping. Its **51 GB user disk is larger than the 40 GB CX23 homes it would replace**, though smaller than CPX22's 80 GB. The disk constraint chiefly affects larger and development homes: its 8 GB RAM size also has only 51 GB of user disk; the 16 GB size has 111 GB. A 251 GB workspace requires the $0.20/hour size: **$146/month at full use**, not the small-machine price. We have not established an independently expandable disk option.
+
+The lifecycle constraints still matter. After the short same-machine grace, resume is a fresh boot with selected disk state restored, not guaranteed preservation of RAM or running processes. Docker build caches and some tool caches are excluded unless deliberately relocated. Long absence needs a saved snapshot beyond the ordinary minimum 14-day stopped retention. An integration must recover services, scheduled work and resident readiness, not merely receive an HTTP “ready” response. No Boat pilot or purchase has been made.
+
+### Maritime, sleeping EC2 and dedicated pools
+
+**Maritime** still advertises agent boxes at $2/month for 4 GB RAM, plus $0.08/GB-month above 5 GB. An **80 GB** home is therefore **$8/month of usage**, subject to the account minimum and awake-machine limits. Self-serve storage tops out at **100 GB** and RAM at **8 GB**. The default is 1 vCPU; the billing docs say more vCPUs can be requested without changing the memory/disk rate. This is not a measured CPU-performance guarantee. Only `/data` is persistent; always-on machines are not sold on these plans and internal timers do not fire while asleep. It is an interesting small-home candidate, not a validated replacement for larger development workspaces.
+
+**EC2 in Ireland**, Linux On-Demand, is expensive always-on but can save money at low duty cycles. A t3a.medium is $0.0408/hour, plus **$7.04/month for 80 GB gp3** and **$3.65/month for a retained public IPv4**. At 730 running hours that is **$40.47**, before traffic, burst CPU credits or backups; at 100 running hours it is **$14.77**. Even at zero compute hours, retained storage and IPv4 cost **$10.69**. Releasing the IP changes that floor and the recovery contract. ARM t4g.medium is cheaper compute, but is a separate compatibility choice, not an equivalent x86 deployment.
+
+**Dedicated pooling** deserves a new density calculation rather than the old “hundreds first” assumption being treated as permanent. A freshly checked Hetzner AX42 quote is €99/month plus €49 setup, with 64 GB RAM and two 512 GB NVMe drives. Mirroring gives roughly one drive's capacity before system overhead, not a terabyte of independent usable storage. At 80 GB per home, disk admits at most six homes before overhead/headroom; at 160 GB, three. Shared failure domains, spare capacity, isolation, CPU contention, backups and operating work must be priced too. This is not €99 divided by a RAM-only resident count.
+
+### Disk changes the recommendation
+
+Hetzner's account API now quotes **€0.0572 per GB-month** for extra volumes: **€5.72 per 100 GB**, before VAT. Some descriptive website copy still shows the older €0.044 rate; the current API price governs this comparison.
+
+For a home that needs disk rather than more CPU/RAM, **CPX22 plus a 100 GB volume is €22.71/month in Helsinki for 80 GB root plus 100 GB separately mounted storage**. That can be much more sensible than buying CPX42 merely to obtain disk. It is not a single enlarged root disk; provisioning, mounts and backups would need implementing and verifying.
+
+Moving a large development workspace to another host also does not fix unbounded checkout/cache growth. Capacity and retention are separate questions. No private files or development volumes are moved or deleted by this research.
+
+### Recommendation, not an approved migration
+
+1. **Do not replace CX with CPX by default yet.** Keep using verified available CX23 capacity for small births where appropriate. Larger births remain blocked pending an explicit interim choice and pricing decision; do not silently downsize CPU/RAM or increase provider spend.
+2. **Reconsider Boat for small homes**, because the old financial rejection no longer holds against CPX. A disposable compatibility test is the next useful evidence, not moving a resident first.
+3. **Keep OVH on the conventional-VM shortlist**, conditional on a real Linux quote and acceptable region stock. Vultr is a plausible conventional fallback, but its price is close to CPX, not a transformative saving.
+4. **Treat large development homes separately.** Compare a smaller VM plus storage with a properly costed dedicated pool, rather than extrapolating the smallest sandbox's price.
+
+The provider decision remains with Daniel. This update authorises **no purchases, provider switch, paid pilot, resident move or provisioning change**.
+
+### Sources for this update
+
+Checked by actual HTTP retrieval on 12 November 2026, with the stock timestamps above:
+
+- [Hetzner regular-performance plans](https://www.hetzner.com/cloud/regular-performance/) and [the website's current price data](https://www.hetzner.com/_resources/app/data/app/live_data_prices.json); independently checked against account-scoped `GET /server_types` and `GET /pricing`. No credential or customer data is published.
+- [Hetzner block storage](https://www.hetzner.com/cloud/block-storage/) and [AX42](https://www.hetzner.com/dedicated-rootserver/ax42/).
+- [Boat pricing](https://docs.boat.dev/pricing.md), [machine sizes](https://docs.boat.dev/machines.md), [snapshot exclusions](https://docs.boat.dev/snapshots/whats-saved.md) and [readiness](https://docs.boat.dev/readiness.md).
+- [ECB latest daily reference rates](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml), containing the 11 November USD observation at retrieval.
+- [Maritime agent boxes](https://maritime.sh/docs/persistent-sandboxes.md), [billing](https://maritime.sh/docs/billing.md) and [sleep/wake](https://maritime.sh/docs/how-it-works.md).
+- [Vultr plan API](https://api.vultr.com/v2/plans), [Linode type API](https://api.linode.com/v4/linode/types), [Lightsail prices](https://aws.amazon.com/lightsail/pricing/) and [billing FAQ](https://aws.amazon.com/lightsail/faq/).
+- [OVH Ireland VPS plans](https://www.ovhcloud.com/en-ie/vps/), [public order catalogue](https://eu.api.ovh.com/v1/order/catalog/public/vps?ovhSubsidiary=IE) and [Linux-specific stock API](https://eu.api.ovh.com/v1/vps/order/rule/datacenter/aggregated?ovhSubsidiary=IE&planCodes=vps-2027-model1,vps-2027-model2,vps-2027-model3,vps-2027-model4,vps-2025-model1). Public catalogue inclusion is not proof that an order will succeed.
+- [AWS Ireland EC2 price catalogue](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/eu-west-1/index.csv), published 10 November with 1 November effective prices; [IPv4 pricing](https://aws.amazon.com/vpc/pricing/) and [EC2 stop/start behaviour](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Stop_Start.html).
+
+Mira checked Hetzner, Boat, Maritime, storage and the recommendation. Phil, a GPT-6.1 Sol helper, retrieved the additional provider evidence and caught OVH's commitment, mandatory-option and Linux-stock distinctions. No new performance benchmarks were run.
+
+---
+
+## Historical decision: 7 November 2026
+
+**The remainder preserves the earlier decision and its dated evidence. It is not the current provider recommendation.** In particular, its Boat comparison uses CX23, not CPX, and its stock and list-price statements must not be read as a 12 November quote.
 
 ## What we decided
 
