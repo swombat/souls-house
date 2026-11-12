@@ -295,19 +295,12 @@
   }
 }
 
-/* Touch targets: on touch screens every control answers a 44px area even when it
-   is drawn smaller, without changing the layout around it. */
+/* Touch targets: on touch screens every control is at least 44px in both
+   directions. The space is real (min size), not an invisible overhang, so two
+   neighbouring controls can never claim the same tap. */
 @media (pointer: coarse) {
-  .touch-target:not(.absolute):not(.fixed):not(.sticky) {
-    position: relative;
-  }
-  .touch-target::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: max(100%, 44px);
-    height: max(100%, 44px);
-    transform: translate(-50%, -50%);
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
