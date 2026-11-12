@@ -9,6 +9,11 @@ Rails.application.configure do
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false
 
+  # Every SQL statement at debug level went to log/test.log: gigabytes a run,
+  # with a stat per line for rotation, written by every worker into one file.
+  # RAILS_LOG_LEVEL=debug brings it back when a failing test needs the log.
+  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "warn")
+
   # Test databases contain synthetic records only. Public, test-only keys make
   # encryption reproducible without giving CI (including forks) any house keys.
   config.active_record.encryption.primary_key = "test-primary-key-not-for-real-data"
