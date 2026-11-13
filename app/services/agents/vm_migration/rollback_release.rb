@@ -67,15 +67,30 @@ module Agents
       # A disabled account keeps no servers (Account#release_vm_servers). Its
       # committed and recovered attempts record the intent; step! still
       # deletes nothing until the attempt is recovered.
+      #
+      # So does a restoring attempt whose swap has already committed: the
+      # placement is the house's at the next generation while the attempt
+      # waits for its post-commit start, before adopt! marks it committed
+      # (Mira, jaMMNj YRyMkB). Before the swap the placement still holds the
+      # server and its own cleanup carries over at the switch.
       def self.request_for_disabled_account!(rollback, now: Time.current)
         recorded = rollback.with_lock do
-          next false if rollback.release_requested? || !%w[committed recovered].include?(rollback.phase)
+          next false if rollback.release_requested? || !swapped?(rollback)
 
           record_request!(rollback, reason: "account_disabled", requested_by: nil, now:)
           true
         end
         VmRollbackReleaseJob.perform_later(rollback.id) if recorded
       end
+
+      def self.swapped?(rollback)
+        return true if %w[committed recovered].include?(rollback.phase)
+        return false unless rollback.phase == "restoring"
+
+        placement = AgentPlacement.find(rollback.agent_placement_id)
+        placement.backend == "local" && placement.generation == rollback.source["placement_generation"].to_i + 1
+      end
+      private_class_method :swapped?
 
       def self.record_request!(rollback, reason:, requested_by:, now:)
         rollback.update!(release_requested_at: now, release_reason: reason.to_s.first(255), release_requested_by: requested_by)

@@ -77,6 +77,9 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     end
 
     def recreate_for_rollback!(guard)
+      # A test's hook into the post-commit start, set without a public
+      # accessor so the fake's interface still matches the real Sandbox.
+      @before&.call
       guard.call(agent.reload)
       raise Agents::Sandbox::SandboxError, error if error
 
@@ -503,6 +506,40 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_equal :released, release(rollback)
     assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
     assert_equal [ "local", "ready", nil ], [ @placement.reload.backend, @placement.state, @placement.cleanup_requested_at ]
+  end
+
+  test "an account disabled after the swap commits but before the attempt is adopted records the intent" do
+    rollback = to_restoring
+    seen = nil
+    # The post-commit start: the placement is already the house's and the
+    # attempt is not yet marked committed.
+    @sandbox.instance_variable_set(:@before, lambda do
+      @sandbox.instance_variable_set(:@before, nil)
+      seen = [ @placement.reload.backend, rollback.reload.phase ]
+      @agent.account.send(:release_vm_servers)
+    end)
+    @sandbox.error = "docker: no space left"
+    assert_equal "committed", full { driver(rollback).step! }
+    assert_equal [ "local", "restoring" ], seen, "the disable landed in the interval"
+
+    assert_nil @placement.reload.cleanup_requested_at, "no flag on the house's placement"
+    assert rollback.reload.release_requested?, "the restoring, already swapped attempt records the intent"
+    assert_equal "account_disabled", rollback.release_reason
+    assert_equal :waiting, release(rollback), "nothing is deleted before the resident is verified running"
+    assert_empty @client.deletes
+
+    @sandbox.error = nil
+    assert_equal "recovered", full { driver(rollback.reload).step! }
+    assert_equal :released, release(rollback)
+    assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
+  end
+
+  test "an account disabled before the swap does not ask the attempt itself" do
+    rollback = to_restoring
+    rollback.update_columns(phase: "restoring") # restoring, the swap not yet committed
+    assert_equal [ "hetzner_cloud", 4343 ], [ @placement.reload.backend, @placement.provider_server_id ]
+    Agents::VmMigration::RollbackRelease.request_for_disabled_account!(rollback)
+    assert_not rollback.reload.release_requested?, "the placement still holds the server and owns its cleanup"
   end
 
   test "a cleanup asked of a placement a rollback has already made local changes nothing" do

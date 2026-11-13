@@ -604,7 +604,7 @@ class Account < ApplicationRecord
       placement.request_cleanup!("account_disabled")
       VmCleanupJob.perform_later(placement.id)
     end
-    VmRollback.where(agent_id: agents.select(:id), phase: %w[committed recovered], release_requested_at: nil)
+    VmRollback.where(agent_id: agents.select(:id), phase: %w[restoring committed recovered], release_requested_at: nil)
       .find_each { |rollback| Agents::VmMigration::RollbackRelease.request_for_disabled_account!(rollback) }
   end
 
