@@ -191,6 +191,10 @@
         <Pulse class="mr-2 size-4" />
         <span>Stalled Threads</span>
       </DropdownMenu.Item>
+      <DropdownMenu.Item onclick={() => router.visit('/admin/hetzner_availability')}>
+        <ChartLine class="mr-2 size-4" />
+        <span>Hetzner Availability</span>
+      </DropdownMenu.Item>
       <DropdownMenu.Item onclick={() => router.visit('/admin/jobs')}>
         <Play class="mr-2 size-4" />
         <span>Background Jobs</span>

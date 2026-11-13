@@ -199,6 +199,32 @@ class HetznerCloudClient
     nil
   end
 
+  # Which locations can sell each server type right now, from GET
+  # /server_types (the old /datacenters endpoint is gone since June 2026):
+  # { "cx23" => { "fsn1" => false, "nbg1" => false, ... }, ... } for every
+  # type Hetzner lists. One request, one page, a short timeout; a page that
+  # says there are more raises IncompleteListing rather than answering for
+  # half the types. Read-only.
+  def server_type_availability
+    body = request(:get, "/server_types", nil, { per_page: LIST_PAGE_SIZE }, 10)
+    types = body["server_types"]
+    incomplete!("of server types is malformed") unless types.is_a?(Array)
+    incomplete!("of server types has more than one page") unless body.dig("meta", "pagination", "next_page").nil?
+
+    types.each_with_object({}) do |type, result|
+      next unless type.is_a?(Hash) && type["name"].is_a?(String)
+
+      result[type["name"]] = Array(type["locations"]).each_with_object({}) do |location, places|
+        next unless location.is_a?(Hash) && location["name"].is_a?(String)
+
+        # A missing or non-boolean answer is not "unavailable": fail the check.
+        incomplete!("of server types has a malformed availability") unless [ true, false ].include?(location["available"])
+
+        places[location["name"]] = location["available"]
+      end
+    end
+  end
+
   # Servers this house created for one placement (normally zero or one).
   def find_by_placement(placement_id)
     list_servers("#{MANAGED_LABEL}=true,#{PLACEMENT_LABEL}=#{placement_id}")
@@ -312,7 +338,8 @@ class HetznerCloudClient
     raise Refused.new(message, code: "refused")
   end
 
-  def request(method, path, payload = nil, query = nil)
+  # read_timeout is positional: callers pass query as bare keywords.
+  def request(method, path, payload = nil, query = nil, read_timeout = 30)
     raise NotConfigured.new("Hetzner Cloud API token is not configured", code: "not_configured") if @token.blank?
 
     uri = URI("#{BASE_URL}#{path}")
@@ -322,7 +349,7 @@ class HetznerCloudClient
     http_request["Content-Type"] = "application/json"
     http_request.body = payload.to_json if payload
 
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 30) do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout:) do |http|
       http.request(http_request)
     end
     handle(response, method)

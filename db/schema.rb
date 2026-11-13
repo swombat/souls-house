@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_004500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1886,6 +1886,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_004500) do
     t.index ["account_id"], name: "index_guest_memberships_on_account_id"
     t.index ["added_by_id"], name: "index_guest_memberships_on_added_by_id"
     t.index ["agent_id"], name: "index_guest_memberships_on_agent_id"
+  end
+
+  create_table "hetzner_availability_samples", force: :cascade do |t|
+    t.datetime "checked_at", null: false
+    t.string "server_type", null: false
+    t.string "location"
+    t.boolean "available"
+    t.string "error"
+    t.datetime "created_at", null: false
+    t.index ["checked_at", "server_type"], name: "index_hetzner_availability_on_checked_at_and_type"
   end
 
   create_table "house_inference_calls", force: :cascade do |t|
