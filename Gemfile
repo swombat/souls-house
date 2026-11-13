@@ -99,7 +99,7 @@ group :development do
 end
 
 group :test do
-  gem "minitest", "~> 6.0"
+  gem "minitest", "~> 6.1"
   # Minitest 6 moved Minitest::Mock and Object#stub into their own gem.
   gem "minitest-mock"
   # Test runner used by bin/test and CI: forked workers, class scheduling,
