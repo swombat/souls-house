@@ -84,9 +84,11 @@ class TelegramSubscriptionTest < ActiveSupport::TestCase
     end
   end
 
-  test "bot streak cannot exceed the cap or be negative" do
+  test "bot streak cannot exceed the widest limit or be negative" do
     group = @agent.telegram_groups.build(telegram_chat_id: -123)
-    [ -1, 4 ].each do |streak|
+    group.bot_wake_streak = 4
+    assert group.valid?, "a streak past a lowered account limit must stay valid"
+    [ -1, 51 ].each do |streak|
       group.bot_wake_streak = streak
       assert_not group.valid?
       assert group.errors[:bot_wake_streak].any?

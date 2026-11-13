@@ -104,6 +104,7 @@ class Account < ApplicationRecord
   validates :account_type, presence: true
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :resident_handoff_cap_in_range
+  validate :telegram_bot_wake_limit_in_range
   validate :resident_room_belongs_to_account
   validates :main_room_name, length: { maximum: 40 }, format: { without: /\0/, message: "must not contain NUL" }
   validates :main_room_description, length: { maximum: 280 }, format: { without: /\0/, message: "must not contain NUL" }
@@ -176,6 +177,12 @@ class Account < ApplicationRecord
   # from a person (MessageHandoff). Stored in settings; 0 turns handoffs off.
   RESIDENT_HANDOFF_CAP_DEFAULT = 6
   RESIDENT_HANDOFF_CAP_RANGE = 0..50
+
+  # How many times in a row a resident in a Telegram group may answer other
+  # bots before a message from a person (TelegramSubscription#bot_wake_streak).
+  # Stored in settings; 0 means it never answers bots.
+  TELEGRAM_BOT_WAKE_LIMIT_DEFAULT = 3
+  TELEGRAM_BOT_WAKE_LIMIT_RANGE = 0..50
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
@@ -309,6 +316,15 @@ class Account < ApplicationRecord
 
   def resident_handoff_cap=(value)
     self.settings = (settings || {}).merge("resident_handoff_cap" => Integer(value.to_s, exception: false) || value)
+  end
+
+  def telegram_bot_wake_limit
+    value = (settings || {})["telegram_bot_wake_limit"]
+    value.is_a?(Integer) ? value : TELEGRAM_BOT_WAKE_LIMIT_DEFAULT
+  end
+
+  def telegram_bot_wake_limit=(value)
+    self.settings = (settings || {}).merge("telegram_bot_wake_limit" => Integer(value.to_s, exception: false) || value)
   end
 
   def disable!
@@ -669,6 +685,13 @@ class Account < ApplicationRecord
     return if value.nil? || (value.is_a?(Integer) && RESIDENT_HANDOFF_CAP_RANGE.cover?(value))
 
     errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
+  end
+
+  def telegram_bot_wake_limit_in_range
+    value = (settings || {})["telegram_bot_wake_limit"]
+    return if value.nil? || (value.is_a?(Integer) && TELEGRAM_BOT_WAKE_LIMIT_RANGE.cover?(value))
+
+    errors.add(:telegram_bot_wake_limit, "must be a whole number from #{TELEGRAM_BOT_WAKE_LIMIT_RANGE.min} to #{TELEGRAM_BOT_WAKE_LIMIT_RANGE.max}")
   end
 
   def main_room_name_is_free

@@ -4,7 +4,6 @@ class TelegramSubscription < ApplicationRecord
 
   CHAT_KINDS = %w[direct group].freeze
   GROUP_CHAT_TYPES = %w[group supergroup].freeze
-  BOT_WAKE_LIMIT = 3
 
   belongs_to :agent
   # A direct thread belongs to the person who subscribed; a group thread
@@ -17,7 +16,11 @@ class TelegramSubscription < ApplicationRecord
 
   validates :chat_kind, inclusion: { in: CHAT_KINDS }
   validates :user, presence: true, if: :direct?
-  validates :bot_wake_streak, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: BOT_WAKE_LIMIT }
+  # The ceiling is the widest limit an owner can set; the account's own limit
+  # can be lowered below a streak already counted, which must stay valid.
+  validates :bot_wake_streak, numericality: {
+    only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: Account::TELEGRAM_BOT_WAKE_LIMIT_RANGE.max
+  }
   validate :valid_answer_bot_usernames
 
   before_validation :normalize_answer_bot_usernames
@@ -48,6 +51,16 @@ class TelegramSubscription < ApplicationRecord
 
   def answers_bot?(username)
     answers_bots? && (answer_bot_usernames.empty? || answer_bot_usernames.include?(username.to_s.downcase.delete_prefix("@")))
+  end
+
+  # Bot answers in a row before a person must speak: the owning account's
+  # setting (Account#telegram_bot_wake_limit), read fresh each time.
+  def bot_wake_limit
+    agent.account.telegram_bot_wake_limit
+  end
+
+  def bot_wake_capped?
+    bot_wake_streak >= bot_wake_limit
   end
 
   def subscriber_name

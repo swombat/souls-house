@@ -27,6 +27,37 @@ class TelegramGroupNoticeJobTest < ActiveSupport::TestCase
     assert_includes text, "Any bot, with or without a username, is allowed."
   end
 
+  test "notices carry the account's bot answer limit, and say plainly when it is zero" do
+    account = @agent.account
+    @group.update!(answers_bots: true)
+    account.update!(telegram_bot_wake_limit: 12)
+    assert_includes TelegramGroupNoticeJob.text_for(@group.reload), "12 times in a row"
+    assert_equal "A < B & C has answered bots 12 times in a row; a message from a person lets her continue.",
+      TelegramGroupNoticeJob.bot_cap_text_for(@group)
+
+    account.update!(telegram_bot_wake_limit: 1)
+    assert_includes TelegramGroupNoticeJob.text_for(@group.reload), "1 time in a row"
+
+    account.update!(telegram_bot_wake_limit: 0)
+    text = TelegramGroupNoticeJob.text_for(@group.reload)
+    assert_not_includes text, "Other bots can also wake"
+    assert_includes text, "answers only people"
+    assert_includes TelegramGroupNoticeJob.bot_cap_text_for(@group), "answers only people"
+  end
+
+  test "a queued cap notice still sends when the limit was lowered under the streak" do
+    @group.update!(answers_bots: true, bot_wake_streak: 3, bot_cap_notice_message_id: 123)
+    @agent.account.update!(telegram_bot_wake_limit: 2)
+    sent = []
+    @group.stub :agent, @agent do
+      @agent.stub :telegram_send_message, ->(_chat, text) { sent << text; { "result" => { "message_id" => 9 } } } do
+        TelegramGroupNoticeJob.perform_now(@group, bot_cap_message_id: 123)
+      end
+    end
+    assert_equal 1, sent.size
+    assert_includes sent.first, "2 times in a row"
+  end
+
   test "group notice names the permitted bot usernames when the list is restricted" do
     @group.update!(answers_bots: true, answer_bot_usernames: [ "@Other_Bot", "SECOND_BOT" ])
     text = TelegramGroupNoticeJob.text_for(@group)

@@ -322,6 +322,68 @@ class ProcessTelegramGroupUpdateJobTest < ActiveSupport::TestCase
     assert_equal 3, enqueued_jobs.count { |job| job["job_class"] == "TelegramAgentTriggerJob" }
   end
 
+  test "the account's bot answer limit replaces the old fixed three" do
+    @account.update!(telegram_bot_wake_limit: 5)
+    group = allowed_group
+    group.update!(answers_bots: true)
+    5.times { |index| ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101 + index)) }
+    assert_equal 5, group.reload.bot_wake_streak
+    assert_nil group.bot_cap_notice_message_id
+
+    assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, bot_message(106))
+      end
+    end
+    assert_equal 5, group.reload.bot_wake_streak
+    assert_equal [ true ] * 5 + [ false ], group.telegram_messages.order(:id).map(&:addressed?)
+  end
+
+  test "a lowered limit stops bot answers earlier" do
+    @account.update!(telegram_bot_wake_limit: 1)
+    group = allowed_group
+    group.update!(answers_bots: true)
+    ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101))
+    assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
+      ProcessTelegramUpdateJob.perform_now(@agent, bot_message(102))
+    end
+    assert_equal [ true, false ], group.telegram_messages.order(:id).map(&:addressed?)
+    assert_equal 1, group.reload.bot_wake_streak
+  end
+
+  test "a limit of zero never answers bots but still answers people" do
+    @account.update!(telegram_bot_wake_limit: 0)
+    group = allowed_group
+    group.update!(answers_bots: true)
+    assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+      ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101))
+    end
+    assert_equal 0, group.reload.bot_wake_streak
+    assert_not group.telegram_messages.sole.addressed?
+  end
+
+  test "a streak already past a newly lowered limit is capped, not wedged, and a person resets it" do
+    group = allowed_group
+    group.update!(answers_bots: true, bot_wake_streak: 3)
+    @account.update!(telegram_bot_wake_limit: 1)
+
+    assert_enqueued_jobs 1, only: TelegramGroupNoticeJob do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, bot_message(101))
+      end
+    end
+    assert_equal 3, group.reload.bot_wake_streak
+    assert group.valid?
+
+    human = group_message("a person is here")
+    human["message"]["message_id"] = 200
+    ProcessTelegramUpdateJob.perform_now(@agent, human)
+    assert_equal 0, group.reload.bot_wake_streak
+    ProcessTelegramUpdateJob.perform_now(@agent, bot_message(201))
+    assert group.telegram_messages.find_by!(telegram_message_id: 201).addressed?
+    assert_equal 1, group.reload.bot_wake_streak
+  end
+
   test "an unaddressed human message resets the cap and permits a new streak and notice" do
     group = allowed_group
     group.update!(answers_bots: true)
