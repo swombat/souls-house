@@ -9,7 +9,9 @@ class TelegramGroupNoticeJob < ApplicationJob
       group.reload
       # A reset and another bot streak may have overtaken this queued notice.
       # The suppressed inbound row identifies the streak, not just its count.
-      return unless group.answers_bots? && group.bot_wake_streak == TelegramSubscription::BOT_WAKE_LIMIT &&
+      # The limit is the account's and may have been lowered under a streak,
+      # so "at or past it" is the cap, not equality.
+      return unless group.answers_bots? && group.bot_wake_capped? &&
         group.bot_cap_notice_message_id == bot_cap_message_id
     end
     return unless group.deliverable?
@@ -42,13 +44,21 @@ class TelegramGroupNoticeJob < ApplicationJob
       else
         "Only these bot usernames are allowed: #{group.answer_bot_usernames.map { |name| "@#{name}" }.join(", ")}."
       end
-      text += "\n\nOther bots can also wake #{agent.name} by mentioning #{handle} or replying to it. #{senders} These answers use the owner's account allowance too. #{agent.name} can answer bots #{TelegramSubscription::BOT_WAKE_LIMIT} times in a row; a message from a person lets her continue."
+      limit = group.bot_wake_limit
+      text += if limit.zero?
+        "\n\nBots are allowed in this group, but the account \"#{account.name}\" has set #{agent.name} to answer bots 0 times in a row, so for now #{agent.name} answers only people."
+      else
+        "\n\nOther bots can also wake #{agent.name} by mentioning #{handle} or replying to it. #{senders} These answers use the owner's account allowance too. #{agent.name} can answer bots #{limit} #{limit == 1 ? "time" : "times"} in a row; a message from a person lets her continue."
+      end
     end
     text
   end
 
   def self.bot_cap_text_for(group)
-    "#{group.agent.name} has answered bots #{TelegramSubscription::BOT_WAKE_LIMIT} times in a row; a message from a person lets her continue."
+    limit = group.bot_wake_limit
+    return "#{group.agent.name} is set not to answer bots in this group's account, so #{group.agent.name} answers only people here." if limit.zero?
+
+    "#{group.agent.name} has answered bots #{limit} #{limit == 1 ? "time" : "times"} in a row; a message from a person lets her continue."
   end
 
 end

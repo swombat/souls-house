@@ -96,6 +96,22 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, @team_account.reload.resident_handoff_cap
   end
 
+  test "the Telegram bot answer limit defaults to three and can be changed, within range" do
+    assert_equal 3, @team_account.telegram_bot_wake_limit
+    patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: "20" } }
+    assert_redirected_to @team_account
+    assert_equal 20, @team_account.reload.telegram_bot_wake_limit
+
+    patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: "0" } }
+    assert_equal 0, @team_account.reload.telegram_bot_wake_limit
+
+    [ "51", "-1", "lots" ].each do |value|
+      patch account_path(@team_account), params: { account: { telegram_bot_wake_limit: value } }
+      assert_redirected_to @team_account
+      assert_equal 0, @team_account.reload.telegram_bot_wake_limit, value
+    end
+  end
+
   test "the reflexes switch saves under any site scope and the page carries the site scope" do
     %w[disabled enabled account_choice].each do |scope|
       Setting.instance.update!(reflexes_scope: scope)

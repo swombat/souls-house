@@ -10,6 +10,7 @@
   import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
+  import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
   import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
   import SpeechEngineCard from '$lib/components/accounts/SpeechEngineCard.svelte';
@@ -25,6 +26,7 @@
     can_invite_owner = false,
     current_user_id,
     resident_handoff_cap = 6,
+    telegram_bot_wake_limit = 3,
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
     voice_mode_enabled = false,
@@ -45,6 +47,7 @@
         'can_manage',
         'can_invite_owner',
         'resident_handoff_cap',
+        'telegram_bot_wake_limit',
         'reflexes_enabled',
         'voice_mode_enabled',
         'speech_engine',
@@ -145,6 +148,8 @@
   </Card.Root>
 
   <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
+
+  <TelegramBotWakeLimitCard accountId={account.id} limit={telegram_bot_wake_limit} canManage={can_manage} />
 
   <ReflexesCard
     accountId={account.id}

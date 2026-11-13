@@ -32,6 +32,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'can_manage',
     'can_invite_owner',
     'resident_handoff_cap',
+    'telegram_bot_wake_limit',
     'reflexes_enabled',
     'voice_mode_enabled',
     'speech_engine',

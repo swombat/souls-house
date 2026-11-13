@@ -164,7 +164,7 @@ class ProcessTelegramUpdateJob < ApplicationJob
           (content[:media_kind].present? || text_wake_eligible?(agent))
       end
 
-      capped = !from_person && addressed && group.bot_wake_streak >= TelegramSubscription::BOT_WAKE_LIMIT
+      capped = !from_person && addressed && group.bot_wake_capped?
       # addressed is wake eligibility, not just syntactic addressing:
       # downstream media preparation uses it too. Policy-suppressed bot media
       # must follow the context path, never wake around the setting/list/cap.
