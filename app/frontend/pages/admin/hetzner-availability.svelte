@@ -33,7 +33,7 @@
     <h2 class="text-lg font-semibold">The last seven days</h2>
     <p class="text-sm text-muted-foreground">
       Each line is a pair: up means <em>either</em> type of the pair was available in <em>any</em> location at that check,
-      down means neither was. A gap means the house could not check.
+      down means both types were checked and neither was. A gap means the house could not check one or both.
     </p>
     {#if !checks.length}
       <p class="text-sm text-muted-foreground">No checks yet. The first one runs within five minutes of a deploy.</p>

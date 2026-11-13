@@ -67,6 +67,23 @@ class HetznerAvailabilityCheckJobTest < ActiveJob::TestCase
     assert_enqueued_jobs 0
   end
 
+  [ :missing, nil, "false", 0 ].each do |bad|
+    test "a location whose available is #{bad.inspect} fails the check instead of reading as unavailable" do
+      types = HetznerAvailabilitySample::TYPES.map { |name| type_json(name, []) }
+      if bad == :missing
+        types.first["locations"].first.delete("available")
+      else
+        types.first["locations"].first["available"] = bad
+      end
+      respond(types)
+
+      run_check
+
+      assert_equal HetznerAvailabilitySample::TYPES.size, HetznerAvailabilitySample.count
+      assert HetznerAvailabilitySample.all.all? { |row| row.available.nil? && row.error == "incomplete_listing" }
+    end
+  end
+
   test "a tracked type Hetzner no longer lists is marked not_listed" do
     respond(HetznerAvailabilitySample::TYPES.without("cx53").map { |name| type_json(name, []) })
 

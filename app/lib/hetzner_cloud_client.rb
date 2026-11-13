@@ -217,7 +217,10 @@ class HetznerCloudClient
       result[type["name"]] = Array(type["locations"]).each_with_object({}) do |location, places|
         next unless location.is_a?(Hash) && location["name"].is_a?(String)
 
-        places[location["name"]] = location["available"] == true
+        # A missing or non-boolean answer is not "unavailable": fail the check.
+        incomplete!("of server types has a malformed availability") unless [ true, false ].include?(location["available"])
+
+        places[location["name"]] = location["available"]
       end
     end
   end

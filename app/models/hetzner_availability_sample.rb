@@ -53,7 +53,8 @@ class HetznerAvailabilitySample < ApplicationRecord
 
   # One series per pair since a time: [{ label:, types:, points: [[time, 1|0|nil]] }].
   # A point is 1 when either type of the pair was available in any location,
-  # 0 when neither was, and nil when neither could be checked.
+  # 0 only when both types were checked and neither was, and nil otherwise:
+  # one unchecked type leaves the pair unknown, never down.
   def self.pair_series(since)
     flags = where(checked_at: since..).group(:checked_at, :server_type).order(:checked_at)
       .pluck(:checked_at, :server_type, Arel.sql("bool_or(available)"))
@@ -67,7 +68,7 @@ class HetznerAvailabilitySample < ApplicationRecord
 
   def self.pair_value(values)
     return 1 if values.include?(true)
-    return 0 if values.include?(false)
+    return 0 if values.all?(false)
 
     nil
   end

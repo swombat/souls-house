@@ -25,6 +25,23 @@ class HetznerAvailabilitySampleTest < ActiveSupport::TestCase
     assert_equal [ t0, t0 + 5.minutes, t0 + 10.minutes, t0 + 15.minutes ], series["CX43 + CAX31"][:points].map(&:first)
   end
 
+  test "a pair is down only when both types were checked; one unchecked type leaves it unknown" do
+    assert_equal 0, HetznerAvailabilitySample.pair_value([ false, false ])
+    assert_nil HetznerAvailabilitySample.pair_value([ false, nil ])
+    assert_nil HetznerAvailabilitySample.pair_value([ nil, false ])
+    assert_nil HetznerAvailabilitySample.pair_value([ nil, nil ])
+    assert_equal 1, HetznerAvailabilitySample.pair_value([ true, nil ])
+    assert_equal 1, HetznerAvailabilitySample.pair_value([ nil, true ])
+
+    t0 = Time.zone.parse("2026-11-13 09:00")
+    HetznerAvailabilitySample.record!(
+      HetznerAvailabilitySample::TYPES.without("cax11").index_with { { "fsn1" => false } }, at: t0
+    )
+    series = HetznerAvailabilitySample.pair_series(t0 - 1.minute).index_by { |line| line[:label] }
+    assert_equal [ [ t0, nil ] ], series["CX23 + CAX11"][:points]
+    assert_equal [ [ t0, 0 ] ], series["CX33 + CAX21"][:points]
+  end
+
   test "the series starts at the window, not before" do
     t0 = Time.zone.parse("2026-11-01 09:00")
     check(t0, "cx23" => %w[fsn1])
