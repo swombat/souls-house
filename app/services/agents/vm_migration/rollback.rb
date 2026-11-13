@@ -31,6 +31,7 @@ module Agents
     # starts it. The server is never released here (that is a separate step,
     # admitted only by a recovered attempt).
     class Rollback
+
       class Refused < StandardError; end
 
       NOT_ON_SERVER = "Only a resident that moved to its own server and runs there can be brought back.".freeze
@@ -83,6 +84,12 @@ module Agents
           reason = unstopped_reason(agent)
           raise Refused, reason if reason
           raise Refused, UNDER_WAY if VmRollback.open.exists?(agent_id: agent.id)
+          # A VmBackup hold does not refuse (decided on #426, jaMMNj): the
+          # restore uses only this attempt's own final snapshot, taken after
+          # the stop, so a backup still running cannot change what comes
+          # back; a hold whose state is uncertain waits for containment, and
+          # the stop is that containment. The hold is let go only once the
+          # server is confirmed gone (RollbackRelease#finish!).
 
           generation = RollbackPlan.reserve!(agent)
           rollback = VmRollback.create!(agent:, agent_placement: placement, requested_by:, generation:,
@@ -323,6 +330,7 @@ module Agents
           data: { "rollback_id" => @rollback.id, "generation" => @rollback.generation, "error" => @rollback.error })
         nil
       end
+
     end
   end
 end

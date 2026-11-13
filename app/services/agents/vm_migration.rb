@@ -47,6 +47,7 @@ module Agents
     CUT_OVER = "This resident already runs on its own server. Bringing it back from there is not built yet.".freeze
     STILL_RUNNING = "Its move can only be undone once nothing of it can be running on a server. Wait for its server " \
                     "to be released.".freeze
+    HOME_RELEASED = "Its house home has been released, so it can't be returned to the house this way.".freeze
 
     # One check a move must pass, and its current answer: nil when it passes.
     Gate = Data.define(:name, :refusal) do
@@ -170,6 +171,8 @@ module Agents
         placement.lock!
         raise Refused, CUT_OVER if agent.runtime_ready_at.present? || placement.state == "ready"
         raise Refused, STILL_RUNNING unless placement.staged? || released?(placement)
+        # Starting it on volumes that are gone would give it an empty home.
+        raise Refused, HOME_RELEASED if home_released?
 
         house_ready_at = placement.house_runtime_ready_at || raise(Refused, NEVER_LIVED)
         placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
@@ -207,6 +210,13 @@ module Agents
       raise Refused, NOT_A_MIGRATION unless placement&.migration?
 
       placement
+    end
+
+    # Any volume it would run on at the house has had a release asked for.
+    def home_released?
+      names = Resources.new(agent).volumes.values
+      AuditLog.where(action: HouseVolumeRelease::INTENDED, auditable_type: "Agent", auditable_id: agent.id)
+        .where("data->>'volume' IN (?)", names).exists?
     end
 
     # Nothing of it can be running anywhere: its server's deletion is

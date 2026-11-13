@@ -88,6 +88,7 @@ module Agents
 
       def initialize(rollback, docker: DOCKER, guard: GUARD, instance: LocalInstance.current, now: -> { Time.current })
         @rollback = rollback
+        @agent_id = rollback.agent_id
         @docker = docker
         @guard = guard
         @instance = instance
@@ -97,7 +98,7 @@ module Agents
       # The closed list, from the records alone. Raises Refused if a recorded
       # name is not this resident's own, rather than skipping it quietly.
       def candidates
-        agent = Agent.find(@rollback.agent_id)
+        agent = Agent.find(@agent_id)
         resources = Agents::Resources.new(agent, instance: @instance)
         derived = resources.derived_volumes.transform_keys(&:to_s)
         live = @rollback.volume_map.to_h.values
@@ -144,7 +145,7 @@ module Agents
         raise Refused, "The release must not run inside an open transaction" if Agent.connection.transaction_open?
 
         @guard.call
-        agent = Agent.find(@rollback.agent_id)
+        agent = Agent.find(@agent_id)
         list = agent.with_lock do
           admit!
           candidates
@@ -157,11 +158,30 @@ module Agents
         end
       end
 
+      protected
+
+      # Why this release may not go on now, read afresh, or nil. Each kind of
+      # release (after a rollback, after a move) answers it for its own basis.
+      def current_refusal
+        self.class.unadmitted_reason(@rollback.reload, now: @now.call)
+      end
+
+      # What names the basis in every intent, receipt and stop row.
+      def subject_data
+        { "rollback_id" => @rollback.id, "generation" => @rollback.generation }
+      end
+
+      # A "-rb<generation>" volume is this release's to remove only for a
+      # generation that is spent.
+      def spent_generation?(generation)
+        generation < @rollback.generation
+      end
+
       private
 
       def release_one(candidate, agent:, by:)
         intent = agent.with_lock do
-          refusal = self.class.unadmitted_reason(@rollback.reload, now: @now.call)
+          refusal = current_refusal
           next Outcome.new(name: candidate.name, status: :not_admitted, detail: refusal) if refusal
           if receipted?(candidate, agent)
             next Outcome.new(name: candidate.name, status: :absent, detail: "Already released")
@@ -180,7 +200,7 @@ module Agents
         end
 
         agent.with_lock do
-          refusal = self.class.unadmitted_reason(@rollback.reload, now: @now.call)
+          refusal = current_refusal
           next stop(intent, Outcome.new(name: candidate.name, status: :not_admitted, detail: refusal), agent:) if refusal
 
           outcome = begin
@@ -204,8 +224,8 @@ module Agents
       end
 
       def receipt_data(candidate)
-        { "rollback_id" => @rollback.id, "generation" => @rollback.generation, "volume" => candidate.name,
-          "role" => candidate.role, "source" => candidate.source, "volume_generation" => candidate.generation }
+        subject_data.merge("volume" => candidate.name, "role" => candidate.role, "source" => candidate.source,
+          "volume_generation" => candidate.generation)
       end
 
       # Earlier intents for this name that no outcome has closed.
@@ -222,8 +242,7 @@ module Agents
       end
 
       def admit!
-        @rollback.reload
-        refusal = self.class.unadmitted_reason(@rollback, now: @now.call)
+        refusal = current_refusal
         raise Refused, refusal if refusal
       end
 
@@ -237,7 +256,7 @@ module Agents
       def check_own!(candidate, derived)
         base = derived.fetch(candidate.role)
         own = candidate.name == base ||
-          (candidate.generation && candidate.generation < @rollback.generation && candidate.name == "#{base}-rb#{candidate.generation}")
+          (candidate.generation && spent_generation?(candidate.generation) && candidate.name == "#{base}-rb#{candidate.generation}")
         raise Refused, "#{candidate.name} is not this resident's #{candidate.role} volume" unless own
       end
 
