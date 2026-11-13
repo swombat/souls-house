@@ -141,6 +141,43 @@ module Backup
       assert_equal "Snapshot missing", result[:reason]
     end
 
+    test "a failed runner answer records the runner's own error, not just its state" do
+      command = issue
+      command.deliver!(now: Time.current)
+      command.record_result!({ "outcome" => "failed", "error" => "restic backup failed",
+        "result" => { "unpaused" => true, "tools_stopped" => true, "snapshot_id" => nil } }, now: Time.current)
+      result = VmResident.status(command:, verifier: Object.new)
+      assert_equal "failed", result[:state]
+      assert_equal "Runner backup failed: restic backup failed", result[:reason]
+      assert_equal "Runner backup failed: restic backup failed", result[:snapshot].stderr_tail
+      assert_not VmResident.held?(@agent)
+    end
+
+    test "a failed or latched Postgres dump fails the backup with its reason and never verifies" do
+      command = issue
+      answer(command, postgres_dump: { "state" => "failed",
+        "reason" => "incomplete generation 20261113T040000Z retained; operator review required" })
+      result = VmResident.status(command:, verifier: Object.new)
+      assert_equal "failed", result[:state]
+      assert_equal "Postgres dump failed: incomplete generation 20261113T040000Z retained; operator review required",
+        result[:reason]
+      assert_equal "a" * 64, result[:snapshot].restic_snapshot_id, "the rest of the snapshot is still on record"
+      assert_not result[:snapshot].ok?
+      assert_not VmResident.held?(@agent), "a dump failure is not a containment failure"
+    end
+
+    test "an ok or absent Postgres dump, or a runner too old to report one, still verifies" do
+      [ { "state" => "ok", "generation" => "20261113T040000Z", "bytes" => 9 }, { "state" => "absent" }, nil ].each do |dump|
+        VmBackup.update_all(state: "verified", released_at: Time.current)
+        command = issue
+        values = dump.nil? ? {} : { postgres_dump: dump }
+        answer(command, **values)
+        verifier = Object.new
+        def verifier.verify!(**) = true
+        assert_equal "verified", VmResident.status(command:, verifier:)[:state], dump.inspect
+      end
+    end
+
     test "deadline or unknown unpause never silently releases a resident" do
       command = issue
       backup = VmBackup.find_by!(runner_command: command)

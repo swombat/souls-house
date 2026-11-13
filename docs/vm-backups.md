@@ -39,6 +39,45 @@ erasure and decay are held too, so the exported graph cannot diverge while
 the runner pauses and snapshots the filesystem. Identity/chaos/repo/work
 volumes are mounted read-only; private provider state is excluded as locally.
 
+## What a snapshot carries (13 Nov)
+
+- **Postgres, dumped minutes earlier.** A server with its own PostgreSQL
+  (`souls-house-postgres`, configured by `/etc/souls-house-postgres-backup.json`
+  naming `home_mount` and `databases`) is dumped by the backup itself, under
+  the house's idle hold and before the pause, into
+  `<chaos volume>/postgres-backups/<generation>/`, which the chaos role
+  carries. Each database is `pg_dump -Fc` and checked with `pg_restore --list`,
+  roles are `pg_dumpall --globals-only`, and a receipt and `current.json`
+  are written last. The new generation and the one before it are kept. The
+  config must name this resident's own chaos volume. The volume belongs to a
+  running resident, so everything under it is opened through held directory
+  descriptors without following links, and `backup.lock` must be a regular
+  file (a FIFO or link is refused without blocking). It replaces the
+  hand-installed 15-minute timer of 11 Nov, of which 95 dumps a day were
+  never shipped; the timer is disabled on both VMs.
+- **The latch stays, loudly.** A generation left `.incomplete` (an interrupted
+  dump) refuses every later dump until an operator has looked; nothing
+  deletes it. The backup still snapshots everything else, but it is recorded
+  as failed with `Postgres dump failed: incomplete generation … retained;
+  operator review required`, so the health rhythm sees it every night.
+- **Claude Code transcripts.** `state/claude/projects`, and nothing else of the
+  state volume, is mounted read-only at `/data/state/claude/projects` through
+  Docker's `volume-subpath`. Docker refuses a link that leaves the volume but
+  follows one inside it (witnessed 13 Nov on Docker 26.1.5: a
+  `claude/projects -> ../credentials` link mounted the sibling directory),
+  so the runner checks the path itself only after the pause, when the
+  resident cannot change it, and fails the backup on any link or on a state
+  volume it cannot inspect. Only "no such volume" or a missing directory
+  means a resident without transcripts. Provider credentials and tailscale
+  state stay out.
+- **A persistent restic cache.** Each resident has a `<container>-restic-cache`
+  volume, the tool's only writable mount. Restic keeps it encrypted. Without
+  it every backup re-read the parent snapshot's trees one ranged request at
+  a time through the house (VM, house, S3, serially), and on 13 Nov that
+  alone outran the work deadline: Alanis had no verified snapshot since
+  29 Oct, and every failure read only "Runner backup failed". Failures now
+  carry the runner's own value-free error.
+
 The command carries the exact checkpoint JSON in the existing encrypted
 command payload. Its whole-file SHA preserves Ruby's bytes across Python;
 the envelope's separate payload digest keeps the existing graph contract.
