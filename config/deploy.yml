@@ -377,7 +377,7 @@ accessories:
     # No public port. Kamal's private network supplies souls-house-comms-telegram.
 <% end %>
   postgres:
-    image: postgres:16.2 # Use the correct version for your app
+    image: postgres:16.16-bookworm # Use the correct version for your app
     host: <%= house_host %>
     env:
       clear:
