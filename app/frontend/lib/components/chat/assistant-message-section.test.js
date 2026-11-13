@@ -41,3 +41,12 @@ it('keeps caption and an explicit text fallback available when a rich component 
   disclosure.open = true;
   expect(disclosure.querySelector('p')).toBeVisible();
 });
+
+it("says which of a resident's named keys posted a message, and nothing for the container key", () => {
+  const base = { content: 'Hello', created_at: '2026-11-13T01:00:00Z', author_type: 'agent' };
+  render(AssistantMessageSection, { message: { ...base, id: 'named', api_key_label: 'Desktop' } });
+  expect(screen.getByTestId('answer-key').textContent).toBe('via Desktop');
+  cleanup();
+  render(AssistantMessageSection, { message: { ...base, id: 'container', api_key_label: null } });
+  expect(screen.queryByTestId('answer-key')).toBeNull();
+});

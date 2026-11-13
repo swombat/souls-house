@@ -345,7 +345,8 @@ module Api
             opening = chat.messages.build(
               role: "assistant",
               agent: current_api_agent,
-              content: params[:message]
+              content: params[:message],
+              **(@current_api_key&.message_attribution || {})
             )
             # An @Name tag of an invited resident hands off to them, as in any post.
             opening.handoff_recipient_ids = []

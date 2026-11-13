@@ -27,7 +27,8 @@ module Api
             content: ResidentMessageContent.normalize(params[:content]),
             role: "assistant",
             agent: current_api_agent,
-            rich_ui: resident_rich_ui
+            rich_ui: resident_rich_ui,
+            **(@current_api_key&.message_attribution || {})
           )
         end
         if current_api_agent

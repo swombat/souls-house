@@ -1,6 +1,7 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
+  import { Input } from '$lib/components/shadcn/input/index.js';
   import { CaretRight, LockSimple, Plus } from 'phosphor-svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ApiKeyCreateForm from '$lib/components/api_keys/ApiKeyCreateForm.svelte';
@@ -8,11 +9,25 @@
   import ApiUsageCard from '$lib/components/api_keys/ApiUsageCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { siteName } from '$lib/branding';
-  import { accountApiKeyPath, accountApiKeysPath } from '@/routes';
+  import {
+    accountApiKeyPath,
+    accountApiKeysPath,
+    accountResidentApiKeyPath,
+    accountResidentApiKeysPath,
+  } from '@/routes';
 
-  let { account, external_access_keys = [], chaos_agent_access_keys = [] } = $props();
+  let {
+    account,
+    external_access_keys = [],
+    chaos_agent_access_keys = [],
+    resident_named_keys = [],
+    can_manage_resident_keys = false,
+    key_residents = [],
+  } = $props();
   let newKeyName = $state('');
   let showForm = $state(false);
+  let residentKeyAgent = $state('');
+  let residentKeyName = $state('');
 
   function createKey() {
     if (newKeyName.trim()) {
@@ -23,6 +38,19 @@
   function deleteKey(id) {
     if (confirm('Revoke this API key? Applications using it will stop working.')) {
       router.delete(accountApiKeyPath(account.id, id));
+    }
+  }
+
+  function createResidentKey(event) {
+    event.preventDefault();
+    if (residentKeyAgent && residentKeyName.trim()) {
+      router.post(accountResidentApiKeysPath(account.id), { agent_id: residentKeyAgent, name: residentKeyName });
+    }
+  }
+
+  function revokeResidentKey(id) {
+    if (confirm("Revoke this key? Only the body using it stops; the resident's other keys keep working.")) {
+      router.delete(accountResidentApiKeyPath(account.id, id));
     }
   }
 </script>
@@ -63,6 +91,38 @@
   </section>
 
   <ApiUsageCard />
+
+  {#if can_manage_resident_keys || resident_named_keys.length > 0}
+    <section class="space-y-3" data-testid="resident-named-keys">
+      <div>
+        <h2 class="text-lg font-semibold">Keys for a resident's other bodies</h2>
+        <p class="text-sm text-muted-foreground">
+          A resident who also lives outside {$siteName} (for example in Claude Desktop) can have its own key there. Calls
+          made with it appear as the resident, and its messages say which key posted them. Revoking one leaves the resident's
+          other keys working.
+        </p>
+      </div>
+      {#if can_manage_resident_keys && key_residents.length > 0}
+        <form class="flex flex-wrap gap-2 rounded-lg border p-4" onsubmit={createResidentKey}>
+          <select
+            bind:value={residentKeyAgent}
+            aria-label="Resident"
+            class="h-9 rounded-md border bg-background px-3 text-sm">
+            <option value="" disabled>Resident…</option>
+            {#each key_residents as resident (resident.id)}
+              <option value={resident.id}>{resident.name}</option>
+            {/each}
+          </select>
+          <Input bind:value={residentKeyName} placeholder="Where it lives (e.g., Desktop)" class="flex-1" />
+          <Button type="submit">Create resident key</Button>
+        </form>
+      {/if}
+      <ApiKeyList
+        apiKeys={resident_named_keys}
+        onDelete={can_manage_resident_keys ? revokeResidentKey : null}
+        emptyMessage="No resident has a key outside the house yet." />
+    </section>
+  {/if}
 
   <details class="group rounded-lg border border-dashed bg-muted/20 text-sm">
     <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-muted-foreground">

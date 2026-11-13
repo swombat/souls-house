@@ -783,6 +783,25 @@ export const accountAgentsPath = /*#__PURE__*/ __route({"account_id":{"r":true},
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/external_access/residents/:id(.:format)
+ * @param {any} accountId
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountResidentApiKeyPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"external_access"],[2,[7,"/"],[2,[6,"residents"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/external_access/residents(.:format)
+ * @param {any} accountId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountResidentApiKeysPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"external_access"],[2,[7,"/"],[2,[6,"residents"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/external_access/:id(.:format)
  * @param {any} accountId
  * @param {any} id

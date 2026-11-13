@@ -11,7 +11,11 @@ class ApiKeysController < ApplicationController
     render inertia: "api_keys/index", props: {
       account: current_account,
       external_access_keys: external_access_keys.by_creation.map { |key| api_key_json(key) },
-      chaos_agent_access_keys: chaos_agent_access_keys.by_creation.map { |key| api_key_json(key) }
+      chaos_agent_access_keys: chaos_agent_access_keys.by_creation.map { |key| api_key_json(key) },
+      resident_named_keys: resident_named_keys.by_creation.map { |key| api_key_json(key) },
+      can_manage_resident_keys: current_account.owned_by?(Current.user),
+      key_residents: current_account.agents.where(runtime: Agent::HOSTED_RUNTIMES).order(:name)
+        .map { |agent| { id: agent.to_param, name: agent.name } }
     }
   end
 
@@ -37,7 +41,11 @@ class ApiKeysController < ApplicationController
   end
 
   def chaos_agent_access_keys
-    current_account.api_keys.where.not(agent_id: nil).includes(:agent, :user)
+    current_account.api_keys.where.not(agent_id: nil).where.not(id: resident_named_keys.select(:id)).includes(:agent, :user)
+  end
+
+  def resident_named_keys
+    ApiKey.resident_named.where(account: current_account).includes(:agent, :user)
   end
 
   def api_key_json(key)
