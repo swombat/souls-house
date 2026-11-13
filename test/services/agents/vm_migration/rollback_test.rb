@@ -1105,6 +1105,12 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
     assert_match "not this resident's work volume", error.message
     assert_empty fake.removed
+
+    # Another role's own name, already on the list: refused, not folded in.
+    @agent.update_columns(volume_map: derived.merge("identity" => derived["chaos"]), volume_rollback_generation: 0)
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_match "not this resident's identity volume", error.message
+    assert_empty fake.removed
   end
 
   test "return to house refuses once a release of the house home has been asked for" do

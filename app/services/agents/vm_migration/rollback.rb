@@ -84,12 +84,14 @@ module Agents
           reason = unstopped_reason(agent)
           raise Refused, reason if reason
           raise Refused, UNDER_WAY if VmRollback.open.exists?(agent_id: agent.id)
-          # A VmBackup hold does not refuse (decided on #426, jaMMNj): the
-          # restore uses only this attempt's own final snapshot, taken after
-          # the stop, so a backup still running cannot change what comes
-          # back; a hold whose state is uncertain waits for containment, and
-          # the stop is that containment. The hold is let go only once the
-          # server is confirmed gone (RollbackRelease#finish!).
+          # A VmBackup hold does not refuse (decided on #426, jaMMNj; Mira's
+          # #944 review). The restore uses only this attempt's own final
+          # snapshot, never the held backup. What makes that snapshot sound
+          # with a backup in flight is the runner, not the stop alone: it
+          # executes commands one at a time, recovers marked backup tools
+          # before running the next one, and the final snapshot checks the
+          # same stopped interval before and after its work. The hold is let
+          # go only once the server is confirmed gone (RollbackRelease#finish!).
 
           generation = RollbackPlan.reserve!(agent)
           rollback = VmRollback.create!(agent:, agent_placement: placement, requested_by:, generation:,

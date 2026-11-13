@@ -88,9 +88,10 @@ module Agents
           end
         end
 
-        list = list.uniq(&:name)
+        # Checked before duplicates go (Ken, #944): a map entry naming
+        # another role's volume is refused, not folded into the good one.
         list.each { |candidate| check_own!(candidate, derived) }
-        list
+        list.uniq(&:name)
       end
 
       protected
