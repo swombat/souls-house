@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3189,7 +3189,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170100) do
     t.index ["allowed_by_id"], name: "index_telegram_subscriptions_on_allowed_by_id"
     t.index ["pending_safeguard_detection_id"], name: "index_telegram_subscriptions_on_pending_safeguard_detection_id"
     t.index ["user_id"], name: "index_telegram_subscriptions_on_user_id"
-    t.check_constraint "bot_wake_streak >= 0 AND bot_wake_streak <= 3", name: "telegram_subscriptions_bot_wake_streak"
+    t.check_constraint "bot_wake_streak >= 0 AND bot_wake_streak <= 50", name: "telegram_subscriptions_bot_wake_streak"
     t.check_constraint "chat_kind::text = 'direct'::text AND user_id IS NOT NULL OR chat_kind::text = 'group'::text AND user_id IS NULL", name: "telegram_subscriptions_kind_user"
   end
 

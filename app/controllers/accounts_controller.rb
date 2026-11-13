@@ -53,6 +53,7 @@ class AccountsController < ApplicationController
       can_invite_owner: @account.owned_by?(Current.user),
       current_user_id: Current.user.id,
       resident_handoff_cap: @account.resident_handoff_cap,
+      telegram_bot_wake_limit: @account.telegram_bot_wake_limit,
       reflexes_enabled: @account.reflexes_enabled,
       reflexes_site_scope: Setting.instance.reflexes_scope,
       voice_mode_enabled: @account.voice_mode_enabled,
@@ -133,13 +134,14 @@ class AccountsController < ApplicationController
     @account = find_current_user_account!(params[:id])
   end
 
-  # The resident handoff cap (MessageHandoff), the reflexes switch
+  # The resident handoff cap (MessageHandoff), the Telegram bot answer limit
+  # (TelegramSubscription#bot_wake_limit), the reflexes switch
   # (ReflexCheck) and the voice mode switch (VoiceMode) are changed only by
   # someone who can manage the account.
   def account_params
     permitted = [ :name ]
     if @account.manageable_by?(Current.user)
-      permitted.push(:resident_handoff_cap, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key)
+      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key)
     end
     params.require(:account).permit(permitted)
   end
