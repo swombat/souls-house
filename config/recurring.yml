@@ -36,6 +36,12 @@ production:
     queue: default
     schedule: every minute
 
+  # Whether Hetzner can sell CX/CAX again (Site Admin → Hetzner availability).
+  hetzner_availability_check:
+    class: HetznerAvailabilityCheckJob
+    queue: default
+    schedule: every 5 minutes
+
   # Xero refresh tokens die after 60 days unused (Services::XeroAdapter).
   xero_keep_alive:
     class: Services::XeroKeepAliveJob

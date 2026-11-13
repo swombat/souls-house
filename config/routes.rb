@@ -395,6 +395,7 @@ Rails.application.routes.draw do
     patch "resident_turns/capacity", to: "resident_turns#update"
     resources :resident_turns, only: [ :index, :destroy ]
     resources :stalled_sweeps, only: :index
+    resource :hetzner_availability, only: :show
     resources :residents, only: :index
     resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
     resources :agents, only: [] do
