@@ -521,16 +521,19 @@ reply, keep reading from before the first unfinished row until it turns `true`.
 To read only what is new, pass the last message you have already read as
 `after_message_id`; the transcript then holds only the messages after it, in
 order. `since=<ISO 8601 time>` does the same by time. A triage pass that keeps
-the last finished message id per conversation fetches only the new part of
-each one, rather than its whole history on every run:
+a cursor per conversation fetches only the new part of each one, rather than
+its whole history on every run:
 
 ```sh
 curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/conversations/$CHAT_ID?after_message_id=$LAST_SEEN_ID"
 ```
 
-Remember the id of the last message whose `completed` is `true`, not of a reply
-still being written, or the rest of that reply falls behind your cursor. The
+Move the cursor only through the finished part, from the front: stop just
+before the first message whose `completed` is `false`, even when finished
+messages come after it. A person's message can finish while an earlier reply
+is still being written; if the cursor jumps to the later one, the rest of that
+reply falls behind it and is never read. The
 result is not paged, so the first read of a long conversation is still whole,
 and a value that is not a message id is ignored (you get the whole transcript).
 
