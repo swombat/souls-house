@@ -116,6 +116,10 @@
           <Input bind:value={residentKeyName} placeholder="Where it lives (e.g., Desktop)" class="flex-1" />
           <Button type="submit">Create resident key</Button>
         </form>
+        <p class="text-xs text-muted-foreground" data-testid="resident-key-warning">
+          Everyone in a conversation sees the name on messages this key posts ("via Desktop"). Rotating the resident's
+          credentials revokes these keys too.
+        </p>
       {/if}
       <ApiKeyList
         apiKeys={resident_named_keys}
