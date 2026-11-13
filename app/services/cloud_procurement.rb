@@ -109,9 +109,21 @@ class CloudProcurement
   # a verified server without an admin, but only when the placement records
   # cleanup intent. A planned operation that never sent anything is closed
   # as refused: nothing was bought.
-  def cleanup!(operation)
+  # rollback: a VmRollback releasing the server it brought its resident back
+  # from (#426). Its placement is local and has no cleanup requested; the
+  # attempt's own record admits exactly the purchases it captured.
+  def cleanup!(operation, rollback: nil)
     placement = operation.agent_placement
-    raise NotAllowed, "placement has no cleanup requested" unless placement.reload.cleanup_requested?
+    if rollback
+      raise NotAllowed, "this rollback does not release that purchase" unless rollback.reload.releases?(operation)
+      # Only deletion: reconciling a purchase or a boot would write the
+      # server onto a placement that is local now.
+      unless %w[provisioned needs_review deleting].include?(operation.reload.state)
+        raise NotAllowed, "a rollback releases only a bought server; #{operation.state} needs an operator"
+      end
+    else
+      raise NotAllowed, "placement has no cleanup requested" unless placement.reload.cleanup_requested?
+    end
 
     operation.reload
     case operation.state

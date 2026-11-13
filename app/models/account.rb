@@ -593,12 +593,19 @@ class Account < ApplicationRecord
   # each of its residents' VM placements is handed to VmCleanupJob, which
   # deletes the server and retires the placement. Enabling the account again
   # does not bring a server back; the resident's backups stay.
+  #
+  # A resident a rollback brought back to the house (#426) has a local
+  # placement, but its old server is kept until the rollback releases it;
+  # the release is asked for here, and still waits for the rollback's
+  # recovery before deleting anything.
   def release_vm_servers
     AgentPlacement.where(agent_id: agents.select(:id), backend: "hetzner_cloud")
       .where.not(state: %w[retired staged]).find_each do |placement|
       placement.request_cleanup!("account_disabled")
       VmCleanupJob.perform_later(placement.id)
     end
+    VmRollback.where(agent_id: agents.select(:id), phase: %w[committed recovered], release_requested_at: nil)
+      .find_each { |rollback| Agents::VmMigration::RollbackRelease.request_for_disabled_account!(rollback) }
   end
 
   # Save validations and insertion share a transaction. Hold the settings row

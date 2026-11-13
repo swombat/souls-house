@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3311,9 +3311,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_100000) do
     t.text "error"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "release_requested_at"
+    t.string "release_reason"
+    t.bigint "release_requested_by_id"
+    t.datetime "released_at"
     t.index ["agent_id", "generation"], name: "index_vm_rollbacks_on_agent_id_and_generation", unique: true
     t.index ["agent_id"], name: "index_vm_rollbacks_one_open_per_agent", unique: true, where: "((phase)::text = ANY ((ARRAY['stopping'::character varying, 'snapshotting'::character varying, 'restoring'::character varying, 'committed'::character varying])::text[]))"
     t.index ["agent_placement_id"], name: "index_vm_rollbacks_on_agent_placement_id"
+    t.index ["release_requested_at"], name: "index_vm_rollbacks_releasing", where: "(released_at IS NULL)"
+    t.index ["release_requested_by_id"], name: "index_vm_rollbacks_on_release_requested_by_id"
     t.index ["requested_by_id"], name: "index_vm_rollbacks_on_requested_by_id"
   end
 
@@ -3750,6 +3756,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_100000) do
   add_foreign_key "vm_backups", "runner_commands"
   add_foreign_key "vm_rollbacks", "agent_placements"
   add_foreign_key "vm_rollbacks", "agents"
+  add_foreign_key "vm_rollbacks", "users", column: "release_requested_by_id"
   add_foreign_key "vm_rollbacks", "users", column: "requested_by_id"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
   add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify

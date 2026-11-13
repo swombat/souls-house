@@ -5,6 +5,7 @@ require "test_helper"
 # fake restore (RollbackHome is tested on its own), a fake sandbox and a fake
 # docker inspect. Outside transactional fixtures, as the swap requires.
 class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
+
   self.use_transactional_tests = false
 
   ROLES = Agents::VmMigration::RollbackPlan::ROLES
@@ -15,8 +16,11 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
   # Stands in for RollbackHome: no restic, no volumes, but the real swap
   # with the driver's in_commit and start.
   class FakeHome
+
     class << self
+
       attr_accessor :calls, :raise_with
+
     end
 
     def initialize(agent, generation:, snapshot:)
@@ -34,6 +38,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
         evidence: { "snapshot_id" => @snapshot.snapshot_id }).call
       Agents::VmMigration::RollbackHome::Result.new(generation: @generation, verified: {}, shapes: {}, swap:)
     end
+
   end
 
   Status = Struct.new(:ok) do
@@ -43,6 +48,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
   # docker container inspect --format {{json .Mounts}}: the agent's current
   # map at the sandbox's paths, unless told otherwise.
   class FakeDocker
+
     attr_accessor :mounts, :running
 
     def initialize(agent)
@@ -56,11 +62,13 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
       end
       [ "#{running} #{JSON.generate(mounts)}", "", Status.new(true) ]
     end
+
   end
 
   # Same public entry as Agents::Sandbox (checked below): runs the guard
   # under no lock, then counts or fails the recreate.
   class FakeSandbox
+
     attr_accessor :error, :recreated, :agent
 
     def initialize(agent)
@@ -74,6 +82,29 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
 
       @recreated += 1
     end
+
+  end
+
+  # The provider, for the release: deletes are recorded and the server goes.
+  class FakeClient
+
+    attr_reader :deletes
+    attr_accessor :servers, :linger
+
+    def initialize(servers)
+      @servers = servers
+      @deletes = []
+    end
+
+    def find_server(id) = servers[id]
+    def find_action(_id) = nil
+
+    def delete_server(id, placement_id:)
+      @deletes << [ id, placement_id ]
+      servers.delete(id) unless linger
+      HetznerCloudClient::DeleteAccepted.new(server_id: id, action_id: 900 + @deletes.size, action_status: "running")
+    end
+
   end
 
   setup do
@@ -93,15 +124,46 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     @sandbox = FakeSandbox.new(@agent)
     @docker = FakeDocker.new(@agent)
     @user = users(:existing_user)
+    @operation = CloudProcurementOperation.create!(agent_placement: @placement, requested_by: @user, state: "provisioned",
+      public_id: SecureRandom.uuid, provider_name: "sh-rollback-#{SecureRandom.hex(4)}", approval_reference: "test",
+      location: "fsn1", server_type: "cx23", image_id: 1, ssh_key_ids: [ 1 ], provider_server_id: 4343)
+    @client = FakeClient.new({ 4343 => Object.new })
+    @created = []
   end
 
   teardown do
+    @created.reverse_each { |record| record.class.where(id: record.id).delete_all }
+    VmBackup.where(agent_id: @agent.id).delete_all
     VmRollback.where(agent_id: @agent.id).delete_all
+    CloudProcurementOperation.where(agent_placement_id: @placement.id).delete_all
     AuditLog.where(auditable: @agent).delete_all
     RunnerCommand.where(agent_placement_id: @placement.id).delete_all
     RunnerEnrollment.where(agent_placement_id: @placement.id).delete_all
     @placement.delete
     @agent.update_columns(@kept)
+  end
+
+  def track(record)
+    @created << record
+    record
+  end
+
+  def release(rollback) = Agents::VmMigration::RollbackRelease.new(rollback,
+    procurement: -> { CloudProcurement.new(client: @client, config: CloudProcurement::Config.new(image_id: 1, ssh_key_ids: [ 1 ],
+      locations: %w[fsn1], rails_url: "https://souls.example")) }).step!
+
+  # A whole rollback, to recovered.
+  def recovered
+    rollback = to_restoring
+    assert_equal "recovered", full { driver(rollback).step! }
+    rollback.reload
+  end
+
+  # A backup the server was taking when the rollback stopped it: its outcome
+  # never came back, so it holds the resident.
+  def held_backup
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "backup_resident", payload: { "fake" => "backup" })
+    VmBackup.create!(agent: @agent, runner_command: command, checkpoint_file_digest: HEX, deadline_at: 10.minutes.from_now)
   end
 
   def driver(rollback) = Agents::VmMigration::Rollback.new(rollback, home: FakeHome, sandbox: ->(_agent) { @sandbox }, docker: @docker)
@@ -243,7 +305,21 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_match "inactive and paused", rollback.reload.error
     @agent.update_columns(active: false, paused: false)
     assert_equal "committed", full { driver(rollback.reload).step! }
-    @agent.update_columns(paused: true, volume_map: map.merge("work" => "someone-elses-work"))
+    @agent.update_columns(paused: true)
+
+    # Busy for real: a turn whose outcome is still open, then one queued.
+    interaction = track(AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake", session_id: SecureRandom.uuid,
+      started_at: Time.current, endpoint_url: "https://runtime.example.test"))
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    assert_match "pending or uncertain execution", rollback.reload.error
+    turn = track(ResidentTurn.enqueue!(interaction, { session_id: interaction.session_id, request: "wake" }))
+    interaction.update_columns(finished_at: Time.current)
+    assert ResidentTurn.pending.exists?(turn.id), "the turn is queued, not finished"
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    assert_match "pending or uncertain execution", rollback.reload.error
+    turn.update_columns(finished_at: Time.current)
+
+    @agent.update_columns(volume_map: map.merge("work" => "someone-elses-work"))
     assert_equal "committed", full { driver(rollback.reload).step! }
     assert_match "no longer on this rollback's volumes", rollback.reload.error
     @agent.update_columns(volume_map: map)
@@ -343,4 +419,112 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_equal [ "local", "ready" ], [ @placement.reload.backend, @placement.state ]
     assert Agents::RuntimeLocation.local?(@agent)
   end
+
+  test "the release deletes the server the rollback recorded, then lets go of the holds its backups left" do
+    backup = held_backup
+    rollback = recovered
+    assert Backup::VmResident.held?(@agent), "the unanswered backup still holds the resident"
+
+    Agents::VmMigration::RollbackRelease.request!(rollback, reason: "rolled back", requested_by: @user)
+    assert rollback.reload.release_requested?
+    assert_nil @placement.reload.cleanup_requested_at, "the placement is not handed to VmCleanupJob"
+
+    @client.linger = true
+    assert_equal :releasing, release(rollback), "deleting: not confirmed until the server is absent"
+    assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
+    assert_equal "deleting", @operation.reload.state
+    assert_not rollback.reload.released?
+    assert Backup::VmResident.held?(@agent), "no hold is let go before the server is gone"
+
+    @client.servers.delete(4343)
+    assert_equal :released, release(rollback)
+    assert_equal "deleted", @operation.reload.state
+    assert rollback.reload.released?
+    assert_equal [ "local", "ready", nil ], [ @placement.reload.backend, @placement.state, @placement.provider_server_id ]
+    assert Agents::RuntimeLocation.local?(@agent), "the resident stays on the house"
+    assert_equal [ "failed", "VM released after a rollback" ], [ backup.reload.state, backup.failure_reason ]
+    assert_not Backup::VmResident.held?(@agent)
+    assert AuditLog.exists?(action: "vm_rollback_released", auditable: @agent)
+
+    assert_equal :released, release(rollback), "repeating changes nothing"
+    assert_equal 1, @client.deletes.size
+  end
+
+  test "a committed rollback whose recreate failed keeps its server, even when the release was asked for" do
+    rollback = to_restoring
+    @sandbox.error = "docker: no space left"
+    assert_equal "committed", full { driver(rollback).step! }
+
+    error = assert_raises(Agents::VmMigration::RollbackRelease::Refused) do
+      Agents::VmMigration::RollbackRelease.request!(rollback.reload, reason: "rolled back", requested_by: @user)
+    end
+    assert_equal Agents::VmMigration::RollbackRelease::NOT_RECOVERED, error.message
+
+    # Account#disable!'s own callback, without the rest of disabling (this
+    # test runs outside a transaction).
+    @agent.account.send(:release_vm_servers)
+    assert rollback.reload.release_requested?, "a disabled account records the intent"
+    assert_equal "account_disabled", rollback.release_reason
+    assert_equal :waiting, release(rollback)
+    assert_empty @client.deletes
+    assert_equal "provisioned", @operation.reload.state
+
+    @sandbox.error = nil
+    assert_equal "recovered", full { driver(rollback.reload).step! }
+    assert_equal :released, release(rollback)
+    assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
+  end
+
+  test "the release reaches only the purchases the rollback recorded" do
+    rollback = recovered
+    Agents::VmMigration::RollbackRelease.request!(rollback, reason: "rolled back", requested_by: @user)
+    @operation.update_columns(state: "deleted")
+    later = CloudProcurementOperation.create!(agent_placement: @placement, requested_by: @user, state: "provisioned",
+      public_id: SecureRandom.uuid, provider_name: "sh-later-#{SecureRandom.hex(4)}", approval_reference: "test",
+      location: "fsn1", server_type: "cx23", image_id: 1, ssh_key_ids: [ 1 ], provider_server_id: 5151)
+    @client.servers[5151] = Object.new
+    procurement = CloudProcurement.new(client: @client, config: CloudProcurement::Config.new(image_id: 1, ssh_key_ids: [ 1 ],
+      locations: %w[fsn1], rails_url: "https://souls.example"))
+    assert_raises(CloudProcurement::NotAllowed, "refused while the release is still open") do
+      procurement.cleanup!(later, rollback: rollback.reload)
+    end
+
+    assert_equal :released, release(rollback)
+    assert_empty @client.deletes, "a purchase made after the switch is not this rollback's"
+    assert_equal "provisioned", later.reload.state
+  end
+
+  test "the release needs a recovery bound to the swap receipt" do
+    rollback = recovered
+    rollback.update_columns(recovery: rollback.recovery.merge("swap_token" => "another-swap"))
+    assert_raises(Agents::VmMigration::RollbackRelease::Refused) do
+      Agents::VmMigration::RollbackRelease.request!(rollback.reload, reason: "rolled back", requested_by: @user)
+    end
+    rollback.update_columns(release_requested_at: Time.current)
+    assert_equal :waiting, release(rollback.reload)
+    assert_empty @client.deletes
+  end
+
+  test "a purchase still being reconciled is left for an operator, never written onto the local placement" do
+    rollback = recovered
+    Agents::VmMigration::RollbackRelease.request!(rollback, reason: "rolled back", requested_by: @user)
+    @operation.update_columns(state: "reconciling")
+    procurement = CloudProcurement.new(client: @client, config: CloudProcurement::Config.new(image_id: 1, ssh_key_ids: [ 1 ],
+      locations: %w[fsn1], rails_url: "https://souls.example"))
+    assert_raises(CloudProcurement::NotAllowed) { procurement.cleanup!(@operation, rollback: rollback.reload) }
+    assert_nil @placement.reload.provider_server_id
+  end
+
+  test "the minute sweep keeps an unconfirmed release going" do
+    rollback = recovered
+    Agents::VmMigration::RollbackRelease.request!(rollback, reason: "rolled back", requested_by: @user)
+    enqueued = []
+    VmRollbackReleaseJob.stub(:perform_later, ->(id) { enqueued << id }) { VmBirthSweepJob.perform_now }
+    assert_includes enqueued, rollback.id
+    rollback.update_columns(released_at: Time.current)
+    enqueued.clear
+    VmRollbackReleaseJob.stub(:perform_later, ->(id) { enqueued << id }) { VmBirthSweepJob.perform_now }
+    assert_not_includes enqueued, rollback.id
+  end
+
 end
