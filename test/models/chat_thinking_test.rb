@@ -100,6 +100,19 @@ class ChatThinkingTest < ActiveSupport::TestCase
     end
   end
 
+  test "Inkling 2 Small is an OpenRouter-only Thinking Machines model with thinking controls" do
+    id = "thinkingmachines/inkling-2-small"
+    entries = Chat::MODELS.select { |model| model[:model_id] == id }
+    assert_equal [ "Thinking Machines" ], entries.pluck(:group)
+    assert_equal "Inkling 2 Small", entries.first[:label]
+    assert_nil entries.first[:provider_model_id]
+    assert Chat.supports_thinking?(id)
+    config = Chat.reasoning_effort_config(id)
+    assert_equal "Thinking mode", config[:label]
+    assert_equal "high", config[:default]
+    assert_equal %w[none high], config[:options].pluck(:value)
+  end
+
   test "new models expose their reasoning profiles" do
     astra = Chat.reasoning_effort_config("openai/gpt-6-astra")
     assert_equal "medium", astra[:default]

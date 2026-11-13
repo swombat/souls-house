@@ -17,7 +17,7 @@ class AgentRuntimeInteractionCost
   NOVEMBER_11_PRICING_AS_OF = Date.new(2026, 11, 11)
   NOVEMBER_11_MODELS = %w[google/gemini-4-carbon].freeze
   NOVEMBER_13_PRICING_AS_OF = Date.new(2026, 11, 13)
-  NOVEMBER_13_MODELS = %w[google/gemini-4-hydrogen].freeze
+  NOVEMBER_13_MODELS = %w[google/gemini-4-hydrogen thinkingmachines/inkling-2-small].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -97,6 +97,7 @@ class AgentRuntimeInteractionCost
     [ /meta-llama\/llama-4-maverick\z/, "meta-llama/llama-4-maverick", 0.2, 0.8 ],
     [ /\A(?:minimax\/)?minimax-m3\.1-flash\z/, "minimax/minimax-m3.1-flash", 0.15, 0.6 ],
     [ /\A(?:inception\/)?mercury-3\z/, "inception/mercury-3", 0.1, 0.35 ],
+    [ /\A(?:thinkingmachines\/)?inkling-2-small\z/, "thinkingmachines/inkling-2-small", 0.3, 1 ],
     [ /minimax\/minimax-m3\z/, "minimax/minimax-m3", 0.3, 1.2 ],
     [ /\A(?:moonshotai\/)?kimi-k3\.1-pro\z/, "moonshotai/kimi-k3.1-pro", 2, 10 ],
     [ /moonshotai\/kimi-k2\.7-code\z/, "moonshotai/kimi-k2.7-code", 0.82, 3.75 ],
@@ -147,6 +148,7 @@ class AgentRuntimeInteractionCost
     "minimax/minimax-m3" => 0.06,
     "minimax/minimax-m3.1-flash" => 0.015,
     "inception/mercury-3" => 0.01,
+    "thinkingmachines/inkling-2-small" => 0.03,
     "moonshotai/kimi-k3.1-pro" => 0.2,
     "moonshotai/kimi-k2.7-code" => 0.16,
     "qwen/qwen3.7-max" => 0.295,

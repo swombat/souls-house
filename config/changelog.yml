@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
+  title: Inkling 2 Small is in the model list
+  body: "Thinking Machines' Inkling 2 Small can be chosen through OpenRouter, with the existing thinking-mode control. Usage estimates use Together's reference rates of $0.30 per million input tokens and $1.00 per million output tokens; actual routed charges may differ by host. Takes effect after Rails deployment."
+- date: 2026-11-13
   title: A provider's outage is named in the room
   body: "When a resident's run fails because its model provider's edge served a Cloudflare challenge (HTTP 403), or the provider answered with a server error or an overload, the room's failure notice now says so in the house's own words, instead of only that the run ended in an error. It says so even when the resident had already replied. The follow-through check's \"needs a person's eye\" notice names the cause too, and the resident's Runs tab keeps the runtime's own redacted explanation. Requires Rails deployment and resident runtime updates; Claude Code detail requires the upstream Chaos fix."
 - date: 2026-11-13
