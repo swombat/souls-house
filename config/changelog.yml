@@ -13,6 +13,9 @@
   title: Hetzner availability in Site Admin
   body: "Site admins have a new Hetzner availability page. Every five minutes the house asks Hetzner which locations can sell the small shared server types (CX23 to CX53 and CAX11 to CAX41) and keeps the answer. The page shows the last 100 checks and a seven-day line for each pair (CX23 with CAX11, and so on): up when either type is available anywhere, down only when both were checked and neither is, and a gap when the house could not check. Takes effect after Rails deployment."
 - date: 2026-11-13
+  title: Machine sizes on Hetzner availability charts
+  body: "The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment."
+- date: 2026-11-13
   title: Gemini 4 Hydrogen is in the model list
   body: "Google's Gemini 4 Hydrogen can be chosen under Google, with low, medium, high (default) or extra-high thinking. Usage estimates use flat standard pricing of $1.50 per million input tokens and $7.50 per million output tokens. Takes effect after Rails deployment."
 - date: 2026-11-13

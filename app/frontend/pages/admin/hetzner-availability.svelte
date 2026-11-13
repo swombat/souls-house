@@ -1,5 +1,5 @@
 <script>
-  import { stepPath, availableShare } from '$lib/hetzner-availability.js';
+  import { stepPath, availableShare, PAIR_SIZES } from '$lib/hetzner-availability.js';
 
   let { now = null, types = [], checks = [], series = [] } = $props();
 
@@ -38,13 +38,17 @@
     {#if !checks.length}
       <p class="text-sm text-muted-foreground">No checks yet. The first one runs within five minutes of a deploy.</p>
     {:else}
-      <div class="space-y-2">
+      <div class="space-y-3">
         {#each series as line, index}
-          <div class="grid grid-cols-[9rem_1fr_3.5rem] items-center gap-3">
-            <span class="text-sm font-medium">{line.label}</span>
+          <div
+            class="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-x-3 gap-y-1 sm:grid-cols-[12rem_minmax(0,1fr)_3.5rem]">
+            <div class="col-span-2 sm:col-span-1">
+              <span class="text-sm font-medium">{line.label}</span>
+              <span class="block text-xs text-muted-foreground">{PAIR_SIZES[line.label] ?? 'Size unknown'}</span>
+            </div>
             <svg
               viewBox={`0 0 ${width} ${height}`}
-              class="w-full rounded border"
+              class="min-w-0 w-full rounded border"
               style:height={`${height}px`}
               preserveAspectRatio="none"
               role="img"
@@ -61,9 +65,9 @@
             </span>
           </div>
         {/each}
-        <div class="grid grid-cols-[9rem_1fr_3.5rem] gap-3 text-[10px] text-muted-foreground">
-          <span></span>
-          <div class="flex justify-between">
+        <div class="grid grid-cols-[minmax(0,1fr)_3.5rem] gap-3 sm:grid-cols-[12rem_minmax(0,1fr)_3.5rem]">
+          <span class="hidden sm:block"></span>
+          <div class="flex justify-between text-[10px] text-muted-foreground">
             <span>{time(new Date(start).toISOString())}</span>
             <span>{time(new Date(end).toISOString())}</span>
           </div>

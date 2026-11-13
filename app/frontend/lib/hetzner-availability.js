@@ -5,6 +5,14 @@
 // two checks is drawn as a gap ("we couldn't check"), not carried across.
 export const MAX_GAP_MS = 12 * 60 * 1000;
 
+// Both members of each pair have this size (Hetzner's cost-optimized catalog).
+export const PAIR_SIZES = {
+  'CX23 + CAX11': '2 vCPU / 4 GB RAM / 40 GB NVMe',
+  'CX33 + CAX21': '4 vCPU / 8 GB RAM / 80 GB NVMe',
+  'CX43 + CAX31': '8 vCPU / 16 GB RAM / 160 GB NVMe',
+  'CX53 + CAX41': '16 vCPU / 32 GB RAM / 320 GB NVMe',
+};
+
 // SVG path for a 0/1 step line. points are [isoTime, 1 | 0 | null], oldest
 // first; x runs from start to end (ms), y is 1 at the top. A null value, or a
 // silence longer than MAX_GAP_MS, breaks the line.
