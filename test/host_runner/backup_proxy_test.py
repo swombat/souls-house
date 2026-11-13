@@ -93,6 +93,8 @@ class FakeDocker:
             return value
         if verb == "inspect --format":
             return True, json.dumps({"Running": self.running, "Paused": self.paused, "Status": self.status})
+        if verb == "volume inspect" and "--format" in argv and argv[-1].endswith("-state"):
+            return False, "Error response from daemon: get " + argv[-1] + ": no such volume"
         if verb == "volume inspect":
             return (False, "") if self.missing_role and argv[-1].endswith("-" + self.missing_role) else (True, "")
         if verb == "image inspect":

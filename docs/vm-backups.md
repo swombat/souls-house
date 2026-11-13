@@ -49,7 +49,10 @@ volumes are mounted read-only; private provider state is excluded as locally.
   carries. Each database is `pg_dump -Fc` and checked with `pg_restore --list`,
   roles are `pg_dumpall --globals-only`, and a receipt and `current.json`
   are written last. The new generation and the one before it are kept. The
-  config must name this resident's own chaos volume. It replaces the
+  config must name this resident's own chaos volume. The volume belongs to a
+  running resident, so everything under it is opened through held directory
+  descriptors without following links, and `backup.lock` must be a regular
+  file (a FIFO or link is refused without blocking). It replaces the
   hand-installed 15-minute timer of 11 Nov, of which 95 dumps a day were
   never shipped; the timer is disabled on both VMs.
 - **The latch stays, loudly.** A generation left `.incomplete` (an interrupted
@@ -59,9 +62,14 @@ volumes are mounted read-only; private provider state is excluded as locally.
   operator review required`, so the health rhythm sees it every night.
 - **Claude Code transcripts.** `state/claude/projects`, and nothing else of the
   state volume, is mounted read-only at `/data/state/claude/projects` through
-  Docker's `volume-subpath`, which resolves inside the volume and refuses an
-  escape. Provider credentials and tailscale state stay out. A resident
-  without that directory is snapshotted as before.
+  Docker's `volume-subpath`. Docker refuses a link that leaves the volume but
+  follows one inside it (witnessed 13 Nov on Docker 26.1.5: a
+  `claude/projects -> ../credentials` link mounted the sibling directory),
+  so the runner checks the path itself only after the pause, when the
+  resident cannot change it, and fails the backup on any link or on a state
+  volume it cannot inspect. Only "no such volume" or a missing directory
+  means a resident without transcripts. Provider credentials and tailscale
+  state stay out.
 - **A persistent restic cache.** Each resident has a `<container>-restic-cache`
   volume, the tool's only writable mount. Restic keeps it encrypted. Without
   it every backup re-read the parent snapshot's trees one ranged request at

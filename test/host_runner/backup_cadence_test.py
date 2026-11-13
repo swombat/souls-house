@@ -32,7 +32,11 @@ class MountDocker(FakeDocker):
         if argv[1:3] == ["volume", "inspect"] and "--format" in argv:
             self.calls.append((list(argv), timeout))
             path = self.mountpoints.get(argv[-1])
-            return (path is not None), (path or "")
+            if path == "daemon-error":
+                return False, "Docker operation timed out"
+            if path is None:
+                return False, "Error response from daemon: get " + argv[-1] + ": no such volume"
+            return True, path
         if argv[1:3] == ["volume", "inspect"] and argv[-1].endswith("-restic-cache"):
             self.calls.append((list(argv), timeout))
             return self.cache_exists, ""
@@ -75,27 +79,71 @@ class TranscriptsTest(unittest.TestCase):
         # Nothing else of the state volume: no whole-volume or other subpath.
         self.assertFalse(any("dst=/data/state," in m or m.endswith("dst=/data/state") for m in restic_mounts(self.docker)))
 
-    def test_absent_or_symlinked_projects_are_not_mounted(self):
-        for build in (
-            lambda: None,
-            lambda: os.makedirs(os.path.join(self.state, "claude")),
-            lambda: (os.makedirs(os.path.join(self.state, "claude")),
-                     os.symlink("/etc", os.path.join(self.state, "claude", "projects"))),
-            lambda: os.symlink("/etc", os.path.join(self.state, "claude")),
-        ):
+    def reset_state(self):
+        import shutil
+        for entry in os.listdir(self.state):
+            path = os.path.join(self.state, entry)
+            if os.path.islink(path) or not os.path.isdir(path):
+                os.unlink(path)
+            else:
+                shutil.rmtree(path)
+        self.docker.calls.clear()
+
+    def test_absent_projects_are_not_mounted(self):
+        for build in (lambda: None, lambda: os.makedirs(os.path.join(self.state, "claude"))):
             with self.subTest():
-                for entry in os.listdir(self.state):
-                    path = os.path.join(self.state, entry)
-                    if os.path.islink(path):
-                        os.unlink(path)
-                    else:
-                        import shutil
-                        shutil.rmtree(path)
+                self.reset_state()
                 build()
-                self.docker.calls.clear()
                 result = run(self.docker)
                 self.assertFalse(result["transcripts"])
                 self.assertFalse(any("state" in m for m in restic_mounts(self.docker)))
+
+    def test_any_symlink_on_the_path_fails_the_backup_after_unpausing(self):
+        for build in (
+            # Intra-volume links: Docker 26 would resolve these inside the volume.
+            lambda: (os.makedirs(os.path.join(self.state, "claude")),
+                     os.makedirs(os.path.join(self.state, "tailscale")),
+                     os.symlink("../tailscale", os.path.join(self.state, "claude", "projects"))),
+            lambda: (os.makedirs(os.path.join(self.state, "other", "projects")),
+                     os.symlink("other", os.path.join(self.state, "claude"))),
+            lambda: os.symlink("/etc", os.path.join(self.state, "claude")),
+        ):
+            with self.subTest():
+                self.reset_state()
+                build()
+                with self.assertRaises(backup.BackupFailed) as caught:
+                    run(self.docker)
+                self.assertIn("symlink", str(caught.exception))
+                self.assertTrue(caught.exception.result["unpaused"])
+                self.assertFalse(any(argv[1] == "run" for argv, _ in self.docker.calls))
+
+    def test_a_swap_during_the_dump_is_caught_after_the_pause(self):
+        os.makedirs(os.path.join(self.state, "claude", "projects"))
+        os.makedirs(os.path.join(self.state, "credentials"))
+
+        def resident_swaps(name, docker, seconds):
+            # The resident is still running while Postgres is dumped.
+            projects = os.path.join(self.state, "claude", "projects")
+            os.rmdir(projects)
+            os.symlink("../credentials", projects)
+            return {"state": "absent"}
+
+        with self.assertRaises(backup.BackupFailed) as caught:
+            run(self.docker, resident_swaps)
+        self.assertIn("symlink", str(caught.exception))
+        commands = [argv for argv, _ in self.docker.calls]
+        pause = next(i for i, argv in enumerate(commands) if argv[1] == "pause")
+        inspect = max(i for i, argv in enumerate(commands)
+                      if argv[1:3] == ["volume", "inspect"] and argv[-1].endswith("-state"))
+        self.assertLess(pause, inspect)
+        self.assertFalse(any(argv[1] == "run" for argv in commands))
+
+    def test_state_volume_inspect_failure_is_loud_not_absence(self):
+        docker = MountDocker({"agent-pilot-1-state": "daemon-error"})
+        with self.assertRaises(backup.BackupFailed) as caught:
+            run(docker)
+        self.assertIn("cannot inspect the state volume", str(caught.exception))
+        self.assertTrue(caught.exception.result["unpaused"])
 
     def test_missing_state_volume_is_not_a_failure(self):
         docker = MountDocker({})
@@ -255,7 +303,29 @@ class DumpPostgresTest(unittest.TestCase):
     def test_symlinked_backup_root_is_refused(self):
         os.symlink(self.temp.name, self.root())
         answer = self.dump()
-        self.assertEqual(answer, {"state": "failed", "reason": "postgres-backups must not be a symlink"})
+        self.assertEqual(answer, {"state": "failed", "reason": "postgres-backups is not a plain directory"})
+
+    def test_fifo_or_symlinked_lock_is_refused_without_blocking(self):
+        os.makedirs(self.root())
+        lock = os.path.join(self.root(), "backup.lock")
+        for build, reason in ((lambda: os.mkfifo(lock), "backup.lock is not a regular file"),
+                              (lambda: os.symlink("/etc/passwd", lock), "backup.lock cannot be opened safely")):
+            with self.subTest(reason=reason):
+                if os.path.lexists(lock):
+                    os.unlink(lock)
+                build()
+                started = time.monotonic()
+                answer = self.dump()
+                self.assertLess(time.monotonic() - started, 2)
+                self.assertEqual(answer["state"], "failed")
+                self.assertIn(reason, answer["reason"])
+
+    def test_a_generation_swapped_for_a_link_latches(self):
+        self.assertEqual(self.dump()["state"], "ok")
+        os.symlink("/etc", os.path.join(self.root(), "20991231T000000Z"))
+        answer = self.dump()
+        self.assertEqual(answer["state"], "failed")
+        self.assertIn("unexpected entry 20991231T000000Z", answer["reason"])
 
     def test_timeout_is_a_failure_not_an_exception(self):
         def slow(argv, **kwargs):
