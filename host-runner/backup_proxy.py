@@ -68,6 +68,23 @@ TRANSCRIPTS_DST = "/data/state/claude/projects"
 # 13 Nov outran the work deadline for both VM residents. It holds only
 # repository files, which restic keeps encrypted.
 CACHE_DST = "/cache"
+# restic writes each pack (16 MiB by default) to a temp file before upload. A
+# 64 MiB /tmp tmpfs is too small for a large first backup with several packs in
+# flight, so temp files go on the cache volume instead. restic unlinks them as
+# soon as they are created, so nothing accumulates there.
+RESTIC_TMPDIR = CACHE_DST
+# restic's diagnostics are never forwarded. A failed backup reports its exit
+# code and, at most, one of these fixed classes matched from stderr.
+RESTIC_ERROR_CLASSES = (
+    ("no space left on device", re.compile(r"no space left on device", re.IGNORECASE)),
+    ("out of memory", re.compile(r"cannot allocate memory|out of memory", re.IGNORECASE)),
+    ("repository locked", re.compile(r"unable to create lock|repository is already locked", re.IGNORECASE)),
+    ("server response", re.compile(r"unexpected HTTP response|server response unexpected|"
+                                   r"\b5\d\d (?:Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)",
+                                   re.IGNORECASE)),
+    ("connection lost", re.compile(r"connection reset|connection refused|broken pipe|unexpected EOF", re.IGNORECASE)),
+    ("killed", re.compile(r"\bsignal: killed\b|^Killed$", re.IGNORECASE | re.MULTILINE)),
+)
 # Logical dumps of the VM's own PostgreSQL, made just before the snapshot so
 # that it always carries a fresh one (they used to come from a 15-minute timer).
 PG_CONFIG = "/etc/souls-house-postgres-backup.json"
@@ -83,6 +100,33 @@ class BackupFailed(CommandFailed):
     def __init__(self, message, result):
         super().__init__(message)
         self.result = result
+
+
+class DockerOutput(str):
+    """Captured output that also carries the Docker client's exit code."""
+
+    def __new__(cls, text, returncode=None):
+        value = super().__new__(cls, text)
+        value.returncode = returncode
+        return value
+
+
+def restic_failure_reason(output):
+    """A fixed reason for a failed restic run: the exit code when known and
+    an allowlisted error class, never restic's own text."""
+    parts = []
+    code = getattr(output, "returncode", None)
+    if type(code) is int:
+        parts.append(f"exit {code}")
+    text = output or ""
+    if text == "Docker deadline exceeded":
+        parts.append("deadline")
+    else:
+        label = next((label for label, pattern in RESTIC_ERROR_CLASSES if pattern.search(text)), None)
+        if label is None and code == 137:
+            label = "killed"
+        parts.append(label or "unclassified")
+    return "restic backup failed (" + ", ".join(parts) + ")"
 
 
 class BodyTooLarge(BadCommand):
@@ -582,7 +626,8 @@ def bounded_docker(argv, timeout=120):
             thread.join(timeout=1)
     if timed_out:
         return False, "Docker deadline exceeded"
-    return process.returncode == 0, bytes(tails[0 if process.returncode == 0 else 1]).decode("utf-8", "replace").strip()
+    text = bytes(tails[0 if process.returncode == 0 else 1]).decode("utf-8", "replace").strip()
+    return process.returncode == 0, DockerOutput(text, process.returncode)
 
 
 def _state(docker, name, timeout):
@@ -608,7 +653,7 @@ def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command, 
         "--network", "host", "--read-only", "--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH",
         "--security-opt", "no-new-privileges", "--memory", "512m", "--cpus", "1",
         "--pids-limit", "64", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "--env-file", env_file,
+        "--env-file", env_file, "--env", f"TMPDIR={RESTIC_TMPDIR}",
     ]
     for role in ROLES:
         argv += ["--mount", f"type=volume,src={volume_name(spec['container_name'], role)},dst=/data/{role},readonly"]
@@ -972,7 +1017,7 @@ def run_backup(payload, host, *, signed_request, docker=None,
                     "--tag", "helixkit_volume_set=v1", "--json",
                 ])
                 if not ok:
-                    raise CommandFailed("restic backup failed")
+                    raise CommandFailed(restic_failure_reason(output))
                 summaries = []
                 for line in output.splitlines():
                     try:
