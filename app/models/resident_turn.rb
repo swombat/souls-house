@@ -122,6 +122,10 @@ class ResidentTurn < ApplicationRecord
   # written to it first (Agents::FirstConversation.turn_deliverable?).
   def dispatch_deliverable?
     return false unless Agents::FirstConversation.turn_deliverable?(agent_runtime_interaction)
+    if Agents::AllowanceBrake.interaction_reason(agent_runtime_interaction)
+      update!(completion_context: completion_context.merge("allowance_brake_refused" => true))
+      return false
+    end
 
     dispatch = agent_runtime_interaction.message_dispatch
     dispatch.nil? || dispatch.with_lock { dispatch.deliverable! }

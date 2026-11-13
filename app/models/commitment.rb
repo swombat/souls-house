@@ -219,7 +219,7 @@ class Commitment < ApplicationRecord
 
   # The sweep's custody step for an activated row: follow the wake to its
   # outcome and wake again when it was lost before a run started. Never posts.
-  def sync_wake!
+  def sync_wake!(allow_retry: true)
     with_lock do
       next unless activated? && wake_state.in?(IN_CUSTODY)
       next update!(wake_state: "blocked", wake_reason: "conversation_gone") unless activation_chat && activation_message
@@ -227,7 +227,7 @@ class Commitment < ApplicationRecord
       case wake_state
       when "held" then follow_held_wake!
       when "woken" then follow_run!
-      when "retrying" then attempt_wake!
+      when "retrying" then attempt_wake! if allow_retry
       end
     end
   end
@@ -257,6 +257,7 @@ class Commitment < ApplicationRecord
       summary: summary,
       headline: headline,
       status: status,
+      essential: essential,
       due_at: due_at&.iso8601,
       due_at_local: due_at&.in_time_zone(timezone)&.iso8601,
       timezone: timezone,
@@ -397,7 +398,9 @@ class Commitment < ApplicationRecord
 
     if run.transport_status.to_i.between?(200, 299) && run.runtime_status == "ok"
       record_delivery!
-    elsif run.execution_state == "busy" || (run.execution_state == "cancelled" && run.dispatch_claimed_at.nil?)
+    elsif run.execution_state == "busy" || (run.execution_state == "cancelled" &&
+        (run.dispatch_claimed_at.nil? || ResidentTurn.where(agent_runtime_interaction_id: run.id)
+          .where("completion_context->>'allowance_brake_refused' = 'true'").exists?))
       retry_later!("run #{run.execution_state} before it started")
     else
       update!(wake_state: "blocked", wake_reason: "run ended #{run.execution_state}; not replayed")
@@ -468,7 +471,7 @@ class Commitment < ApplicationRecord
       return "conversation_unavailable" unless chat.respondable? && chat.manual_responses?
       return "resident_not_in_conversation" unless chat.agents.exists?(agent_id)
     end
-    nil
+    Agents::AllowanceBrake.commitment_reason(self, chat: chat)
   end
 
   def open_conversation!

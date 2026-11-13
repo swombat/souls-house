@@ -38,6 +38,9 @@ class CommitmentPresentation
       items: commitments.map do |commitment|
         manageable = commitment.cancellable? && commitment.manageable_by?(@viewer)
         commitment.as_json.merge(
+          can_manage_essential: Agents::AllowanceBrake.manageable_by?(commitment.account, @viewer),
+          essential_url: Agents::AllowanceBrake.manageable_by?(commitment.account, @viewer) ?
+            @routes.account_agent_commitment_path(@account, @agent, commitment) : nil,
           source_url: commitment.source_chat && @routes.account_chat_path(commitment.account, commitment.source_chat),
           activation_url: commitment.activation_chat && @routes.account_chat_path(commitment.account, commitment.activation_chat),
           manage_url: manageable ? @routes.account_agent_commitment_path(@account, @agent, commitment) : nil

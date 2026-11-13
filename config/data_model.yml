@@ -124,6 +124,8 @@ areas:
       - pending_wakes
       - pending_wake_sources
       - resident_turns
+      - allowance_brake_readings
+      - allowance_brake_notices
       - agent_runtime_interactions
       - agent_runtime_attempts
       - agent_runtime_events

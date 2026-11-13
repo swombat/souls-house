@@ -6,6 +6,7 @@ class ExternalAgentWakeRequest
   end
 
   def call
+    Agents::AllowanceBrake.prepare(agent, essential: agent.scheduled_wakes_essential?)
     Agents::Sandbox.new(agent).with_runtime { perform }
   rescue StandardError => e
     Rails.logger.warn "[ExternalAgentWakeRequest] #{agent.id} wake failed: #{e.class}: #{e.message}"
@@ -17,6 +18,9 @@ class ExternalAgentWakeRequest
   attr_reader :agent, :requested_by
 
   def perform
+    if Agents::AllowanceBrake.check(agent, essential: agent.scheduled_wakes_essential?).braked?
+      return { status: 412, body: { "status" => "skipped_allowance" } }
+    end
     return { status: 503, error: "external runtime unreachable" } if agent.offline? || agent_unhealthy?
 
     endpoint_url = Agents::Endpoint.url_for(agent)

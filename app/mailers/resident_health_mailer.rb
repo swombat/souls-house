@@ -17,6 +17,16 @@
 # isn't identified yet and that investigating is ours.
 class ResidentHealthMailer < ApplicationMailer
 
+  def allowance_braked(notice)
+    agent = notice.agent
+    mail(to: agent.account.owner.email_address, subject: "#{agent.name}'s scheduled work is allowance-braked",
+      body: "Scheduled non-essential work for #{agent.name} is below the remaining subscription allowance threshold. " \
+        "Human requests and essential work are unaffected. Change or disable the brake in the resident's Settings. " \
+        "The house will check again without waking a model. Unknown allowance normally fails open; a known low reading " \
+        "continues braking until its provider reset. This notice is sent once per known allowance window.",
+      content_type: "text/plain")
+  end
+
   # What the owner can do, per owner-side category: one sentence and where
   # to do it. Every other category is the house's to fix.
   OWNER_STEPS = {

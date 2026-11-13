@@ -30,6 +30,26 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_rhythm_path(@account, rhythm)
   end
 
+  test "admin can only update essential without acquiring unrelated management powers" do
+    account = memberships(:team_admin).account
+    resident = account.agents.create!(name: "Admin essential test", system_prompt: "Test", runtime: "external")
+    creator = User.find(memberships(:another_team_member).user_id)
+    rhythm = Rhythm.create!(account: account, creator: creator, agents: [ resident ], title: "Admin flag",
+      opening: "Test", cadence: "daily", time_of_day: "09:00", timezone: "UTC")
+    original_next = rhythm.next_run_at
+    assert_not rhythm.manageable_by?(@user)
+    patch account_rhythm_path(account, rhythm), params: { rhythm: { essential: true } }
+    assert_response :redirect
+    assert rhythm.reload.essential?
+    assert_equal original_next, rhythm.next_run_at
+    patch account_rhythm_path(account, rhythm), params: { rhythm: { title: "Not authorized", essential: false } }
+    assert_response :redirect
+    assert rhythm.reload.essential?
+    delete account_rhythm_path(account, rhythm)
+    assert_response :redirect
+    assert_equal "Admin flag", rhythm.reload.title
+  end
+
   test "only authorized detail partials render a missing rhythm as deleted" do
     rhythm = make_rhythm
     path = account_rhythm_path(@account, rhythm)

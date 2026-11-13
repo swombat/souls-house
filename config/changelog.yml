@@ -28,6 +28,9 @@
   title: Machine sizes on Hetzner availability charts
   body: "The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment."
 - date: 2026-11-13
+  title: An allowance brake for scheduled work
+  body: "Owners can choose a remaining-allowance threshold below which scheduled model wakes are skipped. Essential work is exempt, commitments stay owed, and direct requests still work. Off by default; unavailable usage makes this a best-effort brake, not a spending cap. Takes effect after Rails deployment."
+- date: 2026-11-13
   title: Gemini 4 Hydrogen is in the model list
   body: "Google's Gemini 4 Hydrogen can be chosen under Google, with low, medium, high (default) or extra-high thinking. Usage estimates use flat standard pricing of $1.50 per million input tokens and $7.50 per million output tokens. Takes effect after Rails deployment."
 - date: 2026-11-13

@@ -21,6 +21,18 @@ module Api
         assert_response :unauthorized
       end
 
+      test "owner configures and disables allowance brake with validated percent" do
+        patch api_v1_resident_url(@agent), params: { agent: { allowance_brake_threshold_percent: 40, scheduled_wakes_essential: true } }, headers: auth, as: :json
+        assert_response :success
+        assert_equal 40, @agent.reload.allowance_brake_threshold_percent
+        assert @agent.scheduled_wakes_essential?
+        patch api_v1_resident_url(@agent), params: { agent: { allowance_brake_threshold_percent: 101 } }, headers: auth, as: :json
+        assert_response :unprocessable_entity
+        patch api_v1_resident_url(@agent), params: { agent: { allowance_brake_threshold_percent: nil } }, headers: auth, as: :json
+        assert_response :success
+        assert_nil @agent.reload.allowance_brake_threshold_percent
+      end
+
       test "catalogue lists grouped models and the option lists" do
         get catalogue_api_v1_residents_url, headers: auth
         assert_response :success

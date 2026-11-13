@@ -28,6 +28,16 @@ module Api
         assert_match(/Summary is too long/, response.parsed_body["errors"].join)
       end
 
+      test "resident keys cannot set or change essential" do
+        post api_v1_commitments_url, params: attrs.merge(essential: true), headers: @headers, as: :json
+        assert_response :created
+        commitment = Commitment.find(response.parsed_body.dig("commitment", "id"))
+        assert_not commitment.essential?
+        patch api_v1_commitment_url(commitment), params: { due_at: (@due + 1.hour).iso8601, essential: true }, headers: @headers, as: :json
+        assert_response :ok
+        assert_not commitment.reload.essential?
+      end
+
       test "a resident commits, lists, reschedules and cancels its own commitment" do
         post api_v1_commitments_url, params: attrs, headers: @headers, as: :json
         assert_response :created

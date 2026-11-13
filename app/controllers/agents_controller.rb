@@ -83,6 +83,8 @@ class AgentsController < ApplicationController
     render inertia: "agents/edit", props: {
       portability: -> { portability_props },
       agent: -> { @agent.as_json },
+      can_manage_allowance_brake: Agents::AllowanceBrake.manageable_by?(@agent.account, Current.user),
+      can_manage_essential: Agents::AllowanceBrake.manageable_by?(current_account, Current.user),
       house_allowance: -> { HouseInference::Allowance.presentation(@agent) },
       billing_hold: -> { billing_hold_props },
       subagent_catalog: -> { load_catalog.call.options },

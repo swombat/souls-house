@@ -23,6 +23,15 @@ class Agents::CommitmentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal account_chat_path(@account, @chat), item["source_url"]
   end
 
+  test "owner may change essential independently of rescheduling" do
+    patch account_agent_commitment_path(@account, @agent, @commitment), params: { essential: true }
+    assert_response :redirect
+    assert @commitment.reload.essential?
+    get edit_account_agent_path(@account, @agent, tab: "commitments")
+    assert_equal true, inertia_shared_props["can_manage_essential"]
+    assert_equal true, inertia_shared_props.dig("commitments", "items").sole["essential"]
+  end
+
   test "the owner reschedules and cancels; a finished commitment cannot be changed" do
     later = 3.hours.from_now.change(usec: 0)
     patch account_agent_commitment_path(@account, @agent, @commitment), params: { due_at: later.utc.iso8601 }

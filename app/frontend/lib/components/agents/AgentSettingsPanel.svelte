@@ -5,6 +5,7 @@
   import AgentModelPanel from '$lib/components/agents/AgentModelPanel.svelte';
   import AgentConversationModels from '$lib/components/agents/AgentConversationModels.svelte';
   import AgentHostingLocation from '$lib/components/agents/AgentHostingLocation.svelte';
+  import AgentAllowanceBrake from '$lib/components/agents/AgentAllowanceBrake.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -19,6 +20,8 @@
     // Where the runtime lives (main server or its own VM); null when the
     // resident has no hosted runtime.
     hostingLocation = null,
+    canManageAllowanceBrake = false,
+    allowanceBrakeStatus = null,
   } = $props();
 
   const ADVANCED_FIELDS = [
@@ -55,6 +58,8 @@
   </AgentModelPanel>
 
   {#if subscription}{@render subscription()}{/if}
+
+  <AgentAllowanceBrake {form} canManage={canManageAllowanceBrake} status={allowanceBrakeStatus} />
 
   <div class="space-y-4">
     <div>

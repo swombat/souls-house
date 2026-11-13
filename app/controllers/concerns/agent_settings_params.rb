@@ -16,11 +16,17 @@ module AgentSettingsParams
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
       :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
-      :resident_may_switch_model,
+      :resident_may_switch_model, :allowance_brake_threshold_percent, :scheduled_wakes_essential,
       subagent_models: [], switchable_model_ids: []
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
+    actor = respond_to?(:current_api_user, true) ? current_api_user : Current.user
+    unless @agent && Agents::AllowanceBrake.manageable_by?(@agent.account, actor)
+      permitted.delete(:allowance_brake_threshold_percent)
+      permitted.delete(:scheduled_wakes_essential)
+    end
+    permitted[:allowance_brake_threshold_percent] = nil if permitted.key?(:allowance_brake_threshold_percent) && permitted[:allowance_brake_threshold_percent].blank?
     strip_externally_managed_params!(permitted) if @agent&.identity_owned_by_agent?
     permitted
   end

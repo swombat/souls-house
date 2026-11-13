@@ -17,6 +17,7 @@ export const COMMITMENT_WAITING = {
   billing_hold: 'the resident is held for billing',
   resident_paused: 'the resident is paused',
   resident_unavailable: 'the resident cannot run right now',
+  skipped_allowance: 'the allowance brake is holding this wake; the commitment is still owed',
   conversation_unavailable: 'the conversation is archived',
   resident_not_in_conversation: 'the resident has left the conversation',
 };

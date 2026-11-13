@@ -14,11 +14,17 @@ class Agents::CommitmentsController < ApplicationController
     render inertia: "agents/commitments", props: {
       agent: { id: @agent.to_param, name: @agent.name, guest: guest? },
       commitments: -> { CommitmentPresentation.new(agent: @agent, account: current_account, viewer: Current.user, routes: helpers).as_props },
-      back_url: account_agents_path(current_account)
+      back_url: account_agents_path(current_account),
+      can_manage_essential: Agents::AllowanceBrake.manageable_by?(current_account, Current.user)
     }
   end
 
   def update
+    if params.key?(:essential)
+      return head :forbidden unless Agents::AllowanceBrake.manageable_by?(@commitment.account, Current.user)
+      @commitment.update!(essential: ActiveModel::Type::Boolean.new.cast(params[:essential]))
+      return redirect_to back_path, notice: "Commitment updated" unless params.key?(:due_at)
+    end
     due_at = parse_due_at(params[:due_at])
     result = due_at ? @commitment.reschedule!(due_at: due_at) : nil
     flash_args = case result&.status
@@ -52,6 +58,8 @@ class Agents::CommitmentsController < ApplicationController
   def set_commitment
     scope = CommitmentPresentation.visible_scope(agent: @agent, account: current_account, viewer: Current.user)
     @commitment = scope.find(params[:id])
+    return if action_name == "update" && params.key?(:essential) && !params.key?(:due_at) &&
+      Agents::AllowanceBrake.manageable_by?(@commitment.account, Current.user)
     head :forbidden unless @commitment.manageable_by?(Current.user)
   end
 

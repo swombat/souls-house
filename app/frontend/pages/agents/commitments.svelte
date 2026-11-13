@@ -4,7 +4,7 @@
   // their own page.
   import AgentCommitmentsPanel from '$lib/components/agents/AgentCommitmentsPanel.svelte';
 
-  let { agent, commitments = {}, back_url: backUrl } = $props();
+  let { agent, commitments = {}, back_url: backUrl, can_manage_essential: canManageEssential = false } = $props();
 </script>
 
 <svelte:head>
@@ -18,5 +18,5 @@
       {agent.name} is a guest here. These are the commitments it made in this house.
     </p>
   {/if}
-  <AgentCommitmentsPanel {commitments} agentName={agent.name} />
+  <AgentCommitmentsPanel {commitments} agentName={agent.name} {canManageEssential} />
 </div>

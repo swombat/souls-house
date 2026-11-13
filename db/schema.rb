@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -602,6 +602,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.jsonb "voice_delivery"
     t.jsonb "volume_map"
     t.integer "volume_rollback_generation", default: 0, null: false
+    t.integer "allowance_brake_threshold_percent"
+    t.boolean "scheduled_wakes_essential", default: false, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -617,6 +619,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true
     t.index ["uuid"], name: "index_agents_on_uuid", unique: true
+    t.check_constraint "allowance_brake_threshold_percent >= 0 AND allowance_brake_threshold_percent <= 100", name: "agents_allowance_brake_threshold"
     t.check_constraint "first_conversation_greeting IS NULL OR (first_conversation_greeting::text = ANY (ARRAY['owed'::character varying::text, 'sent'::character varying::text, 'spent'::character varying::text, 'skipped'::character varying::text]))", name: "agents_first_conversation_greeting_values"
     t.check_constraint "turn_timeout_minutes >= 1 AND turn_timeout_minutes <= 1440", name: "agents_turn_timeout_minutes_range"
   end
@@ -641,6 +644,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.index ["modalities"], name: "index_ai_models_on_modalities", using: :gin
     t.index ["provider", "model_id"], name: "index_ai_models_on_provider_and_model_id", unique: true
     t.index ["provider"], name: "index_ai_models_on_provider"
+  end
+
+  create_table "allowance_brake_notices", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "provider", null: false
+    t.string "window_key", null: false
+    t.datetime "resets_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "provider", "window_key"], name: "idx_on_agent_id_provider_window_key_b60366ce25", unique: true
+    t.index ["agent_id"], name: "index_allowance_brake_notices_on_agent_id"
+  end
+
+  create_table "allowance_brake_readings", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "provider", null: false
+    t.string "model", null: false
+    t.jsonb "windows", default: [], null: false
+    t.datetime "observed_at"
+    t.datetime "checked_at"
+    t.datetime "refresh_requested_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "provider", "model"], name: "idx_on_agent_id_provider_model_02031e93bf", unique: true
+    t.index ["agent_id"], name: "index_allowance_brake_readings_on_agent_id"
   end
 
   create_table "api_key_requests", force: :cascade do |t|
@@ -950,6 +978,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "summary"
+    t.boolean "essential", default: false, null: false
     t.index ["account_id"], name: "index_commitments_on_account_id"
     t.index ["activation_chat_id"], name: "index_commitments_on_activation_chat_id"
     t.index ["activation_message_id"], name: "index_commitments_on_activation_message_id"
@@ -2713,6 +2742,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "creator_agent_id"
+    t.boolean "human_requested", default: false, null: false
     t.index ["chat_id"], name: "index_rhythm_occurrences_on_chat_id"
     t.index ["creator_agent_id"], name: "index_rhythm_occurrences_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythm_occurrences_on_creator_id"
@@ -2747,6 +2777,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
     t.boolean "quiet_gate", default: false, null: false
     t.bigint "quiet_gate_room_ids", default: [], null: false, array: true
     t.bigint "quiet_watermark_message_id"
+    t.boolean "essential", default: false, null: false
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"
@@ -3474,6 +3505,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
   add_foreign_key "agents", "chats", column: "first_conversation_chat_id", on_delete: :nullify
   add_foreign_key "agents", "github_resident_imports"
   add_foreign_key "agents", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "allowance_brake_notices", "agents"
+  add_foreign_key "allowance_brake_readings", "agents"
   add_foreign_key "api_key_requests", "api_keys"
   add_foreign_key "api_keys", "accounts"
   add_foreign_key "api_keys", "agents"
