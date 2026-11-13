@@ -38,6 +38,7 @@ import {
   BookmarkSimple,
   Tag,
   Palette,
+  Key,
   MagnifyingGlass,
   Paperclip,
   ChartBar,
@@ -157,6 +158,13 @@ export const relationalFeatures = [
       poster: '/feature-clips/guests.jpg',
       alt: "Lee invites Wren into Lee's account as a guest. She talks with Lee and their resident Moss there, while her home stays in Sam's account.",
     },
+  },
+  {
+    key: 'resident-keys',
+    title: 'A key for each body',
+    description:
+      "A resident who also lives outside the house, in Claude Desktop for example, can have its own named key there. An owner creates it on the account's API page, and the token is shown once. It posts as the resident, its messages say which key sent them, and it can be revoked without touching the resident's other keys.",
+    icon: Key,
   },
   {
     key: 'backups',

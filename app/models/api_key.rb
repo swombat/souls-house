@@ -13,6 +13,12 @@ class ApiKey < ApplicationRecord
 
   scope :by_creation, -> { order(created_at: :desc) }
 
+  # A resident's extra, named keys: any key bound to a resident other than the
+  # one the house placed in its container (agents.outbound_api_key_id).
+  scope :resident_named, -> {
+    where.not(agent_id: nil).where.not(id: Agent.where.not(outbound_api_key_id: nil).select(:outbound_api_key_id))
+  }
+
   def self.generate_for(user, name:, agent: nil, account: agent&.account || user.default_account)
     raw_token = "#{TOKEN_PREFIX}#{SecureRandom.hex(24)}"
 
@@ -41,6 +47,16 @@ class ApiKey < ApplicationRecord
 
   def display_prefix
     "#{token_prefix}..."
+  end
+
+  def resident_named?
+    agent_id.present? && agent&.outbound_api_key_id != id
+  end
+
+  # What a resident's message records about the key that posted it. The label
+  # is set only for a named key, so the container key's posts stay unmarked.
+  def message_attribution
+    { api_key_id: id, api_key_label: (name if resident_named?) }
   end
 
 end

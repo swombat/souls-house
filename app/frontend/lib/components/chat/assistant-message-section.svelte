@@ -141,6 +141,10 @@
       <span data-testid="answer-model" title="The model that produced this answer">{message.runtime_model_label}</span>
       <span>·</span>
     {/if}
+    {#if message.api_key_label}
+      <span data-testid="answer-key" title="Posted with this resident's named key">via {message.api_key_label}</span>
+      <span>·</span>
+    {/if}
     {#if message.paid_fallback}
       <span
         data-testid="paid-fallback-label"

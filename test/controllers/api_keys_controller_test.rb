@@ -28,6 +28,7 @@ class ApiKeysControllerTest < ActionDispatch::IntegrationTest
   test "index separates Chaos agent keys and identifies the bound agent" do
     agent = agents(:other_account_agent)
     key = ApiKey.generate_for(@user, agent: agent, name: "Chaos Agent")
+    agent.update!(outbound_api_key: key) # the container key; named keys are listed apart
 
     get account_api_keys_path(@account)
 

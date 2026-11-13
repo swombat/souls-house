@@ -354,6 +354,32 @@ export const accountAgentsPath: ((
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/external_access/residents/:id(.:format)
+ * @param {any} accountId
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountResidentApiKeyPath: ((
+  accountId: RequiredRouteParameter,
+  id: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/external_access/residents(.:format)
+ * @param {any} accountId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountResidentApiKeysPath: ((
+  accountId: RequiredRouteParameter,
+  options?: {format?: OptionalRouteParameter} & RouteOptions
+) => string) & RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /accounts/:account_id/external_access/:id(.:format)
  * @param {any} accountId
  * @param {any} id

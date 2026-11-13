@@ -77,6 +77,38 @@ module Api
         assert_nil message.user
       end
 
+      test "a resident's named key posts as the resident and the message says which key" do
+        agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id)
+        outbound = ApiKey.generate_for(@user, name: "agent:#{agent.id}:outbound", agent: agent)
+        agent.update!(outbound_api_key: outbound, outbound_api_token: outbound.raw_token)
+        desktop = ApiKey.generate_for(@user, name: "Desktop", agent: agent, account: @account)
+        @chat.agents << agent
+        @chat.update!(manual_responses: true)
+
+        post api_v1_conversation_messages_url(@chat),
+          params: { content: "From the desktop" },
+          headers: { "Authorization" => "Bearer #{desktop.raw_token}" }
+        assert_response :created
+        from_desktop = @chat.messages.order(:created_at).last
+        assert_equal agent, from_desktop.agent
+        assert_nil from_desktop.user
+        assert_equal desktop.id, from_desktop.api_key_id
+        assert_equal "Desktop", from_desktop.api_key_label
+        assert_equal "Desktop", JSON.parse(response.body).dig("message", "api_key_label")
+
+        post api_v1_conversation_messages_url(@chat),
+          params: { content: "From the container" },
+          headers: { "Authorization" => "Bearer #{outbound.raw_token}" }
+        assert_response :created
+        from_container = @chat.messages.order(:created_at).last
+        assert_equal outbound.id, from_container.api_key_id
+        assert_nil from_container.api_key_label
+
+        desktop.destroy!
+        assert_equal "Desktop", from_desktop.reload.api_key_label, "the label outlives the key"
+      end
+
       test "agent-scoped key posts an image attachment" do
         agent = agents(:research_assistant)
         agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account

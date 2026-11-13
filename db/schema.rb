@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_004500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -665,7 +665,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["account_id"], name: "index_api_keys_on_account_id"
-    t.index ["agent_id"], name: "index_api_keys_on_agent_id", unique: true, where: "(agent_id IS NOT NULL)"
+    t.index ["agent_id"], name: "index_api_keys_on_agent_id", where: "(agent_id IS NOT NULL)"
     t.index ["token_digest"], name: "index_api_keys_on_token_digest", unique: true
     t.index ["user_id"], name: "index_api_keys_on_user_id"
   end
@@ -2056,6 +2056,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_200000) do
   create_table "messages", force: :cascade do |t|
     t.bigint "agent_id"
     t.bigint "ai_model_id"
+    t.bigint "api_key_id"
+    t.string "api_key_label"
     t.boolean "audio_source", default: false, null: false
     t.integer "cache_creation_tokens"
     t.integer "cached_tokens"

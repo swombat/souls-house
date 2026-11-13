@@ -16,4 +16,16 @@ class Agents::RotateCredentialsTest < ActiveSupport::TestCase
     assert_equal "synthetic-backup-password", agent.restic_password
   end
 
+  test "rotation also revokes the resident's named keys (bodies outside the house get new ones)" do
+    agent = agents(:research_assistant)
+    key = ApiKey.generate_for(users(:user_1), name: "Primary", agent: agent)
+    agent.update!(outbound_api_key: key, outbound_api_token: key.raw_token)
+    desktop = ApiKey.generate_for(users(:user_1), name: "Desktop", agent: agent)
+
+    Agents::RotateCredentials.call(agent)
+
+    assert_nil ApiKey.authenticate(desktop.raw_token)
+    assert_empty ApiKey.resident_named.where(agent: agent)
+  end
+
 end

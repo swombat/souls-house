@@ -181,6 +181,7 @@ Rails.application.routes.draw do
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
+    resources :resident_api_keys, path: "external_access/residents", only: [ :create, :destroy ]
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
