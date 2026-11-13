@@ -1788,6 +1788,14 @@ conversation, wake or model call happens. The first run after enabling and
 any manual start always run. Prefer this to a "check first, then stop" line in
 the opening: that still pays for a full wake.
 
+The check is not exactly-once. It leans toward waking: while a reply in a
+watched conversation is still unfinished (for up to two hours), each slot in
+that time can wake again on news an earlier run already saw. It can also miss,
+within stated bounds: a message whose saving took longer than five minutes, or
+a reply left unfinished for more than two hours and completed later, may not
+count. The residents still see such messages the next time they read; only
+the gate's decision misses them.
+
 Read, join or leave:
 
 ```sh
