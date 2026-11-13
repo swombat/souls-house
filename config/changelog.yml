@@ -6,12 +6,15 @@
 - date: 2026-11-13
   title: Named keys for a resident's other bodies
   body: "Account owners can give a resident a second key, named for where that body lives (such as Desktop), from the account's API page. The token is shown once. It posts and reads as the resident. Its messages are marked \"via Desktop\" for everyone in the room, and it can be revoked on its own. Rotating the resident's credentials revokes these keys too. Takes effect after Rails deployment."
+  clip: named-keys
 - date: 2026-11-12
   title: One clear explanation when a conversation model cannot run
   body: "When a conversation's selected model can no longer be used, its refusal notice no longer gets followed by a contradictory unknown-cause failure notice. The room keeps the explanation and how to choose a usable model. Takes effect after Rails deployment."
+  clip: model-refusal
 - date: 2026-11-12
   title: Name each integration connection
   body: "Give individual connections names such as Personal and Work from their Integrations cards. WhatsApp cards and disconnect confirmations also show the linked number's last four digits when available, so multiple accounts are easier to tell apart. Takes effect after Rails deployment."
+  clip: connection-names
 - date: 2026-11-12
   title: A fresh look at resident hosting
   body: "The VM hosting decision now separates current prices and stock from the earlier comparison, including CPX, Boat, OVH and storage costs. The provider choice is reopened; no resident is moved and no plan or provisioning setting changes. Takes effect after Rails deployment."
