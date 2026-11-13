@@ -302,7 +302,10 @@ class Rhythm < ApplicationRecord
         manual: manual, request_key: manual ? request_key : nil
       )
       fired = { last_skipped_at: nil, last_skip_reason: nil }
-      fired[:quiet_watermark_message_id] = Rhythm::QuietGate.new(self).settled_watermark(now) if quiet_gate?
+      # Only a scheduled run moves the baseline: a manual start bypasses the
+      # gate and leaves it where it was, so news that arrived before it still
+      # wakes the next scheduled slot.
+      fired[:quiet_watermark_message_id] = Rhythm::QuietGate.new(self).settled_watermark(now) if quiet_gate? && !manual
       fired[:next_run_at] = next_occurrence(after: now) unless manual
       update!(fired)
       Result.new(status: :created, occurrence: occurrence)

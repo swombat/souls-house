@@ -91,6 +91,40 @@ class RhythmQuietGateTest < ActiveSupport::TestCase
     assert_equal :quiet, tick.status
   end
 
+  test "a blank or still-streaming resident reply does not count until it completes" do
+    first_run!
+    post(@room_chat, role: "assistant", user: nil, agent: @peer, content: "")
+    post(@room_chat, role: "assistant", user: nil, agent: @peer, content: "half a sentence", streaming: true)
+    assert_equal :quiet, tick.status
+  end
+
+  test "an attachment-only resident reply counts" do
+    first_run!
+    reply = post(@room_chat, role: "assistant", user: nil, agent: @peer, content: "")
+    reply.attachments.attach(io: file_fixture("test.txt").open, filename: "note.txt", content_type: "text/plain")
+    assert_equal :created, tick.status
+  end
+
+  test "a reply unfinished across a check counts when it completes, though its id is old" do
+    first_run!
+    # Inserted well before the next check, so it is past SETTLE, but still
+    # streaming: the quiet check must not move the watermark above it.
+    reply = post(@room_chat, role: "assistant", user: nil, agent: @peer, content: "", streaming: true,
+      at: next_tick_at - 1.hour)
+    assert_equal :quiet, tick.status
+    assert_operator @rhythm.reload.quiet_watermark_message_id, :<, reply.id
+    reply.update_columns(content: "the finished answer", streaming: false)
+    assert_equal :created, tick.status
+  end
+
+  test "a reply left unfinished past the hold stops holding the watermark" do
+    first_run!
+    stuck = post(@room_chat, role: "assistant", user: nil, agent: @peer, content: "", streaming: true,
+      at: next_tick_at - Rhythm::QuietGate::UNFINISHED_HOLD - 1.minute)
+    assert_equal :quiet, tick.status
+    assert_operator @rhythm.reload.quiet_watermark_message_id, :>=, stuck.id
+  end
+
   test "activity in a conversation not every seated resident can read never wakes the group" do
     @rhythm.update!(agents: [ @agent, @peer ])
     first_run!
@@ -134,6 +168,15 @@ class RhythmQuietGateTest < ActiveSupport::TestCase
     first_run!
     result = @rhythm.fire!(now: @now + 1.hour, manual: true, request_key: "by-hand")
     assert_equal :created, result.status
+  end
+
+  test "a manual start leaves the scheduled baseline, so earlier news still wakes the next slot" do
+    first_run!
+    baseline = @rhythm.reload.quiet_watermark_message_id
+    post(@room_chat, at: @now + 1.hour)
+    assert_equal :created, @rhythm.fire!(now: @now + 2.hours, manual: true, request_key: "by-hand").status
+    assert_equal baseline, @rhythm.reload.quiet_watermark_message_id
+    assert_equal :created, tick.status
   end
 
   test "messages posted while an occurrence runs are counted at the next check" do
