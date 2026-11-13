@@ -138,6 +138,7 @@ class MessageDispatch < ApplicationRecord
       reason = "not_started_in_time" if expires_at.past?
       reason ||= "live_activity_disabled" unless AgentRuntimeInteraction.live_activity_enabled?
       reason ||= source_invalid_reason
+      reason ||= allowance_brake_reason
       if reason
         raise InvocationRefused, reason if invoke?
         next settle!(reason == "not_started_in_time" ? "expired" : "cancelled", reason)
@@ -188,6 +189,7 @@ class MessageDispatch < ApplicationRecord
     end
 
     reason = source_invalid_reason
+    reason ||= allowance_brake_reason
     reason ||= "live_activity_disabled" unless AgentRuntimeInteraction.live_activity_enabled?
     return true unless reason
 
@@ -272,6 +274,13 @@ class MessageDispatch < ApplicationRecord
   end
 
   private
+
+  def allowance_brake_reason
+    return unless rhythm?
+    occurrence = RhythmOccurrence.find_by(message_id: message_id)
+    return unless occurrence
+    Agents::AllowanceBrake.rhythm_reason(occurrence.rhythm, human_requested: occurrence.human_requested?, chat: chat)
+  end
 
   def broadcast_rhythm_activity_after_commit
     # RhythmPresentation renders status/reason, not expiry/recovery metadata

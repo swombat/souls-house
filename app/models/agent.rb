@@ -37,6 +37,8 @@ class Agent < ApplicationRecord
   has_one :fallback_policy, class_name: "ResidentFallbackPolicy", dependent: :destroy
   has_many :fallback_turns, class_name: "ResidentFallbackTurn", dependent: :delete_all
   has_many :fallback_calls, class_name: "ResidentFallbackCall", dependent: :delete_all
+  has_many :allowance_brake_readings, dependent: :delete_all
+  has_many :allowance_brake_notices, dependent: :delete_all
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
   belongs_to :created_by_user, class_name: "User", optional: true
@@ -299,6 +301,7 @@ class Agent < ApplicationRecord
                    :orientation_last_error, :orientation_last_error_at, :oriented_at,
                    :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
                        :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
+                       :allowance_brake_threshold_percent, :scheduled_wakes_essential, :allowance_brake_status,
                        :session_context_budget_tokens, :turn_timeout_minutes,
                        :subagents_enabled?, :subagent_models,
                        :switchable_model_ids, :resident_may_switch_model?,
@@ -335,6 +338,13 @@ class Agent < ApplicationRecord
     else
       helpers.rails_blob_url(avatar, only_path: true)
     end
+  end
+
+  validates :allowance_brake_threshold_percent,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
+
+  def allowance_brake_status
+    Agents::AllowanceBrake.check(self, refresh: false, notify: false).as_json
   end
 
   # After the picture is set or removed here: the resident's Telegram bot

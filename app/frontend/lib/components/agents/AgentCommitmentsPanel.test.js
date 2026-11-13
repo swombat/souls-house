@@ -117,3 +117,21 @@ test('says so when nothing is scheduled', () => {
   render(AgentCommitmentsPanel, { commitments: { items: [] }, agentName: 'Lume' });
   expect(screen.getByText('Lume has nothing scheduled.')).toBeInTheDocument();
 });
+
+test('only an authorized viewer sees essential controls and can mark an owed commitment', async () => {
+  const items = [
+    {
+      ...commitments.items[0],
+      waiting_reason: 'skipped_allowance',
+      essential_url: commitments.items[0].manage_url,
+      manage_url: null,
+    },
+  ];
+  const view = render(AgentCommitmentsPanel, { commitments: { items }, canManageEssential: false });
+  expect(screen.getByText(/commitment is still owed/)).toBeInTheDocument();
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  await view.rerender({ commitments: { items }, canManageEssential: true });
+  await fireEvent.click(screen.getByRole('checkbox', { name: /Essential/ }));
+  expect(router.patch).toHaveBeenCalledWith(items[0].essential_url, { essential: true }, { preserveScroll: true });
+  expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+});

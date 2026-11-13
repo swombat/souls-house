@@ -74,6 +74,26 @@
         <p class="mt-1 text-muted-foreground">
           {rhythm.schedule_description} · set up by {rhythm.creator?.name}
         </p>
+        {#if rhythm.essential}
+          <p class="mt-1 text-sm text-muted-foreground">Essential: exempt from the allowance brake</p>
+        {/if}
+        {#if rhythm.can_manage_essential}
+          <label class="mt-2 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={rhythm.essential}
+              disabled={busy}
+              onchange={(event) => {
+                busy = true;
+                router.patch(
+                  rhythmPath(account.id, rhythm.id),
+                  { rhythm: { essential: event.currentTarget.checked } },
+                  { preserveScroll: true, onFinish: () => (busy = false) }
+                );
+              }} />
+            Essential: exempt from the allowance brake
+          </label>
+        {/if}
       </div>
       {#if rhythm.can_manage}
         <div class="flex shrink-0 gap-2">

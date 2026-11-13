@@ -141,6 +141,7 @@ class PendingWake < ApplicationRecord
     return "paused" if agent.paused?
     return "sources_withdrawn" unless standing_source?
     return "nothing_new" unless unseen_messages?
+    return "skipped_allowance" if Agents::AllowanceBrake.pending_wake_reason(self)
 
     nil
   end
@@ -178,7 +179,7 @@ class PendingWake < ApplicationRecord
     return "not_in_room" unless chat.agent_seated_for_request?(agent.id, created_at)
     return "sources_withdrawn" unless standing_source?
 
-    nil
+    Agents::AllowanceBrake.pending_wake_reason(self)
   end
 
   def recheck_after(wait)

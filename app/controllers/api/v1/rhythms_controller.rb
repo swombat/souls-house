@@ -135,7 +135,8 @@ module Api
       # Manual start, as the web's "Start now". The request key makes a retry
       # return the same occurrence rather than open another conversation.
       def start
-        result = @rhythm.fire!(now: Time.current, manual: true, request_key: params[:request_key])
+        result = @rhythm.fire!(now: Time.current, manual: true, request_key: params[:request_key],
+          requested_by_user: current_api_agent ? nil : current_api_user)
         occurrence = result.occurrence
         response.headers["Cache-Control"] = "no-store"
         render json: {

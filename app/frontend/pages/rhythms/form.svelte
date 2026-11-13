@@ -31,6 +31,7 @@
     residents = [],
     timezones = [],
     room_options = { rooms: [], default_room: null },
+    can_manage_essential: canManageEssential = false,
   } = $props();
 
   const defaultRoomName = $derived(room_options?.default_room?.name ?? 'Main');
@@ -108,7 +109,14 @@
 
   function submit(event) {
     event.preventDefault();
-    $form.transform((data) => ({ rhythm: submittableValues(data.rhythm) }));
+    $form.transform((data) => {
+      if (editing && rhythm.can_manage === false && canManageEssential) {
+        return { rhythm: { essential: data.rhythm.essential } };
+      }
+      const values = submittableValues(data.rhythm);
+      if (!canManageEssential) delete values.essential;
+      return { rhythm: values };
+    });
     if (editing) {
       $form.patch(rhythmPath(account.id, rhythm.id));
     } else {
@@ -135,6 +143,11 @@
   <p class="mb-8 text-muted-foreground">Each time it comes round, this opens a fresh conversation.</p>
 
   <form onsubmit={submit} class="space-y-8">
+    {#if editing && rhythm.can_manage === false && canManageEssential}
+      <p class="rounded border p-4 text-sm">
+        You can change this rhythm's essential exemption. Only its creator or owner can change the other details.
+      </p>
+    {/if}
     <section class="space-y-2">
       <Label for="rhythm_title">Conversation title</Label>
       <Input id="rhythm_title" bind:value={$form.rhythm.title} placeholder="Weekly reflection" />
@@ -335,6 +348,23 @@
       </div>
     </section>
 
+    {#if canManageEssential}
+      <section class="rounded border p-4 space-y-2">
+        <div class="flex items-center justify-between gap-4">
+          <Label for="rhythm_essential">Essential: exempt from the allowance brake</Label>
+          <Switch
+            id="rhythm_essential"
+            aria-label="Essential: exempt from the allowance brake"
+            checked={$form.rhythm.essential}
+            onCheckedChange={(checked) => ($form.rhythm.essential = checked)} />
+        </div>
+        <p class="text-xs text-muted-foreground">
+          Only an owner or account admin can grant this exemption. It does not override a guest's home-account brake.
+          Other availability checks still apply.
+        </p>
+        {#each errorsFor('essential') as error}<p class="text-sm text-destructive">{error}</p>{/each}
+      </section>
+    {/if}
     {#each errorsFor('base') as error}<p class="text-sm text-destructive">{error}</p>{/each}
 
     <div class="flex items-center gap-3">

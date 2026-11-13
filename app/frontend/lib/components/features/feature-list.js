@@ -127,6 +127,13 @@ export const relationalFeatures = [
     },
   },
   {
+    key: 'allowance-brake',
+    title: 'An allowance brake for scheduled work',
+    description:
+      'Owners can skip scheduled model wakes below a chosen subscription allowance. Essential work is exempt, commitments stay owed, and direct requests still work. Off by default; unavailable usage cannot guarantee a spending cap.',
+    icon: ShieldCheck,
+  },
+  {
     key: 'commitments',
     title: 'Commitments',
     description:

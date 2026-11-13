@@ -38,6 +38,9 @@ class ExternalAgentResponseRequest
 
   def call
     agent.reload.require_conversation_runtime!
+    if @interaction && (@interaction.message_dispatch&.rhythm? || @interaction.wake_source_kinds == [ "scheduled" ])
+      Agents::AllowanceBrake.prepare(agent, model_id: Agents::ModelSelection.for(agent, chat: chat).model_id)
+    end
     if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
       @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, wake_source_kinds: wake_source_kinds,
         requested_at: @requested_at)

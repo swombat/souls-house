@@ -38,6 +38,10 @@ class RhythmsController < ApplicationController
 
   def update
     attributes = rhythm_params
+    if attributes.keys == [ :essential ]
+      @rhythm.update!(attributes)
+      return respond_to_save(true)
+    end
     respond_to_save(@rhythm.with_lock { @rhythm.update_from_form(attributes) })
   end
 
@@ -68,7 +72,7 @@ class RhythmsController < ApplicationController
   end
 
   def start
-    result = @rhythm.fire!(now: Time.current, manual: true, request_key: params[:request_key])
+    result = @rhythm.fire!(now: Time.current, manual: true, request_key: params[:request_key], requested_by_user: Current.user)
     if result.created? || result.duplicate?
       redirect_result(result, "Manual occurrence created. The regular schedule is unchanged.")
     else
@@ -90,12 +94,18 @@ class RhythmsController < ApplicationController
   end
 
   def require_manager
+    if Agents::AllowanceBrake.manageable_by?(current_account, Current.user)
+      return if action_name == "edit"
+      return if action_name == "update" && params.require(:rhythm).keys == [ "essential" ]
+    end
     deny_account_access!("Only the creator or account owner can manage this rhythm.") unless @rhythm.manageable_by?(Current.user)
   end
 
   def rhythm_params
     permitted = params.require(:rhythm).permit(:title, :opening, :append_date, :cadence, :time_of_day,
-      :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, quiet_gate_room_ids: [], resident_ids: [], resident_models: {})
+      :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, :essential,
+      quiet_gate_room_ids: [], resident_ids: [], resident_models: {})
+    permitted.delete(:essential) unless Agents::AllowanceBrake.manageable_by?(current_account, Current.user)
     if permitted.key?(:resident_ids)
       permitted[:resident_ids] = Rhythm.selectable_resident_ids(current_account, permitted.delete(:resident_ids))
     end
@@ -131,6 +141,7 @@ class RhythmsController < ApplicationController
   def shared_props
     {
       account: current_account.as_json,
+      can_manage_essential: Agents::AllowanceBrake.manageable_by?(current_account, Current.user),
       residents: -> { resident_options },
       room_options: -> { room_options },
       timezones: -> { ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } } }

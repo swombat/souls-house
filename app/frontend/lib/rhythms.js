@@ -61,6 +61,7 @@ export function formValues(rhythm = {}, fallbackTimezone = 'UTC') {
     title: rhythm.title ?? '',
     opening: rhythm.opening ?? '',
     append_date: rhythm.append_date ?? true,
+    essential: rhythm.essential ?? false,
     resident_ids: [...(rhythm.resident_ids ?? [])],
     // resident id -> model id; '' follows that resident's default.
     resident_models: Object.fromEntries(

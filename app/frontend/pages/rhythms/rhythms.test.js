@@ -26,6 +26,28 @@ test('an unavailable existing selection can be removed but not selected again', 
   expect(button).toBeDisabled();
 });
 
+test('only owner/admin viewers see the rhythm essential exemption', async () => {
+  const view = render(RhythmForm, { account, rhythm: rhythmFixture(), residents });
+  expect(screen.queryByRole('switch', { name: /Essential/ })).toBeNull();
+  await view.rerender({ account, rhythm: rhythmFixture(), residents, can_manage_essential: true });
+  expect(screen.getByRole('switch', { name: /Essential/ })).toBeInTheDocument();
+});
+
+test('essential authority alone does not expose rhythm edit or delete controls', async () => {
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ can_manage: false, can_manage_essential: true }),
+  });
+  expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Delete rhythm' })).toBeNull();
+  await fireEvent.click(screen.getByRole('checkbox', { name: /Essential/ }));
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/acc/rhythms/r1',
+    { rhythm: { essential: true } },
+    expect.objectContaining({ preserveScroll: true })
+  );
+});
+
 function rhythmFixture(overrides = {}) {
   return {
     id: 'r1',

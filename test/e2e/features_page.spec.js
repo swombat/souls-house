@@ -16,7 +16,13 @@ test('the homepage links to a two-column features page with an expandable index'
 
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
-  await expect(life.getByTestId('feature-showcase')).toHaveCount(12);
+  await expect(life.getByTestId('feature-showcase')).toHaveCount(13);
+  const allowanceBrake = life
+    .getByTestId('feature-showcase')
+    .filter({ hasText: 'An allowance brake for scheduled work' });
+  await expect(allowanceBrake).toBeVisible();
+  await expect(allowanceBrake).toContainText('Off by default');
+  await expect(allowanceBrake).toContainText('unavailable usage cannot guarantee a spending cap');
   await expect(house.getByTestId('feature-showcase')).toHaveCount(22);
   await expect(house.getByRole('heading', { name: 'Know when a tool dependency goes missing' })).toBeVisible();
   await expect(house.getByRole('heading', { name: 'Data you can explore in the conversation' })).toBeVisible();

@@ -22,6 +22,8 @@ class RhythmPresentation
       account_id: @rhythm.account.to_param,
       url: @rhythm.persisted? ? account_rhythm_path(@rhythm.account, @rhythm) : nil,
       title: @rhythm.title, opening: @rhythm.opening, append_date: @rhythm.append_date,
+      essential: @rhythm.essential,
+      can_manage_essential: Agents::AllowanceBrake.manageable_by?(@rhythm.account, @user),
       cadence: @rhythm.cadence, time_of_day: @rhythm.time_of_day,
       weekday: @rhythm.weekday, month_day: @rhythm.month_day, month: @rhythm.month,
       timezone: @rhythm.timezone, timezone_identifier: ActiveSupport::TimeZone[@rhythm.timezone.to_s]&.tzinfo&.identifier,

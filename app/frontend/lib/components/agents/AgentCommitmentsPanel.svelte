@@ -5,7 +5,7 @@
   import { router } from '@inertiajs/svelte';
   import { commitmentStatusLine, commitmentWhen } from '$lib/commitment-display';
 
-  let { commitments = {}, agentName = 'This resident' } = $props();
+  let { commitments = {}, agentName = 'This resident', canManageEssential = false } = $props();
 
   let items = $derived(commitments.items || []);
   let scheduled = $derived(items.filter((c) => c.status === 'scheduled'));
@@ -76,6 +76,18 @@
         · delivered in <a class="underline underline-offset-4" href={c.activation_url}>its own conversation</a>
       {/if}
     </p>
+    {#if canManageEssential && c.essential_url && c.status !== 'cancelled'}
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={c.essential}
+          onchange={(event) =>
+            router.patch(c.essential_url, { essential: event.currentTarget.checked }, { preserveScroll: true })} />
+        Essential: exempt from the allowance brake
+      </label>
+    {:else if c.essential}
+      <p class="text-xs text-muted-foreground">Essential: exempt from the allowance brake</p>
+    {/if}
     {#if c.manage_url}
       {#if rescheduling === c.id}
         <div class="flex flex-wrap items-center gap-2">
@@ -110,6 +122,11 @@
       and wakes {agentName}, who decides what makes sense then. A delivered commitment is not a finished task. {agentName}
       makes and manages these; you can reschedule or cancel one here, or ask {agentName} in a conversation.
     </p>
+    {#if canManageEssential}
+      <p class="text-xs text-muted-foreground">
+        An essential flag does not override a guest's home-account allowance brake.
+      </p>
+    {/if}
   </div>
 
   {#if scheduled.length === 0}

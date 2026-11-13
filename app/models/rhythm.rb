@@ -243,36 +243,32 @@ class Rhythm < ApplicationRecord
   # The rhythm row lock protects both schedule advancement and manual request
   # identity. The database indexes are a second guard. Re-delivery of a sweep
   # never creates another room for the same scheduled instant.
-  def fire!(now: Time.current, manual: false, request_key: nil)
+  def fire!(now: Time.current, manual: false, request_key: nil, requested_by_user: nil)
     if manual && (!request_key.is_a?(String) || request_key.blank? || request_key.length > 128)
       return Result.new(status: :invalid_request, reason: "A manual start requires a request key of at most 128 characters")
     end
 
+    human_requested = manual && requested_by_user.is_a?(User)
+    # A quiet slot must not even probe the provider. Check cheaply under the
+    # row lock, release it for telemetry, then recheck admission before firing.
+    preflight = with_lock { admission_result(now: now, manual: manual, request_key: request_key) }
+    return preflight if preflight
+
+    if !human_requested
+      models = resident_models
+      agents.each do |agent|
+        Agents::AllowanceBrake.prepare(agent, model_id: models[agent.id],
+          essential: Agents::AllowanceBrake.essential_for?(self, agent))
+      end
+    end
     occurrence = nil
     result = with_lock do
-      if manual && (existing = occurrences.find_by(manual: true, request_key: request_key))
-        next Result.new(status: :duplicate, occurrence: existing)
-      end
-      next Result.new(status: :held, reason: "This rhythm has open holds") if held?
-      next Result.new(status: :not_due) unless manual || next_run_at <= now
+      refusal = admission_result(now: now, manual: manual, request_key: request_key)
+      next refusal if refusal
 
-      # A slot that cannot fire safely is skipped whole, never opened with a
-      # reduced group. The reason is kept on the rhythm and the schedule moves
-      # past the slot, so the next due slot simply tries again: nothing is
-      # held, and nobody has to resume anything once the cause is gone.
-      if (reason = unavailable_reason)
+      if (reason = Agents::AllowanceBrake.rhythm_reason(self, human_requested: human_requested))
         update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: reason) unless manual
         next Result.new(status: :unavailable, reason: reason)
-      end
-
-      # The quiet gate (#951) skips a scheduled slot when nothing countable
-      # has arrived since the watermark, with no room, dispatch or wake. A
-      # manual start always runs, and so does the first run (no watermark).
-      if !manual && quiet_gate? && quiet_watermark_message_id &&
-          !(gate = Rhythm::QuietGate.new(self)).news_after?(quiet_watermark_message_id)
-        update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: QUIET_SKIP_REASON,
-          quiet_watermark_message_id: [ quiet_watermark_message_id, gate.settled_watermark(now) ].max)
-        next Result.new(status: :quiet, reason: QUIET_SKIP_REASON)
       end
 
       scheduled_for = manual ? now : Rhythm::Schedule.new(self).latest_occurrence(at: now)
@@ -299,7 +295,7 @@ class Rhythm < ApplicationRecord
       occurrence = occurrences.create!(
         chat: chat, message: message, creator: creator, creator_agent: creator_agent, creator_label: creator_label,
         title: occurrence_title, rhythm_title: title, opening: opening, scheduled_for: scheduled_for,
-        manual: manual, request_key: manual ? request_key : nil
+        manual: manual, human_requested: human_requested, request_key: manual ? request_key : nil
       )
       fired = { last_skipped_at: nil, last_skip_reason: nil }
       # Only a scheduled run moves the baseline: a manual start bypasses the
@@ -362,6 +358,27 @@ class Rhythm < ApplicationRecord
   end
 
   private
+
+  # Caller holds this rhythm's row lock; this is database-only.
+  def admission_result(now:, manual:, request_key:)
+    if manual && (existing = occurrences.find_by(manual: true, request_key: request_key))
+      return Result.new(status: :duplicate, occurrence: existing)
+    end
+    return Result.new(status: :held, reason: "This rhythm has open holds") if held?
+    return Result.new(status: :not_due) unless manual || next_run_at <= now
+
+    if (reason = unavailable_reason)
+      update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: reason) unless manual
+      return Result.new(status: :unavailable, reason: reason)
+    end
+    if !manual && quiet_gate? && quiet_watermark_message_id &&
+        !(gate = Rhythm::QuietGate.new(self)).news_after?(quiet_watermark_message_id)
+      update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: QUIET_SKIP_REASON,
+        quiet_watermark_message_id: [ quiet_watermark_message_id, gate.settled_watermark(now) ].max)
+      return Result.new(status: :quiet, reason: QUIET_SKIP_REASON)
+    end
+    nil
+  end
 
   def refresh_removed_guest_home(agent)
     GuestDirectory.refresh!([ agent.account_id ]) if agent.account_id != account_id

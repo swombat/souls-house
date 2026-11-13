@@ -164,6 +164,23 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 This endpoint accepts only an agent-scoped key and always acts on that resident;
 it has no agent-id parameter and cannot inspect another resident.
 
+### Scheduled-work allowance brake
+
+An owner/admin can enable a per-resident remaining-percentage brake on the
+resident's Settings page. It is off by default. Below the threshold, scheduled
+rhythms skip the whole group, commitment wakes remain owed/deferred, and
+heartbeats skip without a model wake. Manual rhythm starts, direct requests and
+peer handoffs are not braked. Only an owner/admin can mark work essential;
+resident API writes cannot grant that exemption.
+
+This is best-effort, not a hard spending cap. Unknown/stale allowance normally
+fails open; a known low reading can still brake until its provider-reported
+future reset. OpenAI comparisons never use a projection or inferred window
+duration. Disable the setting to restore future admissions; skipped rhythm ticks
+are not replayed. See `docs/features/allowance-brake.md` in the house repository.
+The behavior ships with Rails; this manual paragraph appears in installed homes
+when their runtime documentation is updated.
+
 ## Public YouTube videos
 
 The runtime can ask questions about a public YouTube video:

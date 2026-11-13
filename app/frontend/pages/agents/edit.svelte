@@ -68,6 +68,8 @@
     shared_connections: sharedConnections = [],
     can_decide_guest_access: canDecideGuestAccess = false,
     can_manage_provider_subscription: canManageProviderSubscription = false,
+    can_manage_allowance_brake: canManageAllowanceBrake = false,
+    can_manage_essential: canManageEssential = false,
     paid_fallback_url: paidFallbackUrl = null,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
@@ -180,6 +182,8 @@
       persistent_wake_session: agent.persistent_wake_session || false,
       scheduled_wakes_enabled: agent.scheduled_wakes_enabled ?? true,
       heartbeat_wakes_per_day: agent.heartbeat_wakes_per_day ?? 2,
+      allowance_brake_threshold_percent: agent.allowance_brake_threshold_percent ?? null,
+      scheduled_wakes_essential: agent.scheduled_wakes_essential ?? false,
       session_idle_timeout_minutes: agent.session_idle_timeout_minutes ?? 45,
       session_max_age_minutes: agent.session_max_age_minutes ?? 240,
       session_context_budget_tokens: agent.session_context_budget_tokens ?? 300000,
@@ -193,6 +197,11 @@
 
   function updateAgent() {
     $form.agent.model_id = selectedModel;
+    $form.transform((data) => {
+      if (canManageAllowanceBrake) return data;
+      const { allowance_brake_threshold_percent, scheduled_wakes_essential, ...settings } = data.agent;
+      return { ...data, agent: settings };
+    });
     $form.patch(accountAgentPath(account.id, agent.id));
   }
 
@@ -274,6 +283,8 @@
             groupedModels={grouped_models}
             {runtimeManaged}
             {hostingLocation}
+            {canManageAllowanceBrake}
+            allowanceBrakeStatus={agent.allowance_brake_status}
             bind:selectedModel>
             {#snippet subscription()}
               {#if providerSubscription}
@@ -320,7 +331,7 @@
         {:else if activeTab === 'reflexes'}
           <AgentReflexesPanel {reflexes} agentName={agent.name} />
         {:else if activeTab === 'commitments'}
-          <AgentCommitmentsPanel {commitments} agentName={agent.name} />
+          <AgentCommitmentsPanel {commitments} agentName={agent.name} {canManageEssential} />
         {:else if activeTab === 'costs'}
           <AgentCostsPanel report={costReport} />
         {:else if activeTab === 'portability'}
