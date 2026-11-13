@@ -176,8 +176,10 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
     first = agents(:research_assistant)
     second = agents(:code_reviewer)
     chat = create_group_chat(@account, agent_ids: [ first.id, second.id ])
-    # A concurrent removal of `second` lands after this request read the seats.
-    race = ->(seat) { ChatAgent.where(chat_id: seat.chat_id, agent_id: second.id).delete_all if seat.agent_id == first.id }
+    # A concurrent removal of the other seat lands after this request read the
+    # seats. The seats come back unordered, so the race fires on whichever
+    # one the batch removes first.
+    race = ->(seat) { ChatAgent.where(chat_id: seat.chat_id).where.not(agent_id: seat.agent_id).delete_all }
     ChatAgent.before_destroy(race)
     begin
       patch account_chat_participant_path(@account, chat), params: { agent_ids: [] }, as: :json
@@ -189,7 +191,8 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
     assert_nil flash[:alert]
     assert_empty chat.agents.reload
     left = chat.messages.where("content LIKE ?", "%has left the conversation.").pluck(:content)
-    assert_equal [ "[System Notice] #{first.name} has left the conversation." ], left
+    assert_equal 1, left.size
+    assert_includes [ first, second ].map { |a| "[System Notice] #{a.name} has left the conversation." }, left.first
   end
 
   test "remove_participant! is a no-op for a seat that is already gone" do
