@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import { expect, test } from 'vitest';
 import HetznerAvailability from './hetzner-availability.svelte';
 import { PAIR_SIZES, stepPath } from '$lib/hetzner-availability.js';
@@ -14,42 +14,36 @@ const points = [
 const series = Object.keys(PAIR_SIZES).map((label) => ({ label, points }));
 const props = { now, series, checks: [{ at: now, types: {} }] };
 
-test('renders four pairs on one shared binary chart without offsetting overlapping values', () => {
+test('keeps four separate binary charts with gaps', () => {
   render(HetznerAvailability, props);
-  const chart = screen.getByRole('img', { name: 'Availability of all Hetzner pairs' });
-  expect(screen.getAllByRole('img')).toHaveLength(1);
-  const paths = chart.querySelectorAll('path[aria-label]');
-  expect(paths).toHaveLength(4);
-  const expected = stepPath(points, Date.parse(points[0][0]), Date.parse(now), 600, 160, { pad: 12 });
+  expect(screen.getAllByRole('img')).toHaveLength(4);
+  const expected = stepPath(points, Date.parse(points[0][0]), Date.parse(now), 600, 28);
   expect(expected.match(/M/g)).toHaveLength(3);
-  for (const path of paths) {
+  const colors = [];
+  for (const line of series) {
+    const chart = screen.getByRole('img', { name: `${line.label} availability` });
+    const path = chart.querySelector('path');
     expect(path).toHaveAttribute('d', expected);
-    expect(path).toHaveAttribute('stroke-dasharray', '6 18');
-    expect(path).toHaveAttribute('visibility', 'visible');
+    expect(path).not.toHaveAttribute('stroke-dasharray');
+    colors.push(path.getAttribute('stroke'));
   }
-  expect(new Set([...paths].map((path) => path.getAttribute('stroke'))).size).toBe(4);
-  expect([...paths].map((path) => path.getAttribute('stroke-dashoffset'))).toEqual(['0', '-6', '-12', '-18']);
-  expect(screen.getByText('Available')).toBeInTheDocument();
-  expect(screen.getByText('Unavailable')).toBeInTheDocument();
+  expect(new Set(colors).size).toBe(4);
 });
 
-test('shows size and known-check share beneath each pair and lets the legend isolate lines', async () => {
+test('shows the confirmed machine sizes beneath the pair labels', () => {
   render(HetznerAvailability, props);
-  for (const line of series) {
-    const button = screen.getByRole('button', { name: `Show ${line.label}` });
-    expect(button).toHaveAttribute('aria-pressed', 'true');
-    expect(within(button).getByText(PAIR_SIZES[line.label])).toBeInTheDocument();
-    expect(within(button).getByText('50% of known checks available')).toBeInTheDocument();
+  const sizes = [
+    '2 vCPU / 4 GB RAM / 40 GB NVMe',
+    '4 vCPU / 8 GB RAM / 80 GB NVMe',
+    '8 vCPU / 16 GB RAM / 160 GB NVMe',
+    '16 vCPU / 32 GB RAM / 320 GB NVMe',
+  ];
+  for (const [index, line] of series.entries()) {
+    const label = screen.getByText(line.label, { exact: true });
+    expect(label.nextElementSibling).toHaveTextContent(sizes[index]);
   }
-  const button = screen.getByRole('button', { name: `Show ${series[0].label}` });
-  const chart = screen.getByRole('img', { name: 'Availability of all Hetzner pairs' });
-  const paths = chart.querySelectorAll('path[aria-label]');
-  await fireEvent.click(button);
-  expect(button).toHaveAttribute('aria-pressed', 'false');
-  expect(paths[0]).toHaveAttribute('visibility', 'hidden');
-  expect(paths[1]).toHaveAttribute('visibility', 'visible');
-  await fireEvent.click(button);
-  expect(paths[0]).toHaveAttribute('visibility', 'visible');
+  expect(screen.getAllByTitle('Share of checks available')).toHaveLength(4);
+  expect(screen.getAllByText('50%')).toHaveLength(4);
 });
 
 test('keeps the no-checks message instead of an empty chart', () => {

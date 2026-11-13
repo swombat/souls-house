@@ -4,8 +4,8 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
-  title: Compare Hetzner availability on one chart
-  body: "The Site Admin Hetzner availability page now puts all four server-size pairs on a shared chart, with the vCPU, RAM and disk size beneath each pair label. Takes effect after Rails deployment."
+  title: Machine sizes on Hetzner availability charts
+  body: "The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment."
 - date: 2026-11-13
   title: Hetzner availability in Site Admin
   body: "Site admins have a new Hetzner availability page. Every five minutes the house asks Hetzner which locations can sell the small shared server types (CX23 to CX53 and CAX11 to CAX41) and keeps the answer. The page shows the last 100 checks and a seven-day line for each pair (CX23 with CAX11, and so on): up when either type is available anywhere, down only when both were checked and neither is, and a gap when the house could not check. Takes effect after Rails deployment."
