@@ -289,7 +289,7 @@ GEM
     js-routes (2.4.1)
       railties (>= 5)
       sorbet-runtime
-    json (2.21.2)
+    json (3.1.0)
     kamal (2.12.0)
       activesupport (>= 7.0)
       base64 (~> 0.2)
@@ -381,7 +381,7 @@ GEM
       minitest (~> 6.0)
     padded_cell (0.2.0-x86_64-linux-musl)
       minitest (~> 6.0)
-    pagy (43.8.1)
+    pagy (43.8.2)
       json
       uri
       yaml
@@ -672,11 +672,11 @@ DEPENDENCIES
   minitest (~> 6.0)
   minitest-mock
   padded_cell (~> 0.2.0)
-  pagy (~> 43.8.1)
+  pagy (~> 43.8.2)
   paper_trail (~> 17.0)
   pg (~> 1.7)
-  puma (>= 6.6.0)
   public_suffix (~> 7.0)
+  puma (>= 6.6.0)
   rails_app_version (~> 1.5)
   railties (~> 8.1.4, >= 8.1.4.1)
   redcarpet
