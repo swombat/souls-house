@@ -601,4 +601,151 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_not_includes enqueued, rollback.id
   end
 
+  # docker for the house volume release: volumes by name with their labels
+  # and the containers using them; removals are recorded.
+  class FakeVolumes
+
+    attr_reader :volumes, :removed
+
+    def initialize
+      @volumes = {}
+      @removed = []
+    end
+
+    def add(name, rollback: "", checkout: LocalInstance.current.fingerprint, users: "")
+      @volumes[name] = { rollback:, checkout:, users: }
+    end
+
+    def call(*argv)
+      name = argv.last
+      case argv[1, 2]
+      in [ "volume", "inspect" ]
+        volume = @volumes[name]
+        return [ "", "Error: No such volume: #{name}", Status.new(false) ] unless volume
+
+        [ "#{volume[:rollback]}|#{volume[:checkout]}\n", "", Status.new(true) ]
+      in [ "ps", "-a" ]
+        [ @volumes.dig(name.delete_prefix("volume="), :users).to_s, "", Status.new(true) ]
+      in [ "volume", "rm" ]
+        @removed << name
+        @volumes.delete(name)
+        [ "", "", Status.new(true) ]
+      end
+    end
+
+  end
+
+  HouseVolumeRelease = Agents::VmMigration::HouseVolumeRelease
+
+  # The resident's derived house volumes, and the rollback's live ones with
+  # their rollback label.
+  def seed_house_volumes(rollback, fake)
+    derived = Agents::Resources.new(@agent.reload).derived_volumes
+    derived.each_value { |name| fake.add(name) }
+    rollback.volume_map.each_value { |name| fake.add(name, rollback: "#{@agent.uuid}/#{rollback.generation}/#{'f' * 16}") }
+    derived
+  end
+
+  def volume_release(rollback, fake, at:) = HouseVolumeRelease.new(rollback, docker: fake, now: -> { at })
+
+  def after_hold(rollback) = Time.iso8601(rollback.recovery["verified_at"]) + HouseVolumeRelease::HOLD + 1.minute
+
+  test "the house volumes a recovered rollback replaced are removed after the hold, and only those" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+
+    error = assert_raises(HouseVolumeRelease::Refused) { volume_release(rollback, fake, at: Time.current).release!(by: @user) }
+    assert_match "kept until", error.message
+    assert_empty fake.removed
+
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    assert_equal derived.values.sort, fake.removed.sort
+    assert_equal [ :removed ], outcomes.map(&:status).uniq
+    assert rollback.volume_map.values.all? { |name| fake.volumes.key?(name) }, "the live map is untouched"
+    receipts = AuditLog.where(action: "house_volume_released", auditable: @agent)
+    assert_equal derived.values.sort, receipts.map { |receipt| receipt.data["volume"] }.sort
+    assert_equal [ @user.id ], receipts.map(&:user_id).uniq
+
+    again = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    assert_equal [ :absent ], again.map(&:status).uniq
+    assert_equal 5, fake.removed.size
+  end
+
+  test "a rollback that is committed but not recovered removes nothing" do
+    rollback = to_restoring
+    @sandbox.error = "docker: no space left"
+    assert_equal "committed", full { driver(rollback).step! }
+    rollback.reload
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+
+    assert_raises(HouseVolumeRelease::Refused) { volume_release(rollback, fake, at: 30.days.from_now).release!(by: @user) }
+    assert_empty fake.removed
+  end
+
+  test "an earlier attempt's leftovers go too, only with this resident's rollback label for that generation" do
+    @agent.update_columns(volume_rollback_generation: 1) # reserved by an attempt that failed before its swap
+    rollback = recovered
+    assert_equal 2, rollback.generation
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    leftovers = derived.transform_values { |name| "#{name}-rb1" }
+    leftovers.except(:work).each_value { |name| fake.add(name, rollback: "#{@agent.uuid}/1/#{'e' * 16}") }
+    fake.add(leftovers[:work], rollback: "#{SecureRandom.uuid}/1/#{'e' * 16}")
+
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user).index_by(&:name)
+    assert_equal (derived.values + leftovers.except(:work).values).sort, fake.removed.sort
+    assert_equal :foreign, outcomes.fetch(leftovers[:work]).status
+    assert rollback.volume_map.values.all? { |name| fake.volumes.key?(name) }, "the live map is untouched"
+  end
+
+  test "a volume a container still uses, or another checkout's, is left where it is" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.add(derived[:repo], users: "abc123\n")
+    fake.add(derived[:state], checkout: "another-checkout")
+
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user).index_by(&:name)
+    assert_equal :in_use, outcomes.fetch(derived[:repo]).status
+    assert_equal :foreign, outcomes.fetch(derived[:state]).status
+    assert_equal derived.values_at(:identity, :chaos, :work).sort, fake.removed.sort
+  end
+
+  test "nothing is removed once the resident leaves this map, a newer rollback is reserved, or the placement moves on" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+    at = after_hold(rollback)
+    [
+      -> { @agent.update_columns(volume_map: nil) },
+      -> { @agent.update_columns(volume_rollback_generation: rollback.generation + 1) },
+      -> { @placement.update_columns(generation: @placement.generation + 1) },
+      -> { @placement.update_columns(state: "pending") }
+    ].each do |change|
+      agent_before = @agent.reload.attributes.slice("volume_map", "volume_rollback_generation")
+      placement_before = @placement.reload.attributes.slice("generation", "state")
+      change.call
+      assert_raises(HouseVolumeRelease::Refused) { volume_release(rollback, fake, at:).release!(by: @user) }
+      @agent.update_columns(agent_before)
+      @placement.update_columns(placement_before)
+    end
+    assert_empty fake.removed
+    assert_equal 5, volume_release(rollback, fake, at:).release!(by: @user).count { |outcome| outcome.status == :removed }
+  end
+
+  test "a recorded name that is not this resident's own refuses the whole release" do
+    rollback = recovered
+    swap = AuditLog.find_by!(action: "vm_rollback_swap", auditable: @agent)
+    derived = Agents::Resources.new(@agent.reload).derived_volumes.transform_keys(&:to_s)
+    swap.update_columns(data: swap.data.merge("previous_map" => derived.merge("identity" => "hk-agent-someone-else-identity")))
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+
+    error = assert_raises(HouseVolumeRelease::Refused) { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+    assert_match "not this resident's identity volume", error.message
+    assert_empty fake.removed
+  end
+
 end
