@@ -52,6 +52,8 @@ module Agents
       INTENDED = "house_volume_release_intended".freeze
       RELEASED = "house_volume_released".freeze
       FOUND_ABSENT = "house_volume_found_absent".freeze
+      STOPPED = "house_volume_release_stopped".freeze
+      RM_UNANSWERED = "Docker did not answer the removal in time".freeze
 
       # Why this rollback's leftovers may not be removed now, or nil.
       def self.unadmitted_reason(rollback, now: Time.current)
@@ -136,6 +138,11 @@ module Agents
       # admitted at the start; a later loss of admission stops each remaining
       # name before its `rm`.
       def release!(by:)
+        # Inside an enclosing transaction each "committed" intent would only
+        # be a savepoint, gone with the caller's rollback while the volume it
+        # names may already be removed. So, like the swap, top level only.
+        raise Refused, "The release must not run inside an open transaction" if Agent.connection.transaction_open?
+
         @guard.call
         agent = Agent.find(@rollback.agent_id)
         list = agent.with_lock do
@@ -165,18 +172,48 @@ module Agents
         end
         return intent if intent.is_a?(Outcome)
 
+        begin
+          @guard.call
+        rescue StandardError => error
+          agent.with_lock { stop(intent, Outcome.new(name: candidate.name, status: :refused, detail: error.message.first(200)), agent:) }
+          raise
+        end
+
         agent.with_lock do
           refusal = self.class.unadmitted_reason(@rollback.reload, now: @now.call)
-          next Outcome.new(name: candidate.name, status: :not_admitted, detail: refusal) if refusal
+          next stop(intent, Outcome.new(name: candidate.name, status: :not_admitted, detail: refusal), agent:) if refusal
 
-          @guard.call
-          remove(candidate, agent:, by:, intent:)
+          outcome = begin
+            remove(candidate, agent:, by:, intent:)
+          rescue Agents::BoundedCommand::TimedOut
+            Outcome.new(name: candidate.name, status: :unknown, detail: "Docker did not answer in time, before any removal")
+          end
+          next outcome if %i[removed absent].include?(outcome.status) || outcome.detail == RM_UNANSWERED
+
+          stop(intent, outcome, agent:)
         end
+      end
+
+      # Closes an intent whose volume was certainly not removed by it, so a
+      # later absence is never attributed to a request that never reached
+      # `rm`. An `rm` whose answer was lost leaves its intent open on purpose.
+      def stop(intent, outcome, agent:)
+        AuditLog.create!(action: STOPPED, user: intent.user, account: agent.account, auditable: agent,
+          data: intent.data.merge("intent_id" => intent.id, "status" => outcome.status.to_s, "detail" => outcome.detail))
+        outcome
       end
 
       def receipt_data(candidate)
         { "rollback_id" => @rollback.id, "generation" => @rollback.generation, "volume" => candidate.name,
           "role" => candidate.role, "source" => candidate.source, "volume_generation" => candidate.generation }
+      end
+
+      # Earlier intents for this name that no outcome has closed.
+      def open_intents(candidate, agent:, except:)
+        AuditLog.where(auditable: agent, action: INTENDED).where("data->>'volume' = ?", candidate.name)
+          .where.not(id: except.id)
+          .where.not(id: AuditLog.where(auditable: agent, action: STOPPED).select(Arel.sql("(data->>'intent_id')::bigint")))
+          .order(:id)
       end
 
       def receipted?(candidate, agent)
@@ -213,6 +250,11 @@ module Agents
           return Outcome.new(name: candidate.name, status: :unknown, detail: "Could not inspect the volume")
         end
 
+        # The volume is still here, so no earlier open intent removed it.
+        open_intents(candidate, agent:, except: intent).each do |earlier|
+          stop(earlier, Outcome.new(name: candidate.name, status: :unknown, detail: "The volume was still present at a later attempt"), agent:)
+        end
+
         rollback_label, checkout_label = out.to_s.strip.split("|", 2).map(&:to_s)
         if candidate.generation && !rollback_label.start_with?("#{agent.uuid}/#{candidate.generation}/")
           return Outcome.new(name: candidate.name, status: :foreign, detail: "Not labelled as this resident's rollback #{candidate.generation}")
@@ -225,7 +267,11 @@ module Agents
         return Outcome.new(name: candidate.name, status: :unknown, detail: "Could not list its containers") unless status.success?
         return Outcome.new(name: candidate.name, status: :in_use, detail: "A container still uses it") if users.to_s.strip.present?
 
-        _out, err, status = @docker.call("docker", "volume", "rm", candidate.name)
+        begin
+          _out, err, status = @docker.call("docker", "volume", "rm", candidate.name)
+        rescue Agents::BoundedCommand::TimedOut
+          return Outcome.new(name: candidate.name, status: :unknown, detail: RM_UNANSWERED)
+        end
         return Outcome.new(name: candidate.name, status: :refused, detail: err.to_s.strip.first(200)) unless status.success?
 
         AuditLog.create!(action: RELEASED, user: by, account: agent.account, auditable: agent,
@@ -233,24 +279,27 @@ module Agents
         Outcome.new(name: candidate.name, status: :removed, detail: nil)
       end
 
-      # A name Docker no longer has. If a receipt already says it was removed,
-      # nothing more is written. Otherwise, if an earlier intent of a release
-      # names it (an `rm` that Docker carried out before the process died or
-      # its answer timed out), the receipt is written now against the oldest
-      # such intent and attributed to whoever asked for it, marked as
-      # reconciled. Only a volume gone with no intent at all (a hand removal)
-      # is recorded as found absent, once, so the record never shows a home
-      # volume vanishing without a witness.
+      # A name Docker no longer has. An intent stays open only while it may
+      # have removed the volume: one that certainly did not (refused, in use,
+      # not admitted, or followed by an attempt that found the volume still
+      # there) is closed as stopped. If exactly one earlier intent is open, it
+      # is the one whose `rm` Docker carried out before the process died or
+      # its answer was lost, and the receipt is written now against it,
+      # attributed to whoever asked for it and marked as reconciled. With no
+      # open intent (a hand removal) or several the evidence cannot tell
+      # apart, the absence is recorded as found absent, without a guess.
       def absent(candidate, agent:, by:, intent:)
-        earlier = AuditLog.where(auditable: agent, action: INTENDED).where("data->>'volume' = ?", candidate.name)
-          .where.not(id: intent.id).order(:id).first
-        if earlier
+        earlier = open_intents(candidate, agent:, except: intent).to_a
+        if earlier.one?
+          earlier = earlier.first
           AuditLog.create!(action: RELEASED, user: earlier.user, account: agent.account, auditable: agent,
             data: receipt_data(candidate).merge("intent_id" => earlier.id, "reconciled_by_intent_id" => intent.id,
                                                 "reconciled" => true))
         else
+          # No open intent (a hand removal), or several that the evidence
+          # cannot tell apart: the absence is recorded without a guess.
           AuditLog.create!(action: FOUND_ABSENT, user: by, account: agent.account, auditable: agent,
-            data: receipt_data(candidate).merge("intent_id" => intent.id))
+            data: receipt_data(candidate).merge("intent_id" => intent.id, "open_intent_ids" => earlier.map(&:id)))
         end
         Outcome.new(name: candidate.name, status: :absent, detail: nil)
       end

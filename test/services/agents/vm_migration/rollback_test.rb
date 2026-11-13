@@ -853,6 +853,75 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert rollback.volume_map.values.all? { |name| fake.volumes.key?(name) }, "the live map is untouched"
   end
 
+  test "the release refuses to run inside an open transaction" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+
+    error = Agent.transaction do
+      assert_raises(HouseVolumeRelease::Refused) { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+    end
+    assert_match "open transaction", error.message
+    assert_empty fake.removed
+    assert_not AuditLog.where(auditable: @agent).where("action LIKE 'house_volume%'").exists?
+  end
+
+  test "an absence is attributed to the attempt that reached rm, not to an earlier one refused as in use" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    admin = users(:site_admin_user)
+
+    fake.add(derived[:repo], users: "abc123\n")
+    a = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: admin).index_by(&:name)
+    assert_equal :in_use, a.fetch(derived[:repo]).status
+
+    fake.add(derived[:repo])
+    fake.die_after_rm_of = derived[:repo]
+    assert_raises(RuntimeError) { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+
+    fake.die_after_rm_of = nil
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: admin)
+    receipt = AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).sole
+    intents = AuditLog.where(action: "house_volume_release_intended", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).order(:id)
+    assert_equal intents.second.id, receipt.data["intent_id"]
+    assert_equal @user.id, receipt.user_id
+  end
+
+  test "a later attempt that finds the volume still there closes the earlier open intent" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.time_out_after_rm_of = derived[:repo]
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    first = AuditLog.where(action: "house_volume_release_intended", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).sole
+
+    fake.add(derived[:repo]) # the lost answer was a removal that never happened
+    fake.time_out_after_rm_of = nil
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    assert AuditLog.where(action: "house_volume_release_stopped", auditable: @agent).where("(data->>'intent_id')::bigint = ?", first.id).exists?
+    receipt = AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).sole
+    assert_not_equal first.id, receipt.data["intent_id"]
+  end
+
+  test "an absence that two open intents could explain is recorded without a guess" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.time_out_after_rm_of = derived[:repo]
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    fake.add(derived[:repo])
+    fake.time_out_after_rm_of = nil
+    fake.die_after_rm_of = derived[:repo] # the crash also loses the closing of the first intent
+    assert_raises(RuntimeError) { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+
+    fake.die_after_rm_of = nil
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: users(:site_admin_user))
+    assert_not AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).exists?
+    absent = AuditLog.where(action: "house_volume_found_absent", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).sole
+    assert_equal 2, absent.data["open_intent_ids"].size
+  end
+
   test "asking again after a full release writes no further intents" do
     rollback = recovered
     fake = FakeVolumes.new
