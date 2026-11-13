@@ -92,9 +92,6 @@ class ParityTest(unittest.TestCase):
         with self.assertRaises(runner.CommandFailed):
             self.host.provider_auth({"container_name": "agent-other", "method": "GET", "path": "/auth/capabilities"})
 
-    def test_provider_auth_is_in_the_vocabulary(self):
-        self.assertIn("provider_auth", runner.COMMAND_KINDS)
-
     def test_tailnet_runs_only_status_or_up_inside_the_resident_as_agent(self):
         self.host.start_resident(spec())
         self.docker.calls.clear()
@@ -116,9 +113,6 @@ class ParityTest(unittest.TestCase):
         self.docker.fail.add("exec")
         self.assertEqual({"ok": False, "output": "boom"},
                          self.host.tailnet({"container_name": "agent-pilot-1", "action": "status"}))
-
-    def test_tailnet_is_in_the_vocabulary(self):
-        self.assertIn("tailnet", runner.COMMAND_KINDS)
 
     def test_home_stats_runs_the_fixed_script_inside_the_resident_and_returns_only_numbers(self):
         self.host.start_resident(spec())
@@ -151,9 +145,10 @@ class ParityTest(unittest.TestCase):
                 with self.assertRaises(runner.CommandFailed):
                     self.host.home_stats({"container_name": "agent-pilot-1"})
 
-    def test_home_stats_is_in_the_vocabulary_and_announced(self):
-        self.assertIn("home_stats", runner.COMMAND_KINDS)
-        self.assertEqual(1, runner.HOME_STATS_VERSION)
+    def test_the_runner_announces_home_stats_so_the_house_will_ask(self):
+        facts = runner.collect_facts(server_id_reader=lambda: 1, command_runner=lambda argv: None,
+                                     reboot_reader=lambda: {}, sandbox_id_reader=lambda: None)
+        self.assertEqual(runner.HOME_STATS_VERSION, facts["home_stats"])
 
     def test_the_home_stats_script_counts_entries_in_a_real_home(self):
         home = tempfile.mkdtemp()

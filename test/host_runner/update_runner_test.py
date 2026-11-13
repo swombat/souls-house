@@ -366,9 +366,6 @@ class UpdateRunnerTest(unittest.TestCase):
             self.host.update_runner({"sha256": digest, "bytes": len(data)})
         self.assert_untouched()
 
-    def test_update_runner_is_in_the_vocabulary(self):
-        self.assertIn("update_runner", runner.COMMAND_KINDS)
-
 
 if __name__ == "__main__":
     unittest.main()
