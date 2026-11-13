@@ -606,7 +606,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
   class FakeVolumes
 
     attr_reader :volumes, :removed
-    attr_accessor :time_out_on
+    attr_accessor :time_out_on, :die_after_rm_of, :time_out_after_rm_of
 
     def initialize
       @volumes = {}
@@ -632,6 +632,9 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
 
         @removed << name
         @volumes.delete(name)
+        raise "the process died after Docker removed #{name}" if name == die_after_rm_of
+        raise Agents::BoundedCommand::TimedOut if name == time_out_after_rm_of
+
         [ "", "", Status.new(true) ]
       end
     end
@@ -649,7 +652,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     derived
   end
 
-  def volume_release(rollback, fake, at:) = HouseVolumeRelease.new(rollback, docker: fake, now: -> { at })
+  def volume_release(rollback, fake, at:, guard: -> { }) = HouseVolumeRelease.new(rollback, docker: fake, guard:, now: -> { at })
 
   def after_hold(rollback) = Time.iso8601(rollback.recovery["verified_at"]) + HouseVolumeRelease::HOLD + 1.minute
 
@@ -761,6 +764,104 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     witnesses = AuditLog.where(action: "house_volume_found_absent", auditable: @agent)
     assert_equal [ derived[:work] ], witnesses.map { |r| r.data["volume"] }
     assert_equal 4, AuditLog.where(action: "house_volume_released", auditable: @agent).count
+  end
+
+  test "a non-local Docker endpoint refuses the release before any Docker call or record" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+    remote = -> { raise Agents::Resources::OwnershipError, "Local instances require a Unix-socket Docker endpoint; refusing remote Docker" }
+    calls = []
+    spy = ->(*argv) { calls << argv; fake.call(*argv) }
+
+    assert_raises(Agents::Resources::OwnershipError) do
+      HouseVolumeRelease.new(rollback, docker: spy, guard: remote, now: -> { after_hold(rollback) }).release!(by: @user)
+    end
+    assert_empty calls
+    assert_empty fake.removed
+    assert_not AuditLog.where(auditable: @agent).where("action LIKE 'house_volume%'").exists?
+  end
+
+  test "the endpoint guard runs again before each removal" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    checks = 0
+    guard = -> { checks += 1; raise Agents::Resources::OwnershipError, "remote Docker" if checks > 3 }
+
+    assert_raises(Agents::Resources::OwnershipError) { volume_release(rollback, fake, at: after_hold(rollback), guard:).release!(by: @user) }
+    assert_equal 2, fake.removed.size
+    assert_equal 3, AuditLog.where(action: "house_volume_release_intended", auditable: @agent).count
+  end
+
+  test "an intent committed before rm survives a crash and attributes the removal on the next run" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.die_after_rm_of = derived[:repo]
+    admin = users(:site_admin_user)
+
+    assert_raises(RuntimeError) { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+    assert_not fake.volumes.key?(derived[:repo])
+    intents = AuditLog.where(action: "house_volume_release_intended", auditable: @agent).where("data->>'volume' = ?", derived[:repo])
+    assert_equal [ @user.id ], intents.map(&:user_id)
+    assert_not AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).exists?
+
+    fake.die_after_rm_of = nil
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: admin).index_by(&:name)
+    assert_equal :absent, outcomes.fetch(derived[:repo]).status
+    receipt = AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:repo]).sole
+    assert_equal @user.id, receipt.user_id, "attributed to whoever asked for the rm, not the run that found it gone"
+    assert_equal intents.first.id, receipt.data["intent_id"]
+    assert receipt.data["reconciled"]
+    assert_not AuditLog.where(action: "house_volume_found_absent", auditable: @agent).exists?
+    assert_equal derived.values.sort, AuditLog.where(action: "house_volume_released", auditable: @agent).map { |r| r.data["volume"] }.sort
+
+    released = AuditLog.where(action: "house_volume_released", auditable: @agent).index_by { |r| r.data["volume"] }
+    released.each_value { |r| assert_equal r.user_id, AuditLog.find(r.data["intent_id"]).user_id }
+  end
+
+  test "an rm whose answer is lost after Docker acted is reported unknown, then reconciled to its intent" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.time_out_after_rm_of = derived[:chaos]
+
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user).index_by(&:name)
+    assert_equal :unknown, outcomes.fetch(derived[:chaos]).status
+    assert_equal 4, AuditLog.where(action: "house_volume_released", auditable: @agent).count
+    intent = AuditLog.where(action: "house_volume_release_intended", auditable: @agent).where("data->>'volume' = ?", derived[:chaos]).sole
+
+    fake.time_out_after_rm_of = nil
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: users(:site_admin_user))
+    receipt = AuditLog.where(action: "house_volume_released", auditable: @agent).where("data->>'volume' = ?", derived[:chaos]).sole
+    assert_equal [ intent.id, @user.id, true ], [ receipt.data["intent_id"], receipt.user_id, receipt.data["reconciled"] ]
+  end
+
+  test "after a second rollback the original set is released along with the first rollback's" do
+    @agent.update_columns(volume_rollback_generation: 1)
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    first = derived.transform_values { |name| "#{name}-rb1" }
+    first.each_value { |name| fake.add(name, rollback: "#{@agent.uuid}/1/#{'e' * 16}") }
+    swap = AuditLog.find_by!(action: "vm_rollback_swap", auditable: @agent)
+    swap.update_columns(data: swap.data.merge("previous_map" => first.transform_keys(&:to_s)))
+
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    assert_equal (derived.values + first.values).sort, fake.removed.sort
+    assert rollback.volume_map.values.all? { |name| fake.volumes.key?(name) }, "the live map is untouched"
+  end
+
+  test "asking again after a full release writes no further intents" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    seed_house_volumes(rollback, fake)
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    intents = AuditLog.where(action: "house_volume_release_intended", auditable: @agent).count
+
+    volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user)
+    assert_equal intents, AuditLog.where(action: "house_volume_release_intended", auditable: @agent).count
   end
 
   test "a recorded name that is not this resident's own refuses the whole release" do
