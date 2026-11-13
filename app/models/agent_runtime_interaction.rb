@@ -610,7 +610,7 @@ class AgentRuntimeInteraction < ApplicationRecord
     # What the runtime itself said, redacted and bounded in the container
     # before it left (trigger_shim.py runtime_failure, #843). Runs tab and
     # Site Admin only; the room notice keeps the category alone.
-    if category == "runtime_error" && (said = runtime_failure_text)
+    if category.in?([ "runtime_error", *FailureReport::PROVIDER_EDGE_CATEGORIES ]) && (said = runtime_failure_text)
       cause = "#{cause} (runtime said: #{said})"
     end
     # A VM resident's own reason (#868), written by the house, not the runtime.

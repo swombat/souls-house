@@ -113,6 +113,22 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     assert_match "needs a person's eye", @chat.messages.last.content
   end
 
+  test "a nudge run that failed on the provider's edge says so in the flag, in the house's words" do
+    origin = @run
+    @run = finished_run(follow_through_of: origin)
+    @run.update!(execution_state: "failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "provider_challenge",
+                       "runtime_failure" => { "code" => "clamp_runtime_failed", "message" => "API Error: 403 sk-ant-SECRET" } })
+    say("Checking now.")
+    UtilityInference.stub :decide, ->(**) { { FollowThroughCheck::QUESTION_KEY => 0.9 } } do
+      perform
+    end
+    flag = @chat.messages.last.content
+    assert_match "That run failed: its model provider's edge answered with HTTP 403, a Cloudflare challenge page.", flag
+    assert_match "needs a person's eye", flag
+    assert_not_includes flag, "SECRET"
+  end
+
   test "a resident busy in this room is waited for, not skipped" do
     say("I'll open the PR.")
     running_run

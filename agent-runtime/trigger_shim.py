@@ -2790,6 +2790,16 @@ def classify_provider_error(response, provider):
         re.IGNORECASE,
     ):
         return "model_unavailable"
+    # The model provider's edge or servers failing the request, positively
+    # identified in the runtime's own failure (Chaos's error event, #843) or
+    # its stderr, never in stdout, which can quote the conversation. Checked
+    # before the limit and auth classes: Claude Code reports a Cloudflare
+    # challenge as "Failed to authenticate. API Error: 403 Attention
+    # Required! | Cloudflare" (eOyrdJ, 13 Nov 2026), which is not a
+    # credential problem.
+    provider_kind = classify_provider_edge(response)
+    if provider_kind:
+        return provider_kind
     if re.search(
         r"rate.?limit|quota (?:is )?(?:exhausted|reached)|usage limit|too many requests|\b429\b",
         diagnostic,
@@ -2803,6 +2813,30 @@ def classify_provider_error(response, provider):
         re.IGNORECASE,
     ):
         return "auth_expired"
+    return None
+
+
+_PROVIDER_CHALLENGE_STATUS = re.compile(r"\b403\b")
+_PROVIDER_CHALLENGE_PAGE = re.compile(
+    r"cloudflare|attention required!?|\bcf-ray\b|\bcf-chl|just a moment\.\.\.", re.IGNORECASE)
+_PROVIDER_TRANSIENT = re.compile(
+    r"\bAPI Error:?\s*(?:500|502|503|504|529)\b|\boverloaded_error\b|\"type\"\s*:\s*\"overloaded\"",
+    re.IGNORECASE)
+
+
+def classify_provider_edge(response):
+    """provider_challenge for a 403 served as a Cloudflare challenge page,
+    provider_transient for a provider 5xx or overload; None otherwise.
+
+    Read only from the runtime's failure and stderr: both are written by the
+    runtime about the request, not by the model."""
+    failure = response.get("runtime_failure")
+    said = failure.get("message") if isinstance(failure, dict) else None
+    diagnostic = "\n".join(str(text or "") for text in (said, response.get("error"), response.get("stderr")))
+    if _PROVIDER_CHALLENGE_STATUS.search(diagnostic) and _PROVIDER_CHALLENGE_PAGE.search(diagnostic):
+        return "provider_challenge"
+    if _PROVIDER_TRANSIENT.search(diagnostic):
+        return "provider_transient"
     return None
 
 
