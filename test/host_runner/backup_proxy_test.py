@@ -232,10 +232,13 @@ class RunBackupTest(unittest.TestCase):
         self.assertEqual(command[command.index("--network") + 1], "host")
         self.assertIn("--read-only", command)
         self.assertIn(backup.RESTIC_IMAGE, command)
-        self.assertIn("--no-cache", command)
+        self.assertNotIn("--no-cache", command)
+        self.assertEqual(command[command.index("--cache-dir") + 1], backup.CACHE_DST)
+        self.assertGreater(command.index("--cache-dir"), command.index(backup.RESTIC_IMAGE))
         mounts = [command[i + 1] for i, arg in enumerate(command) if arg == "--mount"]
-        self.assertEqual(len(mounts), 5)
-        self.assertTrue(all(mount.endswith(",readonly") for mount in mounts))
+        self.assertEqual(len(mounts), 6)
+        self.assertEqual([m for m in mounts if not m.endswith(",readonly")],
+                         [f"type=volume,src=agent-pilot-1-restic-cache,dst={backup.CACHE_DST}"])
         for role in backup.ROLES:
             self.assertIn(f"type=volume,src=agent-pilot-1-{role},dst=/data/{role},readonly", mounts)
         self.assertFalse(any("dst=/data/state" in mount for mount in mounts))
@@ -722,8 +725,10 @@ class BackupReviewTest(unittest.TestCase):
         self.assertIn("--rm", argv)
         self.assertEqual(argv[argv.index("--network") + 1], "host")
         mounts = [argv[i + 1] for i, value in enumerate(argv) if value == "--mount"]
-        self.assertEqual(len(mounts), 5)
-        self.assertTrue(all(value.endswith(",readonly") for value in mounts))
+        # Everything restic reads is read-only; only its own cache is writable.
+        self.assertEqual(len(mounts), 6)
+        writable = [value for value in mounts if not value.endswith(",readonly")]
+        self.assertEqual(writable, [f"type=volume,src=agent-pilot-1-restic-cache,dst={backup.CACHE_DST}"])
         self.assertFalse(any("dst=/data/state" in value for value in mounts))
 
     def test_proxy_credentials_are_only_in_private_env_file_and_one_connection(self):

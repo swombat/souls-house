@@ -51,7 +51,10 @@ module Backup
       result = command.result["result"].is_a?(Hash) ? command.result["result"] : {}
       safe = result["unpaused"] == true && result["tools_stopped"] == true
       reason = if command.state != "done"
-        "Runner backup #{command.state}"
+        # The runner's errors are value-free by construction ("restic backup
+        # failed", "backup deadline exceeded"); without them a failure read
+        # only "Runner backup failed" for fifteen days on 13 Nov.
+        [ "Runner backup #{command.state}", runner_error(command) ].compact.join(": ")
       elsif !safe
         "Runner did not confirm an unpaused runtime"
       elsif command.generation != command.agent_placement.reload.generation
@@ -61,6 +64,8 @@ module Backup
       elsif result["checkpoint_digest"] != backup.checkpoint_digest ||
           result["checkpoint_file_sha256"] != backup.checkpoint_file_digest
         "Runner checkpoint does not match the issued envelope"
+      else
+        postgres_failure(result)
       end
       if reason.nil?
         verifier.verify!(agent: backup.agent, snapshot_id: result["snapshot_id"],
@@ -156,6 +161,24 @@ module Backup
       backup.agent.agent_runtime_interactions.where("started_at >= ?", backup.created_at).exists?
     end
     private_class_method :overlapped?
+
+    def self.runner_error(command)
+      error = command.result.is_a?(Hash) ? command.result["error"] : nil
+      error.is_a?(String) && error.present? ? error.squish.first(200) : nil
+    end
+    private_class_method :runner_error
+
+    # A dump that failed or is latched behind an incomplete generation makes
+    # the backup fail with its reason, so it reaches the health rhythm, even
+    # though the rest of the snapshot was taken. "absent" means the server
+    # has no PostgreSQL to dump; a runner too old to report is not a failure.
+    def self.postgres_failure(result)
+      dump = result["postgres_dump"]
+      return nil unless dump.is_a?(Hash) && dump["state"] != "ok" && dump["state"] != "absent"
+
+      "Postgres dump #{dump['state']}: #{dump['reason'].to_s.squish.first(200).presence || 'no reason given'}"
+    end
+    private_class_method :postgres_failure
 
     def self.settle!(backup, result, reason, release:)
       backup.agent.with_lock do
