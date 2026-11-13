@@ -606,6 +606,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
   class FakeVolumes
 
     attr_reader :volumes, :removed
+    attr_accessor :time_out_on
 
     def initialize
       @volumes = {}
@@ -627,6 +628,8 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
       in [ "ps", "-a" ]
         [ @volumes.dig(name.delete_prefix("volume="), :users).to_s, "", Status.new(true) ]
       in [ "volume", "rm" ]
+        raise Agents::BoundedCommand::TimedOut if name == time_out_on
+
         @removed << name
         @volumes.delete(name)
         [ "", "", Status.new(true) ]
@@ -733,6 +736,31 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     end
     assert_empty fake.removed
     assert_equal 5, volume_release(rollback, fake, at:).release!(by: @user).count { |outcome| outcome.status == :removed }
+  end
+
+  test "a Docker timeout partway keeps the receipts of the volumes already removed" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.time_out_on = derived[:repo]
+
+    outcomes = volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user).index_by(&:name)
+    assert_equal :unknown, outcomes.fetch(derived[:repo]).status
+    removed = derived.values - [ derived[:repo] ]
+    assert_equal removed.sort, fake.removed.sort
+    assert_equal removed.sort, AuditLog.where(action: "house_volume_released", auditable: @agent).map { |r| r.data["volume"] }.sort
+  end
+
+  test "a volume found already gone without a removal receipt is recorded once" do
+    rollback = recovered
+    fake = FakeVolumes.new
+    derived = seed_house_volumes(rollback, fake)
+    fake.volumes.delete(derived[:work]) # removed by hand, or by an rm whose answer was lost
+
+    2.times { volume_release(rollback, fake, at: after_hold(rollback)).release!(by: @user) }
+    witnesses = AuditLog.where(action: "house_volume_found_absent", auditable: @agent)
+    assert_equal [ derived[:work] ], witnesses.map { |r| r.data["volume"] }
+    assert_equal 4, AuditLog.where(action: "house_volume_released", auditable: @agent).count
   end
 
   test "a recorded name that is not this resident's own refuses the whole release" do

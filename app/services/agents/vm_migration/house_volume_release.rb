@@ -104,20 +104,40 @@ module Agents
         list
       end
 
-      # Removes the closed list, under the resident's row lock so the
-      # admission cannot change underneath. Returns one Outcome per name.
+      # Removes the closed list, one volume per transaction: each takes the
+      # resident's row lock, rechecks the admission, removes and writes its
+      # receipt, and commits before the next begins. So a failure at volume N
+      # (a Docker timeout, say) never rolls back the receipt of a volume
+      # already gone (Mira, #943). A Docker call that fails or times out is
+      # reported as :unknown and the rest still run. Returns one Outcome per
+      # name. Refused (nothing removed) if the release is not admitted at the
+      # start; a later loss of admission stops the remaining names.
       def release!(by:)
         agent = Agent.find(@rollback.agent_id)
-        agent.with_lock do
-          @rollback.reload
-          refusal = self.class.unadmitted_reason(@rollback, now: @now.call)
-          raise Refused, refusal if refusal
+        list = agent.with_lock do
+          admit!
+          candidates
+        end
 
-          candidates.map { |candidate| remove(candidate, agent:, by:) }
+        list.map do |candidate|
+          agent.with_lock do
+            refusal = self.class.unadmitted_reason(@rollback.reload, now: @now.call)
+            next Outcome.new(name: candidate.name, status: :not_admitted, detail: refusal) if refusal
+
+            remove(candidate, agent:, by:)
+          end
+        rescue Agents::BoundedCommand::TimedOut
+          Outcome.new(name: candidate.name, status: :unknown, detail: "Docker did not answer in time")
         end
       end
 
       private
+
+      def admit!
+        @rollback.reload
+        refusal = self.class.unadmitted_reason(@rollback, now: @now.call)
+        raise Refused, refusal if refusal
+      end
 
       def generation_of(name, base)
         return nil if name == base
@@ -137,7 +157,7 @@ module Agents
         out, err, status = @docker.call("docker", "volume", "inspect", "--format",
           "{{ index .Labels \"#{ROLLBACK_LABEL}\" }}|{{ index .Labels \"#{CHECKOUT_LABEL}\" }}", candidate.name)
         unless status.success?
-          return Outcome.new(name: candidate.name, status: :absent, detail: nil) if err.to_s.match?(/no such volume/i)
+          return absent(candidate, agent:, by:) if err.to_s.match?(/no such volume/i)
 
           return Outcome.new(name: candidate.name, status: :unknown, detail: "Could not inspect the volume")
         end
@@ -161,6 +181,21 @@ module Agents
           data: { "rollback_id" => @rollback.id, "generation" => @rollback.generation, "volume" => candidate.name,
                   "role" => candidate.role, "source" => candidate.source, "volume_generation" => candidate.generation })
         Outcome.new(name: candidate.name, status: :removed, detail: nil)
+      end
+
+      # A name Docker no longer has. If no receipt says this release removed
+      # it (an earlier rm that timed out after Docker acted, or a hand
+      # removal), the absence itself is recorded, once, so the record never
+      # shows a home volume vanishing without a witness.
+      def absent(candidate, agent:, by:)
+        receipts = AuditLog.where(auditable: agent, action: %w[house_volume_released house_volume_found_absent])
+          .where("data->>'volume' = ?", candidate.name)
+        unless receipts.exists?
+          AuditLog.create!(action: "house_volume_found_absent", user: by, account: agent.account, auditable: agent,
+            data: { "rollback_id" => @rollback.id, "generation" => @rollback.generation, "volume" => candidate.name,
+                    "role" => candidate.role, "source" => candidate.source, "volume_generation" => candidate.generation })
+        end
+        Outcome.new(name: candidate.name, status: :absent, detail: nil)
       end
 
     end
