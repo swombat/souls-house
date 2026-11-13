@@ -135,6 +135,30 @@ module Agents
       spawn!
     end
 
+    # #426: a resident coming home from its VM is inactive and paused by
+    # design until someone activates it, so the activation check that
+    # recreate! and spawn! make cannot apply here. Every other gate does:
+    # the row lock, billing, local placement, import approval, harness and
+    # memory suspension. The caller's guard runs first, under the same lock,
+    # before anything is removed: it is where the rollback proves this is
+    # still its resident, paused, idle, on its volumes and placement.
+    def recreate_for_rollback!(guard)
+      agent.with_lock(ROW_LOCK) do
+        guard.call(agent)
+        ensure_awake!
+        RuntimeLocation.require_local!(agent)
+        agent.github_resident_import&.require_approval!
+        raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+        ensure_memory_not_suspended!
+        if container_exists?
+          migrate_repo_volume_from_container!
+          migrate_work_volume_from_container!
+        end
+        remove!(delete_volume: false)
+        spawn_without_portability_gate!
+      end
+    end
+
     def status
       @configuration_error = nil
       base = {
