@@ -90,7 +90,7 @@ class ProviderEdgeRetry
       next refusal if refusal
 
       AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, provider_retry_of: failed,
-        requested_at: failed.response_requested_at || failed.created_at)
+        requested_at: requested_at)
       chat.messages.create!(role: "user", content: notice(reason, recovered_at))
       :woken
     end
@@ -108,6 +108,9 @@ class ProviderEdgeRetry
     chat = failed.chat
     return :unavailable if agent.paused? || !agent.active? || !agent.eligible_for_conversation?
     return :unavailable unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
+    # The same seat boundary reserve! enforces: a removal, or a removal and
+    # re-seating, after the failed request ends this retry.
+    return :unseated unless chat.agent_seated_for_request?(agent.id, requested_at)
     return :chain_full if depth >= MAX_WAKES
     return :superseded if superseded?(except: woken)
     return :room_full if room_wakes(except: woken) >= MAX_WAKES
@@ -125,6 +128,10 @@ class ProviderEdgeRetry
   end
 
   private
+
+  def requested_at
+    failed.response_requested_at || failed.created_at
+  end
 
   def cause
     RunFailureNotice::NO_REPLY_CAUSES.fetch(failed.failure_category)

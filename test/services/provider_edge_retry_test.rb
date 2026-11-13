@@ -175,15 +175,57 @@ class ProviderEdgeRetryTest < ActiveSupport::TestCase
     assert_equal :superseded, ProviderEdgeRetry.new(failed).wake!(:recovery)
   end
 
+  # Pins the race fix itself: every eligibility check runs after the room
+  # and then the resident are locked, not before.
+  test "the eligibility checks run while the room and the resident are locked" do
+    failed = failed_run
+    events = []
+    chat = failed.chat
+    agent = failed.agent
+    chat.define_singleton_method(:lock!) { |*args| events << :chat_locked; super(*args) }
+    agent.define_singleton_method(:lock!) { |*args| events << :agent_locked; super(*args) }
+    retry_service = ProviderEdgeRetry.new(failed)
+    original = retry_service.method(:refusal_reason)
+    retry_service.define_singleton_method(:refusal_reason) { |*args, **kw| events << :checked; original.call(*args, **kw) }
+    assert_equal :woken, retry_service.wake!(:backoff)
+    # (reserve! then takes the same locks again, re-entrantly.)
+    assert_equal %i[chat_locked agent_locked checked], events.first(3)
+  end
+
+  # Mira's #938 re-review: the claim keeps the seat boundary reserve! keeps.
+  test "the claim refuses a retry whose resident was removed, or removed and re-seated, after it was reserved" do
+    failed = failed_run
+    assert_equal :woken, ProviderEdgeRetry.new(failed).wake!(:backoff)
+    retry_run = AgentRuntimeInteraction.find_by!(provider_retry_of: failed)
+    @chat.chat_agents.where(agent: @agent).delete_all
+    assert_not retry_run.claim_dispatch!
+    assert_equal "cancelled", retry_run.reload.execution_state
+
+    other = failed_run(chat: other_room, created_at: 2.minutes.from_now)
+    assert_equal :woken, ProviderEdgeRetry.new(other).wake!(:backoff)
+    retry_run = AgentRuntimeInteraction.find_by!(provider_retry_of: other)
+    other.chat.chat_agents.where(agent: @agent).delete_all
+    # Seated again after the failed run was requested: a new stay.
+    other.chat.chat_agents.create!(agent: @agent, created_at: 3.minutes.from_now)
+    assert_not retry_run.claim_dispatch!
+    assert_equal "cancelled", retry_run.reload.execution_state
+  end
+
   # Mira's #938 review, finding 3.
   test "two failed runs that ended in the same minute get distinct notices, so neither wake is rolled back" do
     at = Time.zone.parse("2026-11-13 10:00:05 UTC")
-    first = failed_run(created_at: at)
-    first.update_columns(finished_at: at)
-    assert_equal :woken, ProviderEdgeRetry.new(first).wake!(:recovery, recovered_at: at + 10.seconds)
-    child = fail!(AgentRuntimeInteraction.find_by!(provider_retry_of: first))
-    child.update_columns(finished_at: at + 20.seconds)
-    assert_equal :woken, ProviderEdgeRetry.new(child.reload).wake!(:recovery, recovered_at: at + 30.seconds)
+    # Frozen just after the failures, so the seat (2 hours earlier) and the
+    # recovery window hold whatever the wall clock says.
+    first = nil
+    travel_to(at + 40.seconds) do
+      @chat.chat_agents.update_all(created_at: at - 2.hours)
+      first = failed_run(created_at: at)
+      first.update_columns(finished_at: at)
+      assert_equal :woken, ProviderEdgeRetry.new(first).wake!(:recovery, recovered_at: at + 10.seconds)
+      child = fail!(AgentRuntimeInteraction.find_by!(provider_retry_of: first))
+      child.update_columns(finished_at: at + 20.seconds)
+      assert_equal :woken, ProviderEdgeRetry.new(child.reload).wake!(:recovery, recovered_at: at + 30.seconds)
+    end
     notices = @chat.messages.where(role: "user").order(:id).last(2).map(&:content)
     assert_equal 2, notices.uniq.size
     assert_match "(run #{first.run_id.first(8)})", notices.first
