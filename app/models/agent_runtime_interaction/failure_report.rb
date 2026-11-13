@@ -33,8 +33,14 @@ module AgentRuntimeInteraction::FailureReport
   FAILURE_CATEGORIES = %w[
     needs_setup house_allowance_exhausted house_allowance_none house_provider_refused subscription_limit
     fallback_off fallback_cap_reached fallback_payer_key_missing fallback_model_unavailable fallback_provider_refused
-    runtime_unavailable model_unavailable authentication_error runtime_error timed_out unknown
+    runtime_unavailable model_unavailable provider_challenge provider_transient authentication_error
+    runtime_error timed_out unknown
   ].freeze
+  # The model provider failing a request it would normally serve, positively
+  # identified by the shim (trigger_shim.py classify_provider_edge): a 403
+  # served as a Cloudflare challenge page, or a provider 5xx or overload.
+  # Not the resident's fault and not the house's.
+  PROVIDER_EDGE_CATEGORIES = %w[provider_challenge provider_transient].freeze
   # Runs the house starts on its own clock, with no room to fail in: the
   # scheduled wake and the memory aggregations. Telegram and orientation runs
   # are neither (someone asked, or it ran once at birth).
@@ -97,6 +103,9 @@ module AgentRuntimeInteraction::FailureReport
     # The runtime's own structured classification (trigger_shim.py
     # classify_provider_error): the CLI refused the model before any request.
     return "model_unavailable" if error_kind == "model_unavailable"
+    # Ahead of authentication_error: Claude Code words a Cloudflare challenge
+    # as "Failed to authenticate. API Error: 403 ..." (eOyrdJ).
+    return error_kind if error_kind.in?(PROVIDER_EDGE_CATEGORIES)
     # The shim's auth class (classify_provider_error) matches authentication
     # wording or a 401 anywhere in the run's output, so it shows the run
     # looked like an authentication error, not that a credential is missing

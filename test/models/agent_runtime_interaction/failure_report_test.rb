@@ -104,6 +104,24 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_equal "the run's output looked like its subscription's usage limit", limited.failure_reason
   end
 
+  test "a provider-edge kind is its own category, read ahead of authentication, and its reason says what the runtime said" do
+    said = { "code" => "clamp_runtime_failed",
+             "message" => "Claude Code reported a failed result: Failed to authenticate. API Error: 403 Attention Required! | Cloudflare" }
+    challenge = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "provider_challenge", "runtime_failure" => said })
+    assert_equal "provider_challenge", challenge.failure_category
+    assert_includes challenge.failure_reason, "403"
+    assert_includes challenge.failure_reason, "Cloudflare"
+    overloaded = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "provider_transient" })
+    assert_equal "provider_transient", overloaded.failure_category
+    assert_equal "its model provider answered with a server error or an overload", overloaded.failure_reason
+    # A kind the house doesn't know stays out of the category.
+    stray = live_run("failed", runtime_status: "error", runtime_returncode: 1,
+      response_body: { "status" => "error", "error_kind" => "provider_whatever" })
+    assert_equal "runtime_error", stray.failure_category
+  end
+
   test "the runtime's subscription-limit kind is its own category" do
     limited = live_run("failed", runtime_status: "error", runtime_returncode: 1,
       response_body: { "status" => "error", "error_kind" => "subscription_limit" })

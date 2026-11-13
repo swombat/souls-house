@@ -18,6 +18,8 @@ class RunFailureNotice
     "fallback_provider_refused" => "its paid fallback's provider refused a request it made",
     "runtime_unavailable" => "its runtime couldn't be reached",
     "model_unavailable" => "its model isn't available on its subscription",
+    "provider_challenge" => "its model provider's edge answered with HTTP 403, a Cloudflare challenge page",
+    "provider_transient" => "its model provider answered with a server error or an overload",
     "runtime_error" => "the run ended in an error",
     "timed_out" => "the run timed out",
     "authentication_error" => "the run's output looked like an authentication error",
@@ -48,7 +50,11 @@ class RunFailureNotice
     end
     if replied?
       ended = @run.failure_category == "timed_out" ? "timed out" : "ended with an error"
-      "#{@agent.name}'s run #{ended} after replying (#{tally})."
+      # A provider-edge failure names itself even after a reply: the people
+      # here can see the cause was upstream (eOyrdJ).
+      cause = (": #{NO_REPLY_CAUSES.fetch(@run.failure_category)}" if
+        @run.failure_category.in?(AgentRuntimeInteraction::FailureReport::PROVIDER_EDGE_CATEGORIES))
+      "#{@agent.name}'s run #{ended} after replying#{cause} (#{tally})."
     else
       "#{@agent.name} couldn't respond here: #{NO_REPLY_CAUSES.fetch(@run.failure_category)} (#{tally})."
     end
