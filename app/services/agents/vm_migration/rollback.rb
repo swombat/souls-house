@@ -204,6 +204,7 @@ module Agents
         raise Refused, reason if reason
 
         house_ready_at = placement.house_runtime_ready_at || raise(Refused, NEVER_LIVED)
+        carry_cleanup!(placement)
         placement.update!(backend: "local", kind: nil, state: "ready", generation: placement.generation + 1,
           house_runtime_ready_at: nil, admitted_by_setting_at: nil, birth_deadline_at: nil, birth_requested_by: nil,
           cleanup_requested_at: nil, cleanup_reason: nil, first_backup_command_id: nil, provider_server_id: nil,
@@ -211,6 +212,20 @@ module Agents
         RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil).find_each(&:revoke!)
         locked.update_columns(runtime_ready_at: house_ready_at, active: false, paused: true, runtime: "offline",
           health_state: "unknown", updated_at: Time.current)
+      end
+
+      # A cleanup asked of the server placement (a disabled account, say)
+      # must not vanish when the switch clears it: the placement becomes the
+      # house's, so VmCleanupJob no longer owns that server. The intent moves
+      # onto this attempt, where the release deletes the server once the
+      # resident is recovered (Mira, jaMMNj jlXoyp).
+      def carry_cleanup!(placement)
+        return unless placement.cleanup_requested? && !@rollback.release_requested?
+
+        @rollback.update!(release_requested_at: placement.cleanup_requested_at, release_reason: placement.cleanup_reason)
+        AuditLog.create!(action: "vm_rollback_release_requested", user: nil, account: agent.account, auditable: agent,
+          data: { "rollback_id" => @rollback.id, "reason" => @rollback.release_reason, "phase" => @rollback.phase,
+            "carried_from_placement" => true, "source" => @rollback.source })
       end
 
       def recreate!(target)

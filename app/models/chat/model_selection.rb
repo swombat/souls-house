@@ -484,6 +484,9 @@ module Chat::ModelSelection
     { model_id: "minimax/minimax-m2.7", label: "MiniMax M2.7", group: "MiniMax", thinking: { supported: true } },
     { model_id: "minimax/minimax-m2", label: "MiniMax M2", group: "MiniMax", thinking: { supported: true } },
 
+    # Thinking Machines
+    { model_id: "thinkingmachines/inkling-2-small", label: "Inkling 2 Small", group: "Thinking Machines", thinking: { supported: true } },
+
     # Inception
     { model_id: "inception/mercury-3", label: "Mercury 3", group: "Inception", thinking: { supported: true } },
 
@@ -747,7 +750,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:grok_multi_agent]
       when %r{\Ax-ai/grok-}
         REASONING_PROFILES[:grok]
-      when %r{\A(?:deepseek|inception|meta|moonshotai|minimax|qwen|xiaomi|z-ai)/}
+      when %r{\A(?:deepseek|inception|meta|moonshotai|minimax|qwen|thinkingmachines|xiaomi|z-ai)/}
         REASONING_PROFILES[:thinking_mode] if supports_thinking?(model_id)
       end
     end

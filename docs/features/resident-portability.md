@@ -193,6 +193,22 @@ itself (a restic snapshot bound to resident, generation and image, restored and
 verified on the server) and rollback over all five volumes are the next
 checkpoints. Until they land, the move still carries only the three role homes.
 
+**Releasing the server after a rollback (slice 3C).** A rollback
+(`Agents::VmMigration::Rollback`, #900) makes the placement the house's again
+and keeps the server, stopped and fenced. `RollbackRelease` deletes it later,
+and only that server: the purchases the attempt recorded before its switch,
+never anything the placement holds by then. It never goes through the
+placement's cleanup fields, because `VmCleanupJob` would retire a local
+placement and take the resident off the house. A release is admitted only for
+a recovered attempt whose recovery receipt carries the swap receipt's token,
+generation and map. A committed attempt whose recreate failed keeps its
+server. Only deletion is sent: a purchase still being bought or booted is left
+for an operator. Once the provider confirms every purchase is gone, the backup
+holds the server's backups left open are let go; until then such a hold stops
+the resident's turns on the house. Disabling an account asks for the release
+of its committed and recovered attempts; nothing is deleted before recovery.
+There is no button yet.
+
 Two facts are stated on the page and are not switches:
 
 - No live move happens until rollback after cutover is built (slice 3C). Until

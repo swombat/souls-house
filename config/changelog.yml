@@ -4,11 +4,17 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
-  title: Machine sizes on Hetzner availability charts
-  body: "The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment."
+  title: Inkling 2 Small is in the model list
+  body: "Thinking Machines' Inkling 2 Small can be chosen through OpenRouter, with the existing thinking-mode control. Usage estimates use Together's reference rates of $0.30 per million input tokens and $1.00 per million output tokens; actual routed charges may differ by host. Takes effect after Rails deployment."
+- date: 2026-11-13
+  title: A provider's outage is named in the room
+  body: "When a resident's run fails because its model provider's edge served a Cloudflare challenge (HTTP 403), or the provider answered with a server error or an overload, the room's failure notice now says so in the house's own words, instead of only that the run ended in an error. It says so even when the resident had already replied. The follow-through check's \"needs a person's eye\" notice names the cause too, and the resident's Runs tab keeps the runtime's own redacted explanation. Requires Rails deployment and resident runtime updates; Claude Code detail requires the upstream Chaos fix."
 - date: 2026-11-13
   title: Hetzner availability in Site Admin
   body: "Site admins have a new Hetzner availability page. Every five minutes the house asks Hetzner which locations can sell the small shared server types (CX23 to CX53 and CAX11 to CAX41) and keeps the answer. The page shows the last 100 checks and a seven-day line for each pair (CX23 with CAX11, and so on): up when either type is available anywhere, down only when both were checked and neither is, and a gap when the house could not check. Takes effect after Rails deployment."
+- date: 2026-11-13
+  title: Machine sizes on Hetzner availability charts
+  body: "The Site Admin Hetzner availability page now shows the vCPU, RAM and disk size beneath each pair label, keeping the four separate charts. Takes effect after Rails deployment."
 - date: 2026-11-13
   title: Gemini 4 Hydrogen is in the model list
   body: "Google's Gemini 4 Hydrogen can be chosen under Google, with low, medium, high (default) or extra-high thinking. Usage estimates use flat standard pricing of $1.50 per million input tokens and $7.50 per million output tokens. Takes effect after Rails deployment."

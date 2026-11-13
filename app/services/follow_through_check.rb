@@ -118,10 +118,20 @@ class FollowThroughCheck
 
   def unresolved_notice
     "[System Notice] Follow-through check: #{agent.name} was woken once to finish a step from an earlier run, " \
-      "and that run doesn't show it done either. Not waking #{agent.name} again; this needs a person's eye."
+      "and that run doesn't show it done either.#{failure_clause} Not waking #{agent.name} again; this needs a person's eye."
   end
 
   private
+
+  # The nudge run's own failure, when the house has a safe line for it (the
+  # categories RunFailureNotice words), so the room reads the cause instead
+  # of someone's private logs (eOyrdJ). Unidentified failures add nothing.
+  def failure_clause
+    category = interaction.failure_category
+    return "" if category.nil? || category.in?(%w[unknown runtime_error])
+
+    " That run failed: #{RunFailureNotice::NO_REPLY_CAUSES.fetch(category)}."
+  end
 
   def chat
     interaction.chat

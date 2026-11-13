@@ -123,6 +123,36 @@ class RunFailureNoticeJobTest < ActiveSupport::TestCase
     end
   end
 
+  # eOyrdJ, 13 Nov 2026: eight turns failed on Anthropic's edge answering
+  # with a Cloudflare challenge, and the room only read "ended in an error".
+  test "a Cloudflare challenge on the provider's edge is said in the room, in the house's words only" do
+    said = "Claude Code reported a failed result: Failed to authenticate. API Error: 403 Attention Required! | " \
+      "Cloudflare. Authorization: Bearer sk-ant-oat01-SECRETSECRETSECRET at /home/agent/.claude"
+    challenge = { "status" => "error", "error_kind" => "provider_challenge",
+                  "runtime_failure" => { "code" => "clamp_runtime_failed", "message" => said } }
+    failed_run(at: 30.minutes.ago, response_body: challenge, runtime_status: "error", runtime_returncode: 1)
+    run = failed_run(at: 20.minutes.ago, response_body: challenge, runtime_status: "error", runtime_returncode: 1,
+      stderr: said, error_message: said)
+
+    content = notice_for(run)
+    assert_match(/couldn't respond here: its model provider's edge answered with HTTP 403, a Cloudflare challenge page \(/, content)
+    [ "sk-ant", "SECRET", "/home/agent", "Bearer", "Failed to authenticate", "Attention Required" ].each do |fragment|
+      assert_not_includes content, fragment
+    end
+    # After a reply that stands, the cause is still named.
+    replied = failed_run(at: 10.minutes.ago, response_body: challenge, runtime_status: "error", runtime_returncode: 1)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "Here is my answer.", runtime_interaction: replied)
+    assert_match(/'s run ended with an error after replying: its model provider's edge answered with HTTP 403, a Cloudflare challenge page \(/,
+      notice_for(replied))
+  end
+
+  test "a provider overload is its own line" do
+    overloaded = { "status" => "error", "error_kind" => "provider_transient" }
+    failed_run(at: 30.minutes.ago, response_body: overloaded, runtime_status: "error", runtime_returncode: 1)
+    run = failed_run(at: 20.minutes.ago, response_body: overloaded, runtime_status: "error", runtime_returncode: 1)
+    assert_match(/couldn't respond here: its model provider answered with a server error or an overload \(/, notice_for(run))
+  end
+
   test "busy runs never get a notice, even inside a streak" do
     failed_run(at: 30.minutes.ago)
     failed_run(at: 20.minutes.ago)

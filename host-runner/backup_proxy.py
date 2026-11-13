@@ -20,6 +20,7 @@ as closed intervals; no range is silently dropped.
 """
 
 import base64
+import fcntl
 import hashlib
 import hmac
 import http.client
@@ -28,7 +29,9 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
+import stat
 import subprocess
 import tempfile
 import threading
@@ -55,6 +58,24 @@ OUTPUT_BYTES = 128 * 1024
 HEX_RE = re.compile(r"[0-9a-f]{64}\Z")
 UUID_RE = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 ROLES = ("identity", "chaos", "repo", "work")
+# Claude Code transcripts are the only part of the private state volume that is
+# backed up (Daniel, 13 Nov: close to living things). Provider credentials,
+# tailscale state and the rest of the volume stay out.
+TRANSCRIPTS_SUBPATH = "claude/projects"
+TRANSCRIPTS_DST = "/data/state/claude/projects"
+# A persistent restic cache: without it every backup re-reads the parent
+# snapshot's trees one ranged request at a time through the house, which on
+# 13 Nov outran the work deadline for both VM residents. It holds only
+# repository files, which restic keeps encrypted.
+CACHE_DST = "/cache"
+# Logical dumps of the VM's own PostgreSQL, made just before the snapshot so
+# that it always carries a fresh one (they used to come from a 15-minute timer).
+PG_CONFIG = "/etc/souls-house-postgres-backup.json"
+PG_CONTAINER = "souls-house-postgres"
+PG_DATABASE_RE = re.compile(r"[a-z0-9_]{1,63}\Z")
+PG_GENERATION_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z\Z")
+PG_MAX_DATABASES = 8
+PG_DUMP_SECONDS = 300
 TYPES = ("keys", "locks", "snapshots", "index", "data")
 
 
@@ -577,7 +598,11 @@ def _state(docker, name, timeout):
         raise CommandFailed("invalid resident state") from None
 
 
-def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command):
+def cache_volume(name):
+    return volume_name(name, "restic-cache")
+
+
+def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command, transcripts=False):
     argv = [
         "docker", "run", "--rm", "--pull", "never", "--name", tool_name,
         "--network", "host", "--read-only", "--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH",
@@ -587,9 +612,233 @@ def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command):
     ]
     for role in ROLES:
         argv += ["--mount", f"type=volume,src={volume_name(spec['container_name'], role)},dst=/data/{role},readonly"]
+    if transcripts:
+        # Docker resolves volume-subpath inside the volume and refuses an
+        # escape, so a resident-made symlink cannot widen what is read.
+        argv += ["--mount", f"type=volume,src={volume_name(spec['container_name'], 'state')},"
+                            f"dst={TRANSCRIPTS_DST},readonly,volume-subpath={TRANSCRIPTS_SUBPATH}"]
     argv += ["--mount", f"type=bind,src={checkpoint_dir},dst=/data/memory-graph,readonly",
-             RESTIC_IMAGE, "--no-cache", "-o", "rest.connections=1", *command]
+             "--mount", f"type=volume,src={cache_volume(spec['container_name'])},dst={CACHE_DST}",
+             RESTIC_IMAGE, "--cache-dir", CACHE_DST, "-o", "rest.connections=1", *command]
     return argv
+
+
+def transcripts_present(docker, name, timeout):
+    """Whether the resident's state volume holds a real claude/projects
+    directory. Call it only while the resident is paused or stopped: a
+    running resident could swap the path for a link after a check, and
+    Docker 26 resolves links inside the volume before its safe open.
+    Absent (no state volume, no directory) is ordinary; a symlink anywhere
+    on the path, or a volume that cannot be inspected, fails the backup."""
+    ok, output = docker(["docker", "volume", "inspect", "--format", "{{.Mountpoint}}",
+                         volume_name(name, "state")], timeout=timeout)
+    if not ok:
+        if re.search(r"\bno such volume\b", output or "", re.IGNORECASE):
+            return False
+        raise CommandFailed("cannot inspect the state volume for transcripts")
+    mountpoint = output.strip()
+    if not mountpoint.startswith("/") or os.path.islink(mountpoint) or not os.path.isdir(mountpoint):
+        raise CommandFailed("the state volume has no local mountpoint")
+    path = mountpoint
+    for part in TRANSCRIPTS_SUBPATH.split("/"):
+        path = os.path.join(path, part)
+        if os.path.islink(path):
+            raise CommandFailed("transcripts path is a symlink; refusing to back up the state volume")
+        if not os.path.lexists(path):
+            return False
+        if not os.path.isdir(path):
+            raise CommandFailed("transcripts path is not a directory")
+    return True
+
+
+class PostgresDumpError(Exception):
+    """Value-free diagnostics; no credentials or SQL output."""
+
+
+def _open_dir(name, dir_fd):
+    """Open a directory without following a link, relative to dir_fd."""
+    try:
+        return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
+    except OSError:
+        raise PostgresDumpError(f"{name} is not a plain directory") from None
+
+
+def _create(name, dir_fd, mode="xb"):
+    """Create a new regular file under dir_fd; never follows or reuses a path."""
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=dir_fd)
+    return os.fdopen(fd, mode)
+
+
+def _write_json(name, dir_fd, value):
+    with _create(name, dir_fd, "x") as output:
+        output.write(json.dumps(value, indent=2) + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def _file_receipt(name, dir_fd):
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
+    with os.fdopen(fd, "rb") as source:
+        size = os.fstat(source.fileno()).st_size
+        if size == 0:
+            raise PostgresDumpError("dump artifact is empty")
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {"file": name, "bytes": size, "sha256": digest.hexdigest()}
+
+
+def _pg_generations(root_fd):
+    """Complete generations, oldest first. An incomplete one latches every
+    later dump until an operator has looked at it; it is never deleted here."""
+    found = []
+    for entry in os.listdir(root_fd):
+        info = os.stat(entry, dir_fd=root_fd, follow_symlinks=False)
+        if stat.S_ISREG(info.st_mode):
+            continue
+        if not stat.S_ISDIR(info.st_mode) or not PG_GENERATION_RE.fullmatch(entry):
+            raise PostgresDumpError(f"unexpected entry {entry} in postgres-backups; operator review required")
+        fd = _open_dir(entry, root_fd)
+        try:
+            names = set(os.listdir(fd))
+        finally:
+            os.close(fd)
+        if "receipt.json" not in names or ".incomplete" in names:
+            raise PostgresDumpError(f"incomplete generation {entry} retained; operator review required")
+        found.append(entry)
+    return sorted(found)
+
+
+def read_postgres_config(path, chaos_mountpoint):
+    with open(path) as handle:
+        config = json.loads(handle.read())
+    if not isinstance(config, dict) or set(config) != {"home_mount", "databases"}:
+        raise PostgresDumpError("postgres backup config must name exactly home_mount and databases")
+    if config["home_mount"] != chaos_mountpoint:
+        raise PostgresDumpError("postgres backup config names another volume than this resident's chaos home")
+    databases = config["databases"]
+    if (not isinstance(databases, list) or not 1 <= len(databases) <= PG_MAX_DATABASES or
+            len(set(databases)) != len(databases) or
+            not all(isinstance(db, str) and PG_DATABASE_RE.fullmatch(db) for db in databases)):
+        raise PostgresDumpError("postgres backup config has invalid databases")
+    if os.path.islink(chaos_mountpoint) or not os.path.isdir(chaos_mountpoint):
+        raise PostgresDumpError("chaos home volume is missing or symlinked")
+    return databases
+
+
+def _lock(root_fd):
+    """The dump lock, opened without following links or blocking on a FIFO;
+    anything but a regular file is refused before flock."""
+    try:
+        fd = os.open("backup.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                     0o600, dir_fd=root_fd)
+    except OSError:
+        raise PostgresDumpError("backup.lock cannot be opened safely; operator review required") from None
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise PostgresDumpError("backup.lock is not a regular file; operator review required")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise PostgresDumpError("another postgres dump is running") from None
+    return fd
+
+
+def dump_postgres(name, docker, seconds, config_path=PG_CONFIG, run=subprocess.run, now=time.gmtime):
+    """Dump the resident's databases into <chaos volume>/postgres-backups,
+    keeping the new generation and the one before it. The volume belongs to
+    a running resident, so every path below its mountpoint is opened relative
+    to a held directory descriptor and never through a link. Never raises:
+    the answer says ok, absent (no Postgres on this server) or failed with a
+    reason, and a failure does not stop the snapshot of everything else."""
+    if not os.path.exists(config_path):
+        return {"state": "absent"}
+    ends = time.monotonic() + seconds
+
+    def left():
+        remaining = ends - time.monotonic()
+        if remaining <= 0:
+            raise PostgresDumpError("postgres dump deadline exceeded")
+        return remaining
+
+    fds = []
+    try:
+        ok, mountpoint = docker(["docker", "volume", "inspect", "--format", "{{.Mountpoint}}",
+                                 volume_name(name, "chaos")], timeout=min(10, left()))
+        mountpoint = mountpoint.strip() if ok else ""
+        if not mountpoint.startswith("/"):
+            raise PostgresDumpError("cannot locate the chaos home volume")
+        databases = read_postgres_config(config_path, mountpoint)
+        home_fd = os.open(mountpoint, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fds.append(home_fd)
+        try:
+            os.mkdir("postgres-backups", 0o700, dir_fd=home_fd)
+            os.fsync(home_fd)
+        except FileExistsError:
+            pass
+        root_fd = _open_dir("postgres-backups", home_fd)
+        fds.append(root_fd)
+        fds.append(_lock(root_fd))
+        previous = _pg_generations(root_fd)  # refuse before using more disk
+        generation = time.strftime("%Y%m%dT%H%M%SZ", now())
+        os.mkdir(generation, 0o700, dir_fd=root_fd)
+        os.fsync(root_fd)
+        dest_fd = _open_dir(generation, root_fd)
+        fds.append(dest_fd)
+        # Stays until the generation and current.json are durable, so an
+        # interruption anywhere below latches the next attempt.
+        _write_json(".incomplete", dest_fd, {"state": "backup-in-progress"})
+        os.fsync(dest_fd)
+        receipt = {"created_at": time.time(), "databases": {}}
+        for db in databases:
+            with _create(db + ".dump", dest_fd) as output:
+                run(["docker", "exec", PG_CONTAINER, "pg_dump", "-U", "postgres", "-Fc", "-d", db],
+                    check=True, stdout=output, stderr=subprocess.DEVNULL, timeout=left())
+                output.flush()
+                os.fsync(output.fileno())
+            source_fd = os.open(db + ".dump", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dest_fd)
+            with os.fdopen(source_fd, "rb") as source:
+                run(["docker", "exec", "-i", PG_CONTAINER, "pg_restore", "--list"], stdin=source,
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=left())
+            receipt["databases"][db] = _file_receipt(db + ".dump", dest_fd)
+        with _create("roles.sql", dest_fd) as output:
+            run(["docker", "exec", PG_CONTAINER, "pg_dumpall", "-U", "postgres", "--globals-only"],
+                check=True, stdout=output, stderr=subprocess.DEVNULL, timeout=left())
+            output.flush()
+            os.fsync(output.fileno())
+        receipt["roles"] = _file_receipt("roles.sql", dest_fd)
+        _write_json("receipt.json", dest_fd, receipt)
+        os.fsync(dest_fd)
+        try:
+            os.unlink("current.json.tmp", dir_fd=root_fd)
+        except FileNotFoundError:
+            pass
+        _write_json("current.json.tmp", root_fd, {"generation": generation, **receipt})
+        os.replace("current.json.tmp", "current.json", src_dir_fd=root_fd, dst_dir_fd=root_fd)
+        os.fsync(root_fd)
+        os.unlink(".incomplete", dir_fd=dest_fd)
+        os.fsync(dest_fd)
+        for stale in previous[:-1]:
+            shutil.rmtree(stale, dir_fd=root_fd)
+        os.fsync(root_fd)
+        total = receipt["roles"]["bytes"] + sum(item["bytes"] for item in receipt["databases"].values())
+        return {"state": "ok", "generation": generation, "bytes": total}
+    except PostgresDumpError as error:
+        return {"state": "failed", "reason": str(error)}
+    except subprocess.TimeoutExpired:
+        return {"state": "failed", "reason": "postgres dump deadline exceeded; incomplete generation retained"}
+    except subprocess.CalledProcessError as error:
+        tool = next((part for part in error.cmd if part in ("pg_dump", "pg_restore", "pg_dumpall")), "docker")
+        return {"state": "failed", "reason": f"{tool} exited {error.returncode}; incomplete generation retained"}
+    except (OSError, ValueError) as error:
+        return {"state": "failed", "reason": f"postgres dump failed: {type(error).__name__}"}
+    finally:
+        for fd in reversed(fds):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def restic_config_exists(output):
@@ -602,7 +851,7 @@ def restic_config_exists(output):
 
 
 def run_backup(payload, host, *, signed_request, docker=None,
-               proxy_factory=BackupProxy, clock=time.monotonic):
+               proxy_factory=BackupProxy, clock=time.monotonic, postgres=dump_postgres):
     """Run under the house's idle admission hold; do not acquire that hold here.
 
     Validation raises BadCommand. Operational failures raise BackupFailed with
@@ -622,6 +871,7 @@ def run_backup(payload, host, *, signed_request, docker=None,
         "container_name": name, "checkpoint_digest": spec["checkpoint_digest"],
         "checkpoint_file_sha256": spec["checkpoint_file_sha256"],
         "snapshot_id": None, "size_bytes": 0, "unpaused": False, "tools_stopped": False, "duration_ms": 0,
+        "postgres_dump": None, "transcripts": False,
     }
     pause_attempted = False
     tools = []
@@ -659,6 +909,15 @@ def run_backup(payload, host, *, signed_request, docker=None,
             ok, _ = run(["docker", "image", "inspect", RESTIC_IMAGE])
             if not ok:
                 raise CommandFailed("backup image unavailable after pull")
+        ok, _ = run(["docker", "volume", "inspect", cache_volume(name)])
+        if not ok:
+            ok, _ = run(["docker", "volume", "create", cache_volume(name)])
+            if not ok:
+                raise CommandFailed("could not create the backup cache volume")
+        # Before the pause, under the house's idle hold: the snapshot then
+        # carries a dump made minutes earlier. A failed dump is reported,
+        # and everything else is still snapshotted.
+        result["postgres_dump"] = postgres(name, docker, min(PG_DUMP_SECONDS, max(1, remaining() - 60)))
         # Inspect again after any download. Never inherit somebody else's pause.
         state = _state(docker, name, min(10, remaining()))
         if state["Paused"]:
@@ -676,6 +935,9 @@ def run_backup(payload, host, *, signed_request, docker=None,
             ok, _ = run(["docker", "pause", name])
             if not ok:
                 raise CommandFailed("could not pause resident")
+        # Only now, with the resident paused or stopped, can the path not
+        # change between this check and the mount.
+        result["transcripts"] = transcripts_present(docker, name, min(10, remaining()))
         with tempfile.TemporaryDirectory(prefix="souls-house-backup-") as temp:
             os.chmod(temp, 0o700)
             checkpoint_dir = os.path.join(temp, "checkpoint")
@@ -694,7 +956,8 @@ def run_backup(payload, host, *, signed_request, docker=None,
                 def restic(command):
                     tool = "souls-house-backup-" + secrets.token_hex(12)
                     tools.append(tool)  # remember before launch, including timeouts
-                    return run(restic_argv(spec, proxy.repository, env_file, checkpoint_dir, tool, command))
+                    return run(restic_argv(spec, proxy.repository, env_file, checkpoint_dir, tool, command,
+                                           transcripts=result["transcripts"]))
 
                 ok, output = restic(["init"])
                 # Pinned restic 0.18.1 reports an existing config after HEAD 200.

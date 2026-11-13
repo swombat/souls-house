@@ -151,10 +151,13 @@ RUN case "${TARGETARCH}" in \
 # the unprivileged agent user cannot replace the root-owned binary at runtime.
 # Version 1.1.22 is the first pinned release where denied native tool calls are
 # recoverable in print mode instead of failing the whole clamped turn.
-ARG ANTIGRAVITY_VERSION=1.1.22
-ARG ANTIGRAVITY_BUILD=5711547746615296
-ARG ANTIGRAVITY_AMD64_SHA512=40225d4b1f009412e905f0a234ba3d51487038d1ad1b8fa19331c84be55610a01f5b0ad9916fb871151cc45456c6bc30cc0b1ea5dab6c0616bc8fb262bcdd7a9
-ARG ANTIGRAVITY_ARM64_SHA512=b37a718330eb5e270e1ca70135bf964a407ba626fbff7537ac58e094ea31bc623e6d216ef197188fe8b5c46e6f57aee64a3b7c9e23fc855cefee43fe434179d3
+# 1.5.8 (13 Nov 2026) is needed for Gemini 4 Hydrogen and Argon on subscription
+# sign-ins: `agy models` under 1.1.22 listed neither for Chris; under 1.5.8 both.
+# Build ids come from https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/releases
+ARG ANTIGRAVITY_VERSION=1.5.8
+ARG ANTIGRAVITY_BUILD=4602374149505024
+ARG ANTIGRAVITY_AMD64_SHA512=f08faaee588327dba8722bdc60f26a14f6915a8f2d756ed7959cde0a706d4e62fd9f831ab1a077dace5f947caaa6e851457df5023180bb8d3f54386804a3787f
+ARG ANTIGRAVITY_ARM64_SHA512=7b040bfb8fb96f7550a8a66cd0ac28cb3e6e40e427f1e9810bfe1bf23c417cb9b363e36b2fc8ed645fe1ee518b0106f50f03de7084e95ede4591a893527360d1
 RUN case "${TARGETARCH}" in \
       amd64) artifact=cli_linux_x64.tar.gz; platform=linux-x64; checksum="${ANTIGRAVITY_AMD64_SHA512}" ;; \
       arm64) artifact=cli_linux_arm64.tar.gz; platform=linux-arm; checksum="${ANTIGRAVITY_ARM64_SHA512}" ;; \
