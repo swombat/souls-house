@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_113000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_13_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2744,6 +2744,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_113000) do
     t.bigint "room_id"
     t.datetime "last_skipped_at"
     t.string "last_skip_reason"
+    t.boolean "quiet_gate", default: false, null: false
+    t.bigint "quiet_gate_room_ids", default: [], null: false, array: true
+    t.bigint "quiet_watermark_message_id"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"

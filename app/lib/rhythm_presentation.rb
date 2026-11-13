@@ -35,6 +35,9 @@ class RhythmPresentation
       room_choice: @rhythm.room_choice, room_id: own_room&.to_param,
       room_name: own_room&.name, room_removed: @rhythm.room_removed?,
       opens_in: room_json(@rhythm.occurrence_room),
+      # Run only when something new has arrived since the last run (#951),
+      # optionally only in these rooms.
+      quiet_gate: @rhythm.quiet_gate, quiet_gate_room_ids: @rhythm.quiet_gate_room_public_ids,
       creator: {
         id: (@rhythm.creator_agent || @rhythm.creator)&.to_param,
         name: @rhythm.creator_agent&.name || display_name(@rhythm.creator),
@@ -142,6 +145,7 @@ class RhythmPresentation
     when "resident_not_present" then "#{name} is no longer in this account"
     when "resident_unavailable" then "#{name} can't take conversations right now"
     when "resident_paused" then "#{name} is paused"
+    when Rhythm::QUIET_SKIP_REASON then "nothing new had arrived since its last run"
     else reason.to_s
     end
   end

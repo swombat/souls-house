@@ -66,6 +66,29 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_not Rhythm.exists?(rhythm.id)
   end
 
+  test "a resident switches the quiet gate on, narrows it to a room, and cannot name another account's room" do
+    post api_v1_rhythms_path, params: { rhythm: attributes.merge(quiet_gate: true) }, headers: @headers, as: :json
+    assert_response :created
+    rhythm = Rhythm.order(:id).last
+    assert rhythm.quiet_gate?
+    assert_equal true, response.parsed_body.dig("rhythm", "quiet_gate")
+    assert_equal [], response.parsed_body.dig("rhythm", "quiet_gate_room_ids")
+
+    room = rhythm.account.rooms.create!(name: "Triage")
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { quiet_gate_room_ids: [ room.to_param ] } },
+      headers: @headers, as: :json
+    assert_response :ok
+    assert_equal [ room.id ], rhythm.reload.quiet_gate_room_ids
+    assert_equal [ room.to_param ], response.parsed_body.dig("rhythm", "quiet_gate_room_ids")
+
+    foreign = agents(:other_account_agent).account.rooms.create!(name: "Elsewhere")
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { quiet_gate_room_ids: [ foreign.to_param ] } },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert_equal [ room.id ], rhythm.reload.quiet_gate_room_ids
+    assert_not_includes response.body, "Elsewhere"
+  end
+
   test "creation and update reject spoofed creators and selections" do
     %w[creator creator_id creator_agent creator_agent_id user_id resident_ids agent_ids agents].each do |field|
       assert_no_difference "Rhythm.count" do

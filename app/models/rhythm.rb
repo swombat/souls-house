@@ -5,13 +5,16 @@ class Rhythm < ApplicationRecord
   Result = Struct.new(:status, :occurrence, :reason, keyword_init: true) do
     def created? = status == :created
     def duplicate? = status == :duplicate
-    def success? = status.in?(%i[created duplicate active held])
+    def success? = status.in?(%i[created duplicate active held quiet])
   end
 
   SCHEDULE_FIELDS = %w[cadence time_of_day weekday month_day month timezone].freeze
   # Where an occurrence opens: the account's resident default room, Main on
   # purpose, or the named room.
   ROOM_CHOICES = %w[resident_default main room].freeze
+  # The skip code a quiet slot records; the allowance brake (#950) records
+  # skipped_allowance beside it.
+  QUIET_SKIP_REASON = "skipped_quiet".freeze
 
   belongs_to :account
   belongs_to :room, optional: true
@@ -44,10 +47,12 @@ class Rhythm < ApplicationRecord
   validate :residents_present_in_account, if: :new_record?
   validate :resident_models_valid, if: -> { @pending_resident_models }
   validate :room_choice_valid
+  validate :quiet_gate_rooms_valid
 
   before_validation :resolve_room_public_id
   before_validation :clear_room_unless_named
   before_validation :reset_next_run, if: :schedule_changed?
+  before_validation :clear_quiet_watermark, if: -> { will_save_change_to_quiet_gate? && !quiet_gate? }
   after_save :apply_resident_models, if: -> { @pending_resident_models }
   after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
 
@@ -83,10 +88,13 @@ class Rhythm < ApplicationRecord
   # room_id; the model takes it as room_public_id, so a raw database id is
   # never accepted.
   def self.public_room_attributes(attributes)
-    return attributes unless attributes.key?(:room_id)
+    return attributes unless attributes.key?(:room_id) || attributes.key?(:quiet_gate_room_ids)
 
     attributes = attributes.dup
-    attributes[:room_public_id] = attributes.delete(:room_id)
+    attributes[:room_public_id] = attributes.delete(:room_id) if attributes.key?(:room_id)
+    if attributes.key?(:quiet_gate_room_ids)
+      attributes[:quiet_gate_room_public_ids] = attributes.delete(:quiet_gate_room_ids)
+    end
     attributes
   end
 
@@ -117,6 +125,22 @@ class Rhythm < ApplicationRecord
   end
 
   def room_public_id = room&.to_param
+
+  # The rooms that narrow the quiet gate, by public id as the form and the API
+  # send them. Only this account's rooms resolve; anything else is an error,
+  # never silently dropped.
+  def quiet_gate_room_public_ids=(values)
+    values = Array(values).reject(&:blank?)
+    @quiet_gate_room_ids_invalid = false
+    ids = values.map do |value|
+      decoded = value.is_a?(String) && value.match?(/\A[a-zA-Z]+\z/) ? Room.hashids.decode(value) : []
+      decoded.one? && Room.encode_id(decoded.first) == value ? decoded.first : nil
+    end
+    @quiet_gate_room_ids_invalid = ids.include?(nil)
+    self.quiet_gate_room_ids = ids.compact.uniq
+  end
+
+  def quiet_gate_room_public_ids = quiet_gate_room_ids.map { |id| Room.encode_id(id) }
 
   # The room the next occurrence opens in; nil is Main. A named room that has
   # been removed falls back to the account's default room.
@@ -241,6 +265,16 @@ class Rhythm < ApplicationRecord
         next Result.new(status: :unavailable, reason: reason)
       end
 
+      # The quiet gate (#951) skips a scheduled slot when nothing countable
+      # has arrived since the watermark, with no room, dispatch or wake. A
+      # manual start always runs, and so does the first run (no watermark).
+      if !manual && quiet_gate? && quiet_watermark_message_id &&
+          !(gate = Rhythm::QuietGate.new(self)).news_after?(quiet_watermark_message_id)
+        update!(next_run_at: next_occurrence(after: now), last_skipped_at: now, last_skip_reason: QUIET_SKIP_REASON,
+          quiet_watermark_message_id: [ quiet_watermark_message_id, gate.settled_watermark(now) ].max)
+        next Result.new(status: :quiet, reason: QUIET_SKIP_REASON)
+      end
+
       scheduled_for = manual ? now : Rhythm::Schedule.new(self).latest_occurrence(at: now)
       # An explicit next_run_at may be later than the calendar's previous slot.
       scheduled_for = [ scheduled_for, next_run_at ].max unless manual
@@ -268,6 +302,10 @@ class Rhythm < ApplicationRecord
         manual: manual, request_key: manual ? request_key : nil
       )
       fired = { last_skipped_at: nil, last_skip_reason: nil }
+      # Only a scheduled run moves the baseline: a manual start bypasses the
+      # gate and leaves it where it was, so news that arrived before it still
+      # wakes the next scheduled slot.
+      fired[:quiet_watermark_message_id] = Rhythm::QuietGate.new(self).settled_watermark(now) if quiet_gate? && !manual
       fired[:next_run_at] = next_occurrence(after: now) unless manual
       update!(fired)
       Result.new(status: :created, occurrence: occurrence)
@@ -395,6 +433,17 @@ class Rhythm < ApplicationRecord
     else
       self.room = nil
       @room_public_id_invalid = true
+    end
+  end
+
+  def clear_quiet_watermark
+    self.quiet_watermark_message_id = nil
+  end
+
+  def quiet_gate_rooms_valid
+    if @quiet_gate_room_ids_invalid ||
+        (quiet_gate_room_ids.present? && account && account.rooms.where(id: quiet_gate_room_ids).count != quiet_gate_room_ids.size)
+      errors.add(:quiet_gate_room_ids, "must be rooms of this account")
     end
   end
 

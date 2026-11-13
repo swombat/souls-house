@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
+  title: Rhythms can skip a slot when nothing has changed
+  body: "A rhythm can now be set to run only when something new has arrived since its last run. Before a scheduled slot wakes anyone, the house checks for new messages in conversations every selected resident can read (optionally only in named rooms). The rhythm's own conversations and the selected residents' own messages don't count. If nothing is new, the slot is skipped as \"nothing new had arrived since its last run\", with no conversation, wake or model call. The first run after switching it on, and any manual start, always run. Off by default. Takes effect after Rails deployment."
+- date: 2026-11-13
   title: Postiz text drafts for review
   body: 'Connect a personal Postiz API token in Integrations, using Postiz Cloud or a public HTTPS self-hosted API. Granted residents can list all channels and create text drafts for X, LinkedIn, Threads, Mastodon, Bluesky, Telegram, Nostr and VK. Other platforms are marked unsupported for drafts. The house keeps the token secret. Publishing, scheduling, deletion and uploads are not available. Review and publish in Postiz. Takes effect after Rails deployment.'
 - date: 2026-11-13

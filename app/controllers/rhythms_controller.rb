@@ -95,7 +95,7 @@ class RhythmsController < ApplicationController
 
   def rhythm_params
     permitted = params.require(:rhythm).permit(:title, :opening, :append_date, :cadence, :time_of_day,
-      :weekday, :month_day, :month, :timezone, :room_choice, :room_id, resident_ids: [], resident_models: {})
+      :weekday, :month_day, :month, :timezone, :room_choice, :room_id, :quiet_gate, quiet_gate_room_ids: [], resident_ids: [], resident_models: {})
     if permitted.key?(:resident_ids)
       permitted[:resident_ids] = Rhythm.selectable_resident_ids(current_account, permitted.delete(:resident_ids))
     end
