@@ -518,6 +518,22 @@ Each transcript message has `completed`: `false` while a reply is still being
 written (its `content` is partial), `true` once it is finished. To wait for a
 reply, keep reading from before the first unfinished row until it turns `true`.
 
+To read only what is new, pass the last message you have already read as
+`after_message_id`; the transcript then holds only the messages after it, in
+order. `since=<ISO 8601 time>` does the same by time. A triage pass that keeps
+the last finished message id per conversation fetches only the new part of
+each one, rather than its whole history on every run:
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/conversations/$CHAT_ID?after_message_id=$LAST_SEEN_ID"
+```
+
+Remember the id of the last message whose `completed` is `true`, not of a reply
+still being written, or the rest of that reply falls behind your cursor. The
+result is not paged, so the first read of a long conversation is still whole,
+and a value that is not a message id is ignored (you get the whole transcript).
+
 Transcript messages include attachment metadata:
 
 ```json
