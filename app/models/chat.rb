@@ -256,12 +256,53 @@ class Chat < ApplicationRecord
       .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
     waiting = waiting_commitments_for(chats)
     stuck = handoff_stuck_ids_for(chats)
+    errored = run_error_residents_for(chats)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
       ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
       json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id],
-                 "handoff_stuck" => stuck.include?(chat.id))
+                 "handoff_stuck" => stuck.include?(chat.id),
+                 "run_error_residents" => errored[chat.id] || [])
     end
+  end
+
+  # Residents whose latest run in a conversation ended in an error (Daniel,
+  # 13 Nov, jgDWoJ): the sidebar shows a red circled exclamation mark in the
+  # commitment clock's place, winning over the clock and the stuck hand. Only
+  # residents still in the room count, and only each one's newest run there,
+  # so a run that goes cleanly (or a new one starting) clears it. "Error" is
+  # what the room's run card already says: a live run whose execution state is
+  # failed or timed_out; an older run that finished with an error message, an
+  # HTTP failure or a non-zero exit (chat_activity_status "failed").
+  # One query for the list: { chat_id => [names] }.
+  RUN_ERROR_STATES = %w[failed timed_out].freeze
+
+  def self.run_error_residents_for(chats)
+    ids = chats.map(&:id)
+    return {} if ids.empty?
+
+    latest = AgentRuntimeInteraction
+      .joins("INNER JOIN chat_agents ON chat_agents.chat_id = agent_runtime_interactions.chat_id " \
+             "AND chat_agents.agent_id = agent_runtime_interactions.agent_id")
+      .where(chat_id: ids)
+      .select("DISTINCT ON (agent_runtime_interactions.chat_id, agent_runtime_interactions.agent_id) " \
+              "agent_runtime_interactions.*")
+      .order("agent_runtime_interactions.chat_id, agent_runtime_interactions.agent_id, agent_runtime_interactions.id DESC")
+
+    rows = AgentRuntimeInteraction.from(latest, :agent_runtime_interactions)
+      .joins(:agent)
+      .where(<<~SQL.squish, RUN_ERROR_STATES)
+        agent_runtime_interactions.execution_state IN (?)
+        OR (agent_runtime_interactions.execution_state IS NULL
+            AND agent_runtime_interactions.finished_at IS NOT NULL
+            AND (COALESCE(agent_runtime_interactions.error_message, '') <> ''
+                 OR COALESCE(agent_runtime_interactions.transport_status, 0) >= 400
+                 OR COALESCE(agent_runtime_interactions.runtime_returncode, 0) <> 0))
+      SQL
+      .order("agents.name")
+      .pluck("agent_runtime_interactions.chat_id", "agents.name")
+
+    rows.group_by(&:first).transform_values { |list| list.map(&:last) }
   end
 
   # A conversation stuck at the resident handoff limit (Daniel, 11 Nov,

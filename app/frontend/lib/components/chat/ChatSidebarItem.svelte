@@ -1,9 +1,9 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import { commitmentMarkLabel, handoffStuckLabel, shortDate } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Alarm, Archive, ChatText, HandPalm, PushPin, Spinner, Trash } from 'phosphor-svelte';
+  import { Alarm, Archive, ChatText, HandPalm, PushPin, Spinner, Trash, WarningCircle } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
@@ -20,6 +20,7 @@
   );
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
   const stuckLabel = $derived(handoffStuckLabel(chat.handoff_stuck));
+  const errorLabel = $derived(runErrorLabel(chat.run_error_residents));
 </script>
 
 <div class="relative group/card">
@@ -91,7 +92,7 @@
           <WorkStatusIcon state={chat.work_status.state} />
         </span>
       {:else}
-        <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} />
+        <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} />
       {/if}
     </div>
     <div class="absolute right-2 top-2 flex items-center gap-1">
@@ -103,18 +104,25 @@
       </span>
       <ReplyAttentionEye chatId={chat.id} {accountId} badge={Boolean(chat.work_status?.state)} />
     </div>
-    {#if chat.work_status?.state && (chat.visual_tag?.pins_to_top || stuckLabel || commitmentLabel)}
+    {#if chat.work_status?.state && (chat.visual_tag?.pins_to_top || errorLabel || stuckLabel || commitmentLabel)}
       <div class="absolute left-3 bottom-2 flex items-center gap-1">
         {#if chat.visual_tag?.pins_to_top}
           <span title="Pinned by visual tag" aria-label="Pinned by visual tag" role="img"><PushPin size={12} /></span>
         {/if}
-        {#if stuckLabel}
+        {#if errorLabel}
+          <span
+            title={errorLabel}
+            aria-label={errorLabel}
+            role="img"
+            data-testid="run-error-mark"
+            class="text-red-600"><WarningCircle size={12} weight="bold" /></span>
+        {:else if stuckLabel}
           <span
             title={stuckLabel}
             aria-label={stuckLabel}
             role="img"
             data-testid="handoff-stuck-mark"
-            class="text-red-600"><HandPalm size={12} /></span>
+            class="text-yellow-500"><HandPalm size={12} /></span>
         {:else if commitmentLabel}
           <span
             title={commitmentLabel}

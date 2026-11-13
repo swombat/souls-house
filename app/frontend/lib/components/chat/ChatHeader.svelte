@@ -10,7 +10,7 @@
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
   import WorkStatusControl from './WorkStatusControl.svelte';
   import WorkCompletionControl from './WorkCompletionControl.svelte';
-  import { commitmentMarkLabel, handoffStuckLabel } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -69,6 +69,12 @@
     if (!chat) return '';
     const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
     return handoffStuckLabel(row ? row.handoff_stuck : chat.handoff_stuck);
+  });
+  // The red error mark for a resident whose last run here failed, read the same way.
+  const errorLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return runErrorLabel(row ? row.run_error_residents : chat.run_error_residents);
   });
 
   // Token warning level — based on active context, not lifetime cost
@@ -228,7 +234,8 @@
             tags={$page.props.visual_tags || []}
             faintEmpty={false}
             {commitmentLabel}
-            {stuckLabel} />
+            {stuckLabel}
+            {errorLabel} />
         </span>
       {/if}
       <div class="flex items-center">

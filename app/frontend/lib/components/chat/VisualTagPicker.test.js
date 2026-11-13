@@ -156,16 +156,34 @@ test('deleted conversations do not advertise an available mutation', () => {
   expect(screen.getByRole('button')).toBeDisabled();
 });
 
-test('a thread stuck at the handoff limit shows the red hand in place of the clock, and the clock returns when it clears', async () => {
+test('a thread stuck at the handoff limit shows the yellow hand in place of the clock, and the clock returns when it clears', async () => {
   const waiting = { due_at: '2026-11-12T09:00:00Z', resident_name: 'Mira', count: 1 };
   const row = { ...props.chat, next_commitment: waiting, handoff_stuck: true };
   const { rerender } = render(ChatSidebarItem, { chat: row, accountId: 'house', visualTags: [tag] });
   const hand = screen.getByTestId('handoff-stuck-mark');
-  expect(hand).toHaveClass('text-red-600');
+  expect(hand).toHaveClass('text-yellow-500');
   expect(hand).toHaveAttribute('title', expect.stringMatching(/^Stuck: residents reached the handoff limit/));
   expect(screen.queryByTestId('commitment-mark')).toBeNull();
 
   await rerender({ chat: { ...row, handoff_stuck: false }, accountId: 'house', visualTags: [tag] });
   expect(screen.queryByTestId('handoff-stuck-mark')).toBeNull();
   expect(screen.getByTestId('commitment-mark')).toHaveAttribute('title', expect.stringMatching(/^Mira will come back here /));
+});
+
+test('a resident whose last run here failed shows a red error mark over the hand and the clock, and it clears on its own', async () => {
+  const waiting = { due_at: '2026-11-12T09:00:00Z', resident_name: 'Mira', count: 1 };
+  const row = { ...props.chat, next_commitment: waiting, handoff_stuck: true, run_error_residents: ['Lume'] };
+  const { rerender } = render(ChatSidebarItem, { chat: row, accountId: 'house', visualTags: [tag] });
+  const mark = screen.getByTestId('run-error-mark');
+  expect(mark).toHaveClass('text-red-600');
+  expect(mark).toHaveAttribute('title', "Lume's last run here ended in an error.");
+  expect(screen.queryByTestId('handoff-stuck-mark')).toBeNull();
+  expect(screen.queryByTestId('commitment-mark')).toBeNull();
+
+  await rerender({ chat: { ...row, run_error_residents: ['Lume', 'Mira'] }, accountId: 'house', visualTags: [tag] });
+  expect(screen.getByTestId('run-error-mark')).toHaveAttribute('title', "Lume and Mira's last runs here ended in an error.");
+
+  await rerender({ chat: { ...row, run_error_residents: [] }, accountId: 'house', visualTags: [tag] });
+  expect(screen.queryByTestId('run-error-mark')).toBeNull();
+  expect(screen.getByTestId('handoff-stuck-mark')).toBeInTheDocument();
 });
