@@ -667,6 +667,8 @@ Rails.application.routes.draw do
       resources :service_connections, only: [] do
         get "postiz/channels", to: "postiz#channels", as: :postiz_channels
         post "postiz/drafts", to: "postiz#draft", as: :postiz_drafts
+        post "postiz/posts", to: "postiz#create", as: :postiz_posts
+        post "postiz/uploads", to: "postiz#upload", as: :postiz_uploads
         resource :access_token, only: :show, controller: "service_connection_tokens"
         # Read-only forwarding for services whose tokens can't be scoped
         # down (Monzo). The adapter decides which paths are readable.
