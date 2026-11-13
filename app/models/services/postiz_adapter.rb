@@ -24,6 +24,10 @@ module Services
     end
     DEFAULT_BASE = "https://api.postiz.com/public/v1".freeze
     CHANNEL_FIELDS = %w[id name identifier picture disabled].freeze
+    # Verified against Postiz 23f29c458ab3cd79d785c1c45ed9c9888d5005bf:
+    # all.providers.settings.ts, linkedin.dto.ts and x.dto.ts. Public drafts
+    # still undergo provider settings validation before being stored.
+    TEXT_DRAFT_PROVIDERS = %w[x linkedin linkedin-page threads mastodon bluesky telegram nostr vk].freeze
 
     def connection_attributes(credentials:, user:)
       base = normalize_base(credentials["api_base"])
@@ -58,12 +62,17 @@ module Services
       channel = channels(base, token).find { |entry| entry["id"] == channel_id }
       raise Error, "Unknown Postiz channel" unless channel
       raise Error, "Postiz channel has no platform identifier" if channel["identifier"].blank?
+      unless TEXT_DRAFT_PROVIDERS.include?(channel["identifier"])
+        raise Error, "Text drafts for this Postiz platform are not supported; create the draft in Postiz"
+      end
+      settings = { __type: channel["identifier"] }
+      settings[:who_can_reply_post] = "everyone" if channel["identifier"] == "x"
 
       # Construct, never forward, the payload: no date, media, publish or settings
       # supplied by a resident can cross this boundary.
       result = request_json(base, token, "/posts", {
         type: "draft", shortLink: false, date: Time.current.utc.iso8601, tags: [],
-        posts: [ { integration: { id: channel_id }, settings: { __type: channel["identifier"] },
+        posts: [ { integration: { id: channel_id }, settings: settings,
                    value: [ { content: content, image: [] } ] } ]
       })
       # Do not forward provider objects (including nested credentials).
@@ -132,6 +141,7 @@ module Services
       result.filter_map do |channel|
         next unless channel.is_a?(Hash)
         channel.slice(*CHANNEL_FIELDS).select { |_key, value| value.is_a?(String) || value == true || value == false }
+          .merge("draft_supported" => TEXT_DRAFT_PROVIDERS.include?(channel["identifier"]))
       end
     end
 

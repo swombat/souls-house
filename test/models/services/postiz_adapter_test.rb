@@ -22,7 +22,7 @@ class Services::PostizAdapterTest < ActiveSupport::TestCase
     channels
     public_dns do
       result = @adapter.list_channels(@connection)
-      assert_equal [ { "id" => "c1", "name" => "Channel", "identifier" => "x" } ], result
+      assert_equal [ { "id" => "c1", "name" => "Channel", "identifier" => "x", "draft_supported" => true } ], result
       attributes = @adapter.connection_attributes(credentials: { "api_token" => "secret" }, user: users(:user_1))
       assert_equal "secret", attributes.dig(:credential_payload, "api_token")
       assert_not_includes attributes[:credential_metadata].to_json, "secret"
@@ -34,7 +34,7 @@ class Services::PostizAdapterTest < ActiveSupport::TestCase
     post = stub_request(:post, "#{@base}/posts").with do |request|
       body = JSON.parse(request.body)
       body["type"] == "draft" && body["date"].present? && body["shortLink"] == false && body["tags"] == [] &&
-        body.dig("posts", 0, "settings", "__type") == "x" &&
+        body.dig("posts", 0, "settings") == { "__type" => "x", "who_can_reply_post" => "everyone" } &&
         body.dig("posts", 0, "value", 0) == { "content" => "Hello", "image" => [] }
     end.to_return(body: [ { id: "draft1", token: "leaked" } ].to_json)
     public_dns do
@@ -50,6 +50,32 @@ class Services::PostizAdapterTest < ActiveSupport::TestCase
       end
     end
     assert_not_requested :any, /api.postiz.com/
+  end
+
+  test "unsupported provider is marked and rejected before a draft POST" do
+    %w[youtube reddit unknown-provider].each do |provider|
+      stub_request(:get, "#{@base}/integrations")
+        .to_return(body: [ { id: "c1", identifier: provider, draft_supported: true } ].to_json)
+      public_dns do
+        assert_equal false, @adapter.list_channels(@connection).first["draft_supported"]
+        error = assert_raises(Services::AdapterError) do
+          @adapter.create_draft(@connection, channel_id: "c1", content: "Hello")
+        end
+        assert_includes error.message, "not supported"
+      end
+    end
+    assert_not_requested :post, "#{@base}/posts"
+  end
+
+  test "LinkedIn drafts use its optional-only settings contract" do
+    stub_request(:get, "#{@base}/integrations")
+      .to_return(body: [ { id: "c1", identifier: "linkedin" } ].to_json)
+    post = stub_request(:post, "#{@base}/posts").with do |request|
+      body = JSON.parse(request.body)
+      body["type"] == "draft" && body.dig("posts", 0, "settings") == { "__type" => "linkedin" }
+    end.to_return(body: { postId: "draft1" }.to_json)
+    public_dns { @adapter.create_draft(@connection, channel_id: "c1", content: "Hello") }
+    assert_requested post, times: 1
   end
 
   test "does not follow redirects or expose error bodies" do

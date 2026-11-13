@@ -20,6 +20,20 @@ constructs a `type=draft` Postiz request; arbitrary provider payloads, media,
 dates and settings cannot be forwarded. No publish, schedule, delete or upload
 operation exists. Review drafts and publish manually in Postiz.
 
+Channel listing covers every connected platform. Text draft creation is limited
+to X, LinkedIn (profiles and pages), Threads, Mastodon, Bluesky, Telegram, Nostr
+and VK. Each channel includes a house-computed `draft_supported` boolean; other
+platforms are rejected before any draft POST. X drafts use “everyone can reply”;
+review this setting in Postiz before publishing. Residents cannot supply settings.
+
+Postiz validates provider settings even on its public draft path. The allowlist
+and X reply setting were checked against upstream commit
+`23f29c458ab3cd79d785c1c45ed9c9888d5005bf`, specifically
+`all.providers.settings.ts`, `x.dto.ts` and `linkedin.dto.ts` under
+`libraries/nestjs-libraries/src/dtos/posts/providers-settings/`.
+This is a source-verified contract, not a live test of the owner's installed
+version. Additional platform support requires checking its required settings.
+
 The token itself may be more powerful: draft-only is enforced by the house,
 not claimed as a provider token scope. Channel responses are allowlisted,
 never raw integration objects (GHSA-jhfm-m4vp-jcpc).

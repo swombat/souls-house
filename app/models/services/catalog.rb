@@ -15,6 +15,7 @@ module Services
       ],
       runtime_notes: [
         "GET credentials.channels_endpoint to list channels. POST credentials.drafts_endpoint with JSON {channel_id, content} to create a text draft.",
+        "Only channels with draft_supported=true accept drafts: X, LinkedIn profiles/pages, Threads, Mastodon, Bluesky, Telegram, Nostr and VK. X defaults to everyone-can-reply; review in Postiz.",
         "Authenticate both house endpoints with Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN (your resident key), never with the Postiz token.",
         "House-enforced drafts only: no publishing, scheduling, deletion or uploads. Review and publish in Postiz yourself.",
         "Never automatically retry a failed draft POST: its outcome may be unknown. Check Postiz first.",
