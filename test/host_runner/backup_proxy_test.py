@@ -75,6 +75,7 @@ class FakeDocker:
         self.fail = {}
         self.summary = {"message_type": "summary", "snapshot_id": SNAPSHOT, "total_bytes_processed": 12345}
         self.init_output = ""
+        self.backup_result = None
         self.checkpoint_bytes = None
         self.env_text = None
         self.temp_paths = []
@@ -131,6 +132,8 @@ class FakeDocker:
                 self.advance()
             if "init" in argv:
                 return (not self.init_output), self.init_output
+            if "backup" in argv and self.backup_result is not None:
+                return self.backup_result
             if "backup" in argv:
                 return True, 'ignored non-JSON line\n{"message_type":"status"}\n' + json.dumps(self.summary)
         if verb == "rm -f":
@@ -333,6 +336,41 @@ class RunBackupTest(unittest.TestCase):
                 self.run_backup()
             self.assertTrue(caught.exception.result["unpaused"])
             self.assertIsNone(caught.exception.result["snapshot_id"])
+
+    def test_restic_temp_files_go_to_the_cache_volume(self):
+        self.run_backup()
+        command = next(argv for argv, _ in self.docker.calls if "backup" in argv)
+        envs = [command[i + 1] for i, arg in enumerate(command) if arg == "--env"]
+        self.assertIn("TMPDIR=" + backup.CACHE_DST, envs)
+        mounts = [command[i + 1] for i, arg in enumerate(command) if arg == "--mount"]
+        cache = next(m for m in mounts if f"dst={backup.CACHE_DST}" in m.split(","))
+        self.assertNotIn("readonly", cache.split(","))
+        self.assertLess(command.index("--env"), command.index(backup.RESTIC_IMAGE))
+
+    def test_failed_backup_reports_exit_code_and_fixed_class_only(self):
+        stderr = ("open repository\nFatal: unable to save snapshot: "
+                  "write /tmp/restic-temp-pack-41: no space left on device\n/data/work/private-name")
+        cases = [
+            (backup.DockerOutput(stderr, 1), "restic backup failed (exit 1, no space left on device)"),
+            (backup.DockerOutput("Fatal: unexpected HTTP response (500): 500 Internal Server Error", 1),
+             "restic backup failed (exit 1, server response)"),
+            (backup.DockerOutput("Fatal: unable to create lock in backend: repository is already locked", 1),
+             "restic backup failed (exit 1, repository locked)"),
+            (backup.DockerOutput("", 137), "restic backup failed (exit 137, killed)"),
+            (backup.DockerOutput("Fatal: something new /data/work/private-name", 1),
+             "restic backup failed (exit 1, unclassified)"),
+            ("Docker deadline exceeded", "restic backup failed (deadline)"),
+            ("no exit code here", "restic backup failed (unclassified)"),
+        ]
+        for output, reason in cases:
+            with self.subTest(reason=reason):
+                self.docker = FakeDocker()
+                self.docker.backup_result = (False, output)
+                with self.assertRaises(backup.BackupFailed) as caught:
+                    self.run_backup()
+                self.assertEqual(str(caught.exception), reason)
+                self.assertNotIn("private-name", str(caught.exception))
+                self.assertTrue(caught.exception.result["unpaused"])
 
     def test_pause_failure_or_exception_still_attempts_unpause(self):
         for failure in ((False, "timed out"), lambda: (_ for _ in ()).throw(OSError("lost reply"))):
@@ -1100,6 +1138,14 @@ class BoundedDockerTest(unittest.TestCase):
         ], timeout=2)
         self.assertFalse(ok)
         self.assertEqual(output, "config file already exists")
+
+    def test_failed_command_carries_its_exit_code(self):
+        ok, output = backup.bounded_docker([sys.executable, "-c", "import sys; sys.exit(3)"], timeout=2)
+        self.assertFalse(ok)
+        self.assertEqual(output.returncode, 3)
+        ok, output = backup.bounded_docker([sys.executable, "-c", "pass"], timeout=2)
+        self.assertTrue(ok)
+        self.assertEqual(output.returncode, 0)
 
     def test_timeout_kills_and_reaps_process(self):
         before = time.monotonic()
