@@ -76,6 +76,9 @@ export function formValues(rhythm = {}, fallbackTimezone = 'UTC') {
     // purpose, room opens in room_id.
     room_choice: rhythm.room_choice ?? 'resident_default',
     room_id: rhythm.room_id ?? '',
+    // Run only when something new has arrived since the last run (#951).
+    quiet_gate: rhythm.quiet_gate ?? false,
+    quiet_gate_room_ids: [...(rhythm.quiet_gate_room_ids ?? [])],
   };
 }
 

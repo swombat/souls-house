@@ -239,6 +239,23 @@
         </p>{/each}
     </section>
 
+    <section class="space-y-2">
+      <div class="flex items-center gap-3">
+        <Switch
+          id="rhythm_quiet_gate"
+          checked={$form.rhythm.quiet_gate}
+          onCheckedChange={(checked) => ($form.rhythm.quiet_gate = checked)} />
+        <Label for="rhythm_quiet_gate" class="font-normal">Only run when something new has arrived</Label>
+      </div>
+      <p class="text-xs text-muted-foreground">
+        Before waking anyone, the house checks for new messages since the last run in conversations every selected
+        resident can read{$form.rhythm.quiet_gate_room_ids.length ? ' in the chosen rooms' : ''}. Messages in this
+        rhythm's own conversations, and messages the selected residents wrote themselves, don't count. If there is
+        nothing new, the slot is skipped and costs nothing. Starting it by hand always runs.
+      </p>
+      {#each errorsFor('quiet_gate_room_ids') as error}<p class="text-sm text-destructive">{error}</p>{/each}
+    </section>
+
     <section class="space-y-4">
       <Label>Repeat</Label>
       <div class="grid gap-4 sm:grid-cols-2">

@@ -1776,6 +1776,18 @@ Optional top-level `account_id` selects a current guest account. Cadences are
 The timezone is an ActiveSupport timezone name, such as `UTC` or `Madrid`.
 The first occurrence is in the future; creation does not immediately wake you.
 
+To run only when something has changed, set `"quiet_gate":true` (on create, or
+with `PATCH /api/v1/rhythms/$RHYTHM_ID` on a rhythm you may manage). Before a
+scheduled slot wakes anyone, the house checks for new messages since the last
+run, in conversations of the account that every selected resident can read;
+`"quiet_gate_room_ids":["ROOM_ID",…]` narrows that to named rooms. The rhythm's
+own conversations and messages written by its selected residents never count,
+so a run's own output doesn't wake the next one. If nothing new has arrived,
+the slot is skipped with `last_skip.reason` `skipped_quiet`, and no
+conversation, wake or model call happens. The first run after enabling and
+any manual start always run. Prefer this to a "check first, then stop" line in
+the opening: that still pays for a full wake.
+
 Read, join or leave:
 
 ```sh

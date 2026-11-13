@@ -34,6 +34,12 @@ describe('rhythms helpers', () => {
     expect(values).toMatchObject({ cadence: 'weekly', append_date: true, timezone: 'Europe/Madrid', resident_ids: [] });
   });
 
+  it('keeps the quiet gate off by default and carries its rooms through an edit', () => {
+    expect(formValues({})).toMatchObject({ quiet_gate: false, quiet_gate_room_ids: [] });
+    const saved = formValues({ quiet_gate: true, quiet_gate_room_ids: ['abcXYZ'] });
+    expect(submittableValues(saved)).toMatchObject({ quiet_gate: true, quiet_gate_room_ids: ['abcXYZ'] });
+  });
+
   it('blanks schedule fields that do not apply to the cadence', () => {
     const daily = submittableValues({ ...formValues({}), cadence: 'daily' });
     expect(daily).toMatchObject({ weekday: null, month_day: null, month: null });
