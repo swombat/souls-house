@@ -104,7 +104,7 @@ group :test do
   gem "minitest-mock"
   # Test runner used by bin/test and CI: forked workers, class scheduling,
   # timeouts and flaky-test retries. `bin/rails test` still works as a fallback.
-  gem "padded_cell", "~> 0.2.0"
+  gem "padded_cell", "~> 0.4.0"
 
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
