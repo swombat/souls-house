@@ -45,6 +45,31 @@ output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
 creation tokens use the input rate. Text pricing only; audio/video input is not
 modelled.
 
+Gemini 4 Hydrogen (added November 13, 2026; announced November 12): flat input
+1.50, cache read 0.075, output 7.50 per million tokens. Verified November 13
+against OpenRouter's public
+`https://openrouter.ai/api/v1/models/google/gemini-4-hydrogen/endpoints`
+(standard Google global / Google AI Studio endpoints) and Google's
+`https://ai.google.dev/gemini-api/docs/whats-new-gemini-4-hydrogen`.
+Google confirms the direct id `gemini-4-hydrogen`, flat pricing across the full
+1M context window, and $0.075/M implicit cache reads (95% discount). No
+introductory expiry, December doubling, or context-length tier is applied.
+Flex, priority and regional premiums are not modelled.
+Direct explicit caching (`cachedContents` and `caches.create`) is unsupported;
+unexpected direct creation tokens conservatively fall back to the input rate,
+not a supported cache-write operation. Routed cache writes use only
+OpenRouter's quoted $0.0833333333333333/M token rate, not a Google direct write
+price. OpenRouter reports no implicit caching on its endpoints, unlike the
+direct API. Storage-time charges are not modelled. Lume's November 13 check with
+the house's system Google key returned GET model 200, confirming the direct ID.
+Generation returned 402 (depleted prepayment) at default, low, high and xhigh,
+as did Carbon: direct generation is unverified, blocked by the account balance,
+not demonstrated to be a Hydrogen incompatibility. The Google-pinned OpenRouter
+generation smoke test returned 200 (souls.house YZxogj, YWbDdl).
+Google's guide explicitly lists low, medium, high (default), and xhigh
+thinking levels and rejects minimal. Hydrogen has its own four-level profile,
+not Carbon/Argon's three-level profile; no off or numeric budget is exposed.
+
 Gemini 4 Carbon (added November 11, 2026): input 2, cache read 0.1, output 10
 per million tokens through November 30, 2026; input 4, cache read 0.2, output
 20 from December 1, selected by the interaction's date, not today's date.

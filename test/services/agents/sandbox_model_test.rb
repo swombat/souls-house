@@ -43,7 +43,8 @@ module Agents
         "openai/gpt-6-astra" => [ "openai", "gpt-6-astra" ],
         "google/gemini-3.8-flash" => [ "gemini", "gemini-3.8-flash" ],
         "google/gemini-4-argon" => [ "gemini", "gemini-4-argon" ],
-        "google/gemini-4-carbon" => [ "gemini", "gemini-4-carbon" ]
+        "google/gemini-4-carbon" => [ "gemini", "gemini-4-carbon" ],
+        "google/gemini-4-hydrogen" => [ "gemini", "gemini-4-hydrogen" ]
       }.each do |model_id, (provider, direct_id)|
         agent = agents(:research_assistant)
         agent.model_id = model_id

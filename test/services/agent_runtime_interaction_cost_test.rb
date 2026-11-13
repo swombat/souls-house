@@ -301,6 +301,38 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     end
   end
 
+  test "Gemini 4 Hydrogen uses flat standard pricing on routed and direct IDs" do
+    [ [ "openrouter", "google/gemini-4-hydrogen", "0.08333333" ],
+      [ "gemini", "gemini-4-hydrogen", "1.5" ] ].each do |provider, model, write_cost|
+      %w[2026-11-12 2026-11-30 2026-12-01 2027-01-01].each do |date|
+        cost = build_interaction(
+          provider: provider, model: model,
+          uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000,
+          started_at: Time.zone.parse("#{date} 12:00")
+        ).estimated_cost
+        assert_equal "estimated", cost[:status], model
+        assert_equal "google/gemini-4-hydrogen", cost[:pricing_model], model
+        assert_equal "2026-11-13", cost[:pricing_as_of], model
+        assert_equal "1.5", cost.dig(:components_usd, :uncached_input), model
+        assert_equal "7.5", cost.dig(:components_usd, :output), model
+        assert_equal "0.075", cost.dig(:components_usd, :cache_read_input), model
+        assert_equal write_cost, cost.dig(:components_usd, :cache_creation_input), model
+        assert_equal BigDecimal("9.075") + BigDecimal(write_cost), BigDecimal(cost[:amount_usd]), model
+      end
+    end
+  end
+
+  test "Gemini 4 Hydrogen price rule does not swallow other model IDs" do
+    %w[
+      google/gemini-4-hydrogen-preview google/gemini-4-hydrogen-pro
+      gemini-4-hydrogen-preview other/gemini-4-hydrogen
+      other/google/gemini-4-hydrogen
+    ].each do |model|
+      assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
+    end
+  end
+
   test "Gemini 4 Carbon price rule does not swallow other model IDs" do
     %w[google/gemini-4-carbon-preview google/gemini-4-carbon-pro other/gemini-4-carbon].each do |model|
       assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model

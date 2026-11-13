@@ -81,6 +81,25 @@ class ChatThinkingTest < ActiveSupport::TestCase
     assert Chat.supports_audio_input?("google/gemini-3.8-flash")
   end
 
+  test "Gemini 4 Hydrogen uses the Google group and its four thinking levels" do
+    id = "google/gemini-4-hydrogen"
+    entries = Chat::MODELS.select { |model| model[:model_id] == id }
+    assert_equal [ "Google" ], entries.pluck(:group)
+    assert_equal "Gemini 4 Hydrogen", entries.first[:label]
+    assert_equal "gemini-4-hydrogen", Chat.provider_model_id(id)
+    assert Chat.supports_thinking?(id)
+    config = Chat.reasoning_effort_config(id)
+    assert_equal "Thinking level", config[:label]
+    assert_equal "high", config[:default]
+    efforts = config[:options].pluck(:value)
+    assert_equal %w[low medium high xhigh], efforts
+    refute_includes efforts, "minimal"
+    refute_includes efforts, "none"
+    %w[google/gemini-4-carbon google/gemini-4-argon].each do |sibling|
+      assert_equal %w[low medium high], Chat.reasoning_effort_config(sibling)[:options].pluck(:value)
+    end
+  end
+
   test "new models expose their reasoning profiles" do
     astra = Chat.reasoning_effort_config("openai/gpt-6-astra")
     assert_equal "medium", astra[:default]

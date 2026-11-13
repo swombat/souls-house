@@ -274,6 +274,13 @@ module Chat::ModelSelection
 
     # Google
     {
+      model_id: "google/gemini-4-hydrogen",
+      label: "Gemini 4 Hydrogen",
+      group: "Google",
+      provider_model_id: "gemini-4-hydrogen",
+      thinking: { supported: true }
+    },
+    {
       model_id: "google/gemini-4-carbon",
       label: "Gemini 4 Carbon",
       group: "Google",
@@ -612,6 +619,11 @@ module Chat::ModelSelection
       default: "high",
       options: %i[low medium high]
     },
+    gemini_hydrogen: {
+      label: "Thinking level",
+      default: "high",
+      options: %i[low medium high xhigh]
+    },
     grok: {
       label: "Reasoning effort",
       default: "high",
@@ -727,6 +739,8 @@ module Chat::ModelSelection
         REASONING_PROFILES[:anthropic]
       when %r{\Agoogle/gemini-(?:3\.[5-8]-flash|3\.1-flash|3-flash)}
         REASONING_PROFILES[:gemini_full]
+      when "google/gemini-4-hydrogen"
+        REASONING_PROFILES[:gemini_hydrogen]
       when %r{\Agoogle/gemini-(?:4-carbon|4-argon|3\.1-pro|3-pro)}
         REASONING_PROFILES[:gemini_pro]
       when %r{\Ax-ai/grok-.*multi-agent}

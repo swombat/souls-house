@@ -16,6 +16,8 @@ class AgentRuntimeInteractionCost
   NOVEMBER_9_MODELS = %w[anthropic/claude-fable-5.2].freeze
   NOVEMBER_11_PRICING_AS_OF = Date.new(2026, 11, 11)
   NOVEMBER_11_MODELS = %w[google/gemini-4-carbon].freeze
+  NOVEMBER_13_PRICING_AS_OF = Date.new(2026, 11, 13)
+  NOVEMBER_13_MODELS = %w[google/gemini-4-hydrogen].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -68,6 +70,7 @@ class AgentRuntimeInteractionCost
     [ /(?:openai\/)?gpt-4o-mini(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o-mini", 0.15, 0.6 ],
     [ /(?:openai\/)?gpt-4o(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o", 2.5, 10 ],
 
+    [ /\A(?:google\/)?gemini-4-hydrogen\z/, "google/gemini-4-hydrogen", 1.5, 7.5 ],
     [ /\A(?:google\/)?gemini-4-carbon\z/, "google/gemini-4-carbon", 2, 10 ],
     [ /\A(?:google\/)?gemini-4-argon\z/, "google/gemini-4-argon", 2, 10 ],
     [ /\A(?:google\/)?gemini-3\.8-flash\z/, "google/gemini-3.8-flash", 0.75, 3.75 ],
@@ -118,6 +121,7 @@ class AgentRuntimeInteractionCost
     "openai/gpt-6.1-terra" => 0.05,
     "google/gemini-4-argon" => 0.1,
     "google/gemini-4-carbon" => 0.1,
+    "google/gemini-4-hydrogen" => 0.075,
     "anthropic/claude-opus-5.5" => 0.2,
     "anthropic/claude-fable-5.2" => 0.2,
     "google/gemini-3.8-flash" => 0.075,
@@ -237,7 +241,8 @@ class AgentRuntimeInteractionCost
 
   def pricing_as_of(price)
     model = price&.dig(:model)
-    date = if NOVEMBER_11_MODELS.include?(model) then NOVEMBER_11_PRICING_AS_OF
+    date = if NOVEMBER_13_MODELS.include?(model) then NOVEMBER_13_PRICING_AS_OF
+    elsif NOVEMBER_11_MODELS.include?(model) then NOVEMBER_11_PRICING_AS_OF
     elsif NOVEMBER_9_MODELS.include?(model) then NOVEMBER_9_PRICING_AS_OF
     elsif NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF
     elsif OCTOBER_MODELS.include?(model) then OCTOBER_PRICING_AS_OF
@@ -248,6 +253,12 @@ class AgentRuntimeInteractionCost
   end
 
   def cache_creation_rate(price)
+    if interaction.provider == "openrouter" && price[:model] == "google/gemini-4-hydrogen"
+      # OpenRouter standard endpoint quote only; direct explicit caching is
+      # unsupported. Unexpected direct creation tokens retain the input fallback.
+      return BigDecimal("0.0833333333333333")
+    end
+
     if interaction.provider == "openrouter" && price[:model] == "google/gemini-3.8-flash"
       # The routed catalogue quotes a token write rate; the direct API instead
       # documents storage by token-hour. Do not apply one route's rate to both.
