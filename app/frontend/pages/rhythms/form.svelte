@@ -359,7 +359,8 @@
             onCheckedChange={(checked) => ($form.rhythm.essential = checked)} />
         </div>
         <p class="text-xs text-muted-foreground">
-          Only an owner or account admin can grant this exemption. Other availability checks still apply.
+          Only an owner or account admin can grant this exemption. It does not override a guest's home-account brake.
+          Other availability checks still apply.
         </p>
         {#each errorsFor('essential') as error}<p class="text-sm text-destructive">{error}</p>{/each}
       </section>

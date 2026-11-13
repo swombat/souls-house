@@ -55,7 +55,9 @@ class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
     @commitment.update!(essential: true)
     @commitment.stub(:account_id, accounts(:team_account).id) do
       assert_equal "skipped_allowance", Agents::AllowanceBrake.commitment_reason(@commitment, chat: @chat)
+      assert CommitmentSweepJob.new.send(:recovery_limited?, @commitment)
     end
+    assert_not CommitmentSweepJob.new.send(:recovery_limited?, @commitment)
   end
 
   test "scheduled commitment stays owed without messages or wakes and essential can proceed" do

@@ -122,6 +122,11 @@
       and wakes {agentName}, who decides what makes sense then. A delivered commitment is not a finished task. {agentName}
       makes and manages these; you can reschedule or cancel one here, or ask {agentName} in a conversation.
     </p>
+    {#if canManageEssential}
+      <p class="text-xs text-muted-foreground">
+        An essential flag does not override a guest's home-account allowance brake.
+      </p>
+    {/if}
   </div>
 
   {#if scheduled.length === 0}

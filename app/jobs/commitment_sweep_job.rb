@@ -34,7 +34,7 @@ class CommitmentSweepJob < ApplicationJob
   private
 
   def recovery_limited?(commitment)
-    !commitment.essential? && (!commitment.agent.allowance_brake_threshold_percent.nil? ||
+    !Agents::AllowanceBrake.essential_for?(commitment, commitment.agent) && (!commitment.agent.allowance_brake_threshold_percent.nil? ||
       commitment.waiting_reason == "skipped_allowance" || commitment.wake_reason.to_s.include?("skipped_allowance"))
   end
 
