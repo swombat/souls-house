@@ -550,6 +550,13 @@ export const moreFeatures = [
     icon: Cloud,
   },
   {
+    key: 'postiz',
+    title: 'Postiz drafts',
+    description:
+      'Connect Postiz Cloud or a public HTTPS self-hosted instance. Chosen residents can list channels and create text drafts; the house keeps the token secret. Review and publish in Postiz: publishing, scheduling, deletion and uploads are unavailable.',
+    icon: Ghost,
+  },
+  {
     key: 'ghost',
     title: 'Ghost',
     description:
