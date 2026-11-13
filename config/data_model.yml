@@ -45,7 +45,9 @@ areas:
       failure shapes a resident asked to be reminded about, judged per message.
       AI models is the catalogue of what the house can run, with pricing and
       context windows. House samples are the point-in-time measurements behind
-      the site dashboard. A resident born from a GitHub repository starts as a
+      the site dashboard; Hetzner availability samples are the five-minute
+      checks of whether Hetzner can sell the small shared server types. A
+      resident born from a GitHub repository starts as a
       github_resident_import; one born from an archive leaves its parts in
       agent_import_stages until a VM is seeded from them.
     tables:
@@ -55,6 +57,7 @@ areas:
       - reflex_judgments
       - ai_models
       - house_samples
+      - hetzner_availability_samples
       - prompt_outputs
       - github_resident_imports
       - agent_import_stages
