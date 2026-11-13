@@ -24,7 +24,7 @@ module AgentRuntimeInteraction::LiveActivity
     # A deadline (a message dispatch's expiry) caps the preparation window, so
     # a run reserved late cannot start later than its request allowed.
     def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil,
-      stalled_thread_sweep: nil, wake_source_kinds: [], requested_by_user: nil, requested_at: nil)
+      stalled_thread_sweep: nil, provider_retry_of: nil, wake_source_kinds: [], requested_by_user: nil, requested_at: nil)
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         requested_at ||= message_dispatch&.accepted_at || Time.current
@@ -47,6 +47,7 @@ module AgentRuntimeInteraction::LiveActivity
             response_requested_at: requested_at,
             follow_through_of: follow_through_of,
             stalled_thread_sweep: stalled_thread_sweep,
+            provider_retry_of: provider_retry_of,
             wake_source_kinds: wake_source_kinds,
             requested_by_user: requested_by_user,
             enqueue_dispatch: enqueue

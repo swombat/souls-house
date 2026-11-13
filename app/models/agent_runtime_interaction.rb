@@ -25,6 +25,11 @@ class AgentRuntimeInteraction < ApplicationRecord
   # A follow-through nudge points at the run it continues (FollowThroughCheck).
   belongs_to :follow_through_of, class_name: "AgentRuntimeInteraction", optional: true
   belongs_to :stalled_thread_sweep, optional: true
+  # The failed run a provider-edge retry or recovery wake continues
+  # (ProviderEdgeRetry); unique, so one failed run gets at most one.
+  belongs_to :provider_retry_of, class_name: "AgentRuntimeInteraction", optional: true
+  has_one :provider_retry, class_name: "AgentRuntimeInteraction", foreign_key: :provider_retry_of_id,
+    inverse_of: :provider_retry_of, dependent: :nullify
   # The person whose button press reserved this run (BusyRunRetryJob).
   belongs_to :requested_by_user, class_name: "User", optional: true
   has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,

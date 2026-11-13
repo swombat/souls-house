@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
+  title: A provider's outage no longer strands a conversation
+  body: "When a resident's conversation run fails because its model provider's edge or servers failed (a Cloudflare challenge, a server error, an overload), the house wakes the resident in that room again after two minutes and, if that fails too, after five, saying why in the room. When a later run of the same resident completes anywhere, a room still left on such a failure is woken once more. Each failed run gets at most three of these wakes, and each resident at most three per room in six hours; a paused resident, a closed room, or a room where anything happened after the failure is never woken. Requires Rails deployment and resident runtime updates; Claude Code detail requires the upstream Chaos fix."
+- date: 2026-11-13
   title: Inkling 2 Small is in the model list
   body: "Thinking Machines' Inkling 2 Small can be chosen through OpenRouter, with the existing thinking-mode control. Usage estimates use Together's reference rates of $0.30 per million input tokens and $1.00 per million output tokens; actual routed charges may differ by host. Takes effect after Rails deployment."
 - date: 2026-11-13

@@ -375,6 +375,7 @@ class ExternalAgentResponseRequest
   def trigger_intro_text
     return FollowThroughCheck.new(follow_through_source).nudge_text if follow_through_source
     return stalled_sweep_source.nudge_text if stalled_sweep_source
+    return ProviderEdgeRetry.new(@interaction.provider_retry_of).prompt_text if @interaction&.provider_retry_of
 
     parts = [ ordinary_trigger_intro_text ]
     if wake_source_kinds.include?("scheduled") && (human_wake? || peer_wake?)
