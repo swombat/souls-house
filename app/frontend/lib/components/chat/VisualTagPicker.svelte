@@ -1,6 +1,6 @@
 <script>
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
-  import { Alarm, HandPalm, Tag, Check } from 'phosphor-svelte';
+  import { Alarm, HandPalm, Tag, Check, WarningCircle } from 'phosphor-svelte';
   import { reloadProps } from '$lib/cable';
   import { visualTagColour } from '$lib/visual-tags';
   import VisualTagIcon from './VisualTagIcon.svelte';
@@ -11,11 +11,14 @@
   // The clock then sits faint behind the tag, its right third hidden under it, or in the
   // tag's place when there is no tag. It is absolutely placed, so nothing else in the row moves.
   // stuckLabel: set when the conversation is stuck at the resident handoff limit
-  // (Daniel, 11 Nov, jaMvBj). A red hand then takes the clock's slot, in the same
-  // place, and wins over a waiting commitment.
+  // (Daniel, 11 Nov, jaMvBj). A yellow hand then takes the clock's slot, in the same
+  // place, and wins over a waiting commitment (yellow since 13 Nov, jgDWoJ).
+  // errorLabel: set when a resident's last run in this conversation ended in an
+  // error (Daniel, 13 Nov, jgDWoJ). A red circled exclamation mark then takes the
+  // same slot and wins over both.
   // faintEmpty: in the sidebar an untagged row shows a barely-there tag outline; the
   // conversation header passes false so the button is findable there.
-  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', faintEmpty = true } = $props();
+  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', errorLabel = '', faintEmpty = true } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -44,7 +47,8 @@
     optimistic !== undefined ? optimistic : confirmed && !supersedes(chat, confirmed) ? confirmed.tag : chat.visual_tag
   );
   const label = $derived(current?.label || 'No tag');
-  const markLabel = $derived(stuckLabel || commitmentLabel);
+  const markLabel = $derived(errorLabel || stuckLabel || commitmentLabel);
+  const markKind = $derived(errorLabel ? 'error' : stuckLabel ? 'stuck' : 'commitment');
   const title = $derived(markLabel ? `${label} · ${markLabel}` : label);
 
   $effect(() => {
@@ -104,19 +108,23 @@
        Behind a tag: 10px to the left with the right 6px clipped, so 10 of 16px show
        and the clipped edge meets the tag. With no tag: in the tag's place, giving way
        to the tag outline on hover so the picker still reads as a picker. The stuck
-       hand sits in the same place, red rather than faint. -->
+       hand (yellow) and the error mark (red) sit in the same place, coloured rather than faint. -->
   <span
-    data-testid={stuckLabel ? 'handoff-stuck-mark' : 'commitment-mark'}
+    data-testid={{ error: 'run-error-mark', stuck: 'handoff-stuck-mark', commitment: 'commitment-mark' }[markKind]}
     data-placement={current ? 'behind-tag' : 'in-place'}
     role="img"
     aria-label={markLabel}
     title={markLabel}
-    class="pointer-events-none absolute top-2 inline-flex {stuckLabel
+    class="pointer-events-none absolute top-2 inline-flex {markKind === 'error'
       ? 'text-red-600 dark:text-red-500'
-      : 'text-muted-foreground/40'} {current
+      : markKind === 'stuck'
+        ? 'text-yellow-500 dark:text-yellow-400'
+        : 'text-muted-foreground/40'} {current
       ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
       : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
-    {#if stuckLabel}
+    {#if markKind === 'error'}
+      <WarningCircle size={16} weight="bold" />
+    {:else if markKind === 'stuck'}
       <HandPalm size={16} weight="bold" />
     {:else}
       <Alarm size={16} weight="bold" />

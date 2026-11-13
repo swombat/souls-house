@@ -24,9 +24,19 @@ export function shortDate(dateString) {
 // and when, in the viewer's own clock. The commitment's text stays on the
 // resident's page; the list only says that something will wake here.
 // A conversation stuck at the resident handoff limit (Daniel, 11 Nov, jaMvBj):
-// its red hand takes the commitment clock's place.
+// its hand takes the commitment clock's place (yellow since 13 Nov, jgDWoJ).
 export function handoffStuckLabel(stuck) {
   return stuck ? 'Stuck: residents reached the handoff limit here. Post a message and they can carry on.' : '';
+}
+
+// A resident whose last run in this conversation ended in an error (Daniel,
+// 13 Nov, jgDWoJ): a red circled exclamation mark, which wins over the hand
+// and the clock. names: the residents whose latest run here failed.
+export function runErrorLabel(names) {
+  if (!names?.length) return '';
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const runs = names.length === 1 ? 'last run here' : 'last runs here';
+  return `${who}'s ${runs} ended in an error.`;
 }
 
 export function commitmentMarkLabel(commitment, locale = undefined) {

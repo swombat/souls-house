@@ -330,6 +330,7 @@ class ChatsController < ApplicationController
     json = @chat.as_json
     json[:next_commitment] = Chat.waiting_commitments_for([ @chat ])[@chat.id]
     json[:handoff_stuck] = Chat.handoff_stuck_ids_for([ @chat ]).include?(@chat.id)
+    json[:run_error_residents] = Chat.run_error_residents_for([ @chat ])[@chat.id] || []
     if @chat.active_whiteboard && !@chat.active_whiteboard.deleted?
       json[:active_whiteboard] = {
         id: @chat.active_whiteboard.id,
