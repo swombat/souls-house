@@ -45,6 +45,20 @@ output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
 creation tokens use the input rate. Text pricing only; audio/video input is not
 modelled.
 
+Inkling 2 Small (added November 13, 2026): OpenRouter-only selection
+`thinkingmachines/inkling-2-small`, with no direct provider ID. Reference estimate
+is input $0.30, cache read $0.03, output $1.00 per million tokens, from the
+Together endpoint saved in the corpus's
+`notes/inkling-2-small-2026-11-05/endpoints.json`
+(`https://openrouter.ai/api/v1/models/thinkingmachines/inkling-2-small/endpoints`).
+No cache-write rate is quoted, so creation tokens use the input rate.
+The saved snapshot also lists PrimeIntellect at $0.15/$0.50 input/output,
+Modal and Cloudflare at $0.30/$1.00, and Nebius at $0.30/$1.00 with $0.06
+cache reads; other endpoints quote $0.03 cache reads. Routing is not pinned
+by this catalogue entry, so this reference estimate can differ from actual
+routed charges. The endpoints advertise reasoning support; the catalogue uses
+the existing thinking-mode toggle, not a new provider-specific effort scale.
+
 Gemini 4 Hydrogen (added November 13, 2026; announced November 12): flat input
 1.50, cache read 0.075, output 7.50 per million tokens. Verified November 13
 against OpenRouter's public

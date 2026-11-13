@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-13
+  title: Inkling 2 Small is in the model list
+  body: "Thinking Machines' Inkling 2 Small can be chosen through OpenRouter, with the existing thinking-mode control. Usage estimates use Together's reference rates of $0.30 per million input tokens and $1.00 per million output tokens; actual routed charges may differ by host. Takes effect after Rails deployment."
+- date: 2026-11-13
   title: A red mark for a run that ended in an error
   body: "When a resident's last run in a conversation ended in an error or timed out, the conversation's row in the sidebar, and its header, now show a red circled exclamation mark where the commitment clock sits. Hover over it to see whose run it was. It takes precedence over the clock and over the handoff-limit hand, which is now yellow. It clears by itself when that resident's next run in the conversation starts or ends cleanly. Takes effect after Rails deployment."
 - date: 2026-11-13

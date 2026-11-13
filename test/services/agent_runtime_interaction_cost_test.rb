@@ -69,6 +69,30 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "1.305", cost[:amount_usd]
   end
 
+  test "estimates Inkling 2 Small using the Together reference and cache read rate" do
+    interaction = build_interaction(
+      provider: "openrouter",
+      model: "thinkingmachines/inkling-2-small",
+      uncached_input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 1_000_000,
+      output_tokens: 1_000_000
+    )
+
+    cost = interaction.estimated_cost
+
+    assert_equal "estimated", cost[:status]
+    assert_equal "openrouter", cost[:pricing_source]
+    assert_equal "thinkingmachines/inkling-2-small", cost[:pricing_model]
+    assert_equal "2026-11-13", cost[:pricing_as_of]
+    assert_equal "1.33", cost[:amount_usd]
+    assert_equal "0.03", cost.dig(:components_usd, :cache_read_input)
+
+    %w[thinkingmachines/inkling-small thinkingmachines/inkling-2-small-pro other/inkling-2-small].each do |model|
+      assert_equal "unavailable", build_interaction(provider: "openrouter", model: model).estimated_cost[:status], model
+    end
+  end
+
   test "does not double charge reasoning tokens already included in output" do
     interaction = build_interaction(
       provider: "openai",

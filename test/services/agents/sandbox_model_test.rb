@@ -78,6 +78,17 @@ module Agents
       end
     end
 
+    test "Inkling 2 Small retains its OpenRouter ID regardless of direct key availability" do
+      agent = agents(:research_assistant)
+      agent.model_id = "thinkingmachines/inkling-2-small"
+      [ true, false ].each do |available|
+        ResolvesProvider.stub(:api_key_available?, available) do
+          assert_equal({ provider: "openrouter", model: agent.model_id }, Agents::Sandbox.chaos_selection_for(agent))
+        end
+      end
+      assert_nil Agents::Sandbox.subscription_provider_for(agent)
+    end
+
     test "uses provider model id for chaos runtime when configured" do
       agent = agents(:research_assistant)
       agent.model_id = "anthropic/claude-opus-4.7"
