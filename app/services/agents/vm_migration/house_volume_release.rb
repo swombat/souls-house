@@ -121,9 +121,10 @@ module Agents
           end
         end
 
-        list = list.uniq(&:name).reject { |candidate| live.include?(candidate.name) }
+        # Every recorded name is checked for its role before duplicates go,
+        # so a malformed entry is refused, never hidden behind a good one.
         list.each { |candidate| check_own!(candidate, derived) }
-        list
+        list.uniq(&:name).reject { |candidate| live.include?(candidate.name) }
       end
 
       # Removes the closed list, one volume at a time, each in two committed
