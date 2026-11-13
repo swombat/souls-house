@@ -40,12 +40,23 @@ class ProviderEdgeClassificationTest(unittest.TestCase):
         self.assertEqual(shim.classify_provider_error(failed(stderr="authentication failed: 403 Forbidden"),
                                                       "anthropic"), "auth_expired")
         self.assertIsNone(shim.classify_provider_error(failed(stderr="fetching cloudflare.com failed"), "anthropic"))
+        # Generic page words are not Cloudflare evidence (Mira's probe).
+        self.assertIsNone(shim.classify_provider_edge(
+            failed(stderr="API Error: 403 Attention required by your account administrator")))
+        self.assertIsNone(shim.classify_provider_edge(failed(stderr="API Error: 403 Just a moment...")))
+        self.assertEqual(shim.classify_provider_edge(failed(stderr="API Error: 403 Forbidden cf-ray: 8f1a2b3c4d5e6f70-MAD")),
+                         "provider_challenge")
 
     def test_provider_5xx_and_overload_are_transient(self):
         for text in ("API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}",
-                     "API Error: 503 Service Unavailable", "overloaded_error"):
+                     "API Error: 503 Service Unavailable", "overloaded_error",
+                     "API Error: 520 <none>", "API Error: 522", "API Error: 524 A timeout occurred",
+                     "API Error: Connection error.", "API Error: Request timed out.",
+                     "API Error (request failed): read ECONNRESET", "API Error: socket hang up"):
             self.assertEqual(shim.classify_provider_error(failed(stderr=text), "anthropic"), "provider_transient", text)
-        self.assertIsNone(shim.classify_provider_error(failed(stderr="exit status 503 from my script"), "anthropic"))
+        for text in ("exit status 503 from my script", "read ECONNRESET", "socket hang up in my server",
+                     "API Error: 404 not_found_error", "API Error: 400 invalid_request_error"):
+            self.assertIsNone(shim.classify_provider_edge(failed(stderr=text)), text)
 
     def test_stdout_never_classifies_the_provider_edge(self):
         # The model can write these words; only the runtime's own report counts.

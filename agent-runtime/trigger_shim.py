@@ -2817,16 +2817,22 @@ def classify_provider_error(response, provider):
 
 
 _PROVIDER_CHALLENGE_STATUS = re.compile(r"\b403\b")
-_PROVIDER_CHALLENGE_PAGE = re.compile(
-    r"cloudflare|attention required!?|\bcf-ray\b|\bcf-chl|just a moment\.\.\.", re.IGNORECASE)
+# Evidence that names Cloudflare itself: generic page words ("Attention
+# Required", "Just a moment") also appear in other providers' 403s.
+_PROVIDER_CHALLENGE_PAGE = re.compile(r"\bcloudflare\b|\bcf-ray\b|\bcf[-_]chl", re.IGNORECASE)
+# A provider 5xx (Cloudflare's 520-524 included) or overload, or a
+# connection the provider dropped, as the CLI reports a failed API request.
 _PROVIDER_TRANSIENT = re.compile(
-    r"\bAPI Error:?\s*(?:500|502|503|504|529)\b|\boverloaded_error\b|\"type\"\s*:\s*\"overloaded\"",
+    r"\bAPI Error:?\s*5\d\d\b|\boverloaded_error\b|\"type\"\s*:\s*\"overloaded\"|"
+    r"\bAPI Error:?\s*(?:Connection error|Request timed out)|"
+    r"\bAPI Error\b[^\n]{0,120}?\b(?:ECONNRESET|ETIMEDOUT|EPIPE|socket hang up)\b",
     re.IGNORECASE)
 
 
 def classify_provider_edge(response):
     """provider_challenge for a 403 served as a Cloudflare challenge page,
-    provider_transient for a provider 5xx or overload; None otherwise.
+    provider_transient for a provider 5xx, overload or dropped API
+    connection; None otherwise.
 
     Read only from the runtime's failure and stderr: both are written by the
     runtime about the request, not by the model."""
