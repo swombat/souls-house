@@ -377,7 +377,9 @@ accessories:
     # No public port. Kamal's private network supplies souls-house-comms-telegram.
 <% end %>
   postgres:
-    image: postgres:16.16-bookworm # Use the correct version for your app
+    # PostgreSQL 16.16 / Debian 12, with pgvector 0.8.7. Keep the OS/collation
+    # provider unchanged; activate vector per database, not in shared templates.
+    image: pgvector/pgvector:0.8.7-pg16-bookworm@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
     host: <%= house_host %>
     env:
       clear:
