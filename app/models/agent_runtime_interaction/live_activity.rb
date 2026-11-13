@@ -24,7 +24,7 @@ module AgentRuntimeInteraction::LiveActivity
     # A deadline (a message dispatch's expiry) caps the preparation window, so
     # a run reserved late cannot start later than its request allowed.
     def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil,
-      stalled_thread_sweep: nil, wake_source_kinds: [], requested_by_user: nil, requested_at: nil)
+      stalled_thread_sweep: nil, provider_retry_of: nil, wake_source_kinds: [], requested_by_user: nil, requested_at: nil)
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         requested_at ||= message_dispatch&.accepted_at || Time.current
@@ -47,6 +47,7 @@ module AgentRuntimeInteraction::LiveActivity
             response_requested_at: requested_at,
             follow_through_of: follow_through_of,
             stalled_thread_sweep: stalled_thread_sweep,
+            provider_retry_of: provider_retry_of,
             wake_source_kinds: wake_source_kinds,
             requested_by_user: requested_by_user,
             enqueue_dispatch: enqueue
@@ -71,6 +72,7 @@ module AgentRuntimeInteraction::LiveActivity
     return claim_released_wake! if released_pending_wake
     return claim_handoff! if message_handoffs.exists?
     return claim_stalled_sweep! if stalled_thread_sweep_id
+    return claim_provider_retry! if provider_retry_of_id
     return claim_first_conversation! if Agent.exists?(first_conversation_interaction_id: id)
     if (commitment = Commitment.find_by(wake_interaction_id: id))
       return claim_commitment!(commitment)
@@ -186,6 +188,25 @@ module AgentRuntimeInteraction::LiveActivity
         finish_execution!("cancelled")
       end
       false
+    end
+  end
+
+  # A provider-edge retry (ProviderEdgeRetry) starts only while it would
+  # still be reserved now: resident not paused, room open, nothing else of
+  # the resident's here since the failure, caps not reached. Checked under
+  # the room's lock, then the resident's, then this run's.
+  def claim_provider_retry!
+    chat.with_lock do
+      agent.with_lock do
+        next claim_dispatch_unchecked! unless ProviderEdgeRetry.new(provider_retry_of).refusal_reason(agent, woken: self)
+
+        with_lock do
+          next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+          finish_execution!("cancelled")
+        end
+        false
+      end
     end
   end
 

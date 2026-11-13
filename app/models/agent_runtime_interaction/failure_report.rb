@@ -126,6 +126,15 @@ module AgentRuntimeInteraction::FailureReport
     response_body["error_kind"] if response_body.is_a?(Hash)
   end
 
+  # A cheap indexed probe, so completed runs don't each queue a job.
+  def provider_edge_failure_waiting?
+    agent_id && AgentRuntimeInteraction.where(agent_id: agent_id, trigger_kind: "conversation")
+      .where("created_at > ?", ProviderEdgeRetry::RECOVERY_WINDOW.ago)
+      .where(execution_state: FAILURE_STATES)
+      .where("response_body->>'error_kind' IN (?)", PROVIDER_EDGE_CATEGORIES)
+      .exists?
+  end
+
   def refusal_code
     response_body["refusal_code"] if response_body.is_a?(Hash)
   end
@@ -136,6 +145,12 @@ module AgentRuntimeInteraction::FailureReport
       ScheduledRunFailureNoticeJob.perform_later(id) unless streak_outcome == :neutral
     elsif chat_id && trigger_kind == "conversation" && streak_outcome == :failure
       RunFailureNoticeJob.perform_later(id)
+      ProviderEdgeRetry.schedule(self)
+    end
+    # Any completed run shows the provider answers again: pick up rooms a
+    # provider-edge failure left waiting (ProviderEdgeRetry), when there are any.
+    if streak_outcome == :success && provider_edge_failure_waiting?
+      ProviderEdgeRetryJob.perform_later(id, "recovery")
     end
   rescue StandardError => error
     Rails.logger.warn("Run failure notice enqueue failed for interaction #{id}: #{error.class}")

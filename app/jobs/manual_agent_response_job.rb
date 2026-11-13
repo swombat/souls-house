@@ -10,12 +10,14 @@ class ManualAgentResponseJob < ApplicationJob
       return
     end
     agent.reload
-    # A follow-through nudge, a stalled-thread wake, a released pending wake
+    # A follow-through nudge, a stalled-thread wake, a provider-edge retry
+    # (ProviderEdgeRetry), a released pending wake
     # and a commitment's wake are deferred wakes:
     # a pause after either was reserved still stops it before it reaches the
     # runtime. (The wake's claim checks this again, with its sources.)
     deferred = interaction && (interaction.follow_through_of_id || interaction.stalled_thread_sweep_id ||
-      interaction.released_pending_wake || Commitment.exists?(wake_interaction_id: interaction.id))
+      interaction.provider_retry_of_id || interaction.released_pending_wake ||
+      Commitment.exists?(wake_interaction_id: interaction.id))
     if deferred && agent.paused?
       cancel_unclaimed(interaction)
       return
