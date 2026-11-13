@@ -1,11 +1,17 @@
 <script>
-  import { stepPath, availableShare } from '$lib/hetzner-availability.js';
+  import { stepPath, availableShare, PAIR_SIZES } from '$lib/hetzner-availability.js';
 
   let { now = null, types = [], checks = [], series = [] } = $props();
 
   const width = 600;
-  const height = 28;
+  const height = 160;
+  const pad = 12;
   const colors = ['#0d9488', '#2563eb', '#d97706', '#db2777'];
+  let hidden = $state([]);
+
+  function toggle(label) {
+    hidden = hidden.includes(label) ? hidden.filter((item) => item !== label) : [...hidden, label];
+  }
 
   const end = $derived(now ? Date.parse(now) : Date.now());
   // Seven days, or since the first check if that is later.
@@ -38,36 +44,75 @@
     {#if !checks.length}
       <p class="text-sm text-muted-foreground">No checks yet. The first one runs within five minutes of a deploy.</p>
     {:else}
-      <div class="space-y-2">
-        {#each series as line, index}
-          <div class="grid grid-cols-[9rem_1fr_3.5rem] items-center gap-3">
-            <span class="text-sm font-medium">{line.label}</span>
-            <svg
-              viewBox={`0 0 ${width} ${height}`}
-              class="w-full rounded border"
-              style:height={`${height}px`}
-              preserveAspectRatio="none"
-              role="img"
-              aria-label={`${line.label} availability`}>
+      <div class="space-y-3">
+        <p class="text-sm text-muted-foreground">
+          Overlapping lines share the same values. Coloured dashes help distinguish them; use the legend to hide or show
+          pairs.
+        </p>
+        <div class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-x-2">
+          <div
+            class="flex flex-col justify-between py-3 text-right text-xs text-muted-foreground"
+            style:height={`${height}px`}>
+            <span>Available</span>
+            <span>Unavailable</span>
+          </div>
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            class="min-w-0 w-full rounded border"
+            style:height={`${height}px`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Availability of all Hetzner pairs">
+            <title>Pair availability: available or unavailable; gaps mean unknown</title>
+            <path
+              d={`M0,${pad} H${width} M0,${height - pad} H${width}`}
+              class="stroke-border"
+              fill="none"
+              vector-effect="non-scaling-stroke" />
+            {#each series as line, index}
               <path
-                d={stepPath(line.points, start, end, width, height, { now: end })}
+                aria-label={line.label}
+                d={stepPath(line.points, start, end, width, height, { pad, now: end })}
+                visibility={hidden.includes(line.label) ? 'hidden' : 'visible'}
                 fill="none"
                 stroke={colors[index % colors.length]}
-                stroke-width="2"
+                stroke-width="3"
+                stroke-dasharray="6 18"
+                stroke-dashoffset={-index * 6}
                 vector-effect="non-scaling-stroke" />
-            </svg>
-            <span class="text-right text-sm tabular-nums text-muted-foreground" title="Share of checks available">
-              {percent(availableShare(line.points))}
-            </span>
-          </div>
-        {/each}
-        <div class="grid grid-cols-[9rem_1fr_3.5rem] gap-3 text-[10px] text-muted-foreground">
+            {/each}
+          </svg>
           <span></span>
-          <div class="flex justify-between">
+          <div class="flex justify-between text-[10px] text-muted-foreground">
             <span>{time(new Date(start).toISOString())}</span>
             <span>{time(new Date(end).toISOString())}</span>
           </div>
-          <span></span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Chart legend">
+          {#each series as line, index}
+            <button
+              type="button"
+              class="rounded border p-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+              aria-label={`Show ${line.label}`}
+              aria-pressed={!hidden.includes(line.label)}
+              onclick={() => toggle(line.label)}>
+              <span class="flex items-center gap-2" class:opacity-40={hidden.includes(line.label)}>
+                <svg width="48" height="12" aria-hidden="true">
+                  <path
+                    d="M0,6 H48"
+                    stroke={colors[index % colors.length]}
+                    stroke-width="3"
+                    stroke-dasharray="6 18"
+                    stroke-dashoffset={-index * 6} />
+                </svg>
+                <span class="text-sm font-medium">{line.label}</span>
+              </span>
+              <span class="mt-1 block text-xs text-muted-foreground">{PAIR_SIZES[line.label] ?? 'Size unknown'}</span>
+              <span class="mt-1 block text-xs tabular-nums text-muted-foreground">
+                {percent(availableShare(line.points))} of known checks available
+              </span>
+            </button>
+          {/each}
         </div>
       </div>
     {/if}
