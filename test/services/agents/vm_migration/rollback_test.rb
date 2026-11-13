@@ -946,4 +946,180 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_empty fake.removed
   end
 
+  # The house home after a finished move (MovedHomeRelease).
+
+  MovedHomeRelease = Agents::VmMigration::MovedHomeRelease
+
+  # The move was made ready at `at`: its receipt and the resident's
+  # runtime_ready_at, and unless told otherwise a verified backup issued on
+  # its server an hour later.
+  def moved(at: 10.days.ago.change(usec: 0), backup: true)
+    @agent.update_columns(runtime_ready_at: at)
+    ready = AuditLog.create!(action: "vm_migration_ready", account: @agent.account, auditable: @agent,
+      data: { "placement_id" => @placement.id, "generation" => @placement.generation })
+    ready.update_columns(created_at: at)
+    server_backup(at: at + 1.hour) if backup
+    at
+  end
+
+  def server_backup(at:, state: "verified")
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "backup_resident", payload: { "fake" => "backup" })
+    command.update_columns(created_at: at)
+    VmBackup.create!(agent: @agent, runner_command: command, checkpoint_file_digest: HEX, deadline_at: at + 10.minutes,
+      state:, released_at: at + 5.minutes)
+  end
+
+  def moved_release(fake, at: Time.current, guard: -> { }) =
+    MovedHomeRelease.new(@placement.reload, docker: fake, guard:, now: -> { at })
+
+  def seed_house_home(fake)
+    derived = Agents::Resources.new(@agent.reload).derived_volumes
+    derived.each_value { |name| fake.add(name) }
+    derived
+  end
+
+  test "after a finished move, a verified backup on its server and the hold, the house home is removed" do
+    ready_at = moved
+    fake = FakeVolumes.new
+    derived = seed_house_home(fake)
+
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake, at: ready_at + 6.days).release!(by: @user) }
+    assert_match "kept until", error.message
+    assert_empty fake.removed
+    assert_not AuditLog.exists?(action: HouseVolumeRelease::INTENDED, auditable: @agent), "a refusal writes nothing"
+
+    outcomes = moved_release(fake).release!(by: @user)
+    assert_equal derived.values.sort, fake.removed.sort
+    assert_equal [ :removed ], outcomes.map(&:status).uniq
+    receipts = AuditLog.where(action: HouseVolumeRelease::RELEASED, auditable: @agent)
+    assert_equal derived.values.sort, receipts.map { |receipt| receipt.data["volume"] }.sort
+    assert_equal [ [ "move", @placement.id, @placement.generation, @user.id ] ],
+      receipts.map { |receipt| [ receipt.data["basis"], receipt.data["placement_id"], receipt.data["placement_generation"], receipt.user_id ] }.uniq
+    assert_equal [ "migration", "ready" ], [ @placement.reload.kind, @placement.state ], "the server placement is untouched"
+
+    again = moved_release(fake).release!(by: @user)
+    assert_equal [ :absent ], again.map(&:status).uniq
+    assert_equal 5, fake.removed.size
+  end
+
+  test "without a verified backup taken on its server after the move, nothing is removed" do
+    ready_at = moved(backup: false)
+    server_backup(at: ready_at - 1.hour) # the first backup, before the move was ready
+    server_backup(at: ready_at + 1.hour, state: "failed")
+    fake = FakeVolumes.new
+    seed_house_home(fake)
+
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_match "No backup taken on its server since the move", error.message
+    assert_empty fake.removed
+
+    @placement.update_columns(generation: @placement.generation + 1)
+    server_backup(at: ready_at + 2.hours) # a later generation's, not this move's
+    @placement.update_columns(generation: @placement.generation - 1)
+    assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_empty fake.removed
+  end
+
+  test "a move that is not ready, has no receipt, or has moved on removes nothing" do
+    fake = FakeVolumes.new
+    seed_house_home(fake)
+    @agent.update_columns(runtime_ready_at: 10.days.ago)
+    server_backup(at: 9.days.ago)
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_equal "The move has no ready receipt", error.message
+
+    moved
+    @agent.update_columns(runtime_ready_at: nil)
+    assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    @agent.update_columns(runtime_ready_at: 10.days.ago)
+
+    release = moved_release(fake)
+    @placement.update_columns(generation: @placement.generation + 1)
+    error = assert_raises(MovedHomeRelease::Refused) { release.release!(by: @user) }
+    assert_equal "The resident is not on the server this move made ready", error.message
+    @placement.update_columns(generation: @placement.generation - 1, state: "failed")
+    assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_empty fake.removed
+  end
+
+  test "a rollback started before or during the release stops it before any removal" do
+    moved
+    fake = FakeVolumes.new
+    seed_house_home(fake)
+    release = moved_release(fake)
+    rollback = Agents::VmMigration::Rollback.start!(@agent, requested_by: @user)
+    error = assert_raises(MovedHomeRelease::Refused) { release.release!(by: @user) }
+    assert_equal "A rollback of this resident is open", error.message
+
+    rollback.update_columns(phase: "failed")
+    error = assert_raises(MovedHomeRelease::Refused) { release.release!(by: @user) }
+    assert_match "reserved for this resident since the release was asked for", error.message
+
+    # Between the intent and the removal: the guard before the first `rm`
+    # starts a rollback, so every volume stops at its second step.
+    calls = 0
+    starting = lambda do
+      calls += 1
+      Agents::VmMigration::Rollback.start!(@agent, requested_by: @user) if calls == 2
+    end
+    outcomes = moved_release(fake, guard: starting).release!(by: @user)
+    assert_empty fake.removed
+    assert_equal [ :not_admitted ], outcomes.map(&:status).uniq
+    stopped = AuditLog.where(action: HouseVolumeRelease::STOPPED, auditable: @agent).pluck(Arel.sql("data->>'intent_id'"))
+    intended = AuditLog.where(action: HouseVolumeRelease::INTENDED, auditable: @agent).pluck(:id).map(&:to_s)
+    assert_equal intended.sort, stopped.sort, "every intent is closed as stopped, so no later absence is pinned on it"
+  end
+
+  test "an earlier rollback's map and every spent rollback generation go too, with their own labels" do
+    derived = Agents::Resources.new(@agent.reload).derived_volumes.transform_keys(&:to_s)
+    rb1 = derived.transform_values { |name| "#{name}-rb1" }
+    @agent.update_columns(volume_map: rb1, volume_rollback_generation: 2) # rb2: an attempt that failed before its swap
+    moved
+    fake = FakeVolumes.new
+    seed_house_home(fake)
+    rb1.each_value { |name| fake.add(name, rollback: "#{@agent.uuid}/1/#{'f' * 16}") }
+    derived.each_value { |name| fake.add("#{name}-rb2", rollback: "#{@agent.uuid}/2/#{'e' * 16}") }
+    fake.add("#{derived['chaos']}-rb3", rollback: "#{@agent.uuid}/3/#{'d' * 16}") # not reserved when asked
+    fake.add("#{derived['state']}-rb2", rollback: "#{@agent.uuid}/1/#{'c' * 16}") # labelled for another generation
+
+    outcomes = moved_release(fake).release!(by: @user).index_by(&:name)
+    expected = derived.values + rb1.values + derived.except("state").values.map { |name| "#{name}-rb2" }
+    assert_equal expected.sort, fake.removed.sort
+    assert_equal :foreign, outcomes.fetch("#{derived['state']}-rb2").status
+    assert fake.volumes.key?("#{derived['chaos']}-rb3"), "a generation reserved later is never on the list"
+  end
+
+  test "a house map naming another resident's volume refuses the whole release" do
+    derived = Agents::Resources.new(@agent.reload).derived_volumes.transform_keys(&:to_s)
+    @agent.update_columns(volume_map: derived.merge("identity" => "hk-agent-someone-else-identity"))
+    moved
+    fake = FakeVolumes.new
+    seed_house_home(fake)
+
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_match "not this resident's identity volume", error.message
+    assert_empty fake.removed
+
+    # Its own name for the role, but a rollback generation never reserved.
+    @agent.update_columns(volume_map: derived.merge("work" => "#{derived['work']}-rb9"), volume_rollback_generation: 2)
+    error = assert_raises(MovedHomeRelease::Refused) { moved_release(fake).release!(by: @user) }
+    assert_match "not this resident's work volume", error.message
+    assert_empty fake.removed
+  end
+
+  test "return to house refuses once a release of the house home has been asked for" do
+    @placement.update_columns(state: "staged", provider_server_id: nil)
+    derived = Agents::Resources.new(@agent.reload).derived_volumes
+    AuditLog.create!(action: HouseVolumeRelease::INTENDED, user: @user, account: @agent.account, auditable: @agent,
+      data: { "basis" => "move", "volume" => derived[:chaos] })
+
+    error = assert_raises(Agents::VmMigration::Refused) { Agents::VmMigration.new(@agent).return_to_house!(requested_by: @user) }
+    assert_equal Agents::VmMigration::HOME_RELEASED, error.message
+    assert_equal [ "hetzner_cloud", "staged" ], [ @placement.reload.backend, @placement.state ]
+
+    AuditLog.where(action: HouseVolumeRelease::INTENDED, auditable: @agent).delete_all
+    Agents::VmMigration.new(@agent).return_to_house!(requested_by: @user)
+    assert_equal "local", @placement.reload.backend, "the guard, not something else, was the refusal"
+  end
+
 end
