@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 # eOyrdJ, 13 Nov 2026: a Cloudflare challenge on the provider's edge ate a
 # resident's turns and the nudge with them, and the room waited for a person.
@@ -114,6 +115,78 @@ class ProviderEdgeRetryTest < ActiveSupport::TestCase
     assert_equal 1, AgentRuntimeInteraction.where(provider_retry_of: waiting).count
     assert_match "A later run of #{@agent.name}'s completed", @chat.messages.where(role: "user").last.content
     assert_equal 0, AgentRuntimeInteraction.where(provider_retry_of: [ answered, plain ]).count
+  end
+
+  # Mira's #938 review, finding 1.
+  test "a pause after the retry is reserved stops it before it reaches the runtime" do
+    failed = failed_run
+    assert_equal :woken, ProviderEdgeRetry.new(failed).wake!(:backoff)
+    retry_run = AgentRuntimeInteraction.find_by!(provider_retry_of: failed)
+    @agent.update!(paused: true)
+    trigger = stub_request(:post, %r{agent\.example\.com})
+    # Stopped by the job's own deferred-wake guard, before any request object
+    # exists (the claim would refuse it too; this witnesses the guard).
+    ExternalAgentResponseRequest.stub(:new, ->(**) { flunk "a paused retry must not reach a request" }) do
+      ManualAgentResponseJob.perform_now(@chat, @agent, runtime_interaction_id: retry_run.id)
+    end
+    assert_not_requested trigger
+    assert_equal "cancelled", retry_run.reload.execution_state
+  end
+
+  test "the claim refuses a retry that a pause, a newer run or the room cap overtook" do
+    failed = failed_run
+    assert_equal :woken, ProviderEdgeRetry.new(failed).wake!(:backoff)
+    retry_run = AgentRuntimeInteraction.find_by!(provider_retry_of: failed)
+    @agent.update!(paused: true)
+    assert_not retry_run.claim_dispatch!
+    assert_equal "cancelled", retry_run.reload.execution_state
+
+    @agent.update!(paused: false)
+    other = failed_run(chat: other_room, created_at: 2.minutes.from_now)
+    assert_equal :woken, ProviderEdgeRetry.new(other).wake!(:backoff)
+    retry_run = AgentRuntimeInteraction.find_by!(provider_retry_of: other)
+    # An ordinary run of the resident arrives there and finishes before this
+    # retry is claimed: reserve! only refused active runs; the claim refuses.
+    later = 3.minutes.from_now
+    AgentRuntimeInteraction.create!(agent: @agent, chat: other.chat, trigger_kind: "conversation", requested_by: "souls.house",
+      session_id: "s", started_at: later, created_at: later, run_id: SecureRandom.uuid, execution_state: "completed", finished_at: later)
+    assert_not retry_run.claim_dispatch!
+    assert_equal "cancelled", retry_run.reload.execution_state
+
+    capped_room = third_room
+    ProviderEdgeRetry::MAX_WAKES.times do |i|
+      run = failed_run(chat: capped_room, created_at: (i * 10 + 30).minutes.from_now)
+      AgentRuntimeInteraction.create!(agent: @agent, chat: capped_room, trigger_kind: "conversation", requested_by: "souls.house",
+        session_id: "s", started_at: run.finished_at, created_at: run.finished_at, run_id: SecureRandom.uuid,
+        execution_state: "cancelled", finished_at: run.finished_at, provider_retry_of: run)
+    end
+    last = AgentRuntimeInteraction.where(chat: capped_room).where.not(provider_retry_of_id: nil).order(:created_at).last
+    last.update_columns(execution_state: "queued", finished_at: nil)
+    late = failed_run(chat: capped_room, created_at: 2.hours.from_now)
+    assert_equal :room_full, ProviderEdgeRetry.new(late).wake!(:backoff)
+  end
+
+  # Mira's #938 review, finding 2: the checks run under the locks, so a newer
+  # finished run seen at reservation stops the wake (not only an active one).
+  test "a newer finished run of the resident in the room stops the wake" do
+    failed = failed_run
+    AgentRuntimeInteraction.create!(agent: @agent, chat: @chat, trigger_kind: "conversation", requested_by: "souls.house",
+      session_id: "s", started_at: Time.current, run_id: SecureRandom.uuid, execution_state: "completed", finished_at: Time.current)
+    assert_equal :superseded, ProviderEdgeRetry.new(failed).wake!(:recovery)
+  end
+
+  # Mira's #938 review, finding 3.
+  test "two failed runs that ended in the same minute get distinct notices, so neither wake is rolled back" do
+    at = Time.zone.parse("2026-11-13 10:00:05 UTC")
+    first = failed_run(created_at: at)
+    first.update_columns(finished_at: at)
+    assert_equal :woken, ProviderEdgeRetry.new(first).wake!(:recovery, recovered_at: at + 10.seconds)
+    child = fail!(AgentRuntimeInteraction.find_by!(provider_retry_of: first))
+    child.update_columns(finished_at: at + 20.seconds)
+    assert_equal :woken, ProviderEdgeRetry.new(child.reload).wake!(:recovery, recovered_at: at + 30.seconds)
+    notices = @chat.messages.where(role: "user").order(:id).last(2).map(&:content)
+    assert_equal 2, notices.uniq.size
+    assert_match "(run #{first.run_id.first(8)})", notices.first
   end
 
   test "completed runs queue no recovery job when nothing waits" do

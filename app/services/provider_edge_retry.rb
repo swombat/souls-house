@@ -75,31 +75,44 @@ class ProviderEdgeRetry
     count
   end
 
-  # :woken, or why not.
+  # :woken, or why not. Every mutable check runs under the room's lock and
+  # then the resident's, in the transaction that reserves the wake and posts
+  # its notice (lock order as in reserve!: chat, then agent), so a run that
+  # arrives between a check and the reservation can't be overtaken.
   def wake!(reason, recovered_at: nil)
     return :not_edge unless self.class.edge_failure?(failed)
-    return :chain_full if depth >= MAX_WAKES
-    return :superseded if superseded?
-    return :room_full if room_wakes >= MAX_WAKES
 
     chat = failed.chat
-    agent = failed.agent.lock!
-    return :unavailable if agent.paused? || !agent.eligible_for_conversation? || !agent.active?
-    return :unavailable unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
-
-    # The wake and its notice commit together: no notice for a wake that
-    # didn't happen, no silent wake.
     chat.transaction do
+      chat.lock!
+      agent = failed.agent.lock!
+      refusal = refusal_reason(agent)
+      next refusal if refusal
+
       AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true, provider_retry_of: failed,
         requested_at: failed.response_requested_at || failed.created_at)
       chat.messages.create!(role: "user", content: notice(reason, recovered_at))
+      :woken
     end
-    :woken
   rescue ActiveRecord::RecordNotUnique
     :already_woken
   rescue Agent::RuntimeAvailability::Unavailable, Chat::AlreadyResponding, Chat::ParticipantChanged, ArgumentError => error
     Rails.logger.info("Provider-edge wake for interaction #{failed.id} not sent: #{error.class}")
     :unavailable
+  end
+
+  # Why this failed run may not (or may no longer) be picked up, or nil.
+  # Read at reservation, under the locks, and again when the woken run is
+  # claimed for dispatch (claim_provider_retry!), excluding that run itself.
+  def refusal_reason(agent, woken: nil)
+    chat = failed.chat
+    return :unavailable if agent.paused? || !agent.active? || !agent.eligible_for_conversation?
+    return :unavailable unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
+    return :chain_full if depth >= MAX_WAKES
+    return :superseded if superseded?(except: woken)
+    return :room_full if room_wakes(except: woken) >= MAX_WAKES
+
+    nil
   end
 
   # What the woken run is told. Grants nothing; points at the failure.
@@ -120,7 +133,8 @@ class ProviderEdgeRetry
   def notice(reason, recovered_at)
     name = failed.agent.name
     ended = failed.finished_at.in_time_zone(zone).strftime("%H:%M %Z")
-    lead = "[System Notice] #{name}'s run here that ended at #{ended} failed: #{cause}."
+    # The run id makes each failed run's notice its own, even within a minute.
+    lead = "[System Notice] #{name}'s run here that ended at #{ended} (run #{failed.run_id.to_s.first(8)}) failed: #{cause}."
     if reason == :recovery
       at = recovered_at&.in_time_zone(zone)&.strftime("%H:%M %Z")
       "#{lead} A later run of #{name}'s completed#{" at #{at}" if at}, so waking #{name} once to pick this up."
@@ -133,16 +147,16 @@ class ProviderEdgeRetry
     ActiveSupport::TimeZone[failed.chat.account.owner&.timezone.to_s] || ActiveSupport::TimeZone["UTC"]
   end
 
-  def room_wakes
+  def room_wakes(except: nil)
     failed.chat.agent_runtime_interactions.where(agent_id: failed.agent_id).where.not(provider_retry_of_id: nil)
-      .where("created_at > ?", RECOVERY_WINDOW.ago).count
+      .where("created_at > ?", RECOVERY_WINDOW.ago).where.not(id: except&.id).count
   end
 
   # Something came after the failure: a later run of this resident in the
   # room (a person's wake, a nudge, a handoff), or one already queued.
-  def superseded?
+  def superseded?(except: nil)
     failed.chat.agent_runtime_interactions.where(agent_id: failed.agent_id)
-      .where("created_at > ?", failed.created_at).where.not(id: failed.id).exists?
+      .where("created_at > ?", failed.created_at).where.not(id: [ failed.id, except&.id ].compact).exists?
   end
 
 end
