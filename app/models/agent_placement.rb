@@ -69,6 +69,10 @@ class AgentPlacement < ApplicationRecord
   # itself; VmCleanupJob does that, until the provider confirms.
   def request_cleanup!(reason, now: Time.current)
     with_lock do
+      # Read under the lock: a rollback may have made this placement the
+      # house's since it was loaded, and a local placement owns no server.
+      next if backend == "local"
+
       update!(cleanup_requested_at: now, cleanup_reason: reason.to_s.first(255)) unless cleanup_requested?
     end
   end

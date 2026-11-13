@@ -475,6 +475,43 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
   end
 
+  test "an account disabled while the rollback is restoring keeps its cleanup intent across the switch" do
+    rollback = to_restoring
+    assert rollback.open? && rollback.phase != "committed", "not yet switched"
+
+    # Disabling lands before the switch: the cleanup is asked of the server
+    # placement, and the attempt is not yet committed.
+    @agent.account.send(:release_vm_servers)
+    assert_equal "account_disabled", @placement.reload.cleanup_reason
+    assert_not rollback.reload.release_requested?
+
+    @sandbox.error = "docker: no space left"
+    assert_equal "committed", full { driver(rollback).step! }
+    assert_equal [ "local", nil ], [ @placement.reload.backend, @placement.cleanup_requested_at ]
+    assert rollback.reload.release_requested?, "the switch carries the intent onto the attempt"
+    assert_equal "account_disabled", rollback.release_reason
+    assert AuditLog.where(action: "vm_rollback_release_requested", auditable: @agent)
+      .where("data->>'carried_from_placement' = 'true'").exists?
+    assert_includes VmRollback.releasing, rollback, "the minute sweep owns it now"
+
+    assert_equal :waiting, release(rollback), "nothing is deleted before the resident is verified running"
+    assert_empty @client.deletes
+    assert_equal "provisioned", @operation.reload.state
+
+    @sandbox.error = nil
+    assert_equal "recovered", full { driver(rollback.reload).step! }
+    assert_equal :released, release(rollback)
+    assert_equal [ [ 4343, @placement.id.to_s ] ], @client.deletes
+    assert_equal [ "local", "ready", nil ], [ @placement.reload.backend, @placement.state, @placement.cleanup_requested_at ]
+  end
+
+  test "a cleanup asked of a placement a rollback has already made local changes nothing" do
+    rollback = recovered
+    @placement.reload.request_cleanup!("account_disabled")
+    assert_nil @placement.reload.cleanup_requested_at
+    assert_not rollback.reload.release_requested?
+  end
+
   test "the release reaches only the purchases the rollback recorded" do
     rollback = recovered
     Agents::VmMigration::RollbackRelease.request!(rollback, reason: "rolled back", requested_by: @user)
