@@ -43,26 +43,36 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
   # docker container inspect --format {{json .Mounts}}: the agent's current
   # map at the sandbox's paths, unless told otherwise.
   class FakeDocker
-    attr_accessor :mounts
+    attr_accessor :mounts, :running
 
-    def initialize(agent) = @agent = agent
+    def initialize(agent)
+      @agent = agent
+      @running = true
+    end
 
     def capture3(*_argv, deadline:)
       mounts = @mounts || Agents::VmMigration::Rollback::MOUNTS.map do |role, path|
         { "Type" => "volume", "Name" => @agent.reload.volume_map[role.to_s], "Destination" => path }
       end
-      [ JSON.generate(mounts), "", Status.new(true) ]
+      [ "#{running} #{JSON.generate(mounts)}", "", Status.new(true) ]
     end
   end
 
+  # Same public entry as Agents::Sandbox (checked below): runs the guard
+  # under no lock, then counts or fails the recreate.
   class FakeSandbox
-    attr_accessor :error, :recreated
+    attr_accessor :error, :recreated, :agent
 
-    def initialize = @recreated = 0
+    def initialize(agent)
+      @agent = agent
+      @recreated = 0
+    end
 
-    def recreate_without_portability_gate!
+    def recreate_for_rollback!(guard)
+      guard.call(agent.reload)
+      raise Agents::Sandbox::SandboxError, error if error
+
       @recreated += 1
-      error ? { docker_error: error } : { running: true }
     end
   end
 
@@ -80,7 +90,7 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     @enrollment.confirm_provider_server!(4343)
     @enrollment.enroll!(token:, public_key: Base64.strict_encode64("k" * 32), reported_server_id: 4343, facts: {}, nonce: SecureRandom.hex(16))
     @enrollment.heartbeat!(reported_server_id: 4343, facts: {}, nonce: SecureRandom.hex(16))
-    @sandbox = FakeSandbox.new
+    @sandbox = FakeSandbox.new(@agent)
     @docker = FakeDocker.new(@agent)
     @user = users(:existing_user)
   end
@@ -191,6 +201,69 @@ class Agents::VmMigration::RollbackTest < ActiveSupport::TestCase
     assert_equal "recovered", full { driver(rollback).step! }
     assert_equal 1, FakeHome.calls
     assert_equal 1, AuditLog.where(action: "vm_rollback_swap", auditable: @agent).count
+  end
+
+  test "the fake sandbox's entry is public on the real Sandbox, with the same arity" do
+    (FakeSandbox.public_instance_methods(false) - [ :error, :error=, :recreated, :recreated=, :agent, :agent= ]).each do |name|
+      assert Agents::Sandbox.public_method_defined?(name), "Agents::Sandbox##{name} must be public"
+      assert_equal Agents::Sandbox.instance_method(name).arity, FakeSandbox.instance_method(name).arity
+    end
+  end
+
+  test "the real Sandbox runs the guard under the row lock before removing anything, and spawns an inactive resident" do
+    @placement.update_columns(backend: "local", kind: nil, provider_server_id: nil)
+    @agent.update_columns(runtime: "offline")
+    sandbox = Agents::Sandbox.new(@agent.reload)
+    calls = []
+    sandbox.stub(:remove!, ->(**) { calls << :remove }) do
+      sandbox.stub(:spawn_without_portability_gate!, -> { calls << :spawn }) do
+        sandbox.stub(:container_exists?, false) do
+          refused = ->(_locked) { raise Agents::VmMigration::Rollback::Refused, "no" }
+          assert_raises(Agents::VmMigration::Rollback::Refused) { sandbox.recreate_for_rollback!(refused) }
+          assert_empty calls, "a refused guard removes nothing"
+
+          seen = nil
+          sandbox.recreate_for_rollback!(->(locked) { seen = [ locked.active?, Agent.connection.transaction_open? ] })
+          assert_equal [ false, true ], seen, "the guard sees the inactive resident inside the lock"
+          assert_equal %i[remove spawn], calls, "spawned without the activation gate"
+        end
+      end
+    end
+  end
+
+  test "a retry refuses before recreating once the resident is activated, unpaused, busy or on another map" do
+    rollback = to_restoring
+    @sandbox.error = "docker: no space left"
+    assert_equal "committed", full { driver(rollback).step! }
+    @sandbox.error = nil
+    map = @agent.reload.volume_map
+
+    @agent.update_columns(active: true)
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    assert_match "inactive and paused", rollback.reload.error
+    @agent.update_columns(active: false, paused: false)
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    @agent.update_columns(paused: true, volume_map: map.merge("work" => "someone-elses-work"))
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    assert_match "no longer on this rollback's volumes", rollback.reload.error
+    @agent.update_columns(volume_map: map)
+    @placement.update_columns(generation: @placement.reload.generation + 1)
+    assert_equal "committed", full { driver(rollback.reload).step! }
+    assert_match "placement changed", rollback.reload.error
+    assert_equal 0, @sandbox.recreated, "nothing was torn down by a refused retry"
+
+    @placement.update_columns(generation: @placement.generation - 1)
+    assert_equal "recovered", full { driver(rollback.reload).step! }
+  end
+
+  test "a container that is not running is not recovery, whatever its mounts" do
+    rollback = to_restoring
+    @docker.running = false
+    assert_equal "committed", full { driver(rollback).step! }
+    assert_match "not running", rollback.reload.error
+    assert_nil rollback.recovery
+    @docker.running = true
+    assert_equal "recovered", full { driver(rollback).step! }
   end
 
   test "mounts that are not this swap's map are not recovery" do

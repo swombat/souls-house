@@ -214,25 +214,46 @@ module Agents
       end
 
       def recreate!(target)
-        status = @sandbox.call(target.reload).recreate_without_portability_gate!
-        error = status.is_a?(Hash) ? status[:docker_error] || status["docker_error"] : nil
-        raise Agents::Sandbox::SandboxError, error if error
+        @sandbox.call(target.reload).recreate_for_rollback!(->(locked) { recreate_guard!(locked) })
       end
 
-      # The container's mounts, read back from Docker, against this swap's
-      # map, destination by destination: every role's fresh volume at its own
-      # path, as a named volume.
+      # Under the resident's row lock, before the old container is removed:
+      # a retry minutes later must not tear down a container someone has
+      # since activated, or one on another map, generation or placement.
+      def recreate_guard!(locked)
+        reason = self.class.unstopped_reason(locked)
+        raise Refused, reason if reason
+
+        expected = @rollback.volume_map.presence || receipt&.data&.dig("volume_map")
+        raise Refused, "No committed volume map for this rollback" if expected.blank?
+        raise Refused, "The resident is no longer on this rollback's volumes" unless locked.volume_map == expected.to_h
+        unless locked.volume_rollback_generation == @rollback.generation
+          raise Refused, "A newer rollback reservation superseded this attempt"
+        end
+
+        placement = @rollback.agent_placement.reload
+        unless placement.backend == "local" && placement.generation == @rollback.source["placement_generation"].to_i + 1
+          raise Refused, "The resident's placement changed after the rollback's switch"
+        end
+      end
+
+      # The container, read back from Docker: running, and its mounts against
+      # this swap's map, destination by destination: every role's fresh volume
+      # at its own path, as a named volume.
       def verify!
         map = @rollback.volume_map.to_h
         agent.reload
         raise Refused, "The resident is no longer on this rollback's volumes" unless agent.volume_map == map
 
         container = Agents::Resources.new(agent).container
-        out, _err, status = @docker.capture3("docker", "container", "inspect", "--format", "{{json .Mounts}}", container,
-          deadline: Agents::BoundedCommand.now + 30)
-        raise Refused, "Could not read the recreated container's mounts" unless status.success?
+        out, _err, status = @docker.capture3("docker", "container", "inspect", "--format",
+          "{{json .State.Running}} {{json .Mounts}}", container, deadline: Agents::BoundedCommand.now + 30)
+        raise Refused, "Could not read the recreated container" unless status.success?
 
-        mounts = JSON.parse(out)
+        running, mounts_json = out.strip.split(" ", 2)
+        raise Refused, "The recreated container is not running" unless running == "true"
+
+        mounts = JSON.parse(mounts_json.to_s)
         found = MOUNTS.to_h do |role, path|
           mount = mounts.find { |entry| entry["Destination"] == path }
           [ role.to_s, mount && mount["Type"] == "volume" ? mount["Name"] : nil ]
