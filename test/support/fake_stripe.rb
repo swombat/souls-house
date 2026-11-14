@@ -294,6 +294,7 @@ class FakeStripe
             put_pending_invoice_item(stored[:customer], -(@proration_amount || 500)) if params[:proration_behavior] == "create_prorations"
             next
           end
+          item[:quantity] = change[:quantity] if change[:quantity]
           item[:price] = { id: change[:price] } if change[:price]
           item[:price] = { price_data: change[:price_data] } if change[:price_data]
           item[:metadata] = (item[:metadata] || {}).merge(change[:metadata].transform_keys(&:to_s)) if change[:metadata]
@@ -506,14 +507,22 @@ class FakeStripe
         price_object(change[:price])
       end
       if change[:id].nil?
-        added << { price: price }
+        added << { price: price, quantity: change[:quantity] || 1 }
       elsif price
         items.find { |item| item[:id] == change[:id] }[:price] = price
+      elsif change[:quantity]
+        # One Bill: a line's quantity grows or shrinks; each unit prorated.
+        item = items.find { |row| row[:id] == change[:id] }
+        moved = change[:quantity] - (item[:quantity] || 1)
+        item[:quantity] = change[:quantity]
+        if details[:proration_behavior] == "create_prorations"
+          moved.abs.times { credits << { amount: (moved.positive? ? 1 : -1) * (@proration_amount || 500), proration: true } }
+        end
       end
     end
     refuse_shared_price!((items + added).reject { |item| item[:price][:id] == "price_preview" })
     amount = ->(price) { price_amounts.fetch(price[:id]) { price[:unit_amount] } }
-    lines = (items + added).map { |item| { amount: amount.(item[:price]), proration: false } }
+    lines = (items + added).map { |item| { amount: amount.(item[:price]) * (item[:quantity] || 1), proration: false } }
     unless recurring
       lines += added.map { { amount: @proration_amount || 500, proration: true } } if details[:proration_behavior] == "create_prorations"
       lines += credits
