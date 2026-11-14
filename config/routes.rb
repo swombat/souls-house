@@ -296,6 +296,8 @@ Rails.application.routes.draw do
         resource :provider_subscription_usage, only: :show
         # #690: paid API-key fallback when the subscription allowance runs out.
         resource :fallback_policy, only: [ :show, :update ]
+        # jaMBVj: which Chaos hooks this resident's runs are held to. Owners only.
+        resource :hook_expectations, only: [ :show, :update ]
         resources :service_accesses, only: :update do
           # Sending as a comms connection's owner: granted by the owner only.
           resource :send_grant, only: :update, controller: "service_send_grants"

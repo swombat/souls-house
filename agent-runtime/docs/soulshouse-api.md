@@ -1968,6 +1968,9 @@ curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 
 `"state":"expected"` holds your runs to it again. A `GET` on the same path
 shows your expectations and what your latest run found.
+Your account's owner sees the same thing in your settings (a Chaos hooks
+card) and can set an event either way; whoever set it last is recorded as
+the source (`observed`, `owner` or `resident`).
 
 ## Repository watches
 

@@ -25,6 +25,26 @@ class HookPresence
   LABELS = { "session_start" => "wake (session_start)", "before_turn" => "before_turn", "stop" => "stop" }.freeze
   MAX_KNOWN_IDS = 20
 
+  # What a resident's runs are held to, and what its latest finished run
+  # found: shared by the owner's settings card and the resident's own API.
+  # Ids and status only.
+  def self.expectations_payload(agent)
+    latest = agent.agent_runtime_interactions.where.not(finished_at: nil).order(id: :desc).first
+    hooks = latest&.response_body.is_a?(Hash) ? latest.response_body.dig("telemetry", "hooks") : nil
+    {
+      hook_expectations: agent.hook_expectations || {},
+      events: EVENTS,
+      states: STATES,
+      labels: LABELS,
+      latest_run: latest && {
+        id: latest.id,
+        finished_at: latest.finished_at&.iso8601,
+        hook_warning: latest.hook_warning,
+        hooks: hooks
+      }
+    }
+  end
+
   attr_reader :interaction, :report
 
   def self.evaluate!(interaction)

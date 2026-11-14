@@ -3,6 +3,7 @@
   import AgentRuntimeStatus from '$lib/components/agents/AgentRuntimeStatus.svelte';
   import AgentSubscriptionSettings from '$lib/components/agents/AgentSubscriptionSettings.svelte';
   import AgentPaidFallbackCard from '$lib/components/agents/AgentPaidFallbackCard.svelte';
+  import AgentHookExpectationsCard from '$lib/components/agents/AgentHookExpectationsCard.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import {
@@ -71,6 +72,7 @@
     can_manage_allowance_brake: canManageAllowanceBrake = false,
     can_manage_essential: canManageEssential = false,
     paid_fallback_url: paidFallbackUrl = null,
+    hook_expectations_url: hookExpectationsUrl = null,
     interactions = [],
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
@@ -294,6 +296,9 @@
           </AgentSettingsPanel>
           {#if paidFallbackUrl}
             <AgentPaidFallbackCard url={paidFallbackUrl} agentName={agent.name} />
+          {/if}
+          {#if hookExpectationsUrl}
+            <AgentHookExpectationsCard url={hookExpectationsUrl} agentName={agent.name} />
           {/if}
         {:else if activeTab === 'subagents' && showSubagents}
           <AgentSubagentsPanel
