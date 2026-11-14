@@ -2,7 +2,7 @@
 # monthly house-inference allowance. States and transitions follow the design
 # doc (docs/proposals/2026-10-07-stripe-billing.md, "Entitlement states").
 #
-# Callers apply subscriptions under Billing::SubscriptionSync's per-resident
+# Callers apply subscriptions under Billing::BillSync's per-account
 # advisory lock, so two Stripe fetches can't interleave here.
 class ResidentEntitlement < ApplicationRecord
 
@@ -111,21 +111,6 @@ class ResidentEntitlement < ApplicationRecord
   def expire_grace!(now: Time.current)
     with_lock do
       return false unless grace? && grace_deadline.present? && grace_deadline <= now
-
-      end_paid_plan(now)
-      save!
-    end
-  end
-
-  # The current subscription's item has been unreadable (SubscriptionSync's
-  # untrusted items) for longer than grace while Stripe still says it is
-  # paid: the plan it granted ends, as on cancellation. No payment-failed
-  # mail; nothing failed to pay. A readable sync of the same item later
-  # brings the plan back. Call under SubscriptionSync's account lock.
-  def expire_untrusted!(subscription, now: Time.current)
-    with_lock do
-      return false unless current_subscription_id == subscription.id && (active? || grace?)
-      return false unless subscription.reload.untrusted_expired?(now)
 
       end_paid_plan(now)
       save!

@@ -10,7 +10,7 @@ module Billing
       event = StripeEvent.find(stripe_event_id)
       begin
         subscription_id = event.subscription_id
-        SubscriptionSync.new(subscription_id).call if subscription_id.present?
+        BillSync.new(subscription_id).call if subscription_id.present?
         event.finish!(attempt: attempt, status: "processed")
       rescue StandardError => error
         event.finish!(attempt: attempt, status: "failed", error: "#{error.class}: #{error.message}".first(2_000))

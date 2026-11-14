@@ -25,7 +25,7 @@ class TrialAllowanceTest < ActiveSupport::TestCase
 
   def sync!(id, agent, status:, price: CONVERSATION_PRICE, **stripe)
     @stripe.put_subscription(id: id, agent: agent, customer: "cus_1", price: price, status: status, **stripe)
-    Billing::SubscriptionSync.new(id, client: @stripe).call
+    Billing::BillSync.new(id, client: @stripe).call
   end
 
   def entitlement(agent = @first) = ResidentEntitlement.find_by!(agent: agent)

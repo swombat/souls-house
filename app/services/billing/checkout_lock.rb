@@ -1,24 +1,24 @@
 module Billing
   # A session lock spans several committed transactions. The same key conflicts
-  # with SubscriptionSync's transaction lock; always acquire it before any rows.
+  # with BillSync's transaction lock; always acquire it before any rows.
   class CheckoutLock
 
     def self.synchronize(agent, &)
       # The account's lock: its residents share one subscription.
-      hold(SubscriptionSync::LOCK_NAMESPACE, agent.account_id,
+      hold(BillSync::LOCK_NAMESPACE, agent.account_id,
         "Billing for this account is busy. Please try again in a moment.", &)
     end
 
     # The account's residents' billing, by account: the same key as
     # synchronize, for work (a paid creation) that has no resident yet.
     def self.synchronize_residents(account, &)
-      hold(SubscriptionSync::LOCK_NAMESPACE, account.id,
+      hold(BillSync::LOCK_NAMESPACE, account.id,
         "Billing for this account is busy. Please try again in a moment.", &)
     end
 
-    # An account's plan: the same key as AccountSubscriptionSync's lock.
+    # An account's plan: the same key as BillSync's lock.
     def self.synchronize_account(account, &)
-      hold(AccountSubscriptionSync::LOCK_NAMESPACE, account.id,
+      hold(BillSync::LOCK_NAMESPACE, account.id,
         "Billing for this account is busy. Please try again in a moment.", &)
     end
 

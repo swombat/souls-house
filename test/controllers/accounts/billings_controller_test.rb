@@ -17,8 +17,10 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "the owner moves a paid resident to another plan from the Billing tab" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
     with_stripe do
-      Billing::SubscriptionSync.new("sub_1", client: @stripe).call
+      Billing::BillSync.new("sub_1", client: @stripe).call
       post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "life" }
     end
 
@@ -96,8 +98,10 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
   test "the owner moves the account between Partners and Colleagues, audited" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
     @stripe.put_account_subscription(id: "sub_a", account: @account, customer: "cus_1", price: PARTNERS_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
     with_stripe do
-      Billing::SubscriptionSync.new("sub_a", client: @stripe).call
+      Billing::BillSync.new("sub_a", client: @stripe).call
       post account_plan_change_account_billing_path(@account), params: { plan: "colleagues" }
     end
     assert_redirected_to account_billing_path(@account)
@@ -211,18 +215,18 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
     with_stripe do
-      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      seed_bill!
       post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
     end
 
-    attempt = BillingCheckoutAttempt.find_by!(agent: second, kind: "item")
+    attempt = BillChange.where(account: @account).order(:id).last
     assert_redirected_to account_billing_path(@account, add: attempt.id)
     assert_empty @stripe.checkout_sessions, "no second subscription is opened"
     assert_empty @stripe.subscription_updates, "nothing changes before the owner confirms"
 
     get account_billing_path(@account, add: attempt.id)
     shown = inertia_shared_props["pending_add"]
-    assert_equal [ second.name, Billing::AddItem.digest(attempt.quote) ], shown.values_at("resident_name", "digest")
+    assert_equal [ second.name, attempt.digest ], shown.values_at("resident_name", "digest")
 
     sign_in(users(:regular_user))
     with_stripe do
@@ -241,13 +245,65 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "add_resident_to_subscription", user: @user)
   end
 
+  test "an account that already pays buys its plan as a line on the same bill, quoted first: no second subscription" do
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    with_stripe do
+      seed_bill!
+      post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }
+    end
+
+    change = BillChange.unresolved.find_by!(account: @account)
+    assert_redirected_to account_billing_path(@account, add: change.id)
+    assert_empty @stripe.checkout_sessions
+    assert_equal "companions", @account.reload.plan.id, "nothing changes before the owner confirms"
+
+    get account_billing_path(@account, add: change.id)
+    shown = inertia_shared_props["pending_add"]
+    assert_equal [ "plan", "the Partners plan", change.digest ], shown.values_at("kind", "resident_name", "digest")
+
+    with_stripe { post add_resident_account_billing_path(@account), params: { attempt_id: change.id, digest: shown["digest"] } }
+    assert_match(/The Partners plan is on Partners now|next bill/, flash[:notice])
+    assert_equal "partners", @account.reload.plan.id
+    assert_equal [ "sub_acct" ], AccountSubscription.live.where(account: @account).pluck(:stripe_subscription_id)
+    assert_equal({ LIFE_PRICE => 1, PARTNERS_PRICE => 1 }, Billing::BillSync.house_lines("sub_acct"))
+    assert AuditLog.exists?(action: "change_account_plan", user: @user)
+  end
+
+  test "a quote dropped by a later one is never announced as done: it is made again and shown" do
+    second = agents(:code_reviewer)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe do
+      seed_bill!
+      post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
+    end
+    first = BillChange.unresolved.find_by!(account: @account)
+    with_stripe { post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "life" } }
+    assert first.reload.abandoned?
+
+    with_stripe { post add_resident_account_billing_path(@account), params: { attempt_id: first.id, digest: first.digest } }
+
+    assert_match(/Nothing was sent/, flash[:alert])
+    assert_no_match(/ is on /, flash[:notice].to_s)
+    assert_empty @stripe.subscription_updates
+    assert_not ResidentSubscription.live.exists?(agent: second)
+    assert_not AuditLog.exists?(action: "add_resident_to_subscription")
+  end
+
   test "a stale quote is made again and shown, and a refusal says why" do
     second = agents(:code_reviewer)
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
     with_stripe do
-      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      seed_bill!
       post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
     end
     assert_redirected_to account_billing_path(@account)
@@ -256,17 +312,17 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_payment_method("pm_1")
     @stripe.put_customer("cus_1", default_payment_method: "pm_1")
     with_stripe { post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" } }
-    stale = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "item")
+    stale = BillChange.unresolved.find_by!(account: @account)
     @stripe.price_amounts[CONVERSATION_PRICE] = 4_200
     with_stripe do
       post add_resident_account_billing_path(@account),
-        params: { attempt_id: stale.id, digest: Billing::AddItem.digest(stale.quote) }
+        params: { attempt_id: stale.id, digest: stale.digest }
     end
 
-    fresh = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "item")
+    fresh = BillChange.unresolved.find_by!(account: @account)
     assert_not_equal stale.id, fresh.id
     assert_redirected_to account_billing_path(@account, add: fresh.id)
-    assert_match(/price changed/, flash[:alert])
+    assert_match(/bill changed/, flash[:alert])
     assert_empty @stripe.subscription_updates
   end
 
@@ -304,17 +360,17 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" }, { agent: second, price: CONVERSATION_PRICE, id: "si_b" } ])
     with_stripe do
-      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      seed_bill!
       post end_plan_account_billing_path(@account), params: { agent_id: second.to_param }
     end
 
-    attempt = BillingCheckoutAttempt.find_by!(agent: second, kind: "end")
+    attempt = BillChange.where(account: @account).order(:id).last
     assert_redirected_to account_billing_path(@account, end: attempt.id)
     assert_empty @stripe.subscription_updates, "nothing changes before the owner confirms"
 
     get account_billing_path(@account, end: attempt.id)
     shown = inertia_shared_props["pending_end"]
-    assert_equal [ second.name, "delete", Billing::EndItem.digest(attempt.quote) ], shown.values_at("resident_name", "operation", "digest")
+    assert_equal [ second.name, "delete", attempt.digest ], shown.values_at("resident_name", "operation", "digest")
     assert shown["next_change_cents"].negative?
 
     sign_in(users(:regular_user))
@@ -323,12 +379,12 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
 
     sign_in(@user)
     with_stripe { post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: "moved" } }
-    fresh = BillingCheckoutAttempt.unresolved.find_by!(agent: second, kind: "end")
+    fresh = BillChange.unresolved.find_by!(account: @account)
     assert_redirected_to account_billing_path(@account, end: fresh.id)
     assert_empty @stripe.subscription_updates
 
     with_stripe do
-      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: fresh.id, digest: Billing::EndItem.digest(fresh.quote) }
+      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: fresh.id, digest: fresh.digest }
     end
     assert_redirected_to account_billing_path(@account)
     assert_match(/comes off the next bill as credit/, flash[:notice])
@@ -342,12 +398,12 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
     with_stripe do
-      Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+      seed_bill!
       post end_plan_account_billing_path(@account), params: { agent_id: @agent.to_param }
     end
-    attempt = BillingCheckoutAttempt.find_by!(agent: @agent, kind: "end")
+    attempt = BillChange.where(account: @account).order(:id).last
     with_stripe do
-      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: Billing::EndItem.digest(attempt.quote) }
+      post confirm_end_plan_account_billing_path(@account), params: { attempt_id: attempt.id, digest: attempt.digest }
     end
     assert_match(/won't renew/, flash[:notice])
     assert ResidentEntitlement.find_by!(agent: @agent).current_subscription.cancel_at_period_end
@@ -368,7 +424,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "trialing")
     ends = 11.days.from_now.change(usec: 0)
     @stripe.subscription("sub_1")[:trial_end] = ends.to_i
-    with_stripe { Billing::SubscriptionSync.new("sub_1", client: @stripe).call }
+    with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
 
     with_stripe { get account_billing_path(@account) }
     assert_equal({ "eligible" => false, "days" => 14 }, inertia_shared_props.fetch("trial"))
@@ -379,7 +435,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert others.all? { |resident| resident.key?("trial_ends_at") && resident["trial_ends_at"].nil? }
 
     @stripe.set_subscription_status("sub_1", "active")
-    with_stripe { Billing::SubscriptionSync.new("sub_1", client: @stripe).call }
+    with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
     @inertia_props = nil
     with_stripe { get account_billing_path(@account) }
     row = inertia_shared_props.fetch("residents").find { |resident| resident["id"] == @agent.to_param }
@@ -393,8 +449,8 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: CONVERSATION_PRICE, status: "active")
     @stripe.put_subscription(id: "sub_2", agent: other, customer: "cus_1", price: CONVERSATION_PRICE, status: "active")
     with_stripe do
-      Billing::SubscriptionSync.new("sub_1", client: @stripe).call
-      Billing::SubscriptionSync.new("sub_2", client: @stripe).call
+      Billing::BillSync.new("sub_1", client: @stripe).call
+      Billing::BillSync.new("sub_2", client: @stripe).call
       get account_billing_path(@account)
     end
 

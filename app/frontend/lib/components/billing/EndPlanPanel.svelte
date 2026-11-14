@@ -1,5 +1,5 @@
 <script>
-  // The confirmation for ending one resident's paid plan (Billing::EndItem):
+  // The confirmation for ending one resident's paid plan (Billing::Reconcile):
   // the server's quote, confirmed as-is or not at all. Amounts arrive in cents.
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';

@@ -89,7 +89,7 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal({}, order.birth_attributes)
     assert_equal "Aria", agent.name
     assert_equal @account, agent.account
-    assert_equal agent.id.to_s, @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    assert_empty @stripe.subscription_updates, "the house's row says whose it is; Stripe is not written to again"
     entitlement = ResidentEntitlement.find_by!(agent: agent)
     assert entitlement.active?
     assert_equal "conversation", entitlement.tier
@@ -101,9 +101,9 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     @stripe.set_subscription_status("sub_new_1", "active")
 
     assert_difference "Agent.count", 1 do
-      Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+      Billing::BillSync.new("sub_new_1", client: @stripe).call
       paid_birth.complete!(order)
-      Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+      Billing::BillSync.new("sub_new_1", client: @stripe).call
     end
     assert order.reload.born?
     assert_equal 1, ResidentSubscription.where(stripe_subscription_id: "sub_new_1").count
@@ -111,7 +111,7 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
 
   test "a webhook for an unpaid order changes nothing" do
     start!
-    assert_nil Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+    assert_nil Billing::BillSync.new("sub_new_1", client: @stripe).call
     assert_equal 0, ResidentSubscription.count
   end
 
@@ -212,7 +212,7 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     @stripe.set_subscription_status("sub_new_1", "active")
 
     assert_difference "Agent.count", 1 do
-      Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
+      Billing::BillSync.new("sub_new_1", client: @stripe).call
     end
     order = ResidentBirthOrder.sole
     assert order.born?
@@ -242,28 +242,29 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_no_difference "Agent.count" do
       paid_birth.complete!(order)
       assert_raises(Billing::InvalidSubscription) do
-        Billing::SubscriptionSync.new("sub_elsewhere_ref", client: @stripe).call
+        Billing::BillSync.new("sub_elsewhere_ref", client: @stripe).call
       end
     end
     assert order.reload.pending?
     assert_nil order.stripe_subscription_id
   end
 
-  test "Stripe names the resident only after it is committed, and a failed naming is retried" do
+  test "the plan comes into force only after the birth is committed, and a lost sync is finished by the next one" do
     order, = start!
     @stripe.set_subscription_status("sub_new_1", "active")
-    @stripe.fail_next_subscription_update
 
-    assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    lost = ->(*, **) { raise Stripe::APIConnectionError.new("timed out") }
+    Billing::BillSync.stub(:new, lost) do
+      assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    end
     order.reload
-    assert order.born?, "the birth committed before Stripe was told"
+    assert order.born?, "the birth committed before the subscription was brought in"
     assert Agent.exists?(order.agent_id)
-    assert_nil @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
     assert_not ResidentEntitlement.paid_for?(order.agent)
 
-    Billing::SubscriptionSync.new("sub_new_1", client: @stripe).call
-    assert_equal order.agent_id.to_s, @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
+    Billing::BillSync.new("sub_new_1", client: @stripe).call
     assert ResidentEntitlement.paid_for?(order.agent)
+    assert_equal [ order.agent_id ], ResidentSubscription.where(stripe_subscription_id: "sub_new_1").pluck(:agent_id)
   end
 
   test "a birth rolled back after payment is never named at Stripe" do
@@ -300,14 +301,15 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
   test "a born order whose answer or link was lost is resumed into linking, not refused" do
     order, = start!
     @stripe.set_subscription_status("sub_new_1", "active")
-    @stripe.fail_next_subscription_update
-    assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    lost = ->(*, **) { raise Stripe::APIConnectionError.new("timed out") }
+    Billing::BillSync.stub(:new, lost) do
+      assert_raises(Stripe::APIConnectionError) { paid_birth.complete!(order) }
+    end
     assert order.reload.born?
 
     assert_no_difference "Agent.count" do
       assert_equal({ paid: true }, paid_birth.payment(order))
     end
-    assert_equal order.agent_id.to_s, @stripe.subscription("sub_new_1")[:metadata]["agent_id"]
     assert ResidentEntitlement.paid_for?(order.agent)
   end
 

@@ -1,13 +1,10 @@
 # Immutable payment intent, committed before contacting Stripe. Unknown attempts
 # remain blocking: never rotate their key because a replay was refused.
 #
-# kind "checkout" opens a Stripe Checkout (Billing::Checkout); kind "item"
-# adds the resident to the account's live subscription (Billing::AddItem):
-# stripe_subscription_id is that parent, create_params its pinned update,
-# quote what the owner was shown, submitted_at when it was first sent. kind
-# "end" ends the resident's plan on that subscription (Billing::EndItem):
-# stripe_subscription_item_id is the item it ends, create_params the pinned
-# delete or period-end update, quote names the operation.
+# kind "checkout" opens a Stripe Checkout (Billing::Checkout). The kinds
+# "item", "end" and "keep" were changes to a bill that already existed; those
+# are bill changes now (BillChange, Billing::Reconcile) and are no longer
+# written. Their old rows are kept as the record of what was done.
 class BillingCheckoutAttempt < ApplicationRecord
 
   belongs_to :agent

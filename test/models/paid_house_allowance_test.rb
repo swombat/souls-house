@@ -17,7 +17,7 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     travel_to @now
   end
 
-  # As Billing::SubscriptionSync applies it.
+  # As Billing::BillSync applies it.
   def pay!(agent, tier, id: "sub_#{agent.id}_#{tier}", now: Time.current)
     sub = ResidentSubscription.find_or_initialize_by(stripe_subscription_id: id)
     sub.update!(agent: agent, account: agent.account, tier: tier, stripe_status: "active")

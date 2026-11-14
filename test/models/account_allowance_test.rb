@@ -22,7 +22,7 @@ class AccountAllowanceTest < ActiveSupport::TestCase
 
   def pay!(id, agent, price: CONVERSATION_PRICE, status: "active")
     @stripe.put_subscription(id: id, agent: agent, customer: "cus_1", price: price, status: status)
-    Billing::SubscriptionSync.new(id, client: @stripe).call
+    Billing::BillSync.new(id, client: @stripe).call
   end
 
   def entitlement(agent) = ResidentEntitlement.find_by!(agent: agent)

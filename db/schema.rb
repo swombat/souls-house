@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_14_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -742,6 +742,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
     t.index ["auditable_type", "auditable_id"], name: "index_audit_logs_on_auditable_type_and_auditable_id"
     t.index ["created_at"], name: "index_audit_logs_on_created_at"
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
+  end
+
+  create_table "bill_changes", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "requested_by_id"
+    t.string "state", default: "proposed", null: false
+    t.string "stripe_subscription_id", null: false
+    t.string "idempotency_key", null: false
+    t.jsonb "ops", null: false
+    t.jsonb "base", null: false
+    t.jsonb "lines", null: false
+    t.jsonb "params", null: false
+    t.jsonb "quote", null: false
+    t.string "problem"
+    t.datetime "submitted_at"
+    t.datetime "resolved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "one_unresolved_bill_change_per_account", unique: true, where: "(resolved_at IS NULL)"
+    t.index ["idempotency_key"], name: "index_bill_changes_on_idempotency_key", unique: true
+    t.index ["requested_by_id"], name: "index_bill_changes_on_requested_by_id"
+    t.check_constraint "state::text = ANY (ARRAY['proposed'::character varying, 'submitted'::character varying, 'applied'::character varying, 'abandoned'::character varying]::text[])", name: "bill_changes_state"
   end
 
   create_table "billing_checkout_attempts", force: :cascade do |t|
@@ -2544,6 +2566,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
     t.jsonb "item_create_params"
     t.jsonb "item_quote"
     t.datetime "item_submitted_at"
+    t.bigint "bill_change_id"
+    t.index ["bill_change_id"], name: "index_resident_birth_orders_on_bill_change_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('born'::character varying)::text, ('failed'::character varying)::text])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
@@ -2667,7 +2691,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
     t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
-    t.index ["stripe_subscription_id"], name: "one_unitemised_row_per_subscription", unique: true, where: "(stripe_subscription_item_id IS NULL)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
     t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
@@ -3474,6 +3497,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "bill_changes", "accounts"
+  add_foreign_key "bill_changes", "users", column: "requested_by_id"
   add_foreign_key "billing_checkout_attempts", "accounts"
   add_foreign_key "billing_checkout_attempts", "agents"
   add_foreign_key "billing_checkout_attempts", "billing_code_redemptions"
@@ -3666,6 +3691,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_180000) do
   add_foreign_key "repository_watches", "chats", on_delete: :cascade
   add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
+  add_foreign_key "resident_birth_orders", "bill_changes"
   add_foreign_key "resident_birth_orders", "accounts"
   add_foreign_key "resident_birth_orders", "agents"
   add_foreign_key "resident_birth_orders", "billing_code_redemptions"

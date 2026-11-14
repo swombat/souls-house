@@ -1,10 +1,10 @@
 # Stripe Checkout for an account's plan (Billing::AccountPlan): one line item,
 # metadata kind=account_plan, the same tax and address settings as a
 # resident's Checkout. It grants nothing: the plan comes in when
-# AccountSubscriptionSync brings the paid subscription in.
+# BillSync brings the paid subscription in.
 #
 # The discipline is Billing::Checkout's: under a session lock on the account
-# (the key AccountSubscriptionSync takes), refuse if a plan is live; an
+# (the key BillSync takes), refuse if a plan is live; an
 # attempt is committed before Stripe is called and replayed under its own
 # idempotency key, so an uncertain create can't make a second payable
 # session; one unresolved attempt per account.
@@ -13,6 +13,7 @@ module Billing
 
     class Refused < StandardError; end
 
+    KIND = "account_plan".freeze # the subscription's metadata kind; Billing::BillSync reads it
     REPLAY_WINDOW = Checkout::REPLAY_WINDOW
 
     def initialize(account:, plan:, success_url:, cancel_url:, client: Billing.client)
@@ -85,7 +86,7 @@ module Billing
     end
 
     def params(customer, key)
-      metadata = { kind: AccountSubscriptionSync::KIND, account_id: @account.id.to_s, plan: @plan.id, checkout_attempt: key }
+      metadata = { kind: KIND, account_id: @account.id.to_s, plan: @plan.id, checkout_attempt: key }
       {
         mode: "subscription", customer: customer.stripe_customer_id, client_reference_id: "account-#{@account.id}",
         line_items: [ { price: @plan.price_id, quantity: 1 } ],

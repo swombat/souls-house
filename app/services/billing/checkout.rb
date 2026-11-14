@@ -18,11 +18,10 @@ module Billing
           raise AlreadySubscribed, "#{@agent.name} already has a subscription; change it from Manage billing"
         end
         # One payment per account: a second resident joins the live
-        # subscription (Billing::AddItem), never a Checkout of its own.
-        if AddItem.applies?(@agent.account)
+        # subscription (Billing::Reconcile), never a Checkout of its own.
+        if Reconcile.applies?(@agent.account)
           raise AlreadySubscribed, "This account already pays through one subscription; add #{@agent.name} to it from the Billing tab."
         end
-        settle_items!
         entitlement = ResidentEntitlement.for_agent!(@agent)
         customer = remote { BillingCustomer.for!(@agent.account, client: @client) }
         attempt = BillingCheckoutAttempt.unresolved.find_by(agent: @agent, kind: "checkout")
@@ -53,7 +52,7 @@ module Billing
     end
 
     # Closes every Checkout this resident could still pay before its plan is
-    # bought another way (Billing::AddItem, which holds the account lock).
+    # bought another way (Billing::Reconcile, which holds the account lock).
     # Raises if one may already have been paid.
     def close_all!
       @deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + OPERATION_BUDGET
@@ -69,15 +68,6 @@ module Billing
     end
 
     private
-
-    # An add-item quote never sent is dropped; one sent but unanswered blocks.
-    def settle_items!
-      BillingCheckoutAttempt.unresolved.where(agent: @agent, kind: AddItem::KIND).find_each do |earlier|
-        raise NotReady, "Adding #{@agent.name} to the account's subscription is still being confirmed." if earlier.submitted_at?
-
-        earlier.update!(resolved_at: Time.current)
-      end
-    end
 
     def check_offer!
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?

@@ -1,6 +1,6 @@
 # A Stripe subscription that pays for an account's plan (Billing::AccountPlan),
 # separate from any resident's. One row per Stripe subscription, never reused;
-# at most one live per account (Billing::AccountSubscriptionSync keeps it).
+# at most one live per account (Billing::BillSync keeps it).
 # Ending it removes the plan's features only: no resident is touched.
 class AccountSubscription < ApplicationRecord
 

@@ -23,14 +23,6 @@ module Billing
       ResidentEntitlement.grace_expired(now).find_each { |entitlement| entitlement.expire_grace!(now: now) }
 
       # An unreadable item's hold runs out even if Stripe sends nothing more.
-      ResidentSubscription.untrusted_expired(now).find_each do |row|
-        ApplicationRecord.transaction do
-          SubscriptionSync.lock!(row.account_id)
-          ResidentEntitlement.for_agent!(row.agent).expire_untrusted!(row, now: now)
-        end
-      end
-
-      # A sent item order is never abandoned: it is born, or tried again.
       ResidentBirthOrder.items_unborn(now).find_each do |order|
         PaidBirth.new.resume_item!(order)
       rescue StandardError => error
@@ -48,18 +40,13 @@ module Billing
       # An End plan sent with no answer finishes with no browser; an unsent
       # quote left open is dropped. One that can't be settled is reported
       # and left for the next pass.
-      BillingCheckoutAttempt.unresolved.where(kind: EndItem::KIND).find_each do |attempt|
-        EndItem.new(agent: attempt.agent, now: now).resume!(attempt)
+      # Changes to a bill that were sent and never settled (a lost answer, a
+      # closed browser). A paid creation's change is finished with its order,
+      # above.
+      BillChange.submitted.where(submitted_at: ..(now - 5.minutes)).where.missing(:birth_order).find_each do |change|
+        Reconcile.new(account: change.account, now: now).recover(change)
       rescue StandardError => error
-        Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
-      end
-
-      # A Keep whose answer or sync was lost: finished from what the
-      # subscription shows.
-      BillingCheckoutAttempt.unresolved.where(kind: EndItem::KEEP).find_each do |attempt|
-        EndItem.new(agent: attempt.agent, now: now).resume_keep!(attempt)
-      rescue StandardError => error
-        Rails.error.report(error, handled: true, context: { subsystem: "billing", checkout_attempt_id: attempt.id })
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", bill_change_id: change.id })
       end
     end
 

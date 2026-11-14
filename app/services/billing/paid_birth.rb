@@ -19,11 +19,11 @@
 #                never pays twice and a lost confirmation is recovered.
 #   complete!    once Stripe says the subscription is paid: (1) bears the
 #                resident through the ordinary birth, committed locally, then
-#                (2) links it: names the committed resident on the
-#                subscription and brings the subscription in. Stripe only ever
-#                names a resident that exists. If linking fails it is retried
-#                by the next confirm or webhook; a born order is linked again
-#                until its plan is in force.
+#                (2) brings the subscription in (Billing::BillSync), which
+#                makes the resident's row on it: the house says whose the
+#                subscription is, and Stripe is not written to again. If that
+#                fails it is retried by the next confirm or webhook; a born
+#                order is brought in again until its plan is in force.
 #
 # A free-trial order (Billing::Trial) is the same order with trial: true. It
 # needs no card: instead of opening the subscription itself, start_trial!
@@ -33,11 +33,11 @@
 # webhook and the sweeper treat it as any other order, trialing being paid.
 #
 # In an account that already has a live subscription, the order is an item
-# order instead (Billing::PaidBirth::ItemOrders): the resident is added to
-# that subscription on credit, born once the accepted item is verified.
+# order instead (Billing::PaidBirth::ItemOrders): the resident goes onto that
+# bill as a bill change, on credit, born once Stripe carries its line.
 #
 # Nothing is born before money has cleared, or, for an item order, before the
-# account's subscription has accepted the item. A paid order is never replaced by
+# account's subscription carries its line. A paid order is never replaced by
 # a new one: asking to create another resident while one is paid finishes the
 # paid one and says so. Unpaid orders are abandoned by the sweeper after
 # expires_at, their subscriptions cancelled and drafts cleared.
@@ -85,7 +85,7 @@ module Billing
       # and after earlier orders are settled, and never inferred again.
       CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
-        if AddItem.applies?(account)
+        if Reconcile.applies?(account)
           next [ start_item!(account: account, creator: creator, attributes: attributes, open_beginning: open_beginning,
             offer: offer), nil, nil ]
         end
@@ -345,19 +345,8 @@ module Billing
     def bear_if_paid!(order)
       failure = nil
       remote = nil
-      attention = nil
       order.with_lock do
         next unless order.pending? || order.failed?
-
-        if order.item?
-          begin
-            _outcome, attention = bear_item!(order)
-          rescue ActiveRecord::RecordInvalid, Agents::HostedProvisioning::ConfigurationError => error
-            failure = error
-            raise ActiveRecord::Rollback
-          end
-          next
-        end
 
         remote = remote_subscription(order)
         next unless remote && remote.status.in?(PAID)
@@ -372,7 +361,6 @@ module Billing
         end
       end
       fail!(order, remote, failure) if failure
-      needs_attention!(order, attention) if attention
     end
 
     # An accepted item order that can't be born just now: kept, with its
@@ -385,20 +373,11 @@ module Billing
         context: { subsystem: "billing", birth_order_id: order.id, stripe_subscription_id: order.stripe_subscription_id })
     end
 
-    # Step 2, after the birth has committed: Stripe names the resident, and
-    # the subscription is brought in so the plan is in force. Repeatable.
+    # Step 2, after the birth has committed: the subscription is brought in,
+    # which makes the resident's row on it, so the plan is in force.
+    # Repeatable.
     def link!(order)
-      remote = @client.v1.subscriptions.retrieve(order.stripe_subscription_id)
-      # Once the subscription is the account's (Billing::AddItem converted
-      # it), its metadata names no resident: the item carries the order's
-      # provenance, and an old retry must not write a resident back on top.
-      if remote.metadata["kind"] != "account" && remote.metadata["agent_id"].to_s != order.agent_id.to_s
-        @client.v1.subscriptions.update(remote.id, {
-          metadata: { agent_id: order.agent_id.to_s, birth_order: order.reference },
-          description: "#{order.offer.name} hosting for #{order.agent.name}"
-        })
-      end
-      SubscriptionSync.new(remote.id, client: @client).call
+      BillSync.new(order.stripe_subscription_id, client: @client).call
     end
 
     def fail!(order, remote, error)

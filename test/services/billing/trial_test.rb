@@ -107,7 +107,7 @@ class Billing::TrialTest < ActiveSupport::TestCase
     entitlement = ResidentEntitlement.find_by!(agent: order.agent)
     assert entitlement.active?
     assert_equal BigDecimal("10"), entitlement.allowance_limit, "the trial's $10"
-    assert_equal order.agent_id.to_s, @stripe.subscription("sub_trial")[:metadata]["agent_id"]
+    assert_equal [ order.agent_id ], ResidentSubscription.where(stripe_subscription_id: "sub_trial").pluck(:agent_id)
   end
 
   test "once per account: a born trial is never offered again, to anyone" do
