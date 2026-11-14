@@ -8,6 +8,7 @@
   import RecordingNotes from '$lib/components/field/RecordingNotes.svelte';
   import TranscriptTurns from '$lib/components/field/TranscriptTurns.svelte';
   import ShareTranscript from '$lib/components/field/ShareTranscript.svelte';
+  import ReaderMode from '$lib/components/ReaderMode.svelte';
   import { transcriptPlainText } from '$lib/transcript-share';
   import { formatWhen } from '$lib/field';
   import {
@@ -22,7 +23,7 @@
     suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
-  import { ArrowClockwise, ArrowLeft, CaretLeft, CaretRight, Trash, X } from 'phosphor-svelte';
+  import { ArrowClockwise, ArrowLeft, ArrowsOut, CaretLeft, CaretRight, Trash, X } from 'phosphor-svelte';
 
   let {
     recording,
@@ -38,6 +39,9 @@
     recognition_enabled = false,
     account,
   } = $props();
+
+  // Full-screen reading of the transcript (ReaderMode); the page stays put behind it.
+  let reading = $state(false);
 
   // The transcript's words travel in their own prop, `transcript`, with the
   // revision they belong to, so the recording's refreshes never resend them (a
@@ -255,7 +259,9 @@
               <CaretLeft class="size-4" /> Previous
             </Link>
           {:else}
-            <span class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1" aria-disabled="true">
+            <span
+              class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1"
+              aria-disabled="true">
               <CaretLeft class="size-4" /> Previous
             </span>
           {/if}
@@ -268,7 +274,9 @@
               Next <CaretRight class="size-4" />
             </Link>
           {:else}
-            <span class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1" aria-disabled="true">
+            <span
+              class="text-sm text-muted-foreground/40 inline-flex items-center gap-1 px-2 py-1"
+              aria-disabled="true">
               Next <CaretRight class="size-4" />
             </span>
           {/if}
@@ -418,17 +426,37 @@
         <Card.Content class="p-6">
           <div class="flex items-center justify-between gap-3 mb-4">
             <h2 class="text-lg font-semibold">Transcript</h2>
-            <ShareTranscript text={plainText} sharesUrl={`${recording.show_url}/shares`} {shares} />
+            <div class="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onclick={() => (reading = true)}
+                title="Read the transcript full screen"
+                data-testid="transcript-expand">
+                <ArrowsOut class="size-4" /> Expand
+              </Button>
+              <ShareTranscript text={plainText} sharesUrl={`${recording.show_url}/shares`} {shares} />
+            </div>
           </div>
-          <TranscriptTurns
-            {turns}
-            {names}
-            {activeIndex}
-            onSeek={seek}
-            onSave={saveLine}
-            onReassign={reassignLine}
-            choices={speakerChoices}
-            revision={transcript.revision} />
+          {#snippet turnsView()}
+            <TranscriptTurns
+              {turns}
+              {names}
+              {activeIndex}
+              onSeek={seek}
+              onSave={saveLine}
+              onReassign={reassignLine}
+              choices={speakerChoices}
+              revision={transcript.revision} />
+          {/snippet}
+          <!-- One copy of the turns at a time: their line editor and menus listen on the window. -->
+          {#if reading}
+            <ReaderMode title={recording.title} subtitle="Transcript" onClose={() => (reading = false)}>
+              {@render turnsView()}
+            </ReaderMode>
+          {:else}
+            {@render turnsView()}
+          {/if}
         </Card.Content>
       </Card.Root>
     {:else}

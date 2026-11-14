@@ -2,10 +2,11 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { mode } from 'mode-watcher';
-  import { FloppyDisk, PencilSimple, Spinner, X } from 'phosphor-svelte';
+  import { ArrowsOut, FloppyDisk, PencilSimple, Spinner, X } from 'phosphor-svelte';
   import { Streamdown } from 'svelte-streamdown';
   import { LINK_PREFIXES } from '$lib/markdown-links.js';
   import { formatWhen } from '$lib/field.js';
+  import ReaderMode from '$lib/components/ReaderMode.svelte';
 
   let {
     selected,
@@ -21,7 +22,38 @@
   } = $props();
 
   const shikiTheme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
+
+  let reading = $state(false);
+  const hasContent = $derived(Boolean(selected.content?.trim()));
+  const readerSubtitle = $derived(
+    [
+      selected.dated_at ? `Dated ${formatWhen(selected.dated_at)}` : null,
+      selected.last_edited_at
+        ? `Last edited ${selected.last_edited_at}${selected.editor_name ? ` by ${selected.editor_name}` : ''}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || null
+  );
 </script>
+
+{#snippet rendered()}
+  <div class="prose dark:prose-invert max-w-none">
+    <Streamdown
+      allowedLinkPrefixes={LINK_PREFIXES}
+      content={selected.content}
+      parseIncompleteMarkdown={false}
+      baseTheme="shadcn"
+      {shikiTheme}
+      shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']} />
+  </div>
+{/snippet}
+
+{#if reading && !editing && hasContent}
+  <ReaderMode title={selected.name} subtitle={readerSubtitle} onClose={() => (reading = false)}>
+    {@render rendered()}
+  </ReaderMode>
+{/if}
 
 <Card.Root class="h-[calc(100vh-16rem)]">
   <div class="flex flex-col h-full">
@@ -56,6 +88,17 @@
             Save
           </Button>
         {:else}
+          {#if hasContent}
+            <Button
+              variant="outline"
+              size="sm"
+              onclick={() => (reading = true)}
+              title="Read this full screen"
+              data-testid="note-expand">
+              <ArrowsOut class="mr-1 size-4" />
+              Expand
+            </Button>
+          {/if}
           <Button variant="outline" size="sm" onclick={onStartEditing}>
             <PencilSimple class="mr-1 size-4" />
             Edit
@@ -84,16 +127,8 @@
           class="w-full h-full min-h-[300px] resize-none border border-input rounded-md px-3 py-2 text-sm bg-background font-mono
                  focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
           placeholder="Write your whiteboard content here..."></textarea>
-      {:else if selected.content?.trim()}
-        <div class="prose dark:prose-invert max-w-none">
-          <Streamdown
-            allowedLinkPrefixes={LINK_PREFIXES}
-            content={selected.content}
-            parseIncompleteMarkdown={false}
-            baseTheme="shadcn"
-            {shikiTheme}
-            shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']} />
-        </div>
+      {:else if hasContent}
+        {@render rendered()}
       {:else}
         <p class="text-muted-foreground text-center py-8">No content yet. Click Edit to add content.</p>
       {/if}
