@@ -107,4 +107,19 @@ class Billing::AccountPlanCheckoutTest < ActiveSupport::TestCase
     assert checkout("colleagues")
   end
 
+  test "a grant that arrives while Checkout waits for the account lock stops the purchase" do
+    arrives = lambda do |account, &operation|
+      Account.where(id: account.id).update_all(granted_plan: "partners")
+      operation.call
+    end
+    Billing::CheckoutLock.stub(:synchronize_account, arrives) do
+      assert_raises(Billing::AccountPlanCheckout::Refused) do
+        Billing::AccountPlanCheckout.new(account: @account, plan: Billing::AccountPlan.find!("partners"), client: @stripe,
+          success_url: "https://souls.example/ok", cancel_url: "https://souls.example/no").url
+      end
+    end
+    assert_empty @stripe.checkout_sessions
+    assert_empty AccountPlanCheckoutAttempt.where(account: @account)
+  end
+
 end

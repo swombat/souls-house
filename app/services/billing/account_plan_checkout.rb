@@ -40,11 +40,13 @@ module Billing
 
     def url
       raise Refused, "Companions comes with every account; there is nothing to buy." if @plan.free?
-      if (given = @account.given_plan) && given >= @plan
-        raise Refused, "The account already has the #{given.name} plan, with nothing to pay for it."
-      end
 
       CheckoutLock.synchronize_account(@account) do
+        # Read under the lock a redemption also takes, and from the database:
+        # a grant that committed while this waited must stop the purchase.
+        if (given = Account.find(@account.id).given_plan) && given >= @plan
+          raise Refused, "The account already has the #{given.name} plan, with nothing to pay for it."
+        end
         if @account.account_subscriptions.live.exists?
           raise AlreadySubscribed, "This account already has a plan; change it from the Billing tab or Manage billing."
         end
