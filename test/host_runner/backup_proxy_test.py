@@ -251,6 +251,11 @@ class RunBackupTest(unittest.TestCase):
         self.assertIn("agent_id=" + UUID, command)
         self.assertIn("agent_slug=pilot-1", command)
         self.assertIn("helixkit_volume_set=v1", command)
+        # ctime churns on every runtime start; inode and mtime stay
+        # meaningful, so only ctime is ignored.
+        self.assertIn("--ignore-ctime", command)
+        self.assertNotIn("--ignore-inode", command)
+        self.assertNotIn("--force", command)
         self.assertNotIn("synthetic-password", " ".join(command))
         self.assertNotIn("AWS_", " ".join(command))
         self.assertNotIn("forget", command)
