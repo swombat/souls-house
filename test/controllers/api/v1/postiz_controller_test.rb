@@ -119,7 +119,11 @@ class Api::V1::PostizControllerTest < ActionDispatch::IntegrationTest
         assert_equal mode, calls.last[:mode]
         assert_equal({ "title" => "Title" }, calls.last[:settings])
         assert_equal "signed", calls.last[:media].first["upload_token"]
-        assert_equal body[:scheduled_at], calls.last[:scheduled_at]
+        if mode == "scheduled"
+          assert_equal body[:scheduled_at], calls.last[:scheduled_at]
+        else
+          assert_nil calls.last[:scheduled_at]
+        end
       end
       %w[type date posts integration __type].each do |field|
         post @posts, params: { channel_id: "c1", content: "Hello", mode: "draft", field => "extra" }, headers: @headers, as: :json
