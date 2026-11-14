@@ -25,6 +25,9 @@ class CreateBillChanges < ActiveRecord::Migration[8.1]
       t.check_constraint "state IN ('proposed', 'submitted', 'applied', 'abandoned')", name: "bill_changes_state"
     end
 
+    # A paid creation in an account that already pays is a bill change.
+    add_reference :resident_birth_orders, :bill_change, foreign_key: true
+
     remove_index :resident_subscriptions, name: "one_unitemised_row_per_subscription", column: :stripe_subscription_id,
       unique: true, where: "(stripe_subscription_item_id IS NULL)"
   end

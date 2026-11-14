@@ -37,6 +37,11 @@ module Billing
               "Try again in a few minutes; nothing was changed.".freeze
     DRIFTED = "This account's bill needs a person to look at it before it can change.".freeze
 
+    # Whether the account has a bill a new purchase goes onto.
+    def self.applies?(account)
+      ResidentSubscription.live.where(account:).exists? || AccountSubscription.live.where(account:).exists?
+    end
+
     def initialize(account:, client: Billing.client, now: Time.current)
       @account = account
       @client = client
@@ -140,7 +145,7 @@ module Billing
       parent = @client.v1.subscriptions.retrieve(ids.first)
       raise Refused, "This account's subscription has ended." unless parent.status.in?(BillSync::LIVE)
 
-      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add resize plan]) }
+      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize plan]) }
       parent
     end
 
@@ -186,6 +191,8 @@ module Billing
         case op["op"]
         when "add"
           lines[add!(op)] += 1
+        when "birth"
+          lines[birth!(op)] += 1
         when "end"
           lines[row!(op).stripe_price_id] -= 1
         when "resize"
@@ -200,13 +207,18 @@ module Billing
           current = AccountSubscription.live.find_by(stripe_subscription_id: parent.id)
           plan = op["price"].presence && AccountPlan.for_price(op["price"])
           raise Refused, "That isn't a plan this house sells." if op["price"].present? && plan&.price_id != op["price"]
-          raise Refused, "The account is already on that plan." if current&.stripe_price_id == op["price"]
+          if current&.stripe_price_id == op["price"]
+            raise Refused, "The account is already on #{plan&.name || AccountPlan.default.name}."
+          end
 
           lines[current.stripe_price_id] -= 1 if current
           lines[op["price"]] += 1 if plan
         end
       end
       lines = lines.select { |_price, quantity| quantity.positive? }
+      if ops.any? { |op| op["op"] == "keep_bill" } && !ended_here?(parent)
+        raise Refused, "This bill isn't ending because of something done here. Look at Manage billing."
+      end
       whole = ops.any? { |op| op["op"].in?(%w[end_bill keep_bill]) }
       raise Refused, "A change either ends or keeps the whole bill, or changes its lines." if whole && ops.size > 1
       raise Refused, "That changes nothing on the bill." if lines == base && !whole
@@ -230,7 +242,33 @@ module Billing
         raise NotEligible, "At cost includes no house-model allowance. Choose a model on your own subscription " \
           "or key in the resident's settings first."
       end
+      # Any hosted Checkout the resident could still pay is closed first, so
+      # its plan can't be bought twice.
+      Checkout.new(agent:, tier: offer.tier, rate: offer.rate, success_url: nil, cancel_url: nil, client: @client).close_all!
       op["price"]
+    end
+
+    # A resident about to be created onto the bill: this account's order,
+    # still waiting, at its offer's current price.
+    def birth!(op)
+      order = ResidentBirthOrder.find_by(account: @account, reference: op["order"], kind: "item")
+      raise Refused, "That resident is no longer waiting to be created." unless order&.pending? || order&.failed?
+      unless order.offer.purchasable? && order.offer.price_id == op["price"]
+        raise NotConfigured, "That plan has no Stripe price configured"
+      end
+      unless order.offer.standard? || @account.grant_for(order.offer.rate)
+        raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
+      end
+      op["price"]
+    end
+
+    # Whether the subscription is ending because the house ended it: its last
+    # applied change here ended the whole bill. An ending made elsewhere is
+    # not the house's to undo.
+    def ended_here?(parent)
+      parent.cancel_at_period_end &&
+        BillChange.where(account: @account, stripe_subscription_id: parent.id, state: "applied")
+          .order(:resolved_at, :id).last&.ends_bill?
     end
 
     def row!(op)
@@ -261,9 +299,15 @@ module Billing
     def quote(parent, params, lines)
       shown = { "parent" => parent.id, "lines" => lines, "ends" => params[:cancel_at_period_end],
                 "next_at" => parent.items.data.first&.[](:current_period_end) }.compact
+      customer = BillingCustomer.find_by!(account: @account).stripe_customer_id
+      if params[:cancel_at_period_end]
+        # The last bill: only what is already waiting for it.
+        final = @client.v1.invoices.create_preview({ customer:, subscription: parent.id,
+          subscription_details: { cancel_at_period_end: true } })
+        return shown.merge("currency" => final.currency, "final_total" => final.total.to_i)
+      end
       return shown unless params[:items]
 
-      customer = BillingCustomer.find_by!(account: @account).stripe_customer_id
       details = params.slice(:items, :proration_behavior, :proration_date)
       before = @client.v1.invoices.create_preview({ customer:, subscription: parent.id })
       after = @client.v1.invoices.create_preview({ customer:, subscription: parent.id, subscription_details: details })

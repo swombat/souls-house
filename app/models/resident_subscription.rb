@@ -1,8 +1,9 @@
-# One item of a Stripe subscription, paying for one hosted resident. An
-# account's residents share one subscription, one item each (eoXAEj); the
-# item id is the row's identity. Rows from before have no item id until their
-# first sync. Never reused. Only the entitlement's current subscription can
-# change what the resident is entitled to.
+# One hosted resident's place on a bill: the Stripe subscription that pays for
+# it and the price it was sold at (docs/proposals/2026-11-14-one-bill.md). An
+# account's residents share one subscription; residents sold at the same price
+# are one line of it, with a quantity. The row's status follows the
+# subscription (Billing::BillSync). Never reused. Only the entitlement's
+# current subscription can change what the resident is entitled to.
 class ResidentSubscription < ApplicationRecord
 
   LIVE_STATUSES = %w[incomplete trialing active past_due].freeze
@@ -19,15 +20,11 @@ class ResidentSubscription < ApplicationRecord
   validates :rate, inclusion: { in: Billing::Tier::RATES }
 
   scope :live, -> { where(stripe_status: LIVE_STATUSES) }
-  # Live rows whose item the sync couldn't read for longer than grace.
-  scope :untrusted_expired, ->(now = Time.current) { live.where(untrusted_since: ..(now - Billing::GRACE_PERIOD)) }
 
   def live? = stripe_status.in?(LIVE_STATUSES)
   def paid? = stripe_status.in?(PAID_STATUSES)
   def ended? = stripe_status.in?(ENDED_STATUSES)
   def trialing? = stripe_status == "trialing"
-
-  def untrusted_expired?(now = Time.current) = untrusted_since.present? && untrusted_since + Billing::GRACE_PERIOD <= now
 
   # When the free trial ends, while it runs; nil otherwise.
   def trial_ends_at = trialing? ? trial_end : nil

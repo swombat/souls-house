@@ -283,6 +283,24 @@ describe('adding a resident to the account subscription', () => {
     );
   });
 
+  it('words a plan added to the bill as a plan, and confirms it the same way', async () => {
+    const plan = { ...pendingAdd, kind: 'plan', resident_name: 'the Partners plan', plan: 'Partners', added_cents: 2000 };
+    render(Billing, props({ pending_add: plan }));
+
+    const panel = screen.getByTestId('billing-add-confirm');
+    expect(panel).toHaveTextContent("Add the Partners plan to the account's subscription?");
+    expect(panel).not.toHaveTextContent('on Partners');
+    expect(panel).toHaveTextContent('goes up by about $20.00 for the Partners plan');
+    expect(panel).toHaveTextContent('a month for its plan and residents together');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add the Partners plan' }));
+    expect(router.post).toHaveBeenCalledWith(
+      '/accounts/home/billing/add_resident',
+      { attempt_id: 7, digest: 'abc' },
+      expect.any(Object)
+    );
+  });
+
   it('shows no quote to someone who cannot pay', () => {
     render(Billing, props({ pending_add: pendingAdd, billing: { configured: true, can_pay: false } }));
     expect(screen.queryByTestId('billing-add-confirm')).not.toBeInTheDocument();

@@ -15,12 +15,12 @@ class Billing::BillTest < ActiveSupport::TestCase
   def paid!(agent, price, status: "active")
     id = "sub_#{agent.id}"
     @stripe.put_subscription(id: id, agent: agent, customer: "cus_1", price: price, status: status)
-    Billing::SubscriptionSync.new(id, client: @stripe).call
+    Billing::BillSync.new(id, client: @stripe).call
   end
 
   def plan!(price, status: "active")
     @stripe.put_account_subscription(id: "sub_a", account: @account, customer: "cus_1", price: price, status: status)
-    Billing::SubscriptionSync.new("sub_a", client: @stripe).call
+    Billing::BillSync.new("sub_a", client: @stripe).call
   end
 
   def bill = Billing::Bill.new(@account)

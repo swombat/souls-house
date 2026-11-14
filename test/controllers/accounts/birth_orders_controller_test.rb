@@ -190,7 +190,7 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     first = agents(:research_assistant)
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
       items: [ { agent: first, price: LIFE_PRICE, id: "si_first" } ])
-    Billing::SubscriptionSync.new("sub_acct", client: @stripe).call
+    seed_bill!
 
     Billing.stub(:client, @stripe) { get new_account_agent_path(@account) }
     assert inertia_shared_props.fetch("billing").fetch("adds_to_bill"), "the Plan step shows no card terms"

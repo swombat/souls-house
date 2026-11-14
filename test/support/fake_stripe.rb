@@ -276,7 +276,7 @@ class FakeStripe
         shown = stored[:items][:data].size
         Array(params[:items]).each do |change|
           if change[:id].nil?
-            # A new item, as Billing::AddItem adds a resident.
+            # A new item, as Billing::Reconcile adds a resident.
             planned << { id: "si_#{id}_added_#{planned.size}", quantity: change[:quantity] || 1,
                          price: change[:price_data] ? { price_data: change[:price_data] } : { id: change[:price] },
                          metadata: (change[:metadata] || {}).transform_keys(&:to_s),
@@ -287,7 +287,7 @@ class FakeStripe
           item = planned.find { |row| row[:id] == change[:id] } ||
             raise(Stripe::InvalidRequestError.new("No such subscription item: #{change[:id]}", "items"))
           if change[:deleted]
-            # Billing::EndItem: the item goes; its unused time is a
+            # Billing::Reconcile: the item goes; its unused time is a
             # proration credit waiting for the next invoice.
             planned.delete(item)
             shown -= 1
@@ -588,13 +588,28 @@ class FakeStripe
       "STRIPE_PRICE_ACCOUNT_PARTNERS" => PARTNERS_PRICE, "STRIPE_PRICE_ACCOUNT_COLLEAGUES" => COLLEAGUES_PRICE
     }.freeze
 
+    # The house's rows for a shared subscription the fake holds, one per item
+    # that names a resident, then the subscription brought in. A bill that
+    # already exists is how every change to it starts.
+    def seed_bill!(id = "sub_acct", stripe: @stripe)
+      remote = stripe.subscription(id)
+      (remote[:all_items] || remote[:items][:data]).each do |item|
+        agent = Agent.find_by(id: (item[:metadata] || {})["agent_id"]) || next
+        offer = Billing::Offer.for_price(item[:price][:id])
+        row = ResidentSubscription.create!(agent:, account: agent.account, stripe_subscription_id: id, tier: offer.tier.id,
+          rate: offer.rate, stripe_price_id: item[:price][:id], stripe_status: remote[:status])
+        ResidentEntitlement.for_agent!(agent).apply_subscription!(row)
+      end
+      Billing::BillSync.new(id, client: stripe).call
+    end
+
     def self.included(base)
       base.setup do
         @saved_stripe_env = STRIPE_ENV.keys.index_with { |key| ENV[key] }
         ENV.update(STRIPE_ENV)
         # The account's resident-billing session lock can't be taken inside
         # the fixture transaction; unit contracts run as its holder. The key
-        # itself is CheckoutLockTest's and SharedSubscriptionSyncTest's.
+        # itself is CheckoutLockTest's.
         @saved_residents_lock = Billing::CheckoutLock.method(:synchronize_residents)
         Billing::CheckoutLock.define_singleton_method(:synchronize_residents) { |_account, &operation| operation.call }
       end

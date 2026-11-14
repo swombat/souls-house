@@ -213,7 +213,7 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
     fetches = 0
     callback = lambda do |id, *|
       fetches += 1
-      if fetches == 2 # SubscriptionSync's refetch, after taking its xact lock.
+      if fetches == 2 # BillSync's refetch, after taking its xact lock.
         entered << true
         await(release)
       end
@@ -329,7 +329,10 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
     @stripe.session_states.fetch(session_id).merge!(status: "complete", subscription: "sub_checkout_lifecycle")
   end
 
-  def sync = Billing::SubscriptionSync.new("sub_checkout_lifecycle", client: @stripe).call
+  def sync
+    Billing::BillSync.new("sub_checkout_lifecycle", client: @stripe).call
+    ResidentSubscription.find_by(stripe_subscription_id: "sub_checkout_lifecycle")
+  end
 
   # FakeStripe builds a service per accessor; pin that service only for this
   # scope so callbacks wrap its real cached-response implementation.
@@ -381,7 +384,7 @@ class Billing::CheckoutLifecycleTest < ActiveSupport::TestCase
         ApplicationRecord.connection.select_value(<<~SQL).to_i
           SELECT count(*) FROM pg_locks
           WHERE pid = #{Integer(pid)} AND locktype = 'advisory' AND NOT granted
-            AND classid = #{Billing::SubscriptionSync::LOCK_NAMESPACE}
+            AND classid = #{Billing::BillSync::LOCK_NAMESPACE}
             AND objid = #{@agent.account_id} AND objsubid = 2
         SQL
       end

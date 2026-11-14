@@ -2566,6 +2566,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_213000) do
     t.jsonb "item_create_params"
     t.jsonb "item_quote"
     t.datetime "item_submitted_at"
+    t.bigint "bill_change_id"
+    t.index ["bill_change_id"], name: "index_resident_birth_orders_on_bill_change_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('born'::character varying)::text, ('failed'::character varying)::text])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
@@ -3689,6 +3691,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_213000) do
   add_foreign_key "repository_watches", "chats", on_delete: :cascade
   add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
+  add_foreign_key "resident_birth_orders", "bill_changes"
   add_foreign_key "resident_birth_orders", "accounts"
   add_foreign_key "resident_birth_orders", "agents"
   add_foreign_key "resident_birth_orders", "billing_code_redemptions"

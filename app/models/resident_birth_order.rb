@@ -20,6 +20,8 @@ class ResidentBirthOrder < ApplicationRecord
   belongs_to :creator, class_name: "User"
   belongs_to :agent, optional: true
   belongs_to :billing_code_redemption, optional: true
+  # An item order's place on the account's bill (Billing::Reconcile).
+  belongs_to :bill_change, optional: true
 
   state_machine :state, initial: :pending, action: nil do
     state :pending, :born, :abandoned, :failed
@@ -48,8 +50,10 @@ class ResidentBirthOrder < ApplicationRecord
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }
   # Sent item orders not yet born: waiting on a lost answer, or needing
   # attention (Billing::PaidBirth::ItemOrders). The sweep tries them again.
+  # Item orders whose change was sent and which are still not born.
   scope :items_unborn, ->(now = Time.current) {
-    where(kind: "item", state: %w[pending failed]).where(item_submitted_at: ..(now - 5.minutes))
+    where(kind: "item", state: %w[pending failed]).joins(:bill_change)
+      .where(bill_changes: { submitted_at: ..(now - 5.minutes) })
   }
 
   before_validation { self.expires_at ||= LIFETIME.from_now }
@@ -76,6 +80,9 @@ class ResidentBirthOrder < ApplicationRecord
   # Added to the account's live subscription as an item (eoXAEj slice 2b),
   # not given a subscription of its own.
   def item? = kind == "item"
+
+  # An item order has been sent once its bill change was confirmed.
+  def sent? = bill_change.present? && !bill_change.proposed?
 
   def tier_record = Billing::Tier.find!(tier)
 

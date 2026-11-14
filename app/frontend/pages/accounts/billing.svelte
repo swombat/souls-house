@@ -21,10 +21,10 @@
     account_plan: accountPlan = null,
     // The account's free 14 days: { eligible, days }.
     trial = null,
-    // A resident about to join the account's subscription (Billing::AddItem):
+    // A resident about to join the account's subscription (Billing::Reconcile):
     // the server's quote, confirmed as-is or not at all.
     pending_add: pendingAdd = null,
-    // A resident's plan about to end (Billing::EndItem), quoted by the server.
+    // A resident's plan about to end (Billing::Reconcile), quoted by the server.
     pending_end: pendingEnd = null,
   } = $props();
 
@@ -202,15 +202,21 @@
         class="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm"
         data-testid="billing-add-confirm">
         <p class="font-medium">
-          Add {pendingAdd.resident_name} on {pendingAdd.plan}{pendingAdd.rate === 'at_cost' ? ' at cost' : ''} to the account's
-          subscription?
+          {#if pendingAdd.kind === 'plan'}
+            Add {pendingAdd.resident_name} to the account's subscription?
+          {:else}
+            Add {pendingAdd.resident_name} on {pendingAdd.plan}{pendingAdd.rate === 'at_cost' ? ' at cost' : ''} to the account's
+            subscription?
+          {/if}
         </p>
         <p>
           Nothing is charged today. Your next bill{pendingAdd.next_at ? `, on ${pendingAdd.next_at},` : ''} goes up by about
           {cents(pendingAdd.added_cents, pendingAdd.currency)} for {pendingAdd.resident_name}: the rest of this period
           and the next month. That bill comes to about {cents(pendingAdd.next_total_cents, pendingAdd.currency)} in all,
           including anything else already due on it. After that, the account pays about
-          {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for all its residents together. These are Stripe's
+          {cents(pendingAdd.recurring_cents, pendingAdd.currency)} a month for {pendingAdd.kind === 'plan'
+            ? 'its plan and residents'
+            : 'all its residents'} together. These are Stripe's
           totals, with tax and discounts in.
         </p>
         <div class="flex gap-2">

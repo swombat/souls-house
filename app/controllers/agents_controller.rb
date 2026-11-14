@@ -288,7 +288,7 @@ class AgentsController < ApplicationController
       birth_orders_url: account_birth_orders_path(current_account),
       # A new resident joins the account's live subscription (eoXAEj 2b):
       # no card terms, the quote comes after Create.
-      adds_to_bill: Billing::AddItem.applies?(current_account)
+      adds_to_bill: Billing::Reconcile.applies?(current_account)
     }
   end
 

@@ -7,6 +7,10 @@
 # plan's (AccountSubscription) name the subscription and the price they were
 # sold at. A line of two is the two rows at that price.
 #
+#   0. A subscription the house holds nothing on yet is a first purchase: one
+#      line of one, its metadata naming what was bought (adopt!). A paid
+#      creation's subscription is handed to Billing::PaidBirth until its
+#      resident is born.
 #   1. If the account's submitted change (BillChange) has landed, that is, the
 #      subscription carries exactly the lines it wanted, the house's rows are
 #      changed as the change says and it is applied. This is the only way a
@@ -27,6 +31,12 @@ module Billing
     PAID = ResidentSubscription::PAID_STATUSES
     LIVE = %w[trialing active past_due].freeze
     DOWN = (%w[past_due] + ResidentSubscription::ENDED_STATUSES).freeze
+
+    LOCK_NAMESPACE = 7_242_004 # per account, for pg_advisory_xact_lock(int, int)
+
+    def self.lock!(account_id)
+      ApplicationRecord.connection.execute("SELECT pg_advisory_xact_lock(#{LOCK_NAMESPACE}, #{Integer(account_id)})")
+    end
 
     # The lines the house holds on a subscription: { price id => quantity }.
     def self.house_lines(stripe_subscription_id)
@@ -51,13 +61,17 @@ module Billing
 
     # Returns the applied change, or nil.
     def call
-      account = account_for(fetch)
+      first = fetch
+      account = account_for(first)
+      return PaidBirth.new(client: @client).complete!(unborn_order(first, account)) && nil if unborn?(first)
+
       drift = applied = nil
       ApplicationRecord.transaction do
-        SubscriptionSync.lock!(account.id)
+        self.class.lock!(account.id)
         remote = fetch
         account_for(remote) == account || raise(InvalidSubscription, "Subscription #{remote.id} changed account")
         lines = self.class.remote_lines(remote, client: @client)
+        adopt!(remote, lines, account)
         applied = land!(remote, lines, account)
         house = self.class.house_lines(remote.id)
         drift = [ lines, house ] if remote.status.in?(LIVE) && lines != house
@@ -78,6 +92,75 @@ module Billing
       customer || raise(InvalidSubscription, "Subscription #{@stripe_subscription_id} belongs to another customer")
       customer.account
     end
+
+    # A subscription bought as the last step of creating a resident names its
+    # birth order until the resident exists; its events complete the birth,
+    # which then brings the subscription in itself.
+    def unborn?(remote)
+      reference = metadata(remote)["birth_order"].presence
+      reference.present? && !ResidentBirthOrder.exists?(reference:, state: "born")
+    end
+
+    def unborn_order(remote, account)
+      order = ResidentBirthOrder.find_by(reference: metadata(remote)["birth_order"], account:)
+      if order.nil? || (order.stripe_subscription_id.present? && order.stripe_subscription_id != remote.id)
+        raise InvalidSubscription, "Subscription #{remote.id} names no birth order here"
+      end
+      # Opening the subscription had no certain answer, so the order never
+      # learned its id: this event is how it does.
+      order.update!(stripe_subscription_id: remote.id) if order.stripe_subscription_id.blank?
+      order
+    end
+
+    # A first purchase: the house holds nothing on this subscription, it is
+    # paid, it carries one line of one, and its metadata names what was
+    # bought. Anything else on a subscription with no rows is left as drift.
+    def adopt!(remote, lines, account)
+      return unless remote.status.in?(PAID) && lines.values == [ 1 ]
+      return if ResidentSubscription.exists?(stripe_subscription_id: remote.id) ||
+        AccountSubscription.exists?(stripe_subscription_id: remote.id)
+
+      price = lines.keys.first
+      named = metadata(remote)
+      if named["kind"] == AccountPlanCheckout::KIND
+        plan = AccountPlan.for_price(price) || return
+        if account.account_subscriptions.live.exists?
+          raise InvalidSubscription, "Account #{account.id} already has a live plan; #{remote.id} is a second one"
+        end
+        return AccountSubscription.create!(account:, stripe_subscription_id: remote.id, plan: plan.id,
+          stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
+      end
+
+      offer = Offer.for_price(price) || return
+      order = named["birth_order"].presence && ResidentBirthOrder.find_by(reference: named["birth_order"], account:)
+      agent = order ? order.agent : account.agents.find_by(id: named["agent_id"])
+      return if agent.nil? || ResidentSubscription.live.exists?(agent:)
+
+      ResidentSubscription.create!(agent:, account:, stripe_subscription_id: remote.id, tier: offer.tier.id,
+        rate: offer.rate, stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
+      flag_ungranted!(remote, agent, offer, named)
+      BillingCheckoutAttempt.unresolved.where(idempotency_key: named["checkout_attempt"], agent_id: agent.id)
+        .update_all(resolved_at: @now, updated_at: @now) if named["checkout_attempt"].present?
+    end
+
+    # A recognised at-cost price is accepted (the money is taken; refusing
+    # would strand it) and a missing grant is reported, unless the purchase
+    # names the redemption that authorised it: this account's, for this rate.
+    def flag_ungranted!(remote, agent, offer, named)
+      return if offer.standard? || account_grants?(agent.account, offer, named["redemption_id"])
+
+      AuditLog.create!(account: agent.account, action: "billing_rate_without_grant", auditable: agent,
+        data: { "stripe_subscription_id" => remote.id, "rate" => offer.rate })
+      Rails.error.report(UngrantedRate.new("Subscription #{remote.id} is at #{offer.rate} with no grant on account " \
+        "#{agent.account_id}"), handled: true, context: { subsystem: "billing", stripe_subscription_id: remote.id })
+    end
+
+    def account_grants?(account, offer, redemption_id)
+      account.eligible_for?(offer.rate) || (redemption_id.present? &&
+        BillingCodeRedemption.exists?(id: redemption_id, account_id: account.id, effect: offer.rate))
+    end
+
+    def metadata(remote) = (remote.metadata || {}).to_h.transform_keys(&:to_s)
 
     def land!(remote, lines, account)
       change = BillChange.submitted.find_by(account:, stripe_subscription_id: remote.id)
@@ -104,6 +187,21 @@ module Billing
       agent = account.agents.find(op.fetch("agent_id"))
       ResidentSubscription.create!(agent:, account:, stripe_subscription_id: remote.id, tier: offer.tier.id,
         rate: offer.rate, stripe_price_id: op.fetch("price"), stripe_status: remote.status, last_synced_at: @now)
+    end
+
+    # A resident created onto the bill: born here, in the landing's own
+    # transaction, on a subscription that is paid. If the birth fails the
+    # landing rolls back and the change stays submitted, to be tried again.
+    def apply_birth(remote, account, op)
+      raise NotReady, "The account's subscription is #{remote.status}; the resident waits." unless remote.status.in?(PAID)
+
+      order = ResidentBirthOrder.lock.find_by!(reference: op.fetch("order"), account:)
+      unless order.born?
+        agent = Agents::HostedBirth.new(account:, creator: order.creator, attributes: order.birth_attributes.symbolize_keys,
+          open_beginning: order.open_beginning, paid: true).create!
+        order.mark_born!(agent:, now: @now)
+      end
+      apply_add(remote, account, "agent_id" => order.agent_id, "price" => op.fetch("price"))
     end
 
     def apply_end(remote, _account, op)

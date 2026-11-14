@@ -231,6 +231,7 @@ areas:
       - billing_codes
       - billing_code_redemptions
       - billing_checkout_attempts
+      - bill_changes
       - resident_birth_orders
       - resident_subscriptions
       - account_subscriptions

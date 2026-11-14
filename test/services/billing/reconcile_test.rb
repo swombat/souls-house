@@ -223,6 +223,23 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_empty BillChange.unresolved.where(account: @account)
   end
 
+  test "a hosted Checkout still open for the resident is closed before it joins the bill, so it can't be paid for twice" do
+    Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }) do
+      Billing::Checkout.new(agent: @b, tier: Billing::Tier.find!("conversation"), client: @stripe,
+        success_url: "https://house.test/ok", cancel_url: "https://house.test/no").url
+    end
+    assert_equal [ "open" ], @stripe.session_states.values.map { |session| session[:status] }
+    assert BillingCheckoutAttempt.unresolved.exists?(agent: @b)
+
+    bill!(@a => LIFE_PRICE)
+    go!([ add(@b, CONVERSATION_PRICE) ])
+
+    assert_equal [ "expired" ], @stripe.session_states.values.map { |session| session[:status] }
+    assert_not BillingCheckoutAttempt.unresolved.exists?(agent: @b)
+    assert paid?(@b)
+    assert_empty @stripe.created_subscriptions
+  end
+
   test "drift: a line no change explains grants nothing, blocks changes and is reported; rows still follow down" do
     bill!(@a => CONVERSATION_PRICE)
     @stripe.subscription("sub_acct")[:all_items] << { id: "si_stray", price: @stripe.price_object(LIFE_PRICE), quantity: 1,

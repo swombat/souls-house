@@ -17,7 +17,8 @@
 # so an older change can never land over a newer bill.
 #
 # ops is a list, each one of:
-#   { "op" => "add", "agent_id" => 1, "price" => "price_…", "redemption_id" => nil }
+#   { "op" => "add", "agent_id" => 1, "price" => "price_…" }
+#   { "op" => "birth", "order" => "<birth order reference>", "price" => "price_…" }
 #   { "op" => "end", "agent_id" => 1 }
 #   { "op" => "resize", "agent_id" => 1, "price" => "price_…" }
 #   { "op" => "plan", "price" => "price_…" }   # nil price: back to Companions
@@ -27,10 +28,11 @@
 class BillChange < ApplicationRecord
 
   STATES = %w[proposed submitted applied abandoned].freeze
-  OPS = %w[add end resize plan end_bill keep_bill].freeze
+  OPS = %w[add birth end resize plan end_bill keep_bill].freeze
 
   belongs_to :account
   belongs_to :requested_by, class_name: "User", optional: true
+  has_one :birth_order, class_name: "ResidentBirthOrder", dependent: :nullify
 
   attr_readonly :account_id, :stripe_subscription_id, :idempotency_key, :ops, :base, :lines, :params, :quote
 

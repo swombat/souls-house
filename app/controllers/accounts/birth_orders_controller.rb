@@ -17,7 +17,7 @@ class Accounts::BirthOrdersController < ApplicationController
   before_action :set_order, only: %i[payment confirm confirm_item trial_return]
 
   rescue_from Billing::PaidBirth::Refused, Agents::HostedProvisioning::ConfigurationError, Billing::NotConfigured,
-    Billing::NotEligible, Billing::ItemQuote::Refused do |error|
+    Billing::NotEligible, Billing::Reconcile::Refused do |error|
     render json: { error: error.message }, status: :unprocessable_entity
   end
   rescue_from Billing::NotReady do |error|
@@ -130,15 +130,15 @@ class Accounts::BirthOrdersController < ApplicationController
              confirm_url: confirm_account_birth_order_path(current_account, order) }
     if order.item?
       json[:confirm_item_url] = confirm_item_account_birth_order_path(current_account, order)
-      json[:item_quote] = item_quote_json(order) unless order.item_submitted_at?
+      json[:item_quote] = item_quote_json(order) unless order.sent?
     end
     json
   end
 
   # The quote as the wizard shows it; digest is what confirm_item checks.
   def item_quote_json(order)
-    quote = order.item_quote.to_h
-    { digest: Billing::ItemQuote.digest(quote), currency: quote["currency"], added_cents: quote["added_next"],
+    quote = order.bill_change.quote
+    { digest: order.bill_change.digest, currency: quote["currency"], added_cents: quote["added_next"],
       next_total_cents: quote["next_total"], recurring_cents: quote["recurring_total"],
       next_at: quote["next_at"] && Time.zone.at(quote["next_at"]).to_date.iso8601 }
   end
