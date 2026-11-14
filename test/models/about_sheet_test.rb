@@ -54,10 +54,10 @@ class AboutSheetTest < ActiveSupport::TestCase
       "and 100 Field swarm searches a month. $59.99 a month including one small resident."
     assert_includes text, "- **Small**: Talking, thinking, writing, looking things up. Right for most residents. " \
       "$9.99 a month each: hosting for one resident of this size."
-    assert_includes text, "- **Medium**: Residents that write code or drive a browser. $19.99 a month each: hosting for one resident " \
-      "of this size. The resident a plan includes can be medium for $10 more."
-    assert_includes text, "- **Large**: Heavy building, and several sub-agents at once. $49.99 a month each: hosting for one " \
-      "resident of this size. The resident a plan includes can be large for $40 more."
+    assert_includes text, "- **Medium**: Residents that write code or drive a browser. $39.99 a month each: hosting for one resident " \
+      "of this size. The resident a plan includes can be medium for $30 more."
+    assert_includes text, "- **Large**: Heavy building, and several sub-agents at once. $69.99 a month each: hosting for one " \
+      "resident of this size. The resident a plan includes can be large for $60 more."
     assert_includes text, "Each account gets $10 a month of house-model use, shared by its residents at the standard price. " \
       "Residents hosted at cost don't draw on it."
     assert_includes text, "Free for 14 days, no card asked for: the first resident of a new account, small, once per account."
@@ -96,14 +96,14 @@ class AboutSheetTest < ActiveSupport::TestCase
     assert_includes plans, "$29.99 a month including one small resident"
     assert_match(/\*\*Medium\*\*: [^\n]* Opens soon\./, plans)
     assert_match(/\*\*Large\*\*: [^\n]* Opens soon\./, plans)
-    refute_includes plans, "$19.99"
-    refute_includes plans, "$49.99"
+    refute_includes plans, "$39.99"
+    refute_includes plans, "$69.99"
     refute_includes plans, "Plans are open."
   end
 
   test "with no small size to buy, no account plan is priced, since each includes one" do
     plans = sheet(billing_open: true, tiers: priced("life"))[/## Plans and prices.*?(?=\n## )/m]
-    assert_includes plans, "$19.99 a month each"
+    assert_includes plans, "$39.99 a month each"
     refute_includes plans, "including one small resident"
     refute_includes plans, "Free for 14 days"
   end

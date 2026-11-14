@@ -60,4 +60,14 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
     saved.each { |key, value| ENV[key] = value }
   end
 
+  test "transcription and backups are the account's, the ladder the sizes had, and not shown until enforced" do
+    assert_equal [ 5, 20, 40 ], Billing::AccountPlan.all.map(&:transcription_hours)
+    assert_equal [ 10, 50, 200 ], Billing::AccountPlan.all.map(&:backup_gb)
+    Billing::AccountPlan.all.each do |plan|
+      assert_not plan.features.key?(:transcription_hours)
+      assert_not plan.features.key?(:backup_gb)
+    end
+  end
+
+
 end
