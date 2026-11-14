@@ -17,11 +17,13 @@ class Accounts::BillingCodesController < ApplicationController
   private
 
   def accepted(redemption)
-    case redemption.effect
-    when "at_cost"
-      "Code accepted. This account can now buy plans at cost: the machine's price, with no house-model allowance."
+    if (plan = BillingCode.plan_of(redemption.effect))
+      "Code accepted. This account is on the #{plan.name} plan, with nothing to pay for it."
+    elsif (size = redemption.effect.split(":", 2).second)
+      "Code accepted. This account can now buy a #{Billing::Tier.find!(size).name} at cost: the machine's price, " \
+        "with no house-model allowance."
     else
-      "Code accepted."
+      "Code accepted. This account can now buy plans at cost: the machine's price, with no house-model allowance."
     end
   end
 

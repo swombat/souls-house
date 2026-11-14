@@ -329,8 +329,13 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
 
     @stripe.set_subscription_status("sub_acct", "active")
     reports = []
-    Rails.error.subscribe(Class.new { define_method(:report) { |error, **| reports << error } }.new)
-    sync
+    subscriber = Class.new { define_method(:report) { |error, **| reports << error } }.new
+    Rails.error.subscribe(subscriber)
+    begin
+      sync
+    ensure
+      Rails.error.unsubscribe(subscriber)
+    end
     assert_equal [ Billing::BillDrift ], reports.map(&:class).uniq
     assert_not paid?(@a), "nothing is granted on a bill the house can't account for"
     assert_equal %w[sub_new], ResidentSubscription.live.where(agent: @b).pluck(:stripe_subscription_id)

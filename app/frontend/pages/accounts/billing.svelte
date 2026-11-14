@@ -39,7 +39,7 @@
       : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
   );
   let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
-  let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect === 'at_cost') || null);
+  let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect.startsWith('at_cost')) || null);
 
   const STATE_LABELS = {
     pending: 'Awaiting payment',

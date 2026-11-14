@@ -238,7 +238,7 @@ module Billing
 
       agent = @account.agents.find(op.fetch("agent_id"))
       raise AlreadySubscribed, "#{agent.name} already has a plan." if ResidentSubscription.live.exists?(agent:)
-      unless offer.standard? || @account.grant_for(offer.rate)
+      unless offer.standard? || @account.grant_for(offer)
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
       end
       if offer.at_cost? && HouseInference::Offering.find(agent.model_id.to_s)
@@ -259,7 +259,7 @@ module Billing
       unless order.offer.purchasable? && order.offer.price_id == op["price"]
         raise NotConfigured, "That plan has no Stripe price configured"
       end
-      unless order.offer.standard? || @account.grant_for(order.offer.rate)
+      unless order.offer.standard? || @account.grant_for(order.offer)
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
       end
       op["price"]

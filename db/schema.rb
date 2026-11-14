@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_14_213000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_14_223500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -823,7 +823,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_213000) do
     t.datetime "updated_at", null: false
     t.index "lower((code)::text)", name: "index_billing_codes_on_lower_code", unique: true
     t.index ["created_by_id"], name: "index_billing_codes_on_created_by_id"
-    t.check_constraint "effect::text = 'at_cost'::text", name: "billing_codes_effect_known"
+    t.check_constraint "effect::text ~ '^(at_cost(:[a-z_]+)?|plan:[a-z_]+)$'::text", name: "billing_codes_effect_known"
   end
 
   create_table "billing_customers", force: :cascade do |t|
