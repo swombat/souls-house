@@ -257,12 +257,14 @@ class Chat < ApplicationRecord
     waiting = waiting_commitments_for(chats)
     stuck = handoff_stuck_ids_for(chats)
     errored = run_error_residents_for(chats)
+    hook_warned = hook_warning_residents_for(chats)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
       ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
       json.merge("working_agent_ids" => ids, "next_commitment" => waiting[chat.id],
                  "handoff_stuck" => stuck.include?(chat.id),
-                 "run_error_residents" => errored[chat.id] || [])
+                 "run_error_residents" => errored[chat.id] || [],
+                 "hook_warning_residents" => hook_warned[chat.id] || [])
     end
   end
 
@@ -303,6 +305,30 @@ class Chat < ApplicationRecord
       .pluck("agent_runtime_interactions.chat_id", "agents.name")
 
     rows.group_by(&:first).transform_values { |list| list.map(&:last) }
+  end
+
+  # Residents whose latest run in a conversation had an unmet Chaos hook
+  # expectation (jaMBVj; HookPresence): a yellow mark in the same slot, below
+  # the red error mark and above the stuck hand. Same shape as
+  # run_error_residents_for: only residents still in the room, newest run only.
+  def self.hook_warning_residents_for(chats)
+    ids = chats.map(&:id)
+    return {} if ids.empty?
+
+    latest = AgentRuntimeInteraction
+      .joins("INNER JOIN chat_agents ON chat_agents.chat_id = agent_runtime_interactions.chat_id " \
+             "AND chat_agents.agent_id = agent_runtime_interactions.agent_id")
+      .where(chat_id: ids)
+      .select("DISTINCT ON (agent_runtime_interactions.chat_id, agent_runtime_interactions.agent_id) " \
+              "agent_runtime_interactions.*")
+      .order("agent_runtime_interactions.chat_id, agent_runtime_interactions.agent_id, agent_runtime_interactions.id DESC")
+
+    AgentRuntimeInteraction.from(latest, :agent_runtime_interactions)
+      .joins(:agent)
+      .where("COALESCE(agent_runtime_interactions.hook_warning, '') <> ''")
+      .order("agents.name")
+      .pluck("agent_runtime_interactions.chat_id", "agents.name")
+      .group_by(&:first).transform_values { |list| list.map(&:last) }
   end
 
   # A conversation stuck at the resident handoff limit (Daniel, 11 Nov,

@@ -16,9 +16,12 @@
   // errorLabel: set when a resident's last run in this conversation ended in an
   // error (Daniel, 13 Nov, jgDWoJ). A red circled exclamation mark then takes the
   // same slot and wins over both.
+  // hookLabel: set when a resident's last run here had an unmet Chaos hook
+  // expectation, e.g. its wake hook missing or not firing (jaMBVj). A yellow circled
+  // exclamation mark: below the red error mark, above the stuck hand and the clock.
   // faintEmpty: in the sidebar an untagged row shows a barely-there tag outline; the
   // conversation header passes false so the button is findable there.
-  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', errorLabel = '', faintEmpty = true } = $props();
+  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', errorLabel = '', hookLabel = '', faintEmpty = true } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -47,8 +50,8 @@
     optimistic !== undefined ? optimistic : confirmed && !supersedes(chat, confirmed) ? confirmed.tag : chat.visual_tag
   );
   const label = $derived(current?.label || 'No tag');
-  const markLabel = $derived(errorLabel || stuckLabel || commitmentLabel);
-  const markKind = $derived(errorLabel ? 'error' : stuckLabel ? 'stuck' : 'commitment');
+  const markLabel = $derived(errorLabel || hookLabel || stuckLabel || commitmentLabel);
+  const markKind = $derived(errorLabel ? 'error' : hookLabel ? 'hook' : stuckLabel ? 'stuck' : 'commitment');
   const title = $derived(markLabel ? `${label} · ${markLabel}` : label);
 
   $effect(() => {
@@ -110,19 +113,19 @@
        to the tag outline on hover so the picker still reads as a picker. The stuck
        hand (yellow) and the error mark (red) sit in the same place, coloured rather than faint. -->
   <span
-    data-testid={{ error: 'run-error-mark', stuck: 'handoff-stuck-mark', commitment: 'commitment-mark' }[markKind]}
+    data-testid={{ error: 'run-error-mark', hook: 'hook-warning-mark', stuck: 'handoff-stuck-mark', commitment: 'commitment-mark' }[markKind]}
     data-placement={current ? 'behind-tag' : 'in-place'}
     role="img"
     aria-label={markLabel}
     title={markLabel}
     class="pointer-events-none absolute top-2 inline-flex {markKind === 'error'
       ? 'text-red-600 dark:text-red-500'
-      : markKind === 'stuck'
+      : markKind === 'hook' || markKind === 'stuck'
         ? 'text-yellow-500 dark:text-yellow-400'
         : 'text-muted-foreground/40'} {current
       ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
       : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
-    {#if markKind === 'error'}
+    {#if markKind === 'error' || markKind === 'hook'}
       <WarningCircle size={16} weight="bold" />
     {:else if markKind === 'stuck'}
       <HandPalm size={16} weight="bold" />

@@ -260,6 +260,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       finished_at: Time.current,
       duration_ms: elapsed_ms
     )
+    record_hook_presence
     if live_activity?
       state = if result[:execution_outcome]
         result[:execution_outcome]
@@ -274,6 +275,14 @@ class AgentRuntimeInteraction < ApplicationRecord
       end
       finish_execution!(state)
     end
+  end
+
+  # jaMBVj: never let the hook check stand between a run and its result.
+  def record_hook_presence
+    HookPresence.evaluate!(self)
+  rescue StandardError => error
+    Rails.logger.warn("hook presence check failed for interaction #{id}: #{error.class}: #{error.message}")
+    nil
   end
 
   def record_error!(error)
@@ -523,7 +532,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       created_at: created_at&.iso8601,
       model: model,
       model_label: self.class.model_label_for(model),
-      quiet_reason: visible_quiet_reason
+      quiet_reason: visible_quiet_reason,
+      hook_warning: hook_warning
     }
     live_activity? ? safe.merge(live_activity_json) : safe
   end

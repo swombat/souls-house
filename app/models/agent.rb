@@ -28,6 +28,22 @@ class Agent < ApplicationRecord
     turn_timeout_minutes.minutes.to_i
   end
 
+  # jaMBVj: which Chaos hooks this resident's runs are held to. "off" means a
+  # removal was deliberate, so its absence stops warning. See HookPresence.
+  def set_hook_expectation!(event, state, source:)
+    event = event.to_s
+    state = state.to_s
+    raise ArgumentError, "unknown hook event #{event.inspect}" unless HookPresence::EVENTS.include?(event)
+    raise ArgumentError, "unknown expectation #{state.inspect}" unless HookPresence::STATES.include?(state)
+    raise ArgumentError, "unknown source #{source.inspect}" unless HookPresence::SOURCES.include?(source.to_s)
+
+    with_lock do
+      expectations = (hook_expectations || {}).deep_dup
+      expectations[event] = { "state" => state, "source" => source.to_s, "at" => Time.current.iso8601 }
+      update!(hook_expectations: expectations)
+    end
+  end
+
   belongs_to :account
   has_one :placement, class_name: "AgentPlacement", dependent: :destroy, inverse_of: :agent
   # An archive import's role homes, kept for a VM seed (AgentImportStage).

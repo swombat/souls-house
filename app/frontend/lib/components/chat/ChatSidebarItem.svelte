@@ -1,7 +1,7 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, hookWarningLabel, runErrorLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Alarm, Archive, ChatText, HandPalm, PushPin, Spinner, Trash, WarningCircle } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
@@ -21,6 +21,7 @@
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
   const stuckLabel = $derived(handoffStuckLabel(chat.handoff_stuck));
   const errorLabel = $derived(runErrorLabel(chat.run_error_residents));
+  const hookLabel = $derived(hookWarningLabel(chat.hook_warning_residents));
 </script>
 
 <div class="relative group/card">
@@ -92,7 +93,7 @@
           <WorkStatusIcon state={chat.work_status.state} />
         </span>
       {:else}
-        <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} />
+        <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} {hookLabel} />
       {/if}
     </div>
     <div class="absolute right-2 top-2 flex items-center gap-1">
