@@ -6,28 +6,39 @@
 # Companions is free on top of the residents and has no Stripe price and no
 # subscription. Public cards lead with from_usd (the add-on plus one small
 # resident), never with Companions' $0 add-on.
+#
+# Transcription hours and backup space are the account's, one pool however
+# many residents it has (Daniel, jaMWBj 2026-11-13). They carry across the
+# ladder the sizes had (Small's, Medium's, Large's). Nothing meters or stops
+# them yet, so they are not in features and not shown: a number nobody
+# enforces is not an allowance (ePoEyY). They are here for costing until the
+# hard stops ship.
 module Billing
   class AccountPlan
 
     IDS = %w[companions partners colleagues].freeze
     DEFAULT_ID = "companions".freeze
 
-    attr_reader :id, :name, :monthly_usd, :members, :swarm_searches
+    attr_reader :id, :name, :monthly_usd, :members, :swarm_searches, :transcription_hours, :backup_gb
 
-    def initialize(id:, name:, monthly_usd:, members:, swarm_searches:, subagents:)
+    def initialize(id:, name:, monthly_usd:, members:, swarm_searches:, subagents:, transcription_hours:, backup_gb:)
       @id = id
       @name = name
       @monthly_usd = BigDecimal(monthly_usd)
       @members = members
       @swarm_searches = swarm_searches
       @subagents = subagents
+      @transcription_hours = transcription_hours
+      @backup_gb = backup_gb
     end
 
     CATALOGUE = [
-      new(id: "companions", name: "Companions", monthly_usd: "0", members: "one", swarm_searches: 0, subagents: false),
-      new(id: "partners", name: "Partners", monthly_usd: "20", members: "several", swarm_searches: 20, subagents: false),
+      new(id: "companions", name: "Companions", monthly_usd: "0", members: "one", swarm_searches: 0, subagents: false,
+        transcription_hours: 5, backup_gb: 10),
+      new(id: "partners", name: "Partners", monthly_usd: "20", members: "several", swarm_searches: 20, subagents: false,
+        transcription_hours: 20, backup_gb: 50),
       new(id: "colleagues", name: "Colleagues", monthly_usd: "50", members: "several", swarm_searches: 100,
-        subagents: true)
+        subagents: true, transcription_hours: 40, backup_gb: 200)
     ].freeze
 
     def self.all = CATALOGUE
