@@ -52,22 +52,6 @@ class Api::V1::ResidentConversationArchivesTest < ActionDispatch::IntegrationTes
     assert @chat.reload.archived?
   end
 
-  test "manual human archive still dismisses expectations despite pending work" do
-    ask = @chat.messages.create!(role: "user", user: @user, content: "Can you check this?")
-    expectation = ReplyExpectation.create!(message: ask, user: @user, score: 0.9, classifier_version: "test")
-    commitment = Commitment.create!(agent: @agent, source_chat: @chat, text: "Look at the receipt", due_at: 1.hour.from_now)
-    human = @chat.account.owner
-    human_token = ApiKey.generate_for(human, name: "Manual archive").raw_token
-
-    post "/api/v1/conversations/#{@chat.to_param}/archive", headers: { "Authorization" => "Bearer #{human_token}" }
-
-    assert_response :success
-    assert @chat.reload.archived?
-    assert expectation.reload.state_dismissed?
-    assert commitment.reload.scheduled?
-    assert_equal human, AuditLog.where(action: "archive_chat", auditable: @chat).last.user
-  end
-
   test "another resident's commitment is listed by headline, never its private text" do
     other = agents(:code_reviewer)
     @chat.agents << other

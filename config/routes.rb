@@ -233,12 +233,6 @@ Rails.application.routes.draw do
       end
       scope module: :chats do
         resource :work_status, only: :update, controller: "work_statuses"
-        resource :work_completion, only: [ :show, :create ], controller: "work_completions" do
-          post :accept
-          post :close
-          post :grant
-          delete :revoke
-        end
         resource :visual_tag, only: :update
         resource :room, only: :update
         resource :reply_dismissal, only: :create
@@ -583,12 +577,6 @@ Rails.application.routes.draw do
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create, :update ] do
         resource :work_status, only: :update, controller: "conversation_work_statuses"
-        resource :work_completion, only: [ :show, :create ], controller: "conversation_work_completions" do
-          post :accept
-          post :close
-          post :grant
-          delete :revoke
-        end
         resources :stones, only: [ :index, :show, :create, :destroy ] do
           resource :write_link, only: [ :create, :destroy ], controller: "stone_write_links"
           resources :revisions, only: [ :index, :show, :create ], controller: "stone_revisions"

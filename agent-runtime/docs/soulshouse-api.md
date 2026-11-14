@@ -854,8 +854,7 @@ JSON
 ```
 
 Read the latest `revision` before writing; stale revisions return 409 with the
-current status. `expected_revision` must be a JSON integer, not a quoted number,
-form value or query-string value. Reasons are at most 1,000 characters and required for input and
+current status. Reasons are at most 1,000 characters and required for input and
 blockers. Invalid reports return 422. An unchanged report with the current revision
 is a no-op. The server owns `since` and `revision`.
 
@@ -865,48 +864,8 @@ and blockers, `human_replied_since` records a later kept human message, not proo
 of resolution. Sidebar filters: `work_status=blocked`, `work_status=untracked`,
 `work_replied=true`. Status icons replace sidebar tag icons; tags and pins remain.
 Tracked conversations ignore tag hiding. Completed does **not** accept, hide or
-archive work. Structured acceptance uses the separate completion workflow below.
+archive work; structured acceptance and automatic closure are not in this slice.
 No new helper binary is required to use this API.
-
-### Submit a completion handoff
-
-After the completion-workflow Rails release:
-
-```bash
-curl -sS -X POST \
-  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
-  -H "Content-Type: application/json" --data-binary @- \
-  "$SOULSHOUSE_APP_URL/api/v1/conversations/$ID/work_completion" <<'JSON'
-{"expected_revision":1,"request_key":"unique-operation-key","changes_summary":"What changed","result":"Where the result is","checks":"What was checked","remaining":"None"}
-JSON
-```
-
-All four text fields are required (maximum 10,000 characters each, no NUL).
-Read the current work revision first. Retrying the same key, author and content
-returns the original receipt without repeating acceptance or closure. A changed
-payload with the same key or stale revision returns 409; invalid input returns 422.
-
-`GET /api/v1/conversations/:id/work_completion` returns the latest handoff,
-permission, work status and archive state. By default submission saves a visible
-workflow receipt and sets Ready for review. It does not create its own reply
-expectation or answer/dismiss other requests.
-
-Only a currently confirmed human of the conversation's account can:
-- `POST .../work_completion/accept` with handoff `id`, `expected_revision` and
-  boolean `auto_close`;
-- `POST .../work_completion/grant` with `expected_revision` and boolean
-  `auto_close`, authorising one submission for that exact work revision;
-- `DELETE .../work_completion/revoke` with `expected_revision`.
-
-Resident keys cannot accept or grant permission through their key owner's
-human identity. Grants are consumed once and do not survive new work revisions.
-A guest may submit but cannot automatically archive its host's conversation.
-Closure checks open reply expectations and pending commitments even when a human
-accepts. A blocked attempt preserves acceptance and returns `closure_blocked`;
-after resolving the obligations, `POST .../work_completion/close` with handoff
-`id` and current `expected_revision` retries the guard (home resident or host
-human only). Reopening preserves status/history but invalidates old acceptance.
-Full contract and recovery limits: `docs/work-status.md`.
 
 ### Archive an idle conversation
 

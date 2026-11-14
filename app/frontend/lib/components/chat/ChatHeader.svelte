@@ -9,8 +9,12 @@
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
   import WorkStatusControl from './WorkStatusControl.svelte';
+<<<<<<< HEAD
   import WorkCompletionControl from './WorkCompletionControl.svelte';
   import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel } from '$lib/chat-display';
+=======
+  import { commitmentMarkLabel, handoffStuckLabel } from '$lib/chat-display';
+>>>>>>> parent of 7a60cc68 (Merge pull request #911 from swombat/mira/752-completion-workflow)
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -219,7 +223,6 @@
       {#if chat}
         {#key chat.id}
           <WorkStatusControl {chat} accountId={account.id} />
-          <WorkCompletionControl {chat} accountId={account.id} />
         {/key}
       {/if}
     </div>

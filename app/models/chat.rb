@@ -1,5 +1,4 @@
 class Chat < ApplicationRecord
-  include Chat::CompletionWorkflow
 
   include Discard::Model
   include Broadcastable
