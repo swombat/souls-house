@@ -26,7 +26,10 @@
     }
   }
 
+  // One save at a time across the whole card: each response is a full
+  // snapshot, so an older reply landing after a newer one would undo it.
   async function setState(event, state) {
+    if (saving) return;
     saving = event;
     saveError = '';
     try {
@@ -100,7 +103,7 @@
                 type="button"
                 size="sm"
                 variant={entry?.state === state ? 'default' : 'outline'}
-                disabled={saving === event || entry?.state === state}
+                disabled={!!saving || entry?.state === state}
                 aria-pressed={entry?.state === state}
                 data-testid={`hook-expectation-${event}-${state}`}
                 onclick={() => setState(event, state)}>

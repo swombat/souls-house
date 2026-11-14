@@ -60,3 +60,23 @@ test('turning an event off patches it and shows the saved state', async () => {
   expect(JSON.parse(init.body)).toEqual({ event: 'stop', state: 'off' });
   expect(screen.getByTestId('hook-expectation-stop').textContent).toContain('set by you');
 });
+
+test('saves one at a time, so an older reply cannot undo a newer setting', async () => {
+  let release;
+  const pending = new Promise((resolve) => (release = resolve));
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => payload() })
+    .mockImplementationOnce(() => pending);
+  vi.stubGlobal('fetch', fetchMock);
+  render(Card, { url: '/x', agentName: 'Lume' });
+
+  await fireEvent.click(await screen.findByTestId('hook-expectation-stop-off'));
+  await waitFor(() => expect(screen.getByTestId('hook-expectation-before_turn-off').disabled).toBe(true));
+  await fireEvent.click(screen.getByTestId('hook-expectation-before_turn-off'));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  release({ ok: true, json: async () => payload({ stop: { state: 'off', source: 'owner' } }) });
+  await waitFor(() => expect(screen.getByTestId('hook-expectation-stop').textContent).toContain('removed on purpose'));
+  expect(screen.getByTestId('hook-expectation-before_turn-off').disabled).toBe(false);
+});
