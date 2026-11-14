@@ -1,15 +1,25 @@
-# What an account should be paying each month, from the house's own records:
-# its plan, if it pays for one, and each resident it pays for, at the Stripe
-# price that resident was sold at. Nothing here asks Stripe anything.
+# What an account is being charged for each month, from the house's own
+# records: its plan, if it pays for one, and each resident with a live
+# subscription row, at the Stripe price that row was sold at. Nothing here
+# asks Stripe anything.
 #
 # This is the first piece of "the house owns the bill"
 # (docs/proposals/2026-11-14-one-bill.md). Stripe allows a price once per
 # subscription, so the bill is one line per price with a quantity: two
 # residents sold at the same price are one line of two. The price is the one
-# recorded at the sale, not the offer's current one, so a resident on a
-# retired price keeps it (#619).
+# recorded at the sale, never the offer's current one, so a resident on a
+# retired price keeps it (#619). A row with no recorded price, or one that is
+# not its offer's or its plan's, is refused: missing evidence never picks a
+# price.
 #
-# Read only. Nothing changes a subscription from it yet.
+# It follows the charge, not the entitlement: a resident whose grace ran out
+# is held, yet stays on the bill for as long as its subscription is live,
+# because Stripe is still asking for that money. So this is a reading of what
+# is charged. It is not a statement of what the account wants to pay, and
+# nothing may shrink a subscription to match it; a change to the bill is its
+# own confirmed act.
+#
+# Read only.
 module Billing
   class Bill
 
@@ -22,12 +32,11 @@ module Billing
       end
     end
 
-    # A paid resident whose recorded price is not one of its offer's.
+    # A row whose recorded price is missing or not one of its offer's or plan's.
     class UnknownPrice < StandardError; end
 
-    def initialize(account, now: Time.current)
+    def initialize(account)
       @account = account
-      @now = now
     end
 
     # The plan first, then residents from small to large, standard before at
@@ -51,32 +60,27 @@ module Billing
 
     def plan_line
       subscription = @account.live_plan_subscription
-      return nil unless subscription&.in_force?(@now)
+      return nil unless subscription
 
       plan = subscription.plan_record
-      line("plan", plan.id, plan.name, subscription.stripe_price_id.presence || plan.price_id, 1, plan.price_id,
-        plan.monthly_usd)
+      price = recorded!(subscription.stripe_price_id, plan.price_ids, "The #{plan.name} plan")
+      line("plan", plan.id, plan.name, price, 1, plan.price_id, plan.monthly_usd)
     end
 
     def resident_lines
-      sold = paid_subscriptions.group_by { |subscription| [ subscription.offer, price_of(subscription) ] }
+      sold = ResidentSubscription.live.where(account: @account).group_by do |subscription|
+        offer = subscription.offer
+        [ offer, recorded!(subscription.stripe_price_id, offer.price_ids, "Resident #{subscription.agent_id}") ]
+      end
       sold.sort_by { |(offer, price), _| sort_key(offer, price) }.map do |(offer, price), subscriptions|
         line("resident", offer.id, offer.name, price, subscriptions.size, offer.price_id, offer.monthly_usd)
       end
     end
 
-    # The subscriptions of residents whose paid plan is in force.
-    def paid_subscriptions
-      ResidentEntitlement.where(account: @account, source: "stripe", state: %w[active grace])
-        .includes(:current_subscription).filter_map(&:current_subscription).select(&:live?)
-    end
+    def recorded!(price, known, whose)
+      return price if price.present? && known.include?(price)
 
-    def price_of(subscription)
-      price = subscription.stripe_price_id.presence || subscription.offer.price_id
-      return price if subscription.offer.price_ids.include?(price)
-
-      raise UnknownPrice, "Resident #{subscription.agent_id} is recorded at price #{price.inspect}, " \
-        "which is not one of #{subscription.offer.name}'s"
+      raise UnknownPrice, "#{whose} is recorded at price #{price.inspect}, which is not one of its own"
     end
 
     def line(kind, id, name, price, quantity, current_price, monthly_usd)

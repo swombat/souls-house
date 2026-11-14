@@ -72,28 +72,50 @@ class Billing::BillTest < ActiveSupport::TestCase
     ENV["STRIPE_PRICE_LIFE_AT_COST"] = saved
   end
 
-  test "a resident whose plan has ended is off the bill; one in grace is still on it" do
+  test "the bill follows the charge: an ended subscription is off it, a past-due one is on it, even after grace ran out" do
     paid!(@agents[0], CONVERSATION_PRICE)
     paid!(@agents[1], LIFE_PRICE)
     paid!(@agents[0], CONVERSATION_PRICE, status: "canceled")
     paid!(@agents[1], LIFE_PRICE, status: "past_due")
-
     assert_equal [ { price: LIFE_PRICE, quantity: 1 } ], bill.items
+
+    entitlement = ResidentEntitlement.find_by!(agent: @agents[1])
+    travel_to entitlement.grace_deadline + 1.minute do
+      assert entitlement.expire_grace!
+      assert_not ResidentEntitlement.paid_for?(@agents[1]), "held: its grace ran out"
+      assert_equal [ { price: LIFE_PRICE, quantity: 1 } ], bill.items, "Stripe is still asking for it"
+    end
   end
 
-  test "an ended account plan is off the bill" do
+  test "an account plan is on the bill while its subscription lives, past due included, and off it once ended" do
     plan!(COLLEAGUES_PRICE)
     assert_equal [ { price: COLLEAGUES_PRICE, quantity: 1 } ], bill.items
+    plan!(COLLEAGUES_PRICE, status: "past_due")
+    travel_to 1.month.from_now do
+      assert_equal "companions", @account.reload.plan.id, "out of force after grace"
+      assert_equal [ { price: COLLEAGUES_PRICE, quantity: 1 } ], bill.items
+    end
     plan!(COLLEAGUES_PRICE, status: "canceled")
     assert_empty bill.items
   end
 
-  test "a recorded price that is not one of the offer's is refused, never billed as something else" do
+  test "a missing or unknown recorded price is refused, for a resident and for the plan, never billed as something else" do
     paid!(@agents[0], CONVERSATION_PRICE)
-    ResidentSubscription.find_by!(agent: @agents[0]).update_columns(stripe_price_id: "price_from_nowhere")
+    row = ResidentSubscription.find_by!(agent: @agents[0])
+    row.update_columns(stripe_price_id: "price_from_nowhere")
+    assert_match(/price_from_nowhere/, assert_raises(Billing::Bill::UnknownPrice) { bill.lines }.message)
+    row.update_columns(stripe_price_id: nil)
+    assert_match(/nil/, assert_raises(Billing::Bill::UnknownPrice) { bill.lines }.message)
+    row.update_columns(stripe_price_id: LIFE_PRICE)
+    assert_raises(Billing::Bill::UnknownPrice, "another offer's price is not this row's") { bill.lines }
+    row.update_columns(stripe_price_id: CONVERSATION_PRICE)
 
-    error = assert_raises(Billing::Bill::UnknownPrice) { bill.lines }
-    assert_match(/price_from_nowhere/, error.message)
+    plan!(PARTNERS_PRICE)
+    plan = AccountSubscription.find_by!(account: @account)
+    plan.update_columns(stripe_price_id: nil)
+    assert_raises(Billing::Bill::UnknownPrice) { bill.lines }
+    plan.update_columns(stripe_price_id: COLLEAGUES_PRICE)
+    assert_raises(Billing::Bill::UnknownPrice) { bill.lines }
   end
 
 end
