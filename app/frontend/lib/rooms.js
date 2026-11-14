@@ -6,8 +6,12 @@ import { router } from '@inertiajs/svelte';
 export const MAIN = 'main';
 export const ALL = 'all';
 
+// Archived rooms keep their conversations but are never a destination.
 export function destinations(rooms = [], mainName = 'Main') {
-  return [{ id: MAIN, name: mainName || 'Main' }, ...rooms.map((room) => ({ id: room.id, name: room.name }))];
+  return [
+    { id: MAIN, name: mainName || 'Main' },
+    ...rooms.filter((room) => !room.archived).map((room) => ({ id: room.id, name: room.name })),
+  ];
 }
 
 export function views(rooms = [], mainName = 'Main') {
@@ -16,7 +20,9 @@ export function views(rooms = [], mainName = 'Main') {
 
 export function roomName(key, rooms = [], mainName = 'Main') {
   if (key === ALL) return 'All chats';
-  return rooms.find((room) => room.id === key)?.name ?? (mainName || 'Main');
+  const room = rooms.find((room) => room.id === key);
+  if (room) return room.archived ? `${room.name} (archived)` : room.name;
+  return mainName || 'Main';
 }
 
 // Conversations waiting on you in a room (the reply-attention stream).

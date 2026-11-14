@@ -29,6 +29,13 @@ class Accounts::RoomsController < ApplicationController
     room = Room.resolve_for(current_account, params[:id])
     if params[:direction].in?(%w[up down])
       room.move!(params[:direction] == "up" ? -1 : 1)
+    elsif params.key?(:archived)
+      archive = ActiveModel::Type::Boolean.new.cast(params[:archived])
+      archive ? room.archive! : room.unarchive!
+      audit(archive ? :archive_room : :unarchive_room, room)
+      redirect_to account_rooms_path(current_account),
+        notice: archive ? "#{room.name} archived; its conversations are still there" : "#{room.name} is active again"
+      return
     else
       room.update!(room_params)
       audit_with_changes(:update_room, room)

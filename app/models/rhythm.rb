@@ -479,6 +479,8 @@ class Rhythm < ApplicationRecord
       errors.add(:room, "must be a room of this account")
     elsif room.nil?
       errors.add(:room, "must be chosen")
+    elsif room.archived?
+      errors.add(:room, "#{room.name} is archived")
     end
   end
 

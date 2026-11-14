@@ -12,6 +12,8 @@ class Chats::RoomsController < ApplicationController
 
     chat.update!(room: Room.resolve_for(current_account, params[:room_id]))
     redirect_back_or_to chat_view_path(chat)
+  rescue ActiveRecord::RecordInvalid => error
+    redirect_back_or_to chat_view_path(chat), inertia: { errors: { room_id: error.record.errors.full_messages.to_sentence } }
   rescue ActiveRecord::InvalidForeignKey
     redirect_back_or_to chat_view_path(chat),
       inertia: { errors: { room_id: "This room is no longer available. Refresh and try again." } }

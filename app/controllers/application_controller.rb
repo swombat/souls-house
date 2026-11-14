@@ -18,7 +18,7 @@ class ApplicationController < ActionController::Base
         user: Current.user.as_json,
         account: current_account&.as_json,
         visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
-        rooms: -> { current_account ? current_account.rooms.map(&:as_json) : [] },
+        rooms: -> { current_account ? navigation_rooms.map(&:as_json) : [] },
         main_room_name: -> { current_account&.main_room_label || Room::MAIN },
         current_room: -> { current_account ? selected_room_key : RoomSelection::MAIN },
         accounts: -> { Current.user.confirmed_accounts.map(&:as_json) },
@@ -51,6 +51,15 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  # The switcher's rooms: the active ones, plus an archived room while you are
+  # in it (opened from Rooms settings, or a conversation that lives there), so
+  # its name still shows. Archived rooms are never a destination (lib/rooms.js).
+  def navigation_rooms
+    rooms = current_account.rooms.to_a
+    here = [ (selected_room.id if selected_room.is_a?(Room)), (@chat.room_id if @chat.is_a?(Chat)) ].compact
+    rooms.select { |room| !room.archived? || here.include?(room.id) }
+  end
 
   def viewing_as_site_admin?
     return false unless current_account && Current.user&.site_admin

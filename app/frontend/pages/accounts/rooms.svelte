@@ -37,6 +37,8 @@
   const errors = $derived($page.props.errors || {});
   const residentRoom = $derived(resident_room_id || MAIN);
   const mainName = $derived(main_room?.name || 'Main');
+  const activeRooms = $derived(rooms.filter((room) => !room.archived));
+  const archivedRooms = $derived(rooms.filter((room) => room.archived));
 
   const updateSync = createDynamicSync();
   $effect(() => {
@@ -119,7 +121,8 @@
     <p class="text-sm text-muted-foreground">
       Conversations live in {mainName}, the default room, until you move them. Once you add a room, the Chats menu and
       the conversation list let you switch between rooms or view all chats at once. Removing a room moves its
-      conversations back to {mainName}; none are deleted. Say what each room is for, and residents will read it when
+      conversations back to {mainName}; none are deleted. Archiving a room keeps its conversations where they are and
+      takes it out of the Chats menu and the room pickers. Say what each room is for, and residents will read it when
       they choose where a conversation goes.
     </p>
     <ul class="divide-y divide-border rounded-lg border border-border">
@@ -128,16 +131,19 @@
         room={{ ...main_room, conversation_count: main_count }}
         main
         canManage={can_manage} />
-      {#each rooms as room, index (room.id)}
+      {#each activeRooms as room, index (room.id)}
         <RoomRow
           accountId={account.id}
           room={{ ...room, conversation_count: room_counts[room.id] || 0 }}
           first={index === 0}
-          last={index === rooms.length - 1}
+          last={index === activeRooms.length - 1}
           {mainName}
           canManage={can_manage} />
       {/each}
     </ul>
+    {#if errors.base}
+      <p role="alert" class="text-sm text-destructive">{errors.base}</p>
+    {/if}
     {#if errors.name}
       <p role="alert" class="text-sm text-destructive">Name {errors.name}</p>
     {/if}
@@ -169,6 +175,25 @@
     {/if}
   </section>
 
+  {#if archivedRooms.length > 0}
+    <section class="mt-10 space-y-3" aria-labelledby="archived-rooms-heading" data-testid="archived-rooms">
+      <h2 id="archived-rooms-heading" class="text-xl font-semibold">Archived rooms</h2>
+      <p class="text-sm text-muted-foreground">
+        Their conversations are kept and can still be read. Nothing new goes into an archived room until you unarchive
+        it.
+      </p>
+      <ul class="divide-y divide-border rounded-lg border border-border">
+        {#each archivedRooms as room (room.id)}
+          <RoomRow
+            accountId={account.id}
+            room={{ ...room, conversation_count: room_counts[room.id] || 0 }}
+            {mainName}
+            canManage={can_manage} />
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
   <section class="mt-10 space-y-3" aria-labelledby="resident-room-heading">
     <h2 id="resident-room-heading" class="text-xl font-semibold">Default room for residents</h2>
     <p class="text-sm text-muted-foreground">
@@ -176,7 +201,7 @@
       including {mainName}, and anyone can move a conversation afterwards. This doesn't change where you arrive: the
       Chats menu remembers the room you last opened.
     </p>
-    {#if rooms.length === 0}
+    {#if activeRooms.length === 0}
       <p class="text-sm text-muted-foreground" data-testid="resident-room-empty">
         Resident-started conversations go to {mainName}. Add a room above to send them somewhere else.
       </p>

@@ -30,6 +30,28 @@ class Room < ApplicationRecord
   after_commit :broadcast_navigation
 
   scope :ordered, -> { order(:position, :id) }
+  # Archived rooms keep their conversations, readable where they are, but are
+  # no longer a place to put one: not in the switcher, the pickers, a rhythm's
+  # rooms, or the directory residents choose from.
+  scope :active, -> { where(archived_at: nil) }
+  scope :archived, -> { where.not(archived_at: nil) }
+
+  validate :can_be_archived, if: -> { will_save_change_to_archived_at? && archived_at.present? }
+
+  def archived? = archived_at.present?
+
+  def archive!
+    return if archived?
+
+    update!(archived_at: Time.current)
+  rescue ActiveRecord::RecordInvalid
+    restore_attributes([ :archived_at ]) # a refused archive leaves the room active
+    raise
+  end
+
+  def unarchive!
+    update!(archived_at: nil) if archived?
+  end
 
   # Public writes accept opaque IDs only, not database IDs or coercible values.
   def self.resolve_for(account, public_id)
@@ -44,7 +66,9 @@ class Room < ApplicationRecord
   end
 
   def as_json(_options = nil)
-    { "id" => to_param, "name" => name }
+    json = { "id" => to_param, "name" => name }
+    json["archived"] = true if archived?
+    json
   end
 
   # The room as a place to choose, with what it is for. Main has no row, so
@@ -81,6 +105,17 @@ class Room < ApplicationRecord
 
   def move_chats_to_main
     account.chats.with_discarded.where(room_id: id).find_each { |chat| chat.room = nil; chat.save!(validate: false) }
+  end
+
+  # Archiving must not leave something pointing new conversations here.
+  def can_be_archived
+    if account&.resident_room_id == id
+      errors.add(:base, "#{name} is the default room for residents; choose another default first")
+    end
+    rhythms = Rhythm.where(account_id: account_id, room_id: id, room_choice: "room").count
+    if rhythms.positive?
+      errors.add(:base, "#{rhythms == 1 ? 'A rhythm opens' : "#{rhythms} rhythms open"} conversations in #{name}; move #{rhythms == 1 ? 'it' : 'them'} to another room first")
+    end
   end
 
   def name_is_not_main

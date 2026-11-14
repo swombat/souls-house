@@ -130,3 +130,23 @@ test('models by room are hidden when no resident has a model list', () => {
   render(Rooms, { ...props, model_residents: [] });
   expect(screen.queryByTestId('room-models')).not.toBeInTheDocument();
 });
+
+test('archived rooms are listed apart, with Open and Unarchive, and are not resident defaults', async () => {
+  render(Rooms, {
+    ...props,
+    rooms: [
+      { id: 'live', name: 'Work' },
+      { id: 'old', name: 'Application', archived: true },
+    ],
+    room_counts: { old: 4 },
+  });
+  const archived = screen.getByTestId('archived-rooms');
+  expect(archived).toHaveTextContent('Application');
+  expect(archived).toHaveTextContent('4 conversations');
+  expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/accounts/first/chats?room=old');
+  await fireEvent.click(screen.getByLabelText('Archive Work'));
+  expect(router.patch).toHaveBeenLastCalledWith('/accounts/first/rooms/live', { archived: true }, expect.anything());
+  await fireEvent.click(screen.getByLabelText('Unarchive Application'));
+  expect(router.patch).toHaveBeenLastCalledWith('/accounts/first/rooms/old', { archived: false }, expect.anything());
+  expect(screen.queryByLabelText('Archive Application')).not.toBeInTheDocument();
+});
