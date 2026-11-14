@@ -71,4 +71,25 @@ class Accounts::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "at_cost", @stripe.checkout_sessions.sole.first.dig(:metadata, :rate)
   end
 
+  test "a free-plan code first ends a plan Checkout still open, then gives the plan" do
+    BillingCode.create!(code: "PARTNERS-FREE", effect: "plan:partners", created_by: users(:site_admin_user))
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    stripe = FakeStripe.new
+    unlocked = ->(_account, &operation) { operation.call }
+    sign_in(@owner)
+
+    Billing.stub(:client, stripe) do
+      Billing::CheckoutLock.stub(:synchronize_account, unlocked) do
+        Billing::AccountPlanCheckout.new(account: @account, plan: Billing::AccountPlan.find!("partners"), client: stripe,
+          success_url: "https://souls.example/ok", cancel_url: "https://souls.example/no").url
+        post account_billing_codes_path(@account), params: { code: "partners-free" }
+      end
+    end
+
+    assert_redirected_to account_billing_path(@account)
+    assert_match(/Partners plan, with nothing to pay/, flash[:notice])
+    assert_equal "expired", stripe.session_states["cs_test_1"][:status]
+    assert_equal "partners", @account.reload.plan.id
+  end
+
 end

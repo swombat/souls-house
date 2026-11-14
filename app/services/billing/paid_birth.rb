@@ -95,7 +95,7 @@ module Billing
         # catalogue is re-costed in between (#619).
         order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
           stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
-          billing_code_redemption: account.grant_for(offer.rate),
+          billing_code_redemption: account.grant_for(offer),
           birth_attributes: attributes.to_h, open_beginning: open_beginning)
         order.update!(stripe_payment_method_id: payment_method.id)
         subscription = open_subscription!(order)
@@ -205,7 +205,7 @@ module Billing
       raise Refused, "Only the account's owner can pay for a new resident." unless account.owned_by?(creator)
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
       raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
-      raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer.rate)
+      raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer)
     end
 
     # At cost includes no house-model allowance, so a resident on a

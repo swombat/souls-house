@@ -476,10 +476,18 @@ class Account < ApplicationRecord
 
   def field_swarm_plan_searches = plan.swarm_searches
 
-  # What the account can do (Billing::AccountPlan): the higher of a site
-  # admin's grant and a paid plan in force, Companions otherwise.
+  # What the account can do (Billing::AccountPlan): the highest of a site
+  # admin's grant, a plan a billing code gives and a paid plan in force,
+  # Companions otherwise.
   def plan(now = Time.current)
-    Billing::AccountPlan.highest(granted_plan, paid_plan_subscription(now)&.plan)
+    Billing::AccountPlan.highest(given_plan, paid_plan_subscription(now)&.plan)
+  end
+
+  # The plan held with nothing to pay: a site admin's grant, or a live
+  # billing-code redemption's, whichever is higher. Nil when neither.
+  def given_plan
+    codes = billing_code_redemptions.live.where("effect LIKE 'plan:%'").pluck(:effect).map { |effect| BillingCode.plan_of(effect) }
+    [ Billing::AccountPlan.find(granted_plan), *codes ].compact.max
   end
 
   # Where the plan comes from: "subscription" when a paid plan in force is at
@@ -487,7 +495,7 @@ class Account < ApplicationRecord
   # "default" for Companions with neither.
   def plan_source(now = Time.current)
     subscription = paid_plan_subscription(now)
-    granted = Billing::AccountPlan.find(granted_plan)
+    granted = given_plan
     if subscription && (granted.nil? || subscription.plan_record >= granted)
       "subscription"
     elsif granted
@@ -524,22 +532,24 @@ class Account < ApplicationRecord
   # live billing-code redemption grants (docs/proposals/2026-10-28-billing-codes-at-cost.md).
   # The redemption is the grant; there is no flag here.
   def eligible_rates
-    [ "standard" ] | (billing_code_redemptions.live.distinct.pluck(:effect) & Billing::Tier::RATES)
+    held = billing_code_redemptions.live.distinct.pluck(:effect).map { |effect| effect.split(":").first }
+    [ "standard" ] | (held & Billing::Tier::RATES)
   end
 
-  def eligible_for?(rate) = eligible_rates.include?(rate.to_s)
+  def eligible_for?(offer) = offer.standard? || grant_for(offer).present?
 
-  # The live redemption that grants a rate; named on the purchases it
-  # authorises, so a grant withdrawn afterwards is not read as abuse.
-  def grant_for(rate)
-    return nil if rate.to_s == "standard"
+  # The live redemption that lets the account buy an offer: one for its rate
+  # at every size, or at this size. Named on the purchases it authorises, so
+  # a grant withdrawn afterwards is not read as abuse.
+  def grant_for(offer)
+    return nil if offer.standard?
 
-    billing_code_redemptions.live.where(effect: rate.to_s).order(:id).first
+    billing_code_redemptions.live.where(effect: BillingCode.effects_for(offer)).order(:id).first
   end
 
   # What this account can buy now: every purchasable offer at a rate it holds.
   def purchasable_offers
-    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.purchasable? && eligible_for?(offer.rate) }
+    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.purchasable? && eligible_for?(offer) }
   end
 
   def recording_unlimited? = includes_site_admin?

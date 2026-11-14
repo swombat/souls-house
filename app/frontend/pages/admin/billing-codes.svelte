@@ -7,12 +7,11 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
 
-  let { effects = ['at_cost'], codes = [], redemptions = [], errors = {} } = $props();
+  let { effects = ['at_cost'], effect_labels = {}, codes = [], redemptions = [], errors = {} } = $props();
 
   let form = $state({ code: '', effect: 'at_cost', max_redemptions: '', expires_at: '', note: '' });
   let busy = $state(null);
 
-  const EFFECT_LABELS = { at_cost: 'At cost: the machine’s price, no house-model allowance' };
 
   function date(value) {
     if (!value) return '–';
@@ -74,7 +73,7 @@
       <span class="font-medium">Effect</span>
       <select class="rounded border bg-background px-3 py-1.5" bind:value={form.effect}>
         {#each effects as effect (effect)}
-          <option value={effect}>{EFFECT_LABELS[effect] ?? effect}</option>
+          <option value={effect}>{effect_labels[effect] ?? effect}</option>
         {/each}
       </select>
     </label>
@@ -115,7 +114,7 @@
               {@const s = status(code)}
               <tr>
                 <td class="p-2 font-mono">{code.code}</td>
-                <td class="p-2">{code.effect.replace('_', ' ')}</td>
+                <td class="p-2">{code.effect_label ?? code.effect}</td>
                 <td class="p-2">{code.redemptions_count}{code.max_redemptions ? ` / ${code.max_redemptions}` : ''}</td>
                 <td class="p-2">{date(code.expires_at)}</td>
                 <td class="p-2 text-muted-foreground">{code.note ?? ''}</td>
@@ -152,7 +151,7 @@
               <tr>
                 <td class="p-2">{redemption.account}</td>
                 <td class="p-2 font-mono">{redemption.code}</td>
-                <td class="p-2">{redemption.effect.replace('_', ' ')}</td>
+                <td class="p-2">{redemption.effect_label ?? redemption.effect}</td>
                 <td class="p-2">{redemption.redeemed_by}</td>
                 <td class="p-2">{date(redemption.redeemed_at)}</td>
                 <td class="p-2">

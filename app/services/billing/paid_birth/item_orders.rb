@@ -106,7 +106,7 @@ module Billing
         ResidentBirthOrder.transaction do
           order = ResidentBirthOrder.create!(kind: ITEM, account: account, creator: creator, tier: offer.tier.id,
             rate: offer.rate, stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
-            billing_code_redemption: account.grant_for(offer.rate), birth_attributes: attributes.to_h,
+            billing_code_redemption: account.grant_for(offer), birth_attributes: attributes.to_h,
             open_beginning: open_beginning)
           order.update!(bill_change: propose_item(order))
           order

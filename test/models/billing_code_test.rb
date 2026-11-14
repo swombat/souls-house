@@ -28,9 +28,10 @@ class BillingCodeTest < ActiveSupport::TestCase
     assert_equal @now, redemption.redeemed_at
     assert_equal 1, BillingCode.sole.redemptions_count
     assert_equal %w[standard at_cost], @account.reload.eligible_rates
-    assert @account.eligible_for?("at_cost")
-    assert_equal redemption, @account.grant_for("at_cost")
-    assert_nil @account.grant_for("standard")
+    at_cost = Billing::Tier.find!("life").offer("at_cost")
+    assert @account.eligible_for?(at_cost)
+    assert_equal redemption, @account.grant_for(at_cost)
+    assert_nil @account.grant_for(Billing::Tier.find!("life").offer("standard"))
     assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost],
       @account.purchasable_offers.map(&:id)
   end
@@ -62,11 +63,11 @@ class BillingCodeTest < ActiveSupport::TestCase
     record = code
     redemption = BillingCode.redeem!(code: record.code, account: @account, by: @owner, now: @now)
     record.revoke!(now: @now)
-    assert @account.reload.eligible_for?("at_cost"), "the grant already made stays"
+    assert @account.reload.eligible_for?(Billing::Tier.find!("life").offer("at_cost")), "the grant already made stays"
 
     redemption.withdraw!(by: @admin, now: @now + 1.hour)
-    assert_not @account.reload.eligible_for?("at_cost")
-    assert_nil @account.grant_for("at_cost")
+    assert_not @account.reload.eligible_for?(Billing::Tier.find!("life").offer("at_cost"))
+    assert_nil @account.grant_for(Billing::Tier.find!("life").offer("at_cost"))
   end
 
   test "codes are upper-case letters, digits and dashes, unique regardless of case, and can be made up" do
@@ -81,6 +82,82 @@ class BillingCodeTest < ActiveSupport::TestCase
     generated = BillingCode.generate
     assert_match BillingCode::FORMAT, generated
     assert_equal 10, generated.length
+  end
+
+  test "a code for one size lets the account buy that size at cost and no other" do
+    code(effect: "at_cost:life")
+    redemption = BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner, now: @now)
+
+    assert_equal %w[standard at_cost], @account.eligible_rates
+    assert_equal redemption, @account.grant_for(Billing::Tier.find!("life").offer("at_cost"))
+    assert_nil @account.grant_for(Billing::Tier.find!("work").offer("at_cost"))
+    assert_equal %w[conversation life life_at_cost work], @account.purchasable_offers.map(&:id)
+
+    redemption.withdraw!(by: @admin)
+    assert_equal %w[conversation life work], @account.reload.purchasable_offers.map(&:id)
+  end
+
+  test "a free-plan code gives the account that plan while the redemption lives, and never lowers a higher grant" do
+    code(effect: "plan:partners")
+    assert_equal "companions", @account.plan.id
+
+    redemption = BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner, now: @now)
+    assert_equal "partners", @account.reload.plan.id
+    assert_equal "grant", @account.plan_source
+    assert_equal %w[standard], @account.eligible_rates, "a plan code grants no rate"
+
+    @account.update!(granted_plan: "colleagues")
+    assert_equal "colleagues", @account.plan.id
+    @account.update!(granted_plan: nil)
+
+    redemption.withdraw!(by: @admin)
+    assert_equal "companions", @account.reload.plan.id
+    assert_equal "default", @account.plan_source
+  end
+
+  test "a free-plan code is refused while the account pays for that plan or a lower one, so nothing is charged twice" do
+    code(effect: "plan:partners")
+    paid = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_plan", stripe_status: "active",
+      plan: "partners", stripe_price_id: Billing::AccountPlan.find!("partners").price_id)
+
+    error = assert_raises(BillingCode::Refused) { BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner) }
+    assert_match(/paying for Partners/, error.message)
+    assert_equal 0, BillingCode.sole.redemptions_count
+
+    paid.update!(stripe_status: "canceled")
+    assert BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner)
+  end
+
+  test "only known effects make a code" do
+    assert_includes BillingCode::EFFECTS, "at_cost:conversation"
+    assert_includes BillingCode::EFFECTS, "plan:colleagues"
+    assert_not_includes BillingCode::EFFECTS, "plan:companions"
+    assert_not BillingCode.new(code: "X-Y-Z", effect: "plan:everything", created_by: @admin).valid?
+    assert_equal "The Partners plan, free", BillingCode.label("plan:partners")
+    assert_equal "At cost, every size", BillingCode.label("at_cost")
+  end
+
+  test "a free-plan code waits for anything the account could still pay for that plan: an unpaid plan, an open Checkout, a sent change" do
+    code(effect: "plan:partners")
+    redeem = -> { BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner) }
+    paid = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_plan", stripe_status: "unpaid",
+      plan: "partners", stripe_price_id: Billing::AccountPlan.find!("partners").price_id)
+    assert_match(/paying for Partners/, assert_raises(BillingCode::Refused, &redeem).message)
+    paid.update!(stripe_status: "canceled")
+
+    attempt = AccountPlanCheckoutAttempt.create!(account: @account, plan: "partners", stripe_price_id: "price_x",
+      idempotency_key: "key-1", create_params: { "mode" => "subscription" })
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    attempt.update!(resolved_at: @now)
+
+    change = BillChange.create!(account: @account, stripe_subscription_id: "sub_acct", idempotency_key: "key-2",
+      ops: [ { "op" => "plan", "price" => "price_x" } ], base: {}, lines: { "price_x" => 1 }, params: {}, quote: {},
+      state: "submitted", submitted_at: @now)
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    change.abandon!("test")
+
+    assert redeem.call
+    assert_equal "partners", @account.reload.plan.id
   end
 
 end

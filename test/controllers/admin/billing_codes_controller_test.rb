@@ -33,7 +33,8 @@ class Admin::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "admin/billing-codes", inertia_component
     assert_equal 2, inertia_shared_props["codes"].size
-    assert_equal [ "at_cost" ], inertia_shared_props["effects"]
+    assert_equal BillingCode::EFFECTS, inertia_shared_props["effects"]
+    assert_equal "The Colleagues plan, free", inertia_shared_props["effect_labels"]["plan:colleagues"]
   end
 
   test "an invalid code comes back with errors and nothing made" do
@@ -52,13 +53,13 @@ class Admin::BillingCodesControllerTest < ActionDispatch::IntegrationTest
     patch revoke_admin_billing_code_path(code)
     assert_redirected_to admin_billing_codes_path
     assert code.reload.revoked?
-    assert account.reload.eligible_for?("at_cost")
+    assert account.reload.eligible_for?(Billing::Tier.find!("life").offer("at_cost"))
 
     patch admin_withdraw_billing_code_redemption_path(redemption)
     assert_redirected_to admin_billing_codes_path
     assert_not redemption.reload.live?
     assert_equal @admin, redemption.withdrawn_by
-    assert_not account.reload.eligible_for?("at_cost")
+    assert_not account.reload.eligible_for?(Billing::Tier.find!("life").offer("at_cost"))
     assert AuditLog.exists?(action: "withdraw_billing_code_redemption")
   end
 

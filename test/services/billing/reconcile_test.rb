@@ -329,8 +329,13 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
 
     @stripe.set_subscription_status("sub_acct", "active")
     reports = []
-    Rails.error.subscribe(Class.new { define_method(:report) { |error, **| reports << error } }.new)
-    sync
+    subscriber = Class.new { define_method(:report) { |error, **| reports << error } }.new
+    Rails.error.subscribe(subscriber)
+    begin
+      sync
+    ensure
+      Rails.error.unsubscribe(subscriber)
+    end
     assert_equal [ Billing::BillDrift ], reports.map(&:class).uniq
     assert_not paid?(@a), "nothing is granted on a bill the house can't account for"
     assert_equal %w[sub_new], ResidentSubscription.live.where(agent: @b).pluck(:stripe_subscription_id)
@@ -346,6 +351,36 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     change = reconcile.propose_end(@b)
     assert_equal "sub_two", change.stripe_subscription_id
     assert_equal [ { "op" => "end_bill", "agent_id" => @b.id } ], change.ops
+  end
+
+  def grant!(effect)
+    BillingCode.redeem!(code: BillingCode.create!(code: "G-#{SecureRandom.hex(4)}", effect:, created_by: users(:site_admin_user)).code,
+      account: @account, by: users(:site_admin_user))
+  end
+
+  test "a grant for one size is no grant for another: a resident can't be resized past it" do
+    grant!("at_cost:conversation")
+    bill!(@a => CONVERSATION_AT_COST_PRICE)
+
+    assert_raises(Billing::NotEligible) { reconcile.propose([ { op: "resize", agent_id: @a.id, price: LIFE_AT_COST_PRICE } ]) }
+
+    wide = grant!("at_cost")
+    change = reconcile.propose([ { op: "resize", agent_id: @a.id, price: LIFE_AT_COST_PRICE } ])
+    wide.withdraw!(by: users(:site_admin_user))
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_equal({ CONVERSATION_AT_COST_PRICE => 1 }, remote)
+  end
+
+  test "a plan the account holds free is not bought, nor a quote for it confirmed" do
+    bill!(@a => CONVERSATION_PRICE)
+    change = reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ])
+    grant!("plan:partners")
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
+    assert reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]), "a higher plan can still be bought"
   end
 
 end

@@ -10,6 +10,7 @@ class Admin::BillingCodesController < ApplicationController
   def index
     render inertia: "admin/billing-codes", props: {
       effects: BillingCode::EFFECTS,
+      effect_labels: BillingCode::EFFECTS.index_with { |effect| BillingCode.label(effect) },
       codes: BillingCode.includes(:created_by).by_recency.map(&:as_json),
       redemptions: BillingCodeRedemption.includes(:billing_code, :account, :redeemed_by).order(redeemed_at: :desc)
         .limit(200).map(&:as_json)
@@ -41,7 +42,7 @@ class Admin::BillingCodesController < ApplicationController
     audit("withdraw_billing_code_redemption", redemption, code: redemption.billing_code.code,
       account_id: redemption.account_id)
     redirect_to admin_billing_codes_path,
-      notice: "#{redemption.account.name} can no longer buy at #{redemption.effect.humanize.downcase}. Plans already bought are unchanged."
+      notice: "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}. Plans already bought are unchanged."
   end
 
   private

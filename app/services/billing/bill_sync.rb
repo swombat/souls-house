@@ -157,8 +157,8 @@ module Billing
     end
 
     def account_grants?(account, offer, redemption_id)
-      account.eligible_for?(offer.rate) || (redemption_id.present? &&
-        BillingCodeRedemption.exists?(id: redemption_id, account_id: account.id, effect: offer.rate))
+      account.eligible_for?(offer) || (redemption_id.present? &&
+        BillingCodeRedemption.exists?(id: redemption_id, account_id: account.id, effect: BillingCode.effects_for(offer)))
     end
 
     def metadata(remote) = (remote.metadata || {}).to_h.transform_keys(&:to_s)
