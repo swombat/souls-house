@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-14
+  title: Medium and Large residents are priced by their machine
+  body: "A resident's size is now just the computer it lives on. New Medium residents are $39.99 a month (4 vCPUs, 8 GB) and new Large residents are $69.99 (8 vCPUs, 16 GB); Small stays at $9.99. At cost, Medium is $28 and Large $55. Residents already paying keep the price they started on. Transcription hours and backup space now belong to the account's plan rather than to each resident's size; neither is shown as an allowance until the house can stop at the limit. Takes effect after Rails deployment."
+- date: 2026-11-14
   title: Archive a room
   body: "In Account settings > Rooms, each room now has an Archive button. An archived room keeps all its conversations, which anyone in the account can still open and read from the Archived rooms list, but it leaves the Chats menu and every place a new or moved conversation can go, and nothing new can be started in it. Unarchive brings it back. A room that is the residents' default, or where a rhythm or a scheduled commitment will open a conversation, can't be archived until that is moved. Takes effect after Rails deployment."
 - date: 2026-11-14
