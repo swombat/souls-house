@@ -438,7 +438,8 @@
               <ShareTranscript text={plainText} sharesUrl={`${recording.show_url}/shares`} {shares} />
             </div>
           </div>
-          {#snippet turnsView()}
+          <!-- One TranscriptTurns, moved into the reader rather than remounted, so a line being edited survives Expand and ×. -->
+          <ReaderMode open={reading} title={recording.title} subtitle="Transcript" onClose={() => (reading = false)}>
             <TranscriptTurns
               {turns}
               {names}
@@ -448,15 +449,7 @@
               onReassign={reassignLine}
               choices={speakerChoices}
               revision={transcript.revision} />
-          {/snippet}
-          <!-- One copy of the turns at a time: their line editor and menus listen on the window. -->
-          {#if reading}
-            <ReaderMode title={recording.title} subtitle="Transcript" onClose={() => (reading = false)}>
-              {@render turnsView()}
-            </ReaderMode>
-          {:else}
-            {@render turnsView()}
-          {/if}
+          </ReaderMode>
         </Card.Content>
       </Card.Root>
     {:else}

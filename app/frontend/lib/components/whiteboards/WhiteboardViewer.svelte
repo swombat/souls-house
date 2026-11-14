@@ -24,6 +24,11 @@
   const shikiTheme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
 
   let reading = $state(false);
+  // A different note (or one emptied by a sync) never opens straight into the reader.
+  $effect(() => {
+    selected.id;
+    reading = false;
+  });
   const hasContent = $derived(Boolean(selected.content?.trim()));
   const readerSubtitle = $derived(
     [
@@ -48,12 +53,6 @@
       shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']} />
   </div>
 {/snippet}
-
-{#if reading && !editing && hasContent}
-  <ReaderMode title={selected.name} subtitle={readerSubtitle} onClose={() => (reading = false)}>
-    {@render rendered()}
-  </ReaderMode>
-{/if}
 
 <Card.Root class="h-[calc(100vh-16rem)]">
   <div class="flex flex-col h-full">
@@ -128,7 +127,9 @@
                  focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
           placeholder="Write your whiteboard content here..."></textarea>
       {:else if hasContent}
-        {@render rendered()}
+        <ReaderMode open={reading} title={selected.name} subtitle={readerSubtitle} onClose={() => (reading = false)}>
+          {@render rendered()}
+        </ReaderMode>
       {:else}
         <p class="text-muted-foreground text-center py-8">No content yet. Click Edit to add content.</p>
       {/if}
