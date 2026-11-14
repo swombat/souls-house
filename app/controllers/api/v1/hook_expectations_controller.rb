@@ -29,18 +29,7 @@ module Api
       end
 
       def payload
-        latest = current_api_agent.agent_runtime_interactions.where.not(finished_at: nil).order(id: :desc).first
-        {
-          hook_expectations: current_api_agent.hook_expectations || {},
-          events: HookPresence::EVENTS,
-          states: HookPresence::STATES,
-          latest_run: latest && {
-            id: latest.id,
-            finished_at: latest.finished_at&.iso8601,
-            hook_warning: latest.hook_warning,
-            hooks: latest.response_body.is_a?(Hash) ? latest.response_body.dig("telemetry", "hooks") : nil
-          }
-        }
+        HookPresence.expectations_payload(current_api_agent)
       end
 
     end
