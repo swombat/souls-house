@@ -150,3 +150,13 @@ test('archived rooms are listed apart, with Open and Unarchive, and are not resi
   expect(router.patch).toHaveBeenLastCalledWith('/accounts/first/rooms/old', { archived: false }, expect.anything());
   expect(screen.queryByLabelText('Archive Application')).not.toBeInTheDocument();
 });
+
+test('a member who cannot manage rooms can still open an archived room', () => {
+  render(Rooms, {
+    ...props,
+    can_manage: false,
+    rooms: [{ id: 'old', name: 'Application', archived: true }],
+  });
+  expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/accounts/first/chats?room=old');
+  expect(screen.queryByLabelText('Unarchive Application')).not.toBeInTheDocument();
+});

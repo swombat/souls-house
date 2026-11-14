@@ -225,4 +225,15 @@ class RoomTest < ActiveSupport::TestCase
     assert_not rhythm.update(room_choice: "room", room: room)
   end
 
+  test "reordering moves past archived rooms the list does not show" do
+    a = @account.rooms.create!(name: "A")
+    b = @account.rooms.create!(name: "B")
+    c = @account.rooms.create!(name: "C")
+    b.archive!
+
+    c.move!(-1)
+
+    assert_equal %w[C A], @account.rooms.active.ordered.map(&:name)
+  end
+
 end

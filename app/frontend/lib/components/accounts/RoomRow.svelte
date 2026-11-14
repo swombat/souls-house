@@ -85,12 +85,14 @@
         <span class="whitespace-nowrap text-xs text-muted-foreground">
           {count} conversation{count === 1 ? '' : 's'}{main ? ' · default' : ''}
         </span>
+        {#if archived}
+          <a
+            href={`/accounts/${accountId}/chats?room=${encodeURIComponent(room.id)}`}
+            class="px-2 text-sm underline-offset-4 hover:underline">Open</a>
+        {/if}
         {#if canManage}
           <div class="-mr-2 flex items-center gap-1 sm:mr-0">
             {#if archived}
-              <a
-                href={`/accounts/${accountId}/chats?room=${encodeURIComponent(room.id)}`}
-                class="px-2 text-sm underline-offset-4 hover:underline">Open</a>
               <Button
                 variant="ghost"
                 size="sm"

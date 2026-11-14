@@ -79,7 +79,8 @@ class Room < ApplicationRecord
 
   # Swap with the neighbour in the given direction (-1 up, +1 down).
   def move!(direction)
-    siblings = account.rooms.ordered.to_a
+    # Among the rooms the list shows: an archived room is not a neighbour.
+    siblings = account.rooms.ordered.to_a.select { |room| room.archived? == archived? }
     index = siblings.index(self)
     other = siblings[index + direction] if index && (index + direction).between?(0, siblings.size - 1)
     return unless other
@@ -111,6 +112,10 @@ class Room < ApplicationRecord
   def can_be_archived
     if account&.resident_room_id == id
       errors.add(:base, "#{name} is the default room for residents; choose another default first")
+    end
+    commitments = Commitment.scheduled.where(account_id: account_id, room_id: id, destination: "new_conversation").count
+    if commitments.positive?
+      errors.add(:base, "#{commitments == 1 ? 'A scheduled commitment opens' : "#{commitments} scheduled commitments open"} a conversation in #{name}; let #{commitments == 1 ? 'it' : 'them'} run or cancel first")
     end
     rhythms = Rhythm.where(account_id: account_id, room_id: id, room_choice: "room").count
     if rhythms.positive?
