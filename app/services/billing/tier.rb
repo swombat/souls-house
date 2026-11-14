@@ -9,7 +9,7 @@
 # resident is just a machine size. The allowances are per account."). The
 # transcription hours and backup space are the account plan's
 # (Billing::AccountPlan), like swarm searches and the house-model allowance.
-# Each size is priced as if its Boat machine ran all month (Daniel, jaMWBj
+# Each size is priced as if its Boat machine ran a whole 31-day month (Daniel, jaMWBj
 # 2026-11-13); tier_test holds the working. Small is the exception: it sleeps
 # on Boat after 15 idle minutes, and a Small awake most of the day moves to a
 # CX23, so its worst month is the CX23's, not Boat small's (ePoEyY).
@@ -62,7 +62,7 @@ module Billing
     # month (re-costed 2026-11-14, ePoEyY). No house-model allowance. Re-cost
     # by hand when a provider or the exchange rate moves: that makes a new
     # Stripe price, and the old id stays in the list (#619).
-    AT_COST_MONTHLY_USD = { "conversation" => BigDecimal("8"), "life" => BigDecimal("28"), "work" => BigDecimal("55") }.freeze
+    AT_COST_MONTHLY_USD = { "conversation" => BigDecimal("8"), "life" => BigDecimal("28"), "work" => BigDecimal("56") }.freeze
 
     # The house-model allowance, per account per UTC month, shared by every
     # resident whose plan funds calls at the standard rate.
@@ -125,8 +125,11 @@ module Billing
     # The machine the size is sold as: Boat's, without its price.
     def machine = BOAT_MACHINES.fetch(boat_size).except(:hourly_usd)
 
-    # Boat's price for the machine running all month (730 hours).
-    def boat_full_month_usd = BOAT_MACHINES.fetch(boat_size)[:hourly_usd] * 730
+    # Boat's price for the machine running a whole 31-day month (744 hours),
+    # the worst month, not the average (Mira, #964).
+    WORST_MONTH_HOURS = 744
+
+    def boat_full_month_usd = BOAT_MACHINES.fetch(boat_size)[:hourly_usd] * WORST_MONTH_HOURS
 
     # What the size includes, for the public page, the Billing tab, the
     # creation wizard and the about-sheet. Only what a size delivers today:

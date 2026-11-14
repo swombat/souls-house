@@ -34,7 +34,7 @@ class PricingPageTest < ActionDispatch::IntegrationTest
         assert_equal tier.features.stringify_keys, card["features"]
       end
       assert_equal %w[conversation life work], tiers.map { |row| row["id"] }
-      assert_equal %w[9.99 19.99 49.99], tiers.map { |row| row["monthly_usd"] }
+      assert_equal %w[9.99 39.99 69.99], tiers.map { |row| row["monthly_usd"] }
       assert tiers.none? { |row| row.key?("memory_gb") || row.key?("cpu_shares") }, "container limits stay server-side"
       # Going live (Daniel, 2026-10-25): a size shows only what it delivers
       # today. Swarm searches and sub-agents are the account plan's.
