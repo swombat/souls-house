@@ -93,6 +93,7 @@ The existing text platforms remain supported: X, LinkedIn profiles/pages,
 Threads, Mastodon, Bluesky, Telegram, Nostr and VK. X defaults to
 `who_can_reply_post: "everyone"`; its other accepted values are
 `mentionedUsers` and `following`. Other text platforms accept empty settings.
+X permits at most four photos or one video, never mixed photo/video media.
 
 Additional providers accept this deliberately bounded subset:
 

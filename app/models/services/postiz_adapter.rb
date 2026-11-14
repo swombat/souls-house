@@ -155,6 +155,7 @@ module Services
         raise Error, "TikTok Business video publishing is disabled: privacy_level is ignored and account-default visibility is not acknowledged. Use draft mode."
       end
       invalid = case provider
+      when "x" then types.size > 4 || (types.include?(:video) && types != [:video])
       when "youtube" then types != [:video]
       when "tiktok", "tiktok-business" then types.include?(:video) && types != [:video]
       when "facebook"

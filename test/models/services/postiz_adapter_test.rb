@@ -325,6 +325,42 @@ class Services::PostizAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  test "X rejects excess photos multiple videos and mixed media before a post write" do
+    @connection.id = 123
+    @connection.credential_metadata = { "publishing_enabled" => true }
+    channels
+    images = (1..5).map { |n| signed_media("https://cdn.example/#{n}.jpg", id: "image#{n}") }
+    videos = (1..2).map { |n| signed_media("https://cdn.example/#{n}.mp4", id: "video#{n}") }
+    public_dns do
+      %w[draft publish_now scheduled].each do |mode|
+        [images, videos, [images.first, videos.first]].each do |media|
+          error = assert_raises(Services::AdapterError) do
+            @adapter.create_post(@connection, channel_id: "c1", content: "Hello", mode: mode,
+              scheduled_at: mode == "scheduled" ? "2099-01-01T12:00:00Z" : nil, media: media)
+          end
+          assert_includes error.message, "Unsupported media combination"
+        end
+      end
+    end
+    assert_not_requested :post, "#{@base}/posts"
+  end
+
+  test "X accepts text four photos or one video" do
+    @connection.id = 123
+    channels
+    images = (1..4).map { |n| signed_media("https://cdn.example/#{n}.jpg", id: "image#{n}") }
+    video = signed_media("https://cdn.example/video.mp4")
+    public_dns do
+      [[], images, [video]].each do |media|
+        write = stub_request(:post, "#{@base}/posts").with do |req|
+          JSON.parse(req.body).dig("posts", 0, "value", 0, "image") == media.map { |item| item.slice("id", "path") }
+        end.to_return(body: '[{"id":"p1"}]')
+        @adapter.create_post(@connection, channel_id: "c1", content: "Hello", mode: "draft", media: media)
+        assert_requested write, times: 1
+      end
+    end
+  end
+
   test "provider settings reject missing required, invalid and unknown values" do
     @connection.id = 123
     image = signed_media("https://cdn.example/image.jpg")
