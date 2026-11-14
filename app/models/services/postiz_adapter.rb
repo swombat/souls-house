@@ -112,7 +112,7 @@ module Services
       if mode != "draft" && %w[tiktok tiktok-business].include?(provider) && settings["content_posting_method"] != "DIRECT_POST"
         raise Error, "TikTok publishing requires DIRECT_POST; UPLOAD only sends media to the TikTok inbox"
       end
-      validate_provider_media(provider, settings, media)
+      validate_provider_media(provider, settings, media, mode: mode)
 
       # Construct the payload from validated, allowlisted fields.
       result = request_json(base, token, "/posts", {
@@ -140,7 +140,7 @@ module Services
 
     private
 
-    def validate_provider_media(provider, settings, media)
+    def validate_provider_media(provider, settings, media, mode:)
       types = media.map do |item|
         path = URI.parse(item["path"]).path.to_s
         ext = File.extname(path)
@@ -148,6 +148,11 @@ module Services
         ext == ".mp4" ? :video : :image
       rescue URI::InvalidURIError
         raise Error, "Invalid media"
+      end
+      # Business video publishing ignores privacy_level and uses account defaults.
+      # No account-default visibility acknowledgement contract is exposed yet.
+      if provider == "tiktok-business" && mode != "draft" && types.include?(:video)
+        raise Error, "TikTok Business video publishing is disabled: privacy_level is ignored and account-default visibility is not acknowledged. Use draft mode."
       end
       invalid = case provider
       when "youtube" then types != [:video]

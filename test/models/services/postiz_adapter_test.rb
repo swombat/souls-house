@@ -285,6 +285,46 @@ class Services::PostizAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  test "TikTok Business video publication fails closed for all privacy values and both publishing modes" do
+    @connection.id = 123
+    @connection.credential_metadata = { "publishing_enabled" => true }
+    provider_channel("tiktok-business")
+    video = signed_media("https://cdn.example/video.mp4")
+    public_dns do
+      %w[publish_now scheduled].each do |mode|
+        %w[SELF_ONLY PUBLIC_TO_EVERYONE MUTUAL_FOLLOW_FRIENDS FOLLOWER_OF_CREATOR].each do |privacy|
+          error = assert_raises(Services::AdapterError) do
+            @adapter.create_post(@connection, channel_id: "c1", content: "Hello", mode: mode,
+              scheduled_at: mode == "scheduled" ? "2099-01-01T12:00:00Z" : nil,
+              settings: tiktok_settings.merge("privacy_level" => privacy), media: [ video ])
+          end
+          assert_includes error.message, "account-default visibility"
+        end
+      end
+    end
+    assert_not_requested :post, "#{@base}/posts"
+  end
+
+  test "TikTok Business video drafts and privacy-capable publishing paths remain available" do
+    @connection.id = 123
+    @connection.credential_metadata = { "publishing_enabled" => true }
+    public_dns do
+      [["tiktok-business", "draft", "mp4"], ["tiktok-business", "publish_now", "jpg"],
+       ["tiktok", "publish_now", "mp4"]].each do |provider, mode, extension|
+        provider_channel(provider)
+        write = stub_request(:post, "#{@base}/posts").with do |req|
+          body = JSON.parse(req.body)
+          body["type"] == (mode == "draft" ? "draft" : "now") &&
+            body.dig("posts", 0, "settings", "__type") == provider &&
+            body.dig("posts", 0, "settings", "privacy_level") == "SELF_ONLY"
+        end.to_return(body: '[{"id":"p1"}]')
+        @adapter.create_post(@connection, channel_id: "c1", content: "Hello", mode: mode,
+          settings: tiktok_settings, media: [ signed_media("https://cdn.example/media.#{extension}") ])
+        assert_requested write, times: 1
+      end
+    end
+  end
+
   test "provider settings reject missing required, invalid and unknown values" do
     @connection.id = 123
     image = signed_media("https://cdn.example/image.jpg")

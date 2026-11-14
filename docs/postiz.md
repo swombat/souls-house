@@ -110,6 +110,12 @@ collaborators, locations, thumbnails and other nested settings are not
 supported in this first extension. Do not infer support for all features of
 a provider from its presence here.
 
+TikTok Business **video** publishing and scheduling are disabled: upstream
+ignores `privacy_level` for videos and uses the account's default visibility.
+The connector does not yet represent or acknowledge that default. Video drafts
+remain available, but `SELF_ONLY` must not be treated as a publication guarantee.
+This restriction does not apply to TikTok Business photos or ordinary TikTok.
+
 Instagram, TikTok and YouTube require media even for drafts. Media count and
 type checks are enforced before a post write. The legacy `draft_supported`
 field describes the legacy text endpoint, not the richer media endpoint.
