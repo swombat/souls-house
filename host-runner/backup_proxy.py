@@ -1017,8 +1017,9 @@ def run_backup(payload, host, *, signed_request, docker=None,
                     # likely a recursive chown), while inode, mtime and size
                     # stay put. Without this, restic re-reads the whole
                     # tree each run (Alanis: 462,654 of 462,898 "changed",
-                    # 156 MB new, 544 s of a ~580 s deadline). Content changes
-                    # still move mtime or size.
+                    # 156 MB new, 544 s of a ~580 s deadline). Ordinary content
+                    # writes still change mtime or size; same-size in-place
+                    # rewrites that restore mtime can be missed.
                     "--ignore-ctime",
                     "--tag", f"agent_id={spec['agent_uuid']}",
                     "--tag", f"agent_slug={spec['agent_slug']}",
