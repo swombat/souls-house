@@ -6,8 +6,6 @@ class Whiteboard < ApplicationRecord
   include FieldTaggable
   include FieldActivityBroadcasting
 
-  MAX_RECOMMENDED_LENGTH = 10_000
-
   belongs_to :account
   belongs_to :last_edited_by, polymorphic: true, optional: true
 
@@ -43,10 +41,6 @@ class Whiteboard < ApplicationRecord
 
   def deleted?
     deleted_at.present?
-  end
-
-  def over_recommended_length?
-    content.to_s.length > MAX_RECOMMENDED_LENGTH
   end
 
   def editor_name

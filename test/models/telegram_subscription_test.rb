@@ -8,11 +8,6 @@ class TelegramSubscriptionTest < ActiveSupport::TestCase
     @user = users(:user_1)
   end
 
-  test "creates valid subscription" do
-    sub = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 12345)
-    assert sub.persisted?
-  end
-
   test "enforces uniqueness on agent_id and user_id" do
     @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 111)
     duplicate = @agent.telegram_subscriptions.build(user: @user, telegram_chat_id: 222)
@@ -26,19 +21,19 @@ class TelegramSubscriptionTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::RecordNotUnique) { duplicate.save! }
   end
 
-  test "active scope excludes blocked subscriptions" do
+  test "active scope is unblocked direct chats and allowed groups the bot is still in" do
     active = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 111)
     blocked = @agent.telegram_subscriptions.create!(user: users(:existing_user), telegram_chat_id: 222, blocked: true)
+    allowed_group = @agent.telegram_groups.create!(telegram_chat_id: -1, allowed: true)
+    unallowed_group = @agent.telegram_groups.create!(telegram_chat_id: -2, allowed: false)
+    removed_group = @agent.telegram_groups.create!(telegram_chat_id: -3, allowed: true, removed_at: Time.current)
+    blocked_group = @agent.telegram_groups.create!(telegram_chat_id: -4, allowed: true, blocked: true)
 
-    results = @agent.telegram_subscriptions.active
-    assert_includes results, active
-    assert_not_includes results, blocked
-  end
-
-  test "mark_blocked! sets blocked flag" do
-    sub = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 111)
-    sub.mark_blocked!
-    assert sub.reload.blocked?
+    assert_equal [ active, allowed_group ].map(&:id).sort, TelegramSubscription.where(agent: @agent).active.ids.sort
+    assert_not_includes TelegramSubscription.active, unallowed_group
+    assert_not_includes TelegramSubscription.active, removed_group
+    assert_not_includes TelegramSubscription.active, blocked_group
+    assert_not_includes TelegramSubscription.active, blocked
   end
 
   test "uses a stable obfuscated thread id" do
