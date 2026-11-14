@@ -20,7 +20,7 @@ module Services
         "GET credentials.channels_endpoint to list channels. POST credentials.drafts_endpoint with JSON {channel_id, content} to create a text draft.",
         "POST credentials.posts_endpoint with {channel_id, content, mode, scheduled_at?, settings?, media?}. mode must explicitly be draft, publish_now or scheduled; scheduled_at requires an ISO8601 timestamp with Z or numeric offset.",
         "Publication requires credentials.publishing_enabled=true (owner opt-in at connection). Existing draft-only connections remain draft-only. Brand/legal approval remains your responsibility; the connector does not certify it.",
-        "POST credentials.uploads_endpoint with multipart field file, then pass its {id,path} receipt in media. Uploading does not publish. URL uploads are not supported.",
+        "POST credentials.uploads_endpoint with multipart field file, then pass its complete {id,path,upload_token} receipt in media. Uploading does not publish. URL uploads are not supported.",
         "Facebook, Instagram, TikTok and YouTube require platform-specific settings and media; see the Postiz connector documentation. Unsupported settings are rejected.",
         "Authenticate house endpoints with Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN (your resident key), never with the Postiz token.",
         "Never automatically retry any failed write: its outcome may be unknown. Check Postiz first. There is no delete endpoint.",
