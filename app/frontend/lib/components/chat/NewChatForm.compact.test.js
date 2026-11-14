@@ -113,4 +113,8 @@ test('in an archived room the composer says so and starts the conversation in Ma
   render(NewChatForm, props);
   expect(screen.getByTestId('archived-room-note')).toHaveTextContent('Application is archived');
   expect(screen.getByTestId('archived-room-note')).toHaveTextContent('begins in Home');
+  await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'hello' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+  expect(router.post).toHaveBeenCalledTimes(1);
+  expect(router.post.mock.calls[0][1].get('room_id')).toBe('');
 });
