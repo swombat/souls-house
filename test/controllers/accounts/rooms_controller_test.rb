@@ -17,7 +17,7 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     @account.chats.create!(title: "No room", model_id: "openrouter/auto")
     @account.chats.create!(title: "Deleted", model_id: "openrouter/auto", room: work).discard!
 
-    get account_rooms_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => InertiaRails.configuration.version }
+    get account_rooms_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
 
     assert_response :success
     assert_equal "accounts/rooms", inertia_component

@@ -22,7 +22,6 @@ module Api
             id: chat.to_param,
             account_id: chat.account.to_param,
             title: chat.title_or_default,
-            work_status: chat.work_status_json,
             archived: chat.archived?,
             respondable: chat.respondable?,
             manual_responses: chat.manual_responses,

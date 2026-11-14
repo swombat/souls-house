@@ -325,11 +325,10 @@ class CommitStatusTest < ActiveSupport::TestCase
     started = Concurrent::AtomicFixnum.new(0)
     slow_started = Concurrent::CountDownLatch.new(1)
     items = [ :fail, :slow ] + Array.new(20, :later)
-    workers = Queue.new
+    threads_before = Thread.list.size
 
     error = assert_raises(RuntimeError) do
       CommitStatus.parallel_map(items) do |item|
-        workers << Thread.current
         started.increment
         case item
         when :fail
@@ -346,12 +345,7 @@ class CommitStatusTest < ActiveSupport::TestCase
 
     assert_equal "boom", error.message
     assert finished.true?, "the slower sibling was still running when the error was raised"
-    # Unrelated application threads may stop while the slow item runs. Inspect
-    # this call's workers instead of assuming the global thread count is fixed.
-    observed_workers = []
-    observed_workers << workers.pop until workers.empty?
-    assert observed_workers.any?
-    assert observed_workers.none?(&:alive?), "a parallel_map worker survived the raised error"
+    assert_equal threads_before, Thread.list.size
     assert_operator started.value, :<, items.size
   end
 
