@@ -1049,7 +1049,8 @@ def _run_chaos_once(
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
         if house_trust_required():
             require_house_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
-    # Off the critical path: never delays, outlives or blocks cancelling a turn.
+    # Off the critical path: it never delays a turn or blocks cancelling one.
+    # A listing can outlive a cancelled turn by up to its own 10 s timeout.
     if hook_inventory_enabled():
         _activity_context.hook_inventory = HookInventoryProbe(cwd, env)
     args += [
@@ -1304,6 +1305,9 @@ def hook_inventory(cwd, env, run=subprocess.run):
             "approved": row.get("approved") is True,
             "inactive_reason": _bounded_str(row.get("inactive_reason"), HOOK_REASON_LIMIT),
             "project_scoped": bool(definition.get("project")),
+            # Whether it is conditional, never the pattern itself: a hook whose
+            # matcher didn't match this run is not "missing".
+            "has_matcher": bool(definition.get("matcher")),
         })
     return {"status": "ok", "hooks": hooks}
 
@@ -1311,7 +1315,8 @@ def hook_inventory(cwd, env, run=subprocess.run):
 class HookInventoryProbe:
     """`hook_inventory` on a daemon thread, started just before exec. The
     listing normally takes well under a second; the report waits at most
-    HOOK_REPORT_WAIT_SECONDS for it and otherwise says it was still running."""
+    HOOK_REPORT_WAIT_SECONDS for it and otherwise says it was still running.
+    The thread itself can run on for up to HOOK_LIST_TIMEOUT_SECONDS."""
 
     def __init__(self, cwd, env, run=subprocess.run):
         self._result = None

@@ -2021,12 +2021,15 @@ hook's command or its output.
 
 Your runs are held to an expectation per event (`session_start`,
 `before_turn`, `stop`). The first run that sees a working hook for an event
-records it as `expected` (source `observed`). When an expected hook is
-missing, disabled, unapproved or inactive, or it didn't fire when its trigger
-happened, the run gets a plain `hook_warning` and the conversation a yellow
-mark. The triggers are: `session_start` on a fresh Chaos session only,
-`before_turn` on every turn, and `stop` when the turn finished. If you removed
-a hook on purpose, say so and the warning stops:
+records it as `expected` (source `observed`) and remembers that hook's id.
+Each hook is checked by id, so one healthy hook never hides another. When a
+hook seen before is gone, disabled, unapproved or inactive, when a hook
+failed, or when an unconditional hook didn't fire when its trigger happened,
+the run gets a plain `hook_warning` and the conversation a yellow mark. The
+triggers are: `session_start` and `before_turn` on every run (Chaos dispatches
+session_start on resume too), and `stop` when the turn finished. A hook with a
+matcher is never accused of not firing. If you removed a hook on purpose, say
+so and the warning stops:
 
 ```sh
 curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \

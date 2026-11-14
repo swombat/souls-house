@@ -18,10 +18,11 @@ class HookPresenceTest < ActiveSupport::TestCase
     assert_equal %w[before_turn session_start stop], @agent.reload.hook_expectations.keys.sort
     assert_equal "observed", @agent.hook_expectations.dig("session_start", "source")
     assert_equal "expected", @agent.hook_expectations.dig("session_start", "state")
+    assert_equal [ "house-session_start" ], @agent.hook_expectations.dig("session_start", "hook_ids")
   end
 
   test "the 12 Nov case: hooks gone from the store warn plainly, on every expected event" do
-    expect_all
+    finish(hooks: inventory(%w[session_start before_turn stop]))
     run = finish(hooks: inventory([]))
 
     assert_equal "Chaos hooks: no wake (session_start) hook is configured; no before_turn hook is configured; " \
@@ -45,6 +46,8 @@ class HookPresenceTest < ActiveSupport::TestCase
     @agent.set_hook_expectation!("session_start", "expected", source: "resident")
     run = finish(hooks: inventory(%w[before_turn stop]))
     assert_equal "Chaos hooks: no wake (session_start) hook is configured.", run.reload.hook_warning
+    assert_nil @agent.reload.hook_expectations.dig("session_start", "hook_ids"),
+               "an owner/resident setting starts afresh rather than inheriting ids"
   end
 
   test "an off expectation is not overwritten by a later observation" do
@@ -55,7 +58,7 @@ class HookPresenceTest < ActiveSupport::TestCase
   end
 
   test "disabled, unapproved and inactive hooks each say so" do
-    expect_all
+    finish(hooks: inventory([]).merge("hooks" => [ hook("w", "session_start"), hook("b", "before_turn"), hook("s", "stop") ]))
     hooks = inventory([]).merge("hooks" => [
       hook("w", "session_start", enabled: false),
       hook("b", "before_turn", approved: false),
@@ -63,6 +66,15 @@ class HookPresenceTest < ActiveSupport::TestCase
     ])
     run = finish(hooks: hooks)
 
+    assert_equal "Chaos hooks: the wake (session_start) hook w is disabled; the before_turn hook b is not approved; " \
+                 "the stop hook s is inactive (project is not trusted).", run.reload.hook_warning
+  end
+
+  test "an expectation set by hand with no hook ever seen working says what is wrong at the event level" do
+    expect_all
+    run = finish(hooks: inventory([]).merge("hooks" => [ hook("w", "session_start", enabled: false),
+                                                          hook("b", "before_turn", approved: false),
+                                                          hook("s", "stop", inactive_reason: "project is not trusted") ]))
     assert_equal "Chaos hooks: the wake (session_start) hook is disabled; the before_turn hook is not approved; " \
                  "the stop hook is inactive (project is not trusted).", run.reload.hook_warning
   end
@@ -83,22 +95,63 @@ class HookPresenceTest < ActiveSupport::TestCase
     assert_nil run.reload.hook_warning
   end
 
-  test "each hook is held to its own trigger: session_start only on a fresh session" do
+  test "session_start is due on every exec, resumed too (Chaos dispatches it with source resume)" do
     expect_all
     fired = [ ran("before_turn"), ran("stop") ]
     resumed = finish(hooks: inventory(%w[session_start before_turn stop], runs: fired), outcome: "resumed")
-    assert_nil resumed.reload.hook_warning
+    assert_equal "Chaos hooks: the wake (session_start) hook house-session_start didn't fire.", resumed.reload.hook_warning
 
-    fresh = finish(hooks: inventory(%w[session_start before_turn stop], runs: fired), outcome: "fresh")
-    assert_equal "Chaos hooks: the wake (session_start) hook didn't fire.", fresh.reload.hook_warning
-
-    woke = finish(hooks: inventory(%w[session_start before_turn stop], runs: fired + [ ran("session_start") ]), outcome: "rolled")
+    woke = finish(hooks: inventory(%w[session_start before_turn stop], runs: fired + [ ran("session_start") ]), outcome: "resumed")
     assert_nil woke.reload.hook_warning
+  end
+
+  test "a session_start failure on a resumed run is reported (Mira's reproduction)" do
+    expect_all
+    run = finish(hooks: inventory(%w[session_start before_turn stop],
+                                  runs: [ ran("session_start", "failed"), ran("before_turn"), ran("stop") ]), outcome: "resumed")
+    assert_equal "Chaos hooks: the wake (session_start) hook house-session_start failed.", run.reload.hook_warning
+  end
+
+  test "a healthy neighbouring hook never masks one that failed or didn't fire (Mira's reproductions)" do
+    hooks = inventory(%w[session_start stop]).merge("hooks" => inventory(%w[session_start stop])["hooks"] +
+      [ hook("identity", "before_turn"), hook("other", "before_turn") ])
+    expect_all
+
+    failed = finish(hooks: hooks.merge("runs_reported" => true, "runs" => [
+      ran("session_start"), ran("stop"),
+      { "id" => "identity", "event" => "before_turn", "status" => "failed" },
+      { "id" => "other", "event" => "before_turn", "status" => "completed" }
+    ]))
+    assert_equal "Chaos hooks: the before_turn hook identity failed.", failed.reload.hook_warning
+
+    silent = finish(hooks: hooks.merge("runs_reported" => true, "runs" => [
+      ran("session_start"), ran("stop"), { "id" => "other", "event" => "before_turn", "status" => "completed" }
+    ]))
+    assert_equal "Chaos hooks: the before_turn hook identity didn't fire.", silent.reload.hook_warning
+  end
+
+  test "a hook seen running before that is now gone is named even while another hook covers the event" do
+    finish(hooks: inventory([]).merge("hooks" => [ hook("wake", "session_start"), hook("extra", "session_start") ]))
+    run = finish(hooks: inventory([]).merge("hooks" => [ hook("extra", "session_start") ]))
+
+    assert_equal "Chaos hooks: the wake (session_start) hook wake is gone.", run.reload.hook_warning
+  end
+
+  test "a conditional hook is never accused of not firing, but its failure still counts" do
+    expect_all
+    hooks = inventory(%w[before_turn stop]).merge("runs_reported" => true)
+    hooks["hooks"] << hook("only-on-startup", "session_start", has_matcher: true)
+    quiet = finish(hooks: hooks.merge("runs" => [ ran("before_turn"), ran("stop") ]))
+    assert_nil quiet.reload.hook_warning
+
+    failed = finish(hooks: hooks.merge("runs" => [ ran("before_turn"), ran("stop"),
+      { "id" => "only-on-startup", "event" => "session_start", "status" => "failed" } ]))
+    assert_equal "Chaos hooks: the wake (session_start) hook only-on-startup failed.", failed.reload.hook_warning
   end
 
   test "a stop hook is only expected to fire when the turn finished" do
     expect_all
-    failed = finish(hooks: inventory(%w[session_start before_turn stop], runs: [ ran("before_turn") ]),
+    failed = finish(hooks: inventory(%w[session_start before_turn stop], runs: [ ran("session_start"), ran("before_turn") ]),
                     outcome: "resumed", status: "error", returncode: 1)
     assert_nil failed.reload.hook_warning
   end
@@ -108,7 +161,7 @@ class HookPresenceTest < ActiveSupport::TestCase
     run = finish(hooks: inventory(%w[session_start before_turn stop],
                                   runs: [ ran("session_start", "failed"), ran("before_turn"), ran("stop") ]), outcome: "fresh")
 
-    assert_equal "Chaos hooks: the wake (session_start) hook failed.", run.reload.hook_warning
+    assert_equal "Chaos hooks: the wake (session_start) hook house-session_start failed.", run.reload.hook_warning
   end
 
   test "no report (an older shim) changes nothing" do
@@ -137,9 +190,9 @@ class HookPresenceTest < ActiveSupport::TestCase
     HookPresence::EVENTS.each { |event| @agent.set_hook_expectation!(event, "expected", source: "observed") }
   end
 
-  def hook(id, event, enabled: true, approved: true, inactive_reason: nil)
+  def hook(id, event, enabled: true, approved: true, inactive_reason: nil, has_matcher: false)
     { "id" => id, "event" => event, "enabled" => enabled, "approved" => approved,
-      "inactive_reason" => inactive_reason, "project_scoped" => true }
+      "inactive_reason" => inactive_reason, "project_scoped" => true, "has_matcher" => has_matcher }
   end
 
   def inventory(events, runs: nil)

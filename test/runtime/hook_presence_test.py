@@ -21,12 +21,12 @@ def listing(*rows):
     return json.dumps(list(rows))
 
 
-def row(hook_id, event, enabled=True, approved=True, inactive_reason=None, project="/home/agent/identity"):
+def row(hook_id, event, enabled=True, approved=True, inactive_reason=None, project="/home/agent/identity", matcher=None):
     return {
         "id": hook_id,
         "revision": 1,
         "definition": {"event": event, "command": SECRET_COMMAND, "project": project,
-                       "matcher": None, "timeout_sec": 90, "order": 0,
+                       "matcher": matcher, "timeout_sec": 90, "order": 0,
                        "status_message": "Waking"},
         "enabled": enabled,
         "approved": approved,
@@ -70,7 +70,7 @@ class HookPresenceTest(unittest.TestCase):
         run, calls = self.fake_list(listing(
             row("house-project-v1-1", "session_start"),
             row("house-project-v1-2", "before_turn", approved=False),
-            row("house-project-v1-3", "stop", inactive_reason="project is not trusted"),
+            row("house-project-v1-3", "stop", inactive_reason="project is not trusted", matcher="^resume$"),
         ))
         inventory = self.shim.hook_inventory(self.root, {"CHAOS_HOME": "/x"}, run=run)
 
@@ -79,13 +79,14 @@ class HookPresenceTest(unittest.TestCase):
         self.assertEqual(calls[0][1]["env"], {"CHAOS_HOME": "/x"})
         self.assertEqual(inventory, {"status": "ok", "hooks": [
             {"id": "house-project-v1-1", "event": "session_start", "enabled": True, "approved": True,
-             "inactive_reason": None, "project_scoped": True},
+             "inactive_reason": None, "project_scoped": True, "has_matcher": False},
             {"id": "house-project-v1-2", "event": "before_turn", "enabled": True, "approved": False,
-             "inactive_reason": None, "project_scoped": True},
+             "inactive_reason": None, "project_scoped": True, "has_matcher": False},
             {"id": "house-project-v1-3", "event": "stop", "enabled": True, "approved": True,
-             "inactive_reason": "project is not trusted", "project_scoped": True},
+             "inactive_reason": "project is not trusted", "project_scoped": True, "has_matcher": True},
         ]})
         self.assertNotIn("secret", json.dumps(inventory))
+        self.assertNotIn("^resume$", json.dumps(inventory))
 
     def test_an_empty_store_is_an_empty_list_not_unknown(self):
         run, _calls = self.fake_list("[]\n")

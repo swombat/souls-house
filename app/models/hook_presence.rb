@@ -13,15 +13,17 @@
 # an explicit expectation per event: set "expected" the first time a run sees
 # a working hook for it (source "observed"), or by the owner or the resident;
 # set "off" when a removal was on purpose, which stops the warning. Each
-# expected hook is held against its own trigger: session_start on a fresh
-# Chaos session only, before_turn on every turn, stop when the turn finished.
+# expected event is checked hook by hook: a hook seen running before that is
+# now gone, off or failing is named by id, and each hook is held against its
+# own trigger (session_start and before_turn on every exec, stop when the turn
+# finished; a hook with a matcher is never accused of not firing).
 class HookPresence
 
   EVENTS = %w[session_start before_turn stop].freeze
   STATES = %w[expected off].freeze
   SOURCES = %w[observed owner resident].freeze
   LABELS = { "session_start" => "wake (session_start)", "before_turn" => "before_turn", "stop" => "stop" }.freeze
-  FRESH_OUTCOMES = %w[fresh legacy_fresh rolled fresh_fallback].freeze
+  MAX_KNOWN_IDS = 20
 
   attr_reader :interaction, :report
 
@@ -47,36 +49,34 @@ class HookPresence
   end
 
   def warning_text
-    problems = expected_events.filter_map { |event| problem_for(event) }
+    problems = expected_events.flat_map { |event| problems_for(event) }
     return nil if problems.empty?
 
     "Chaos hooks: #{problems.join('; ')}."
   end
 
   def expected_events
-    expectations = interaction.agent.hook_expectations || {}
-    EVENTS.select { |event| expectations.dig(event, "state") == "expected" }
+    EVENTS.select { |event| expectation(event)&.dig("state") == "expected" }
   end
 
-  def problem_for(event)
+  # Every problem for one expected event, hook by hook (Mira, #959): a healthy
+  # neighbouring hook must never mask one that is gone, switched off or failing.
+  def problems_for(event)
     label = LABELS.fetch(event)
     unless report["status"] == "ok"
       reason = report["reason"].presence || "unknown reason"
-      return "couldn't check the #{label} hook (#{reason})"
+      return [ "couldn't check the #{label} hook (#{reason})" ]
     end
 
-    hooks = Array(report["hooks"]).select { |hook| hook.is_a?(Hash) && hook["event"] == event }
-    return "no #{label} hook is configured" if hooks.empty?
-    return "the #{label} hook is disabled" if hooks.none? { |hook| hook["enabled"] }
-    return "the #{label} hook is not approved" if hooks.none? { |hook| hook["enabled"] && hook["approved"] }
+    hooks = hooks_for(event)
+    return [ "no #{label} hook is configured" ] if hooks.empty?
 
+    problems = known_ids(event).filter_map { |id| known_hook_problem(label, id, hooks) }
     live = hooks.select { |hook| working?(hook) }
-    if live.empty?
-      reason = hooks.filter_map { |hook| hook["inactive_reason"].presence }.first
-      return "the #{label} hook is inactive (#{reason})"
+    if live.empty? && problems.empty?
+      problems << event_level_problem(label, hooks)
     end
-
-    firing_problem(event, label, live)
+    problems + firing_problems(event, label, live)
   end
 
   def working?(hook)
@@ -85,24 +85,65 @@ class HookPresence
 
   private
 
-  # Only judged when the Chaos build reports hook runs at all; until then
-  # "fired" is unknown, never assumed either way.
-  def firing_problem(event, label, live)
-    return nil unless report["runs_reported"] && triggered?(event)
-
-    ids = live.map { |hook| hook["id"] }
-    runs = Array(report["runs"]).select { |run| run.is_a?(Hash) && run["event"] == event }
-    runs = runs.select { |run| run["id"].blank? || ids.include?(run["id"]) }
-    return "the #{label} hook didn't fire" if runs.empty?
-    return nil if runs.any? { |run| run["status"] == "completed" }
-
-    "the #{label} hook #{runs.map { |run| run['status'] }.uniq.join(' / ')}"
+  def expectation(event)
+    (interaction.agent.hook_expectations || {})[event]
   end
 
+  def known_ids(event)
+    Array(expectation(event)&.dig("hook_ids"))
+  end
+
+  def hooks_for(event)
+    Array(report["hooks"]).select { |hook| hook.is_a?(Hash) && hook["event"] == event }
+  end
+
+  # A hook this resident was seen running before.
+  def known_hook_problem(label, id, hooks)
+    hook = hooks.find { |candidate| candidate["id"] == id }
+    return "the #{label} hook #{id} is gone" unless hook
+    return "the #{label} hook #{id} is disabled" unless hook["enabled"]
+    return "the #{label} hook #{id} is not approved" unless hook["approved"]
+    return "the #{label} hook #{id} is inactive (#{hook['inactive_reason']})" if hook["inactive_reason"].present?
+
+    nil
+  end
+
+  # Expected (say, by the owner) but none of its hooks works, and none was
+  # seen running before.
+  def event_level_problem(label, hooks)
+    return "the #{label} hook is disabled" if hooks.none? { |hook| hook["enabled"] }
+    return "the #{label} hook is not approved" if hooks.none? { |hook| hook["enabled"] && hook["approved"] }
+
+    reason = hooks.filter_map { |hook| hook["inactive_reason"].presence }.first
+    "the #{label} hook is inactive (#{reason})"
+  end
+
+  # Only judged when the Chaos build reports hook runs at all; until then
+  # "fired" is unknown, never assumed either way. A reported failure counts
+  # whatever the trigger. "Didn't fire" is only said of an unconditional hook
+  # whose trigger happened: a hook with a matcher may rightly not have matched.
+  def firing_problems(event, label, live)
+    return [] unless report["runs_reported"]
+
+    runs = Array(report["runs"]).select { |run| run.is_a?(Hash) && run["event"] == event }
+    live.filter_map do |hook|
+      mine = runs.select { |run| run["id"] == hook["id"] }
+      if mine.any? { |run| run["status"] == "completed" }
+        nil
+      elsif mine.any?
+        "the #{label} hook #{hook['id']} #{mine.map { |run| run['status'] }.uniq.join(' / ')}"
+      elsif triggered?(event) && !hook["has_matcher"]
+        "the #{label} hook #{hook['id']} didn't fire"
+      end
+    end
+  end
+
+  # Pinned Chaos dispatches session_start on every exec, with source startup
+  # or resume (session/init.rs), so it is due on every run, not only a fresh
+  # session (Mira, #959).
   def triggered?(event)
     case event
-    when "session_start" then interaction.session_outcome.in?(FRESH_OUTCOMES)
-    when "before_turn" then true
+    when "session_start", "before_turn" then true
     when "stop" then interaction.runtime_status == "ok" && interaction.runtime_returncode.to_i.zero?
     end
   end
@@ -110,19 +151,23 @@ class HookPresence
   def observe!
     return unless report["status"] == "ok"
 
-    seen = Array(report["hooks"]).select { |hook| hook.is_a?(Hash) && working?(hook) }.map { |hook| hook["event"] }
-    return if seen.empty?
+    working = Array(report["hooks"]).select { |hook| hook.is_a?(Hash) && EVENTS.include?(hook["event"]) && working?(hook) }
+    return if working.empty?
 
     agent = interaction.agent
     agent.with_lock do
       expectations = (agent.hook_expectations || {}).deep_dup
-      added = (seen & EVENTS).reject { |event| expectations.key?(event) }
-      next if added.empty?
+      changed = false
+      working.group_by { |hook| hook["event"] }.each do |event, hooks|
+        entry = expectations[event] ||= { "state" => "expected", "source" => "observed", "at" => Time.current.iso8601 }
+        ids = Array(entry["hook_ids"])
+        merged = (ids | hooks.filter_map { |hook| hook["id"].presence }).first(MAX_KNOWN_IDS)
+        next if merged == ids && entry.key?("hook_ids")
 
-      added.each do |event|
-        expectations[event] = { "state" => "expected", "source" => "observed", "at" => Time.current.iso8601 }
+        entry["hook_ids"] = merged
+        changed = true
       end
-      agent.update_column(:hook_expectations, expectations)
+      agent.update_column(:hook_expectations, expectations) if changed
     end
   end
 
