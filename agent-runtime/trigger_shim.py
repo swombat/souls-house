@@ -1049,7 +1049,9 @@ def _run_chaos_once(
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
         if house_trust_required():
             require_house_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
-    _activity_context.hook_inventory = hook_inventory(cwd, env)
+    # Off the critical path: never delays, outlives or blocks cancelling a turn.
+    if hook_inventory_enabled():
+        _activity_context.hook_inventory = HookInventoryProbe(cwd, env)
     args += [
         "--provider", provider or AGENT_PROVIDER,
         "-C", str(cwd),
@@ -1224,6 +1226,12 @@ HOOK_REASON_LIMIT = 200
 HOOK_INVENTORY_LIMIT = 50
 
 
+def hook_inventory_enabled(environ=None):
+    """On in the runtime image (SOULSHOUSE_HOOK_INVENTORY=1); set 0 to stop
+    listing hooks before each run."""
+    return (environ if environ is not None else os.environ).get("SOULSHOUSE_HOOK_INVENTORY") == "1"
+
+
 def _bounded_str(value, limit):
     if not isinstance(value, str):
         return None
@@ -1266,7 +1274,7 @@ def hook_inventory(cwd, env, run=subprocess.run):
     """
     try:
         out = run(
-            [CHAOS_BIN, "hooks", "list"], cwd=str(cwd), env=env,
+            [CHAOS_BIN, "hooks", "list"], cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, timeout=HOOK_LIST_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
@@ -1300,12 +1308,41 @@ def hook_inventory(cwd, env, run=subprocess.run):
     return {"status": "ok", "hooks": hooks}
 
 
+class HookInventoryProbe:
+    """`hook_inventory` on a daemon thread, started just before exec. The
+    listing normally takes well under a second; the report waits at most
+    HOOK_REPORT_WAIT_SECONDS for it and otherwise says it was still running."""
+
+    def __init__(self, cwd, env, run=subprocess.run):
+        self._result = None
+        self._thread = threading.Thread(
+            target=self._probe, args=(cwd, dict(env), run), name="hook-inventory", daemon=True)
+        self._thread.start()
+
+    def _probe(self, cwd, env, run):
+        try:
+            self._result = hook_inventory(cwd, env, run=run)
+        except Exception as error:  # never let a probe take a turn down
+            self._result = {"status": "unavailable", "reason": f"hook listing failed: {type(error).__name__}"}
+
+    def result(self, timeout=None):
+        self._thread.join(HOOK_REPORT_WAIT_SECONDS if timeout is None else timeout)
+        if self._result is None:
+            return {"status": "unavailable", "reason": "chaos hooks list was still running"}
+        return self._result
+
+
+HOOK_REPORT_WAIT_SECONDS = 2
+
+
 def hook_report(events):
     """The `hooks` block of the telemetry envelope, or None when this
     invocation never got as far as listing hooks."""
     inventory = getattr(_activity_context, "hook_inventory", None)
     if inventory is None:
         return None
+    if isinstance(inventory, HookInventoryProbe):
+        inventory = inventory.result()
     report = dict(inventory)
     runs = events.get("hook_runs") if events else None
     report["runs_reported"] = runs is not None

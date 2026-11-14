@@ -155,6 +155,36 @@ class HookPresenceTest(unittest.TestCase):
         self.assertEqual(hooks["runs"], [{"id": "house-project-v1-1", "event": "session_start", "status": "completed"}])
         self.assertEqual(hooks["hooks"][0]["id"], "house-project-v1-1")
 
+    def test_the_probe_runs_beside_the_turn_and_never_holds_it(self):
+        release = __import__("threading").Event()
+
+        def slow(args, **kwargs):
+            self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+            release.wait(5)
+            return subprocess.CompletedProcess(args, 0, "[]", "")
+
+        import time
+        before = time.monotonic()
+        probe = self.shim.HookInventoryProbe(self.root, {}, run=slow)
+        self.assertLess(time.monotonic() - before, 0.5)
+        self.assertEqual(probe.result(timeout=0.05),
+                         {"status": "unavailable", "reason": "chaos hooks list was still running"})
+        release.set()
+        self.assertEqual(probe.result(timeout=5), {"status": "ok", "hooks": []})
+
+    def test_a_probe_that_raises_is_reported(self):
+        def broken(args, **kwargs):
+            raise ValueError("synthetic")
+        probe = self.shim.HookInventoryProbe(self.root, {}, run=broken)
+        self.assertEqual(probe.result(timeout=5)["status"], "unavailable")
+
+    def test_listing_is_on_only_where_the_image_turns_it_on(self):
+        self.assertFalse(self.shim.hook_inventory_enabled({}))
+        self.assertFalse(self.shim.hook_inventory_enabled({"SOULSHOUSE_HOOK_INVENTORY": "0"}))
+        self.assertTrue(self.shim.hook_inventory_enabled({"SOULSHOUSE_HOOK_INVENTORY": "1"}))
+        dockerfile = (Path(__file__).resolve().parents[2] / "agent-runtime" / "Dockerfile").read_text()
+        self.assertIn("ENV SOULSHOUSE_HOOK_INVENTORY=1", dockerfile)
+
     def test_no_inventory_means_no_hooks_block(self):
         self.shim._activity_context.hook_inventory = None
         telemetry = self.shim.build_telemetry(runtime={}, session={}, prompt={}, usage=None,
