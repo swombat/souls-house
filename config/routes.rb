@@ -551,6 +551,8 @@ Rails.application.routes.draw do
       end
       resources :commitments, only: %i[index show create update destroy]
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      get "agent/hook_expectations", to: "hook_expectations#show"
+      patch "agent/hook_expectations", to: "hook_expectations#update"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"
       get "agent/voice", to: "agent_voices#show"

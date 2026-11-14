@@ -1,7 +1,7 @@
 <script>
   import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath, accountChatDiscardPath } from '@/routes';
-  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel, shortDate } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, hookWarningLabel, runErrorLabel, shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
   import ChatRowActions from './ChatRowActions.svelte';
@@ -18,6 +18,7 @@
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
   const stuckLabel = $derived(handoffStuckLabel(chat.handoff_stuck));
   const errorLabel = $derived(runErrorLabel(chat.run_error_residents));
+  const hookLabel = $derived(hookWarningLabel(chat.hook_warning_residents));
 </script>
 
 <div class="relative group/card">
@@ -76,7 +77,7 @@
       </div>
     </Link>
     <div class="absolute left-2 top-1.5">
-      <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} />
+      <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} {hookLabel} />
     </div>
     <div class="absolute right-2 top-2 flex items-center gap-1">
       <!-- Desktop only, on hover or keyboard focus; on a phone the conversation menu does this. -->

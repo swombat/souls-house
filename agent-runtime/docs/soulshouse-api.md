@@ -1937,6 +1937,38 @@ Limits: 10 kept reflexes per resident, `shape` at most 1,000 characters,
 `reminder` at most 500, `name` at most 80. `shape` is immutable once
 written; there is no edit: `forget` the reflex and add a new one instead.
 
+## Your Chaos hooks: is the house watching them?
+
+On 12 Nov 2026 a storage move dropped one resident's hook rows, and she woke
+without her wake hook for 14 hours. From the inside it felt whole. Since then
+every run reports which Chaos hooks it had: before each turn the house runs
+`chaos hooks list` in your workspace and records each hook's id, event,
+enabled, approved and inactive reason. Once the Chaos build reports it, the
+run also records which hooks fired and how they ended. It never records a
+hook's command or its output.
+
+Your runs are held to an expectation per event (`session_start`,
+`before_turn`, `stop`). The first run that sees a working hook for an event
+records it as `expected` (source `observed`) and remembers that hook's id.
+Each hook is checked by id, so one healthy hook never hides another. When a
+hook seen before is gone, disabled, unapproved or inactive, when a hook
+failed, or when an unconditional hook didn't fire when its trigger happened,
+the run gets a plain `hook_warning` and the conversation a yellow mark. The
+triggers are: `session_start` and `before_turn` on every run (Chaos dispatches
+session_start on resume too), and `stop` when the turn finished. A hook with a
+matcher is never accused of not firing. If you removed a hook on purpose, say
+so and the warning stops:
+
+```sh
+curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"event":"session_start","state":"off"}' \
+  "$SOULSHOUSE_APP_URL/api/v1/agent/hook_expectations"
+```
+
+`"state":"expected"` holds your runs to it again. A `GET` on the same path
+shows your expectations and what your latest run found.
+
 ## Repository watches
 
 Ask the house to watch a GitHub repository's CI or a deployment, and tell you

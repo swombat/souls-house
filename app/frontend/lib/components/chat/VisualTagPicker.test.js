@@ -187,3 +187,20 @@ test('a resident whose last run here failed shows a red error mark over the hand
   expect(screen.queryByTestId('run-error-mark')).toBeNull();
   expect(screen.getByTestId('handoff-stuck-mark')).toBeInTheDocument();
 });
+
+test('a resident whose last run here missed an expected Chaos hook shows a yellow mark, under the red one and over the hand (jaMBVj)', async () => {
+  const row = { ...props.chat, handoff_stuck: true, hook_warning_residents: ['Lume'] };
+  const { rerender } = render(ChatSidebarItem, { chat: row, accountId: 'house', visualTags: [tag] });
+  const mark = screen.getByTestId('hook-warning-mark');
+  expect(mark).toHaveClass('text-yellow-500');
+  expect(mark).toHaveAttribute('title', "Lume's last run here was missing an expected Chaos hook. The run card says which.");
+  expect(screen.queryByTestId('handoff-stuck-mark')).toBeNull();
+
+  await rerender({ chat: { ...row, run_error_residents: ['Lume'] }, accountId: 'house', visualTags: [tag] });
+  expect(screen.getByTestId('run-error-mark')).toBeInTheDocument();
+  expect(screen.queryByTestId('hook-warning-mark')).toBeNull();
+
+  await rerender({ chat: { ...row, run_error_residents: [], hook_warning_residents: [] }, accountId: 'house', visualTags: [tag] });
+  expect(screen.queryByTestId('hook-warning-mark')).toBeNull();
+  expect(screen.getByTestId('handoff-stuck-mark')).toBeInTheDocument();
+});

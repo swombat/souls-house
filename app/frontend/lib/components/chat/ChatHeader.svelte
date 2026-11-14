@@ -8,7 +8,7 @@
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
-  import { commitmentMarkLabel, handoffStuckLabel, runErrorLabel } from '$lib/chat-display';
+  import { commitmentMarkLabel, handoffStuckLabel, hookWarningLabel, runErrorLabel } from '$lib/chat-display';
   import {
     accountChatForkPath,
     accountChatModerationPath,
@@ -73,6 +73,12 @@
     if (!chat) return '';
     const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
     return runErrorLabel(row ? row.run_error_residents : chat.run_error_residents);
+  });
+  // The yellow hook mark for a resident whose last run here missed an expected hook.
+  const hookLabel = $derived.by(() => {
+    if (!chat) return '';
+    const row = ($page.props.chats || []).find((entry) => entry.id === chat.id);
+    return hookWarningLabel(row ? row.hook_warning_residents : chat.hook_warning_residents);
   });
 
   // Token warning level — based on active context, not lifetime cost
@@ -227,7 +233,8 @@
             faintEmpty={false}
             {commitmentLabel}
             {stuckLabel}
-            {errorLabel} />
+            {errorLabel}
+            {hookLabel} />
         </span>
       {/if}
       <div class="flex items-center">

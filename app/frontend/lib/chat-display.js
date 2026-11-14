@@ -39,6 +39,15 @@ export function runErrorLabel(names) {
   return `${who}'s ${runs} ended in an error.`;
 }
 
+// A resident whose last run here had an unmet Chaos hook expectation (jaMBVj):
+// a yellow circled exclamation mark, below the red error mark. names: those residents.
+export function hookWarningLabel(names) {
+  if (!names?.length) return '';
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const runs = names.length === 1 ? 'last run here was' : 'last runs here were';
+  return `${who}'s ${runs} missing an expected Chaos hook. The run card says which.`;
+}
+
 export function commitmentMarkLabel(commitment, locale = undefined) {
   if (!commitment?.due_at) return '';
 

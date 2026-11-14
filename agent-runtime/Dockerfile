@@ -299,6 +299,9 @@ ENV SHIM_PORT=4000
 # keeps the cache chained across wakes (5m dies in the inter-wake gap and its
 # writes become pure loss).
 ENV CHAOS_ANTHROPIC_CACHE_TTL=1h
+# Each run lists the Chaos hooks it will load (ids and status only) so the
+# house can see a wake hook go missing (jaMBVj). 0 turns the listing off.
+ENV SOULSHOUSE_HOOK_INVENTORY=1
 EXPOSE 4000
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/entrypoint.sh"]

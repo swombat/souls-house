@@ -427,6 +427,7 @@ def trigger():
     # provider: anything else never carries the flag's guarantee.
     _activity_context.paid_fallback = payload.get("paid_fallback") is True and provider == "house"
     _activity_context.turn_deadline = time.monotonic() + timeout_secs
+    _activity_context.hook_inventory = None
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
         _activity_context.memory_aggregation = bool(aggregation_context(payload))
@@ -483,6 +484,7 @@ def trigger():
         _activity_context.paid_fallback = False
         _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
+        _activity_context.hook_inventory = None
         if not lock_released:
             _unregister_running_session(session_id)
             session_lock.release()
@@ -1047,6 +1049,10 @@ def _run_chaos_once(
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
         if house_trust_required():
             require_house_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
+    # Off the critical path: it never delays a turn or blocks cancelling one.
+    # A listing can outlive a cancelled turn by up to its own 10 s timeout.
+    if hook_inventory_enabled():
+        _activity_context.hook_inventory = HookInventoryProbe(cwd, env)
     args += [
         "--provider", provider or AGENT_PROVIDER,
         "-C", str(cwd),
@@ -1175,6 +1181,9 @@ def parse_events(stdout):
         "output_tokens": 0,
         "agent_messages": [],
         "errors": [],
+        # None until Chaos emits hook.* events at all; then one entry per
+        # completed hook run, identity and status only.
+        "hook_runs": None,
     }
     for line in (stdout or "").splitlines():
         line = line.strip()
@@ -1195,7 +1204,155 @@ def parse_events(stdout):
                 parsed["agent_messages"].append(item["text"])
         elif kind in ("error", "turn.failed"):
             parsed["errors"].append(json.dumps(event))
+        elif kind in HOOK_EVENT_TYPES:
+            _parse_hook_event(parsed, kind, event)
     return parsed
+
+
+# ----- hook presence and firing (jaMBVj) -----
+#
+# On 12 Nov 2026 a storage move dropped a resident's Chaos hook rows and she
+# woke without her wake hook for 14 hours; from the inside it felt whole. The
+# house has to see it instead. Before each exec the shim lists the hooks Chaos
+# will load for this workspace, and reads hook.started / hook.completed from
+# the JSONL when the Chaos build emits them. Only ids, events and status cross
+# to Rails: never a hook's command or its output.
+
+HOOK_EVENT_TYPES = ("hook.started", "hook.completed")
+HOOK_EVENTS = ("session_start", "before_turn", "stop")
+HOOK_RUN_STATUSES = ("running", "completed", "failed", "blocked", "stopped")
+HOOK_LIST_TIMEOUT_SECONDS = 10
+HOOK_ID_LIMIT = 64
+HOOK_REASON_LIMIT = 200
+HOOK_INVENTORY_LIMIT = 50
+
+
+def hook_inventory_enabled(environ=None):
+    """On in the runtime image (SOULSHOUSE_HOOK_INVENTORY=1); set 0 to stop
+    listing hooks before each run."""
+    return (environ if environ is not None else os.environ).get("SOULSHOUSE_HOOK_INVENTORY") == "1"
+
+
+def _bounded_str(value, limit):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value[:limit] or None
+
+
+def _hook_id(value):
+    """Chaos names a database hook's run `chaos://hooks/<id>`; the list
+    command names it `<id>`. Both map to the bare id."""
+    value = _bounded_str(value, 512)
+    if value and value.startswith("chaos://hooks/"):
+        value = value[len("chaos://hooks/"):]
+    return value[:HOOK_ID_LIMIT] if value else None
+
+
+def _parse_hook_event(parsed, kind, event):
+    if parsed["hook_runs"] is None:
+        parsed["hook_runs"] = []
+    if kind != "hook.completed":
+        return
+    event_name = event.get("event_name")
+    status = event.get("status")
+    if event_name not in HOOK_EVENTS or status not in HOOK_RUN_STATUSES:
+        return
+    if len(parsed["hook_runs"]) >= HOOK_INVENTORY_LIMIT:
+        return
+    run = {"id": _hook_id(event.get("id")), "event": event_name, "status": status}
+    duration = event.get("duration_ms")
+    if isinstance(duration, int) and not isinstance(duration, bool):
+        run["duration_ms"] = duration
+    parsed["hook_runs"].append(run)
+
+
+def hook_inventory(cwd, env, run=subprocess.run):
+    """The hooks this exec will load, from `chaos hooks list` in its cwd.
+
+    Returns {"status": "ok", "hooks": [...]} or {"status": "unavailable",
+    "reason": ...}. Never raises: a failure to look is reported, not fatal.
+    """
+    try:
+        out = run(
+            [CHAOS_BIN, "hooks", "list"], cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=HOOK_LIST_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "unavailable", "reason": "chaos hooks list timed out"}
+    except OSError as error:
+        return {"status": "unavailable", "reason": f"chaos hooks list failed to start: {error.strerror or error}"}
+    if out.returncode != 0:
+        return {"status": "unavailable", "reason": f"chaos hooks list exited {out.returncode}"}
+    try:
+        rows = json.loads(out.stdout or "null")
+    except json.JSONDecodeError:
+        return {"status": "unavailable", "reason": "chaos hooks list printed something other than JSON"}
+    if not isinstance(rows, list):
+        return {"status": "unavailable", "reason": "chaos hooks list did not return a list"}
+    hooks = []
+    for row in rows[:HOOK_INVENTORY_LIMIT]:
+        if not isinstance(row, dict):
+            continue
+        definition = row.get("definition") if isinstance(row.get("definition"), dict) else {}
+        event = definition.get("event")
+        if event not in HOOK_EVENTS:
+            continue
+        hooks.append({
+            "id": _hook_id(row.get("id")),
+            "event": event,
+            "enabled": row.get("enabled") is True,
+            "approved": row.get("approved") is True,
+            "inactive_reason": _bounded_str(row.get("inactive_reason"), HOOK_REASON_LIMIT),
+            "project_scoped": bool(definition.get("project")),
+            # Whether it is conditional, never the pattern itself: a hook whose
+            # matcher didn't match this run is not "missing".
+            "has_matcher": bool(definition.get("matcher")),
+        })
+    return {"status": "ok", "hooks": hooks}
+
+
+class HookInventoryProbe:
+    """`hook_inventory` on a daemon thread, started just before exec. The
+    listing normally takes well under a second; the report waits at most
+    HOOK_REPORT_WAIT_SECONDS for it and otherwise says it was still running.
+    The thread itself can run on for up to HOOK_LIST_TIMEOUT_SECONDS."""
+
+    def __init__(self, cwd, env, run=subprocess.run):
+        self._result = None
+        self._thread = threading.Thread(
+            target=self._probe, args=(cwd, dict(env), run), name="hook-inventory", daemon=True)
+        self._thread.start()
+
+    def _probe(self, cwd, env, run):
+        try:
+            self._result = hook_inventory(cwd, env, run=run)
+        except Exception as error:  # never let a probe take a turn down
+            self._result = {"status": "unavailable", "reason": f"hook listing failed: {type(error).__name__}"}
+
+    def result(self, timeout=None):
+        self._thread.join(HOOK_REPORT_WAIT_SECONDS if timeout is None else timeout)
+        if self._result is None:
+            return {"status": "unavailable", "reason": "chaos hooks list was still running"}
+        return self._result
+
+
+HOOK_REPORT_WAIT_SECONDS = 2
+
+
+def hook_report(events):
+    """The `hooks` block of the telemetry envelope, or None when this
+    invocation never got as far as listing hooks."""
+    inventory = getattr(_activity_context, "hook_inventory", None)
+    if inventory is None:
+        return None
+    if isinstance(inventory, HookInventoryProbe):
+        inventory = inventory.result()
+    report = dict(inventory)
+    runs = events.get("hook_runs") if events else None
+    report["runs_reported"] = runs is not None
+    report["runs"] = runs or []
+    return report
 
 
 def _parse_completion_event(parsed, event):
@@ -1354,6 +1511,7 @@ def instrumented_response(
             session_usage=events["session_usage"],
             chaos_telemetry_status=chaos_telemetry_status,
             unsupported_chaos_schema=events["unsupported_telemetry_schema_version"],
+            hooks=hook_report(events),
         ),
     }
     telegram_run = getattr(_activity_context, "telegram_run", None)
@@ -1441,6 +1599,7 @@ def build_telemetry(
     session_usage=None,
     chaos_telemetry_status=None,
     unsupported_chaos_schema=None,
+    hooks=None,
 ):
     telemetry = {
         "schema_version": SHIM_TELEMETRY_SCHEMA_VERSION,
@@ -1455,6 +1614,8 @@ def build_telemetry(
         telemetry["chaos_telemetry_status"] = chaos_telemetry_status
     if unsupported_chaos_schema is not None:
         telemetry["unsupported_chaos_telemetry_schema_version"] = unsupported_chaos_schema
+    if hooks is not None:
+        telemetry["hooks"] = hooks
     return telemetry
 
 
@@ -1568,6 +1729,7 @@ def timeout_response(
             session_usage=events["session_usage"],
             chaos_telemetry_status=chaos_telemetry_status,
             unsupported_chaos_schema=events["unsupported_telemetry_schema_version"],
+            hooks=hook_report(events),
         ),
     }
     if roll:

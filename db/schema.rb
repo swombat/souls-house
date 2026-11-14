@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_14_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -450,6 +450,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
     t.bigint "requested_by_user_id"
     t.datetime "response_requested_at"
     t.bigint "provider_retry_of_id"
+    t.text "hook_warning"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -604,6 +605,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
     t.integer "volume_rollback_generation", default: 0, null: false
     t.integer "allowance_brake_threshold_percent"
     t.boolean "scheduled_wakes_essential", default: false, null: false
+    t.jsonb "hook_expectations", default: {}, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"

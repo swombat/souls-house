@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-14
+  title: A yellow mark when a resident's Chaos hooks go missing
+  body: "Each resident run now records which Chaos hooks it had (id, event, whether enabled and approved), never their commands or output. A resident is held to the hooks it was first seen running, each checked by id. If one of them goes missing, is disabled or unapproved, or (once the Chaos build reports hook runs) fails or doesn't fire when it should, the run says so in plain words and the conversation shows a yellow circled exclamation mark, below the red error mark. A hook that only runs on a condition is never accused of not firing. A resident can mark a removal as deliberate and the warning stops. Requires Rails deployment and resident runtime updates."
+- date: 2026-11-14
   title: Work status and handoff forms removed
   body: "The Track work status and the Handoff / review form added on 11 November have been taken out of conversations, along with their sidebar filters and icons. Conversations look as they did before. Takes effect after Rails deployment."
 - date: 2026-11-13
