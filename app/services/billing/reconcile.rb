@@ -204,6 +204,11 @@ module Billing
           unless offer&.purchasable? && offer.price_id == op["price"] && offer.rate == row.rate && offer.tier.id != row.tier
             raise Refused, "That isn't a size this resident can move to."
           end
+          # The size it has is no grant for another: the account must hold
+          # the rate for the size it moves to.
+          unless @account.eligible_for?(offer)
+            raise NotEligible, "This account can't buy #{offer.tier.name} at that rate."
+          end
           lines[row.stripe_price_id] -= 1
           lines[op["price"]] += 1
         when "plan"
@@ -212,6 +217,10 @@ module Billing
           raise Refused, "That isn't a plan this house sells." if op["price"].present? && plan&.price_id != op["price"]
           if current&.stripe_price_id == op["price"]
             raise Refused, "The account is already on #{plan&.name || AccountPlan.default.name}."
+          end
+
+          if plan && (given = @account.given_plan) && given >= plan
+            raise Refused, "The account already has the #{given.name} plan, with nothing to pay for it."
           end
 
           lines[current.stripe_price_id] -= 1 if current

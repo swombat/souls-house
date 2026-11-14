@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-14
+  title: Billing codes for one size, or for a plan
+  body: "A billing code can now do one of three things: let an account buy residents at cost in every size (as before), let it buy one size at cost (Small, Medium or Large), or give it the Partners or Colleagues plan with nothing to pay. Site admins make them in Site Admin > Billing codes and owners enter them in the Billing tab, as before. A code for a free plan is refused while the account is paying for that plan or a lower one: move the account to Companions first, then enter the code, so nothing is charged twice. Withdrawing a code's grant ends the plan it gave and stops new purchases at its rate; residents already bought keep their price. Takes effect after Rails deployment."
+- date: 2026-11-14
   title: Medium and Large residents are priced by their machine
   body: "A resident's size is now just the computer it lives on. New Medium residents are $39.99 a month (4 vCPUs, 8 GB) and new Large residents are $69.99 (8 vCPUs, 16 GB); Small stays at $9.99. At cost, Medium is $28 and Large $56. Residents already paying keep the price they started on. Transcription hours and backup space now belong to the account's plan rather than to each resident's size; neither is shown as an allowance until the house can stop at the limit. Takes effect after Rails deployment."
 - date: 2026-11-14

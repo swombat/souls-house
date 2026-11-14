@@ -137,4 +137,27 @@ class BillingCodeTest < ActiveSupport::TestCase
     assert_equal "At cost, every size", BillingCode.label("at_cost")
   end
 
+  test "a free-plan code waits for anything the account could still pay for that plan: an unpaid plan, an open Checkout, a sent change" do
+    code(effect: "plan:partners")
+    redeem = -> { BillingCode.redeem!(code: "PEPE-AT-COST", account: @account, by: @owner) }
+    paid = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_plan", stripe_status: "unpaid",
+      plan: "partners", stripe_price_id: Billing::AccountPlan.find!("partners").price_id)
+    assert_match(/paying for Partners/, assert_raises(BillingCode::Refused, &redeem).message)
+    paid.update!(stripe_status: "canceled")
+
+    attempt = AccountPlanCheckoutAttempt.create!(account: @account, plan: "partners", stripe_price_id: "price_x",
+      idempotency_key: "key-1", create_params: { "mode" => "subscription" })
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    attempt.update!(resolved_at: @now)
+
+    change = BillChange.create!(account: @account, stripe_subscription_id: "sub_acct", idempotency_key: "key-2",
+      ops: [ { "op" => "plan", "price" => "price_x" } ], base: {}, lines: { "price_x" => 1 }, params: {}, quote: {},
+      state: "submitted", submitted_at: @now)
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    change.abandon!("test")
+
+    assert redeem.call
+    assert_equal "partners", @account.reload.plan.id
+  end
+
 end

@@ -353,4 +353,34 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_equal [ { "op" => "end_bill", "agent_id" => @b.id } ], change.ops
   end
 
+  def grant!(effect)
+    BillingCode.redeem!(code: BillingCode.create!(code: "G-#{SecureRandom.hex(4)}", effect:, created_by: users(:site_admin_user)).code,
+      account: @account, by: users(:site_admin_user))
+  end
+
+  test "a grant for one size is no grant for another: a resident can't be resized past it" do
+    grant!("at_cost:conversation")
+    bill!(@a => CONVERSATION_AT_COST_PRICE)
+
+    assert_raises(Billing::NotEligible) { reconcile.propose([ { op: "resize", agent_id: @a.id, price: LIFE_AT_COST_PRICE } ]) }
+
+    wide = grant!("at_cost")
+    change = reconcile.propose([ { op: "resize", agent_id: @a.id, price: LIFE_AT_COST_PRICE } ])
+    wide.withdraw!(by: users(:site_admin_user))
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_equal({ CONVERSATION_AT_COST_PRICE => 1 }, remote)
+  end
+
+  test "a plan the account holds free is not bought, nor a quote for it confirmed" do
+    bill!(@a => CONVERSATION_PRICE)
+    change = reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ])
+    grant!("plan:partners")
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert_empty @stripe.subscription_updates
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
+    assert reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]), "a higher plan can still be bought"
+  end
+
 end

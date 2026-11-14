@@ -51,15 +51,17 @@ class BillingCode < ApplicationRecord
 
   # Redeems a code for an account, atomically: the code row is locked, so two
   # accounts can't both take the last redemption, and the unique index keeps
-  # one account from redeeming the same code twice.
+  # one account from redeeming the same code twice. It waits for the
+  # account's billing lock, so a purchase can't pass it half way.
   def self.redeem!(code:, account:, by:, now: Time.current)
     normalized = code.to_s.strip.upcase
     transaction do
+      Billing::BillSync.lock!(account.id)
       record = lock.find_by("lower(code) = ?", normalized.downcase)
       raise Refused, "That code isn't one this house knows." if record.nil?
       raise Refused, "This account has already used that code." if record.redemptions.exists?(account: account)
       raise Refused, record.refusal(now) unless record.redeemable?(now)
-      raise Refused, record.paid_plan_refusal(account) if record.paid_plan_refusal(account)
+      raise Refused, record.plan_refusal(account) if record.plan_refusal(account)
 
       redemption = record.redemptions.create!(account: account, effect: record.effect, redeemed_by: by, redeemed_at: now)
       record.update!(redemptions_count: record.redemptions_count + 1)
@@ -81,14 +83,27 @@ class BillingCode < ApplicationRecord
   end
 
   # A free plan is never laid over a paid one it covers: the paid line would
-  # go on charging for what the code gives. The owner ends that first.
-  def paid_plan_refusal(account)
-    plan = self.class.plan_of(effect)
-    paid = plan && account.account_subscriptions.live.order(:id).last
-    return nil unless paid && paid.plan_record <= plan
+  # go on charging for what the code gives. So it waits until nothing the
+  # account pays, or could still pay, is for that plan or a lower one: a plan
+  # row not truly ended (an unpaid one comes back when its bill is paid), a
+  # Checkout still open, a change to the bill already sent.
+  PLAN_OVER = %w[canceled incomplete_expired].freeze
 
-    "This code gives the #{plan.name} plan free, and this account is paying for #{paid.plan_record.name}. " \
-      "Move the account to #{Billing::AccountPlan.default.name} in Billing first, then use the code, so nothing is charged twice."
+  def plan_refusal(account)
+    plan = self.class.plan_of(effect)
+    return nil unless plan
+
+    paid = account.account_subscriptions.where.not(stripe_status: PLAN_OVER).order(:id).last
+    if paid && paid.plan_record <= plan
+      return "This code gives the #{plan.name} plan free, and this account is paying for #{paid.plan_record.name}. " \
+        "Move the account to #{Billing::AccountPlan.default.name} in Billing first, then use the code, so nothing is charged twice."
+    end
+    if AccountPlanCheckoutAttempt.unresolved.exists?(account:) ||
+        BillChange.submitted.where(account:).any? { |change| change.ops.any? { |op| op["op"] == "plan" } }
+      return "A payment for this account's plan is still being confirmed. Try the code again in a few minutes."
+    end
+
+    nil
   end
 
   def revoke!(now: Time.current)

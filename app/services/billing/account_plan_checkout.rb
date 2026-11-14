@@ -21,8 +21,28 @@ module Billing
       @success_url, @cancel_url = success_url, cancel_url
     end
 
+    # Ends any Checkout for the account's plan that could still be paid,
+    # before a billing code gives the plan free. One that was paid and is
+    # still coming in refuses (AlreadySubscribed).
+    def self.close!(account, client: Billing.client)
+      new(account:, plan: nil, success_url: nil, cancel_url: nil, client:).close!
+    end
+
+    def close!
+      CheckoutLock.synchronize_account(@account) do
+        attempt = AccountPlanCheckoutAttempt.unresolved.find_by(account: @account)
+        next unless attempt
+
+        settle!(recover!(attempt))
+        attempt.update!(resolved_at: Time.current)
+      end
+    end
+
     def url
       raise Refused, "Companions comes with every account; there is nothing to buy." if @plan.free?
+      if (given = @account.given_plan) && given >= @plan
+        raise Refused, "The account already has the #{given.name} plan, with nothing to pay for it."
+      end
 
       CheckoutLock.synchronize_account(@account) do
         if @account.account_subscriptions.live.exists?

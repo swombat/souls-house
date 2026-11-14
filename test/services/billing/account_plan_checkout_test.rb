@@ -94,4 +94,17 @@ class Billing::AccountPlanCheckoutTest < ActiveSupport::TestCase
     assert_empty @stripe.checkout_sessions
   end
 
+  test "a plan the account holds free can't be bought, and close! expires a Checkout still open" do
+    checkout("partners")
+    Billing::CheckoutLock.stub(:synchronize_account, ->(_account, &operation) { operation.call }) do
+      Billing::AccountPlanCheckout.close!(@account, client: @stripe)
+    end
+    assert_equal "expired", @stripe.session_states["cs_test_1"][:status]
+    assert_empty AccountPlanCheckoutAttempt.unresolved.where(account: @account)
+
+    @account.update!(granted_plan: "partners")
+    assert_raises(Billing::AccountPlanCheckout::Refused) { checkout("partners") }
+    assert checkout("colleagues")
+  end
+
 end
