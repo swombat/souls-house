@@ -196,4 +196,44 @@ class RoomTest < ActiveSupport::TestCase
     assert_nil chat.reload.room
   end
 
+  test "an archived room keeps its conversations but none can be put there" do
+    account = accounts(:team_account)
+    room = account.rooms.create!(name: "Archive me")
+    kept = account.chats.create!(title: "Kept", model_id: "openrouter/auto", room: room)
+    room.archive!
+
+    assert_equal room, kept.reload.room
+    assert kept.update(title: "Still editable")
+    assert_not account.chats.new(title: "New", model_id: "openrouter/auto", room: room).valid?
+    moving = account.chats.create!(title: "Elsewhere", model_id: "openrouter/auto")
+    assert_not moving.update(room: room)
+    assert_not account.update(resident_room: room)
+    assert_equal [], account.rooms.active.where(id: room.id).to_a
+  end
+
+  test "a room a rhythm opens conversations in cannot be archived" do
+    resident = agents(:research_assistant)
+    room = @account.rooms.create!(name: "Rhythmic")
+    rhythm = Rhythm.create!(account: @account, creator_agent: resident, title: "Watch", opening: "Look round.",
+      agents: [ resident ], cadence: "daily", time_of_day: "09:00", timezone: "UTC", next_run_at: 1.hour.from_now,
+      room_choice: "room", room: room)
+
+    assert_raises(ActiveRecord::RecordInvalid) { room.archive! }
+    rhythm.update!(room_choice: "main", room: nil)
+    room.archive!
+    assert room.reload.archived?
+    assert_not rhythm.update(room_choice: "room", room: room)
+  end
+
+  test "reordering moves past archived rooms the list does not show" do
+    a = @account.rooms.create!(name: "A")
+    b = @account.rooms.create!(name: "B")
+    c = @account.rooms.create!(name: "C")
+    b.archive!
+
+    c.move!(-1)
+
+    assert_equal %w[C A], @account.rooms.active.ordered.map(&:name)
+  end
+
 end

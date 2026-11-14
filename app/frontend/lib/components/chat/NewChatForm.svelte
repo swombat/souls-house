@@ -38,7 +38,13 @@
   let title = $state(restored.title);
   let sidebarOpen = $state(false);
   // A new conversation starts in the room being viewed; from All chats, Main.
-  const roomId = $derived($page.props.current_room === 'all' ? 'main' : $page.props.current_room || 'main');
+  // An archived room is read-only: a conversation started there begins in Main.
+  const archivedHere = $derived(
+    ($page.props.rooms || []).find((room) => room.id === $page.props.current_room && room.archived)
+  );
+  const roomId = $derived(
+    $page.props.current_room === 'all' || archivedHere ? 'main' : $page.props.current_room || 'main'
+  );
   let textareaRef = $state(null);
   const placeholder =
     Math.random() < 0.1
@@ -187,6 +193,11 @@
       <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
+    {#if archivedHere}
+      <p class="px-4 py-2 text-sm text-muted-foreground" data-testid="archived-room-note">
+        {archivedHere.name} is archived. A conversation started here begins in {$page.props.main_room_name || 'Main'}.
+      </p>
+    {/if}
     {#if error}
       <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
     {/if}

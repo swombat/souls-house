@@ -123,7 +123,7 @@ module Api
       end
 
       def directory
-        { rooms: [ @account.main_room_json, *@account.rooms.ordered.map(&:directory_json) ],
+        { rooms: [ @account.main_room_json, *@account.rooms.active.map(&:directory_json) ],
           resident_room: @account.resident_room&.as_json || { "id" => nil, "name" => @account.main_room_label } }
       end
 

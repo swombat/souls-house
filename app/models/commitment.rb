@@ -439,6 +439,7 @@ class Commitment < ApplicationRecord
       return unless new_record? || will_save_change_to_room_id? || will_save_change_to_destination?
 
       errors.add(:room, "must be a room of this account") if room && room.account_id != account_id
+      errors.add(:room, "#{room.name} is archived") if room&.archived?
     elsif room_id
       errors.add(:room, "is only for a new conversation")
     end

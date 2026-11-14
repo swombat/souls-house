@@ -196,4 +196,37 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to login_path
   end
 
+  test "archiving keeps a room's conversations and takes it out of the switcher; unarchiving brings it back" do
+    old = @account.rooms.create!(name: "Application")
+    @account.rooms.create!(name: "Work")
+    chat = @account.chats.create!(title: "Draft", model_id: "openrouter/auto", room: old)
+
+    patch account_room_path(@account, old), params: { archived: true }
+
+    assert_redirected_to account_rooms_path(@account)
+    assert old.reload.archived?
+    assert_equal old, chat.reload.room
+    assert_equal "archive_room", AuditLog.order(:id).last.action
+
+    get account_chats_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_equal [ "Work" ], inertia_shared_props.fetch("rooms").map { |room| room["name"] }
+
+    get account_chat_path(@account, chat), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_response :success
+    assert_includes inertia_shared_props.fetch("rooms"), { "id" => old.to_param, "name" => "Application", "archived" => true }
+
+    patch account_room_path(@account, old), params: { archived: false }
+    assert_not old.reload.archived?
+  end
+
+  test "the residents' default room cannot be archived" do
+    room = @account.rooms.create!(name: "Life")
+    @account.update!(resident_room: room)
+
+    patch account_room_path(@account, room), params: { archived: true }
+
+    assert_redirected_to account_rooms_path(@account)
+    assert_not room.reload.archived?
+  end
+
 end

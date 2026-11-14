@@ -2,11 +2,12 @@
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
-  import { ArrowDown, ArrowUp, Check, PencilSimple, Trash, X } from 'phosphor-svelte';
+  import { Archive, ArrowDown, ArrowUp, ArrowCounterClockwise, Check, PencilSimple, Trash, X } from 'phosphor-svelte';
 
   // One room on the Rooms page. `main` is the default room: no row behind it,
   // so it can be renamed and described but not moved or removed.
   let { accountId, room, first = false, last = false, canManage = false, main = false, mainName = 'Main' } = $props();
+  const archived = $derived(!!room.archived);
 
   let editing = $state(false);
   let name = $state('');
@@ -28,6 +29,12 @@
 
   function move(direction) {
     router.patch(path, { direction }, { preserveScroll: true });
+  }
+
+  // Archiving keeps every conversation where it is; it only stops the room
+  // being a place to put new ones.
+  function setArchived(value) {
+    router.patch(path, { archived: value }, { preserveScroll: true });
   }
 
   function remove() {
@@ -78,9 +85,23 @@
         <span class="whitespace-nowrap text-xs text-muted-foreground">
           {count} conversation{count === 1 ? '' : 's'}{main ? ' · default' : ''}
         </span>
+        {#if archived}
+          <a
+            href={`/accounts/${accountId}/chats?room=${encodeURIComponent(room.id)}`}
+            class="px-2 text-sm underline-offset-4 hover:underline">Open</a>
+        {/if}
         {#if canManage}
           <div class="-mr-2 flex items-center gap-1 sm:mr-0">
-            {#if !main}
+            {#if archived}
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-8 w-8 p-0"
+                onclick={() => setArchived(false)}
+                aria-label="Unarchive {room.name}">
+                <ArrowCounterClockwise size={14} />
+              </Button>
+            {:else if !main}
               <Button
                 variant="ghost"
                 size="sm"
@@ -103,6 +124,16 @@
             <Button variant="ghost" size="sm" class="h-8 w-8 p-0" onclick={startEditing} aria-label="Edit {room.name}">
               <PencilSimple size={14} />
             </Button>
+            {#if !main && !archived}
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-8 w-8 p-0"
+                onclick={() => setArchived(true)}
+                aria-label="Archive {room.name}">
+                <Archive size={14} />
+              </Button>
+            {/if}
             {#if !main}
               <Button
                 variant="ghost"

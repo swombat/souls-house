@@ -162,7 +162,7 @@ class RhythmsController < ApplicationController
   # form can say what "the account's default room" currently is.
   def room_options
     {
-      rooms: current_account.rooms.ordered.map(&:as_json),
+      rooms: current_account.rooms.active.map(&:as_json),
       main_room: current_account.main_room_json.slice("id", "name"),
       default_room: current_account.resident_room&.as_json || current_account.main_room_json.slice("id", "name")
     }

@@ -135,6 +135,9 @@ class ChatsController < ApplicationController
     redirect_to chat_view_path(@chat)
   rescue ActiveRecord::RecordNotFound
     redirect_to new_account_chat_path(current_account), alert: "Select valid residents from this account"
+  rescue ActiveRecord::RecordInvalid => error
+    # A form left open on a room that has since been archived, for instance.
+    redirect_to new_account_chat_path(current_account), alert: error.record.errors.full_messages.to_sentence
   end
 
   def update
@@ -172,7 +175,8 @@ class ChatsController < ApplicationController
     if params.key?(:room_id)
       Room.resolve_for(current_account, params[:room_id].presence)
     else
-      selected_room == :all ? nil : selected_room
+      # Viewing an archived room: new conversations start in Main (the form says so).
+      selected_room == :all || (selected_room.is_a?(Room) && selected_room.archived?) ? nil : selected_room
     end
   end
 

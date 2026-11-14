@@ -85,6 +85,20 @@ class CommitmentTest < ActiveSupport::TestCase
     assert commitment.errors[:room].present?
   end
 
+  test "a scheduled new conversation in a room holds the room open; an archived room is never a destination" do
+    room = @account.rooms.create!(name: "Ops")
+    commitment = commit("Open a fresh thread", at: @now + 1.hour, destination: "new_conversation", room: room)
+
+    assert_raises(ActiveRecord::RecordInvalid) { room.archive! }
+    assert_not room.reload.archived?
+
+    commitment.update_columns(status: "cancelled")
+    room.archive!
+    later = build("Again", at: @now + 2.hours, destination: "new_conversation", room: room)
+    assert_not later.valid?
+    assert_match(/archived/, later.errors[:room].to_sentence)
+  end
+
   test "a room is only for a new conversation" do
     room = @account.rooms.create!(name: "Ops")
     commitment = build("Same thread", at: @now + 1.hour, room: room)

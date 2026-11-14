@@ -25,6 +25,7 @@ class Chat < ApplicationRecord
   # No room means Main (see Room).
   belongs_to :room, optional: true
   validate :room_belongs_to_account
+  validate :room_is_not_archived, if: :will_save_change_to_room_id?
   belongs_to :active_whiteboard, class_name: "Whiteboard", optional: true
 
   has_many :chat_agents, dependent: :destroy
@@ -623,6 +624,11 @@ class Chat < ApplicationRecord
   end
 
   private
+
+  # A conversation can stay in a room that is archived, but none can be put there.
+  def room_is_not_archived
+    errors.add(:room, "#{room.name} is archived") if room&.archived?
+  end
 
   def room_belongs_to_account
     errors.add(:room, "must belong to this account") if room && room.account_id != account_id

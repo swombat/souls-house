@@ -100,3 +100,21 @@ test('the routine draft note is desktop-only; nothing about it shows on a phone'
   const note = screen.getByText(/Draft saved only in this browser/).parentElement;
   expect(note).toHaveClass('hidden', 'md:block');
 });
+
+test('in an archived room the composer says so and starts the conversation in Main', async () => {
+  page.set({
+    props: {
+      ...pageProps,
+      rooms: [...pageProps.rooms, { id: 'old', name: 'Application', archived: true }],
+      current_room: 'old',
+    },
+    url: '/',
+  });
+  render(NewChatForm, props);
+  expect(screen.getByTestId('archived-room-note')).toHaveTextContent('Application is archived');
+  expect(screen.getByTestId('archived-room-note')).toHaveTextContent('begins in Home');
+  await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'hello' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+  expect(router.post).toHaveBeenCalledTimes(1);
+  expect(router.post.mock.calls[0][1].get('room_id')).toBe('');
+});

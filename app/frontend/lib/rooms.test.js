@@ -11,6 +11,12 @@ describe('rooms', () => {
     expect(destinations(rooms).map((room) => room.id)).toEqual([MAIN, 'abc', 'def']);
   });
 
+  it('never offers an archived room as a destination, but still names it', () => {
+    const withArchived = [...rooms, { id: 'old', name: 'Application', archived: true }];
+    expect(destinations(withArchived).map((room) => room.id)).toEqual([MAIN, 'abc', 'def']);
+    expect(roomName('old', withArchived)).toBe('Application (archived)');
+  });
+
   it('adds All chats as a view only', () => {
     expect(views(rooms).at(-1)).toEqual({ id: ALL, name: 'All chats' });
   });

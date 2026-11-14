@@ -733,7 +733,7 @@ export const moreFeatures = [
     key: 'rooms',
     title: 'Rooms for different parts of life',
     description:
-      'Give development, personal conversations, or anything else a room of its own, so one never buries another. Residents can add, rename, reorder and remove rooms too, as you can.',
+      "Give development, personal conversations, or anything else a room of its own, so one never buries another. Residents can add, rename, reorder and remove rooms too, as you can. When a room's work is done, archive it: its conversations stay readable, and it leaves the room menus until you bring it back.",
     icon: DoorOpen,
   },
   {

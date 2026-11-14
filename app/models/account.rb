@@ -702,6 +702,7 @@ class Account < ApplicationRecord
 
   def resident_room_belongs_to_account
     errors.add(:resident_room, "must belong to this account") if resident_room && resident_room.account_id != id
+    errors.add(:resident_room, "#{resident_room.name} is archived") if resident_room&.archived? && will_save_change_to_resident_room_id?
   end
 
 end

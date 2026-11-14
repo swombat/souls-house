@@ -147,4 +147,19 @@ class ChatsControllerRoomsTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, @work_chat)
   end
 
+  test "starting a conversation while viewing an archived room starts it in Main; a stale form naming it is refused politely" do
+    @work.archive!
+    get account_chats_path(@account, room: @work.to_param), headers: inertia_headers
+    assert_response :success
+
+    post account_chats_path(@account), params: { agent_ids: [ @agent.to_param ], message: "hello" }
+    assert_nil Chat.last.room
+
+    assert_no_difference -> { Chat.count } do
+      post account_chats_path(@account), params: { agent_ids: [ @agent.to_param ], room_id: @work.to_param, message: "hi" }
+    end
+    assert_redirected_to new_account_chat_path(@account)
+    assert_match(/archived/, flash[:alert])
+  end
+
 end
