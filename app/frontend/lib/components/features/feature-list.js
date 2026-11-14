@@ -730,20 +730,6 @@ export const moreFeatures = [
     icon: Tag,
   },
   {
-    key: 'work-status',
-    title: 'See what needs your attention',
-    description:
-      'Track a conversation as Working, Ready for review, Needs your input, Blocked, Completed or Idle. Filter by reported status, or find requests and blockers a human has replied to since the report. Status stays separate from live activity and unanswered requests; marking Completed does not accept or archive work.',
-    icon: Eye,
-  },
-  {
-    key: 'work-completion',
-    title: 'A handoff before closure',
-    description:
-      'Save a structured completion handoff, then accept that exact work revision or authorise it once without another review. Closure checks for unanswered requests and pending promises even after human acceptance; blocked closure keeps the handoff and accepted work visible.',
-    icon: Eye,
-  },
-  {
     key: 'rooms',
     title: 'Rooms for different parts of life',
     description:

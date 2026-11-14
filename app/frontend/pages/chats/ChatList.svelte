@@ -28,8 +28,6 @@
   const showArchived = $derived(urlParams.get('show_archived') === 'true');
   const showHidden = $derived(urlParams.get('show_hidden') === 'true');
   const selectedTagId = $derived(urlParams.get('tag') || null);
-  const selectedWorkStatus = $derived(urlParams.get('work_status') || '');
-  const workReplied = $derived(urlParams.get('work_replied') === 'true');
   // Hidden conversations with an open red eye: the server sends only their
   // IDs, so the count follows both the tags and the eyes as they change.
   const hiddenAttentionCount = $derived(
@@ -40,8 +38,6 @@
     show_archived: showArchived ? true : undefined,
     show_hidden: showHidden ? true : undefined,
     tag: selectedTagId || undefined,
-    work_status: selectedWorkStatus || undefined,
-    work_replied: workReplied ? true : undefined,
   });
 
   function visitWithParam(name, value) {
@@ -113,10 +109,6 @@
     {showHidden}
     {hiddenAttentionCount}
     {selectedTagId}
-    {selectedWorkStatus}
-    {workReplied}
-    onSelectWorkStatus={(state) => visitWithParam('work_status', state)}
-    onToggleWorkReplied={() => visitWithParam('work_replied', workReplied ? null : 'true')}
     visualTags={$page.props.visual_tags || []}
     onToggleHidden={toggleShowHidden}
     onSelectTag={selectTag}

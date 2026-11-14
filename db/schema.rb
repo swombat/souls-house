@@ -890,10 +890,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
     t.integer "title_sweep_attempts", default: 0, null: false
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
-    t.string "work_status"
-    t.text "work_status_reason"
-    t.integer "work_status_revision", default: 0, null: false
-    t.datetime "work_status_since"
     t.bigint "visual_tag_id"
     t.bigint "room_id"
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
@@ -3413,47 +3409,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
     t.index ["search_vector"], name: "index_whiteboards_on_search_vector", using: :gin
   end
 
-  create_table "work_completion_permissions", force: :cascade do |t|
-    t.bigint "chat_id", null: false
-    t.bigint "user_id", null: false
-    t.integer "work_revision", null: false
-    t.boolean "auto_close", default: false, null: false
-    t.datetime "revoked_at"
-    t.datetime "consumed_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["chat_id", "work_revision"], name: "index_work_completion_permissions_on_chat_id_and_work_revision"
-    t.index ["chat_id"], name: "index_work_completion_permissions_on_chat_id"
-    t.index ["user_id"], name: "index_work_completion_permissions_on_user_id"
-  end
-
-  create_table "work_completions", force: :cascade do |t|
-    t.bigint "chat_id", null: false
-    t.bigint "message_id", null: false
-    t.bigint "agent_id"
-    t.bigint "user_id"
-    t.string "request_key", null: false
-    t.integer "source_revision", null: false
-    t.integer "review_revision", null: false
-    t.text "changes_summary", null: false
-    t.text "result", null: false
-    t.text "checks", null: false
-    t.text "remaining", null: false
-    t.bigint "accepted_by_id"
-    t.datetime "accepted_at"
-    t.integer "accepted_revision"
-    t.jsonb "closure_blocked"
-    t.datetime "closed_at"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["accepted_by_id"], name: "index_work_completions_on_accepted_by_id"
-    t.index ["agent_id"], name: "index_work_completions_on_agent_id"
-    t.index ["chat_id", "request_key"], name: "index_work_completions_on_chat_id_and_request_key", unique: true
-    t.index ["chat_id"], name: "index_work_completions_on_chat_id"
-    t.index ["message_id"], name: "index_work_completions_on_message_id"
-    t.index ["user_id"], name: "index_work_completions_on_user_id"
-  end
-
   create_table "x_integrations", force: :cascade do |t|
     t.text "access_token"
     t.bigint "account_id", null: false
@@ -3804,12 +3759,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_090000) do
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
   add_foreign_key "watched_repositories", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "whiteboards", "accounts"
-  add_foreign_key "work_completion_permissions", "chats"
-  add_foreign_key "work_completion_permissions", "users"
-  add_foreign_key "work_completions", "agents"
-  add_foreign_key "work_completions", "chats"
-  add_foreign_key "work_completions", "messages"
-  add_foreign_key "work_completions", "users"
-  add_foreign_key "work_completions", "users", column: "accepted_by_id"
   add_foreign_key "x_integrations", "accounts"
 end

@@ -185,7 +185,6 @@ class ChatsController < ApplicationController
       chats = base_scope.kept
     end
     chats = filter_sidebar_by_tag(chats)
-    chats = Chat.filter_work_status(chats, state: params[:work_status], replied: params[:work_replied])
 
     if params[:show_deleted].present? && can_manage_account?
       chats.latest

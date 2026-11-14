@@ -1,39 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { page, router } from '@inertiajs/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import NewChatEmptyState from './NewChatEmptyState.svelte';
-
-vi.mock('@inertiajs/svelte', async (importOriginal) => {
-  const original = await importOriginal();
-  const { writable } = await import('svelte/store');
-  return { ...original, page: writable({ url: '/', props: {} }) };
-});
-
-beforeEach(() => {
-  page.set({ url: '/', props: {} });
-  window.history.replaceState({}, '', '/');
-});
-
-test('mobile reports replace tags and retain work filters on conversation links', () => {
-  page.set({ url: '/?work_status=completed', props: {} });
-  render(NewChatEmptyState, {
-    accountId: 'account',
-    chats: [{ id: 'finished', title: 'Finished', work_status: { state: 'completed', revision: 1 } }],
-  });
-  expect(screen.getByRole('link')).toHaveAttribute('href', '/accounts/account/chats/finished?work_status=completed');
-  expect(within(screen.getByRole('link')).getByText('Completed')).toBeVisible();
-  expect(screen.queryByRole('button', { name: /Change visual tag/ })).not.toBeInTheDocument();
-});
-
-test('a phone can clear a work filter even when no conversations match', async () => {
-  page.set({ url: '/?work_status=blocked', props: {} });
-  window.history.replaceState({}, '', '/?work_status=blocked');
-  render(NewChatEmptyState, { accountId: 'account', chats: [] });
-  const disclosure = screen.getByText('Filter conversations · Blocked').closest('details');
-  disclosure.open = true;
-  await fireEvent(disclosure, new Event('toggle'));
-  await fireEvent.change(screen.getByRole('combobox', { name: 'Work status' }), { target: { value: '' } });
-  expect(router.visit).toHaveBeenCalledWith('http://localhost:3000/', { preserveState: true });
-});
 
 test('offers active conversations in recency order', () => {
   render(NewChatEmptyState, {
@@ -113,16 +79,7 @@ test('offers at most ten conversations even when the screen has room', () => {
 
 describe('fitting the screen', () => {
   let rectSpy, parentSpy;
-  const rect = (bottom) => ({
-    top: bottom - 50,
-    bottom,
-    left: 0,
-    right: 300,
-    width: 300,
-    height: 50,
-    x: 0,
-    y: bottom - 50,
-  });
+  const rect = (bottom) => ({ top: bottom - 50, bottom, left: 0, right: 300, width: 300, height: 50, x: 0, y: bottom - 50 });
 
   beforeEach(() => {
     // jsdom has no layout: give the scroller a bottom edge at 300px and stack
@@ -150,32 +107,6 @@ describe('fitting the screen', () => {
       'Chat 2',
       'Chat 3',
     ]);
-  });
-
-  test('compact filters leave room for a recent conversation and remain usable when expanded', async () => {
-    // jsdom cannot verify viewport layout. Model a short phone with room for
-    // one card under the compact disclosure, but none under the expanded panel.
-    rectSpy.mockImplementation(function () {
-      if (this.dataset?.testid === 'new-chat-empty-state') return rect(200);
-      if (this.tagName === 'LI') {
-        const expanded = this.closest('nav').querySelector('details').open;
-        return rect((expanded ? 350 : 170) + 60 * [...this.parentElement.children].indexOf(this));
-      }
-      return rect(0);
-    });
-    render(NewChatEmptyState, { accountId: 'account', chats: many });
-    await vi.waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
-    expect(screen.getByRole('link')).toHaveTextContent('Chat 0');
-    const disclosure = screen.getByText('Filter conversations').closest('details');
-    expect(disclosure.open).toBe(false);
-    disclosure.open = true;
-    await fireEvent(disclosure, new Event('toggle'));
-    await vi.waitFor(() => expect(screen.queryByRole('link')).not.toBeInTheDocument());
-    expect(screen.getByRole('combobox', { name: 'Work status' })).toBeVisible();
-    expect(screen.getByRole('checkbox', { name: 'Human replied since request or blocker' })).toBeVisible();
-    disclosure.open = false;
-    await fireEvent(disclosure, new Event('toggle'));
-    await vi.waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
   });
 
   test('shows no conversations and no prompt when not even the newest fits whole', async () => {
