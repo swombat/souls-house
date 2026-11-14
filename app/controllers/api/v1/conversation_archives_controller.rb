@@ -25,7 +25,7 @@ module Api
           # are only read here (their own lock order is commitment → chat).
           refusal = nil
           @chat.with_lock do
-            refusal = PendingWorkArchiveRefusal.new(@chat).call
+            refusal = owed_refusal
             next if refusal || @chat.archived?
 
             @chat.archive!
@@ -62,6 +62,29 @@ module Api
       # The resident's home account only, and a conversation it is in.
       def resident_chat!
         current_api_agent.chats.kept.where(account_id: current_api_agent.account_id).find(params[:conversation_id])
+      end
+
+      def owed_refusal
+        expectations = ReplyExpectation.joins(:message).state_open
+          .where(messages: { chat_id: @chat.id, discarded_at: nil }).includes(:user, :message)
+        # Scheduled ones made here, and ones already activated into this chat
+        # whose wake is still held or retrying (a claim or retry checks
+        # activation_chat.respondable?, so archiving would strand them).
+        commitments = Commitment.scheduled.where(source_chat_id: @chat.id)
+          .or(Commitment.wake_in_custody.where(activation_chat_id: @chat.id))
+          .includes(:agent).order(:due_at)
+        return nil if expectations.none? && commitments.none?
+
+        {
+          error: "This conversation still has something owed in it; archiving would dismiss or silence it. Answer, dismiss or cancel these first.",
+          code: "conversation_has_pending_work",
+          open_reply_expectations: expectations.map { |e|
+            { message_id: e.message.to_param, awaiting: e.user&.display_name }
+          },
+          scheduled_commitments: commitments.map { |c|
+            { id: c.to_param, resident: c.agent.name, due_at: c.due_at.iso8601, status: c.status, headline: c.headline }
+          }
+        }
       end
 
       def audit_resident_action(action)

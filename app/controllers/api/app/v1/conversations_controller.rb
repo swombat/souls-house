@@ -12,9 +12,7 @@ module Api
         def index
           account = find_account!(params[:account_id])
           chats = account.chats.kept.includes(:account, :agents)
-          rows = chats.active.latest + chats.archived.latest
-          Chat.preload_work_status_replies(rows)
-          render json: { conversations: rows.map { |c| Presenter.conversation(c) } }
+          render json: { conversations: (chats.active.latest + chats.archived.latest).map { |c| Presenter.conversation(c) } }
         end
 
         # A new, empty conversation with the residents named in agent_ids

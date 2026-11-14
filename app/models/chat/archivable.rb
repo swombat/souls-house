@@ -17,13 +17,7 @@ module Chat::Archivable
   end
 
   def unarchive!
-    with_lock do
-      changes = { archived_at: nil }
-      if archived? && work_completions.exists?
-        changes[:work_status_revision] = work_status_revision + 1
-      end
-      update!(changes)
-    end
+    update!(archived_at: nil)
   end
 
   def archived?

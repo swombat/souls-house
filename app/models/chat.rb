@@ -1,5 +1,4 @@
 class Chat < ApplicationRecord
-  include Chat::CompletionWorkflow
 
   include Discard::Model
   include Broadcastable
@@ -7,7 +6,6 @@ class Chat < ApplicationRecord
   include SyncAuthorizable
   include JsonAttributes
   include Chat::Archivable
-  include Chat::WorkStatus
   include Chat::Forkable
   include Chat::AgentAssignable
   include Chat::Initiable
@@ -42,8 +40,6 @@ class Chat < ApplicationRecord
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
     hash["visual_tag"] = visual_tag&.as_json
-    hash["work_status"] = work_status_json
-    hash.except!("work_status_reason", "work_status_since", "work_status_revision")
     hash.delete("visual_tag_id")
     hash["room_id"] = room_id && Room.encode_id(room_id)
     # For sidebar format, only include attributes used by the chat list UI.
@@ -60,7 +56,6 @@ class Chat < ApplicationRecord
         "manual_responses",
         "participants_json",
         "visual_tag",
-        "work_status",
         "room_id",
         "archived",
         "discarded"
@@ -130,9 +125,9 @@ class Chat < ApplicationRecord
   # Conversations whose tag hides them from the sidebar stay out of it
   # (they are not archived; taking the tag off brings them back).
   scope :not_hidden_from_list, -> {
-    left_joins(:visual_tag).where("chats.work_status IS NOT NULL OR visual_tags.hides_from_list IS NOT TRUE")
+    left_joins(:visual_tag).where(visual_tags: { hides_from_list: [ false, nil ] })
   }
-  scope :hidden_from_list, -> { joins(:visual_tag).where(work_status: nil, visual_tags: { hides_from_list: true }) }
+  scope :hidden_from_list, -> { joins(:visual_tag).where(visual_tags: { hides_from_list: true }) }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
@@ -224,7 +219,6 @@ class Chat < ApplicationRecord
 
   def self.cached_json_for(chats, as: nil)
     return [] if chats.blank?
-    preload_work_status_replies(chats)
 
     entries = chats.map { |chat| [ chat, chat.json_cache_key(as: as) ] }
     cached = Rails.cache.read_multi(*entries.map(&:last))
