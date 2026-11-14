@@ -194,6 +194,9 @@ touching the voice's name history, and so that nothing which serialises
 
 - `recording_ms_weekly_limit` (bigint, default 72_000_000, i.e. 20 h). Per
   account, so Daniel can change it from the console without a deploy.
+  *(Superseded 2026-11-15: the limit is the plan's transcription hours over a
+  rolling 30 days, `Account#transcription_ms_limit`, with
+  `transcription_ms_limit_override` as the per-account lever.)*
 - `recognise_voices` (boolean, default **false**). Slice C, and only
   meaningful when the house flag is on.
 

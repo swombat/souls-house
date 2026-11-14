@@ -8,22 +8,28 @@ class FieldRecordingTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:personal_account)
     @user = users(:user_1)
-    @account.update!(recording_ms_weekly_limit: 2.hours.in_milliseconds)
+    @account.update!(transcription_ms_limit_override: 2.hours.in_milliseconds)
   end
 
   def recording(**attributes) = claimed_recording(account: @account, user: @user, **attributes)
 
-  test "an account with a site admin in it isn't held to the weekly allowance" do
+  test "an account with a site admin in it isn't held to the allowance" do
     limited = Account.create!(name: "Limited #{SecureRandom.hex(3)}", account_type: "team", granted_plan: "partners",
-      recording_ms_weekly_limit: 2.hours.in_milliseconds)
+      transcription_ms_limit_override: 2.hours.in_milliseconds)
     limited.memberships.create!(user: users(:regular_user), role: "owner", confirmed_at: Time.current)
     assert_not limited.recording_unlimited?
-    assert_equal 2.hours.in_milliseconds, limited.recording_ms_weekly_limit
+    assert_equal 2.hours.in_milliseconds, limited.transcription_ms_limit
+
+    limited.update!(transcription_ms_limit_override: nil)
+    assert_equal 20.hours.in_milliseconds, limited.transcription_ms_limit, "Partners' hours when nothing overrides them"
+    limited.update!(granted_plan: nil)
+    assert_equal 5.hours.in_milliseconds, limited.transcription_ms_limit, "Companions' hours"
+    limited.update!(granted_plan: "partners", transcription_ms_limit_override: 2.hours.in_milliseconds)
 
     limited.memberships.create!(user: users(:site_admin_user), role: "member", confirmed_at: Time.current)
     limited.reload
     assert limited.recording_unlimited?
-    assert_equal Account::UNLIMITED_RECORDING_MS, limited.recording_ms_weekly_limit
+    assert_equal Account::UNLIMITED_RECORDING_MS, limited.transcription_ms_limit
     assert FieldItems.allowance_json(limited)[:unlimited]
 
     r = claimed_recording(account: limited, user: users(:regular_user))
@@ -68,7 +74,7 @@ class FieldRecordingTest < ActiveSupport::TestCase
     assert_equal :rejected, r.admit!(1.hour.in_milliseconds)
     assert r.reload.rejected?
     assert_nil r.reservation
-    assert_match "You have 30 m left this week", r.failure_reason
+    assert_match "You have 30 m left in this 30-day window", r.failure_reason
   end
 
   test "a recording discarded while probing gets no reservation" do

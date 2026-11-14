@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-15
+  title: Recording transcription follows the account's plan
+  body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
 - date: 2026-11-14
   title: Billing codes for one size, or for a plan
   body: "A billing code can now do one of three things: let an account buy residents at cost in every size (as before), let it buy one size at cost (Small, Medium or Large), or give it the Partners or Colleagues plan with nothing to pay. Site admins make them in Site Admin > Billing codes and owners enter them in the Billing tab, as before. A code for a free plan is refused while the account is paying for that plan or a lower one: move the account to Companions first, then enter the code, so nothing is charged twice. Withdrawing a code's grant ends the plan it gave and stops new purchases at its rate; residents already bought keep their price. Takes effect after Rails deployment."

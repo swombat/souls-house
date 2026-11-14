@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_14_223500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_003000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -100,6 +100,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_223500) do
     t.text "openrouter_api_key"
     t.jsonb "settings", default: {}
     t.string "slug"
+    t.bigint "transcription_ms_limit_override"
     t.datetime "updated_at", null: false
     t.boolean "use_system_ai_credentials", default: false, null: false
     t.text "xai_api_key"

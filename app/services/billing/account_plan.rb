@@ -9,10 +9,12 @@
 #
 # Transcription hours and backup space are the account's, one pool however
 # many residents it has (Daniel, jaMWBj 2026-11-13). They carry across the
-# ladder the sizes had (Small's, Medium's, Large's). Nothing meters or stops
-# them yet, so they are not in features and not shown: a number nobody
-# enforces is not an allowance (ePoEyY). They are here for costing until the
-# hard stops ship.
+# ladder the sizes had (Small's, Medium's, Large's). Field recordings are held
+# to the transcription hours, per rolling 30 days
+# (Account#transcription_ms_limit); composer voice notes and Telegram audio are
+# not metered yet, and nothing stops backups at backup_gb. So neither is in
+# features or shown on the plan cards: a number that is only partly enforced
+# is not an allowance (ePoEyY).
 module Billing
   class AccountPlan
 

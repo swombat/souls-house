@@ -104,13 +104,13 @@ describe('recording wording', () => {
       window_days: 7,
       unlimited: true,
     };
-    expect(allowanceLine(allowance)).toBe('3 h 20 m used in the last 7 days (no weekly limit)');
+    expect(allowanceLine(allowance)).toBe('3 h 20 m used in the last 7 days (no limit)');
     expect(preflightProblem(400 * 3_600_000, allowance)).toBe('');
   });
 
   it('warns before uploading something longer than what is left', () => {
     const allowance = { limit_ms: 6_000_000, used_ms: 0 };
-    expect(preflightProblem(7_500_000, allowance)).toBe('This recording is 2 h 05 m; 1 h 40 m left this week.');
+    expect(preflightProblem(7_500_000, allowance)).toBe('This recording is 2 h 05 m; 1 h 40 m left in this 30-day window.');
     expect(preflightProblem(60_000, allowance)).toBe('');
     expect(preflightProblem(Infinity, allowance)).toBe('');
   });

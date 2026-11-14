@@ -103,7 +103,7 @@ class FieldRecordings::TranscribeJobTest < ActiveJob::TestCase
   end
 
   test "the account's dispatch exposure bounds retries across recordings, refunds or not" do
-    @account.update!(recording_ms_weekly_limit: 90_000) # exposure ceiling: 180 s of audio sent per week
+    @account.update!(transcription_ms_limit_override: 90_000) # exposure ceiling: 180 s of audio sent per 30 days
     client = FakeScribe.new(submit: ElevenLabsScribe::PermanentError.new("Scribe refused the request (422)"))
 
     FieldRecordings::TranscribeJob.perform_now(@recording.id, client:, configured: true)   # 60 s sent, failed, refunded

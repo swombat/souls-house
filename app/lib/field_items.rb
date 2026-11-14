@@ -344,11 +344,11 @@ module FieldItems
     end
   end
 
-  # The gauge (spec §6): used over the rolling 7 days, with the part still
+  # The gauge (spec §6): used over the rolling 30 days, with the part still
   # transcribing shown separately.
   def allowance_json(account, now: Time.current)
     {
-      limit_ms: account.recording_ms_weekly_limit,
+      limit_ms: account.transcription_ms_limit,
       unlimited: account.recording_unlimited?,
       used_ms: FieldRecordingReservation.used_ms(account, now:),
       pending_ms: account.field_recording_reservations.where(state: "pending").sum(:audio_ms),

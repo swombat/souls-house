@@ -55,9 +55,9 @@ class FieldRecordingLifecycleConcurrencyTest < ActiveSupport::TestCase
   end
 
   test "two claims at the account's exposure ceiling: one is sent, one is refused" do
-    @account.update!(recording_ms_weekly_limit: 200_000) # allowance 200 s, exposure ceiling 400 s
+    @account.update!(transcription_ms_limit_override: 200_000) # allowance 200 s, exposure ceiling 400 s
     earlier = claimed_recording(account: @account, user: @user)
-    # 320 s already sent this week: room for one more 45 s attempt, not two.
+    # 320 s already sent in the window: room for one more 45 s attempt, not two.
     FieldRecordingDispatch.create!(field_recording: earlier, account: @account, audio_ms: 320_000 - @dispatch.audio_ms,
       attempt_token: SecureRandom.hex(8))
     a = queued_recording(account: @account, user: @user, duration_ms: 45_000)
