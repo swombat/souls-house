@@ -273,6 +273,30 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "change_account_plan", user: @user)
   end
 
+  test "a quote dropped by a later one is never announced as done: it is made again and shown" do
+    second = agents(:code_reviewer)
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
+      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe do
+      seed_bill!
+      post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "conversation" }
+    end
+    first = BillChange.unresolved.find_by!(account: @account)
+    with_stripe { post checkout_account_billing_path(@account), params: { agent_id: second.to_param, tier: "life" } }
+    assert first.reload.abandoned?
+
+    with_stripe { post add_resident_account_billing_path(@account), params: { attempt_id: first.id, digest: first.digest } }
+
+    assert_match(/Nothing was sent/, flash[:alert])
+    assert_no_match(/ is on /, flash[:notice].to_s)
+    assert_empty @stripe.subscription_updates
+    assert_not ResidentSubscription.live.exists?(agent: second)
+    assert_not AuditLog.exists?(action: "add_resident_to_subscription")
+  end
+
   test "a stale quote is made again and shown, and a refusal says why" do
     second = agents(:code_reviewer)
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")

@@ -76,7 +76,7 @@ class Accounts::BillingsController < ApplicationController
   # Confirms a quoted addition to the bill: a resident, or the account's plan.
   def add_resident
     change = proposed_change(params[:attempt_id])
-    reconcile.confirm(change, digest: params[:digest].to_s)
+    done!(reconcile.confirm(change, digest: params[:digest].to_s))
     if (agent_id = change.ops.first["agent_id"])
       audit("add_resident_to_subscription", current_account.agents.find(agent_id), ops: change.ops,
         stripe_subscription_id: change.stripe_subscription_id)
@@ -110,7 +110,7 @@ class Accounts::BillingsController < ApplicationController
   def confirm_end_plan
     change = proposed_change(params[:attempt_id])
     agent = billable_agents.find(change.ops.first.fetch("agent_id"))
-    reconcile.confirm(change, digest: params[:digest].to_s)
+    done!(reconcile.confirm(change, digest: params[:digest].to_s))
     audit("end_resident_plan", agent, operation: end_operation(change), stripe_subscription_id: change.stripe_subscription_id)
     redirect_to account_billing_path(current_account), notice: ended_notice(agent, change)
   rescue Billing::Reconcile::QuoteChanged => error
@@ -185,7 +185,13 @@ class Accounts::BillingsController < ApplicationController
   # A change with nothing to show first: proposed and confirmed in one step.
   def change!(ops)
     change = reconcile.propose(ops, by: Current.user)
-    reconcile.confirm(change, digest: change.digest)
+    done!(reconcile.confirm(change, digest: change.digest))
+  end
+
+  # Only an applied change is announced as done; one Stripe hasn't shown
+  # yet is still being confirmed.
+  def done!(change)
+    change.applied? ? change : raise(Billing::NotReady, Billing::Reconcile::WAITING)
   end
 
   def proposed_change(id) = BillChange.where(account: current_account).find(id)

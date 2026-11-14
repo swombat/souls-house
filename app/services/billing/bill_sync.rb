@@ -72,6 +72,7 @@ module Billing
         account_for(remote) == account || raise(InvalidSubscription, "Subscription #{remote.id} changed account")
         lines = self.class.remote_lines(remote, client: @client)
         adopt!(remote, lines, account)
+        revive!(remote, lines)
         applied = land!(remote, lines, account)
         house = self.class.house_lines(remote.id)
         drift = [ lines, house ] if remote.status.in?(LIVE) && lines != house
@@ -162,6 +163,25 @@ module Billing
 
     def metadata(remote) = (remote.metadata || {}).to_h.transform_keys(&:to_s)
 
+    # A bill that went unpaid and is paid again: its rows come back, when
+    # with them the house holds exactly what Stripe carries. A resident or
+    # plan paid for elsewhere since is not brought back; that difference
+    # stays drift, for a person.
+    def revive!(remote, lines)
+      return unless remote.status.in?(PAID)
+
+      rows = ResidentSubscription.where(stripe_subscription_id: remote.id, stripe_status: "unpaid")
+        .reject { |row| ResidentSubscription.live.exists?(agent_id: row.agent_id) }
+      plan = AccountSubscription.where(stripe_subscription_id: remote.id, stripe_status: "unpaid").order(:id).last
+      rows << plan if plan && !AccountSubscription.live.exists?(account_id: plan.account_id)
+      return if rows.empty?
+
+      held = rows.each_with_object(self.class.house_lines(remote.id)) do |row, sum|
+        sum[row.stripe_price_id] = sum.fetch(row.stripe_price_id, 0) + 1
+      end
+      rows.each { |row| row.update!(stripe_status: remote.status) } if held == lines
+    end
+
     def land!(remote, lines, account)
       change = BillChange.submitted.find_by(account:, stripe_subscription_id: remote.id)
       return nil unless change && landed?(remote, lines, change)
@@ -190,10 +210,12 @@ module Billing
     end
 
     # A resident created onto the bill: born here, in the landing's own
-    # transaction, on a subscription that is paid. If the birth fails the
-    # landing rolls back and the change stays submitted, to be tried again.
+    # transaction, on a subscription that is paid and collecting. If the
+    # birth fails the landing rolls back and the change stays submitted, to
+    # be tried again.
     def apply_birth(remote, account, op)
       raise NotReady, "The account's subscription is #{remote.status}; the resident waits." unless remote.status.in?(PAID)
+      raise NotReady, "The account's payments are paused; the resident waits." if remote[:pause_collection].present?
 
       order = ResidentBirthOrder.lock.find_by!(reference: op.fetch("order"), account:)
       unless order.born?

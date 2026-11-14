@@ -153,6 +153,24 @@ class Billing::PaidBirthItemTest < ActiveSupport::TestCase
     assert ResidentEntitlement.paid_for?(order.agent)
   end
 
+  test "a bill whose payments were paused after the change was sent bears nobody until they resume" do
+    order = start!
+    accepted_without_answer!(order)
+    @stripe.subscription("sub_acct")[:pause_collection] = { behavior: "void" }
+
+    assert_no_difference "Agent.count" do
+      paid_birth.resume_item!(order)
+    end
+    assert order.reload.failed?
+    assert order.bill_change.submitted?, "its line is on the bill; the change waits"
+
+    @stripe.subscription("sub_acct")[:pause_collection] = nil
+    assert_difference "Agent.count", 1 do
+      Billing.stub(:client, @stripe) { Billing::SweepJob.perform_now(now: 10.minutes.from_now) }
+    end
+    assert order.reload.born?
+  end
+
   test "a birth that fails rolls the landing back, is kept for attention, and is retried" do
     order = start!
     Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 0)

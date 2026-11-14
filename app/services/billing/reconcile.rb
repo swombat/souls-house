@@ -76,7 +76,10 @@ module Billing
     def confirm(change, digest:)
       CheckoutLock.synchronize_residents(@account) do
         change.reload
-        next change if change.resolved?
+        next change if change.applied?
+        # Dropped by a later proposal, or refused: never sent, and never
+        # reported as done.
+        raise QuoteChanged, "This was replaced or dropped before it was confirmed. Nothing was sent; look at it again." if change.abandoned?
 
         unless change.submitted?
           unless digest == change.digest && holds?(change)
@@ -319,14 +322,19 @@ module Billing
     end
 
     # Whether the quote still holds: the same subscription carrying the same
-    # lines, still fit, and Stripe's totals unmoved.
+    # lines, still fit, every op still one the house would propose today (a
+    # grant withdrawn or a price retired since refuses it), and Stripe's
+    # totals unmoved. Only before sending: a submitted change is never
+    # judged again.
     def holds?(change)
       parent = parent!(change.ops)
+      base = change.base.transform_values(&:to_i)
       return false unless parent.id == change.stripe_subscription_id
-      return false unless BillSync.remote_lines(parent, client: @client) == change.base.transform_values(&:to_i)
+      return false unless BillSync.remote_lines(parent, client: @client) == base
+      return false unless after(base, change.ops, parent) == change.wanted
 
       quote(parent, change.params.deep_symbolize_keys, change.lines).except("next_at") == change.quote.except("next_at")
-    rescue Refused, NotReady, NotEligible
+    rescue Refused, NotReady, NotEligible, NotConfigured, AlreadySubscribed, ActiveRecord::RecordNotFound
       false
     end
 

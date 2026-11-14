@@ -202,8 +202,11 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
 
     assert first.reload.abandoned?
     assert_equal [ second ], BillChange.unresolved.where(account: @account).to_a
-    assert_equal first, reconcile.confirm(first, digest: first.digest), "an abandoned change is returned, never sent"
-    assert first.resolved?
+    assert_raises(Billing::Reconcile::QuoteChanged, "an abandoned change is never sent and never reported as done") do
+      reconcile.confirm(first, digest: first.digest)
+    end
+    assert first.reload.abandoned?
+    assert second.reload.proposed?
     assert_empty @stripe.subscription_updates
   end
 
@@ -288,6 +291,49 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_not paid?(@b)
     assert_equal "companions", @account.reload.plan.id
     assert_empty Billing::Bill.new(@account).items
+  end
+
+  test "a quote is only confirmed while the house would still propose it: a grant withdrawn since refuses it" do
+    bill!(@a => CONVERSATION_PRICE)
+    grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: users(:site_admin_user))
+    change = reconcile.propose([ add(@b, CONVERSATION_AT_COST_PRICE) ])
+    grant.update!(withdrawn_at: @now)
+
+    assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
+    assert change.reload.abandoned?
+    assert_empty @stripe.subscription_updates
+    assert_not paid?(@b)
+  end
+
+  test "a bill that went unpaid and is paid again brings its residents and plan back" do
+    bill!(@a => CONVERSATION_PRICE, @b => CONVERSATION_PRICE, plan: PARTNERS_PRICE)
+    @stripe.set_subscription_status("sub_acct", "unpaid")
+    sync
+    assert_not paid?(@a)
+    assert_equal "companions", @account.reload.plan.id
+
+    @stripe.set_subscription_status("sub_acct", "active")
+    sync
+    assert paid?(@a)
+    assert paid?(@b)
+    assert_equal "partners", @account.reload.plan.id
+    assert_equal({ CONVERSATION_PRICE => 2, PARTNERS_PRICE => 1 }, Billing::BillSync.house_lines("sub_acct"))
+  end
+
+  test "an unpaid row is not brought back when its resident is paid for elsewhere since: that is drift" do
+    bill!(@a => CONVERSATION_PRICE, @b => CONVERSATION_PRICE)
+    @stripe.set_subscription_status("sub_acct", "unpaid")
+    sync
+    bill!(@b => LIFE_PRICE, id: "sub_new")
+
+    @stripe.set_subscription_status("sub_acct", "active")
+    reports = []
+    Rails.error.subscribe(Class.new { define_method(:report) { |error, **| reports << error } }.new)
+    sync
+    assert_equal [ Billing::BillDrift ], reports.map(&:class).uniq
+    assert_not paid?(@a), "nothing is granted on a bill the house can't account for"
+    assert_equal %w[sub_new], ResidentSubscription.live.where(agent: @b).pluck(:stripe_subscription_id)
   end
 
   test "two subscriptions on one account, as before the one bill, each stay as they are" do
