@@ -12,6 +12,7 @@ module Backup
         # A thinning that died left its mark, and maybe a repository lock:
         # recover it. No backup is issued while any mark stands.
         Backup::VmThinningJob.perform_later(agent.id) if VmThinning.abandoned?(agent)
+        report_stalled(agent)
         next if agent.backup_thinning_started_at.present?
         next unless due?(agent)
         Backup::AgentResticJob.perform_later(agent.id)
@@ -19,6 +20,17 @@ module Backup
     end
 
     private
+
+    # Backups paused too long behind a recovery that keeps failing: tell the
+    # people who run the house, naming the resident.
+    def report_stalled(agent)
+      since = agent.backup_thinning_interrupted_at
+      return unless agent.backup_thinning_started_at.present? && since && since <= VmThinning::ALERT_AFTER.ago
+
+      Rails.error.report(VmThinning::Stalled.new(
+        "Backups for resident #{agent.id} (#{agent.name}) have been paused since #{since.utc.iso8601}: " \
+        "an interrupted backup clean-up could not be confirmed stopped"), handled: true)
+    end
 
     def due?(agent)
       last = agent.agent_backup_snapshots.where(ok: true).order(taken_at: :desc).first

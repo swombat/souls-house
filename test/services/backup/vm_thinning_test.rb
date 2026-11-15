@@ -56,7 +56,7 @@ module Backup
 
         VmThinning::Result.new(kept: 3, removed: 1, oldest_at: nil)
       end
-      double.define_singleton_method(:recover) { |_agent| log << :recover }
+      double.define_singleton_method(:recover) { |_agent, renew: nil| log << :recover }
       double
     end
 
@@ -90,7 +90,7 @@ module Backup
 
     test "when recovery itself fails the mark stays, so no backup is issued into a locked repository" do
       double = thinning(fail_with: "killed")
-      double.define_singleton_method(:recover) { |_agent| raise VmThinning::Failed, "restic unlock failed" }
+      double.define_singleton_method(:recover) { |_agent, renew: nil| raise VmThinning::Failed, "restic unlock failed" }
       run_job(double)
 
       assert @agent.reload.backup_thinning_started_at.present?
@@ -151,7 +151,7 @@ module Backup
       assert_equal %i[recover], log
       assert_nil @agent.reload.backup_thinning_started_at
 
-      double.define_singleton_method(:recover) { |_agent| raise IOError, "closed stream" }
+      double.define_singleton_method(:recover) { |_agent, renew: nil| raise IOError, "closed stream" }
       run_job(double)
       assert @agent.reload.backup_thinning_started_at.present?
     end
@@ -185,6 +185,110 @@ module Backup
       calls = []
       VmThinning.new(run: restic([], calls:)).recover(@agent)
       assert_equal [ [ "unlock", "--remove-all" ] ], calls
+    end
+
+    # A stand-in for the Docker client: `ps` answers with `listed` and `ok`.
+    def docker(listed: "", ok: true, calls: [])
+      lambda do |*args|
+        calls << args
+        args.first == "ps" ? [ listed, ok ] : [ "", true ]
+      end
+    end
+
+    test "recovery unlocks only after Docker lists no container of that name, stopped ones included" do
+      calls = []
+      restic_calls = []
+      VmThinning.new(run: restic([], calls: restic_calls), docker: docker(calls:)).recover(@agent)
+
+      name = "vm-backup-thin-#{@agent.uuid}"
+      assert_equal [ [ "rm", "--force", name ], [ "ps", "--all", "--filter", "name=#{name}", "--format", "{{.Names}}" ] ], calls
+      assert_equal [ [ "unlock", "--remove-all" ] ], restic_calls
+    end
+
+    test "a Docker error is unknown, not gone: no unlock" do
+      restic_calls = []
+      thinning = VmThinning.new(run: restic([], calls: restic_calls), docker: docker(ok: false))
+      assert_raises(VmThinning::Failed) { thinning.recover(@agent) }
+      assert_empty restic_calls
+    end
+
+    test "a container still listed, running or stopped, means no unlock" do
+      restic_calls = []
+      name = "vm-backup-thin-#{@agent.uuid}"
+      thinning = VmThinning.new(run: restic([], calls: restic_calls), docker: docker(listed: "#{name}\n"))
+      assert_raises(VmThinning::Failed) { thinning.recover(@agent) }
+      assert_empty restic_calls
+
+      # A longer name that only contains this one is another container.
+      VmThinning.new(run: restic([], calls: restic_calls), docker: docker(listed: "#{name}-old\n")).recover(@agent)
+      assert_equal [ [ "unlock", "--remove-all" ] ], restic_calls
+    end
+
+    test "recovery renews before each step and stops before the unlock once the lease is lost" do
+      steps = []
+      docker_calls = []
+      restic_calls = []
+      thinning = VmThinning.new(run: restic([], calls: restic_calls), docker: docker(calls: docker_calls))
+      thinning.recover(@agent, renew: -> { steps << :renew })
+      assert_equal 3, steps.size, "before the removal, the check and the unlock"
+
+      docker_calls.clear
+      restic_calls.clear
+      renewals = 0
+      lost = -> { (renewals += 1) > 2 ? raise(VmThinningJob::Lease::Lost, "taken over") : nil }
+      assert_raises(VmThinningJob::Lease::Lost) { thinning.recover(@agent, renew: lost) }
+      assert_equal %w[rm ps], docker_calls.map(&:first)
+      assert_empty restic_calls
+    end
+
+    test "the kill grace is inside the lease" do
+      assert_operator VmThinning::TIMEOUT_SECONDS + VmThinning::KILL_GRACE_SECONDS, :<, VmThinning::CLAIM_SECONDS
+      assert_operator VmThinning::RECOVERY_TIMEOUT_SECONDS + VmThinning::KILL_GRACE_SECONDS, :<, VmThinning::CLAIM_SECONDS
+    end
+
+    test "the interruption is timed from the first one and ends only when the mark is released" do
+      abandoned = 2.hours.ago.change(usec: 0)
+      @agent.update_columns(backup_thinning_started_at: abandoned)
+      double = thinning
+      double.define_singleton_method(:recover) { |_agent, renew: nil| raise VmThinning::Failed, "unknown" }
+      run_job(double)
+      assert_equal abandoned, @agent.reload.backup_thinning_interrupted_at
+      assert @agent.backup_thinning_started_at.present?
+
+      # A later failed takeover moves the lease, never the interruption.
+      @agent.update_columns(backup_thinning_started_at: 1.hour.ago.change(usec: 0))
+      run_job(double)
+      assert_equal abandoned, @agent.reload.backup_thinning_interrupted_at
+
+      @agent.update_columns(backup_thinning_started_at: 1.hour.ago.change(usec: 0))
+      run_job(thinning)
+      assert_nil @agent.reload.backup_thinning_started_at
+      assert_nil @agent.backup_thinning_interrupted_at
+    end
+
+    test "a recovery that fails straight after a failed thinning starts the interruption" do
+      double = thinning(fail_with: "restic forget failed")
+      double.define_singleton_method(:recover) { |_agent, renew: nil| raise VmThinning::Failed, "unknown" }
+      freeze_time do
+        run_job(double)
+        assert_equal Time.current, @agent.reload.backup_thinning_interrupted_at
+      end
+    end
+
+    test "the sweeper reports a resident whose backups have been paused for three hours, and not before" do
+      @agent.update!(runtime: "external", backup_thinning_started_at: 10.minutes.ago, backup_thinning_interrupted_at: 2.hours.ago)
+      reported = []
+      report = ->(error, **) { reported << error }
+      Agents::Config.stub(:backups_enabled?, true) do
+        Rails.error.stub(:report, report) { AgentBackupSweeperJob.perform_now }
+        assert_empty reported
+
+        @agent.update!(backup_thinning_interrupted_at: 181.minutes.ago)
+        Rails.error.stub(:report, report) { AgentBackupSweeperJob.perform_now }
+      end
+      assert_equal 1, reported.size
+      assert_kind_of VmThinning::Stalled, reported.first
+      assert_includes reported.first.message, @agent.name
     end
 
     test "the sweeper sends an abandoned mark to recovery and issues no backup while any mark stands" do

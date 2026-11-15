@@ -27,16 +27,33 @@ module Backup
   # A thinning that is killed can leave restic's exclusive lock behind, which
   # would fail every later backup. `recover` removes the thinning container,
   # confirms it is gone, and only then removes every lock in the repository.
-  # The job calls it only while it holds the lease, when no backup and no
-  # other thinning can be running.
+  # "Gone" needs a positive answer: Docker listed every container with that
+  # name, stopped ones included, and the list did not hold it. An error, a
+  # timeout or an unreachable daemon is unknown, and unknown keeps the mark,
+  # so the resident's backups stay paused until a later recovery succeeds.
+  # Each recovery step is bounded and renews the lease first, so a job that
+  # lost the lease stops before the unlock.
   class VmThinning
 
     class Failed < StandardError; end
 
+    # Raised to the error tracker by the sweeper when a resident's backups
+    # have stayed paused past ALERT_AFTER.
+    class Stalled < StandardError; end
+
     TIMEOUT_SECONDS = 30 * 60
+    # `timeout` sends TERM at the limit and KILL this much later.
+    KILL_GRACE_SECONDS = 30
+    # Recovery's own steps are short ones.
+    RECOVERY_TIMEOUT_SECONDS = 5 * 60
+    DOCKER_TIMEOUT_SECONDS = 60
     # How long a mark is believed after its last renewal. One command cannot
-    # run this long, so past it the job that held the mark is not running one.
-    CLAIM_SECONDS = TIMEOUT_SECONDS + 5 * 60
+    # run this long, kill grace included, so past it the job that held the
+    # mark is not running one.
+    CLAIM_SECONDS = TIMEOUT_SECONDS + KILL_GRACE_SECONDS + 5 * 60
+    # Measured from the first unresolved interruption
+    # (backup_thinning_interrupted_at), never from the lease, which moves.
+    ALERT_AFTER = 3.hours
 
     def self.running?(agent, now: Time.current)
       started = agent.backup_thinning_started_at
@@ -48,8 +65,10 @@ module Backup
     end
     Result = Struct.new(:kept, :removed, :oldest_at, keyword_init: true)
 
-    def initialize(run: nil)
+    # `run` stands in for restic and `docker` for the Docker client in tests.
+    def initialize(run: nil, docker: nil)
       @run = run
+      @docker = docker
     end
 
     def call(agent, renew: nil)
@@ -74,10 +93,10 @@ module Backup
 
     # After an interrupted thinning: remove its container, confirm it is gone,
     # then clear the repository's locks. The caller holds the lease.
-    def recover(agent)
-      @renew = nil
-      remove_container!(agent) unless @run
-      run(agent, "unlock", "--remove-all")
+    def recover(agent, renew: nil)
+      @renew = renew
+      remove_container!(agent) if @docker || !@run
+      run(agent, "unlock", "--remove-all", timeout: RECOVERY_TIMEOUT_SECONDS)
       true
     end
 
@@ -90,9 +109,23 @@ module Backup
     # Locks are removed only once no thinning container can still be writing.
     def remove_container!(agent)
       name = container_name(agent)
-      system("docker", "rm", "--force", name, out: File::NULL, err: File::NULL)
-      _out, _err, status = Open3.capture3("docker", "container", "inspect", name)
-      raise Failed, "The thinning container could not be removed" if status.success?
+      @renew&.call
+      docker("rm", "--force", name)
+      @renew&.call
+      # The filter matches substrings, so the exact name is compared here.
+      listed, answered = docker("ps", "--all", "--filter", "name=#{name}", "--format", "{{.Names}}")
+      return if answered && listed.to_s.lines.map(&:strip).exclude?(name)
+
+      raise Failed, "The thinning container could not be confirmed gone"
+    end
+
+    # [ stdout, whether Docker answered successfully ], within a time limit.
+    def docker(*args)
+      return @docker.call(*args) if @docker
+      raise Failed, "Live Docker operations are disabled in tests" if Rails.env.test?
+
+      out, _err, status = Open3.capture3("timeout", "--kill-after=10", DOCKER_TIMEOUT_SECONDS.to_s, "docker", *args)
+      [ out, status.success? ]
     end
 
     def snapshots(agent)
@@ -104,14 +137,14 @@ module Backup
       raise Failed, "Unreadable snapshot list", cause: nil
     end
 
-    def run(agent, *args)
+    def run(agent, *args, timeout: TIMEOUT_SECONDS)
       @renew&.call
       return @run.call(agent, *args) if @run
       # No production credential lookup or Docker operation in ordinary tests.
       raise Failed, "Live VM backup thinning is disabled in tests" if Rails.env.test?
 
       name = container_name(agent)
-      argv = [ "timeout", "--kill-after=30", TIMEOUT_SECONDS.to_s,
+      argv = [ "timeout", "--kill-after=#{KILL_GRACE_SECONDS}", timeout.to_s,
         "docker", "run", "--rm", "--name", name,
         "-e", "AWS_ACCESS_KEY_ID=#{AgentRestic.aws_value(:access_key_id)}",
         "-e", "AWS_SECRET_ACCESS_KEY=#{AgentRestic.aws_value(:secret_access_key)}",
@@ -123,7 +156,7 @@ module Backup
       return out if status.success?
 
       # Killing the client does not stop a container the daemon still runs.
-      system("docker", "rm", "--force", name, out: File::NULL, err: File::NULL)
+      docker("rm", "--force", name)
       raise Failed, "restic #{args.first} failed: #{err.to_s.squish.last(500).presence || "exit #{status.exitstatus}"}"
     end
 

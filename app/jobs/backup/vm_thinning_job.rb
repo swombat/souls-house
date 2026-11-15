@@ -41,12 +41,13 @@ module Backup
         @token = now
       end
 
-      def release! = swap!(nil)
+      # Releasing also ends the interruption the alert is measured from.
+      def release! = swap!(nil, backup_thinning_interrupted_at: nil)
 
       private
 
-      def swap!(value)
-        rows = Agent.where(id: @agent_id, backup_thinning_started_at: @token).update_all(backup_thinning_started_at: value)
+      def swap!(value, **also)
+        rows = Agent.where(id: @agent_id, backup_thinning_started_at: @token).update_all(backup_thinning_started_at: value, **also)
         raise Lost, "The thinning mark for agent #{@agent_id} belongs to another job" if rows.zero?
       end
 
@@ -91,16 +92,20 @@ module Backup
 
         took_over = VmThinning.abandoned?(agent)
         token = Time.current.change(usec: 0)
-        agent.update_columns(backup_thinning_started_at: token)
+        # The first unresolved interruption is the abandoned mark's last
+        # renewal. Later takeovers leave it alone.
+        interrupted = agent.backup_thinning_interrupted_at || (agent.backup_thinning_started_at if took_over)
+        agent.update_columns(backup_thinning_started_at: token, backup_thinning_interrupted_at: interrupted)
         Lease.new(agent, token, took_over:)
       end
     end
 
     # Renewing first is the ownership check: recovery removes a container and
-    # every lock in the repository, so it runs only for the lease's holder.
+    # every lock in the repository, so it runs only for the lease's holder,
+    # and it renews again before each of its own steps.
     def recover!(agent, lease, thinning)
       lease.renew!
-      thinning.recover(agent)
+      thinning.recover(agent, renew: lease.method(:renew!))
     end
 
     # Runs on every way out, including an interrupted process. The mark is
@@ -111,6 +116,8 @@ module Backup
     rescue Lease::Lost
       nil
     rescue StandardError => error
+      # The mark stays, and so the resident's backups stay paused.
+      Agent.where(id: agent.id, backup_thinning_interrupted_at: nil).update_all(backup_thinning_interrupted_at: Time.current)
       record_failure(agent, error)
     end
 
