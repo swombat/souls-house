@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: A voice note can't be lost to voice mode
+  body: "While a voice note is recording or being transcribed, the voice mode button no longer shows next to the message box, in a conversation or on New Chat. The microphone is the only control: tap it to stop, and the note is transcribed into the message box as before. A stray tap can no longer switch to voice mode and lose the recording. Takes effect after Rails deployment."
+- date: 2026-11-15
   title: Recording transcription follows the account's plan
   body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
 - date: 2026-11-14
