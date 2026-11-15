@@ -85,6 +85,18 @@ class HookPresenceTest < ActiveSupport::TestCase
     assert_nil run.reload.hook_warning
   end
 
+  test "setting an event expected leaves an already-warned run's warning as it was" do
+    @agent.set_hook_expectation!("session_start", "expected", source: "owner")
+    run = finish(hooks: inventory(%w[stop]))
+    before = run.reload.hook_warning
+    assert before.present?
+    assert_not_includes before, "before_turn"
+
+    @agent.set_hook_expectation!("before_turn", "expected", source: "owner")
+
+    assert_equal before, run.reload.hook_warning
+  end
+
   test "disabled, unapproved and inactive hooks each say so" do
     finish(hooks: inventory([]).merge("hooks" => [ hook("w", "session_start"), hook("b", "before_turn"), hook("s", "stop") ]))
     hooks = inventory([]).merge("hooks" => [
