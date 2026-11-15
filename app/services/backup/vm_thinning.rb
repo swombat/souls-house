@@ -18,19 +18,24 @@ module Backup
   # also looks, so a backup is not issued while history is being thinned and
   # thinning does not start while a backup is held.
   #
+  # The mark is a lease. `call` asks its holder to renew it before every
+  # restic command (`renew:`), and a command is killed after TIMEOUT_SECONDS,
+  # which is shorter than the lease, so a thinning that is still running
+  # always holds a fresh mark. If the renewal refuses, the thinning stops
+  # before the next command.
+  #
   # A thinning that is killed can leave restic's exclusive lock behind, which
-  # would fail every later backup. `recover` removes the thinning container
-  # and every lock in the repository. That is safe only under the marker,
-  # when no backup can be running, and it does not wait for a backup to
-  # succeed first: the job recovers after any failure, and a marker left by a
-  # job that died is found by the sweeper and recovered before the next
-  # backup is issued.
+  # would fail every later backup. `recover` removes the thinning container,
+  # confirms it is gone, and only then removes every lock in the repository.
+  # The job calls it only while it holds the lease, when no backup and no
+  # other thinning can be running.
   class VmThinning
 
     class Failed < StandardError; end
 
     TIMEOUT_SECONDS = 30 * 60
-    # How long a marker is believed. Past this the job that set it is dead.
+    # How long a mark is believed after its last renewal. One command cannot
+    # run this long, so past it the job that held the mark is not running one.
     CLAIM_SECONDS = TIMEOUT_SECONDS + 5 * 60
 
     def self.running?(agent, now: Time.current)
@@ -47,7 +52,8 @@ module Backup
       @run = run
     end
 
-    def call(agent)
+    def call(agent, renew: nil)
+      @renew = renew
       raise Failed, "Thinning requires a VM placement" unless Agents::RemoteRuntime.remote?(agent)
       raise Failed, "Invalid resident identity" unless VmRepository::UUID.match?(agent.uuid.to_s)
       raise Failed, "Backup password is missing" if agent.restic_password.blank?
@@ -66,10 +72,11 @@ module Backup
         oldest_at: kept.filter_map { |snapshot| Time.zone.parse(snapshot["time"].to_s) rescue nil }.min)
     end
 
-    # After an interrupted thinning: stop its container if it is still there
-    # and clear the repository's locks. Only ever called under the marker.
+    # After an interrupted thinning: remove its container, confirm it is gone,
+    # then clear the repository's locks. The caller holds the lease.
     def recover(agent)
-      system("docker", "rm", "--force", container_name(agent), out: File::NULL, err: File::NULL) unless @run
+      @renew = nil
+      remove_container!(agent) unless @run
       run(agent, "unlock", "--remove-all")
       true
     end
@@ -79,6 +86,14 @@ module Backup
     # One name per resident, so a container a dead job left behind can be
     # found and removed, and two thinnings of one repository cannot coexist.
     def container_name(agent) = "vm-backup-thin-#{agent.uuid}"
+
+    # Locks are removed only once no thinning container can still be writing.
+    def remove_container!(agent)
+      name = container_name(agent)
+      system("docker", "rm", "--force", name, out: File::NULL, err: File::NULL)
+      _out, _err, status = Open3.capture3("docker", "container", "inspect", name)
+      raise Failed, "The thinning container could not be removed" if status.success?
+    end
 
     def snapshots(agent)
       list = JSON.parse(run(agent, "snapshots", "--json"))
@@ -90,6 +105,7 @@ module Backup
     end
 
     def run(agent, *args)
+      @renew&.call
       return @run.call(agent, *args) if @run
       # No production credential lookup or Docker operation in ordinary tests.
       raise Failed, "Live VM backup thinning is disabled in tests" if Rails.env.test?

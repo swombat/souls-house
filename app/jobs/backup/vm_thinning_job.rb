@@ -3,15 +3,54 @@ module Backup
   # from the sweeper when a thinning was left interrupted.
   #
   # It marks the resident for as long as it runs. VmResident.issue! refuses a
-  # backup while the mark is fresh, and this job does not start while a backup
+  # backup while any mark stands, and this job does not start while a backup
   # is held; both decide under the agent lock, so the two never overlap.
   #
-  # A failure is recorded on the resident's newest good snapshot and logged,
-  # as a house resident's failed prune is; the backup itself stays good. After
-  # any failure, and when taking over a mark a dead job left, the repository
-  # is recovered (VmThinning#recover) before the mark is cleared, so a lock
-  # left by a killed prune never waits on a later backup to be removed.
+  # The mark is a lease (Lease below). The job renews it before every restic
+  # command, and each command is bounded by less than the lease lasts, so a
+  # job that is still working never loses it to age. A job that finds the
+  # lease is no longer its own stops and touches nothing: it does not
+  # recover, unlock or clear a mark that belongs to someone else.
+  #
+  # The mark is cleared in two cases only: the thinning finished, or the
+  # repository was recovered (VmThinning#recover) while the lease was still
+  # this job's. Any other ending, a restic failure, an unexpected error or an
+  # interrupted process whose recovery did not complete, leaves the mark
+  # standing. No backup is issued then, and the sweeper sends the resident
+  # back here once the mark is old enough to be taken over.
   class VmThinningJob < ApplicationJob
+
+    # The resident's thinning mark, held by one job. The mark's timestamp is
+    # the token: renewing moves it forward only if it is still the value this
+    # job last wrote.
+    class Lease
+
+      class Lost < StandardError; end
+
+      attr_reader :took_over
+
+      def initialize(agent, token, took_over:)
+        @agent_id = agent.id
+        @token = token
+        @took_over = took_over
+      end
+
+      def renew!
+        now = Time.current.change(usec: 0)
+        swap!(now)
+        @token = now
+      end
+
+      def release! = swap!(nil)
+
+      private
+
+      def swap!(value)
+        rows = Agent.where(id: @agent_id, backup_thinning_started_at: @token).update_all(backup_thinning_started_at: value)
+        raise Lost, "The thinning mark for agent #{@agent_id} belongs to another job" if rows.zero?
+      end
+
+    end
 
     queue_as :default
 
@@ -22,45 +61,56 @@ module Backup
       return unless agent && Agents::RemoteRuntime.remote?(agent)
       return if agent.account.disabled?
 
-      claim = claim!(agent) or return
-      failed = claim[:took_over]
+      lease = claim!(agent) or return
+      finished = false
       begin
-        thinning.recover(agent) if claim[:took_over]
-        failed = false
-        result = thinning.call(agent)
+        recover!(agent, lease, thinning) if lease.took_over
+        result = thinning.call(agent, renew: lease.method(:renew!))
+        finished = true
         Rails.logger.info("[vm_backup] thinned agent_id=#{agent.id} kept=#{result.kept} removed=#{result.removed}")
         result
-      rescue VmThinning::Failed => error
-        failed = true
+      rescue Lease::Lost => error
+        Rails.logger.warn("[vm_backup] thinning stopped agent_id=#{agent.id}: #{error.message}")
+        nil
+      rescue StandardError => error
         record_failure(agent, error)
+        Rails.error.report(error, handled: true) unless error.is_a?(VmThinning::Failed)
         nil
       ensure
-        release!(agent, claim[:started_at], recover_with: failed ? thinning : nil)
+        settle!(agent, lease, thinning, finished:)
       end
     end
 
     private
 
     # Under the agent lock: nil when a backup is held or another thinning is
-    # running; otherwise the mark, and whether it replaced an abandoned one.
+    # running; otherwise the lease, and whether it replaced an abandoned one.
     def claim!(agent)
       agent.with_lock do
         next nil if VmResident.held?(agent) || VmThinning.running?(agent)
 
         took_over = VmThinning.abandoned?(agent)
-        started_at = Time.current.change(usec: 0)
-        agent.update_columns(backup_thinning_started_at: started_at)
-        { started_at:, took_over: }
+        token = Time.current.change(usec: 0)
+        agent.update_columns(backup_thinning_started_at: token)
+        Lease.new(agent, token, took_over:)
       end
     end
 
-    # Recovery runs while the mark is still ours. If recovery itself fails the
-    # mark stays, so no backup is issued into a repository that may be locked,
-    # and the sweeper comes back for it once the mark is old enough.
-    def release!(agent, started_at, recover_with:)
-      recover_with&.recover(agent)
-      Agent.where(id: agent.id, backup_thinning_started_at: started_at).update_all(backup_thinning_started_at: nil)
-    rescue VmThinning::Failed => error
+    # Renewing first is the ownership check: recovery removes a container and
+    # every lock in the repository, so it runs only for the lease's holder.
+    def recover!(agent, lease, thinning)
+      lease.renew!
+      thinning.recover(agent)
+    end
+
+    # Runs on every way out, including an interrupted process. The mark is
+    # released only after a finished thinning or a recovery that completed.
+    def settle!(agent, lease, thinning, finished:)
+      recover!(agent, lease, thinning) unless finished
+      lease.release!
+    rescue Lease::Lost
+      nil
+    rescue StandardError => error
       record_failure(agent, error)
     end
 

@@ -50,7 +50,7 @@ module Backup
     # A stand-in for VmThinning in the job: records what it was asked to do.
     def thinning(fail_with: nil, log: [])
       double = Object.new
-      double.define_singleton_method(:call) do |_agent|
+      double.define_singleton_method(:call) do |_agent, renew: nil|
         log << :call
         raise VmThinning::Failed, fail_with if fail_with
 
@@ -67,7 +67,7 @@ module Backup
     test "the job marks the resident while it thins and clears the mark after" do
       seen = nil
       double = thinning
-      double.define_singleton_method(:call) do |agent|
+      double.define_singleton_method(:call) do |agent, renew: nil|
         seen = agent.reload.backup_thinning_started_at
         VmThinning::Result.new(kept: 1, removed: 0, oldest_at: nil)
       end
@@ -112,6 +112,72 @@ module Backup
       run_job(thinning(log:))
 
       assert_equal %i[recover call], log
+      assert_nil @agent.reload.backup_thinning_started_at
+    end
+
+    test "the mark is renewed before every restic command, and a thinning that lost it stops there" do
+      calls = []
+      renewals = 0
+      VmThinning.new(run: restic([ snapshot(1) ], calls:)).call(@agent, renew: -> { renewals += 1 })
+      assert_equal calls.size, renewals
+
+      calls.clear
+      lost = -> { raise VmThinningJob::Lease::Lost, "taken" }
+      assert_raises(VmThinningJob::Lease::Lost) { VmThinning.new(run: restic([ snapshot(1) ], calls:)).call(@agent, renew: lost) }
+      assert_empty calls
+    end
+
+    test "a job that renews before each command keeps the mark however long the whole job runs" do
+      double = thinning
+      agent = @agent
+      clock = self
+      double.define_singleton_method(:call) do |_agent, renew: nil|
+        3.times do
+          clock.travel 25.minutes
+          renew.call
+          raise "the mark expired under a live job" unless VmThinning.running?(agent.reload)
+        end
+        VmThinning::Result.new(kept: 1, removed: 0, oldest_at: nil)
+      end
+      assert_equal 1, run_job(double).kept
+      assert_nil @agent.reload.backup_thinning_started_at
+    end
+
+    test "an unexpected error keeps the mark unless recovery completes" do
+      log = []
+      double = thinning(log:)
+      double.define_singleton_method(:call) { |_agent, renew: nil| raise IOError, "closed stream" }
+      assert_nil run_job(double)
+      assert_equal %i[recover], log
+      assert_nil @agent.reload.backup_thinning_started_at
+
+      double.define_singleton_method(:recover) { |_agent| raise IOError, "closed stream" }
+      run_job(double)
+      assert @agent.reload.backup_thinning_started_at.present?
+    end
+
+    test "a job whose mark was taken over recovers nothing and clears nothing" do
+      log = []
+      replacement_mark = 1.minute.from_now.change(usec: 0)
+      agent = @agent
+      old = thinning(log:)
+      old.define_singleton_method(:call) do |_agent, renew: nil|
+        # Another job took the mark over while this one was stalled.
+        agent.update_columns(backup_thinning_started_at: replacement_mark)
+        raise VmThinning::Failed, "restic forget failed: killed"
+      end
+      run_job(old)
+      assert_empty log, "the old job must not recover a repository it no longer owns"
+      assert_equal replacement_mark, @agent.reload.backup_thinning_started_at
+
+      # And the same once the replacement has finished and cleared the mark.
+      old.define_singleton_method(:call) do |_agent, renew: nil|
+        agent.update_columns(backup_thinning_started_at: nil)
+        raise VmThinning::Failed, "restic forget failed: killed"
+      end
+      @agent.update_columns(backup_thinning_started_at: nil)
+      run_job(old)
+      assert_empty log
       assert_nil @agent.reload.backup_thinning_started_at
     end
 
