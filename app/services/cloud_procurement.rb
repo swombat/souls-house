@@ -192,15 +192,16 @@ class CloudProcurement
   # purchase against the cap in the same transaction. Sends nothing.
   def plan_spare!(server_type:, location:, approval_reference:)
     raise NotAllowed, "image and SSH keys must be configured" if @config.image_id.nil? || @config.ssh_key_ids.empty?
-    unless (CloudProcurementOperation::EU_LOCATIONS & @config.locations).include?(location.to_s)
-      raise NotAllowed, "not an approved EU location"
-    end
+    raise NotAllowed, "not an approved EU location" unless spare_locations.include?(location.to_s)
 
     public_id = "cpo-#{SecureRandom.hex(8)}"
     CloudProcurementOperation.create!(purpose: "spare", placement_label: CloudProcurementOperation::SPARE_LABEL,
       public_id:, approval_reference:, server_type:, location:, image_id: @config.image_id,
       ssh_key_ids: @config.ssh_key_ids, provider_name: "souls-house-#{public_id}")
   end
+
+  # Where a spare may be bought: the EU locations this installation allows.
+  def spare_locations = CloudProcurementOperation::EU_LOCATIONS & @config.locations
 
   # Mints enrollment authority, commits create intent, then sends the one
   # create request. Calling it again, concurrently or later, sends nothing.
@@ -317,10 +318,12 @@ class CloudProcurement
 
     holder = AgentPlacement.where(backend: "hetzner_cloud").where.not(location: nil).where.not(state: "retired")
       .pluck(:id, :location).to_h
+    unplaced = []
     CloudProcurementOperation.unresolved.pluck(:agent_placement_id, :location).each do |placement_id, location|
-      holder[placement_id] ||= location
+      # A purchase with no placement (a spare) is its own server: each counts.
+      placement_id.nil? ? unplaced << location : holder[placement_id] ||= location
     end
-    counts = holder.values.tally
+    counts = (holder.values + unplaced).tally
     candidates.min_by { |location| [ counts.fetch(location, 0), CloudProcurementOperation::EU_LOCATIONS.index(location) ] }
   end
 

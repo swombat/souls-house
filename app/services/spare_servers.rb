@@ -32,6 +32,9 @@ class SpareServers
   # After a refusal, the same type in the same location is not tried again
   # for this long, so a window that lies costs one order, not one per check.
   REFUSAL_PAUSE = 20.minutes
+  # The reconcile job re-queues itself every minute while a purchase settles.
+  # A settling spare nobody has reconciled for this long has lost its job.
+  RECONCILE_STALE_AFTER = 3.minutes
   TYPES = CloudProcurementOperation::SERVER_TYPES
 
   def self.replenish!(availability)
@@ -48,21 +51,34 @@ class SpareServers
   # operations it submitted. Never raises for a provider failure: the next
   # check is five minutes away.
   def replenish!(availability)
+    recover!
     return [] unless @setting.reload.spare_server_limit.positive?
 
     planned = plan!(availability)
-    planned.each do |operation|
-      procurement.submit!(operation)
-      CloudProcurementReconcileJob.set(wait: 30.seconds).perform_later(operation.id)
-    rescue StandardError => e
-      # submit! has already recorded the purchase as unknown; reconcile it.
-      Rails.logger.error("[spare_servers] submit #{operation.public_id} failed: #{e.class}")
-      CloudProcurementReconcileJob.set(wait: 30.seconds).perform_later(operation.id)
-    end
+    planned.each { |operation| submit(operation) }
     planned
   rescue CloudProcurement::NotAllowed, HetznerCloudClient::Error => e
     Rails.logger.error("[spare_servers] nothing ordered: #{e.class}: #{e.message}")
     []
+  end
+
+  # Picks up what a stopped worker left (Mira, #977). Runs on every check,
+  # whatever the limit says now, because these purchases already hold a slot:
+  #
+  # - a spare still planned was counted and never sent. submit! sends its one
+  #   request now, or does nothing if another worker has claimed it. If its
+  #   location has sold out, Hetzner refuses it and the slot is free again.
+  # - a spare left settling (sent or maybe sent, booting, deleting) with no
+  #   recent reconcile gets its reconcile job again. That only reads the
+  #   provider: an uncertain purchase is never sent a second time.
+  def recover!
+    CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
+    CloudProcurementOperation.spares.where(state: CloudProcurementReconcileJob::SETTLING_STATES)
+      .where("last_reconciled_at IS NULL OR last_reconciled_at < ?", now - RECONCILE_STALE_AFTER)
+      .where(updated_at: ..(now - RECONCILE_STALE_AFTER))
+      .order(:id).each { |operation| CloudProcurementReconcileJob.perform_later(operation.id) }
+  rescue StandardError => e
+    Rails.logger.error("[spare_servers] recovery failed: #{e.class}: #{e.message}")
   end
 
   # What Site Admin shows: per type, who is waiting, the target, what is held
@@ -101,6 +117,16 @@ class SpareServers
 
   def now = @clock.call
 
+  # One create request for one planned spare, then its reconcile job. A
+  # failure here leaves the purchase recorded (unknown, or still planned) for
+  # the next check's recover!.
+  def submit(operation)
+    procurement.submit!(operation)
+    CloudProcurementReconcileJob.set(wait: 30.seconds).perform_later(operation.id)
+  rescue StandardError => e
+    Rails.logger.error("[spare_servers] submit #{operation.public_id} failed: #{e.class}")
+  end
+
   def procurement
     @procurement ||= CloudProcurement.from_credentials
   end
@@ -135,15 +161,17 @@ class SpareServers
     end
   end
 
-  # Approved EU locations Hetzner says can sell the type now, leaving out any
-  # that refused a spare of this type a short while ago.
+  # Locations this installation allows that Hetzner says can sell the type
+  # now, leaving out any that refused a spare of this type a short while ago.
+  # Filtered here, before anything is planned: a location plan_spare! would
+  # refuse must not roll back the orders beside it.
   def locations_selling(type, availability)
     places = availability[type]
     return [] unless places.is_a?(Hash)
 
     paused = CloudProcurementOperation.spares.where(server_type: type, state: "refused")
       .where(updated_at: (now - REFUSAL_PAUSE)..).distinct.pluck(:location)
-    CloudProcurementOperation::EU_LOCATIONS.select { |location| places[location] == true } - paused
+    procurement.spare_locations.select { |location| places[location] == true } - paused
   end
 
 end

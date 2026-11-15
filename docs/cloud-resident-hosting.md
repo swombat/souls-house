@@ -262,6 +262,11 @@ and that type and location are skipped for 20 minutes. Any approved EU
 location is used: a resident moves onto a spare by disk copy, so it has no
 location to match.
 
+Every check first recovers what a stopped worker left: a spare still
+`planned` is submitted (the one-shot claim sends at most one request), and a
+spare left settling with no reconcile for three minutes gets its reconcile
+job again. Neither sends a second create for an uncertain purchase.
+
 `bin/rails vm:spares` prints the state; with `RELEASE=<cpo-id>` and
 `REQUESTED_BY=<site admin email>` it deletes one spare.
 

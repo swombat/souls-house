@@ -134,6 +134,68 @@ class SpareServersTest < ActiveSupport::TestCase
     assert_equal [ "nbg1" ], spares.replenish!(selling("cx33", "nbg1")).map(&:location)
   end
 
+  # Mira, #977: a worker that stops after the reservation commits must not
+  # leave a planned spare holding the cap forever.
+  test "a spare left planned by a stopped worker is sent by the next check, once" do
+    stranded = CloudProcurementOperation.transaction do
+      @procurement.plan_spare!(server_type: "cx33", location: "nbg1", approval_reference: "setting:spare_servers/cx33")
+    end
+
+    assert_empty spares.replenish!(selling("cx33"))
+    assert_equal "reconciling", stranded.reload.state
+    assert_equal 1, @client.creates.size
+
+    spares.replenish!(selling("cx33", "nbg1"))
+    assert_equal 1, @client.creates.size
+  end
+
+  test "a spare left settling with no reconcile job gets one again and is never sent twice" do
+    @client.on_create = ->(_) { raise HetznerCloudClient::CreateOutcomeUnknown.new("lost", code: "outcome_unknown") }
+    operation = spares.replenish!(selling("cx33", "nbg1")).sole
+    clear_enqueued_jobs
+
+    spares.replenish!(selling("cx33", "nbg1"))
+    assert_no_enqueued_jobs only: CloudProcurementReconcileJob
+
+    operation.update_columns(last_reconciled_at: 4.minutes.ago, updated_at: 4.minutes.ago)
+    assert_enqueued_with(job: CloudProcurementReconcileJob, args: [ operation.id ]) do
+      spares.replenish!(selling("cx33", "nbg1"))
+    end
+    assert_equal 1, @client.creates.size
+  end
+
+  test "recovery runs even after the limit is set back to 0" do
+    stranded = @procurement.plan_spare!(server_type: "cx33", location: "nbg1", approval_reference: "t")
+    @setting.update!(spare_server_limit: 0)
+
+    assert_empty spares.replenish!(selling("cx33", "nbg1"))
+    assert_equal "reconciling", stranded.reload.state
+  end
+
+  # Mira, #977: a location Hetzner sells but this installation does not allow
+  # must not roll back the valid order beside it.
+  test "only the installation's allowed locations are used, and the rest of the batch still orders" do
+    narrow = CloudProcurement.new(client: @client, config: CloudProcurement::Config.new(image_id: IMAGE_ID,
+      ssh_key_ids: [ 101 ], locations: %w[hel1], rails_url: "https://souls.example"))
+    @setting.update!(spare_server_limit: 2, spare_cx33_target: 2)
+
+    ordered = SpareServers.new(setting: @setting, procurement: narrow).replenish!(selling("cx33", "fsn1", "hel1"))
+
+    assert_equal %w[hel1 hel1], ordered.map(&:location)
+    assert_empty SpareServers.new(setting: @setting, procurement: narrow).replenish!(selling("cx33", "fsn1"))
+  end
+
+  test "choosing a location for a resident's server counts each spare, not all spares as one" do
+    2.times { @procurement.plan_spare!(server_type: "cx33", location: "fsn1", approval_reference: "t") }
+    @procurement.plan_spare!(server_type: "cx33", location: "nbg1", approval_reference: "t")
+    placement = AgentPlacement.create!(agent: agents(:research_assistant), backend: "hetzner_cloud", state: "pending")
+
+    operation = @procurement.plan!(placement:, requested_by: users(:site_admin_user), approval_reference: "t",
+      server_type: "cx23")
+
+    assert_equal "hel1", operation.location
+  end
+
   test "a type that is not on sale, or sold only outside the approved locations, is not ordered" do
     assert_empty spares.replenish!(selling("cx33"))
     assert_empty spares.replenish!("cx33" => { "ash" => true })
