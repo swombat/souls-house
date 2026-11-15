@@ -19,7 +19,17 @@ module Agents
       @agent = agent
     end
 
+    # With what its backup repository held when last read (Backup::Space),
+    # wherever it runs.
     def call
+      location = place
+      backups = location && %w[house vm].include?(location[:kind]) && Backup::Space.summary(@agent)
+      backups ? location.merge(backups:) : location
+    end
+
+    private
+
+    def place
       # provisioning: a resident still being born has a home already.
       return unless @agent.externally_hosted? || @agent.provisioning?
 

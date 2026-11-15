@@ -59,3 +59,43 @@ test('a failed setup says so without claiming the server is gone', () => {
   expect(block).not.toHaveTextContent('Not on any server');
   expect(block).not.toHaveTextContent('Directly on the main');
 });
+
+test('the backups kept, their age and the space they take are shown', () => {
+  render(AgentHostingLocation, {
+    hostingLocation: {
+      kind: 'house',
+      backups: {
+        snapshots: 9,
+        oldest_at: '2026-11-06T04:10:00Z',
+        stored_bytes: 13 * 1024 ** 3,
+        space_bytes: 60 * 1024 ** 3,
+        thinned_to_fit: false,
+        over_space: false,
+      },
+    },
+  });
+  const block = screen.getByTestId('backup-history');
+  expect(block).toHaveTextContent('9 backups are kept');
+  expect(block).toHaveTextContent("13.0 GB of this resident's 60.0 GB of backup space");
+  expect(screen.queryByTestId('backup-thinned')).toBeNull();
+});
+
+test('history being thinned to fit is said, and so is a newest backup larger than the space', () => {
+  const backups = { snapshots: 1, stored_bytes: 70 * 1024 ** 3, space_bytes: 60 * 1024 ** 3 };
+  const { unmount } = render(AgentHostingLocation, {
+    hostingLocation: { kind: 'vm', status: 'ready', backups: { ...backups, thinned_to_fit: true, over_space: false } },
+  });
+  expect(screen.getByTestId('backup-thinned')).toHaveTextContent('Older backups are being removed');
+  expect(screen.getByTestId('backup-history')).toHaveTextContent('1 backup is kept');
+  unmount();
+
+  render(AgentHostingLocation, {
+    hostingLocation: { kind: 'vm', status: 'ready', backups: { ...backups, thinned_to_fit: true, over_space: true } },
+  });
+  expect(screen.getByTestId('backup-over-space')).toHaveTextContent('for the house to fix');
+});
+
+test('no backup line before the house has read the repository', () => {
+  render(AgentHostingLocation, { hostingLocation: { kind: 'house', backups: null } });
+  expect(screen.queryByTestId('backup-history')).toBeNull();
+});

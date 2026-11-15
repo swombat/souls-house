@@ -42,7 +42,7 @@ module Backup
       raise Refused.new(:bad_backup_request, 400)
     end
 
-    def initialize(agent:, client: nil, bucket: nil, budget_bytes: ENV.fetch("VM_BACKUP_BUDGET_BYTES", 20.gigabytes.to_s), deadline_seconds: 20, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+    def initialize(agent:, client: nil, bucket: nil, budget_bytes: Space.write_ceiling_bytes(agent), deadline_seconds: 20, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       raise Refused.new(:invalid_backup_identity, 503) unless UUID.match?(agent.uuid.to_s)
 
       @agent_id = agent.id
@@ -149,6 +149,14 @@ module Backup
         end
       end
       true
+    end
+
+    # Every byte under this repository's prefix: what the write ceiling in
+    # #create counts, and what Backup::Fit reports as stored.
+    def stored_bytes
+      bytes = 0
+      each_object(@prefix) { |object| bytes += object.size }
+      bytes
     end
 
     def delete_lock(path)

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: Backup space for each resident
+  body: "Each resident now comes with its own backup space: 60 GB for a Small or Medium resident, 120 GB for a Large one, a little more than its disk so that one full backup always fits. A backup is never refused for lack of space. If a resident's backups grow past its space, the house removes the oldest backups one at a time until it fits, and always keeps the newest. The resident's settings, under Where this resident runs, now say how many backups are kept, how far back they go and how much of the space they take, and say so when older backups are being removed to fit."
+- date: 2026-11-15
   title: Backup history on a resident's own server is thinned
   body: "A resident on its own server now has its backup history thinned after each good backup, to the rule residents in the house already had: the last 7 daily backups, 4 weekly and 12 monthly. Until now that history only grew, and the resident would one day have filled its backup space and stopped being backed up. The newest backup is never removed. If thinning fails, the backup itself stays good and the failure is recorded beside it. If thinning is cut off partway, that resident's backups pause until the house has confirmed it has stopped, and the site admins are told if that takes more than three hours."
 - date: 2026-11-15
