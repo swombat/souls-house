@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: Spare servers are ordered even when Hetzner's stock flag says no
+  body: "Hetzner's own sign of whether a server type is on sale turned out to be unreliable: it showed nothing available while an order for the same type went through. When the house is short of a server type and Hetzner shows no stock, it now tries one location every five minutes anyway. A refused order costs nothing. If Hetzner refuses because the project has reached its own limit on servers, the house stops ordering for an hour and Site Admin > Settings > Spare servers says so."
+- date: 2026-11-15
   title: A resident can be moved to a bigger server
   body: "A resident on its own server can now be moved onto a spare server the house holds, which is how it gets a bigger machine when Hetzner will not enlarge the one it has. The house waits until the resident is idle, holds its turns, shuts its server down, copies the whole disk to the new server and starts it there. Messages sent meanwhile wait and are answered once it is back. The old server is kept, switched off and unchanged, until a site admin releases it; until then the resident can be put back on it, and it is put back automatically if the copy fails. A move needs a verified backup from the last 26 hours, and it is only finished once the resident itself answers on the new server. The old server can be released only after a verified backup has been taken from the new one since it last started. Site admins start a move from the server's command line for now."
 - date: 2026-11-15

@@ -123,12 +123,11 @@ class SpareServersTest < ActiveSupport::TestCase
     spares.replenish!(selling("cx33", "nbg1"))
     assert_equal "refused", CloudProcurementOperation.spares.sole.state
 
+    # nbg1 is still flagged, but it refused a moment ago: another location is tried.
     @client.on_create = nil
-    assert_empty spares.replenish!(selling("cx33", "nbg1"))
-    assert_equal 1, @client.creates.size
+    assert_equal [ "fsn1" ], spares.replenish!(selling("cx33", "nbg1")).map(&:location)
 
-    # Another location is still tried, and nbg1 again once the pause is over.
-    assert_equal [ "hel1" ], spares.replenish!(selling("cx33", "nbg1", "hel1")).map(&:location)
+    # nbg1 again once the pause is over.
     CloudProcurementOperation.spares.where(state: "refused").update_all(updated_at: 21.minutes.ago)
     @setting.update!(spare_server_limit: 3, spare_cx33_target: 2)
     assert_equal [ "nbg1" ], spares.replenish!(selling("cx33", "nbg1")).map(&:location)
@@ -196,11 +195,92 @@ class SpareServersTest < ActiveSupport::TestCase
     assert_equal "hel1", operation.location
   end
 
-  test "a type that is not on sale, or sold only outside the approved locations, is not ordered" do
+  # 2026-11-15: the flag said no CX33 anywhere while an order for one succeeded.
+  test "short of a type with no location flagged, one location is tried per check, the one tried longest ago" do
+    refuse = lambda do |_|
+      raise HetznerCloudClient::CapacityUnavailable.new("none", status: 412, code: "resource_unavailable")
+    end
+    @client.on_create = refuse
+
+    assert_equal [ "fsn1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal [ "nbg1" ], spares.replenish!({}).map(&:location)
+    assert_equal [ "hel1" ], spares.replenish!("cx33" => { "ash" => true }).map(&:location)
+    assert_empty spares.replenish!(selling("cx33")), "all three refused a short while ago"
+    assert_equal 3, @client.creates.size
+
+    CloudProcurementOperation.spares.where(location: "nbg1").update_all(updated_at: 21.minutes.ago, created_at: 30.minutes.ago)
+    @client.on_create = nil
+    assert_equal [ "nbg1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal "reconciling", CloudProcurementOperation.spares.unresolved.sole.state
+    assert_empty spares.replenish!(selling("cx33")), "held now: nothing more is wanted"
+  end
+
+  # Mira, #980: against the flag it is one order per type per check, however
+  # many are missing.
+  test "a try against the flag is one order, even when several are missing" do
+    @setting.update!(spare_server_limit: 3, spare_cx33_target: 3)
+
+    assert_equal [ "fsn1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal [ "nbg1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal 2, @client.creates.size
+
+    # With a flag, the whole of what is missing and fits is ordered.
+    @setting.update!(spare_server_limit: 5, spare_cx33_target: 5)
+    assert_equal 3, spares.replenish!(selling("cx33", "hel1")).size
+  end
+
+  test "a flagged location is preferred to a blind try" do
+    assert_equal [ "hel1" ], spares.replenish!(selling("cx33", "hel1")).map(&:location)
+  end
+
+  test "nothing is tried for a type the house is not short of" do
+    @setting.update!(spare_cx33_target: 0)
+
     assert_empty spares.replenish!(selling("cx33"))
-    assert_empty spares.replenish!("cx33" => { "ash" => true })
-    assert_empty spares.replenish!({})
     assert_empty @client.creates
+  end
+
+  # The project's own server limit: no location will do better.
+  test "after Hetzner's project limit refuses an order, all spare buying rests for an hour and Site Admin says why" do
+    @setting.update!(spare_server_limit: 3, spare_cx23_target: 1)
+    @client.on_create = lambda do |_|
+      raise HetznerCloudClient::CapacityUnavailable.new("limit", status: 403, code: "resource_limit_exceeded")
+    end
+    spares.replenish!(selling("cx33", "nbg1"))
+    creates = @client.creates.size
+    assert_not_nil spares.status[:project_limit_hit_at]
+
+    @client.on_create = nil
+    assert_empty spares.replenish!(selling("cx33", "fsn1", "hel1").merge(selling("cx23", "fsn1")))
+    assert_equal creates, @client.creates.size
+
+    # Mira, #980: the limit is read before every send, so the first refusal
+    # of a batch leaves the rest of it planned.
+    CloudProcurementOperation.spares.delete_all
+    @setting.update!(spare_cx23_target: 0, spare_cx33_target: 3)
+    @client.on_create = lambda do |_|
+      raise HetznerCloudClient::CapacityUnavailable.new("limit", status: 403, code: "resource_limit_exceeded")
+    end
+    batch = spares.replenish!(selling("cx33", "nbg1"))
+    assert_equal 3, batch.size
+    assert_equal %w[planned planned refused], batch.map { |operation| operation.reload.state }.sort
+    assert_equal creates + 1, @client.creates.size
+    @client.on_create = nil
+    creates = @client.creates.size
+    CloudProcurementOperation.spares.where(state: "planned").delete_all
+
+    # A spare left planned is not sent during the rest either, and still holds its slot.
+    stranded = @procurement.plan_spare!(server_type: "cx33", location: "hel1", approval_reference: "t")
+    assert_empty spares.replenish!(selling("cx33", "hel1"))
+    assert_equal "planned", stranded.reload.state
+    assert_equal creates, @client.creates.size
+    assert_equal 1, spares.status[:counted]
+
+    # After the rest it is sent, and buying goes on.
+    CloudProcurementOperation.spares.where(state: "refused").update_all(updated_at: 61.minutes.ago)
+    assert_nil spares.status[:project_limit_hit_at]
+    assert_not_empty spares.replenish!(selling("cx33", "hel1"))
+    assert_equal "reconciling", stranded.reload.state
   end
 
   test "a spare boots to provisioned with no runner, and an admin can release it" do

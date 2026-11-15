@@ -25,13 +25,27 @@
 # its disk copied there, wherever it runs today, so a spare has no location
 # to match beyond the house's allowlist.
 #
-# Hetzner saying "available" is not a promise. A refused order is settled as
-# refused and that type and location are left alone for a while.
+# Hetzner's "available" flag is neither a promise nor a verdict. A refused
+# order is settled as refused and that type and location are left alone for a
+# while. And an order can succeed while the flag says no: on 2026-11-15 the
+# flag had CX23 and CX33 unavailable in every location for half an hour, and
+# in that half hour the house bought one of each. So when the house is short
+# of a type and no location is flagged, it still tries one location per
+# check, the one tried longest ago. A refusal costs nothing.
+#
+# One refusal is different: resource_limit_exceeded is the Hetzner project's
+# own limit on servers, not stock. No location will do better, so for
+# LIMIT_PAUSE no order is sent at all, new or left planned, and Site Admin
+# says why. Purchases already sent are still reconciled.
 class SpareServers
 
   # After a refusal, the same type in the same location is not tried again
   # for this long, so a window that lies costs one order, not one per check.
   REFUSAL_PAUSE = 20.minutes
+  # After the project's server limit refused an order, nothing is ordered for
+  # this long: only a person (or a released server) changes that answer.
+  LIMIT_PAUSE = 1.hour
+  PROJECT_LIMIT_CODE = "resource_limit_exceeded".freeze
   # The reconcile job re-queues itself every minute while a purchase settles.
   # A settling spare nobody has reconciled for this long has lost its job.
   RECONCILE_STALE_AFTER = 3.minutes
@@ -72,6 +86,9 @@ class SpareServers
   #   recent reconcile gets its reconcile job again. That only reads the
   #   provider: an uncertain purchase is never sent a second time.
   def recover!
+    # While the project's server limit rests all buying, a planned spare is
+    # not sent either: it would be refused for the same reason and extend
+    # the rest. It keeps its slot and is sent when the rest is over.
     CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
     CloudProcurementOperation.spares.where(state: CloudProcurementReconcileJob::SETTLING_STATES)
       .where("last_reconciled_at IS NULL OR last_reconciled_at < ?", now - RECONCILE_STALE_AFTER)
@@ -88,6 +105,7 @@ class SpareServers
     {
       limit: @setting.spare_server_limit,
       counted: held.values.sum,
+      project_limit_hit_at: project_limit_hit_at&.iso8601,
       types: TYPES.map do |type|
         { server_type: type, waiting: waiting(type), target: target(type), held: held.fetch(type, 0) }
       end,
@@ -121,6 +139,10 @@ class SpareServers
   # failure here leaves the purchase recorded (unknown, or still planned) for
   # the next check's recover!.
   def submit(operation)
+    # Read before every send: the order before this one may just have been
+    # refused by the project's server limit, and then this one waits planned.
+    return if project_limit_hit_at
+
     procurement.submit!(operation)
     CloudProcurementReconcileJob.set(wait: 30.seconds).perform_later(operation.id)
   rescue StandardError => e
@@ -139,13 +161,18 @@ class SpareServers
     CloudProcurementOperation.transaction do
       CloudProcurementOperation.connection.execute("SELECT pg_advisory_xact_lock(#{CloudProcurement::ADMISSION_LOCK})")
       limit = @setting.reload.spare_server_limit
+      next [] if project_limit_hit_at
+
       held = CloudProcurementOperation.spares.unresolved.group(:server_type).count
       room = limit - held.values.sum
 
       TYPES.flat_map do |type|
         missing = waiting(type) + target(type) - held.fetch(type, 0)
-        places = locations_selling(type, availability)
+        places, flagged = locations_selling(type, availability)
         count = [ missing, room ].min
+        # A try against the flag is one order, whatever is missing: it is a
+        # question put to Hetzner, not a batch (Mira, #980).
+        count = [ count, 1 ].min unless flagged
         next [] if count <= 0 || places.empty?
 
         room -= count
@@ -161,17 +188,29 @@ class SpareServers
     end
   end
 
-  # Locations this installation allows that Hetzner says can sell the type
-  # now, leaving out any that refused a spare of this type a short while ago.
-  # Filtered here, before anything is planned: a location plan_spare! would
-  # refuse must not roll back the orders beside it.
+  # Where to order a type now, and whether Hetzner flagged it: the allowed
+  # locations Hetzner flags as selling it, or, when it flags none, the one
+  # allowed location tried longest ago (never, first). Either way a location that refused a spare of
+  # this type a short while ago is left out. Filtered here, before anything
+  # is planned: a location plan_spare! would refuse must not roll back the
+  # orders beside it.
   def locations_selling(type, availability)
+    recent = CloudProcurementOperation.spares.where(server_type: type, state: "refused")
+    paused = recent.where(updated_at: (now - REFUSAL_PAUSE)..).distinct.pluck(:location)
+    allowed = procurement.spare_locations - paused
     places = availability[type]
-    return [] unless places.is_a?(Hash)
+    flagged = places.is_a?(Hash) ? allowed.select { |location| places[location] == true } : []
+    return [ flagged, true ] if flagged.any?
 
-    paused = CloudProcurementOperation.spares.where(server_type: type, state: "refused")
-      .where(updated_at: (now - REFUSAL_PAUSE)..).distinct.pluck(:location)
-    procurement.spare_locations.select { |location| places[location] == true } - paused
+    last_tried = CloudProcurementOperation.spares.where(server_type: type).group(:location).maximum(:created_at)
+    [ allowed.min_by(1) { |location| [ last_tried[location] || Time.at(0), allowed.index(location) ] }, false ]
+  end
+
+  # When the Hetzner project's server limit last refused a spare, if that
+  # was within LIMIT_PAUSE.
+  def project_limit_hit_at
+    CloudProcurementOperation.spares.where(state: "refused", last_error_code: PROJECT_LIMIT_CODE)
+      .where(updated_at: (now - LIMIT_PAUSE)..).maximum(:updated_at)
   end
 
 end

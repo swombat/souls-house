@@ -57,6 +57,13 @@
       {/each}
     </div>
 
+    {#if status.project_limit_hit_at}
+      <p class="text-sm rounded-md border border-amber-500/50 bg-amber-500/10 p-3" data-testid="spare-project-limit">
+        Hetzner refused an order because the project has reached its own limit on servers. Nothing more is ordered for
+        an hour after that. Ask Hetzner to raise the project's server limit, or release a server.
+      </p>
+    {/if}
+
     {#if servers.length}
       <ul class="text-sm space-y-1" data-testid="spare-servers-list">
         {#each servers as server (server.public_id)}
