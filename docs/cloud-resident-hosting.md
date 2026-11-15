@@ -319,7 +319,9 @@ What holds:
   itself seen it off: no marker can prove a shutdown was never sent.
 - Nothing is deleted before a site admin releases the move. A release needs
   the server reporting from where the move left the resident, the resident's
-  own answer to a start in that server's current boot, and a verified backup
+  own answer to a start sent for that release (the first release call sends
+  it and refuses; the answer the move was verified by is never reused, since
+  a resident can stop without its server restarting), and a verified backup
   taken since the move settled and since that boot. The backup protects the
   home; it is not evidence the resident is up (a backup succeeds for a
   stopped container).

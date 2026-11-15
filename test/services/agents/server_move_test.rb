@@ -421,6 +421,15 @@ module Agents
       procurement
     end
 
+    # A release asks the resident afresh: the first call is refused and
+    # sends the start, the second goes through once it has answered.
+    def release_with_fresh_answer!(mover, move)
+      error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+      assert_equal ServerMove::NOT_ANSWERING, error.message
+      answer_start
+      mover.release!(move, requested_by: @admin)
+    end
+
     def backed_up_from_new_server!
       command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "backup_resident", payload: {})
       command.update_columns(state: "done", finished_at: Time.current)
@@ -460,10 +469,7 @@ module Agents
         backed_up_from_new_server!
         report_from(NEW, uptime: 190)
         # Restarted since it answered: asked again, and released once it answers.
-        error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
-        assert_equal ServerMove::NOT_ANSWERING, error.message
-        answer_start
-        mover.release!(move, requested_by: @admin)
+        release_with_fresh_answer!(mover, move)
       end
       assert_equal "released", move.reload.phase
       assert_equal [ @source.id ], deleted
@@ -495,7 +501,7 @@ module Agents
       travel(5.minutes) do
         backed_up_from_new_server!
         report_from(OLD, uptime: 290)
-        mover.release!(move, requested_by: @admin)
+        release_with_fresh_answer!(mover, move)
       end
       assert_equal "released", move.reload.phase
       assert_empty deleted
@@ -516,8 +522,10 @@ module Agents
         # The provider fails after the claim: nothing deleted, phase releasing.
         failing = Object.new
         failing.define_singleton_method(:snapshot_ids_labelled) { |*| raise HetznerCloudClient::Error.new("down", code: "unavailable") }
-        ServerMove.new(client: failing, procurement: releasing_procurement(deleted), starter: @starter)
-          .release!(move, requested_by: @admin)
+        failed = ServerMove.new(client: failing, procurement: releasing_procurement(deleted), starter: @starter)
+        assert_raises(ServerMove::Refused) { failed.release!(move, requested_by: @admin) }
+        answer_start
+        failed.release!(move, requested_by: @admin)
         assert_equal "releasing", move.reload.phase
         assert_equal @source.id, move.release_operation_id
         assert_empty deleted
@@ -613,7 +621,7 @@ module Agents
 
         backed_up_from_new_server!
         report_from(OLD, uptime: 40)
-        ServerMove.new(client: @hetzner, procurement:, starter: @starter).release!(move, requested_by: @admin)
+        release_with_fresh_answer!(ServerMove.new(client: @hetzner, procurement:, starter: @starter), move)
       end
       assert_empty deleted
       assert_equal "released", move.reload.phase
@@ -668,6 +676,39 @@ module Agents
       @hetzner.settle!
       travel(1.minute) { come_up_on(move, OLD) }
       assert_equal "reverted", move.reload.phase
+    end
+
+    # Mira, #979 fourth round: the container can stop with no reboot. Moved at
+    # 10:00, exited at 10:05, backed up (stopped volumes) at 10:06: a release
+    # must not pass on the 10:00 answer.
+    test "release does not accept the move's own answer: a resident that stopped since, same boot, is asked and refused" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
+      move = start!
+      run_to(move, "verifying")
+      come_up_on(move, NEW)
+      assert_equal "moved", move.reload.phase
+      starts = @starts.size
+
+      travel(3.minutes) do
+        backed_up_from_new_server!
+        report_from(NEW, uptime: 210)
+        error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_equal ServerMove::NOT_ANSWERING, error.message
+        assert_equal starts + 1, @starts.size, "a start was sent for this release"
+
+        # The container is gone: the start fails, and the release stays refused.
+        answer_start(outcome: "failed")
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_empty deleted
+        assert_equal "moved", move.reload.phase
+      end
+      # A question left unanswered for too long is asked again, not waited on.
+      travel(3.minutes + ServerMove::RELEASE_ANSWER_WITHIN + 1.minute) do
+        report_from(NEW, uptime: 900)
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_equal starts + 2, @starts.size
+      end
     end
 
     # Mira, #979 third round: a backup succeeds for a stopped container.

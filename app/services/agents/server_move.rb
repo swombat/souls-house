@@ -42,7 +42,8 @@ module Agents
   #   authenticated health check), and that command must come back done from
   #   the new server, in that server's current boot. Going back is confirmed
   #   the same way. The left-behind server is released only once the
-  #   resident has answered in its server's current boot, and a verified
+  #   resident has answered a start sent for that release (never the one
+  #   the move was verified by), in its server's current boot, and a verified
   #   backup has been taken since the move settled and since that boot. The
   #   backup protects the home; it is not evidence that the resident is up,
   #   since a backup succeeds for a stopped container.
@@ -69,6 +70,8 @@ module Agents
     }.freeze
     MOVE_LABEL = "souls-house/move".freeze
     START_RETRY_AFTER = 1.minute
+    # How long after a release first asked the resident it may be claimed.
+    RELEASE_ANSWER_WITHIN = 10.minutes
     NOT_ANSWERING = "The resident has not confirmed it is running since its server last started. It has been asked; " \
                     "try the release again in a minute.".freeze
 
@@ -203,13 +206,23 @@ module Agents
       # and says nothing about the resident being up (Mira, #979). The
       # resident's own answer, in this boot, is asked for separately, and
       # outside the claim's transaction: a refusal there would roll the
-      # question back with it.
+      # question back with it. The answer must be this release's own: a
+      # resident can stop without its server restarting, so the answer the
+      # move was verified by, however recent, is never accepted here. The
+      # first call sends a start and refuses; a call within
+      # RELEASE_ANSWER_WITHIN goes on once that start, or a retry of it,
+      # has come back done and running.
       checks.call
-      raise Refused, NOT_ANSWERING unless resident_answers?(move.reload)
+      asked = move.reload.release_asked_at
+      if asked.nil? || asked < now - RELEASE_ANSWER_WITHIN
+        move.update!(release_asked_at: now, verify_command_id: @starter.call(move.agent).id)
+        raise Refused, NOT_ANSWERING
+      end
+      raise Refused, NOT_ANSWERING unless resident_answers?(move, earliest: asked)
 
       claim_release!(move, by: requested_by) do
         checks.call
-        raise Refused, NOT_ANSWERING unless resident_answer(move) == :yes
+        raise Refused, NOT_ANSWERING unless resident_answer(move, earliest: asked) == :yes
       end
       finish_release!(move)
     end
@@ -420,8 +433,8 @@ module Agents
     # before the server's current boot began says nothing about now, and is
     # sent again (Mira, #979). A start that failed is sent again on a later
     # step; the phase deadline bounds that.
-    def resident_answers?(move)
-      case resident_answer(move)
+    def resident_answers?(move, earliest: nil)
+      case resident_answer(move, earliest:)
       when :yes then true
       when :ask
         move.update!(verify_command_id: @starter.call(move.agent).id)
@@ -430,14 +443,16 @@ module Agents
       end
     end
 
-    # Reads only. :yes when a start sent in the current boot came back done
-    # and running; :ask when one should be sent now; :wait otherwise.
-    def resident_answer(move)
+    # Reads only. :yes when a start sent in the current boot (and, given
+    # earliest:, not before it) came back done and running; :ask when one
+    # should be sent now; :wait otherwise.
+    def resident_answer(move, earliest: nil)
       booted_at = current_boot_started_at(move)
       return :wait if booted_at.nil?
 
+      earliest = [ booted_at, earliest ].compact.max
       command = move.verify_command_id && RunnerCommand.find_by(id: move.verify_command_id)
-      return :ask if command.nil? || command.created_at < booted_at
+      return :ask if command.nil? || command.created_at < earliest
       return :wait unless command.terminal?
       if command.state == "done"
         return command.result.is_a?(Hash) && command.result.dig("result", "state") == "running" ? :yes : wait_retry(command)

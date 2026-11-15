@@ -3429,6 +3429,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_233000) do
     t.bigint "set_aside_operation_id"
     t.bigint "release_operation_id"
     t.bigint "released_by_id"
+    t.datetime "release_asked_at"
     t.datetime "release_claimed_at"
     t.datetime "switched_at"
     t.datetime "rebuilt_at"

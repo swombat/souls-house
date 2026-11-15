@@ -30,6 +30,7 @@ class CreateVmServerMoves < ActiveRecord::Migration[8.1]
       t.references :set_aside_operation, foreign_key: { to_table: :cloud_procurement_operations }, index: false
       t.references :release_operation, foreign_key: { to_table: :cloud_procurement_operations }, index: false
       t.references :released_by, foreign_key: { to_table: :users }, index: false
+      t.datetime :release_asked_at
       t.datetime :release_claimed_at
       t.datetime :switched_at
       t.datetime :rebuilt_at
