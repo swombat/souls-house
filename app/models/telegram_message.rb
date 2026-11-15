@@ -95,6 +95,7 @@ class TelegramMessage < ApplicationRecord
       ("Typed caption: #{caption}" if caption.present?),
       ("Machine transcription: #{transcription}" if transcription.present?),
       ("Transcription status: failed or unavailable" if media_metadata["transcription_status"] == "failed"),
+      ("Transcription status: not transcribed, because the account's transcription allowance for 30 days is used up" if media_metadata["transcription_status"] == "over_allowance"),
       ("Media metadata: #{media_metadata.to_json}" if media_metadata.present?)
     ].compact
 

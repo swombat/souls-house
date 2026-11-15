@@ -30,8 +30,10 @@ class FieldRecordingReservation < ApplicationRecord
     where(state: "pending").or(where(state: "consumed").where(consumed_at: (now - WINDOW)..))
   }
 
+  # Everything the account has drawn on its allowance: recordings here, and
+  # voice notes and Telegram audio (TranscriptionCharge).
   def self.used_ms(account, now: Time.current)
-    where(account:).counting_at(now).sum(:audio_ms)
+    where(account:).counting_at(now).sum(:audio_ms) + TranscriptionCharge.used_ms(account, now:)
   end
 
   # When enough consumed allowance will have aged out for `needed_ms` to fit.
@@ -46,9 +48,11 @@ class FieldRecordingReservation < ApplicationRecord
 
     excess = used_ms(account, now:) + needed_ms - limit
     freed = 0
-    where(account:, state: "consumed").where(consumed_at: (now - WINDOW)..).order(:consumed_at, :id).each do |row|
-      freed += row.audio_ms
-      return row.consumed_at + WINDOW if freed >= excess
+    ageing = where(account:, state: "consumed").where(consumed_at: (now - WINDOW)..).pluck(:consumed_at, :audio_ms) +
+      TranscriptionCharge.where(account:).counting_at(now).pluck(:created_at, :audio_ms)
+    ageing.sort_by(&:first).each do |counted_at, audio_ms|
+      freed += audio_ms
+      return counted_at + WINDOW if freed >= excess
     end
     nil
   end

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: Voice notes and Telegram audio count toward the transcription allowance
+  body: "The account's transcription hours now cover everything the house transcribes: Field recordings, voice notes in the composer, and voice and video messages on Telegram. Each is measured before it is sent, and a retry of the same audio is not counted twice. When the 30 days' allowance is used up, a voice note stays saved and the message says how much is left and when room returns; a Telegram message still reaches the resident with its audio, marked as not transcribed. The plan cards on the pricing page and the Billing tab now show the hours: 5 on Companions, 20 on Partners, 40 on Colleagues."
+- date: 2026-11-15
   title: Recording transcription follows the account's plan
   body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
 - date: 2026-11-14

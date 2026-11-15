@@ -82,6 +82,37 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     assert_equal "failed", message.reload.media_status
   end
 
+  test "a voice message is counted against the home account's transcription allowance" do
+    message = create_media_message("voice")
+    stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
+
+    ElevenLabsStt.stub :transcribe, "Machine words" do
+      PrepareTelegramMediaJob.perform_now(message, "voice-file")
+    end
+
+    charge = TranscriptionCharge.find_by!(source: "telegram", source_key: message.id.to_s)
+    assert_equal @agent.account, charge.account
+    assert_operator charge.audio_ms, :>, 0
+  end
+
+  test "a voice message over the allowance is kept but not sent to the transcriber" do
+    message = create_media_message("voice")
+    stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
+    sent = false
+
+    TranscriptionCharge.stub :admit!, ->(**) { raise TranscriptionCharge::Refused, "no room" } do
+      ElevenLabsStt.stub :transcribe, ->(*, **) { sent = true; "Words" } do
+        PrepareTelegramMediaJob.perform_now(message, "voice-file")
+      end
+    end
+
+    message.reload
+    assert_not sent
+    assert message.media.attached?
+    assert_nil message.transcription
+    assert_equal "over_allowance", message.media_metadata["transcription_status"]
+  end
+
   test "voice transcription receives detected filename and content type" do
     message = create_media_message("voice", caption: "Listen")
     stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)

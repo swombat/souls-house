@@ -71,6 +71,12 @@ export function accountPlanLines(plan) {
   if (features.swarm_searches > 0) {
     lines.push({ key: 'swarm', text: `${features.swarm_searches} swarm searches a month` });
   }
+  if (features.transcription_hours > 0) {
+    lines.push({
+      key: 'transcription',
+      text: `${features.transcription_hours} hours of transcription every 30 days`,
+    });
+  }
   return lines;
 }
 

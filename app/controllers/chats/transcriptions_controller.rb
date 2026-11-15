@@ -27,6 +27,7 @@ class Chats::TranscriptionsController < ApplicationController
     else
       audio = params.require(:audio)
       blob = store_recording(audio) or return
+      charge!(blob, audio.tempfile.path)
       audio.tempfile.rewind
       text = ElevenLabsStt.transcribe(audio, keyterms: keyterms)
     end
@@ -36,7 +37,7 @@ class Chats::TranscriptionsController < ApplicationController
     else
       render_failed(blob, NO_SPEECH)
     end
-  rescue ElevenLabsStt::Error => e
+  rescue ElevenLabsStt::Error, TranscriptionCharge::Refused => e
     render_failed(blob, e.message)
   end
 
@@ -93,12 +94,22 @@ class Chats::TranscriptionsController < ApplicationController
     nil
   end
 
+  # Counts this voice note against the account's transcription allowance
+  # before it is sent; a retry of the same saved recording is not counted
+  # twice. Raises TranscriptionCharge::Refused when there is no room, and the
+  # recording stays saved.
+  def charge!(blob, path)
+    TranscriptionCharge.admit!(account: transcription_account, source: "voice_note", key: blob.id,
+      path:, byte_size: blob.byte_size)
+  end
+
   def render_gone
     render json: { error: GONE, retryable: false, saved: false }, status: :not_found
   end
 
   def transcribe_stored(blob)
     blob.open do |file|
+      charge!(blob, file.path)
       upload = ActionDispatch::Http::UploadedFile.new(tempfile: file, filename: blob.filename.to_s, type: blob.content_type)
       ElevenLabsStt.transcribe(upload, keyterms: keyterms)
     end
