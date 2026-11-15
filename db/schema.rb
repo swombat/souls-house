@@ -3231,6 +3231,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_092000) do
     t.index ["tool_call_id"], name: "index_tool_calls_on_tool_call_id"
   end
 
+  create_table "transcription_charges", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "audio_ms", null: false
+    t.datetime "created_at", null: false
+    t.boolean "retry", default: false, null: false
+    t.string "source", null: false
+    t.string "source_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_transcription_charges_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_transcription_charges_on_account_id"
+    t.index ["source", "source_key"], name: "index_transcription_charges_on_first_send", unique: true, where: "(retry = false)"
+  end
+
   create_table "transcription_glossary_terms", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "term", null: false
@@ -3769,6 +3782,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_092000) do
   add_foreign_key "telegram_subscriptions", "users"
   add_foreign_key "telegram_subscriptions", "users", column: "allowed_by_id", on_delete: :nullify
   add_foreign_key "tool_calls", "messages"
+  add_foreign_key "transcription_charges", "accounts"
   add_foreign_key "transcription_glossary_terms", "accounts"
   add_foreign_key "transcription_glossary_terms", "agents", column: "created_by_agent_id", on_delete: :nullify
   add_foreign_key "transcription_glossary_terms", "users", column: "created_by_user_id", on_delete: :nullify

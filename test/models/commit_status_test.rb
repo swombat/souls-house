@@ -325,7 +325,10 @@ class CommitStatusTest < ActiveSupport::TestCase
     started = Concurrent::AtomicFixnum.new(0)
     slow_started = Concurrent::CountDownLatch.new(1)
     items = [ :fail, :slow ] + Array.new(20, :later)
-    threads_before = Thread.list.size
+    # Threads alive before the call. Other tests' background threads may end
+    # while this one runs, so the count of all threads is not stable; what
+    # matters is that the call leaves none of its own behind.
+    threads_before = Thread.list
 
     error = assert_raises(RuntimeError) do
       CommitStatus.parallel_map(items) do |item|
@@ -345,7 +348,7 @@ class CommitStatusTest < ActiveSupport::TestCase
 
     assert_equal "boom", error.message
     assert finished.true?, "the slower sibling was still running when the error was raised"
-    assert_equal threads_before, Thread.list.size
+    assert_empty Thread.list - threads_before, "parallel_map left a worker thread running"
     assert_operator started.value, :<, items.size
   end
 

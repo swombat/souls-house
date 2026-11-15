@@ -92,6 +92,16 @@ describe('accountPlanLines', () => {
   });
 });
 
+describe('accountPlanLines with transcription hours', () => {
+  it('names the hours a plan includes', () => {
+    const plan = { features: { members: 'one', swarm_searches: 0, subagents: false, transcription_hours: 5 } };
+    expect(accountPlanLines(plan).map((line) => line.text)).toEqual([
+      'One person in the account',
+      '5 hours of transcription every 30 days',
+    ]);
+  });
+});
+
 describe('copy', () => {
   it('has a tagline for each account plan and a line for each size', () => {
     expect(accountPlanTaglines).toEqual({
