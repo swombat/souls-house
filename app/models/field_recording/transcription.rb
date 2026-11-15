@@ -18,7 +18,7 @@ module FieldRecording::Transcription
   # the account's dispatch exposure is used up).
   #
   # Two bounds. Per recording, at most MAX_DISPATCHES attempts. Per account,
-  # the audio sent to the vendor in the last 7 days (every committed dispatch,
+  # the audio sent to the vendor in the last 30 days (every committed dispatch,
   # whatever became of it, because a timed-out or failed attempt may still
   # have been billed) stays within FieldRecordingDispatch.exposure_limit_ms.
   # That second bound is what stops refunded failures from buying unbounded

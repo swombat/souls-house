@@ -8,16 +8,16 @@ class FieldRecordingReservationTest < ActiveSupport::TestCase
   setup do
     @account = accounts(:personal_account)
     @user = users(:user_1)
-    @account.update!(recording_ms_weekly_limit: 10.hours.in_milliseconds)
+    @account.update!(transcription_ms_limit_override: 10.hours.in_milliseconds)
   end
 
   def recording = claimed_recording(account: @account, user: @user)
 
-  test "pending counts at any age, consumed counts for seven days from consumption" do
+  test "pending counts at any age, consumed counts for thirty days from consumption" do
     now = Time.current
-    reserve!(recording, 1.hour.in_milliseconds).update_columns(reserved_at: 30.days.ago)
-    reserve!(recording, 2.hours.in_milliseconds, state: "consumed", consumed_at: 6.days.ago)
-    reserve!(recording, 4.hours.in_milliseconds, state: "consumed", consumed_at: 8.days.ago)
+    reserve!(recording, 1.hour.in_milliseconds).update_columns(reserved_at: 45.days.ago)
+    reserve!(recording, 2.hours.in_milliseconds, state: "consumed", consumed_at: 15.days.ago)
+    reserve!(recording, 4.hours.in_milliseconds, state: "consumed", consumed_at: 31.days.ago)
     reserve!(recording, 8.hours.in_milliseconds, state: "released")
 
     assert_equal 3.hours.in_milliseconds, FieldRecordingReservation.used_ms(@account, now:)
@@ -56,7 +56,7 @@ class FieldRecordingReservationTest < ActiveSupport::TestCase
     reserve!(recording, 3.hours.in_milliseconds, state: "consumed", consumed_at: 2.days.ago)
 
     at = FieldRecordingReservation.room_at(@account, 4.hours.in_milliseconds, now:)
-    assert_in_delta (5.days.ago + 7.days).to_f, at.to_f, 1
+    assert_in_delta (5.days.ago + FieldRecordingReservation::WINDOW).to_f, at.to_f, 1
   end
 
   test "no estimate when pending work alone leaves too little room" do
@@ -68,7 +68,7 @@ class FieldRecordingReservationTest < ActiveSupport::TestCase
 
   test "a recording longer than the whole allowance says so" do
     message = FieldRecordingReservation.over_limit_message(@account, 11.hours.in_milliseconds)
-    assert_match "longer than this Field's whole weekly allowance", message
+    assert_match "longer than this Field's whole allowance for 30 days", message
   end
 
   test "one reservation per recording, even outside the lock" do

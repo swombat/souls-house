@@ -180,10 +180,10 @@ export function formatDuration(ms) {
 
 export function allowanceLine(allowance) {
   if (!allowance) return '';
-  const days = allowance.window_days || 7;
+  const days = allowance.window_days || 30;
   const used = formatDuration(allowance.used_ms || 0);
   if (allowance.unlimited) {
-    let open = `${used} used in the last ${days} days (no weekly limit)`;
+    let open = `${used} used in the last ${days} days (no limit)`;
     if ((allowance.pending_ms || 0) > 0) open += `, ${formatDuration(allowance.pending_ms)} still transcribing`;
     return open;
   }
@@ -202,7 +202,7 @@ export function remainingMs(allowance) {
 export function preflightProblem(durationMs, allowance) {
   const left = remainingMs(allowance);
   if (durationMs == null || !Number.isFinite(durationMs) || left == null || durationMs <= left) return '';
-  return `This recording is ${formatDuration(durationMs)}; ${formatDuration(left)} left this week.`;
+  return `This recording is ${formatDuration(durationMs)}; ${formatDuration(left)} left in this ${allowance.window_days || 30}-day window.`;
 }
 
 // "Venue planning with Priya and Tomás" → 3: two named, plus you. A hint only.

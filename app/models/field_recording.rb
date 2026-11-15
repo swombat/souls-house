@@ -99,7 +99,7 @@ class FieldRecording < ApplicationRecord
   #
   # - size: the upload declaration and the create validation, as for any
   #   recording (2 GB);
-  # - allowance: not reserved. The weekly allowance meters what is sent to
+  # - allowance: not reserved. The allowance meters what is sent to
   #   the transcriber, and nothing is;
   # - language: the caller's code, format-checked, not detected;
   # - speakers: at most SuppliedTranscript::MAX_SPEAKERS distinct labels.
@@ -285,7 +285,7 @@ class FieldRecording < ApplicationRecord
       next :skipped if reservation.present?
 
       used = FieldRecordingReservation.used_ms(account, now:)
-      if used + duration_ms > account.recording_ms_weekly_limit
+      if used + duration_ms > account.transcription_ms_limit
         update!(status: "rejected", duration_ms:, attempt_token: nil,
           failure_reason: FieldRecordingReservation.over_limit_message(account, duration_ms, now:))
         :rejected

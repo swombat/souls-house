@@ -1,13 +1,13 @@
 # The recording allowance ledger (spec §6). One reservation per recording,
 # ever (unique index). "Used" is every pending reservation at any age, plus
-# consumed ones whose transcription finished in the last 7 days.
+# consumed ones whose transcription finished in the last 30 days.
 #
 # Consume and release are guarded updates (WHERE state = 'pending'), so a
 # duplicate does nothing. They never need the account lock: they only lower
 # "used" or keep it the same, so they can't break an admission decision.
 class FieldRecordingReservation < ApplicationRecord
 
-  WINDOW = 7.days
+  WINDOW = 30.days
 
   belongs_to :account
   belongs_to :field_recording
@@ -38,7 +38,7 @@ class FieldRecordingReservation < ApplicationRecord
   # nil when no estimate is honest: pending work alone leaves too little room,
   # or nothing consumed is due to expire (§6).
   def self.room_at(account, needed_ms, now: Time.current)
-    limit = account.recording_ms_weekly_limit
+    limit = account.transcription_ms_limit
     return now if used_ms(account, now:) + needed_ms <= limit
 
     pending_ms = where(account:, state: "pending").sum(:audio_ms)
@@ -54,10 +54,10 @@ class FieldRecordingReservation < ApplicationRecord
   end
 
   def self.over_limit_message(account, needed_ms, now: Time.current)
-    left = [ account.recording_ms_weekly_limit - used_ms(account, now:), 0 ].max
-    message = "This recording is #{format_duration(needed_ms)}. You have #{format_duration(left)} left this week."
-    if needed_ms > account.recording_ms_weekly_limit
-      "#{message} It's longer than this Field's whole weekly allowance."
+    left = [ account.transcription_ms_limit - used_ms(account, now:), 0 ].max
+    message = "This recording is #{format_duration(needed_ms)}. You have #{format_duration(left)} left in this 30-day window."
+    if needed_ms > account.transcription_ms_limit
+      "#{message} It's longer than this Field's whole allowance for 30 days."
     elsif (at = room_at(account, needed_ms, now:))
       "#{message} Room frees up gradually; enough for this one by about #{at.strftime('%a %-d %b, %H:%M')}."
     else

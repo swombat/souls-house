@@ -11,7 +11,7 @@ class FieldRecordingAdmissionConcurrencyTest < ActiveSupport::TestCase
 
   setup do
     @account = Account.create!(name: "Recording race #{SecureRandom.hex(4)}", account_type: "team",
-      recording_ms_weekly_limit: 90.minutes.in_milliseconds)
+      transcription_ms_limit_override: 90.minutes.in_milliseconds)
     @user = users(:user_1)
     @recordings = 2.times.map { claimed_recording(account: @account, user: @user) }
   end

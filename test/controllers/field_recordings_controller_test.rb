@@ -184,7 +184,8 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "recordings", props["tab"]
     assert_equal [ "Board call" ], props["items"].map { |r| r["title"] }
     assert_equal 30.minutes.in_milliseconds, props["recording_allowance"]["used_ms"]
-    assert_equal 20.hours.in_milliseconds, props["recording_allowance"]["limit_ms"]
+    assert_equal 5.hours.in_milliseconds, props["recording_allowance"]["limit_ms"], "Companions' hours"
+    assert_equal 30, props["recording_allowance"]["window_days"]
   end
 
   test "the transcript page gets a supplied transcript's turns, and no timed words" do

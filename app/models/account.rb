@@ -1,5 +1,9 @@
 class Account < ApplicationRecord
 
+  # The flat weekly transcription limit that the plan's hours replaced
+  # (transcription_ms_limit); dropped once no running code selects it.
+  self.ignored_columns += %w[recording_ms_weekly_limit]
+
   include JsonAttributes
   include SyncAuthorizable
   include Broadcastable
@@ -451,15 +455,18 @@ class Account < ApplicationRecord
   alias_method :active, :active?
   alias_method :disabled, :disabled?
 
-  # Field recordings: accounts with a site admin in them aren't held to the
-  # weekly transcription allowance (Daniel, 2026-10-09). The column keeps its
-  # stored value; every reader goes through here, so the reservation check,
-  # the vendor exposure ceiling and the gauge all see the same number. Later
-  # this comes from the account's plan.
+  # Field recordings: how much audio the account may have transcribed in any
+  # 30 days (FieldRecordingReservation::WINDOW). It is the plan's hours, or a
+  # site admin's override for this account. Accounts with a site admin in them
+  # aren't held to it (Daniel, 2026-10-09). Every reader goes through here, so
+  # the reservation check, the vendor exposure ceiling and the gauge all see
+  # the same number.
   UNLIMITED_RECORDING_MS = 100_000.hours.in_milliseconds
 
-  def recording_ms_weekly_limit
-    recording_unlimited? ? UNLIMITED_RECORDING_MS : super
+  def transcription_ms_limit
+    return UNLIMITED_RECORDING_MS if recording_unlimited?
+
+    transcription_ms_limit_override || plan.transcription_hours.hours.in_milliseconds
   end
 
   # Field swarm search: a site admin's per-account test switch (unmetered beyond

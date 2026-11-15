@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-15
+  title: Recording transcription follows the account's plan
+  body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
 - date: 2026-11-14
   title: Adding a resident to an account on a plan
   body: "On an account with the Partners or Colleagues plan, the Billing tab's confirmation for adding a resident now asks to add them to the account's subscription without naming a per-resident plan, and its monthly total is described as the plan and residents together. Every change to an existing bill (a resident added, ended or resized, the plan bought or changed) now goes through one path, and the Billing tab only announces a change once it has been applied."
