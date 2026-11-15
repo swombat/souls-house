@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-16
+  title: Spare servers are ordered even when Hetzner's stock flag says no
+  body: "Hetzner's own sign of whether a server type is on sale turned out to be unreliable: it showed nothing available while an order for the same type went through. When the house is short of a server type and Hetzner shows no stock, it now tries one location every five minutes anyway. A refused order costs nothing. If Hetzner refuses because the project has reached its own limit on servers, the house stops ordering for an hour and Site Admin > Settings > Spare servers says so."
 - date: 2026-11-15
   title: The house buys spare servers when Hetzner has them
   body: "Hetzner's larger servers are on sale for a few minutes at a time, so a resident waiting for a Medium or Large server could wait for days. The house now checks every five minutes and, when one is on sale, orders it: one for each resident whose plan names a bigger server than the one it runs on, plus a number to keep spare. Site admins set how many of each size to keep spare and the most the house may hold with no resident on them, in Site Admin > Settings > Spare servers. Nothing is ordered until that limit is set above 0. A spare costs its monthly price while the house holds it. This buys the server only; moving a resident onto it is a separate step."

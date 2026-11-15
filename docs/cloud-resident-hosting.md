@@ -258,7 +258,15 @@ Limits, all in Site Admin > Settings > Spare servers and all 0 by default:
 
 Counting and planning happen in one transaction under the procurement
 admission lock. A refused order (stock that was gone) is settled as refused,
-and that type and location are skipped for 20 minutes. Any approved EU
+and that type and location are skipped for 20 minutes.
+
+Hetzner's stock flag is not trusted as a verdict. On 2026-11-15 it had CX23
+and CX33 unavailable everywhere while the house bought one of each. So when
+the house is short of a type and no allowed location is flagged, it tries
+one location per check, the one tried longest ago. A refusal with
+`resource_limit_exceeded` is the Hetzner project's own server limit, not
+stock: all spare buying then rests for an hour, and the Site Admin card says
+so. Any approved EU
 location is used: a resident moves onto a spare by disk copy, so it has no
 location to match.
 

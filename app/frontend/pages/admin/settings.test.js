@@ -68,8 +68,12 @@ test('sets the spare-server cap and targets and shows what is waiting and held',
       counted: 1,
       types: [{ server_type: 'cx33', waiting: 2, target: 0, held: 1 }],
       servers: [{ public_id: 'cpo-abc', server_type: 'cx33', location: 'nbg1', state: 'provisioned' }],
+      project_limit_hit_at: '2026-11-15T22:45:00Z',
     },
   });
+  expect(screen.getByTestId('spare-project-limit')).toHaveTextContent(
+    'the project has reached its own limit on servers'
+  );
   expect(screen.getByTestId('spare-cx33-status')).toHaveTextContent('2 waiting, 1 held or on order.');
   expect(screen.getByTestId('spare-servers-list')).toHaveTextContent('CX33 in nbg1: provisioned');
   const limit = screen.getByLabelText('Most servers held with no resident on them');
