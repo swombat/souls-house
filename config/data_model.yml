@@ -262,7 +262,9 @@ areas:
       first-boot document pins by digest, kept until that VM has fetched it.
       A VM rollback is one attempt to bring a resident back from its server
       to the house, with the server it came from and the receipt that its
-      container was recreated on the restored volumes.
+      container was recreated on the restored volumes. A VM server move is
+      one attempt to move a resident from its server to another the house
+      holds, with both servers, the disk snapshot and how far it got.
     tables:
       - agent_placements
       - cloud_procurement_operations
@@ -273,6 +275,7 @@ areas:
       - runner_request_nonces
       - vm_backups
       - vm_rollbacks
+      - vm_server_moves
       - agent_backup_snapshots
       - agent_import_stages
 
