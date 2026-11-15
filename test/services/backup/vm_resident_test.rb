@@ -62,6 +62,16 @@ module Backup
       assert_empty VmBackup.all
     end
 
+    test "no backup is issued while the resident's history is being thinned, or was left mid-thinning" do
+      @agent.update!(backup_thinning_started_at: 1.minute.ago)
+      assert_raises(AgentRestic::ResidentBusy) { issue }
+      @agent.update!(backup_thinning_started_at: 3.hours.ago)
+      assert_raises(AgentRestic::ResidentBusy) { issue }
+      assert_not VmResident.held?(@agent)
+      @agent.update!(backup_thinning_started_at: nil)
+      assert issue
+    end
+
     test "delivered lifecycle commands prevent issuing a backup" do
       command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "start_resident", payload: {})
       command.deliver!(now: Time.current)
@@ -112,7 +122,8 @@ module Backup
       verifier = Minitest::Mock.new
       verifier.expect(:verify!, true, [], agent: @agent, snapshot_id: "a" * 64,
         checkpoint_digest: nil, checkpoint_file_digest: Digest::SHA256.hexdigest("null"))
-      result = VmResident.status(command:, verifier:)
+      result = nil
+      assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { result = VmResident.status(command:, verifier:) }
       assert_equal "verified", result[:state]
       assert result[:snapshot].ok?
       assert_not VmResident.held?(@agent)
@@ -123,7 +134,9 @@ module Backup
     test "checkpoint mismatch never asks the verifier and records failed backup" do
       command = issue
       answer(command, checkpoint_file_sha256: "wrong")
-      result = VmResident.status(command:, verifier: Object.new)
+      result = nil
+      # A failed backup is thinned after too: it may have left partial data.
+      assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { result = VmResident.status(command:, verifier: Object.new) }
       assert_equal "failed", result[:state]
       assert_not result[:snapshot].ok?
       assert_not VmResident.held?(@agent)
