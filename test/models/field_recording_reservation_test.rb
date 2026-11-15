@@ -13,10 +13,10 @@ class FieldRecordingReservationTest < ActiveSupport::TestCase
 
   def recording = claimed_recording(account: @account, user: @user)
 
-  test "pending counts at any age, consumed counts for seven days from consumption" do
+  test "pending counts at any age, consumed counts for thirty days from consumption" do
     now = Time.current
-    reserve!(recording, 1.hour.in_milliseconds).update_columns(reserved_at: 30.days.ago)
-    reserve!(recording, 2.hours.in_milliseconds, state: "consumed", consumed_at: 6.days.ago)
+    reserve!(recording, 1.hour.in_milliseconds).update_columns(reserved_at: 45.days.ago)
+    reserve!(recording, 2.hours.in_milliseconds, state: "consumed", consumed_at: 15.days.ago)
     reserve!(recording, 4.hours.in_milliseconds, state: "consumed", consumed_at: 31.days.ago)
     reserve!(recording, 8.hours.in_milliseconds, state: "released")
 

@@ -123,4 +123,19 @@ class FieldRecordings::TranscribeJobTest < ActiveJob::TestCase
     assert_empty fourth.dispatches
   end
 
+  test "audio sent 15 days ago still counts toward the exposure ceiling; audio sent 31 days ago doesn't" do
+    @account.update!(transcription_ms_limit_override: 90_000) # ceiling: 180 s
+    old = @recording.dispatches.create!(account: @account, outcome: "failed", audio_ms: 150_000, attempt_token: SecureRandom.hex(8))
+    old.update_columns(created_at: 15.days.ago)
+    assert_equal 150_000, FieldRecordingDispatch.exposure_ms(@account)
+
+    client = FakeScribe.new(submit: ElevenLabsScribe::PermanentError.new("Scribe refused the request (422)"))
+    FieldRecordings::TranscribeJob.perform_now(@recording.id, client:, configured: true) # 60 s more would be 210 s
+    assert_empty client.submissions
+    assert_equal FieldRecordingDispatch::EXPOSURE_MESSAGE, @recording.reload.failure_reason
+
+    old.update_columns(created_at: 31.days.ago)
+    assert_equal 0, FieldRecordingDispatch.exposure_ms(@account)
+  end
+
 end
