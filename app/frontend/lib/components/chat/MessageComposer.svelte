@@ -268,7 +268,10 @@
           onerror={handleTranscriptionError}
           onrecordingchange={(active) => (micDictating = active)} />
       </div>
-      {#if showWave}
+      {#if micDictating}
+        <!-- While a voice note is recording or transcribing, stop (the mic) is the only control:
+             opening voice mode here took the microphone and lost the note untranscribed. -->
+      {:else if showWave}
         <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => (voiceOpen = true)} />
       {:else}
         <button
