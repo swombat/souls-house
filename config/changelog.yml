@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-14
+  title: Adding a resident to an account on a plan
+  body: "On an account with the Partners or Colleagues plan, the Billing tab's confirmation for adding a resident now asks to add them to the account's subscription without naming a per-resident plan, and its monthly total is described as the plan and residents together. Every change to an existing bill (a resident added, ended or resized, the plan bought or changed) now goes through one path, and the Billing tab only announces a change once it has been applied."
+- date: 2026-11-14
   title: Billing codes for one size, or for a plan
   body: "A billing code can now do one of three things: let an account buy residents at cost in every size (as before), let it buy one size at cost (Small, Medium or Large), or give it the Partners or Colleagues plan with nothing to pay. Site admins make them in Site Admin > Billing codes and owners enter them in the Billing tab, as before. A code for a free plan is refused while the account is paying for that plan or a lower one: move the account to Companions first, then enter the code, so nothing is charged twice. Withdrawing a code's grant ends the plan it gave and stops new purchases at its rate; residents already bought keep their price. Takes effect after Rails deployment."
 - date: 2026-11-14
