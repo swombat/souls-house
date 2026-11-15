@@ -315,9 +315,14 @@ What holds:
 - Backups and kernel reboots are not admitted while a move is open.
 - The proof that the resident answered belongs to one boot: a start sent
   before the server's current boot began is sent again.
+- Going back always takes the old server to off first, unless this move has
+  itself seen it off: no marker can prove a shutdown was never sent.
 - Nothing is deleted before a site admin releases the move. A release needs
-  the server reporting from where the move left the resident, and a verified
-  backup taken since the move settled and since that server last started.
+  the server reporting from where the move left the resident, the resident's
+  own answer to a start in that server's current boot, and a verified backup
+  taken since the move settled and since that boot. The backup protects the
+  home; it is not evidence the resident is up (a backup succeeds for a
+  stopped container).
   It is claimed in the database first (phase `releasing`), which shuts out
   going back; it deletes only the purchase this move's own switch set aside
   (recorded on the move then, `set_aside_operation`), and the snapshot. A release
@@ -337,3 +342,15 @@ Operator commands:
 Not built: a button in Site Admin, moving to a smaller disk, and using a
 spare for a new resident's birth (a spare has no runner until a disk with
 one is copied onto it).
+
+Seen against Hetzner on 2026-11-15 (a throwaway resident's CX23 copied onto
+a spare CX23 by hand): shutdown took 9 s and the action is `shutdown_server`;
+a snapshot of 2.4 GB took 27 s (`create_image`), with the server `off`
+throughout; the rebuild took 27 s (`rebuild_server`, no root password
+returned), the server going `rebuilding` then `running`. On the copy:
+cloud-init finished, the hostname became the spare's, the firewall, Docker
+and the runner were active, the resident container was up, the metadata
+service gave the new server id, and the runner's config was intact. The
+house refused the copy's reports (server mismatch) while its records still
+named the old server. Power actions are `stop_server` and `start_server`.
+Not yet seen: the disk growing when the new server's is bigger.

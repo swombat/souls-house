@@ -459,6 +459,10 @@ module Agents
       travel(10.minutes) do
         backed_up_from_new_server!
         report_from(NEW, uptime: 190)
+        # Restarted since it answered: asked again, and released once it answers.
+        error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_equal ServerMove::NOT_ANSWERING, error.message
+        answer_start
         mover.release!(move, requested_by: @admin)
       end
       assert_equal "released", move.reload.phase
@@ -490,7 +494,7 @@ module Agents
       assert_nil move.reload.left_behind_operation
       travel(5.minutes) do
         backed_up_from_new_server!
-        report_from(OLD, uptime: 200)
+        report_from(OLD, uptime: 290)
         mover.release!(move, requested_by: @admin)
       end
       assert_equal "released", move.reload.phase
@@ -645,6 +649,55 @@ module Agents
         @mover.step!(move)
       end
       assert_equal "reverted", move.reload.phase
+    end
+
+    # Mira, #979 third round: a worker killed after Hetzner accepted the
+    # shutdown loses its marker. Going back does not trust the marker.
+    test "going back takes the old server to off first even with no record that a shutdown was sent" do
+      move = start!
+      move.update_columns(phase: "reverting", phase_started_at: Time.current, revert_reason: "test")
+      assert_nil move.stop_requested_at
+
+      report_from(OLD, uptime: 86_400)
+      @mover.step!(move)
+      assert_equal [ [ "stop_server", OLD ] ], @hetzner.calls
+      assert_equal "reverting", move.reload.phase
+      @hetzner.settle!
+      @mover.step!(move)
+      assert_equal [ "start_server", OLD ], @hetzner.calls.last
+      @hetzner.settle!
+      travel(1.minute) { come_up_on(move, OLD) }
+      assert_equal "reverted", move.reload.phase
+    end
+
+    # Mira, #979 third round: a backup succeeds for a stopped container.
+    test "release needs the resident's own answer in the current boot, not only a backup" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
+      move = start!
+      run_to(move, "verifying")
+      come_up_on(move, NEW)
+      travel(10.minutes) do
+        # Restarted since it answered; backed up since the restart.
+        report_from(NEW, uptime: 120)
+        backed_up_from_new_server!
+        error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_equal ServerMove::NOT_ANSWERING, error.message
+        assert_equal 2, @starts.size, "the resident was asked"
+        assert_equal "moved", move.reload.phase
+
+        answer_start(outcome: "failed")
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_empty deleted
+      end
+      travel(12.minutes) do
+        report_from(NEW, uptime: 240)
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        answer_start
+        mover.release!(move, requested_by: @admin)
+      end
+      assert_equal "released", move.reload.phase
+      assert_equal [ @source.id ], deleted
     end
 
     test "the job steps an open move and comes back; the sweep restarts one left without a job" do

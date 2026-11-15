@@ -41,9 +41,11 @@ module Agents
   #   (the runner keeps the home volumes and waits for the resident's
   #   authenticated health check), and that command must come back done from
   #   the new server, in that server's current boot. Going back is confirmed
-  #   the same way. The left-behind server is released only once a verified
-  #   backup has been taken since the move settled and since the server the
-  #   resident is on last started.
+  #   the same way. The left-behind server is released only once the
+  #   resident has answered in its server's current boot, and a verified
+  #   backup has been taken since the move settled and since that boot. The
+  #   backup protects the home; it is not evidence that the resident is up,
+  #   since a backup succeeds for a stopped container.
   # - The left-behind server, from being deleted while something else still
   #   needs it. release! claims the release in the database first (phase
   #   releasing), which shuts out going back, and deletes only the purchase
@@ -67,6 +69,8 @@ module Agents
     }.freeze
     MOVE_LABEL = "souls-house/move".freeze
     START_RETRY_AFTER = 1.minute
+    NOT_ANSWERING = "The resident has not confirmed it is running since its server last started. It has been asked; " \
+                    "try the release again in a minute.".freeze
 
     NOT_ON_SERVER = "Only a resident that is running on its own server can be moved to another one.".freeze
     NOT_A_SPARE = "The server to move to must be a spare the house holds, running and not in use.".freeze
@@ -186,12 +190,26 @@ module Agents
     def release!(move, requested_by:)
       raise Refused, "installation admin required" unless requested_by.is_a?(User) && requested_by.is_site_admin?
 
-      claim_release!(move, by: requested_by) do
+      checks = lambda do
+        raise Refused, "Only a settled move has something to release." unless move.settled?
+
         server_id = move.phase == "moved" ? move.target_server_id : move.source_server_id
         unless healthy_on?(move, server_id)
           raise Refused, "The resident's server is not reporting from where the move left it, so the other one is kept."
         end
         raise Refused, NOT_BACKED_UP unless backed_up_since_settled?(move)
+      end
+      # A backup succeeds for a stopped container, so it protects the home
+      # and says nothing about the resident being up (Mira, #979). The
+      # resident's own answer, in this boot, is asked for separately, and
+      # outside the claim's transaction: a refusal there would roll the
+      # question back with it.
+      checks.call
+      raise Refused, NOT_ANSWERING unless resident_answers?(move.reload)
+
+      claim_release!(move, by: requested_by) do
+        checks.call
+        raise Refused, NOT_ANSWERING unless resident_answer(move) == :yes
       end
       finish_release!(move)
     end
@@ -403,20 +421,34 @@ module Agents
     # sent again (Mira, #979). A start that failed is sent again on a later
     # step; the phase deadline bounds that.
     def resident_answers?(move)
+      case resident_answer(move)
+      when :yes then true
+      when :ask
+        move.update!(verify_command_id: @starter.call(move.agent).id)
+        false
+      else false
+      end
+    end
+
+    # Reads only. :yes when a start sent in the current boot came back done
+    # and running; :ask when one should be sent now; :wait otherwise.
+    def resident_answer(move)
       booted_at = current_boot_started_at(move)
-      return false if booted_at.nil?
+      return :wait if booted_at.nil?
 
       command = move.verify_command_id && RunnerCommand.find_by(id: move.verify_command_id)
-      stale = command && command.created_at < booted_at
-      if command.nil? || stale || (command.terminal? && command.state != "done")
-        return false if command && !stale && command.finished_at && command.finished_at > now - START_RETRY_AFTER
-
-        move.update!(verify_command_id: @starter.call(move.agent).id)
-        return false
+      return :ask if command.nil? || command.created_at < booted_at
+      return :wait unless command.terminal?
+      if command.state == "done"
+        return command.result.is_a?(Hash) && command.result.dig("result", "state") == "running" ? :yes : wait_retry(command)
       end
-      return false unless command.terminal?
 
-      command.result.is_a?(Hash) && command.result.dig("result", "state") == "running"
+      wait_retry(command)
+    end
+
+    # A start that failed, or came back not running, is sent again after a pause.
+    def wait_retry(command)
+      command.finished_at && command.finished_at > now - START_RETRY_AFTER ? :wait : :ask
     end
 
     # When the boot the runner last reported from began, by its own uptime.
@@ -466,19 +498,19 @@ module Agents
         Rails.logger.error("[server_move] #{move.public_id}: old server #{move.source_server_id} is gone; needs an operator")
         return
       end
-      # A shutdown that was asked for and never seen to finish may still be
-      # under way, or may have been ignored. Either way the old server is
-      # taken to off first, so that what comes back is one clean boot and
-      # "reporting again" can be told from "never stopped" (Mira, #979).
-      if move.stop_requested_at && move.source_off_at.nil?
+      # Unless this move has itself seen the old server off, a shutdown may
+      # have been sent and not recorded (a worker killed after the request
+      # went out loses the write), may still be under way, or may have been
+      # ignored. No marker of ours can prove nothing was sent, so none is
+      # consulted: the old server is taken to off first, and what comes back
+      # is one clean boot (Mira, #979).
+      if move.source_off_at.nil?
         return client.poweroff_server(move.source_server_id) unless source.status == "off"
 
         move.update!(source_off_at: now)
       end
       return client.poweron_server(move.source_server_id) if source.status == "off"
-      # Never asked to stop: it has been running all along.
-      since = move.source_off_at && [ move.source_off_at, move.phase_started_at ].max
-      return unless healthy_on?(move, move.source_server_id, since:)
+      return unless healthy_on?(move, move.source_server_id, since: [ move.source_off_at, move.phase_started_at ].max)
       return unless resident_answers?(move)
 
       move.enter!("reverted", now:)
