@@ -155,7 +155,9 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
     end
     audit = AuditLog.find_by!(action: KernelReboot::RECORDED)
     assert_equal({ "kernel_before" => OLD, "kernel_after" => NEW }, audit.data.slice("kernel_before", "kernel_after"))
-    line = Chat.find(audit.data["chat_id"]).messages.last
+    chat = Chat.find(audit.data["chat_id"])
+    assert chat.archived?, "an info-only notice must not stay open in the room"
+    line = chat.messages.last
     assert_equal "system", line.role
     assert_includes line.content, "restarted for a kernel update"
     assert_includes line.content, "back on Linux #{NEW}"

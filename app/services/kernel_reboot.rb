@@ -161,6 +161,9 @@ module KernelReboot
         agent_ids: [ agent.id ], automatic_response: false
       )
       chat.messages.create!(role: "system", content: notice_text(agent, after, booted_at))
+      # Info only ("Nothing for you to do"): kept under Archived, never left
+      # open in the room for someone to close by hand (Pepe, 15 Nov).
+      chat.archive!
       AuditLog.create!(user: nil, account: agent.account, action: RECORDED, auditable: agent,
         data: { command_id: command.public_id, kernel_before: before, kernel_after: after,
                 booted_at: booted_at.iso8601, chat_id: chat.id })
