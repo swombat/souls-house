@@ -28,8 +28,8 @@ module Backup
       list = [ snapshot(40), snapshot(2), snapshot(1) ]
       result = VmThinning.new(run: restic(list, forgets: 1, calls:)).call(@agent)
 
-      assert_equal %w[unlock snapshots forget snapshots], calls.map(&:first)
-      assert_equal [ "forget", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12", "--prune" ], calls[2]
+      assert_equal %w[snapshots forget snapshots], calls.map(&:first)
+      assert_equal [ "forget", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12", "--prune" ], calls[1]
       assert_equal 2, result.kept
       assert_equal 1, result.removed
       assert_in_delta 2.days.ago, result.oldest_at, 5
@@ -47,27 +47,89 @@ module Backup
       assert_empty calls
     end
 
-    test "the job records a failure on the newest good snapshot and does not raise" do
-      good = AgentBackupSnapshot.create!(agent: @agent, restic_snapshot_id: "a" * 64, taken_at: Time.current, ok: true)
-      failing = Object.new
-      def failing.call(_agent) = raise(VmThinning::Failed, "restic forget failed: repository is locked")
+    # A stand-in for VmThinning in the job: records what it was asked to do.
+    def thinning(fail_with: nil, log: [])
+      double = Object.new
+      double.define_singleton_method(:call) do |_agent|
+        log << :call
+        raise VmThinning::Failed, fail_with if fail_with
 
-      Agents::Config.stub(:backups_enabled?, true) do
-        assert_nil VmThinningJob.perform_now(@agent.id, thinning: failing)
+        VmThinning::Result.new(kept: 3, removed: 1, oldest_at: nil)
       end
-      assert_equal "Prune failed: restic forget failed: repository is locked", good.reload.stderr_tail
-      assert good.ok?
+      double.define_singleton_method(:recover) { |_agent| log << :recover }
+      double
     end
 
-    test "the job leaves a resident alone while a backup is in flight" do
-      called = false
-      thinning = Object.new
-      thinning.define_singleton_method(:call) { |_agent| called = true }
+    def run_job(double)
+      Agents::Config.stub(:backups_enabled?, true) { VmThinningJob.perform_now(@agent.id, thinning: double) }
+    end
 
-      Agents::Config.stub(:backups_enabled?, true) do
-        VmResident.stub(:held?, true) { VmThinningJob.perform_now(@agent.id, thinning:) }
+    test "the job marks the resident while it thins and clears the mark after" do
+      seen = nil
+      double = thinning
+      double.define_singleton_method(:call) do |agent|
+        seen = agent.reload.backup_thinning_started_at
+        VmThinning::Result.new(kept: 1, removed: 0, oldest_at: nil)
       end
-      assert_not called
+      run_job(double)
+
+      assert seen.present?
+      assert_nil @agent.reload.backup_thinning_started_at
+    end
+
+    test "a failed thinning is recorded, recovered, and does not raise" do
+      good = AgentBackupSnapshot.create!(agent: @agent, restic_snapshot_id: "a" * 64, taken_at: Time.current, ok: true)
+      log = []
+      assert_nil run_job(thinning(fail_with: "restic forget failed: timed out", log:))
+
+      assert_equal %i[call recover], log
+      assert_equal "Prune failed: restic forget failed: timed out", good.reload.stderr_tail
+      assert good.ok?
+      assert_nil @agent.reload.backup_thinning_started_at
+    end
+
+    test "when recovery itself fails the mark stays, so no backup is issued into a locked repository" do
+      double = thinning(fail_with: "killed")
+      double.define_singleton_method(:recover) { |_agent| raise VmThinning::Failed, "restic unlock failed" }
+      run_job(double)
+
+      assert @agent.reload.backup_thinning_started_at.present?
+    end
+
+    test "the job does not start while a backup is held or another thinning is running" do
+      log = []
+      VmResident.stub(:held?, true) { run_job(thinning(log:)) }
+      @agent.update!(backup_thinning_started_at: 1.minute.ago)
+      run_job(thinning(log:))
+
+      assert_empty log
+      assert @agent.reload.backup_thinning_started_at.present?, "another job's mark is left alone"
+    end
+
+    test "a mark left by a dead job is taken over: recover first, then thin" do
+      @agent.update!(backup_thinning_started_at: 2.hours.ago)
+      log = []
+      run_job(thinning(log:))
+
+      assert_equal %i[recover call], log
+      assert_nil @agent.reload.backup_thinning_started_at
+    end
+
+    test "recover clears every lock in the repository" do
+      calls = []
+      VmThinning.new(run: restic([], calls:)).recover(@agent)
+      assert_equal [ [ "unlock", "--remove-all" ] ], calls
+    end
+
+    test "the sweeper sends an abandoned mark to recovery and issues no backup while any mark stands" do
+      @agent.update!(runtime: "external", backup_thinning_started_at: 2.hours.ago)
+      Agents::Config.stub(:backups_enabled?, true) do
+        assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { AgentBackupSweeperJob.perform_now }
+        backups = enqueued_jobs.select { |job| job["job_class"] == "Backup::AgentResticJob" }
+        assert backups.none? { |job| job["arguments"].first == @agent.id }
+        @agent.update!(backup_thinning_started_at: nil)
+        assert_enqueued_with(job: AgentResticJob, args: [ @agent.id ]) { AgentBackupSweeperJob.perform_now }
+      end
     end
 
   end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_003000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_092000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -503,6 +503,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_003000) do
     t.integer "backup_keep_daily", default: 7, null: false
     t.integer "backup_keep_monthly", default: 12, null: false
     t.integer "backup_keep_weekly", default: 4, null: false
+    t.datetime "backup_thinning_started_at"
     t.datetime "birth_committed_at"
     t.boolean "can_post_site_announcements", default: false, null: false
     t.string "colour"

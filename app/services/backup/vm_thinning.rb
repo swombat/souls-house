@@ -12,15 +12,35 @@ module Backup
   # verified. Until this existed a VM's history only grew, and the resident
   # would one day have met its repository budget and stopped being backed up.
   #
-  # restic's own repository lock keeps this apart from a backup: forget
-  # --prune takes the exclusive lock and fails if the VM holds one, and the VM
-  # sees the house's lock through the same repository. `unlock` first removes
-  # only locks restic itself judges stale.
+  # A backup and a thinning never run together, and the house decides that,
+  # not restic's lock: VmThinningJob marks the resident
+  # (backup_thinning_started_at) under the agent lock, where VmResident.issue!
+  # also looks, so a backup is not issued while history is being thinned and
+  # thinning does not start while a backup is held.
+  #
+  # A thinning that is killed can leave restic's exclusive lock behind, which
+  # would fail every later backup. `recover` removes the thinning container
+  # and every lock in the repository. That is safe only under the marker,
+  # when no backup can be running, and it does not wait for a backup to
+  # succeed first: the job recovers after any failure, and a marker left by a
+  # job that died is found by the sweeper and recovered before the next
+  # backup is issued.
   class VmThinning
 
     class Failed < StandardError; end
 
     TIMEOUT_SECONDS = 30 * 60
+    # How long a marker is believed. Past this the job that set it is dead.
+    CLAIM_SECONDS = TIMEOUT_SECONDS + 5 * 60
+
+    def self.running?(agent, now: Time.current)
+      started = agent.backup_thinning_started_at
+      started.present? && started > now - CLAIM_SECONDS
+    end
+
+    def self.abandoned?(agent, now: Time.current)
+      agent.backup_thinning_started_at.present? && !running?(agent, now:)
+    end
     Result = Struct.new(:kept, :removed, :oldest_at, keyword_init: true)
 
     def initialize(run: nil)
@@ -32,7 +52,6 @@ module Backup
       raise Failed, "Invalid resident identity" unless VmRepository::UUID.match?(agent.uuid.to_s)
       raise Failed, "Backup password is missing" if agent.restic_password.blank?
 
-      run(agent, "unlock")
       before = snapshots(agent)
       run(agent, "forget",
         "--keep-daily", agent.backup_keep_daily.to_s,
@@ -47,7 +66,19 @@ module Backup
         oldest_at: kept.filter_map { |snapshot| Time.zone.parse(snapshot["time"].to_s) rescue nil }.min)
     end
 
+    # After an interrupted thinning: stop its container if it is still there
+    # and clear the repository's locks. Only ever called under the marker.
+    def recover(agent)
+      system("docker", "rm", "--force", container_name(agent), out: File::NULL, err: File::NULL) unless @run
+      run(agent, "unlock", "--remove-all")
+      true
+    end
+
     private
+
+    # One name per resident, so a container a dead job left behind can be
+    # found and removed, and two thinnings of one repository cannot coexist.
+    def container_name(agent) = "vm-backup-thin-#{agent.uuid}"
 
     def snapshots(agent)
       list = JSON.parse(run(agent, "snapshots", "--json"))
@@ -63,7 +94,7 @@ module Backup
       # No production credential lookup or Docker operation in ordinary tests.
       raise Failed, "Live VM backup thinning is disabled in tests" if Rails.env.test?
 
-      name = "vm-backup-thin-#{SecureRandom.hex(12)}"
+      name = container_name(agent)
       argv = [ "timeout", "--kill-after=30", TIMEOUT_SECONDS.to_s,
         "docker", "run", "--rm", "--name", name,
         "-e", "AWS_ACCESS_KEY_ID=#{AgentRestic.aws_value(:access_key_id)}",

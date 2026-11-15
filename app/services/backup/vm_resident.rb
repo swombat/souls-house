@@ -21,6 +21,11 @@ module Backup
         Agent.connection.execute("SELECT pg_advisory_xact_lock(1936680308, 1)")
         agent.with_lock do
           raise Unavailable, "Backup already pending" if held?(agent)
+          # Fresh or abandoned: the repository may hold a prune's exclusive
+          # lock until VmThinningJob has finished or recovered it.
+          if agent.backup_thinning_started_at.present?
+            raise AgentRestic::ResidentBusy, "Backup history is being thinned"
+          end
           raise AgentRestic::ResidentBusy, "Backup requires an idle resident" if busy?(agent)
           enrollment = Agents::RemoteRuntime.live_enrollment!(agent)
           raise Unavailable, "Backup requires a healthy runner" unless enrollment.healthy?
@@ -193,12 +198,12 @@ module Backup
             duration_ms: result["duration_ms"], ok: reason.nil?, stderr_tail: reason)
           backup.update!(state: reason.nil? ? "verified" : "failed", failure_reason: reason,
             agent_backup_snapshot: snapshot, released_at: release ? Time.current : nil)
-          if reason.nil?
-            # A VM can't thin its own history; the house does it once the
-            # new snapshot is safely recorded.
-            agent_id = backup.agent_id
-            ActiveRecord.after_all_transactions_commit { VmThinningJob.perform_later(agent_id) }
-          end
+          # A VM can't thin its own history; the house does it once the
+          # backup is settled. After a failed backup too: a backup refused at
+          # the repository's write ceiling leaves partial data only a prune
+          # removes, and thinning is what makes room for the next one.
+          agent_id = backup.agent_id
+          ActiveRecord.after_all_transactions_commit { VmThinningJob.perform_later(agent_id) }
           answer(backup)
         end
       end
