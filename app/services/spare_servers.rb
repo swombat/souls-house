@@ -34,8 +34,9 @@
 # check, the one tried longest ago. A refusal costs nothing.
 #
 # One refusal is different: resource_limit_exceeded is the Hetzner project's
-# own limit on servers, not stock. No location will do better, so all spare
-# buying rests for LIMIT_PAUSE and Site Admin says why.
+# own limit on servers, not stock. No location will do better, so for
+# LIMIT_PAUSE no order is sent at all, new or left planned, and Site Admin
+# says why. Purchases already sent are still reconciled.
 class SpareServers
 
   # After a refusal, the same type in the same location is not tried again
@@ -85,7 +86,12 @@ class SpareServers
   #   recent reconcile gets its reconcile job again. That only reads the
   #   provider: an uncertain purchase is never sent a second time.
   def recover!
-    CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
+    # While the project's server limit rests all buying, a planned spare is
+    # not sent either: it would be refused for the same reason and extend
+    # the rest. It keeps its slot and is sent when the rest is over.
+    unless project_limit_hit_at
+      CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
+    end
     CloudProcurementOperation.spares.where(state: CloudProcurementReconcileJob::SETTLING_STATES)
       .where("last_reconciled_at IS NULL OR last_reconciled_at < ?", now - RECONCILE_STALE_AFTER)
       .where(updated_at: ..(now - RECONCILE_STALE_AFTER))
@@ -160,8 +166,11 @@ class SpareServers
 
       TYPES.flat_map do |type|
         missing = waiting(type) + target(type) - held.fetch(type, 0)
-        places = locations_selling(type, availability)
+        places, flagged = locations_selling(type, availability)
         count = [ missing, room ].min
+        # A try against the flag is one order, whatever is missing: it is a
+        # question put to Hetzner, not a batch (Mira, #980).
+        count = [ count, 1 ].min unless flagged
         next [] if count <= 0 || places.empty?
 
         room -= count
@@ -177,9 +186,9 @@ class SpareServers
     end
   end
 
-  # Where to order a type now: the allowed locations Hetzner flags as
-  # selling it, or, when it flags none, the one allowed location tried
-  # longest ago (never, first). Either way a location that refused a spare of
+  # Where to order a type now, and whether Hetzner flagged it: the allowed
+  # locations Hetzner flags as selling it, or, when it flags none, the one
+  # allowed location tried longest ago (never, first). Either way a location that refused a spare of
   # this type a short while ago is left out. Filtered here, before anything
   # is planned: a location plan_spare! would refuse must not roll back the
   # orders beside it.
@@ -189,10 +198,10 @@ class SpareServers
     allowed = procurement.spare_locations - paused
     places = availability[type]
     flagged = places.is_a?(Hash) ? allowed.select { |location| places[location] == true } : []
-    return flagged if flagged.any?
+    return [ flagged, true ] if flagged.any?
 
     last_tried = CloudProcurementOperation.spares.where(server_type: type).group(:location).maximum(:created_at)
-    allowed.min_by(1) { |location| [ last_tried[location] || Time.at(0), allowed.index(location) ] }
+    [ allowed.min_by(1) { |location| [ last_tried[location] || Time.at(0), allowed.index(location) ] }, false ]
   end
 
   # When the Hetzner project's server limit last refused a spare, if that

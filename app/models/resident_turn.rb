@@ -53,13 +53,16 @@ class ResidentTurn < ApplicationRecord
       # A VM rebooting onto a new kernel (KernelReboot): released when the
       # heartbeat shows the fresh boot, which dispatches again.
       rebooting = KernelReboot.holding_agent_ids
+      # A resident being moved between servers (Agents::ServerMove): released
+      # when the move settles, which dispatches again.
+      moving = VmServerMove.holding_agent_ids
       while selected.length < available
         # A backup hold, a runtime roll (ops/deploy/roll-resident.rb) or a
         # kernel reboot keeps the turn queued: it waits for the hold to clear,
         # it isn't cancelled.
         eligible = candidates.reject do |turn|
           busy_sessions.include?(turn.session_id) || Backup::VmResident.held?(turn.agent) ||
-            rolling.include?(turn.agent_id) || rebooting.include?(turn.agent_id)
+            rolling.include?(turn.agent_id) || rebooting.include?(turn.agent_id) || moving.include?(turn.agent_id)
         end
         break if eligible.empty?
         turn = eligible.min_by { |item| [ last_admitted[item.agent_id] || Time.at(0), item.created_at, item.id ] }

@@ -215,6 +215,20 @@ class SpareServersTest < ActiveSupport::TestCase
     assert_empty spares.replenish!(selling("cx33")), "held now: nothing more is wanted"
   end
 
+  # Mira, #980: against the flag it is one order per type per check, however
+  # many are missing.
+  test "a try against the flag is one order, even when several are missing" do
+    @setting.update!(spare_server_limit: 3, spare_cx33_target: 3)
+
+    assert_equal [ "fsn1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal [ "nbg1" ], spares.replenish!(selling("cx33")).map(&:location)
+    assert_equal 2, @client.creates.size
+
+    # With a flag, the whole of what is missing and fits is ordered.
+    @setting.update!(spare_server_limit: 5, spare_cx33_target: 5)
+    assert_equal 3, spares.replenish!(selling("cx33", "hel1")).size
+  end
+
   test "a flagged location is preferred to a blind try" do
     assert_equal [ "hel1" ], spares.replenish!(selling("cx33", "hel1")).map(&:location)
   end
@@ -240,9 +254,18 @@ class SpareServersTest < ActiveSupport::TestCase
     assert_empty spares.replenish!(selling("cx33", "fsn1", "hel1").merge(selling("cx23", "fsn1")))
     assert_equal creates, @client.creates.size
 
-    CloudProcurementOperation.spares.update_all(updated_at: 61.minutes.ago)
+    # A spare left planned is not sent during the rest either, and still holds its slot.
+    stranded = @procurement.plan_spare!(server_type: "cx33", location: "hel1", approval_reference: "t")
+    assert_empty spares.replenish!(selling("cx33", "hel1"))
+    assert_equal "planned", stranded.reload.state
+    assert_equal creates, @client.creates.size
+    assert_equal 1, spares.status[:counted]
+
+    # After the rest it is sent, and buying goes on.
+    CloudProcurementOperation.spares.where(state: "refused").update_all(updated_at: 61.minutes.ago)
     assert_nil spares.status[:project_limit_hit_at]
     assert_not_empty spares.replenish!(selling("cx33", "hel1"))
+    assert_equal "reconciling", stranded.reload.state
   end
 
   test "a spare boots to provisioned with no runner, and an admin can release it" do

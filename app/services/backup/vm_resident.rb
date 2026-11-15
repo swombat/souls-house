@@ -26,6 +26,10 @@ module Backup
           if agent.backup_thinning_started_at.present?
             raise AgentRestic::ResidentBusy, "Backup history is being thinned"
           end
+          # Its server is being shut down, copied or started (Agents::ServerMove).
+          if VmServerMove.open.exists?(agent_id: agent.id)
+            raise AgentRestic::ResidentBusy, "The resident is being moved to another server"
+          end
           raise AgentRestic::ResidentBusy, "Backup requires an idle resident" if busy?(agent)
           enrollment = Agents::RemoteRuntime.live_enrollment!(agent)
           raise Unavailable, "Backup requires a healthy runner" unless enrollment.healthy?

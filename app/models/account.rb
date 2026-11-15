@@ -631,6 +631,9 @@ class Account < ApplicationRecord
   # placement, but its old server is kept until the rollback releases it;
   # the release is asked for here, and still waits for the rollback's
   # recovery before deleting anything.
+  #
+  # A resident that was moved between servers has one more: the server the
+  # move left behind, which has no placement, and the move's snapshot.
   def release_vm_servers
     AgentPlacement.where(agent_id: agents.select(:id), backend: "hetzner_cloud")
       .where.not(state: %w[retired staged]).find_each do |placement|
@@ -639,6 +642,11 @@ class Account < ApplicationRecord
     end
     VmRollback.where(agent_id: agents.select(:id), phase: %w[restoring committed recovered], release_requested_at: nil)
       .find_each { |rollback| Agents::VmMigration::RollbackRelease.request_for_disabled_account!(rollback) }
+    # A move between servers (eRyZBY) sets a server aside with no placement,
+    # and keeps a snapshot: both are released too. A move still under way is
+    # picked up by VmBirthSweepJob once it settles.
+    VmServerMove.where(agent_id: agents.select(:id), phase: VmServerMove::SETTLED_PHASES)
+      .find_each { |move| Agents::ServerMove.new.release_for_disabled_account!(move) }
   end
 
   # Save validations and insertion share a transaction. Hold the settings row

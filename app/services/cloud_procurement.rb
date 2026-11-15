@@ -296,6 +296,25 @@ class CloudProcurement
     operation.reload
   end
 
+  # Deletes the server a move between servers left behind (Agents::ServerMove).
+  # The move claimed the release before calling this; only a purchase that a
+  # move set aside (no placement, purpose move_source) is ever deleted here.
+  def release_move_source!(operation)
+    operation.with_lock do
+      unless operation.purpose == "move_source" && operation.agent_placement_id.nil?
+        raise NotAllowed, "this purchase was not set aside by a move"
+      end
+      next unless %w[provisioned needs_review].include?(operation.state) && operation.provider_server_id
+
+      operation.transition_to!("deleting", delete_requested_at: now, review_reason: nil)
+    end
+    send_delete!(operation) if operation.reload.state == "deleting"
+    operation.reload
+  rescue HetznerCloudClient::Error => e
+    operation.update_columns(last_error_code: e.code, last_reconciled_at: now)
+    operation
+  end
+
   private
 
   def now = @clock.call

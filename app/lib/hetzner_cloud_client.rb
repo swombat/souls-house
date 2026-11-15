@@ -277,7 +277,99 @@ class HetznerCloudClient
     :already_absent
   end
 
+  # --- moving a resident between servers (Agents::ServerMove) ---------------
+  #
+  # Each of these acts on one server the house created, checked by its
+  # managed label before anything is sent. They return the provider Action;
+  # none waits for it. A request whose outcome is not known raises
+  # ActionOutcomeUnknown: the caller reads the server's actions before
+  # deciding to send it again.
+
+  class ActionOutcomeUnknown < Error; end
+
+  # Asks the operating system to shut down (ACPI). The server is off only
+  # when find_server says so.
+  def shutdown_server(id) = server_action(id, "shutdown")
+
+  # Cuts the power. For a server that did not answer a shutdown, or a copy
+  # that must not keep running.
+  def poweroff_server(id) = server_action(id, "poweroff")
+
+  def poweron_server(id) = server_action(id, "poweron")
+
+  # Writes an image over the server's disk and starts it. Everything on the
+  # server's disk is replaced.
+  def rebuild_server(id, image:)
+    server_action(id, "rebuild", { image: Integer(image) })
+  end
+
+  # Starts a snapshot of the server's disk. Returns [image id, Action].
+  def create_snapshot(id, description:, labels: {})
+    managed_server!(id)
+    body = action_request("/servers/#{Integer(id)}/actions/create_image",
+      { type: "snapshot", description: description.to_s.first(100),
+        labels: labels.transform_keys(&:to_s).merge(MANAGED_LABEL => "true") })
+    image_id = body.dig("image", "id")
+    unless image_id.is_a?(Integer) && image_id.positive?
+      raise ActionOutcomeUnknown.new("Hetzner Cloud snapshot returned no image id", code: "outcome_unknown")
+    end
+
+    [ image_id, action_from(body.fetch("action")) ]
+  end
+
+  # Snapshot image ids this house made that carry a label value.
+  def snapshot_ids_labelled(key, value)
+    body = request(:get, "/images", nil, type: "snapshot", per_page: LIST_PAGE_SIZE,
+      label_selector: "#{MANAGED_LABEL}=true,#{key}=#{value}")
+    images = body["images"]
+    incomplete!("of images is malformed") unless images.is_a?(Array)
+    incomplete!("of images has more than one page") unless body.dig("meta", "pagination", "next_page").nil?
+
+    images.map { |image| image.fetch("id") }
+  end
+
+  # true once the image is gone (deleted now or already absent).
+  def delete_snapshot(image_id)
+    request(:delete, "/images/#{Integer(image_id)}")
+    true
+  rescue NotFound
+    true
+  end
+
+  # The server's actions for one command, newest last.
+  def server_actions(id, command)
+    body = request(:get, "/servers/#{Integer(id)}/actions", nil, command: command.to_s, sort: "id:asc",
+      per_page: LIST_PAGE_SIZE)
+    actions = body["actions"]
+    incomplete!("of actions is malformed") unless actions.is_a?(Array)
+
+    actions.map { |json| action_from(json) }
+  end
+
   private
+
+  def managed_server!(id)
+    server = find_server(id)
+    raise NotFound.new("Hetzner Cloud server is absent", status: 404, code: "not_found") if server.nil?
+    refuse!("Server is not managed by this house") unless server.managed?
+
+    server
+  end
+
+  def server_action(id, command, payload = {})
+    managed_server!(id)
+    action_from(action_request("/servers/#{Integer(id)}/actions/#{command}", payload).fetch("action"))
+  end
+
+  # A POST that is not a create: an unknown outcome is its own error, so it
+  # is never mistaken for a purchase that may exist.
+  def action_request(path, payload)
+    request(:post, path, payload)
+  rescue CreateOutcomeUnknown => e
+    raise ActionOutcomeUnknown.new(e.message, status: e.status, code: "action_outcome_unknown")
+  rescue KeyError
+    raise ActionOutcomeUnknown.new("Hetzner Cloud action reply is malformed", code: "action_outcome_unknown")
+  end
 
   def action_from(json, expected_id: nil)
     raise Error.new("Hetzner Cloud action is malformed", code: "invalid_response") unless json.is_a?(Hash) && json["id"].is_a?(Integer)
