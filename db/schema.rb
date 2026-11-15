@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -934,8 +934,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
   end
 
   create_table "cloud_procurement_operations", force: :cascade do |t|
-    t.bigint "agent_placement_id", null: false
-    t.bigint "requested_by_id", null: false
+    t.bigint "agent_placement_id"
+    t.bigint "requested_by_id"
     t.string "public_id", null: false
     t.string "state", default: "planned", null: false
     t.string "approval_reference", null: false
@@ -959,15 +959,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "placement_generation", default: 1, null: false
+    t.string "purpose", default: "placement", null: false
+    t.string "placement_label"
     t.index ["agent_placement_id"], name: "index_cloud_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL (ARRAY[('refused'::character varying)::text, ('deleted'::character varying)::text]))"
     t.index ["location", "state"], name: "index_cloud_procurement_operations_on_location_and_state"
     t.index ["provider_name"], name: "index_cloud_procurement_operations_on_provider_name", unique: true
     t.index ["provider_server_id"], name: "index_cloud_procurement_operations_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
+    t.index ["purpose", "server_type", "state"], name: "index_cloud_procurement_operations_on_purpose_type_state"
     t.index ["public_id"], name: "index_cloud_procurement_operations_on_public_id", unique: true
     t.index ["requested_by_id"], name: "index_cloud_procurement_operations_on_requested_by_id"
     t.check_constraint "image_id > 0", name: "cloud_procurement_operations_positive_image_id"
     t.check_constraint "placement_generation >= 1", name: "cloud_procurement_operations_positive_placement_generation"
     t.check_constraint "provider_server_id > 0", name: "cloud_procurement_operations_positive_server_id"
+    t.check_constraint "(purpose::text = 'placement'::text) = (agent_placement_id IS NOT NULL)", name: "cloud_procurement_operations_purpose_matches_placement"
+    t.check_constraint "purpose::text = ANY (ARRAY['placement'::character varying, 'spare'::character varying, 'move_source'::character varying]::text[])", name: "cloud_procurement_operations_purpose"
     t.check_constraint "state::text = ANY (ARRAY['planned'::character varying::text, 'create_in_flight'::character varying::text, 'reconciling'::character varying::text, 'provisioned'::character varying::text, 'unknown'::character varying::text, 'refused'::character varying::text, 'needs_review'::character varying::text, 'deleting'::character varying::text, 'deleted'::character varying::text])", name: "cloud_procurement_operations_state"
   end
 
@@ -3067,6 +3072,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.string "companion_linux_amd64_download_sha256", limit: 64
     t.string "companion_linux_arm64_download_url", limit: 500
     t.string "companion_linux_arm64_download_sha256", limit: 64
+    t.integer "spare_server_limit", default: 0, null: false
+    t.integer "spare_cx23_target", default: 0, null: false
+    t.integer "spare_cx33_target", default: 0, null: false
+    t.integer "spare_cx43_target", default: 0, null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

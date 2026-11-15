@@ -12,6 +12,7 @@
   import CompanionDownloadSettingsCard from '$lib/components/admin/CompanionDownloadSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
+  import SpareServersSettingsCard from '$lib/components/admin/SpareServersSettingsCard.svelte';
   import BillingSettingsCard from '$lib/components/admin/BillingSettingsCard.svelte';
   import PaidFallbackSettingsCard from '$lib/components/admin/PaidFallbackSettingsCard.svelte';
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
@@ -23,6 +24,7 @@
     site_announcement_residents = [],
     stalled_sweep_accounts = [],
     vm_births = {},
+    spare_servers = {},
     billing = {},
     field_ocr = {},
     field_tweets = {},
@@ -72,6 +74,9 @@
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
     formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
     formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
+    for (const key of ['spare_server_limit', 'spare_cx23_target', 'spare_cx33_target', 'spare_cx43_target']) {
+      formData.append(`setting[${key}]`, form[key] ?? 0);
+    }
     formData.append('setting[billing_enabled]', form.billing_enabled ?? false);
     formData.append('setting[free_trial_enabled]', form.free_trial_enabled ?? true);
     formData.append('setting[paid_fallback_enabled]', form.paid_fallback_enabled ?? false);
@@ -158,6 +163,7 @@
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
+      <SpareServersSettingsCard {form} status={spare_servers} />
 
       <BillingSettingsCard {form} status={billing} />
 

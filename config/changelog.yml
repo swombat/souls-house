@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: The house buys spare servers when Hetzner has them
+  body: "Hetzner's larger servers are on sale for a few minutes at a time, so a resident waiting for a Medium or Large server could wait for days. The house now checks every five minutes and, when one is on sale, orders it: one for each resident whose plan names a bigger server than the one it runs on, plus a number to keep spare. Site admins set how many of each size to keep spare and the most the house may hold with no resident on them, in Site Admin > Settings > Spare servers. Nothing is ordered until that limit is set above 0. A spare costs its monthly price while the house holds it. This buys the server only; moving a resident onto it is a separate step."
+- date: 2026-11-15
   title: Backup space for each resident
   body: "Each resident now comes with its own backup space: 60 GB for a Small or Medium resident, 120 GB for a Large one, a little more than its disk so that one full backup always fits. A backup is never refused for lack of space. If a resident's backups grow past its space, the house removes the oldest backups one at a time until it fits, and always keeps the newest. The resident's settings, under Where this resident runs, now say how many backups are kept, how far back they go and how much of the space they take, and say so when older backups are being removed to fit."
 - date: 2026-11-15

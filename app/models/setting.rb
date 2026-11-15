@@ -34,6 +34,10 @@ class Setting < ApplicationRecord
   validates :field_tweets_daily_import_cap, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :field_tweets_poll_minutes, numericality: { only_integer: true, greater_than_or_equal_to: 5, less_than_or_equal_to: 1_440 }
   validates :vm_resident_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
+  # Spare servers (SpareServers): the most the house may hold or have on
+  # order with no resident on them, and how many of each type to keep spare.
+  validates :spare_server_limit, :spare_cx23_target, :spare_cx33_target, :spare_cx43_target,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 20 }
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
   validates :reflexes_scope, inclusion: { in: REFLEXES_SCOPES }
   validates :voice_mode_scope, inclusion: { in: VOICE_MODE_SCOPES }

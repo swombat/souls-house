@@ -26,9 +26,16 @@ class CloudProcurementOperation < ApplicationRecord
   UNRESOLVED_STATES = (STATES - RESOLVED_STATES).freeze
   SERVER_TYPES = %w[cx23 cx33 cx43].freeze
   EU_LOCATIONS = %w[fsn1 nbg1 hel1].freeze
+  # placement: bought for one resident's placement, the only kind until
+  # eRyZBY. spare: bought by the house with no resident on it, to be taken
+  # when a resident needs that machine (SpareServers). move_source: a
+  # resident's old server, kept untouched after it moved to another one.
+  # Only a placement purchase has a placement and a person who asked.
+  PURPOSES = %w[placement spare move_source].freeze
+  SPARE_LABEL = "spare".freeze
 
-  belongs_to :agent_placement
-  belongs_to :requested_by, class_name: "User"
+  belongs_to :agent_placement, optional: true
+  belongs_to :requested_by, class_name: "User", optional: true
   has_one :runner_enrollment, foreign_key: :procurement_operation_id, inverse_of: false
 
   state_machine :state, initial: :planned, action: nil do
@@ -68,14 +75,25 @@ class CloudProcurementOperation < ApplicationRecord
   end
 
   validates :public_id, :provider_name, :approval_reference, presence: true
+  validates :purpose, inclusion: { in: PURPOSES }
+  validates :agent_placement, :requested_by, presence: true, if: -> { purpose == "placement" }
+  validates :agent_placement, absence: true, unless: -> { purpose == "placement" }
+  validates :placement_label, presence: true, unless: -> { purpose == "placement" }
   validates :server_type, inclusion: { in: SERVER_TYPES }
   validates :location, inclusion: { in: EU_LOCATIONS }
   validates :image_id, numericality: { only_integer: true, greater_than: 0 }
   validate :ssh_key_ids_are_positive_integers
 
   scope :unresolved, -> { where(state: UNRESOLVED_STATES) }
+  scope :spares, -> { where(purpose: "spare") }
 
   def unresolved? = UNRESOLVED_STATES.include?(state)
+  def spare? = purpose == "spare"
+
+  # What the server's placement label says. Set at create and never changed
+  # at the provider, so a server whose purchase has since changed hands still
+  # answers to the label it was created with.
+  def provider_placement_label = placement_label.presence || agent_placement_id.to_s
 
   # CloudProcurement holds the operation's lock and supplies the evidence.
   # Persist the edge and its metadata together; never perform provider I/O here.

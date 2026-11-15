@@ -114,6 +114,7 @@ class CloudProcurement
   # attempt's own record admits exactly the purchases it captured.
   def cleanup!(operation, rollback: nil)
     placement = operation.agent_placement
+    raise NotAllowed, "this purchase has no placement; an admin releases it" if placement.nil?
     if rollback
       raise NotAllowed, "this rollback does not release that purchase" unless rollback.reload.releases?(operation)
       # Only deletion: reconciling a purchase or a boot would write the
@@ -186,8 +187,26 @@ class CloudProcurement
 
   public
 
+  # Fixes location and spec for one spare: a server with no resident on it
+  # (SpareServers). The caller holds the admission lock and has counted this
+  # purchase against the cap in the same transaction. Sends nothing.
+  def plan_spare!(server_type:, location:, approval_reference:)
+    raise NotAllowed, "image and SSH keys must be configured" if @config.image_id.nil? || @config.ssh_key_ids.empty?
+    raise NotAllowed, "not an approved EU location" unless spare_locations.include?(location.to_s)
+
+    public_id = "cpo-#{SecureRandom.hex(8)}"
+    CloudProcurementOperation.create!(purpose: "spare", placement_label: CloudProcurementOperation::SPARE_LABEL,
+      public_id:, approval_reference:, server_type:, location:, image_id: @config.image_id,
+      ssh_key_ids: @config.ssh_key_ids, provider_name: "souls-house-#{public_id}")
+  end
+
+  # Where a spare may be bought: the EU locations this installation allows.
+  def spare_locations = CloudProcurementOperation::EU_LOCATIONS & @config.locations
+
   # Mints enrollment authority, commits create intent, then sends the one
   # create request. Calling it again, concurrently or later, sends nothing.
+  # A spare gets no enrollment and no user_data: it is a stock machine that
+  # runs nothing until a resident's disk is put on it.
   def submit!(operation)
     enrollment = nil
     user_data = nil
@@ -195,10 +214,12 @@ class CloudProcurement
       next false unless operation.state == "planned"
 
       claimed_at = now
-      enrollment, token = @minter.mint!(placement: operation.agent_placement, operation_id: operation.id, now: now)
-      # The plaintext token lives only in this local and the request body.
-      user_data = @renderer.render(enrollment:, token:, rails_url: @config.rails_url,
-        commands_enabled: @config.runner_commands)
+      if operation.purpose == "placement"
+        enrollment, token = @minter.mint!(placement: operation.agent_placement, operation_id: operation.id, now: now)
+        # The plaintext token lives only in this local and the request body.
+        user_data = @renderer.render(enrollment:, token:, rails_url: @config.rails_url,
+          commands_enabled: @config.runner_commands)
+      end
       operation.transition_to!("create_in_flight", create_sent_at: claimed_at)
       true
     end
@@ -213,7 +234,7 @@ class CloudProcurement
     begin
       created = @client.create_server_with_action(
         name: operation.provider_name,
-        placement_id: operation.agent_placement_id.to_s,
+        placement_id: operation.provider_placement_label,
         server_type: operation.server_type,
         location: operation.location,
         image: operation.image_id,
@@ -297,10 +318,12 @@ class CloudProcurement
 
     holder = AgentPlacement.where(backend: "hetzner_cloud").where.not(location: nil).where.not(state: "retired")
       .pluck(:id, :location).to_h
+    unplaced = []
     CloudProcurementOperation.unresolved.pluck(:agent_placement_id, :location).each do |placement_id, location|
-      holder[placement_id] ||= location
+      # A purchase with no placement (a spare) is its own server: each counts.
+      placement_id.nil? ? unplaced << location : holder[placement_id] ||= location
     end
-    counts = holder.values.tally
+    counts = (holder.values + unplaced).tally
     candidates.min_by { |location| [ counts.fetch(location, 0), CloudProcurementOperation::EU_LOCATIONS.index(location) ] }
   end
 
@@ -408,6 +431,14 @@ class CloudProcurement
     operation.with_lock do
       next unless operation.state == "reconciling"
 
+      # A spare has no runner and no placement to tell: running is all there
+      # is to confirm.
+      if operation.spare?
+        operation.transition_to!("provisioned", provisioned_at: now, ipv4: server.ipv4, ipv6: server.ipv6,
+          last_reconciled_at: now)
+        next
+      end
+
       enrollment = operation.runner_enrollment
       if enrollment.nil? || enrollment.revoked_at || now >= enrollment.expires_at
         operation.transition_to!("needs_review", review_reason: "enrollment_unusable", last_reconciled_at: now)
@@ -422,7 +453,7 @@ class CloudProcurement
   end
 
   def send_delete!(operation)
-    result = @client.delete_server(operation.provider_server_id, placement_id: operation.agent_placement_id.to_s)
+    result = @client.delete_server(operation.provider_server_id, placement_id: operation.provider_placement_label)
     if result.is_a?(HetznerCloudClient::DeleteAccepted)
       operation.update_columns(delete_action_id: result.action_id, last_reconciled_at: now)
     end
@@ -450,7 +481,7 @@ class CloudProcurement
       next unless operation.state == "deleting"
 
       placement = operation.agent_placement
-      if placement.provider_server_id == operation.provider_server_id
+      if placement && placement.provider_server_id == operation.provider_server_id
         # A ready VM placement must name its server, so once that server is
         # confirmed gone the placement can't stay ready. Cleanup of a healthy
         # resident (request_cleanup! on a ready placement) otherwise failed this
@@ -469,8 +500,13 @@ class CloudProcurement
   end
 
   # Intent and enrollment commit together, so a missing enrollment is as
-  # unusable as an expired one.
+  # unusable as an expired one. A spare never had one: with no token to
+  # expire, its uncertainty is bounded by the same lifetime from the send.
   def enrollment_expired?(operation)
+    if operation.purpose != "placement"
+      return operation.create_sent_at.nil? || now >= operation.create_sent_at + RunnerEnrollment::TOKEN_TTL
+    end
+
     enrollment = operation.runner_enrollment
     enrollment.nil? || now >= enrollment.expires_at
   end
@@ -478,7 +514,7 @@ class CloudProcurement
   # Identity and spec, not just a name.
   def matches?(operation, server)
     server.managed? &&
-      server.placement_id == operation.agent_placement_id.to_s &&
+      server.placement_id == operation.provider_placement_label &&
       server.operation_id == operation.public_id &&
       server.name == operation.provider_name &&
       server.server_type == operation.server_type &&
