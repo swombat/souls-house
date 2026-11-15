@@ -272,3 +272,52 @@ job again. Neither sends a second create for an uncertain purchase.
 
 Nothing in this section puts a resident on a spare. That is the move, a
 separate step.
+
+## Moving a resident to another server (eRyZBY)
+
+`Agents::ServerMove` moves a resident from the server it runs on to a spare,
+by disk copy. Hetzner will rarely resize a server in place when the larger
+type is short, and a spare is a server the house already owns.
+
+    hold turns -> shut the old server down -> snapshot its disk ->
+    switch the house's records to the new server -> rebuild the new server
+    from the snapshot -> its runner reports from the new server -> moved
+
+Why a copy is enough: the runner reads its server id from Hetzner's metadata
+service on every report, and the house accepts a report only from the server
+the enrollment expects. The copy, started on the new server, reports as the
+new server with the same runner key. Nothing else on the disk names the
+server. The resident's container starts with the machine, as after a reboot.
+
+One `VmServerMove` row per attempt holds both servers, the snapshot, the
+provider actions and the phase. `VmServerMoveJob` steps it every 20 seconds;
+`VmBirthSweepJob` restarts one left with no job. Each step reads the
+provider before asking for anything, so a crash repeats nothing: a snapshot
+is adopted by its label, a rebuild by the server's action history.
+
+What holds:
+
+- The old server is powered off and never changed. Its purchase becomes
+  `move_source` with no placement; the spare's purchase becomes the
+  placement's. Until `release!`, going back is: power the new server off,
+  switch the records back, power the old one on. A failure in any phase, or
+  a phase past its deadline, does that by itself.
+- Only one of the two servers is on at a time. A server that came on anyway
+  is refused by the house (server mismatch).
+- A move starts only for an idle resident (the kernel-reboot idle check,
+  under the turn admission gate), with a verified backup from the last 26
+  hours. While it is open the resident's turns wait in the queue.
+- Nothing is deleted before a site admin releases the move. After a
+  release the move cannot be undone.
+
+Operator commands:
+
+    bin/rails "vm:move[<agent id>]" REQUESTED_BY=<admin email>             # dry run: every gate
+    bin/rails "vm:move[<agent id>]" REQUESTED_BY=... MODE=apply [TARGET=<cpo-id>]
+    bin/rails vm:moves                                                      # the newest ten
+    bin/rails vm:moves RELEASE=<vsm-id> REQUESTED_BY=...                    # delete old server + snapshot
+    bin/rails vm:moves REVERT=<vsm-id> REASON=... REQUESTED_BY=...          # back to the old server
+
+Not built: a button in Site Admin, moving to a smaller disk, and using a
+spare for a new resident's birth (a spare has no runner until a disk with
+one is copied onto it).

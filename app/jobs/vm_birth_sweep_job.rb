@@ -25,6 +25,9 @@ class VmBirthSweepJob < ApplicationJob
     # (#426). Placement cleanup can't carry it: the placement is local.
     VmRollback.releasing.pluck(:id).each { |rollback_id| VmRollbackReleaseJob.perform_later(rollback_id) }
 
+    # A move between servers left open with no job (Agents::ServerMove).
+    VmServerMove.open.where(updated_at: ..1.minute.ago).pluck(:id).each { |move_id| VmServerMoveJob.perform_later(move_id) }
+
     # A credential/service restart whose settle job was lost.
     AgentPlacement.where.not(refresh_command_id: nil).where("refresh_requested_at < ?", 1.minute.ago)
       .pluck(:id).each { |placement_id| RemoteRefreshSettleJob.perform_later(placement_id) }

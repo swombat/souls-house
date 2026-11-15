@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_233000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3407,6 +3407,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_230000) do
     t.index ["requested_by_id"], name: "index_vm_rollbacks_on_requested_by_id"
   end
 
+  create_table "vm_server_moves", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "agent_placement_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.bigint "source_operation_id", null: false
+    t.bigint "target_operation_id", null: false
+    t.bigint "runner_enrollment_id", null: false
+    t.string "public_id", null: false
+    t.string "phase", default: "stopping", null: false
+    t.bigint "source_server_id", null: false
+    t.bigint "target_server_id", null: false
+    t.bigint "snapshot_image_id"
+    t.bigint "snapshot_action_id"
+    t.bigint "rebuild_action_id"
+    t.datetime "phase_started_at", null: false
+    t.datetime "stop_requested_at"
+    t.datetime "poweroff_requested_at"
+    t.datetime "switched_at"
+    t.datetime "rebuilt_at"
+    t.datetime "verified_at"
+    t.datetime "released_at"
+    t.string "failure"
+    t.string "revert_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_vm_server_moves_on_agent_id"
+    t.index ["agent_id"], name: "index_vm_server_moves_one_open_per_agent", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('rebuilding'::character varying)::text, ('verifying'::character varying)::text, ('reverting'::character varying)::text]))"
+    t.index ["public_id"], name: "index_vm_server_moves_on_public_id", unique: true
+    t.index ["requested_by_id"], name: "index_vm_server_moves_on_requested_by_id"
+    t.index ["target_operation_id"], name: "index_vm_server_moves_one_open_per_target", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('rebuilding'::character varying)::text, ('verifying'::character varying)::text, ('reverting'::character varying)::text]))"
+    t.check_constraint "phase::text = ANY (ARRAY['stopping'::character varying::text, 'snapshotting'::character varying::text, 'rebuilding'::character varying::text, 'verifying'::character varying::text, 'moved'::character varying::text, 'reverting'::character varying::text, 'reverted'::character varying::text, 'released'::character varying::text])", name: "vm_server_moves_phase"
+  end
+
   create_table "watched_repositories", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "service_connection_id", null: false
@@ -3808,6 +3841,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_230000) do
   add_foreign_key "vm_rollbacks", "agents"
   add_foreign_key "vm_rollbacks", "users", column: "release_requested_by_id"
   add_foreign_key "vm_rollbacks", "users", column: "requested_by_id"
+  add_foreign_key "vm_server_moves", "agent_placements"
+  add_foreign_key "vm_server_moves", "agents"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "source_operation_id"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "target_operation_id"
+  add_foreign_key "vm_server_moves", "runner_enrollments"
+  add_foreign_key "vm_server_moves", "users", column: "requested_by_id"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
   add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
