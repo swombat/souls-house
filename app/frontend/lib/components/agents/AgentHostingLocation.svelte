@@ -9,6 +9,12 @@
       ? `${hostingLocation.vcpus} vCPUs, ${hostingLocation.ram_gb} GB RAM, ${hostingLocation.disk_gb} GB disk`
       : null
   );
+
+  // What its backup repository held when the house last read it.
+  let backups = $derived(hostingLocation?.backups ?? null);
+  const gb = (bytes) => `${(Number(bytes) / 1024 ** 3).toFixed(1)} GB`;
+  const day = (iso) =>
+    new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 </script>
 
 <div class="space-y-3" data-testid="hosting-location">
@@ -37,6 +43,25 @@
         we may have to limit usage there and ask people to move their residents onto their own VMs. If everyone is
         considerate, we won't need to.
       </p>
+    {/if}
+    {#if backups}
+      <div class="border-t pt-2 space-y-1" data-testid="backup-history">
+        <p>
+          {backups.snapshots === 1 ? '1 backup is kept' : `${backups.snapshots} backups are kept`}{#if backups.oldest_at}, the
+            oldest from {day(backups.oldest_at)}{/if}. They take {gb(backups.stored_bytes)} of this resident's
+          {gb(backups.space_bytes)} of backup space.
+        </p>
+        {#if backups.over_space}
+          <p class="text-muted-foreground" data-testid="backup-over-space">
+            The newest backup alone is larger than this resident's backup space. It is kept, and backups continue;
+            this is for the house to fix, not you.
+          </p>
+        {:else if backups.thinned_to_fit}
+          <p class="text-muted-foreground" data-testid="backup-thinned">
+            Older backups are being removed to stay within that space. The newest backup is always kept.
+          </p>
+        {/if}
+      </div>
     {/if}
   </div>
 </div>

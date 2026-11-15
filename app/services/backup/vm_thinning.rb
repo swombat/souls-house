@@ -84,11 +84,15 @@ module Backup
         "--keep-monthly", agent.backup_keep_monthly.to_s,
         "--prune")
       # What is left is read back, never taken from forget's own report.
-      kept = snapshots(agent)
-      raise Failed, "No snapshot is left after thinning" if kept.empty? && before.any?
+      raise Failed, "No snapshot is left after thinning" if snapshots(agent).empty? && before.any?
 
-      Result.new(kept: kept.size, removed: [ before.size - kept.size, 0 ].max,
-        oldest_at: kept.filter_map { |snapshot| Time.zone.parse(snapshot["time"].to_s) rescue nil }.min)
+      # Then the resident's backup space: thin further if it is over, and
+      # record what the repository holds.
+      history = Fit.new(agent, run: ->(*args) { run(agent, *args) }).call
+      Result.new(kept: history["snapshots"], removed: [ before.size - history["snapshots"], 0 ].max,
+        oldest_at: history["oldest_at"])
+    rescue Fit::Failed => error
+      raise Failed, error.message, cause: nil
     end
 
     # After an interrupted thinning: remove its container, confirm it is gone,

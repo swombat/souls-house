@@ -43,7 +43,10 @@ module Backup
         ok: ok,
         stderr_tail: stderr_tail
       )
-      record_prune_failure(snapshot, prune!(agent)) if ok
+      if ok
+        record_prune_failure(snapshot, prune!(agent))
+        record_prune_failure(snapshot, fit!(agent))
+      end
       raise "restic backup failed for #{agent.name}: #{stderr_tail.presence || 'unknown error'}" if force && !ok
 
       snapshot
@@ -96,6 +99,21 @@ module Backup
       ]
       _out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd))
       status.success? ? nil : err.to_s.last(2000)
+    end
+
+    # Keeps the repository within the resident's backup space and records
+    # what it holds (Backup::Fit). Returns an error string, or nil.
+    def fit!(agent)
+      run = lambda do |*args|
+        out, err, status = Open3.capture3(*docker_run_cmd(agent, *restic_env(agent), Backup::AgentRestic::IMAGE, *args))
+        raise Backup::Fit::Failed, "restic #{args.first} failed: #{err.to_s.squish.last(500)}" unless status.success?
+
+        out
+      end
+      Backup::Fit.new(agent, run:).call
+      nil
+    rescue Backup::Fit::Failed => error
+      error.message
     end
 
     # The backup itself succeeded, so the snapshot stays ok; a failed forget/
