@@ -46,10 +46,10 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :success
 
-    charge = TranscriptionCharge.find_by!(account: @account, source: "voice_note")
-    assert_equal 1, TranscriptionCharge.where(account: @account).count
-    assert_equal 2, charge.attempts
-    assert_operator charge.audio_ms, :>, 0
+    sends = TranscriptionCharge.where(account: @account, source: "voice_note").order(:id)
+    assert_equal [ false, true ], sends.map(&:retry)
+    assert_equal 1, sends.map(&:source_key).uniq.size
+    assert_equal sends.first.audio_ms, FieldRecordingReservation.used_ms(@account)
   end
 
   test "a voice note over the allowance is saved, not sent, and says why" do

@@ -49,7 +49,7 @@ class FieldRecordingReservation < ApplicationRecord
     excess = used_ms(account, now:) + needed_ms - limit
     freed = 0
     ageing = where(account:, state: "consumed").where(consumed_at: (now - WINDOW)..).pluck(:consumed_at, :audio_ms) +
-      TranscriptionCharge.where(account:).counting_at(now).pluck(:created_at, :audio_ms)
+      TranscriptionCharge.where(account:).first_sends.counting_at(now).pluck(:created_at, :audio_ms)
     ageing.sort_by(&:first).each do |counted_at, audio_ms|
       freed += audio_ms
       return counted_at + WINDOW if freed >= excess

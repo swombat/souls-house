@@ -99,8 +99,7 @@ class Chats::TranscriptionsController < ApplicationController
   # twice. Raises TranscriptionCharge::Refused when there is no room, and the
   # recording stays saved.
   def charge!(blob, path)
-    TranscriptionCharge.admit!(account: transcription_account, source: "voice_note", key: blob.id,
-      path:, byte_size: blob.byte_size)
+    TranscriptionCharge.admit!(account: transcription_account, source: "voice_note", key: blob.id, path:)
   end
 
   def render_gone

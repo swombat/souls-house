@@ -90,7 +90,7 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
       PrepareTelegramMediaJob.perform_now(message, "voice-file")
     end
 
-    charge = TranscriptionCharge.find_by!(source: "telegram", source_key: message.id.to_s)
+    charge = TranscriptionCharge.find_by!(source: "telegram", source_key: message.id.to_s, retry: false)
     assert_equal @agent.account, charge.account
     assert_operator charge.audio_ms, :>, 0
   end

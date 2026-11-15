@@ -10,8 +10,8 @@ class TranscriptionChargeTest < ActiveSupport::TestCase
   end
 
   def admit(key:, ms:, now: Time.current)
-    TranscriptionCharge.stub(:measure, [ ms, false ]) do
-      TranscriptionCharge.admit!(account: @account, source: "voice_note", key:, path: @path, byte_size: 1, now:)
+    TranscriptionCharge.stub(:measure, ms) do
+      TranscriptionCharge.admit!(account: @account, source: "voice_note", key:, path: @path, now:)
     end
   end
 
@@ -59,15 +59,39 @@ class TranscriptionChargeTest < ActiveSupport::TestCase
     assert_match "enough for this by about #{20.days.from_now.strftime('%a %-d %b')}", error.message
   end
 
-  test "an unreadable file is charged by its size, erring long" do
+  test "a retry counts toward the vendor ceiling for 30 days from the retry, not from the first send" do
+    admit(key: 1, ms: 6.minutes.in_milliseconds, now: 29.days.ago)
+    admit(key: 1, ms: 6.minutes.in_milliseconds, now: 24.days.ago)
+
+    later = 2.days.from_now
+    assert_equal 0, FieldRecordingReservation.used_ms(@account, now: later), "the first send has aged out of the allowance"
+    assert_equal 6.minutes.in_milliseconds, FieldRecordingDispatch.exposure_ms(@account, now: later),
+      "the retry is still inside the window"
+  end
+
+  test "a retry after the first send has aged out is still a retry, and still bounded" do
+    admit(key: 1, ms: 6.minutes.in_milliseconds, now: 40.days.ago)
+    3.times { admit(key: 1, ms: 6.minutes.in_milliseconds) }
+
+    assert_equal 0, FieldRecordingReservation.used_ms(@account)
+    assert_raises(TranscriptionCharge::Refused) { admit(key: 1, ms: 6.minutes.in_milliseconds) }
+  end
+
+  test "audio whose length can't be read is refused, never sent on a guess" do
     Tempfile.create("noise") do |file|
       file.write("x" * 30_000)
       file.flush
-      ms, estimated = TranscriptionCharge.measure(file.path, byte_size: 30_000)
 
-      assert estimated
-      assert_equal 10_000, ms
+      error = assert_raises(TranscriptionCharge::Refused) do
+        TranscriptionCharge.admit!(account: @account, source: "voice_note", key: 9, path: file.path)
+      end
+      assert_equal TranscriptionCharge::UNREADABLE, error.message
+      assert_equal 0, TranscriptionCharge.count
     end
+  end
+
+  test "a browser recording's length is read" do
+    assert_in_delta 1008, TranscriptionCharge.measure(@path), 50
   end
 
 end

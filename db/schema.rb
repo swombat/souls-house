@@ -3231,16 +3231,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_090000) do
 
   create_table "transcription_charges", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.integer "attempts", default: 1, null: false
     t.bigint "audio_ms", null: false
     t.datetime "created_at", null: false
-    t.boolean "estimated", default: false, null: false
+    t.boolean "retry", default: false, null: false
     t.string "source", null: false
     t.string "source_key", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "index_transcription_charges_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_transcription_charges_on_account_id"
-    t.index ["source", "source_key"], name: "index_transcription_charges_on_source_and_source_key", unique: true
+    t.index ["source", "source_key"], name: "index_transcription_charges_on_first_send", unique: true, where: "(retry = false)"
   end
 
   create_table "transcription_glossary_terms", force: :cascade do |t|
