@@ -32,6 +32,44 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a voice note is counted against the account's transcription allowance, once across retries" do
+    audio = fixture_file_upload("test_audio.webm", "audio/webm")
+
+    ElevenLabsStt.stub(:transcribe, ->(*, **) { raise ElevenLabsStt::Error, "busy" }) do
+      post account_chat_transcription_path(@account, @chat), params: { audio: audio }
+    end
+    assert_response :unprocessable_entity
+    signed_id = JSON.parse(response.body)["audio_signed_id"]
+
+    ElevenLabsStt.stub(:transcribe, "Hello world") do
+      post account_chat_transcription_path(@account, @chat), params: { audio_signed_id: signed_id }
+    end
+    assert_response :success
+
+    sends = TranscriptionCharge.where(account: @account, source: "voice_note").order(:id)
+    assert_equal [ false, true ], sends.map(&:retry)
+    assert_equal 1, sends.map(&:source_key).uniq.size
+    assert_equal sends.first.audio_ms, FieldRecordingReservation.used_ms(@account)
+  end
+
+  test "a voice note over the allowance is saved, not sent, and says why" do
+    audio = fixture_file_upload("test_audio.webm", "audio/webm")
+    sent = false
+
+    TranscriptionCharge.stub(:admit!, ->(**) { raise TranscriptionCharge::Refused, "Transcription has stopped for now" }) do
+      ElevenLabsStt.stub(:transcribe, ->(*, **) { sent = true; "Words" }) do
+        post account_chat_transcription_path(@account, @chat), params: { audio: audio }
+      end
+    end
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(response.body)
+    assert_not sent
+    assert_equal "Transcription has stopped for now", json["error"]
+    assert json["saved"]
+    assert json["audio_signed_id"].present?
+  end
+
   test "the room's account glossary goes to transcription" do
     TranscriptionGlossary.new(@account).add!("GrantTree", by: @user)
     received = nil

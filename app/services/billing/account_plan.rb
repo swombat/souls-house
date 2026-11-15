@@ -100,7 +100,7 @@ module Billing
     def purchasable? = price_id.present?
 
     def features
-      { members: members, swarm_searches: swarm_searches, subagents: subagents? }
+      { members: members, swarm_searches: swarm_searches, subagents: subagents?, transcription_hours: transcription_hours }
     end
 
     def as_json(*)

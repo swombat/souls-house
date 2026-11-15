@@ -16,9 +16,9 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
 
   test "features: one person and nothing more; several people and searches; sub-agents on Colleagues" do
     companions, partners, colleagues = Billing::AccountPlan.all
-    assert_equal({ members: "one", swarm_searches: 0, subagents: false }, companions.features)
-    assert_equal({ members: "several", swarm_searches: 20, subagents: false }, partners.features)
-    assert_equal({ members: "several", swarm_searches: 100, subagents: true }, colleagues.features)
+    assert_equal({ members: "one", swarm_searches: 0, subagents: false, transcription_hours: 5 }, companions.features)
+    assert_equal({ members: "several", swarm_searches: 20, subagents: false, transcription_hours: 20 }, partners.features)
+    assert_equal({ members: "several", swarm_searches: 100, subagents: true, transcription_hours: 40 }, colleagues.features)
   end
 
   test "highest picks the higher plan, ignoring blanks and unknowns, Companions by default" do
@@ -32,7 +32,7 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
   test "JSON leads with from_usd as a decimal string; Companions is never sold" do
     json = Billing::AccountPlan.find!("companions").as_json
     assert_equal({ id: "companions", name: "Companions", monthly_usd: "0.00", from_usd: "9.99", purchasable: false,
-      features: { members: "one", swarm_searches: 0, subagents: false } }, json)
+      features: { members: "one", swarm_searches: 0, subagents: false, transcription_hours: 5 } }, json)
     assert_equal "29.99", Billing::AccountPlan.find!("partners").as_json[:from_usd]
     assert_equal "59.99", Billing::AccountPlan.find!("colleagues").as_json[:from_usd]
   end
@@ -60,11 +60,11 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
     saved.each { |key, value| ENV[key] = value }
   end
 
-  test "transcription and backups are the account's, the ladder the sizes had, and not shown until enforced" do
+  test "transcription is the account's and shown now it is enforced; backups are not shown until they are" do
     assert_equal [ 5, 20, 40 ], Billing::AccountPlan.all.map(&:transcription_hours)
     assert_equal [ 10, 50, 200 ], Billing::AccountPlan.all.map(&:backup_gb)
     Billing::AccountPlan.all.each do |plan|
-      assert_not plan.features.key?(:transcription_hours)
+      assert_equal plan.transcription_hours, plan.features[:transcription_hours]
       assert_not plan.features.key?(:backup_gb)
     end
   end

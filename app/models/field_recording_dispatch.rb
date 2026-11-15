@@ -22,8 +22,10 @@ class FieldRecordingDispatch < ApplicationRecord
   validates :outcome, inclusion: { in: OUTCOMES }
   validates :audio_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
+  # Every send to the vendor: recording dispatches here, and each send of a
+  # voice note or Telegram audio (TranscriptionCharge).
   def self.exposure_ms(account, now: Time.current)
-    where(account:, created_at: (now - EXPOSURE_WINDOW)..).sum(:audio_ms)
+    where(account:, created_at: (now - EXPOSURE_WINDOW)..).sum(:audio_ms) + TranscriptionCharge.exposure_ms(account, now:)
   end
 
   def self.exposure_limit_ms(account)

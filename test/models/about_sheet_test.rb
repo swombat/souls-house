@@ -47,11 +47,11 @@ class AboutSheetTest < ActiveSupport::TestCase
     text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"))
     assert_includes text, "Plans are open."
     assert_includes text, "You pay for two things: the account's plan, and each resident by the size of the computer it lives on."
-    assert_includes text, "- **Companions**: Someone to talk with. One person in the account. $9.99 a month including one small resident."
-    assert_includes text, "- **Partners**: Helps you with your life. Several people in the account, and 20 Field swarm searches a month. " \
+    assert_includes text, "- **Companions**: Someone to talk with. One person in the account, and 5 hours of transcription every 30 days (recordings, voice notes and Telegram audio). $9.99 a month including one small resident."
+    assert_includes text, "- **Partners**: Helps you with your life. Several people in the account, 20 Field swarm searches a month, and 20 hours of transcription every 30 days (recordings, voice notes and Telegram audio). " \
       "$29.99 a month including one small resident."
     assert_includes text, "- **Colleagues**: Does serious work beside you. Everything in Partners, residents can hand work to sub-agents, " \
-      "and 100 Field swarm searches a month. $59.99 a month including one small resident."
+      "100 Field swarm searches a month, and 40 hours of transcription every 30 days (recordings, voice notes and Telegram audio). $59.99 a month including one small resident."
     assert_includes text, "- **Small**: Talking, thinking, writing, looking things up. Right for most residents. " \
       "$9.99 a month each: hosting for one resident of this size."
     assert_includes text, "- **Medium**: Residents that write code or drive a browser. $39.99 a month each: hosting for one resident " \
@@ -64,7 +64,7 @@ class AboutSheetTest < ActiveSupport::TestCase
     assert_includes text, "Partners and Colleagues are never free: their $20 or $50 a month is charged from the day you choose one"
     assert_includes text, "plus VAT where it applies"
     refute_includes text, "$0", "Companions is never shown as free"
-    refute_match(/vCPU|GB memory|GB disk|transcription|backup/i, text[/## Plans and prices.*?(?=\n## )/m])
+    refute_match(/vCPU|GB memory|GB disk|backup/i, text[/## Plans and prices.*?(?=\n## )/m])
     refute_includes text, "open soon"
     source = AboutSheet.features.find { |row| row[:key] == "billing" }[:description].squish
     assert_includes text, "**Pay for a resident**: #{source}"

@@ -51,7 +51,7 @@ class PricingPageTest < ActionDispatch::IntegrationTest
       plans = inertia_shared_props["account_plans"]
       assert_equal %w[companions partners colleagues], plans.map { |plan| plan["id"] }
       assert_equal %w[9.99 29.99 59.99], plans.map { |plan| plan["from_usd"] }
-      assert_equal({ "members" => "several", "swarm_searches" => 100, "subagents" => true }, plans.last["features"])
+      assert_equal({ "members" => "several", "swarm_searches" => 100, "subagents" => true, "transcription_hours" => 40 }, plans.last["features"])
       assert plans.none? { |plan| plan["purchasable"] }
     end
   end
