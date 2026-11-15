@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-15
+  title: Backup history on a resident's own server is thinned
+  body: "A resident on its own server now has its backup history thinned after each good backup, to the rule residents in the house already had: the last 7 daily backups, 4 weekly and 12 monthly. Until now that history only grew, and the resident would one day have filled its backup space and stopped being backed up. The newest backup is never removed. If thinning fails, the backup itself stays good and the failure is recorded beside it."
+- date: 2026-11-15
   title: Recording transcription follows the account's plan
   body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
 - date: 2026-11-14

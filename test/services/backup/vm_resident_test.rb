@@ -112,7 +112,8 @@ module Backup
       verifier = Minitest::Mock.new
       verifier.expect(:verify!, true, [], agent: @agent, snapshot_id: "a" * 64,
         checkpoint_digest: nil, checkpoint_file_digest: Digest::SHA256.hexdigest("null"))
-      result = VmResident.status(command:, verifier:)
+      result = nil
+      assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { result = VmResident.status(command:, verifier:) }
       assert_equal "verified", result[:state]
       assert result[:snapshot].ok?
       assert_not VmResident.held?(@agent)
@@ -123,7 +124,8 @@ module Backup
     test "checkpoint mismatch never asks the verifier and records failed backup" do
       command = issue
       answer(command, checkpoint_file_sha256: "wrong")
-      result = VmResident.status(command:, verifier: Object.new)
+      result = nil
+      assert_no_enqueued_jobs(only: VmThinningJob) { result = VmResident.status(command:, verifier: Object.new) }
       assert_equal "failed", result[:state]
       assert_not result[:snapshot].ok?
       assert_not VmResident.held?(@agent)
