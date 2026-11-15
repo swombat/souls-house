@@ -184,6 +184,7 @@ areas:
       - field_recordings
       - field_recording_dispatches
       - field_recording_reservations
+      - transcription_charges
       - field_recording_shares
       - field_recording_speakers
       - field_voices
