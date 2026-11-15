@@ -26,7 +26,15 @@ class VmBirthSweepJob < ApplicationJob
     VmRollback.releasing.pluck(:id).each { |rollback_id| VmRollbackReleaseJob.perform_later(rollback_id) }
 
     # A move between servers left open with no job (Agents::ServerMove).
-    VmServerMove.open.where(updated_at: ..1.minute.ago).pluck(:id).each { |move_id| VmServerMoveJob.perform_later(move_id) }
+    # The same for a release that was claimed and not finished.
+    VmServerMove.where(phase: VmServerMove::OPEN_PHASES + [ "releasing" ]).where(updated_at: ..1.minute.ago)
+      .pluck(:id).each { |move_id| VmServerMoveJob.perform_later(move_id) }
+
+    # A move that settled after its account was disabled: a disabled account
+    # keeps no servers (Account#release_vm_servers).
+    VmServerMove.where(phase: VmServerMove::SETTLED_PHASES)
+      .where(agent_id: Agent.where(account_id: Account.where.not(disabled_at: nil).select(:id)).select(:id))
+      .find_each { |move| Agents::ServerMove.new.release_for_disabled_account!(move) }
 
     # A credential/service restart whose settle job was lost.
     AgentPlacement.where.not(refresh_command_id: nil).where("refresh_requested_at < ?", 1.minute.ago)

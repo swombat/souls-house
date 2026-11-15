@@ -10,10 +10,15 @@ class VmServerMoveJob < ApplicationJob
 
   def perform(move_id)
     move = VmServerMove.find_by(id: move_id)
-    return if move.nil? || !move.open?
+    return if move.nil?
 
-    move = Agents::ServerMove.new.step!(move)
-    self.class.set(wait: RECHECK_AFTER).perform_later(move.id) if move.open?
+    mover = Agents::ServerMove.new
+    if move.phase == "releasing"
+      move = mover.finish_release!(move)
+    elsif move.open?
+      move = mover.step!(move)
+    end
+    self.class.set(wait: RECHECK_AFTER).perform_later(move.id) if move.open? || move.phase == "releasing"
   end
 
 end

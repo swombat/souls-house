@@ -93,7 +93,28 @@ module Agents
       VmBackup.create!(agent: @agent, runner_command: command, checkpoint_file_digest: "d" * 64, state: "verified",
         deadline_at: 1.hour.ago, released_at: 1.hour.ago)
       @hetzner = FakeHetzner.new(OLD, NEW)
-      @mover = ServerMove.new(client: @hetzner, procurement: nil)
+      @starts = []
+      @starter = lambda do |agent|
+        @starts << agent.id
+        RunnerCommand.enqueue!(enrollment: @enrollment, kind: "start_resident", payload: {})
+      end
+      @mover = ServerMove.new(client: @hetzner, procurement: nil, starter: @starter)
+    end
+
+    # The runner answers the newest start_resident it was sent.
+    def answer_start(outcome: "done", state: "running")
+      command = @enrollment.commands.where(kind: "start_resident", state: "queued").order(:id).last
+      command.deliver!(now: Time.current)
+      command.record_result!({ "outcome" => outcome, "result" => ({ "state" => state } if outcome == "done"),
+                               "error" => ("boom" unless outcome == "done") }.compact, now: Time.current)
+    end
+
+    # Runner reports from the server, then the resident answers its start.
+    def come_up_on(move, server_id)
+      report_from(server_id)
+      @mover.step!(move)
+      answer_start
+      @mover.step!(move)
     end
 
     def operation!(server_type:, location:, server_id:, **attributes)
@@ -147,7 +168,16 @@ module Agents
       @mover.step!(move)
       assert_equal "verifying", move.reload.phase
 
+      # The runner reporting from the new server is not enough (Mira, #979):
+      # the resident is asked to start, and must answer.
       report_from(NEW)
+      @mover.step!(move)
+      assert_equal "verifying", move.reload.phase
+      assert_equal [ @agent.id ], @starts
+      @mover.step!(move)
+      assert_equal 1, @starts.size, "one start is in flight"
+
+      answer_start
       @mover.step!(move)
       assert_equal "moved", move.reload.phase
       assert_not_includes VmServerMove.holding_agent_ids, @agent.id
@@ -238,10 +268,7 @@ module Agents
       @mover.step!(move)
       assert_equal "reverting", move.reload.phase
 
-      travel(1.minute) do
-        report_from(OLD)
-        @mover.step!(move)
-      end
+      travel(1.minute) { come_up_on(move, OLD) }
       assert_equal "reverted", move.reload.phase
       assert_match(/snapshot failed/, move.failure)
       assert_not @hetzner.calls.any? { |call| call.first == "rebuild_server" }
@@ -272,10 +299,7 @@ module Agents
       assert_equal [ "start_server", OLD ], @hetzner.calls.last
       @hetzner.settle!
 
-      travel(1.minute) do
-        report_from(OLD)
-        @mover.step!(move)
-      end
+      travel(1.minute) { come_up_on(move, OLD) }
       assert_equal "reverted", move.reload.phase
       # The spare now holds a copy of a resident's disk: it is not a spare again.
       assert_equal 0, CloudProcurementOperation.spares.count
@@ -325,8 +349,7 @@ module Agents
     test "a site admin sends a moved resident back, and only while it is idle" do
       move = start!
       run_to(move, "verifying")
-      report_from(NEW)
-      @mover.step!(move)
+      come_up_on(move, NEW)
       assert_equal "moved", move.reload.phase
 
       assert_raises(ServerMove::Refused) { @mover.revert!(move, requested_by: users(:regular_user), reason: "x") }
@@ -342,37 +365,205 @@ module Agents
       end
       assert_equal "off", @hetzner.find_server(NEW).status
       assert_equal OLD, @placement.reload.provider_server_id
-      travel(1.minute) do
-        report_from(OLD)
-        @mover.step!(move)
-      end
+      travel(1.minute) { come_up_on(move, OLD) }
       assert_equal "reverted", move.reload.phase
     end
 
-    test "release deletes the snapshot and the old server, only once the resident reports from the new one" do
-      deleted = []
+    # Stands in for CloudProcurement#release_move_source!.
+    def releasing_procurement(deleted)
       procurement = Object.new
-      procurement.define_singleton_method(:request_delete!) do |operation, requested_by:|
-        deleted << [ operation.id, requested_by.id ]
+      procurement.define_singleton_method(:release_move_source!) do |operation|
+        deleted << operation.id
+        operation.update_columns(state: "deleting")
         operation
       end
-      mover = ServerMove.new(client: @hetzner, procurement:)
+      procurement
+    end
+
+    def backed_up_from_new_server!
+      command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "backup_resident", payload: {})
+      command.update_columns(state: "done", finished_at: Time.current)
+      VmBackup.create!(agent: @agent, runner_command: command, checkpoint_file_digest: "e" * 64, state: "verified",
+        deadline_at: Time.current, released_at: Time.current)
+    end
+
+    test "release needs the resident running on the new server and backed up from it, then deletes the old server and snapshot" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
       move = start!
       assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
 
       run_to(move, "verifying")
-      report_from(NEW)
-      @mover.step!(move)
-      @enrollment.update!(last_heartbeat_at: 10.minutes.ago)
-      assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
-      assert_empty deleted
+      come_up_on(move, NEW)
+      assert_equal "moved", move.reload.phase
+      assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: users(:regular_user)) }
 
-      report_from(NEW)
-      mover.release!(move, requested_by: @admin)
+      error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+      assert_equal ServerMove::NOT_BACKED_UP, error.message
+
+      travel(5.minutes) do
+        backed_up_from_new_server!
+        @enrollment.update!(last_heartbeat_at: 10.minutes.ago)
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_empty deleted
+        assert_equal "moved", move.reload.phase
+
+        report_from(NEW)
+        mover.release!(move, requested_by: @admin)
+      end
       assert_equal "released", move.reload.phase
-      assert_equal [ [ @source.id, @admin.id ] ], deleted
+      assert_equal [ @source.id ], deleted
       assert_empty @hetzner.snapshots
       assert_raises(ServerMove::Refused) { mover.revert!(move, requested_by: @admin, reason: "too late") }
+    end
+
+    # Mira, #979: the release is claimed in the database before anything is
+    # deleted, so going back cannot take a server that is being deleted.
+    test "a claimed release shuts out going back, and a release cut short is finished later" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
+      move = start!
+      run_to(move, "verifying")
+      come_up_on(move, NEW)
+      travel(5.minutes) do
+        backed_up_from_new_server!
+        report_from(NEW)
+
+        # The provider fails after the claim: nothing deleted, phase releasing.
+        failing = Object.new
+        failing.define_singleton_method(:snapshot_ids_labelled) { |*| raise HetznerCloudClient::Error.new("down", code: "unavailable") }
+        ServerMove.new(client: failing, procurement: releasing_procurement(deleted), starter: @starter)
+          .release!(move, requested_by: @admin)
+        assert_equal "releasing", move.reload.phase
+        assert_equal @source.id, move.release_operation_id
+        assert_empty deleted
+
+        assert_raises(ServerMove::Refused) { mover.revert!(move, requested_by: @admin, reason: "changed my mind") }
+        assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+
+        ServerMove.stub(:new, mover) { VmServerMoveJob.perform_now(move.id) }
+      end
+      assert_equal "released", move.reload.phase
+      assert_equal [ @source.id ], deleted
+    end
+
+    test "a resident whose runner reports but which never answers its start is sent back" do
+      move = start!
+      run_to(move, "verifying")
+      report_from(NEW)
+      @mover.step!(move)
+      answer_start(outcome: "failed")
+      @mover.step!(move)
+      assert_equal "verifying", move.reload.phase
+      assert_equal 1, @starts.size, "a failed start is not sent again at once"
+
+      travel(ServerMove::START_RETRY_AFTER + 1.second) do
+        report_from(NEW)
+        @mover.step!(move)
+        assert_equal 2, @starts.size
+        answer_start(outcome: "done", state: "exited")
+        @mover.step!(move)
+        assert_equal "verifying", move.reload.phase
+      end
+      travel(ServerMove::PHASE_DEADLINES["verifying"] + 1.minute) { @mover.step!(move) }
+      assert_equal "reverting", move.reload.phase
+      assert_nil move.verify_command_id
+    end
+
+    test "a backup or a kernel reboot is not admitted while a move is open" do
+      move = start!
+      assert_raises(Backup::AgentRestic::ResidentBusy) { Backup::VmResident.issue!(placement: @placement) }
+
+      @enrollment.update!(last_facts: @enrollment.last_facts.merge("reboot_required" => true, "reboot_host" => 1))
+      assert_not KernelReboot.offer?(@enrollment.reload)
+      KernelReboot.offer!(@enrollment)
+      assert_not @enrollment.commands.exists?(kind: KernelReboot::KIND)
+
+      move.update_columns(phase: "moved")
+      assert KernelReboot.offer?(@enrollment.reload)
+    end
+
+    test "a disabled account's settled move gives up its left-behind server and snapshot" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
+      move = start!
+      run_to(move, "verifying")
+      come_up_on(move, NEW)
+      assert_equal 1, @hetzner.snapshots.size
+
+      # No backup from the new server and no fresh report: a disabled account needs neither.
+      @enrollment.update!(last_heartbeat_at: 10.minutes.ago)
+      ServerMove.stub(:new, mover) do
+        @agent.account.update_columns(disabled_at: Time.current)
+        VmBirthSweepJob.perform_now
+      end
+      assert_equal "released", move.reload.phase
+      assert_equal [ @source.id ], deleted
+      assert_empty @hetzner.snapshots
+    end
+
+    # Mira, #979: a move that went back before it wrote to its target left
+    # the target a spare. Releasing that move must not delete it, least of
+    # all after another resident has taken it.
+    test "releasing a move that went back before the switch deletes no server" do
+      deleted = []
+      procurement = releasing_procurement(deleted)
+      move = start!
+      run_to(move, "snapshotting")
+      @mover.step!(move)
+      @hetzner.settle!("error")
+      run_to(move, "reverting")
+      3.times do
+        @mover.step!(move)
+        @hetzner.settle!
+      end
+      travel(1.minute) do
+        come_up_on(move, OLD)
+        assert_equal "reverted", move.reload.phase
+        assert_equal "spare", @target.reload.purpose
+        assert_nil move.left_behind_operation
+
+        # Another resident's move takes the same spare and finishes.
+        @target.update!(purpose: "placement", agent_placement: AgentPlacement.create!(agent: agents(:code_reviewer),
+          backend: "hetzner_cloud", state: "ready", provider_server_id: NEW, location: "nbg1"), requested_by: @admin)
+
+        report_from(OLD)
+        ServerMove.new(client: @hetzner, procurement:, starter: @starter).release!(move, requested_by: @admin)
+      end
+      assert_empty deleted
+      assert_equal "released", move.reload.phase
+      assert_empty @hetzner.snapshots
+    end
+
+    # Mira, #979: a shutdown that was asked for and never happened.
+    test "going back from a shutdown that never finished cuts the power, then starts the old server once" do
+      move = start!
+      @mover.step!(move)
+      assert_equal "running", @hetzner.find_server(OLD).status
+      travel(ServerMove::PHASE_DEADLINES["stopping"] + 1.minute) do
+        @mover.step!(move)
+        assert_equal "reverting", move.reload.phase
+
+        # Still running and still reporting: that alone is not "back".
+        report_from(OLD, uptime: 86_400)
+        @mover.step!(move)
+        assert_equal "reverting", move.reload.phase
+        assert_equal [ "stop_server", OLD ], @hetzner.calls.last
+        @hetzner.settle!
+
+        @mover.step!(move)
+        assert_equal [ "start_server", OLD ], @hetzner.calls.last
+        @hetzner.settle!
+        @mover.step!(move)
+        assert_equal "reverting", move.reload.phase, "the old report is from before the restart"
+      end
+      travel(ServerMove::PHASE_DEADLINES["stopping"] + 3.minutes) do
+        report_from(OLD, uptime: 30)
+        @mover.step!(move)
+        answer_start
+        @mover.step!(move)
+      end
+      assert_equal "reverted", move.reload.phase
     end
 
     test "the job steps an open move and comes back; the sweep restarts one left without a job" do

@@ -35,6 +35,18 @@ module Agents
   # - Its home. A move starts only with a verified backup newer than
   #   BACKUP_WITHIN, taken from the old server.
   #
+  # - A resident that did not come back. A reporting runner is not a working
+  #   resident (Mira, #979), so a move is finished only when the resident
+  #   itself answers: the house sends the same start command a deploy sends
+  #   (the runner keeps the home volumes and waits for the resident's
+  #   authenticated health check), and that command must come back done from
+  #   the new server. Going back is confirmed the same way. The old server is
+  #   released only once a verified backup has been taken from the new one.
+  # - The left-behind server, from being deleted while something else still
+  #   needs it. release! claims the release in the database first (phase
+  #   releasing), which shuts out going back, and deletes only a purchase the
+  #   switch set aside for this move.
+  #
   # What it does not do: it never deletes a server or a snapshot before
   # release!, never resizes anything, and never starts a move by itself.
   # After a move, what the resident wrote on the new server exists only
@@ -52,6 +64,7 @@ module Agents
       "verifying" => 20.minutes
     }.freeze
     MOVE_LABEL = "souls-house/move".freeze
+    START_RETRY_AFTER = 1.minute
 
     NOT_ON_SERVER = "Only a resident that is running on its own server can be moved to another one.".freeze
     NOT_A_SPARE = "The server to move to must be a spare the house holds, running and not in use.".freeze
@@ -65,10 +78,15 @@ module Agents
       def ok? = refusal.nil?
     end
 
-    def initialize(client: nil, procurement: nil, clock: -> { Time.current })
+    # starter: sends start_resident for a resident and returns the command.
+    STARTER = ->(agent) { RemoteRuntime.start!(agent) }
+    NOT_BACKED_UP = "The resident has no verified backup taken from its new server yet, so its old one is kept.".freeze
+
+    def initialize(client: nil, procurement: nil, clock: -> { Time.current }, starter: STARTER)
       @client = client
       @procurement = procurement
       @clock = clock
+      @starter = starter
     end
 
     # Every gate with its answer, for a dry run. Reads only.
@@ -132,6 +150,9 @@ module Agents
       # reads again. The phase deadline bounds how long that can go on.
       Rails.logger.warn("[server_move] #{move.public_id} #{move.phase}: #{e.class} #{e.code}")
       move.reload
+    rescue RemoteRuntime::Unavailable, Agent::RuntimeAvailability::Unavailable => e
+      Rails.logger.warn("[server_move] #{move.public_id} #{move.phase}: resident start not sent: #{e.message}")
+      move.reload
     end
 
     # A site admin sends a moved resident back to its old server. What it
@@ -154,26 +175,57 @@ module Agents
     end
 
     # A site admin lets go of what the move left behind: the old server
-    # after a move (or the new one after going back) and the snapshot. After
+    # after a move (or the copy after going back) and the snapshot. After
     # this the move cannot be undone.
     def release!(move, requested_by:)
       raise Refused, "installation admin required" unless requested_by.is_a?(User) && requested_by.is_site_admin?
 
-      operation = nil
-      move.with_lock do
-        operation = move.left_behind_operation
-        raise Refused, "Only a settled move has something to release." if operation.nil?
-        if move.phase == "moved" && !healthy_on?(move, move.target_server_id)
-          raise Refused, "The resident is not reporting from its new server, so its old one is kept."
+      claim_release!(move, by: requested_by) do
+        server_id = move.phase == "moved" ? move.target_server_id : move.source_server_id
+        unless healthy_on?(move, server_id) && resident_last_started?(move)
+          raise Refused, "The resident is not running on the server it was left on, so the other one is kept."
+        end
+        if move.phase == "moved" &&
+            !VmBackup.where(agent_id: move.agent_id, state: "verified").where(created_at: move.verified_at..).exists?
+          raise Refused, NOT_BACKED_UP
         end
       end
+      finish_release!(move)
+    end
+
+    # A disabled account keeps no servers (Account#release_vm_servers): what
+    # a settled move left behind goes without the checks a release makes for
+    # a resident that is meant to keep running.
+    def release_for_disabled_account!(move)
+      claim_release!(move, by: nil)
+      finish_release!(move)
+    rescue Refused
+      move
+    end
+
+    # Deletes the claimed server and the snapshot. Safe to run again: a
+    # release cut short stays in releasing and the job or the sweep comes
+    # back to it.
+    def finish_release!(move)
+      return move unless move.reload.phase == "releasing"
 
       client.snapshot_ids_labelled(MOVE_LABEL, move.public_id).each { |image_id| client.delete_snapshot(image_id) }
-      operation = procurement.request_delete!(operation, requested_by:) if %w[provisioned needs_review].include?(operation.state)
-      CloudProcurementReconcileJob.perform_later(operation.id)
-      move.with_lock { move.enter!("released", now:, released_at: now) }
-      audit!(move, "vm_server_move_released", "by" => requested_by.id, "operation" => operation.public_id)
+      operation = move.release_operation
+      if operation
+        operation = procurement.release_move_source!(operation)
+        CloudProcurementReconcileJob.perform_later(operation.id) if operation.state == "deleting"
+        return move unless %w[deleting deleted].include?(operation.state)
+      end
+      move.with_lock do
+        next unless move.phase == "releasing"
+
+        move.enter!("released", now:, released_at: now)
+        audit!(move, "vm_server_move_released", "by" => move.released_by_id, "operation" => operation&.public_id)
+      end
       move
+    rescue HetznerCloudClient::Error, CloudProcurement::NotAllowed => e
+      Rails.logger.warn("[server_move] #{move.public_id} release: #{e.class}: #{e.message}")
+      move.reload
     end
 
     private
@@ -181,6 +233,22 @@ module Agents
     def now = @clock.call
     def client = @client ||= HetznerCloudClient.from_credentials
     def procurement = @procurement ||= CloudProcurement.from_credentials
+
+    # Moves a settled move to releasing in one transaction, after the
+    # block's checks, and records which purchase this release may delete.
+    # From here revert! refuses (it needs "moved"), and no other move can
+    # take the purchase (a move_source is not a spare).
+    def claim_release!(move, by:)
+      move.with_lock do
+        raise Refused, "Only a settled move has something to release." unless move.settled?
+
+        yield if block_given?
+        # nil after a move that went back before it wrote to its target.
+        operation = move.left_behind_operation
+        move.enter!("releasing", now:, release_operation: operation, released_by: by, release_claimed_at: now)
+        audit!(move, "vm_server_move_release_claimed", "by" => by&.id, "operation" => operation&.public_id)
+      end
+    end
 
     def checks(agent, target, placement: nil)
       placement ||= AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
@@ -229,7 +297,7 @@ module Agents
     def stop!(move)
       server = client.find_server(move.source_server_id)
       return begin_revert!(move, "the old server is gone") if server.nil?
-      return move.enter!("snapshotting", now:) if server.status == "off"
+      return move.enter!("snapshotting", now:, source_off_at: now) if server.status == "off"
 
       if move.stop_requested_at.nil?
         client.shutdown_server(move.source_server_id)
@@ -300,6 +368,7 @@ module Agents
       return begin_revert!(move, "the new server is gone") if server.nil?
       client.poweron_server(move.target_server_id) if server.status == "off"
       return unless healthy_on?(move, move.target_server_id, since: move.switched_at)
+      return unless resident_answers?(move)
 
       move.enter!("moved", now:, verified_at: now)
       audit!(move, "vm_server_move_finished", "target_server_id" => move.target_server_id)
@@ -319,10 +388,38 @@ module Agents
         enrollment.last_heartbeat_at >= since
     end
 
+    # The resident itself, not only its runner: a start_resident sent after
+    # the runner reported from the right server came back done and running.
+    # The runner recreates the container only if its spec changed, keeps the
+    # home volumes either way, and answers done only after the resident's
+    # authenticated /health. A start that failed is sent again on a later
+    # step; the phase deadline bounds that.
+    def resident_answers?(move)
+      command = move.verify_command_id && RunnerCommand.find_by(id: move.verify_command_id)
+      if command.nil? || (command.terminal? && command.state != "done")
+        return false if command && command.finished_at && command.finished_at > now - START_RETRY_AFTER
+
+        move.update!(verify_command_id: @starter.call(move.agent).id)
+        return false
+      end
+      return false unless command.terminal?
+
+      command.result.is_a?(Hash) && command.result.dig("result", "state") == "running"
+    end
+
+    # The newest lifecycle command its runner finished is a start that
+    # worked: nothing has stopped the resident since.
+    def resident_last_started?(move)
+      last = move.runner_enrollment.commands.where(kind: %w[start_resident stop_resident]).where.not(finished_at: nil)
+        .order(:finished_at, :id).last
+      last&.kind == "start_resident" && last.state == "done"
+    end
+
     # --- going back -----------------------------------------------------------
 
     def begin_revert!(move, reason)
-      move.enter!("reverting", now:, revert_reason: reason.to_s.first(255), failure: (reason.to_s.first(255) unless move.phase == "moved"))
+      move.enter!("reverting", now:, revert_reason: reason.to_s.first(255), verify_command_id: nil,
+        failure: (reason.to_s.first(255) unless move.phase == "moved"))
       audit!(move, "vm_server_move_reverting", "reason" => reason.to_s.first(255))
     end
 
@@ -345,8 +442,20 @@ module Agents
         Rails.logger.error("[server_move] #{move.public_id}: old server #{move.source_server_id} is gone; needs an operator")
         return
       end
+      # A shutdown that was asked for and never seen to finish may still be
+      # under way, or may have been ignored. Either way the old server is
+      # taken to off first, so that what comes back is one clean boot and
+      # "reporting again" can be told from "never stopped" (Mira, #979).
+      if move.stop_requested_at && move.source_off_at.nil?
+        return client.poweroff_server(move.source_server_id) unless source.status == "off"
+
+        move.update!(source_off_at: now)
+      end
       return client.poweron_server(move.source_server_id) if source.status == "off"
-      return unless healthy_on?(move, move.source_server_id, since: move.phase_started_at)
+      # Never asked to stop: it has been running all along.
+      since = move.source_off_at && [ move.source_off_at, move.phase_started_at ].max
+      return unless healthy_on?(move, move.source_server_id, since:)
+      return unless resident_answers?(move)
 
       move.enter!("reverted", now:)
       audit!(move, "vm_server_move_reverted", "reason" => move.revert_reason)

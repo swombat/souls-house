@@ -25,6 +25,11 @@ class CreateVmServerMoves < ActiveRecord::Migration[8.1]
       t.datetime :phase_started_at, null: false
       t.datetime :stop_requested_at
       t.datetime :poweroff_requested_at
+      t.datetime :source_off_at
+      t.bigint :verify_command_id
+      t.references :release_operation, foreign_key: { to_table: :cloud_procurement_operations }, index: false
+      t.references :released_by, foreign_key: { to_table: :users }, index: false
+      t.datetime :release_claimed_at
       t.datetime :switched_at
       t.datetime :rebuilt_at
       t.datetime :verified_at
@@ -39,7 +44,7 @@ class CreateVmServerMoves < ActiveRecord::Migration[8.1]
       name: "index_vm_server_moves_one_open_per_target"
     add_index :vm_server_moves, :agent_id
     add_check_constraint :vm_server_moves,
-      "phase IN ('stopping', 'snapshotting', 'rebuilding', 'verifying', 'moved', 'reverting', 'reverted', 'released')",
+      "phase IN ('stopping', 'snapshotting', 'rebuilding', 'verifying', 'moved', 'reverting', 'reverted', 'releasing', 'released')",
       name: "vm_server_moves_phase"
   end
 

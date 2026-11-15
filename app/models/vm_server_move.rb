@@ -14,10 +14,15 @@
 #   reverting     going back: the new server is being stopped and the old
 #                 one started
 #   reverted      the resident runs on the old server again
-#   released      a site admin let the left-behind server and the snapshot go
+#   releasing     the left-behind server and the snapshot are being let go.
+#                 Claimed before anything is deleted: from here the move
+#                 can no longer be undone, and nothing else can take it back
+#   released      the left-behind server's deletion is asked for and the
+#                 snapshot is gone
 class VmServerMove < ApplicationRecord
 
-  PHASES = %w[stopping snapshotting rebuilding verifying moved reverting reverted released].freeze
+  PHASES = %w[stopping snapshotting rebuilding verifying moved reverting reverted releasing released].freeze
+  SETTLED_PHASES = %w[moved reverted].freeze
   # A move in one of these holds the resident's turns and its target.
   OPEN_PHASES = %w[stopping snapshotting rebuilding verifying reverting].freeze
 
@@ -27,6 +32,8 @@ class VmServerMove < ApplicationRecord
   belongs_to :source_operation, class_name: "CloudProcurementOperation"
   belongs_to :target_operation, class_name: "CloudProcurementOperation"
   belongs_to :runner_enrollment
+  belongs_to :release_operation, class_name: "CloudProcurementOperation", optional: true
+  belongs_to :released_by, class_name: "User", optional: true
 
   validates :phase, inclusion: { in: PHASES }
   validates :public_id, :source_server_id, :target_server_id, :phase_started_at, presence: true
@@ -34,6 +41,7 @@ class VmServerMove < ApplicationRecord
   scope :open, -> { where(phase: OPEN_PHASES) }
 
   def open? = OPEN_PHASES.include?(phase)
+  def settled? = SETTLED_PHASES.include?(phase)
   def switched? = switched_at.present?
 
   # Residents whose turns wait for a move (ResidentTurn.admit!).
@@ -43,12 +51,15 @@ class VmServerMove < ApplicationRecord
 
   # The server the move left behind, once it is settled: the old one after a
   # move, the new one (which holds a copy of the resident's disk) after
-  # going back.
+  # going back. Only a purchase the switch set aside counts. A spare that a
+  # failed move never wrote to is still a spare, perhaps another resident's
+  # server by now, and is nothing of this move's to release (Mira, #979).
   def left_behind_operation
-    case phase
+    operation = case phase
     when "moved" then source_operation
     when "reverted" then target_operation
     end
+    operation if operation&.purpose == "move_source" && operation.agent_placement_id.nil?
   end
 
   def enter!(phase, now: Time.current, **attributes)

@@ -3424,6 +3424,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_233000) do
     t.datetime "phase_started_at", null: false
     t.datetime "stop_requested_at"
     t.datetime "poweroff_requested_at"
+    t.datetime "source_off_at"
+    t.bigint "verify_command_id"
+    t.bigint "release_operation_id"
+    t.bigint "released_by_id"
+    t.datetime "release_claimed_at"
     t.datetime "switched_at"
     t.datetime "rebuilt_at"
     t.datetime "verified_at"
@@ -3437,7 +3442,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_233000) do
     t.index ["public_id"], name: "index_vm_server_moves_on_public_id", unique: true
     t.index ["requested_by_id"], name: "index_vm_server_moves_on_requested_by_id"
     t.index ["target_operation_id"], name: "index_vm_server_moves_one_open_per_target", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('rebuilding'::character varying)::text, ('verifying'::character varying)::text, ('reverting'::character varying)::text]))"
-    t.check_constraint "phase::text = ANY (ARRAY['stopping'::character varying::text, 'snapshotting'::character varying::text, 'rebuilding'::character varying::text, 'verifying'::character varying::text, 'moved'::character varying::text, 'reverting'::character varying::text, 'reverted'::character varying::text, 'released'::character varying::text])", name: "vm_server_moves_phase"
+    t.check_constraint "phase::text = ANY (ARRAY['stopping'::character varying::text, 'snapshotting'::character varying::text, 'rebuilding'::character varying::text, 'verifying'::character varying::text, 'moved'::character varying::text, 'reverting'::character varying::text, 'reverted'::character varying::text, 'releasing'::character varying::text, 'released'::character varying::text])", name: "vm_server_moves_phase"
   end
 
   create_table "watched_repositories", force: :cascade do |t|
@@ -3843,9 +3848,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_233000) do
   add_foreign_key "vm_rollbacks", "users", column: "requested_by_id"
   add_foreign_key "vm_server_moves", "agent_placements"
   add_foreign_key "vm_server_moves", "agents"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "release_operation_id"
   add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "source_operation_id"
   add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "target_operation_id"
   add_foreign_key "vm_server_moves", "runner_enrollments"
+  add_foreign_key "vm_server_moves", "users", column: "released_by_id"
   add_foreign_key "vm_server_moves", "users", column: "requested_by_id"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
   add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify

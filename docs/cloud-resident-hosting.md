@@ -307,8 +307,21 @@ What holds:
 - A move starts only for an idle resident (the kernel-reboot idle check,
   under the turn admission gate), with a verified backup from the last 26
   hours. While it is open the resident's turns wait in the queue.
-- Nothing is deleted before a site admin releases the move. After a
-  release the move cannot be undone.
+- A reporting runner is not a working resident. The move is finished only
+  when a `start_resident` sent after the new server's first report comes
+  back done and running: the runner keeps the home volumes and answers only
+  after the resident's authenticated `/health`. Going back is confirmed the
+  same way.
+- Backups and kernel reboots are not admitted while a move is open.
+- Nothing is deleted before a site admin releases the move. A release needs
+  the resident running where the move left it and, after a move, a verified
+  backup taken from the new server. It is claimed in the database first
+  (phase `releasing`), which shuts out going back; it deletes only the
+  purchase the switch set aside for this move, and the snapshot. A release
+  cut short is finished by the job or the sweep. After a release the move
+  cannot be undone.
+- A disabled account's settled move is released without those checks: a
+  disabled account keeps no servers.
 
 Operator commands:
 
