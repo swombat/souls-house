@@ -188,12 +188,13 @@ class AboutSheet
 
   # Only what a plan delivers today (Billing::AccountPlan#features).
   def account_plan_includes(plan)
+    hours = "#{plan.transcription_hours} hours of transcription every 30 days (recordings, voice notes and Telegram audio)"
     if plan.subagents?
-      "Everything in Partners, residents can hand work to sub-agents, and #{plan.swarm_searches} Field swarm searches a month."
+      "Everything in Partners, residents can hand work to sub-agents, #{plan.swarm_searches} Field swarm searches a month, and #{hours}."
     elsif plan.several_members?
-      "Several people in the account, and #{plan.swarm_searches} Field swarm searches a month."
+      "Several people in the account, #{plan.swarm_searches} Field swarm searches a month, and #{hours}."
     else
-      "One person in the account."
+      "One person in the account, and #{hours}."
     end
   end
 

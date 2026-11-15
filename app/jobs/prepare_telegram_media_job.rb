@@ -58,8 +58,13 @@ class PrepareTelegramMediaJob < ApplicationJob
 
   def prepare_voice(telegram_message, tempfile, filename, content_type)
     telegram_message.update!(
-      transcription: transcribe(tempfile, filename, content_type),
+      transcription: transcribe(telegram_message, tempfile, filename, content_type),
       media_metadata: telegram_message.media_metadata.except("transcription_status")
+    )
+  rescue TranscriptionCharge::Refused => e
+    telegram_message.update!(
+      transcription: nil,
+      media_metadata: telegram_message.media_metadata.merge("transcription_status" => refusal_status(e))
     )
   rescue ElevenLabsStt::Error => e
     Rails.logger.warn("[TelegramMedia] voice transcription failed for message #{telegram_message.id}: #{e.class}")
@@ -76,12 +81,15 @@ class PrepareTelegramMediaJob < ApplicationJob
     if preview.audio
       begin
         transcription = transcribe(
+          telegram_message,
           preview.audio,
           "telegram-video-audio-#{telegram_message.id}.wav",
           "audio/wav"
         )
         metadata.delete("transcription_status")
         telegram_message.transcription = transcription
+      rescue TranscriptionCharge::Refused => e
+        metadata["transcription_status"] = refusal_status(e)
       rescue ElevenLabsStt::Error => e
         Rails.logger.warn("[TelegramMedia] video transcription failed for message #{telegram_message.id}: #{e.class}")
         metadata["transcription_status"] = "failed"
@@ -110,7 +118,17 @@ class PrepareTelegramMediaJob < ApplicationJob
     preview&.close
   end
 
-  def transcribe(io, filename, content_type)
+  # Audio whose length can't be read was never sent: that is a failed
+  # transcription, not a used-up allowance.
+  def refusal_status(error)
+    error.is_a?(TranscriptionCharge::Unreadable) ? "failed" : "over_allowance"
+  end
+
+  # Counted against the home account's transcription allowance before it is
+  # sent (TranscriptionCharge); a retried job for the same message is not
+  # counted twice.
+  def transcribe(telegram_message, io, filename, content_type)
+    TranscriptionCharge.admit!(account: @glossary_account, source: "telegram", key: telegram_message.id, path: io.path)
     io.rewind
     # The resident's home account: its members' and residents' vocabulary.
     ElevenLabsStt.transcribe(Upload.new(io, filename, content_type),
