@@ -28,6 +28,8 @@
 
   let uploader = $state(null);
   let voiceNotice = $state('');
+  // While a voice note is recording or transcribing, stop is the only control (see MessageComposer).
+  let micDictating = $state(false);
   // As in a conversation: the wave stands in for Send while there is nothing
   // to send. It needs a resident to talk to.
   const showWave = $derived(
@@ -80,9 +82,12 @@
         {userId}
         disabled={processing || (isGroupChat && selectedAgentIds.length === 0)}
         onsuccess={onTranscription}
-        onerror={onError} />
+        onerror={onError}
+        onrecordingchange={(active) => (micDictating = active)} />
     </div>
-    {#if showWave}
+    {#if micDictating}
+      <!-- nothing: stop (the mic) is the only control while a voice note is in flight -->
+    {:else if showWave}
       <VoiceModeButton {voiceMode} bind:notice={voiceNotice} onopen={() => onVoiceStart?.()} />
     {:else}
       <button
