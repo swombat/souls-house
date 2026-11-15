@@ -313,11 +313,14 @@ What holds:
   after the resident's authenticated `/health`. Going back is confirmed the
   same way.
 - Backups and kernel reboots are not admitted while a move is open.
+- The proof that the resident answered belongs to one boot: a start sent
+  before the server's current boot began is sent again.
 - Nothing is deleted before a site admin releases the move. A release needs
-  the resident running where the move left it and, after a move, a verified
-  backup taken from the new server. It is claimed in the database first
-  (phase `releasing`), which shuts out going back; it deletes only the
-  purchase the switch set aside for this move, and the snapshot. A release
+  the server reporting from where the move left the resident, and a verified
+  backup taken since the move settled and since that server last started.
+  It is claimed in the database first (phase `releasing`), which shuts out
+  going back; it deletes only the purchase this move's own switch set aside
+  (recorded on the move then, `set_aside_operation`), and the snapshot. A release
   cut short is finished by the job or the sweep. After a release the move
   cannot be undone.
 - A disabled account's settled move is released without those checks: a

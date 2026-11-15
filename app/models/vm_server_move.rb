@@ -32,6 +32,7 @@ class VmServerMove < ApplicationRecord
   belongs_to :source_operation, class_name: "CloudProcurementOperation"
   belongs_to :target_operation, class_name: "CloudProcurementOperation"
   belongs_to :runner_enrollment
+  belongs_to :set_aside_operation, class_name: "CloudProcurementOperation", optional: true
   belongs_to :release_operation, class_name: "CloudProcurementOperation", optional: true
   belongs_to :released_by, class_name: "User", optional: true
 
@@ -49,16 +50,17 @@ class VmServerMove < ApplicationRecord
     open.pluck(:agent_id).to_set
   end
 
-  # The server the move left behind, once it is settled: the old one after a
-  # move, the new one (which holds a copy of the resident's disk) after
-  # going back. Only a purchase the switch set aside counts. A spare that a
-  # failed move never wrote to is still a spare, perhaps another resident's
-  # server by now, and is nothing of this move's to release (Mira, #979).
+  # The server this move left behind, once it is settled: the old one after
+  # a move, the new one (which holds a copy of the resident's disk) after
+  # going back. It is the purchase this move's own switch set aside, recorded
+  # then, never inferred from what a purchase looks like now: a spare this
+  # move never wrote to may since have been used and set aside by another
+  # move, and is that move's to release (Mira, #979). nil when this move
+  # never switched.
   def left_behind_operation
-    operation = case phase
-    when "moved" then source_operation
-    when "reverted" then target_operation
-    end
+    return nil unless settled?
+
+    operation = set_aside_operation
     operation if operation&.purpose == "move_source" && operation.agent_placement_id.nil?
   end
 

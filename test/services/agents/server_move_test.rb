@@ -239,18 +239,37 @@ module Agents
       assert_equal 1, VmServerMove.count
     end
 
-    test "a shutdown the machine ignores gets its power cut after the grace" do
+    test "a shutdown the machine ignores is asked again, then gets its power cut after the grace" do
       move = start!
       @mover.step!(move)
-      assert_equal [ [ "shutdown_server", OLD ] ], @hetzner.calls
       @mover.step!(move)
-      assert_equal 1, @hetzner.calls.size
+      assert_equal [ [ "shutdown_server", OLD ], [ "shutdown_server", OLD ] ], @hetzner.calls
 
       travel(ServerMove::SHUTDOWN_GRACE + 1.second) { @mover.step!(move) }
       assert_equal [ "stop_server", OLD ], @hetzner.calls.last
+      assert_not_nil move.reload.poweroff_requested_at
       @hetzner.settle!
       @mover.step!(move)
       assert_equal "snapshotting", move.reload.phase
+    end
+
+    # Mira, #979: Hetzner may have accepted a shutdown whose reply was lost.
+    # The intent is kept, so going back still takes the server to off first.
+    test "a shutdown whose outcome is unknown is still recorded as asked for" do
+      move = start!
+      @hetzner.fail_next = HetznerCloudClient::ActionOutcomeUnknown.new("lost", code: "action_outcome_unknown")
+      assert_equal "stopping", @mover.step!(move).phase
+      assert_not_nil move.reload.stop_requested_at
+      assert_empty @hetzner.calls
+
+      travel(ServerMove::PHASE_DEADLINES["stopping"] + 1.minute) do
+        @mover.step!(move)
+        assert_equal "reverting", move.reload.phase
+        report_from(OLD, uptime: 86_400)
+        @mover.step!(move)
+        assert_equal [ "stop_server", OLD ], @hetzner.calls.last, "not released on a report from before the shutdown"
+        assert_includes VmServerMove.holding_agent_ids, @agent.id
+      end
     end
 
     test "a failed snapshot goes back: nothing was switched, the old server is started and reports again" do
@@ -338,12 +357,34 @@ module Agents
 
     test "a provider error leaves the move where it is for the next step" do
       move = start!
+      run_to(move, "snapshotting")
       @hetzner.fail_next = HetznerCloudClient::ActionOutcomeUnknown.new("lost", code: "action_outcome_unknown")
-      assert_equal "stopping", @mover.step!(move).phase
-      assert_nil move.reload.stop_requested_at
+      assert_equal "snapshotting", @mover.step!(move).phase
+      assert_nil move.reload.snapshot_image_id
 
       @mover.step!(move)
-      assert_equal [ [ "shutdown_server", OLD ] ], @hetzner.calls
+      assert_equal 1, @hetzner.calls.count { |call| call.first == "create_image" }
+      assert_not_nil move.reload.snapshot_image_id
+    end
+
+    # Mira, #979: a start that worked belongs to the boot it worked in.
+    test "a reboot after the resident answered means it is asked again before the move is finished" do
+      move = start!
+      run_to(move, "verifying")
+      report_from(NEW)
+      @mover.step!(move)
+      answer_start
+
+      travel(2.minutes) do
+        # The server restarted before the house read the answer.
+        report_from(NEW, uptime: 20)
+        @mover.step!(move)
+        assert_equal "verifying", move.reload.phase
+        assert_equal 2, @starts.size
+        answer_start
+        @mover.step!(move)
+      end
+      assert_equal "moved", move.reload.phase
     end
 
     test "a site admin sends a moved resident back, and only while it is idle" do
@@ -407,14 +448,53 @@ module Agents
         assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
         assert_empty deleted
         assert_equal "moved", move.reload.phase
-
-        report_from(NEW)
+      end
+      travel(7.minutes) do
+        # A backup from before the server's last start proves nothing about now.
+        report_from(NEW, uptime: 10)
+        error = assert_raises(ServerMove::Refused) { mover.release!(move, requested_by: @admin) }
+        assert_equal ServerMove::NOT_BACKED_UP, error.message
+        assert_empty deleted
+      end
+      travel(10.minutes) do
+        backed_up_from_new_server!
+        report_from(NEW, uptime: 190)
         mover.release!(move, requested_by: @admin)
       end
       assert_equal "released", move.reload.phase
       assert_equal [ @source.id ], deleted
       assert_empty @hetzner.snapshots
       assert_raises(ServerMove::Refused) { mover.revert!(move, requested_by: @admin, reason: "too late") }
+    end
+
+    # Mira, #979 second round: A fails before touching spare T; B uses T and
+    # goes back, so T is set aside by B. Releasing A must not delete it.
+    test "a move releases only the purchase it set aside itself" do
+      deleted = []
+      mover = ServerMove.new(client: @hetzner, procurement: releasing_procurement(deleted), starter: @starter)
+      move = start!
+      run_to(move, "snapshotting")
+      @mover.step!(move)
+      @hetzner.settle!("error")
+      run_to(move, "reverting")
+      3.times do
+        @mover.step!(move)
+        @hetzner.settle!
+      end
+      travel(1.minute) { come_up_on(move, OLD) }
+      assert_equal "reverted", move.reload.phase
+      assert_nil move.set_aside_operation_id
+
+      # Another move used the same spare and set it aside.
+      @target.update!(purpose: "move_source")
+      assert_nil move.reload.left_behind_operation
+      travel(5.minutes) do
+        backed_up_from_new_server!
+        report_from(OLD, uptime: 200)
+        mover.release!(move, requested_by: @admin)
+      end
+      assert_equal "released", move.reload.phase
+      assert_empty deleted
     end
 
     # Mira, #979: the release is claimed in the database before anything is
@@ -427,7 +507,7 @@ module Agents
       come_up_on(move, NEW)
       travel(5.minutes) do
         backed_up_from_new_server!
-        report_from(NEW)
+        report_from(NEW, uptime: 330)
 
         # The provider fails after the claim: nothing deleted, phase releasing.
         failing = Object.new
@@ -527,7 +607,8 @@ module Agents
         @target.update!(purpose: "placement", agent_placement: AgentPlacement.create!(agent: agents(:code_reviewer),
           backend: "hetzner_cloud", state: "ready", provider_server_id: NEW, location: "nbg1"), requested_by: @admin)
 
-        report_from(OLD)
+        backed_up_from_new_server!
+        report_from(OLD, uptime: 40)
         ServerMove.new(client: @hetzner, procurement:, starter: @starter).release!(move, requested_by: @admin)
       end
       assert_empty deleted

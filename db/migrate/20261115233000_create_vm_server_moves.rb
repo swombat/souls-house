@@ -27,6 +27,7 @@ class CreateVmServerMoves < ActiveRecord::Migration[8.1]
       t.datetime :poweroff_requested_at
       t.datetime :source_off_at
       t.bigint :verify_command_id
+      t.references :set_aside_operation, foreign_key: { to_table: :cloud_procurement_operations }, index: false
       t.references :release_operation, foreign_key: { to_table: :cloud_procurement_operations }, index: false
       t.references :released_by, foreign_key: { to_table: :users }, index: false
       t.datetime :release_claimed_at
