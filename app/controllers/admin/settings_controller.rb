@@ -12,6 +12,7 @@ class Admin::SettingsController < ApplicationController
       site_announcement_residents: -> { site_announcement_residents },
       stalled_sweep_accounts: -> { stalled_sweep_accounts },
       vm_births: -> { Agents::VmBirthPolicy.current.as_json },
+      spare_servers: -> { SpareServers.new.status },
       billing: -> { billing_status },
       field_ocr: -> { FieldOcr.status_json },
       field_tweets: -> { FieldTweets.status_json }
@@ -89,6 +90,10 @@ class Admin::SettingsController < ApplicationController
       :stalled_sweep_wake,
       :new_residents_on_vm,
       :vm_resident_limit,
+      :spare_server_limit,
+      :spare_cx23_target,
+      :spare_cx33_target,
+      :spare_cx43_target,
       :billing_enabled,
       :free_trial_enabled,
       :paid_fallback_enabled,

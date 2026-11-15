@@ -60,6 +60,28 @@ test('switches new residents onto their own server with a cap and shows the excl
   expect(body.get('setting[vm_resident_limit]')).toBe('2');
 });
 
+test('sets the spare-server cap and targets and shows what is waiting and held', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, spare_server_limit: 0, spare_cx33_target: 0 },
+    spare_servers: {
+      limit: 0,
+      counted: 1,
+      types: [{ server_type: 'cx33', waiting: 2, target: 0, held: 1 }],
+      servers: [{ public_id: 'cpo-abc', server_type: 'cx33', location: 'nbg1', state: 'provisioned' }],
+    },
+  });
+  expect(screen.getByTestId('spare-cx33-status')).toHaveTextContent('2 waiting, 1 held or on order.');
+  expect(screen.getByTestId('spare-servers-list')).toHaveTextContent('CX33 in nbg1: provisioned');
+  const limit = screen.getByLabelText('Most servers held with no resident on them');
+  await fireEvent.input(limit, { target: { value: '2' } });
+  await fireEvent.input(screen.getByLabelText('CX33 (Medium) to keep spare'), { target: { value: '1' } });
+  await fireEvent.submit(limit.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[spare_server_limit]')).toBe('2');
+  expect(body.get('setting[spare_cx33_target]')).toBe('1');
+  expect(body.get('setting[spare_cx23_target]')).toBe('0');
+});
+
 test('says plainly when the switch is on and births are being refused', () => {
   render(Settings, {
     setting: { site_name: 'Test House', max_accounts: 30, new_residents_on_vm: true, vm_resident_limit: 1 },

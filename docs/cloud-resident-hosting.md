@@ -230,3 +230,40 @@ resident through its runner (`ops/deploy/roll-vm-resident.rb`):
 
 Not covered: the runner program itself (`host-runner/`) still ships only with
 a VM's user_data, so a runner change reaches existing VMs only by rebuilding them.
+
+## Spare servers (eRyZBY)
+
+Hetzner's larger shared types are on sale for minutes at a time, so the house
+buys them when it sees them. `HetznerAvailabilityCheckJob` (every five
+minutes) hands the answer it just got to `SpareServers.replenish!`, which
+orders, per type:
+
+    residents waiting for the type + the type's spare target
+      - spares of that type held or on order
+
+A resident is waiting when it is ready on its own server, its plan in force
+names a bigger server type than its provisioned purchase, and no cleanup has
+been asked for. A spare is a `CloudProcurementOperation` with
+`purpose: "spare"`: no placement, no requester, no runner enrollment and no
+user_data. Its server carries the placement label `spare`. It goes through
+the same one-create-request, reconcile-never-retry path as every other
+purchase and becomes `provisioned` once Hetzner says it is running.
+
+Limits, all in Site Admin > Settings > Spare servers and all 0 by default:
+
+- `spare_server_limit`: the most spares that may exist or might exist
+  (every unresolved spare purchase counts). 0 switches buying off.
+- `spare_cx23_target`, `spare_cx33_target`, `spare_cx43_target`: how many
+  of each to keep beyond those residents are waiting for.
+
+Counting and planning happen in one transaction under the procurement
+admission lock. A refused order (stock that was gone) is settled as refused,
+and that type and location are skipped for 20 minutes. Any approved EU
+location is used: a resident moves onto a spare by disk copy, so it has no
+location to match.
+
+`bin/rails vm:spares` prints the state; with `RELEASE=<cpo-id>` and
+`REQUESTED_BY=<site admin email>` it deletes one spare.
+
+Nothing in this section puts a resident on a spare. That is the move, a
+separate step.

@@ -27,4 +27,18 @@ namespace :vm do
       abort "Refused: #{error.message}"
     end
   end
+
+  desc "Spare servers (eRyZBY): what is waiting, wanted and held. RELEASE=<cpo-id> REQUESTED_BY=<site admin email> " \
+       "deletes one spare at Hetzner."
+  task spares: :environment do
+    puts JSON.pretty_generate(SpareServers.new.status)
+    next unless ENV["RELEASE"].present?
+
+    requested_by = User.find_by(email_address: ENV.fetch("REQUESTED_BY", ""))
+    abort "REQUESTED_BY must be a site admin's email address" unless requested_by&.is_site_admin?
+    operation = CloudProcurementOperation.spares.find_by!(public_id: ENV["RELEASE"])
+    operation = CloudProcurement.from_credentials.request_delete!(operation, requested_by:)
+    CloudProcurementReconcileJob.perform_later(operation.id)
+    puts "Release asked: #{operation.public_id} is #{operation.state}"
+  end
 end
