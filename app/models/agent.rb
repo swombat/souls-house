@@ -42,6 +42,7 @@ class Agent < ApplicationRecord
       expectations[event] = { "state" => state, "source" => source.to_s, "at" => Time.current.iso8601 }
       update!(hook_expectations: expectations)
     end
+    HookPresence.reevaluate_warned!(self)
   end
 
   belongs_to :account

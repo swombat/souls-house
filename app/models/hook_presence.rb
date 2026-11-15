@@ -51,6 +51,18 @@ class HookPresence
     new(interaction).evaluate!
   end
 
+  # After an expectation changes, re-check the newest run in each conversation
+  # that still carries a warning, so switching an event off clears the yellow
+  # marks at once instead of waiting for the resident's next run there (Pepe,
+  # 15 Nov, jgDQRJ: the switch "didn't work" for ten conversations). Only
+  # warned runs: setting an event expected doesn't flag old runs retroactively.
+  def self.reevaluate_warned!(agent)
+    newest = agent.agent_runtime_interactions.where.not(chat_id: nil).where.not(finished_at: nil)
+      .select("DISTINCT ON (chat_id) id").order(:chat_id, id: :desc)
+    agent.agent_runtime_interactions.where(id: newest)
+      .where("COALESCE(hook_warning, '') <> ''").find_each { |run| evaluate!(run) }
+  end
+
   def initialize(interaction)
     @interaction = interaction
     report = interaction.response_body.is_a?(Hash) ? interaction.response_body.dig("telemetry", "hooks") : nil
