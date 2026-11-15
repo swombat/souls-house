@@ -141,3 +141,44 @@ describe('up arrow edits the last message', () => {
     expect(onEditLast).not.toHaveBeenCalled();
   });
 });
+
+// Daniel, 15 Nov (eqRwnj): a stray tap on the wave while a voice note was recording opened
+// voice mode, which took the microphone and lost minutes of speech untranscribed. While the
+// mic is recording, stopping it (and so sending) is the only control left.
+test('while a voice note is recording, the wave button is gone', async () => {
+  const { tick } = await import('svelte');
+  let release;
+  globalThis.MediaRecorder = class {
+    constructor() {
+      this.state = 'inactive';
+      this.mimeType = 'audio/webm';
+    }
+    static isTypeSupported() {
+      return true;
+    }
+    start() {
+      this.state = 'recording';
+    }
+    stop() {
+      this.state = 'inactive';
+    }
+  };
+  Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+    configurable: true,
+    value: {
+      getUserMedia: () => new Promise((resolve) => (release = () => resolve({ getTracks: () => [{ stop() {} }] }))),
+    },
+  });
+
+  render(ChatInputArea, { chat, accountId: 'account', voiceMode: { offered: true, available: true, reason: null } });
+  expect(screen.getByRole('button', { name: 'Start voice mode' })).toBeInTheDocument();
+
+  await fireEvent.click(screen.getByTitle('Record voice message'));
+  release();
+  await tick();
+  await tick();
+
+  expect(screen.getByTitle('Stop recording')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Start voice mode' })).toBeNull();
+  expect(screen.queryByTestId('voice-mode-button')).toBeNull();
+});
