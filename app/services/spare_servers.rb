@@ -89,9 +89,7 @@ class SpareServers
     # While the project's server limit rests all buying, a planned spare is
     # not sent either: it would be refused for the same reason and extend
     # the rest. It keeps its slot and is sent when the rest is over.
-    unless project_limit_hit_at
-      CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
-    end
+    CloudProcurementOperation.spares.where(state: "planned").order(:id).each { |operation| submit(operation) }
     CloudProcurementOperation.spares.where(state: CloudProcurementReconcileJob::SETTLING_STATES)
       .where("last_reconciled_at IS NULL OR last_reconciled_at < ?", now - RECONCILE_STALE_AFTER)
       .where(updated_at: ..(now - RECONCILE_STALE_AFTER))
@@ -141,6 +139,10 @@ class SpareServers
   # failure here leaves the purchase recorded (unknown, or still planned) for
   # the next check's recover!.
   def submit(operation)
+    # Read before every send: the order before this one may just have been
+    # refused by the project's server limit, and then this one waits planned.
+    return if project_limit_hit_at
+
     procurement.submit!(operation)
     CloudProcurementReconcileJob.set(wait: 30.seconds).perform_later(operation.id)
   rescue StandardError => e

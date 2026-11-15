@@ -254,6 +254,21 @@ class SpareServersTest < ActiveSupport::TestCase
     assert_empty spares.replenish!(selling("cx33", "fsn1", "hel1").merge(selling("cx23", "fsn1")))
     assert_equal creates, @client.creates.size
 
+    # Mira, #980: the limit is read before every send, so the first refusal
+    # of a batch leaves the rest of it planned.
+    CloudProcurementOperation.spares.delete_all
+    @setting.update!(spare_cx23_target: 0, spare_cx33_target: 3)
+    @client.on_create = lambda do |_|
+      raise HetznerCloudClient::CapacityUnavailable.new("limit", status: 403, code: "resource_limit_exceeded")
+    end
+    batch = spares.replenish!(selling("cx33", "nbg1"))
+    assert_equal 3, batch.size
+    assert_equal %w[planned planned refused], batch.map { |operation| operation.reload.state }.sort
+    assert_equal creates + 1, @client.creates.size
+    @client.on_create = nil
+    creates = @client.creates.size
+    CloudProcurementOperation.spares.where(state: "planned").delete_all
+
     # A spare left planned is not sent during the rest either, and still holds its slot.
     stranded = @procurement.plan_spare!(server_type: "cx33", location: "hel1", approval_reference: "t")
     assert_empty spares.replenish!(selling("cx33", "hel1"))
