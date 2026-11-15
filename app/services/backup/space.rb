@@ -12,10 +12,13 @@ module Backup
 
     GB_BY_SIZE = { "small" => 60, "medium" => 60, "large" => 120 }.freeze
     DEFAULT_GB = 60
-    # A VM writes through the house (VmRepository), which needs some bound on
-    # what one repository can take between thinnings. Half as much again as
-    # the space: room for a backup to land before older history is removed.
-    WRITE_CEILING_FACTOR = 1.5
+    # A VM writes through the house (VmRepository), which bounds what one
+    # repository can take. The bound has to let the next backup land before
+    # older history is thinned: the history kept (up to the space) plus one
+    # whole new backup that shares nothing with it (at most the disk, which
+    # is under the space), plus a quarter of the space for data a failed
+    # backup left behind and packs a prune has not yet rewritten.
+    WRITE_CEILING_FACTOR = 2.25
 
     module_function
 
@@ -25,9 +28,24 @@ module Backup
       GB_BY_SIZE.fetch(size, DEFAULT_GB).gigabytes
     end
 
+    # VM_BACKUP_BUDGET_BYTES can raise the ceiling, never lower it: the old
+    # flat 20 GB setting must not survive as a way to refuse backups.
     def write_ceiling_bytes(agent)
+      computed = (bytes_for(agent) * WRITE_CEILING_FACTOR).to_i
       override = ENV["VM_BACKUP_BUDGET_BYTES"].presence
-      override ? Integer(override, 10) : (bytes_for(agent) * WRITE_CEILING_FACTOR).to_i
+      override ? [ Integer(override, 10), computed ].max : computed
+    end
+
+    # What the repository occupies in storage: every object under its prefix,
+    # the same count VmRepository's write ceiling uses. nil where there is no
+    # object store to ask (a local repository, tests).
+    def physical_bytes(agent)
+      return nil if Rails.env.test? || LocalRepository.enabled?
+
+      VmRepository.new(agent:, deadline_seconds: 120).stored_bytes
+    rescue VmRepository::Refused => error
+      Rails.logger.warn("[backup] physical size unavailable agent_id=#{agent.id}: #{error.code}")
+      nil
     end
 
     # For the hosting tab: what the repository held when last read, or nil

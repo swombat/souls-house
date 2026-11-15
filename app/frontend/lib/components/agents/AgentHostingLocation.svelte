@@ -58,7 +58,7 @@
           </p>
         {:else if backups.thinned_to_fit}
           <p class="text-muted-foreground" data-testid="backup-thinned">
-            Older backups are being removed to stay within that space. The newest backup is always kept.
+            Older backups are being removed, oldest first, to stay within that space. The newest backup is always kept.
           </p>
         {/if}
       </div>

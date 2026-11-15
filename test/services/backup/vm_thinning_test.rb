@@ -29,8 +29,8 @@ module Backup
       list = [ snapshot(40), snapshot(2), snapshot(1) ]
       result = VmThinning.new(run: restic(list, forgets: 1, calls:)).call(@agent)
 
-      assert_equal %w[snapshots forget snapshots], calls.map(&:first)
-      assert_equal [ "forget", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12", "--prune" ], calls[1]
+      assert_equal %w[snapshots forget prune snapshots snapshots stats], calls.map(&:first)
+      assert_equal [ "forget", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12" ], calls[1]
       assert_equal 2, result.kept
       assert_equal 1, result.removed
       assert_in_delta 2.days.ago, Time.zone.parse(result.oldest_at), 5

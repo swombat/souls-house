@@ -151,6 +151,14 @@ module Backup
       true
     end
 
+    # Every byte under this repository's prefix: what the write ceiling in
+    # #create counts, and what Backup::Fit reports as stored.
+    def stored_bytes
+      bytes = 0
+      each_object(@prefix) { |object| bytes += object.size }
+      bytes
+    end
+
     def delete_lock(path)
       raise Refused.new(:bad_backup_request, 400) unless path.match?(/\Alocks\/[0-9a-f]{64}\z/)
 

@@ -81,8 +81,11 @@ module Backup
       run(agent, "forget",
         "--keep-daily", agent.backup_keep_daily.to_s,
         "--keep-weekly", agent.backup_keep_weekly.to_s,
-        "--keep-monthly", agent.backup_keep_monthly.to_s,
-        "--prune")
+        "--keep-monthly", agent.backup_keep_monthly.to_s)
+      # A prune of its own, every time: forget --prune prunes only when it
+      # forgot something, and a failed backup's partial data needs removing
+      # even on a night when no backup aged out.
+      run(agent, "prune")
       # What is left is read back, never taken from forget's own report.
       raise Failed, "No snapshot is left after thinning" if snapshots(agent).empty? && before.any?
 
