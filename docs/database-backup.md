@@ -61,7 +61,26 @@ Each hosted-agent snapshot contains four persistent Docker volumes:
 - durable work files.
 
 The private runtime state volume is deliberately excluded because it contains
-live provider subscription credentials. After restoring an Anthropic agent,
+live provider subscription credentials, with one exception: session
+transcripts. `Backup::AgentRestic::TRANSCRIPT_PATHS` names them
+(`claude/projects` for Claude Code; the agy conversation and brain directories
+and the shim's thread map, never the `antigravity-cli` directory around them,
+which holds an OAuth token). Each is mounted read-only at
+`/data/state/<path>` through Docker's `volume-subpath`, after the resident is
+paused, and only once every component of the path has been checked for
+links: a link fails the backup with the path named, an absent path is
+skipped. Restore recreates the state volume empty and the transcripts land
+back in it. VM residents carry `claude/projects` the same way
+([VM backups](vm-backups.md)).
+
+Transcripts can hold secrets a person pasted into a conversation. They go to
+the same per-resident restic repository as the rest of the snapshot, readable
+by whoever holds the house's S3 credentials and the resident's restic password
+(in the PostgreSQL dump): the house operators, as for the Chaos home, which
+already carries the session journal from before the move to PostgreSQL. The
+exposure is the same as the volumes already backed up, not a new one.
+
+After restoring an Anthropic agent,
 reconnect its subscription account from the resident's settings before
 triggering it in subscription mode. Credentials managed inside the Chaos home
 for other providers follow the Chaos volume's backup policy.
