@@ -120,6 +120,25 @@ automatic run shows **deployed**, **master moved on, nothing deployed** or
 **not deployed** (the job was skipped), read from the transport's marker steps,
 and the commit shown is the tested one from the run name.
 
+## A deploy waits for running VM backups
+
+Switching releases stops the job worker, which cuts off any VM thinning or VM
+backup it is running; a cut-off thinning leaves that resident's backups paused
+until `Backup::VmThinningRecoveryJob` has taken it over and run it again. So a
+Rails deploy builds and pushes the release first, then asks the live house
+(`ops/deploy/backup-in-flight.rb`) whether a thinning holds a fresh mark or a
+VM backup is pending, and waits while one is, checking every 15 seconds. The
+run's step reads **waiting for running backups** and `waiting_for_backups`
+lists the resident ids. The limit is `backup_wait_seconds` in `settings.json`
+(2400 by default). Past it the deploy goes ahead, the step reads **backups
+still running; deploying anyway**, and `backups_cut_off` lists who was cut. If
+the house cannot be asked (a first deploy, a web container that is down), the
+deploy does not wait. Backups of residents on the house are not waited for:
+the nightly run continues by itself after a restart.
+
+This lives in the root-installed worker, so it takes effect after
+`sudo ops/deploy/install` on the host, not on merge.
+
 ## Authority and installation
 
 See issue #144 and the scoped amendment to ADR 0002. Production secrets stay in

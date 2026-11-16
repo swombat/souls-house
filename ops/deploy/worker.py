@@ -240,12 +240,41 @@ class Worker:
             self.run(["docker", "rm", "-f", name], timeout=30)
             raise
 
+    def wait_for_backups(self):
+        """A release switch stops the job worker and cuts off any VM thinning
+        or VM backup it is running (a thinning takes about twenty minutes on a
+        large repository, and a cut one pauses that resident's backups until
+        it has been recovered). So the switch waits for them, up to a limit.
+        Past the limit, or if the house cannot be asked, the deploy goes on:
+        a cut-off thinning is recovered by the house, a stuck deploy is not."""
+        script = (CODE / "backup-in-flight.rb").read_text()
+        deadline = time.monotonic() + self.settings.get("backup_wait_seconds", 2400)
+        while True:
+            try:
+                busy = self.rails(script)
+                residents = sorted(set(busy["thinning"]) | set(busy["backing_up"]))
+            except Exception:
+                self.report("could not read running backups; deploying")
+                return
+            if not residents:
+                return
+            if time.monotonic() >= deadline:
+                self.report("backups still running; deploying anyway", backups_cut_off=residents)
+                return
+            self.report("waiting for running backups", waiting_for_backups=residents)
+            time.sleep(15)
+
     def deploy_rails(self):
-        self.report("deploying Rails")
+        self.report("building Rails")
         # Kamal deploy takes its own production deploy lock: Mac/Dell operators
         # contend for the same lock. No separate acquire (that would deadlock it).
-        self.kamal("deploy", "--skip-hooks", "--version", self.data["rails_revision"])
+        # Built and pushed first, so that the wait below ends seconds before
+        # the job worker stops, not a whole build before it.
         revision = self.data["rails_revision"]
+        self.kamal("build", "push", "--skip-hooks", "--version", revision)
+        self.wait_for_backups()
+        self.report("deploying Rails")
+        self.kamal("deploy", "--skip-push", "--skip-hooks", "--version", revision)
         for role in ("web", "jobs"):
             versions = self.run(["docker", "ps", "--filter", "label=service=souls-house",
                                  "--filter", f"label=role={role}",

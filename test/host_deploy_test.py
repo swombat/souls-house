@@ -693,6 +693,56 @@ class WorkerTest(unittest.TestCase):
         self.assertIn(name, run.call_args_list[0].args[0])
         self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
 
+    def backup_waiter(self, answers, **settings):
+        (self.root / "backup-in-flight.rb").write_text("")
+        self.w.settings.update(settings)
+        self.w.data["rails_revision"] = "d" * 40
+        calls = []
+
+        def rails(_code, env=None):
+            calls.append("ask")
+            answer = answers.pop(0) if len(answers) > 1 else answers[0]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        return calls, rails
+
+    def test_release_switch_waits_for_a_running_thinning_after_the_build(self):
+        busy = dict(thinning=[44], backing_up=[])
+        calls, rails = self.backup_waiter([busy, busy, dict(thinning=[], backing_up=[])])
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(self.w, "kamal", side_effect=lambda *args: calls.append(args[:2])), \
+             patch.object(self.w, "run", return_value=""), patch.object(worker.time, "sleep") as sleep:
+            with self.assertRaises(RuntimeError):  # the fixture has no live containers to verify
+                self.w.deploy_rails()
+        self.assertEqual([("build", "push"), "ask", "ask", "ask", ("deploy", "--skip-push")], calls)
+        self.assertEqual(2, sleep.call_count)
+        self.assertEqual([44], self.w.data["waiting_for_backups"])
+
+    def test_release_switch_goes_ahead_past_the_backup_wait_limit(self):
+        calls, rails = self.backup_waiter([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(worker.time, "sleep") as sleep:
+            self.w.wait_for_backups()
+        self.assertEqual(["ask"], calls)
+        sleep.assert_not_called()
+        self.assertEqual([45], self.w.data["backups_cut_off"])
+        self.assertEqual("backups still running; deploying anyway", self.w.data["step"])
+
+    def test_release_switch_does_not_hang_when_the_house_cannot_be_asked(self):
+        calls, rails = self.backup_waiter([RuntimeError("no web container")])
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(worker.time, "sleep") as sleep:
+            self.w.wait_for_backups()
+        sleep.assert_not_called()
+        self.assertEqual("could not read running backups; deploying", self.w.data["step"])
+
+    def test_backup_wait_fields_reach_the_status_and_the_script_is_installed(self):
+        self.assertIn("waiting_for_backups", gate.FIELDS)
+        self.assertIn("backups_cut_off", gate.FIELDS)
+        self.assertIn("backup-in-flight.rb", (OPS / "install").read_text())
+
     def test_master_moved_on_deploys_nothing(self):
         self.w.data["expected_revision"] = "c" * 40
         self.w.settings["repository"] = "https://example.test/public.git"

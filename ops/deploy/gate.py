@@ -34,7 +34,7 @@ TERMINAL = ("success", "failed", "partial", "interrupted", "superseded")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
           "chaos_version", "skipped", "waiting", "held", "births_alias_failed", "absent", "resident_id",
           "expected_revision", "accepted_migrations", "migration_changes", "acknowledged",
-          "runtime_rebuild_needed", "runtime_source")
+          "runtime_rebuild_needed", "runtime_source", "waiting_for_backups", "backups_cut_off")
 ACCEPT_ENTRY = re.compile(r"(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}\.sql@[0-9a-f]{40}")
 MAX_ACCEPTED = 20
 

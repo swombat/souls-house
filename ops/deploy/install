@@ -9,7 +9,7 @@ install -d -m 700 /etc/house-deploy /var/lib/house-deploy /var/lib/house-deploy/
 for file in gate.py worker.py ssh-command; do
   install -m 755 "$source_dir/$file" "/opt/house-deploy/$file"
 done
-for file in roll-resident.rb roll-vm-resident.rb; do
+for file in roll-resident.rb roll-vm-resident.rb backup-in-flight.rb; do
   install -m 644 "$source_dir/$file" "/opt/house-deploy/$file"
 done
 id house-deploy-trigger >/dev/null 2>&1 || useradd --system --create-home --shell /bin/sh house-deploy-trigger
