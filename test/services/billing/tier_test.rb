@@ -174,11 +174,12 @@ class Billing::TierTest < ActiveSupport::TestCase
 
   # The cheapest account on each plan: the add-on and one Small resident
   # drawing the account's whole $10 allowance, and the plan's searches,
-  # transcription (Scribe, $0.22/h) and backups (S3, $0.023/GB), all used up.
+  # transcription (Scribe, $0.22/h) and that resident's own backup space
+  # (Backup::Space, S3 at $0.023/GB), all used up.
   def cheapest_account_cost(plan)
     small = Billing::Tier.find!("conversation")
     size_cost(small) + Billing::Tier::ACCOUNT_ALLOWANCE_USD.to_f + plan.swarm_searches * 0.064 +
-      plan.transcription_hours * 0.22 + plan.backup_gb * 0.023 +
+      plan.transcription_hours * 0.22 + Backup::Space::GB_BY_SIZE.fetch("small") * 0.023 +
       (plan.free? ? 0 : plan.monthly_usd.to_f * 0.029 + 0.30)
   end
 

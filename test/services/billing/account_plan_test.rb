@@ -60,11 +60,11 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
     saved.each { |key, value| ENV[key] = value }
   end
 
-  test "transcription is the account's and shown now it is enforced; backups are not shown until they are" do
+  test "transcription is the account's and shown; backup space is each resident's and not a plan's" do
     assert_equal [ 5, 20, 40 ], Billing::AccountPlan.all.map(&:transcription_hours)
-    assert_equal [ 10, 50, 200 ], Billing::AccountPlan.all.map(&:backup_gb)
     Billing::AccountPlan.all.each do |plan|
       assert_equal plan.transcription_hours, plan.features[:transcription_hours]
+      assert_not_respond_to plan, :backup_gb
       assert_not plan.features.key?(:backup_gb)
     end
   end
