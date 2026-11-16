@@ -20,8 +20,9 @@ class Admin::ResidentsController < ApplicationController
 
   # Servers the house holds at Hetzner, and so pays for, with no resident on
   # them (Daniel, JWbKBj 2026-11-16): a spare not yet taken, a resident's old
-  # server kept after a move, or a resident's purchase whose placement no
-  # longer points at it. A purchase counts once the provider has given it a
+  # server kept after a move, a server kept after its resident was rolled
+  # back to the house, or a resident's purchase whose placement now points at
+  # another server. A purchase counts once the provider has given it a
   # server and until its deletion is verified. Read from the house's own
   # records; never calls the provider, so a server bought outside the house
   # is not here.
@@ -49,6 +50,12 @@ class Admin::ResidentsController < ApplicationController
     else
       placement = operation.agent_placement
       return "resident_gone" if placement.nil? || placement.agent.nil?
+      # Rollback#switch! makes the placement local and clears its server id
+      # but keeps the server until release. A placement only ever buys while
+      # it is a cloud one (VmMigration stages it hetzner_cloud first), so a
+      # local placement with a bought server is that leftover; a cloud one
+      # with no server id yet is still being bought, not empty (Mira, #993).
+      return "rolled_back" if placement.backend == "local"
       return "replaced" if placement.provider_server_id.present? && placement.provider_server_id != operation.provider_server_id
 
       nil

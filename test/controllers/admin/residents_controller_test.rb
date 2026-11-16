@@ -132,4 +132,27 @@ class Admin::ResidentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 101, spare_row["provider_server_id"]
   end
 
+  test "empty VMs includes a server kept after a rollback to the house, but not one still being bought" do
+    CloudProcurementOperation.delete_all
+    admin = users(:site_admin_user)
+    purchase = ->(placement, state, server_id) do
+      CloudProcurementOperation.create!(agent_placement: placement, requested_by: admin, state:,
+        provider_server_id: server_id, public_id: SecureRandom.hex(4), approval_reference: "test", location: "fsn1",
+        server_type: "cx33", image_id: 1, ssh_key_ids: [ 1 ], provider_name: "resident-#{SecureRandom.hex(3)}")
+    end
+    # Rollback#switch!'s shape: back on the house, server id cleared, server kept.
+    rolled, buying = [ agents(:research_assistant), agents(:code_reviewer) ].map { |agent| AgentPlacement.where(agent:).delete_all && agent }
+    home = AgentPlacement.create!(agent: rolled, backend: "local", state: "ready", provider_server_id: nil)
+    kept = purchase.call(home, "provisioned", 201)
+    # A first purchase the provider has answered but the placement has not yet taken.
+    staged = AgentPlacement.create!(agent: buying, backend: "hetzner_cloud", kind: "migration", state: "pending",
+      provider_server_id: nil)
+    purchase.call(staged, "reconciling", 202)
+
+    sign_in admin
+    get admin_residents_path
+    vms = inertia_props["props"]["empty_vms"]
+    assert_equal [ [ kept.id, "rolled_back" ] ], vms.map { |vm| [ vm["id"], vm["reason"] ] }
+  end
+
 end

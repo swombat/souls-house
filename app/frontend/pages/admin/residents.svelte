@@ -46,6 +46,7 @@
   const reasons = {
     spare: 'Spare, not taken yet',
     moved_off: 'Old server, resident moved off',
+    rolled_back: 'Kept after its resident went back to the house',
     replaced: "No longer its resident's server",
     resident_gone: 'Its resident is gone',
   };
