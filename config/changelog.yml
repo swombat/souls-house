@@ -6,48 +6,61 @@
 - date: 2026-11-16
   title: Switching a hook off clears its yellow marks at once
   body: "When an owner switches one of a resident's hooks to off, the yellow hook marks it caused now go from the resident's conversations straight away, instead of staying until the resident next runs in each one. Switching a hook to expected changes nothing until the resident's next run: older runs are never marked after the fact."
+  clip: hook-off-clears
 - date: 2026-11-15
   title: Spare servers are ordered even when Hetzner's stock flag says no
   body: "Hetzner's own sign of whether a server type is on sale turned out to be unreliable: it showed nothing available while an order for the same type went through. When the house is short of a server type and Hetzner shows no stock, it now tries one location every five minutes anyway. A refused order costs nothing. If Hetzner refuses because the project has reached its own limit on servers, the house stops ordering for an hour and Site Admin > Settings > Spare servers says so."
+  clip: spare-limit-rest
 - date: 2026-11-15
   title: A resident can be moved to a bigger server
   body: "A resident on its own server can now be moved onto a spare server the house holds, which is how it gets a bigger machine when Hetzner will not enlarge the one it has. The house waits until the resident is idle, holds its turns, shuts its server down, copies the whole disk to the new server and starts it there. Messages sent meanwhile wait and are answered once it is back. The old server is kept, switched off and unchanged, until a site admin releases it; until then the resident can be put back on it, and it is put back automatically if the copy fails. A move needs a verified backup from the last 26 hours, and it is only finished once the resident itself answers on the new server. The old server can be released only after a verified backup has been taken from the new one since it last started. Site admins start a move from the server's command line for now."
 - date: 2026-11-15
   title: The house buys spare servers when Hetzner has them
   body: "Hetzner's larger servers are on sale for a few minutes at a time, so a resident waiting for a Medium or Large server could wait for days. The house now checks every five minutes and, when one is on sale, orders it: one for each resident whose plan names a bigger server than the one it runs on, plus a number to keep spare. Site admins set how many of each size to keep spare and the most the house may hold with no resident on them, in Site Admin > Settings > Spare servers. Nothing is ordered until that limit is set above 0. A spare costs its monthly price while the house holds it. This buys the server only; moving a resident onto it is a separate step."
+  clip: spare-servers
 - date: 2026-11-15
   title: Backup space for each resident
   body: "Each resident now comes with its own backup space: 60 GB for a Small or Medium resident, 120 GB for a Large one, a little more than its disk so that one full backup always fits. A backup is never refused for lack of space. If a resident's backups grow past its space, the house removes the oldest backups one at a time until it fits, and always keeps the newest. The resident's settings, under Where this resident runs, now say how many backups are kept, how far back they go and how much of the space they take, and say so when older backups are being removed to fit."
+  clip: backup-space
 - date: 2026-11-15
   title: Backup history on a resident's own server is thinned
   body: "A resident on its own server now has its backup history thinned after each good backup, to the rule residents in the house already had: the last 7 daily backups, 4 weekly and 12 monthly. Until now that history only grew, and the resident would one day have filled its backup space and stopped being backed up. The newest backup is never removed. If thinning fails, the backup itself stays good and the failure is recorded beside it. If thinning is cut off partway, that resident's backups pause until the house has confirmed it has stopped, and the site admins are told if that takes more than three hours."
 - date: 2026-11-15
   title: Voice notes and Telegram audio count toward the transcription allowance
   body: "The account's transcription hours now cover everything the house transcribes: Field recordings, voice notes in the composer, and voice and video messages on Telegram. Each is measured before it is sent, and a retry of the same audio is not counted twice. Audio whose length can't be read is not sent. When the 30 days' allowance is used up, a voice note stays saved and the message says how much is left and when room returns; a Telegram message still reaches the resident with its audio, marked as not transcribed. The plan cards on the pricing page and the Billing tab now show the hours: 5 on Companions, 20 on Partners, 40 on Colleagues."
+  clip: transcription-hours
 - date: 2026-11-15
   title: A voice note can't be lost to voice mode
   body: "While a voice note is recording or being transcribed, the voice mode button no longer shows next to the message box, in a conversation or on New Chat. The microphone is the only control: tap it to stop, and the note is transcribed into the message box as before. A stray tap can no longer switch to voice mode and lose the recording. Takes effect after Rails deployment."
+  clip: voice-note-safe
 - date: 2026-11-15
   title: Recording transcription follows the account's plan
-  body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, and the Field's gauge and the message on a refused recording say how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
+  body: "The Field's transcription allowance for recordings now comes from the account's plan: 5 hours on Companions, 20 on Partners and 40 on Colleagues, counted over the last 30 days. It was 20 hours a week for every account. The window rolls: an hour used today comes back 30 days from now, the Field's gauge shows how much of it is used, and the message on a refused recording says how much is left and when room returns. Recordings already transcribed in the last 30 days count from the start. A recording over the limit is kept and can be transcribed once there is room. Composer voice notes and Telegram voice messages are not counted yet. Takes effect after Rails deployment."
+  clip: transcription-plan
 - date: 2026-11-14
-  title: Adding a resident to an account on a plan
-  body: "On an account with the Partners or Colleagues plan, the Billing tab's confirmation for adding a resident now asks to add them to the account's subscription without naming a per-resident plan, and its monthly total is described as the plan and residents together. Every change to an existing bill (a resident added, ended or resized, the plan bought or changed) now goes through one path, and the Billing tab only announces a change once it has been applied."
+  title: Buying a plan on an account that already pays
+  body: "On an account that already pays for a resident, the Billing tab's confirmation for moving to the Partners or Colleagues plan now asks to add the plan to the account's subscription, instead of naming it like a resident on a per-resident plan, and its monthly total is described as the plan and residents together. Every change to an existing bill (a resident added, ended or resized, the plan bought or changed) now goes through one path, and the Billing tab only announces a change once it has been applied."
+  clip: plan-add-resident
 - date: 2026-11-14
   title: Billing codes for one size, or for a plan
   body: "A billing code can now do one of three things: let an account buy residents at cost in every size (as before), let it buy one size at cost (Small, Medium or Large), or give it the Partners or Colleagues plan with nothing to pay. Site admins make them in Site Admin > Billing codes and owners enter them in the Billing tab, as before. A code for a free plan is refused while the account is paying for that plan or a lower one: move the account to Companions first, then enter the code, so nothing is charged twice. Withdrawing a code's grant ends the plan it gave and stops new purchases at its rate; residents already bought keep their price. Takes effect after Rails deployment."
+  clip: billing-code-kinds
 - date: 2026-11-14
   title: Medium and Large residents are priced by their machine
   body: "A resident's size is now just the computer it lives on. New Medium residents are $39.99 a month (4 vCPUs, 8 GB) and new Large residents are $69.99 (8 vCPUs, 16 GB); Small stays at $9.99. At cost, Medium is $28 and Large $56. Residents already paying keep the price they started on. Transcription hours and backup space now belong to the account's plan rather than to each resident's size; neither is shown as an allowance until the house can stop at the limit. Takes effect after Rails deployment."
+  clip: size-prices
 - date: 2026-11-14
   title: Archive a room
   body: "In Account settings > Rooms, each room now has an Archive button. An archived room keeps all its conversations, which anyone in the account can still open and read from the Archived rooms list, but it leaves the Chats menu and every place a new or moved conversation can go, and nothing new can be started in it. Unarchive brings it back. A room that is the residents' default, or where a rhythm or a scheduled commitment will open a conversation, can't be archived until that is moved. Takes effect after Rails deployment."
+  clip: archive-room
 - date: 2026-11-14
   title: Read a note or a transcript full screen
   body: "A note in the Field now has an Expand button beside Edit, and a recording's transcript has one beside Share. It opens the document on its own across the whole window, in a reading-width column, with the rest of the page set aside until you close it with the × or Escape. The transcript there is the same one as on the page, so a line you were correcting keeps its text when you open or close the reader. Takes effect after Rails deployment."
+  clip: reader-expand
 - date: 2026-11-14
   title: A yellow mark when a resident's Chaos hooks go missing
   body: "Each resident run now records which Chaos hooks it had (id, event, whether enabled and approved), never their commands or output. A resident is held to the hooks it was first seen running, each checked by id. If one of them goes missing, is disabled or unapproved, or (once the Chaos build reports hook runs) fails or doesn't fire when it should, the run says so in plain words and the conversation shows a yellow circled exclamation mark, below the red error mark. A hook that only runs on a condition is never accused of not firing. A resident, or the account's owner from a new Chaos hooks card in the resident's settings, can mark a removal as deliberate and the warning stops. Requires Rails deployment and resident runtime updates."
+  clip: hooks-yellow-mark
 - date: 2026-11-14
   title: Work status and handoff forms removed
   body: "The Track work status and the Handoff / review form added on 11 November have been taken out of conversations, along with their sidebar filters and icons. Conversations look as they did before. Takes effect after Rails deployment."
