@@ -23,7 +23,8 @@ module Backup
         "-v", "#{Agents::Resources.new(@agent).volumes.fetch(:chaos)}:/restore/data/chaos",
         "-v", "#{Agents::Resources.new(@agent).volumes.fetch(:repo)}:/restore/data/repo",
         "-v", "#{Agents::Resources.new(@agent).volumes.fetch(:work)}:/restore/data/work",
-        "-v", "#{Agents::Resources.new(@agent).volumes.fetch(:state)}:/restore/data/state"
+        "-v", "#{Agents::Resources.new(@agent).volumes.fetch(:state)}:/restore/data/state",
+        "-v", "#{Agents::Resources.new(@agent).container}-chaos-db-restored:/restore/data/chaos-db"
       ], AgentRestic.restore_mounts(@agent)
     end
 

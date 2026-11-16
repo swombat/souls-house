@@ -80,6 +80,28 @@ by whoever holds the house's S3 credentials and the resident's restic password
 already carries the session journal from before the move to PostgreSQL. The
 exposure is the same as the volumes already backed up, not a new one.
 
+Since 11 Nov 2026 a resident's Chaos keeps its session journal
+(`journal_entries` and the rest of its runtime tables) in its own database on
+the house's PostgreSQL server, named by `storage_url` in the resident's
+`chaos/config.toml`; `DatabaseBackupJob` dumps only the house's database.
+`Backup::ChaosJournalDump` therefore dumps the resident's database inside the
+same pause: `pg_dump -Fc -Z0` run in the server's container over its local
+socket as the house's database user (no resident password is read or
+passed), streamed into a throwaway volume, read back with
+`pg_restore --list` (it must list `TABLE DATA public journal_entries`) and
+carried at `/data/chaos-db/chaos-journal.dump`. Only a database on the house's
+own server is dumped, never a `*_oauth` one (provider auth) nor the house's
+own; a home still on SQLite keeps its journal in the chaos volume.
+
+A full restore puts the dump into the volume `<container>-chaos-db-restored`
+and does not load it. To load it into an empty database:
+
+```bash
+docker run --rm -v <container>-chaos-db-restored:/in:ro busybox:1.37 \
+  cat /in/chaos-journal.dump | \
+  docker exec -i souls-house-postgres pg_restore -U <house user> --no-owner -d <empty database>
+```
+
 After restoring an Anthropic agent,
 reconnect its subscription account from the resident's settings before
 triggering it in subscription mode. Credentials managed inside the Chaos home

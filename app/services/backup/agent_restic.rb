@@ -125,9 +125,14 @@ module Backup
       restored = backed_up_volumes(agent)
       state = Agents::VolumeSet.new(agent).names[:state]
       restored = restored.merge(state:) if state
-      restored.flat_map do |name, volume|
+      mounts = restored.flat_map do |name, volume|
         [ "-v", "#{volume}:/restore/data/#{name}" ]
       end
+      # The Chaos journal dump comes back into a volume of its own for an
+      # operator to pg_restore (docs/database-backup.md); it is never loaded
+      # into a live database automatically.
+      restored_dump = "#{Agents::Resources.new(agent).container}-#{ChaosJournalDump::RESTORED_VOLUME_SUFFIX}"
+      mounts + [ "-v", "#{restored_dump}:/restore#{ChaosJournalDump::MOUNT}" ]
     end
 
     # Read-only mounts of the transcript directories that exist in the state
