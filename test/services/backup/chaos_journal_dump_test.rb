@@ -82,6 +82,8 @@ module Backup
       assert_equal [ "--network", "kamal" ], dump[dump.index("--network"), 2]
       assert_includes dump.each_cons(2).to_a, [ "-U", "res_main" ]
       assert_includes dump.each_cons(2).to_a, [ "-h", "pg" ]
+      assert_includes dump, "--exclude-table=public.house_oauth_store_merges",
+        "the house's merge marker is not the resident's, and its role cannot read it"
       assert_not_includes dump, "exec", "never inside the server's container, where loopback is trusted"
       assert_equal [ "docker", "volume", "rm" ], calls.last.last.first(3)
     end

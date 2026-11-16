@@ -25,6 +25,11 @@ module Backup
     class Error < StandardError; end
 
     DUMP_FILE = "chaos-journal.dump"
+    # The house's own bookkeeping from the 11 Nov oauth-store merge
+    # (ops/chaos-home/oauth_store_merge.sql: "not resident state"). It is
+    # owned by the house user, so the resident's role cannot read it, and
+    # pg_dump would fail at LOCK TABLE for every merged home without this.
+    EXCLUDED_TABLES = %w[public.house_oauth_store_merges].freeze
     MOUNT = "/data/chaos-db"
     RESTORED_VOLUME_SUFFIX = "chaos-db-restored"
 
@@ -148,6 +153,7 @@ module Backup
         "docker", "run", "--rm", "--network", server[:network], "-e", "PGPASSWORD",
         "-v", "#{volume}:/out", server[:image],
         "pg_dump", "-h", target.host, "-p", target.port.to_s, "-U", target.user, "-d", target.database,
+        *EXCLUDED_TABLES.map { |table| "--exclude-table=#{table}" },
         "-Fc", "-Z0", "--no-owner", "--no-acl", "-f", "/out/#{DUMP_FILE}")
       return if status.success?
 
