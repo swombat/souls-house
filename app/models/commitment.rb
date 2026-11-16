@@ -305,6 +305,11 @@ class Commitment < ApplicationRecord
   # cancelling post nothing. A failure to post (the save, or a callback such
   # as a broadcast) never undoes the commitment or fails the create; it is
   # logged and not retried.
+  #
+  # Plain text on one line: system messages render as plain text
+  # (MessageBubble's system branch has no Markdown), so `**` would show as
+  # asterisks and a newline collapses into a space (#842). The " · " before
+  # "due" keeps the headline from running into the date.
   def announce!
     return unless scheduled? && persisted?
 
@@ -316,9 +321,9 @@ class Commitment < ApplicationRecord
 
   def announcement_text
     local = due_at.in_time_zone(timezone)
-    line = "due #{local.strftime('%a %-d %b %H:%M')} #{timezone}"
-    line += " · will open a new conversation in #{destination_room&.name || 'Main'}" if new_conversation?
-    "**#{agent.name} made a commitment:** #{headline}\n\n#{line}"
+    text = "#{agent.name} made a commitment: #{headline} · due #{local.strftime('%a %-d %b %H:%M')} #{timezone}"
+    text += " · will open a new conversation in #{destination_room&.name || 'Main'}" if new_conversation?
+    text
   end
 
   private
