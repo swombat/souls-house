@@ -141,26 +141,22 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
     assert_equal "queued", turn.reload.state
   end
 
-  test "the fresh boot is recorded once and the owner told once, with the new kernel" do
+  test "the fresh boot is recorded once, with the new kernel, and no conversation is opened" do
     beat(required)
     answer(reboots.last)
     beat(required(uptime_seconds: 3 * 86_400))
     assert_equal 0, AuditLog.where(action: KernelReboot::RECORDED).count, "no boot seen yet"
 
     travel 2.minutes do
-      assert_difference -> { @agent.account.chats.count }, 1 do
+      assert_no_difference -> { Chat.count } do
         beat(kernel_running: NEW, kernel_installed: NEW, reboot_required: false, reboot_host: 1, uptime_seconds: 40)
         beat(kernel_running: NEW, kernel_installed: NEW, reboot_required: false, reboot_host: 1, uptime_seconds: 100)
       end
     end
+    assert_equal 1, AuditLog.where(action: KernelReboot::RECORDED).count
     audit = AuditLog.find_by!(action: KernelReboot::RECORDED)
     assert_equal({ "kernel_before" => OLD, "kernel_after" => NEW }, audit.data.slice("kernel_before", "kernel_after"))
-    chat = Chat.find(audit.data["chat_id"])
-    assert chat.archived?, "an info-only notice must not stay open in the room"
-    line = chat.messages.last
-    assert_equal "system", line.role
-    assert_includes line.content, "restarted for a kernel update"
-    assert_includes line.content, "back on Linux #{NEW}"
+    assert_nil audit.data["chat_id"]
   end
 
   test "overlapping observers record the reboot once" do
@@ -173,7 +169,7 @@ class Api::V1::HostRunner::KernelRebootTest < ActionDispatch::IntegrationTest
       # Both heartbeat handlers passed the unlocked check before either wrote.
       KernelReboot.stub(:latest_unrecorded, command) do
         assert_difference -> { AuditLog.where(action: KernelReboot::RECORDED).count } => 1,
-                          -> { @agent.account.chats.count } => 1 do
+                          -> { Chat.count } => 0 do
           2.times { KernelReboot.observe!(@enrollment) }
         end
       end
