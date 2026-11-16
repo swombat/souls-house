@@ -96,4 +96,40 @@ class Admin::ResidentsControllerTest < ActionDispatch::IntegrationTest
     assert_nil card["hosting"]["eur_per_month"]
   end
 
+  test "empty VMs lists servers we hold with no resident on them, and only those" do
+    CloudProcurementOperation.delete_all
+    admin = users(:site_admin_user)
+    house = ->(purpose, state, server_id, **extra) do
+      CloudProcurementOperation.create!(purpose:, state:, provider_server_id: server_id,
+        public_id: SecureRandom.hex(4), approval_reference: "test", location: "fsn1", server_type: "cx33",
+        image_id: 1, ssh_key_ids: [ 1 ], provider_name: "resident-#{SecureRandom.hex(3)}", **extra)
+    end
+    spare = house.call("spare", "provisioned", 101, placement_label: "spare")
+    moved_off = house.call("move_source", "provisioned", 102, placement_label: "7")
+    house.call("spare", "deleted", 103, placement_label: "spare")
+    house.call("spare", "planned", nil, placement_label: "spare")
+
+    occupied, elsewhere = [ agents(:research_assistant), agents(:code_reviewer) ].map do |agent|
+      AgentPlacement.where(agent: agent).delete_all
+      AgentPlacement.create!(agent: agent, backend: "hetzner_cloud", state: "ready", location: "fsn1",
+        provider_server_id: agent == agents(:research_assistant) ? 104 : 106)
+    end
+    house.call("placement", "provisioned", 104, agent_placement: occupied, requested_by: admin)
+    # Its resident now answers from server 106; this purchase's 105 has nobody on it.
+    replaced = house.call("placement", "needs_review", 105, agent_placement: elsewhere, requested_by: admin)
+    HouseSample.create!(kind: "pricing", sampled_at: 1.hour.ago,
+      metrics: { "hetzner_eur_per_month" => { "cx33" => { "fsn1" => 6.2 } } })
+
+    sign_in admin
+    get admin_residents_path
+    vms = inertia_props["props"]["empty_vms"]
+    assert_equal [ spare.id, moved_off.id, replaced.id ].sort, vms.map { |vm| vm["id"] }.sort
+    assert_equal({ spare.id => "spare", moved_off.id => "moved_off", replaced.id => "replaced" },
+      vms.to_h { |vm| [ vm["id"], vm["reason"] ] })
+    spare_row = vms.find { |vm| vm["id"] == spare.id }
+    assert_equal 6.2, spare_row["eur_per_month"]
+    assert_equal 4, spare_row["vcpus"]
+    assert_equal 101, spare_row["provider_server_id"]
+  end
+
 end
