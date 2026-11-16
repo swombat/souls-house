@@ -191,6 +191,14 @@ module Backup
       end
     end
 
+    test "the backup deadline is one the runner accepts" do
+      source = Rails.root.join("host-runner/backup_proxy.py").read
+      most = Integer(source[/^MAX_DEADLINE_SECONDS = (\d+)$/, 1])
+      cleanup = Integer(source[/^CLEANUP_SECONDS = (\d+)$/, 1])
+      assert_operator VmResident::DEADLINE.to_i, :<=, most
+      assert_operator VmResident::DEADLINE.to_i, :>, cleanup
+    end
+
     test "deadline or unknown unpause never silently releases a resident" do
       command = issue
       backup = VmBackup.find_by!(runner_command: command)

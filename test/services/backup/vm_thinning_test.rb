@@ -24,13 +24,26 @@ module Backup
       end
     end
 
+    test "a resident that keeps everything loses no backup by age, and is still pruned and measured" do
+      assert @agent.backup_keep_all?, "keeping everything is the default"
+      calls = []
+      list = [ snapshot(400), snapshot(40), snapshot(2), snapshot(1) ]
+      result = VmThinning.new(run: restic(list, forgets: 1, calls:)).call(@agent)
+
+      assert_equal %w[snapshots prune snapshots snapshots stats], calls.map(&:first)
+      assert_equal 4, result.kept
+      assert_equal 0, result.removed
+      assert_equal 4, @agent.reload.backup_history["snapshots"]
+    end
+
     test "thins to the resident's keep rules and reports what is left" do
+      @agent.update!(backup_keep_all: false)
       calls = []
       list = [ snapshot(40), snapshot(2), snapshot(1) ]
       result = VmThinning.new(run: restic(list, forgets: 1, calls:)).call(@agent)
 
       assert_equal %w[snapshots forget prune snapshots snapshots stats], calls.map(&:first)
-      assert_equal [ "forget", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12" ], calls[1]
+      assert_equal [ "forget", "--group-by", "paths", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12" ], calls[1]
       assert_equal 2, result.kept
       assert_equal 1, result.removed
       assert_in_delta 2.days.ago, Time.zone.parse(result.oldest_at), 5
@@ -38,6 +51,7 @@ module Backup
     end
 
     test "a thinning that leaves nothing is a failure, never a success" do
+      @agent.update!(backup_keep_all: false)
       list = [ snapshot(1) ]
       assert_raises(VmThinning::Failed) { VmThinning.new(run: restic(list, forgets: 1)).call(@agent) }
     end

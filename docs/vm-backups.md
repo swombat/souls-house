@@ -140,7 +140,7 @@ Defaults, configurable through installation environment:
 - Request objects: 32 MiB; database statements and S3 connection/read
   operations are bounded separately, without asynchronous Ruby interruption
   of a pooled database connection.
-- Runner backup: ten minutes, including a reserved cleanup/unpause window.
+- Runner backup: fifteen minutes (the most the runner accepts), including a reserved cleanup/unpause window.
   Unpause retains a ten-second attempt budget and one retry even after an
   overrun; containment takes precedence over a strict wall-clock cutoff.
 - Verification commands: 120 seconds each, with bounded output and
@@ -162,3 +162,17 @@ cloud-init size below Hetzner's 32 KiB limit, and perform the disposable
 birth/answer/restore/delete check from the design. Unit tests are not that
 live recovery proof. Include an agent-owned 0600 file, a second backup using
 the first as its parent, and an interrupted-backup recovery.
+
+## What is kept (16 Nov)
+
+A resident's backups are its only versioned history, so by default every
+backup is kept: `agents.backup_keep_all` is true and nothing is removed by
+age, in the house (`AgentResticJob#prune!`) or on a VM (`Backup::VmThinning`,
+which still prunes unreferenced data after each verified backup). A resident
+whose home is versioned elsewhere can have it set false from the console; it
+is then thinned to `backup_keep_daily`, `_weekly` and `_monthly` (7, 4, 12),
+grouped by path so that the machine name a backup happened to run under does
+not split the history into groups of one.
+
+The resident's backup space is separate and still applies: `Backup::Fit`
+removes the oldest backups one at a time when the repository passes it.
