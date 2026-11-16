@@ -108,9 +108,12 @@
     <div data-testid="empty-vms" class="space-y-3">
       <p class="text-sm text-muted-foreground">
         {#if emptyVms.length}
-          {emptyVms.length} {emptyVms.length === 1 ? 'server' : 'servers'} we pay for with no resident on {emptyVms.length === 1 ? 'it' : 'them'}
-          · {euros(emptyTotal)}/month at list price{#if emptyUnpriced}, not counting those without a price{/if}.
-          From the house's own purchase records; a server bought outside the house is not here.
+          {emptyVms.length}
+          {emptyVms.length === 1 ? 'server' : 'servers'} we pay for with no resident on {emptyVms.length === 1
+            ? 'it'
+            : 'them'}
+          · {euros(emptyTotal)}/month at list price{#if emptyUnpriced}, not counting those without a price{/if}. From
+          the house's own purchase records; a server bought outside the house is not here.
         {:else}
           No empty VMs: every server the house holds has a resident on it.
         {/if}
