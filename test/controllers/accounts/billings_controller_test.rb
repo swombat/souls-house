@@ -30,8 +30,8 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "change_plan", user: @user)
 
     get account_billing_path(@account)
-    assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost],
-      inertia_shared_props["change_offers"].map { |offer| offer["id"] }
+    assert_equal %w[conversation conversation_at_cost conversation_at_cost_hetzner life life_at_cost life_at_cost_hetzner
+      work work_at_cost work_at_cost_hetzner], inertia_shared_props["change_offers"].map { |offer| offer["id"] }
 
     sign_in(users(:regular_user))
     with_stripe do

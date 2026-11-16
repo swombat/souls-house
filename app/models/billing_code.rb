@@ -34,7 +34,12 @@ class BillingCode < ApplicationRecord
   end
 
   # The effects that let an account buy an offer at other than the standard rate.
-  def self.effects_for(offer) = [ offer.rate, "#{offer.rate}:#{offer.tier.id}" ]
+  # An at-cost grant covers both at-cost rates: which one a resident pays is
+  # the machine it lives on (Billing::Tier::AT_COST_RATES), not the code.
+  def self.effects_for(offer)
+    rate = offer.at_cost? ? "at_cost" : offer.rate
+    [ rate, "#{rate}:#{offer.tier.id}" ]
+  end
 
   # The account plan an effect grants, or nil.
   def self.plan_of(effect)

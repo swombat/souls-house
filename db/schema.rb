@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_114500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2590,7 +2590,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_114500) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
@@ -2618,7 +2618,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_114500) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2703,7 +2703,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_114500) do
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|

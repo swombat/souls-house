@@ -33,7 +33,10 @@ class BillingCodeTest < ActiveSupport::TestCase
     assert_equal redemption, @account.grant_for(at_cost)
     assert_nil @account.grant_for(Billing::Tier.find!("life").offer("standard"))
     assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost],
-      @account.purchasable_offers.map(&:id)
+      @account.purchasable_offers.map(&:id), "the Hetzner rate is the operator's to set, not offered"
+    hetzner = Billing::Tier.find!("life").offer("at_cost_hetzner")
+    assert @account.eligible_for?(hetzner), "an at-cost code covers whichever machine the resident lives on"
+    assert_equal redemption, @account.grant_for(hetzner)
   end
 
   test "unknown, used, withdrawn, expired and exhausted codes are refused, each with its reason" do

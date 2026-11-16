@@ -217,7 +217,7 @@ class ResidentEntitlement < ApplicationRecord
       return
     end
 
-    if limit.zero? && rate == "at_cost"
+    if limit.zero? && Billing::Tier::AT_COST_RATES.include?(rate)
       raise HouseInference::Error.new(
         "This resident is hosted at cost, which includes no house-model allowance; it runs on its own model subscription or key.",
         code: "house_allowance_none", status: 402)
