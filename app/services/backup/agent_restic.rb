@@ -3,7 +3,36 @@ module Backup
 
     IMAGE = "restic/restic:0.18.1"
 
+    # Session transcripts are the only part of the private state volume that
+    # is backed up (Daniel, 16 Nov: "they are life traces"). The rest of it
+    # holds provider credentials and tokens and stays out. Each path is named
+    # here, never globbed: `antigravity-cli` keeps its OAuth token beside its
+    # conversations, so only the conversation directories go in. The VM
+    # runner carries claude/projects the same way (host-runner/backup_proxy.py).
+    TRANSCRIPT_PATHS = [
+      "claude/projects",                                   # Claude Code
+      "antigravity/.gemini/antigravity-cli/conversations", # agy
+      "antigravity/.gemini/antigravity-cli/brain",         # agy, per conversation
+      "antigravity/.chaos-conversations"                   # the agy shim's thread map
+    ].freeze
+    INSPECT_IMAGE = "busybox:1.37"
+
+    # Prints "<verdict> <path>" for each path: ok, absent, link or notdir.
+    TRANSCRIPT_CHECK = <<~'SH'.freeze
+      for p in "$@"; do
+        cur=/state; verdict=ok
+        for part in $(echo "$p" | tr / ' '); do
+          cur="$cur/$part"
+          if [ -L "$cur" ]; then verdict=link; break; fi
+          if [ ! -e "$cur" ]; then verdict=absent; break; fi
+        done
+        if [ "$verdict" = ok ] && [ ! -d "$cur" ]; then verdict=notdir; fi
+        echo "$verdict $p"
+      done
+    SH
+
     class ResidentBusy < ArgumentError; end
+    class TranscriptRefused < ArgumentError; end
 
     module_function
 
@@ -78,8 +107,54 @@ module Backup
     end
 
     def restore_mounts(agent)
-      backed_up_volumes(agent).flat_map do |name, volume|
+      # The state volume is mounted too, so transcripts in a snapshot land in
+      # it. Restore recreates every volume first (AgentResticRestore#
+      # recreate_volumes!), so it is empty here and nothing else in it is
+      # overwritten; snapshots never carry the credentials.
+      restored = backed_up_volumes(agent)
+      state = Agents::VolumeSet.new(agent).names[:state]
+      restored = restored.merge(state:) if state
+      restored.flat_map do |name, volume|
         [ "-v", "#{volume}:/restore/data/#{name}" ]
+      end
+    end
+
+    # Read-only mounts of the transcript directories that exist in the state
+    # volume, each through Docker's volume-subpath. Call it only while the
+    # resident is quiesced: Docker refuses a subpath link that leaves the
+    # volume but follows one inside it (a claude/projects -> ../credentials
+    # link would mount the credentials), so every component of every path is
+    # checked here, after the pause, when the resident cannot change it. A
+    # link anywhere on a path fails the backup rather than skipping the path.
+    def transcript_mounts(agent)
+      volume = Agents::VolumeSet.new(agent).names[:state]
+      return [] if volume.blank?
+
+      _, err, status = Open3.capture3("docker", "volume", "inspect", volume)
+      unless status.success?
+        return [] if err.to_s.match?(/no such volume/i)
+        raise TranscriptRefused, "Cannot inspect the state volume for transcripts"
+      end
+
+      present_transcript_paths(volume).flat_map do |path|
+        [ "--mount", "type=volume,src=#{volume},dst=/data/state/#{path},readonly,volume-subpath=#{path}" ]
+      end
+    end
+
+    def present_transcript_paths(volume)
+      out, _, status = Open3.capture3("docker", "run", "--rm", "--network", "none",
+        "--mount", "type=volume,src=#{volume},dst=/state,readonly",
+        INSPECT_IMAGE, "sh", "-c", TRANSCRIPT_CHECK, "transcript-check", *TRANSCRIPT_PATHS)
+      raise TranscriptRefused, "Cannot inspect the state volume for transcripts" unless status.success?
+
+      verdicts = out.to_s.lines.to_h { |line| line.strip.split(" ", 2).reverse }
+      TRANSCRIPT_PATHS.select do |path|
+        case verdicts[path]
+        when "ok" then true
+        when "absent" then false
+        when "link" then raise TranscriptRefused, "Transcript path #{path} has a link on it; refusing to back up the state volume"
+        else raise TranscriptRefused, "Transcript path #{path} is not a directory"
+        end
       end
     end
 
