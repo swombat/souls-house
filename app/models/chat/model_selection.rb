@@ -51,7 +51,7 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Top Models" },
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "Top Models", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Top Models", thinking: { supported: true } },
-    { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
+    { model_id: "qwen/qwen4-max", label: "Qwen4 Max", group: "Top Models", thinking: { supported: true } },
     { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Top Models", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Top Models", thinking: { supported: true } },
 
@@ -521,6 +521,7 @@ module Chat::ModelSelection
     { model_id: "meta-llama/llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct", group: "Meta" },
 
     # Qwen
+    { model_id: "qwen/qwen4-max", label: "Qwen4 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-max-prime", label: "Qwen3.8 Max Prime", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-2.4t-a95b", label: "Qwen3.8 2.4T A95B", group: "Qwen", thinking: { supported: true } },

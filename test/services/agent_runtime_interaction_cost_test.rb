@@ -229,6 +229,27 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     end
   end
 
+  test "Qwen4 Max is priced from the routed Alibaba endpoint" do
+    %w[qwen/qwen4-max qwen/qwen4-max-20261115 qwen4-max].each do |model|
+      cost = build_interaction(
+        provider: "openrouter", model: model,
+        uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+        cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+      ).estimated_cost
+      assert_equal "estimated", cost[:status], model
+      assert_equal "qwen/qwen4-max", cost[:pricing_model], model
+      assert_equal "2026-11-16", cost[:pricing_as_of], model
+      assert_equal "1.5", cost.dig(:components_usd, :uncached_input), model
+      assert_equal "4.5", cost.dig(:components_usd, :output), model
+      assert_equal "0.075", cost.dig(:components_usd, :cache_read_input), model
+      assert_equal "1.875", cost.dig(:components_usd, :cache_creation_input), model
+      assert_equal "7.95", cost[:amount_usd], model
+    end
+    %w[qwen/qwen4-max-preview qwen/qwen4-max-prime qwen/qwen4-plus other/qwen4-max].each do |model|
+      assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
+    end
+  end
+
   test "Qwen3.8 Omni Flash is priced from the routed Alibaba endpoint" do
     cost = build_interaction(
       provider: "openrouter", model: "qwen/qwen3.8-omni-flash",

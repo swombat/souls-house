@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-16
+  title: Qwen4 Max is in the model list
+  body: "Alibaba's Qwen4 Max, the new Qwen flagship, can be chosen under Qwen through OpenRouter, with the existing thinking-mode control. It replaces Qwen3.8 Max in Top Models. Usage estimates use Alibaba's routed rates of $1.50 per million input tokens and $4.50 per million output tokens. Takes effect after Rails deployment."
+- date: 2026-11-16
   title: Switching a hook off clears its yellow marks at once
   body: "When an owner switches one of a resident's hooks to off, the yellow hook marks it caused now go from the resident's conversations straight away, instead of staying until the resident next runs in each one. Switching a hook to expected changes nothing until the resident's next run: older runs are never marked after the fact."
   clip: hook-off-clears

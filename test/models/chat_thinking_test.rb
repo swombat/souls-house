@@ -347,7 +347,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "meta-llama/llama-4-maverick",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3.1-pro",
-      "qwen/qwen3.8-max-0902",
+      "qwen/qwen4-max",
       "xiaomi/mimo-v2.6-pro",
       "z-ai/glm-5.3"
     ], top_model_ids
@@ -369,6 +369,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "moonshotai/kimi-k3",
       "qwen/qwen3.7-flash",
       "qwen/qwen3.8-2.4t-a95b",
+      "qwen/qwen4-max",
       "qwen/qwen3.8-omni-flash",
       "qwen/qwen3.8-max-0902",
       "qwen/qwen3.8-max-prime",
