@@ -58,39 +58,50 @@ module Backup
       raise ArgumentError, "Backup archive integrity verification failed" unless status.success?
     end
 
-    def with_quiesced(agent)
-      vault = agent.memory_vault
-      return yield unless vault
+    # Holds the resident still while its backup is taken: idle, and its
+    # container paused (or already stopped). A resident with a memory vault is
+    # also held under the vault's lock, so the graph cannot change. A resident
+    # without one is paused all the same: the transcript paths are checked for
+    # links inside this block, and that check means nothing while the
+    # resident can still change them (Mira, #1004).
+    def with_quiesced(agent, &block)
       Agents::Resources.new(agent).verify_existing!
+      vault = agent.memory_vault
+      return paused(agent, &block) unless vault
+
       vault.with_lock do
         raise ArgumentError, "Erasure is pending" if vault.erasure_requested_at?
-        raise ResidentBusy, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
-        output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
-        paused_here = false
-        begin
-          if status.success? && output.strip == "true false"
-            _, _, paused = Open3.capture3("docker", "pause", agent.container_name)
-            raise ArgumentError, "Could not quiesce resident filesystem" unless paused.success?
-            paused_here = true
-          elsif status.success? && !%w[false].include?(output.split.first) && output.strip != "true true"
-            raise ArgumentError, "Cannot establish resident filesystem state"
-          elsif !status.success?
-            # Offline residents can have volumes but no container. Distinguish
-            # absence from daemon errors through the ownership verifier above.
-            raise ArgumentError, "Missing hosted runtime" if agent.external?
-          end
-          raise ResidentBusy, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
-          yield
-        ensure
-          if paused_here
-            original_error = $!
-            begin
-              _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
-              raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
-            rescue StandardError
-              Rails.logger.error("Resident remains paused after backup")
-              raise unless original_error
-            end
+        paused(agent, &block)
+      end
+    end
+
+    def paused(agent)
+      raise ResidentBusy, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
+      output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
+      paused_here = false
+      begin
+        if status.success? && output.strip == "true false"
+          _, _, paused = Open3.capture3("docker", "pause", agent.container_name)
+          raise ArgumentError, "Could not quiesce resident filesystem" unless paused.success?
+          paused_here = true
+        elsif status.success? && !%w[false].include?(output.split.first) && output.strip != "true true"
+          raise ArgumentError, "Cannot establish resident filesystem state"
+        elsif !status.success?
+          # Offline residents can have volumes but no container. Distinguish
+          # absence from daemon errors through the ownership verifier above.
+          raise ArgumentError, "Missing hosted runtime" if agent.external?
+        end
+        raise ResidentBusy, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
+        yield
+      ensure
+        if paused_here
+          original_error = $!
+          begin
+            _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
+            raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
+          rescue StandardError
+            Rails.logger.error("Resident remains paused after backup")
+            raise unless original_error
           end
         end
       end

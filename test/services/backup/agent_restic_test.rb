@@ -98,6 +98,60 @@ module Backup
 
     private
 
+    public
+
+    test "a resident without a memory vault is paused before its transcripts are checked, and resumed after" do
+      assert_nil @agent.memory_vault
+      check = AgentRestic::TRANSCRIPT_PATHS.map { |path| "#{path == 'claude/projects' ? 'ok' : 'absent'} #{path}" }.join("\n")
+      [ :success, :refusal ].each do |outcome|
+        events = []
+        docker = lambda do |*command|
+          case command[1]
+          when "inspect" then events << :inspect; [ "true false", "", ok ]
+          when "pause" then events << :pause; [ "", "", ok ]
+          when "unpause" then events << :unpause; [ "", "", ok ]
+          when "volume" then [ "", "", ok ]
+          when "run"
+            events << :check
+            [ outcome == :success ? check : check.sub("ok claude", "link claude"), "", ok ]
+          end
+        end
+        Agents::Resources.stub(:new, verified_resources) do
+          Open3.stub(:capture3, docker) do
+            if outcome == :success
+              AgentRestic.with_quiesced(@agent) { AgentRestic.transcript_mounts(@agent) }
+            else
+              assert_raises(AgentRestic::TranscriptRefused) do
+                AgentRestic.with_quiesced(@agent) { AgentRestic.transcript_mounts(@agent) }
+              end
+            end
+          end
+        end
+        assert_equal %i[inspect pause check unpause], events, "#{outcome}: pause before the check, resume after"
+      end
+    end
+
+    test "a busy resident without a memory vault is not backed up" do
+      @agent.save!
+      @agent.agent_runtime_interactions.create!(trigger_kind: "synthetic", started_at: Time.current)
+      Agents::Resources.stub(:new, verified_resources) do
+        Open3.stub(:capture3, ->(*) { flunk "a busy resident must not be paused or inspected" }) do
+          assert_raises(AgentRestic::ResidentBusy) { AgentRestic.with_quiesced(@agent) { flunk "must not run" } }
+        end
+      end
+    end
+
+    private
+
+    # verify_existing! passes; volumes are the agent's real derived names.
+    def verified_resources
+      real = Agents::Resources.new(@agent)
+      Object.new.tap do |resources|
+        resources.define_singleton_method(:verify_existing!) { |**| true }
+        resources.define_singleton_method(:volumes) { real.volumes }
+      end
+    end
+
     def ok = Struct.new(:success?).new(true)
     def failed = Struct.new(:success?).new(false)
 
