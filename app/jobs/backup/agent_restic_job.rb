@@ -26,9 +26,13 @@ module Backup
         # Inside the pause: the transcript paths are checked for links when
         # the resident can no longer change them.
         transcripts = Backup::AgentRestic.transcript_mounts(agent)
-        Backup::GraphCheckpoint.with_volume(agent) do |mounts, envelope|
-          checkpoint = envelope
-          run_restic_backup(agent, graph_mounts: mounts + transcripts)
+        # The Chaos journal is dumped inside the pause too, so it matches the
+        # files it is snapshotted with.
+        Backup::ChaosJournalDump.with_volume(agent) do |journal, _receipt|
+          Backup::GraphCheckpoint.with_volume(agent) do |mounts, envelope|
+            checkpoint = envelope
+            run_restic_backup(agent, graph_mounts: mounts + transcripts + journal)
+          end
         end
       end
       if checkpoint && agent.agent_runtime_interactions.where("started_at >= ?", backup_started_at).exists?
@@ -57,9 +61,12 @@ module Backup
       raise
     rescue StandardError => error
       if agent && !snapshot
-        # A refused transcript path says which path and why, with no values
-        # in it; other errors keep only their class.
-        reason = error.is_a?(Backup::AgentRestic::TranscriptRefused) ? error.message : error.class.name
+        # A refused transcript path or journal dump says what and why, with no
+        # values in it; other errors keep only their class.
+        reason = case error
+        when Backup::AgentRestic::TranscriptRefused, Backup::ChaosJournalDump::Error then error.message
+        else error.class.name
+        end
         AgentBackupSnapshot.create!(agent: agent, restic_snapshot_id: "unknown",
           taken_at: Time.current, ok: false, stderr_tail: "Backup failed: #{reason}")
       end

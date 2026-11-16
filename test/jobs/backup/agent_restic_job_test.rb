@@ -13,6 +13,7 @@ class Backup::AgentResticJobTest < ActiveSupport::TestCase
     commands = []
     quiesced = ->(_agent, &block) { order << :pause; block.call.tap { order << :resume } }
     transcripts = ->(_agent) { order << :transcripts; [ "--mount", "synthetic-transcripts" ] }
+    journal = ->(_agent, &block) { order << :journal; block.call([ "-v", "synthetic-journal:/data/chaos-db:ro" ], {}) }
     summary = { message_type: "summary", snapshot_id: "abc123", total_bytes_processed: 7 }.to_json
     restic = ->(*command) { commands << command; [ command.include?("backup") ? summary : "", "", @ok ] }
 
@@ -20,10 +21,12 @@ class Backup::AgentResticJobTest < ActiveSupport::TestCase
       Backup::AgentRestic.stub(:backup_mounts, []) do
         Backup::AgentRestic.stub(:with_quiesced, quiesced) do
           Backup::AgentRestic.stub(:transcript_mounts, transcripts) do
-            Backup::Fit.stub(:new, ->(*, **) { Struct.new(:call).new(nil) }) do
-              Open3.stub(:capture3, restic) do
-                snapshot = Backup::AgentResticJob.perform_now(@agent.id, force: true)
-                assert snapshot.ok
+            Backup::ChaosJournalDump.stub(:with_volume, journal) do
+              Backup::Fit.stub(:new, ->(*, **) { Struct.new(:call).new(nil) }) do
+                Open3.stub(:capture3, restic) do
+                  snapshot = Backup::AgentResticJob.perform_now(@agent.id, force: true)
+                  assert snapshot.ok
+                end
               end
             end
           end
@@ -31,9 +34,10 @@ class Backup::AgentResticJobTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal %i[pause transcripts resume], order
+    assert_equal %i[pause transcripts journal resume], order
     backup = commands.find { |command| command.include?("backup") }
     assert_includes backup, "synthetic-transcripts"
+    assert_includes backup, "synthetic-journal:/data/chaos-db:ro"
     assert commands.reject { |command| command.include?("backup") }.none? { |command| command.include?("synthetic-transcripts") }
   end
 
