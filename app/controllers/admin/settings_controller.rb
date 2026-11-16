@@ -195,8 +195,10 @@ class Admin::SettingsController < ApplicationController
     end
   end
 
-  # The form sends the full list of picked residents; anyone not in it is
-  # off, including an inactive resident that still had the mark.
+  # The form sends the full list of picked residents among those the page
+  # shows (Agent.active); one of those left out is off. A resident the page
+  # does not show keeps its mark: saving the settings for any other reason
+  # must not take away its protection.
   def update_backup_never_removed_residents
     picked = Array(params[:setting][:backup_never_removed_resident_ids]).compact_blank.filter_map do |param|
       Agent.find_by_obfuscated_id(param)&.id
@@ -204,7 +206,7 @@ class Admin::SettingsController < ApplicationController
       nil
     end
     turned_on = Agent.active.where(id: picked, backup_never_removed: false).pluck(:id)
-    turned_off = Agent.where(backup_never_removed: true).where.not(id: picked).pluck(:id)
+    turned_off = Agent.active.where(backup_never_removed: true).where.not(id: picked).pluck(:id)
     Agent.where(id: turned_on).update_all(backup_never_removed: true, updated_at: Time.current)
     Agent.where(id: turned_off).update_all(backup_never_removed: false, updated_at: Time.current)
     @backup_never_removed_changes = {
