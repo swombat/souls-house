@@ -177,6 +177,26 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, ResidentBirthOrder.count
   end
 
+  test "a birth can't be bought at the Hetzner at-cost rate, even with an at-cost code" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: users(:user_1))
+    Billing.stub(:client, @stripe) do
+      post account_birth_orders_path(@account), params: { agent: draft, tier: "life", rate: "at_cost_hetzner" }, as: :json
+    end
+    assert_response :unprocessable_entity
+    assert_equal "Choose a plan.", response.parsed_body.fetch("error")
+    assert_equal 0, ResidentBirthOrder.count
+    assert_empty @stripe.created_subscriptions
+
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      Billing.stub(:client, @stripe) do
+        Billing::PaidBirth.new.start!(account: @account, creator: users(:user_1), attributes: draft, open_beginning: false,
+          tier: Billing::Tier.find!("life"), rate: "at_cost_hetzner")
+      end
+    end
+    assert_equal "That rate is set by the house, not bought.", error.message
+  end
+
   test "someone else's order can't be confirmed" do
     order = ResidentBirthOrder.create!(account: @account, creator: users(:site_admin_user), tier: "conversation",
       stripe_subscription_id: "sub_x", birth_attributes: { name: "Theirs" })

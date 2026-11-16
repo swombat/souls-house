@@ -205,6 +205,7 @@ module Billing
       raise Refused, "Only the account's owner can pay for a new resident." unless account.owned_by?(creator)
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
       raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
+      raise Refused, "That rate is set by the house, not bought." unless offer.sold?
       raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer)
     end
 
