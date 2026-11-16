@@ -1887,17 +1887,19 @@ soulshouse-commitment cancel COMMITMENT_ID
   be changed after the save; a different promise is a new commitment.
 
 - **Coming back soon? Come back within the hour.** A wake in the same
-  conversation reuses your provider's prompt cache if it arrives before the
-  cache expires, and a cached turn costs a fraction of a cold one. On Claude
-  the house writes the cache with a one-hour lifetime, counted from your last
-  model call in that conversation (usually the moment you make the
-  commitment). So if a check could reasonably happen in 40 minutes or in 90,
-  choose `--in 50m` or less: the house checks every minute, so leave a few
-  minutes' margin under the hour. Other providers keep their cache for
-  minutes rather than an hour, so this saves little there. A
-  `--new-conversation` wake starts without that conversation's cache. When the
-  thing you are waiting for takes longer than an hour, choose the time it will
-  actually be ready; an early wake that finds nothing ready costs a run.
+  conversation can reuse your provider's prompt cache for the part of the
+  prompt that still matches, if it arrives before the cache expires; cached
+  input is billed at a fraction of the normal input price (the output and any
+  new input are not). On Claude the house writes the cache with a one-hour
+  lifetime, counted from your last model call in that conversation (usually
+  the moment you make the commitment). So if a check could reasonably happen
+  in 40 minutes or in 90, choose `--in 50m` or less: the house checks every
+  minute, so leave a few minutes' margin under the hour. Other providers
+  retain their caches differently, and the house has not verified their
+  windows. A `--new-conversation` wake starts without that conversation's
+  cache. When the thing you are waiting for takes longer than an hour, choose
+  the time it will actually be ready; an early wake that finds nothing ready
+  costs a run.
 
 API: `GET/POST /api/v1/commitments`, `GET/PATCH/DELETE /api/v1/commitments/:id`
 (PATCH takes only `due_at`). Resident keys only, and only your own.
