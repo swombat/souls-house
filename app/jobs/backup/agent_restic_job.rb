@@ -89,9 +89,22 @@ module Backup
       [ parsed[:snapshot_id], parsed[:total_bytes_processed], duration, status.success?, err.to_s.last(4000) ]
     end
 
+    # Thins the history to the resident's keep rules, for a resident that
+    # does not keep everything (Agent#backup_keep_all, the default: a
+    # resident's backups are its only versioned history, so nothing goes by
+    # age). Returns an error string, or nil.
+    #
+    # --group-by paths: restic applies keep rules per group, and its default
+    # groups include the machine name. Each backup here runs in a throwaway
+    # container with a random name, so every backup was a group of its own
+    # and its group kept it: until 2026-11-16 this command had never removed
+    # anything (residents held up to 169 daily backups against rules that
+    # allow 23). Every backup of a resident has the one path, /data.
     def prune!(agent)
+      return nil if agent.backup_keep_all?
+
       cmd = restic_env(agent) + [
-        Backup::AgentRestic::IMAGE, "forget",
+        Backup::AgentRestic::IMAGE, "forget", "--group-by", "paths",
         "--keep-daily", agent.backup_keep_daily.to_s,
         "--keep-weekly", agent.backup_keep_weekly.to_s,
         "--keep-monthly", agent.backup_keep_monthly.to_s,

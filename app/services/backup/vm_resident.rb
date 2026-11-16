@@ -5,7 +5,11 @@ module Backup
   class VmResident
 
     class Unavailable < ArgumentError; end
-    DEADLINE = 10.minutes
+    # The most the runner accepts (backup_proxy.py MAX_DEADLINE_SECONDS). A
+    # resident is held only for as long as its backup really takes; at ten
+    # minutes a 28 GB home failed once and passed with 75 seconds to spare
+    # (Alanis, 15 and 16 Nov 2026: 580 s, 524 s, 399 s against a usual 155 s).
+    DEADLINE = 15.minutes
 
     def self.held?(agent)
       VmBackup.holding.where(agent_id: agent.id).exists?

@@ -1,9 +1,13 @@
 require "open3"
 
 module Backup
-  # Thins a VM resident's backup history to its keep rules (7 daily, 4 weekly,
-  # 12 monthly unless the resident's own numbers differ), the rules house
-  # residents have always had (AgentResticJob#prune!).
+  # Tidies a VM resident's backup repository after a verified backup. For a
+  # resident that keeps everything (Agent#backup_keep_all, the default) no
+  # backup is removed by age; otherwise its history is thinned to its keep
+  # rules (7 daily, 4 weekly, 12 monthly unless its own numbers differ), as
+  # AgentResticJob#prune! does for a resident in the house. Either way the
+  # repository is pruned and then kept within the resident's backup space
+  # (Backup::Fit).
   #
   # A VM cannot do this itself: its restic reaches the repository through the
   # house (VmRepository), which lets it add objects and remove its own locks
@@ -78,10 +82,15 @@ module Backup
       raise Failed, "Backup password is missing" if agent.restic_password.blank?
 
       before = snapshots(agent)
-      run(agent, "forget",
-        "--keep-daily", agent.backup_keep_daily.to_s,
-        "--keep-weekly", agent.backup_keep_weekly.to_s,
-        "--keep-monthly", agent.backup_keep_monthly.to_s)
+      # Nothing goes by age from a resident that keeps everything. One path
+      # per resident, so the rules see the whole history as one group even
+      # if its server's name ever changes (see AgentResticJob#prune!).
+      unless agent.backup_keep_all?
+        run(agent, "forget", "--group-by", "paths",
+          "--keep-daily", agent.backup_keep_daily.to_s,
+          "--keep-weekly", agent.backup_keep_weekly.to_s,
+          "--keep-monthly", agent.backup_keep_monthly.to_s)
+      end
       # A prune of its own, every time: forget --prune prunes only when it
       # forgot something, and a failed backup's partial data needs removing
       # even on a night when no backup aged out.
