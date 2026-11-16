@@ -22,8 +22,10 @@
 # exec` on the host) and refuses otherwise; it answers first, then reboots.
 # A turn that arrives meanwhile waits in the queue (ResidentTurn.admit!) until
 # the heartbeat shows the fresh boot, or BOOT_GRACE passes. The fresh boot is
-# recorded as an audit entry (the latch), and the resident's home account is
-# told in one quiet line.
+# recorded as an audit entry (the latch). Nobody is told: a kernel reboot is
+# maintenance, like a backup, and is invisible to the owner (Daniel, 16 Nov:
+# conversations are for people and residents, not announcements). The
+# admin residents page shows the running kernel.
 module KernelReboot
 
   KIND = "reboot_host".freeze
@@ -99,8 +101,8 @@ module KernelReboot
   end
 
   # On every heartbeat: a reboot_host answered done, then a boot after it was
-  # issued, is a completed reboot. Recorded once, the owner told once, and the
-  # turns that waited are dispatched.
+  # issued, is a completed reboot. It is recorded once and the turns that
+  # waited are dispatched.
   def observe!(enrollment, now: Time.current)
     command = latest_unrecorded(enrollment)
     return unless command
@@ -116,7 +118,7 @@ module KernelReboot
     recorded = false
     # Heartbeats can overlap: the check above is only a cheap filter. The
     # command's row lock serialises observers, and the recheck under it makes
-    # the record (audit row and chat line) happen once.
+    # the audit row happen once.
     command.with_lock do
       next if recorded?(command)
 
@@ -155,27 +157,13 @@ module KernelReboot
   end
 
   def record!(agent, command, before:, after:, booted_at:)
-    # Runner-reported strings reach a message and an audit row: only a
+    # Runner-reported strings reach an audit row: only a
     # kernel-release shape passes.
     before = nil unless before.is_a?(String) && RELEASE.match?(before)
     after = nil unless after.is_a?(String) && RELEASE.match?(after)
-    Agent.transaction do
-      chat = agent.account.chats.create_with_message!(
-        { title: "#{agent.name}'s server restarted for a kernel update", manual_responses: true },
-        agent_ids: [ agent.id ], automatic_response: false
-      )
-      chat.messages.create!(role: "system", content: notice_text(agent, after, booted_at))
-      AuditLog.create!(user: nil, account: agent.account, action: RECORDED, auditable: agent,
-        data: { command_id: command.public_id, kernel_before: before, kernel_after: after,
-                booted_at: booted_at.iso8601, chat_id: chat.id })
-    end
-  end
-
-  def notice_text(agent, kernel, at)
-    zone = ActiveSupport::TimeZone[agent.account.owner&.timezone.to_s] || ActiveSupport::TimeZone["UTC"]
-    back_on = kernel ? ", back on Linux #{kernel}" : ""
-    "[System Notice] #{agent.name}'s server restarted for a kernel update at " \
-      "#{at.in_time_zone(zone).strftime('%-d %b %H:%M %Z')}#{back_on}. Nothing for you to do."
+    AuditLog.create!(user: nil, account: agent.account, action: RECORDED, auditable: agent,
+      data: { command_id: command.public_id, kernel_before: before, kernel_after: after,
+              booted_at: booted_at.iso8601 })
   end
 
 end
