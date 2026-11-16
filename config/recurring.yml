@@ -168,6 +168,13 @@ production:
     class: FullBackupJob
     schedule: every day at 4am
 
+  # An interrupted VM backup thinning pauses that resident's backups until
+  # it is recovered; this is what recovers it.
+  vm_thinning_recovery:
+    class: Backup::VmThinningRecoveryJob
+    queue: default
+    schedule: every 10 minutes
+
   external_agent_wake:
     class: ExternalAgentWakeJob
     queue: default
