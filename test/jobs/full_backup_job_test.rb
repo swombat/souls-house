@@ -73,4 +73,42 @@ class FullBackupJobTest < ActiveJob::TestCase
     assert @dumped
   end
 
+  test "a restarted nightly run skips residents already backed up since it was queued, and still dumps the database" do
+    queued_at = 30.minutes.ago
+    AgentBackupSnapshot.create!(agent: @agent_a, restic_snapshot_id: "done", taken_at: 10.minutes.ago, ok: true)
+    AgentBackupSnapshot.create!(agent: @agent_b, restic_snapshot_id: "failed", taken_at: 10.minutes.ago, ok: false)
+    AgentBackupSnapshot.create!(agent: @agent_b, restic_snapshot_id: "yesterday", taken_at: 1.day.ago, ok: true)
+    attempted = []
+    backup_stub = ->(agent_id, force:) { attempted << agent_id }
+
+    Backup::AgentResticJob.stub(:perform_now, backup_stub) do
+      DatabaseBackupJob.stub(:perform_now, @dump_stub) do
+        job = FullBackupJob.new
+        job.enqueued_at = queued_at
+        job.perform_now
+      end
+    end
+
+    assert_not_includes attempted, @agent_a.id
+    assert_includes attempted, @agent_b.id
+    assert @dumped
+  end
+
+  test "a run by hand skips nobody, whatever was backed up a moment ago" do
+    AgentBackupSnapshot.create!(agent: @agent_a, restic_snapshot_id: "done", taken_at: 1.minute.ago, ok: true)
+    attempted = []
+    backup_stub = ->(agent_id, force:) { attempted << agent_id }
+
+    Backup::AgentResticJob.stub(:perform_now, backup_stub) do
+      DatabaseBackupJob.stub(:perform_now, @dump_stub) do
+        FullBackupJob.perform_now
+        job = FullBackupJob.new(fail_fast: true)
+        job.enqueued_at = 30.minutes.ago
+        job.perform_now
+      end
+    end
+
+    assert_equal 2, attempted.count(@agent_a.id)
+  end
+
 end
