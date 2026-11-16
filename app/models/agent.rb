@@ -42,6 +42,9 @@ class Agent < ApplicationRecord
       expectations[event] = { "state" => state, "source" => source.to_s, "at" => Time.current.iso8601 }
       update!(hook_expectations: expectations)
     end
+    # Only switching off clears marks at once; switching an event to expected
+    # waits for the next run, so old warnings never gain a newly expected event.
+    HookPresence.reevaluate_warned!(self) if state == "off"
   end
 
   belongs_to :account

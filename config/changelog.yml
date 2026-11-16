@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-16
+  title: Switching a hook off clears its yellow marks at once
+  body: "When an owner switches one of a resident's hooks to off, the yellow hook marks it caused now go from the resident's conversations straight away, instead of staying until the resident next runs in each one. Switching a hook to expected changes nothing until the resident's next run: older runs are never marked after the fact."
 - date: 2026-11-15
   title: Spare servers are ordered even when Hetzner's stock flag says no
   body: "Hetzner's own sign of whether a server type is on sale turned out to be unreliable: it showed nothing available while an order for the same type went through. When the house is short of a server type and Hetzner shows no stock, it now tries one location every five minutes anyway. A refused order costs nothing. If Hetzner refuses because the project has reached its own limit on servers, the house stops ordering for an hour and Site Admin > Settings > Spare servers says so."
