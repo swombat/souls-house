@@ -174,6 +174,25 @@ test('sets the reflexes scope to one of three states, with no resident picker', 
   expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent("Every resident's posts are checked");
 });
 
+test('picks the residents whose backups are never removed', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off' },
+    backup_never_removed_residents: [
+      { id: 'BJZbJx', name: 'Wing', account: 'Nexus', backup_never_removed: false },
+      { id: 'AYawJx', name: 'Dora', account: 'Other', backup_never_removed: true },
+    ],
+  });
+  expect(screen.getByText('Residents whose backups are never removed')).toBeVisible();
+  expect(screen.getByText(/the house removes none of its backups, however much space they take/)).toBeVisible();
+
+  await fireEvent.click(screen.getByLabelText('Never remove backups of Wing'));
+  await fireEvent.click(screen.getByLabelText('Never remove backups of Dora'));
+
+  await fireEvent.submit(screen.getByLabelText('Find a resident whose backups are never removed').closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.getAll('setting[backup_never_removed_resident_ids][]')).toEqual(['', 'BJZbJx']);
+});
+
 test('switches residents on for site announcements and says the switch grants nothing else', async () => {
   render(Settings, {
     setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off' },

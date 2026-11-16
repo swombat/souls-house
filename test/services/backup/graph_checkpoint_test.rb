@@ -101,6 +101,19 @@ class Backup::GraphCheckpointTest < ActiveSupport::TestCase
     assert_empty commands
   end
 
+  test "a resident whose backups are never removed is not thinned by rules even with keep-all off" do
+    @agent.update!(backup_keep_all: false, backup_never_removed: true)
+    commands = []
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*command) { commands << command; [ "", "", Struct.new(:success?).new(true) ] }) do
+          assert_nil Backup::AgentResticJob.new.send(:prune!, @agent)
+        end
+      end
+    end
+    assert_empty commands
+  end
+
   test "a resident thinned by rules has its whole history treated as one group" do
     @agent.update!(backup_keep_all: false)
     commands = []

@@ -10,6 +10,10 @@ module Backup
   # space is the house's problem (Daniel: "that's a problem on us rather than
   # on the user"), recorded as over_space and reported to the site admins.
   #
+  # A resident whose backups are never removed (Agent#backup_never_removed)
+  # is measured and recorded the same way, and nothing of its history is
+  # forgotten however far past its space it is.
+  #
   # Two sizes. `referenced` is what the kept backups need (restic stats
   # --mode raw-data): it falls as soon as a backup is forgotten, so it decides
   # how much history goes. `physical` is every object in the repository, the
@@ -41,7 +45,7 @@ module Backup
       kept = snapshots
       referenced = referenced_bytes
       forgot = false
-      while referenced > space && kept.size > 1
+      while referenced > space && kept.size > 1 && !@agent.backup_never_removed?
         @run.call("forget", kept.first.fetch("id"))
         left = snapshots
         raise Failed, "No backup is left after thinning to fit" if left.empty?
@@ -65,8 +69,8 @@ module Backup
       report_over_space(referenced, space) if over
       # Said while history is being cut to fit, and while the repository is
       # still near its space, so it does not flicker off on a quiet night.
-      thinned = forgot || (referenced > space && !over) ||
-        (@agent.backup_history["thinned_to_fit"] == true && stored > space * STILL_TIGHT)
+      thinned = !@agent.backup_never_removed? && (forgot || (referenced > space && !over) ||
+        (@agent.backup_history["thinned_to_fit"] == true && stored > space * STILL_TIGHT))
       @agent.update!(backup_history: {
         "snapshots" => kept.size, "oldest_at" => kept.first && parse_time(kept.first["time"])&.iso8601,
         "stored_bytes" => stored, "referenced_bytes" => referenced,

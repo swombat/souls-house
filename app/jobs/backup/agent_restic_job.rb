@@ -101,7 +101,7 @@ module Backup
     # anything (residents held up to 169 daily backups against rules that
     # allow 23). Every backup of a resident has the one path, /data.
     def prune!(agent)
-      return nil if agent.backup_keep_all?
+      return nil if agent.backup_keep_all? || agent.backup_never_removed?
 
       cmd = restic_env(agent) + [
         Backup::AgentRestic::IMAGE, "forget", "--group-by", "paths",

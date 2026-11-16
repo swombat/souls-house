@@ -6,6 +6,7 @@
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
   import SiteAnnouncementsSettingsCard from '$lib/components/admin/SiteAnnouncementsSettingsCard.svelte';
+  import BackupsNeverRemovedSettingsCard from '$lib/components/admin/BackupsNeverRemovedSettingsCard.svelte';
   import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import VoiceModeSettingsCard from '$lib/components/admin/VoiceModeSettingsCard.svelte';
   import SpeechEngineSettingsCard from '$lib/components/admin/SpeechEngineSettingsCard.svelte';
@@ -22,6 +23,7 @@
     setting = {},
     follow_through_residents = [],
     site_announcement_residents = [],
+    backup_never_removed_residents = [],
     stalled_sweep_accounts = [],
     vm_births = {},
     spare_servers = {},
@@ -36,6 +38,9 @@
   let followThroughPicked = $state(follow_through_residents.filter((r) => r.follow_through).map((r) => r.id));
   let siteAnnouncementsPicked = $state(
     site_announcement_residents.filter((r) => r.can_post_site_announcements).map((r) => r.id)
+  );
+  let backupsNeverRemovedPicked = $state(
+    backup_never_removed_residents.filter((r) => r.backup_never_removed).map((r) => r.id)
   );
   let stalledSweepAccounts = $state(stalled_sweep_accounts.filter((a) => a.enabled).map((a) => a.id));
   let logoFile = $state(null);
@@ -95,6 +100,8 @@
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
     formData.append('setting[site_announcement_resident_ids][]', '');
     for (const id of siteAnnouncementsPicked) formData.append('setting[site_announcement_resident_ids][]', id);
+    formData.append('setting[backup_never_removed_resident_ids][]', '');
+    for (const id of backupsNeverRemovedPicked) formData.append('setting[backup_never_removed_resident_ids][]', id);
     formData.append('setting[stalled_sweep_account_ids][]', '');
     for (const id of stalledSweepAccounts) formData.append('setting[stalled_sweep_account_ids][]', id);
 
@@ -164,6 +171,10 @@
 
       <VmBirthSettingsCard {form} status={vm_births} />
       <SpareServersSettingsCard {form} status={spare_servers} />
+
+      <BackupsNeverRemovedSettingsCard
+        residents={backup_never_removed_residents}
+        bind:picked={backupsNeverRemovedPicked} />
 
       <BillingSettingsCard {form} status={billing} />
 
