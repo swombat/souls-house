@@ -130,11 +130,23 @@ Rails deploy builds and pushes the release first, then asks the live house
 VM backup is pending, and waits while one is, checking every 15 seconds. The
 run's step reads **waiting for running backups** and `waiting_for_backups`
 lists the resident ids. The limit is `backup_wait_seconds` in `settings.json`
-(2400 by default). Past it the deploy goes ahead, the step reads **backups
-still running; deploying anyway**, and `backups_cut_off` lists who was cut. If
-the house cannot be asked (a first deploy, a web container that is down), the
-deploy does not wait. Backups of residents on the house are not waited for:
-the nightly run continues by itself after a restart.
+(2400 by default). How the wait ended is kept in `backup_wait`:
+
+- `idle`: nothing was running.
+- `waited`: something was, and it finished.
+- `limit`: still running at the limit; the deploy went ahead and
+  `backups_cut_off` lists who was cut.
+- `limit_unread`: a backup had been seen and the house then stopped answering
+  until the limit.
+- `unread`: the house could not be asked three times in a row and no backup
+  had been seen (a first deploy, a web container that is down), so the deploy
+  did not wait.
+
+An answer the house could not give counts as unknown, never as idle. The wait
+is a best effort: after the last check Kamal still pulls the image and boots
+web before it stops the job worker, and a backup that starts in that time is
+cut off. Backups of residents on the house are not waited for: the nightly run
+continues by itself after a restart.
 
 This lives in the root-installed worker, so it takes effect after
 `sudo ops/deploy/install` on the host, not on merge.
