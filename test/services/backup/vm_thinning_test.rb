@@ -277,26 +277,56 @@ module Backup
       end
     end
 
-    test "the sweeper reports a resident whose backups have been paused for three hours, and not before" do
+    test "the recovery job reports a resident whose backups have been paused for three hours, and not before" do
       @agent.update!(runtime: "external", backup_thinning_started_at: 10.minutes.ago, backup_thinning_interrupted_at: 2.hours.ago)
       reported = []
       report = ->(error, **) { reported << error }
       Agents::Config.stub(:backups_enabled?, true) do
-        Rails.error.stub(:report, report) { AgentBackupSweeperJob.perform_now }
+        Rails.error.stub(:report, report) { VmThinningRecoveryJob.perform_now }
         assert_empty reported
 
         @agent.update!(backup_thinning_interrupted_at: 181.minutes.ago)
-        Rails.error.stub(:report, report) { AgentBackupSweeperJob.perform_now }
+        Rails.error.stub(:report, report) { VmThinningRecoveryJob.perform_now }
       end
       assert_equal 1, reported.size
       assert_kind_of VmThinning::Stalled, reported.first
       assert_includes reported.first.message, @agent.name
     end
 
-    test "the sweeper sends an abandoned mark to recovery and issues no backup while any mark stands" do
+    test "the recovery job sends an abandoned mark back to thinning, and leaves a live mark and a held backup alone" do
+      Agents::Config.stub(:backups_enabled?, true) do
+        @agent.update!(runtime: "external", backup_thinning_started_at: 10.minutes.ago)
+        assert_no_enqueued_jobs(only: VmThinningJob) { VmThinningRecoveryJob.perform_now }
+
+        @agent.update!(backup_thinning_started_at: 2.hours.ago)
+        assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { VmThinningRecoveryJob.perform_now }
+
+        VmResident.stub(:held?, true) do
+          assert_no_enqueued_jobs(only: VmThinningJob) { VmThinningRecoveryJob.perform_now }
+        end
+      end
+    end
+
+    test "the recovery job does nothing when backups are switched off" do
+      @agent.update!(runtime: "external", backup_thinning_started_at: 2.hours.ago)
+      Agents::Config.stub(:backups_enabled?, false) do
+        assert_no_enqueued_jobs { VmThinningRecoveryJob.perform_now }
+      end
+    end
+
+    # The recovery was written and tested in a job that nothing ran. What the
+    # design depends on is the schedule entry, so that is tested too.
+    test "the recovery job is on the production schedule, more often than a mark takes to be abandoned" do
+      entry = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true).dig("production", "vm_thinning_recovery")
+      assert_equal "Backup::VmThinningRecoveryJob", entry["class"]
+      assert_equal "every 10 minutes", entry["schedule"]
+      assert_operator 10.minutes, :<, VmThinning::CLAIM_SECONDS
+    end
+
+    test "the sweeper issues no backup while any mark stands" do
       @agent.update!(runtime: "external", backup_thinning_started_at: 2.hours.ago)
       Agents::Config.stub(:backups_enabled?, true) do
-        assert_enqueued_with(job: VmThinningJob, args: [ @agent.id ]) { AgentBackupSweeperJob.perform_now }
+        AgentBackupSweeperJob.perform_now
         backups = enqueued_jobs.select { |job| job["job_class"] == "Backup::AgentResticJob" }
         assert backups.none? { |job| job["arguments"].first == @agent.id }
         @agent.update!(backup_thinning_started_at: nil)
