@@ -693,6 +693,90 @@ class WorkerTest(unittest.TestCase):
         self.assertIn(name, run.call_args_list[0].args[0])
         self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
 
+    def backup_waiter(self, answers, **settings):
+        (self.root / "backup-in-flight.rb").write_text("")
+        self.w.settings.update(settings)
+        self.w.data["rails_revision"] = "d" * 40
+        calls = []
+
+        def rails(_code, env=None):
+            calls.append("ask")
+            answer = answers.pop(0) if len(answers) > 1 else answers[0]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        return calls, rails
+
+    def test_release_switch_waits_for_a_running_thinning_after_the_build(self):
+        busy = dict(thinning=[44], backing_up=[])
+        calls, rails = self.backup_waiter([busy, busy, dict(thinning=[], backing_up=[])])
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(self.w, "kamal", side_effect=lambda *args: calls.append(args[:2])), \
+             patch.object(self.w, "run", return_value=""), patch.object(worker.time, "sleep") as sleep:
+            with self.assertRaises(RuntimeError):  # the fixture has no live containers to verify
+                self.w.deploy_rails()
+        self.assertEqual([("build", "push"), "ask", "ask", "ask", ("deploy", "--skip-push")], calls)
+        self.assertEqual(2, sleep.call_count)
+        self.assertEqual([44], self.w.data["waiting_for_backups"])
+
+    def wait_with(self, answers, **settings):
+        calls, rails = self.backup_waiter(answers, **settings)
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(worker.time, "sleep") as sleep:
+            self.w.wait_for_backups()
+        return calls, sleep
+
+    def test_release_switch_goes_ahead_past_the_backup_wait_limit(self):
+        calls, sleep = self.wait_with([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
+        self.assertEqual(["ask"], calls)
+        sleep.assert_not_called()
+        self.assertEqual([45], self.w.data["backups_cut_off"])
+        self.assertEqual("limit", self.w.data["backup_wait"])
+        self.assertEqual("backups still running; deploying anyway", self.w.data["step"])
+
+    def test_an_unread_answer_after_a_running_backup_keeps_waiting(self):
+        busy, idle = dict(thinning=[44], backing_up=[]), dict(thinning=[], backing_up=[])
+        failure = RuntimeError("transient")
+        calls, sleep = self.wait_with([busy, failure, failure, failure, failure, idle])
+        self.assertEqual(6, len(calls))
+        self.assertEqual(5, sleep.call_count)
+        self.assertEqual("waited", self.w.data["backup_wait"])
+        self.assertNotIn("backups_cut_off", self.w.data)
+
+    def test_unread_answers_after_a_running_backup_end_at_the_limit_and_say_who(self):
+        busy = dict(thinning=[44], backing_up=[])
+        clock = iter([0, 0, 99999])
+        with patch.object(worker.time, "monotonic", side_effect=lambda: next(clock)):
+            calls, sleep = self.wait_with([busy, RuntimeError("down")], backup_wait_seconds=60)
+        self.assertEqual(2, len(calls))
+        self.assertEqual("limit_unread", self.w.data["backup_wait"])
+        self.assertEqual([44], self.w.data["backups_cut_off"])
+
+    def test_a_house_that_cannot_be_asked_at_all_is_deployed_after_three_tries(self):
+        calls, sleep = self.wait_with([RuntimeError("no web container")])
+        self.assertEqual(3, len(calls))
+        self.assertEqual(2, sleep.call_count)
+        self.assertEqual("unread", self.w.data["backup_wait"])
+        self.assertEqual("could not read running backups; deploying", self.w.data["step"])
+
+    def test_one_unread_answer_before_any_backup_is_asked_again(self):
+        calls, sleep = self.wait_with([RuntimeError("blip"), dict(thinning=[], backing_up=[])])
+        self.assertEqual(2, len(calls))
+        self.assertEqual("idle", self.w.data["backup_wait"])
+
+    def test_the_wait_outcome_survives_the_steps_that_follow(self):
+        self.wait_with([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
+        self.w.report("deploying Rails")
+        self.w.report("Rails healthy")
+        self.assertEqual("limit", self.w.data["backup_wait"])
+        self.assertEqual([45], self.w.data["backups_cut_off"])
+
+    def test_backup_wait_fields_reach_the_status_and_the_script_is_installed(self):
+        for field in ("waiting_for_backups", "backups_cut_off", "backup_wait"):
+            self.assertIn(field, gate.FIELDS)
+        self.assertIn("backup-in-flight.rb", (OPS / "install").read_text())
+
     def test_master_moved_on_deploys_nothing(self):
         self.w.data["expected_revision"] = "c" * 40
         self.w.settings["repository"] = "https://example.test/public.git"
