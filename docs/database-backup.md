@@ -85,13 +85,20 @@ Since 11 Nov 2026 a resident's Chaos keeps its session journal
 the house's PostgreSQL server, named by `storage_url` in the resident's
 `chaos/config.toml`; `DatabaseBackupJob` dumps only the house's database.
 `Backup::ChaosJournalDump` therefore dumps the resident's database inside the
-same pause: `pg_dump -Fc -Z0` run in the server's container over its local
-socket as the house's database user (no resident password is read or
-passed), streamed into a throwaway volume, read back with
-`pg_restore --list` (it must list `TABLE DATA public journal_entries`) and
-carried at `/data/chaos-db/chaos-journal.dump`. Only a database on the house's
-own server is dumped, never a `*_oauth` one (provider auth) nor the house's
-own; a home still on SQLite keeps its journal in the chaos volume.
+same pause. The URL is the resident's to write, so it is not trusted to say
+whose database it is: `pg_dump -Fc -Z0` runs in a throwaway container from the
+server's own image, on the server's Docker network, as the role and password
+the URL carries (passed by environment, never in argv). pg_hba requires scram
+on that path, and each journal database belongs to its own role, which cannot
+connect to any other resident's; PostgreSQL decides what may be read. The
+dump never runs inside the server's container, where the local socket and
+loopback are trusted without a password. It is written to a throwaway volume,
+read back with `pg_restore --list` (it must list
+`TABLE DATA public journal_entries`) and carried at
+`/data/chaos-db/chaos-journal.dump`. Only a database on the house's own server
+is dumped, never a `*_oauth` one (provider auth) nor the house's own; a home
+on SQLite keeps its journal in the chaos volume. A missing or unreadable
+setting, or one naming anything else, fails the backup.
 
 A full restore puts the dump into the volume `<container>-chaos-db-restored`
 and does not load it. To load it into an empty database:

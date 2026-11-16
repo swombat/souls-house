@@ -16,6 +16,11 @@ module Backup
       assert_equal [ "pg", 5432, "res_main", "s@cret", "res_main" ], target.to_a
     end
 
+    test "a plus in a password stays a plus" do
+      target = ChaosJournalDump.target_from(%(storage_url = "postgresql://res_main:a+b%2Bc@pg:5432/res_main"), house: HOUSE)
+      assert_equal "a+b+c", target.password
+    end
+
     test "a home on SQLite has nothing to dump" do
       assert_nil ChaosJournalDump.target_from(%(storage_url = "sqlite:///home/agent/.chaos/chaos.sqlite"), house: HOUSE)
     end

@@ -103,8 +103,9 @@ module Backup
       raise Error, "Chaos storage names an unexpected database" unless name.match?(/\A[a-z0-9_]{1,63}\z/)
       raise Error, "Chaos storage names a credential database" if name.match?(/_oauth(_|\z)/)
       raise Error, "Chaos storage names the house's database" if name == house[:database]
-      user = CGI.unescape(uri.user.to_s)
-      password = CGI.unescape(uri.password.to_s)
+      # Percent-decoding only: a "+" in a password is a plus, not a space.
+      user = URI.decode_uri_component(uri.user.to_s)
+      password = URI.decode_uri_component(uri.password.to_s)
       raise Error, "Chaos storage has no credentials of its own" if user.blank? || password.blank? || user == house[:username]
 
       Target.new(host: uri.host, port: uri.port || 5432, user:, password:, database: name)
