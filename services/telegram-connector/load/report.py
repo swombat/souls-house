@@ -67,6 +67,9 @@ ROWS += [
     ("CPU s total / of which in the fake", lambda r: f'{r.get("cpu_s")} / {g(r, "fake_calls", "seconds")}'),
     ("Rails requests (steady phase total)", lambda r: g(r, "steady", "rails_requests")),
     ("store size (MB)", lambda r: round(r.get("store_bytes", 0) / 1e6, 1)),
+    ("GC gen2: count, max (ms); pauses >100 ms", lambda r: (
+        "not recorded" if "gc" not in r else
+        f'{g(r, "gc", "gen2", "n")}, {ms(g(r, "gc", "gen2", "max"))}; {len(g(r, "gc", "over_100ms") or [])}')),
     ("connector warnings", lambda r: ", ".join(f"{k}: {v}" for k, v in (r.get("warnings") or {}).items()) or "none"),
 ]
 

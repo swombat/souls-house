@@ -186,6 +186,34 @@ async def sleep_until(due, stop):
     return True
 
 
+class GcWatch:
+    """Records every garbage collection with its generation and duration:
+    with a large heap (the fake worlds hold most objects), a full collection
+    is a loop stall that is not the connector's own work."""
+
+    def __init__(self, harness):
+        self.harness = harness
+        self.events = []
+        self.started = None
+        import gc
+        gc.callbacks.append(self.callback)
+
+    def callback(self, phase, info):
+        if phase == "start":
+            self.started = time.perf_counter()
+        elif self.started is not None:
+            took = time.perf_counter() - self.started
+            self.events.append((round(time.perf_counter() - self.harness.t0, 2), info["generation"], took))
+
+    def summary(self):
+        out = {}
+        for generation in (0, 1, 2):
+            values = [took for _, gen, took in self.events if gen == generation]
+            out[f"gen{generation}"] = summary(values)
+        out["over_100ms"] = [(t, gen, round(took, 3)) for t, gen, took in self.events if took > 0.1]
+        return out
+
+
 class Sampler:
     """Loop lag from a 100 ms ticker; RSS, FDs and outbox depth every second."""
 
@@ -417,6 +445,7 @@ async def main(args):
     rss_before_worlds = rss_mb()
     harness = LoadHarness(args)
     sampler = Sampler(harness)
+    gc_watch = GcWatch(harness)
     background = [asyncio.ensure_future(sampler.ticker()), asyncio.ensure_future(sampler.sampler())]
     result = {
         "label": args.label, "args": vars(args),
@@ -475,6 +504,7 @@ async def main(args):
             say("restart done", result["restart"]["boot_s"], result["restart"]["first_message_all_accounts_s"])
 
         result["loop_lag_s"] = {phase: sampler.lag(phase) for phase in ("onboard", "steady", "drain", "restart")}
+        result["gc"] = gc_watch.summary()
         result["fake_calls"] = {"seconds": round(FAKE_SECONDS["total"], 2), "calls": FAKE_SECONDS["calls"]}
         usage = resource.getrusage(resource.RUSAGE_SELF)
         result["cpu_s"] = round(usage.ru_utime + usage.ru_stime, 1)
