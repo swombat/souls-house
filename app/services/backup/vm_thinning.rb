@@ -85,7 +85,7 @@ module Backup
       # Nothing goes by age from a resident that keeps everything. One path
       # per resident, so the rules see the whole history as one group even
       # if its server's name ever changes (see AgentResticJob#prune!).
-      unless agent.backup_keep_all?
+      unless agent.backup_keep_all? || agent.backup_never_removed?
         run(agent, "forget", "--group-by", "paths",
           "--keep-daily", agent.backup_keep_daily.to_s,
           "--keep-weekly", agent.backup_keep_weekly.to_s,

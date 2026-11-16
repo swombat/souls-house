@@ -36,6 +36,16 @@ module Backup
       assert_equal 4, @agent.reload.backup_history["snapshots"]
     end
 
+    test "a resident whose backups are never removed is not asked to forget, even with keep-all off" do
+      @agent.update!(backup_keep_all: false, backup_never_removed: true)
+      calls = []
+      list = [ snapshot(400), snapshot(40), snapshot(2), snapshot(1) ]
+      result = VmThinning.new(run: restic(list, forgets: 1, calls:)).call(@agent)
+
+      assert_not_includes calls.map(&:first), "forget"
+      assert_equal 4, result.kept
+    end
+
     test "thins to the resident's keep rules and reports what is left" do
       @agent.update!(backup_keep_all: false)
       calls = []

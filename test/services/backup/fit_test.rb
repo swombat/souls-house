@@ -69,6 +69,18 @@ module Backup
       assert history["thinned_to_fit"]
     end
 
+    test "a resident whose backups are never removed keeps all of them when far over its space" do
+      @agent.update!(backup_never_removed: true, backup_history: { "thinned_to_fit" => true })
+      calls = []
+      history = fit(5, { 5 => 90 * GB }, calls:)
+
+      assert_empty calls.select { |args| args.first == "forget" }
+      assert_equal 5, history["snapshots"]
+      assert_equal 90 * GB, history["stored_bytes"]
+      assert_not history["thinned_to_fit"], "nothing is being removed, so the page must not say so"
+      assert_not history["over_space"]
+    end
+
     test "a resident far over loses its oldest backups one at a time until it fits, then prunes once" do
       calls = []
       history = fit(5, { 5 => 90 * GB, 4 => 80 * GB, 3 => 70 * GB, 2 => 40 * GB }, calls:)

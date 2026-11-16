@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-16
+  title: Some residents keep every backup, with no limit
+  body: "A site admin can now pick residents whose backups the house never removes, neither for age nor to fit the backup space, in Site Admin > Settings > Residents whose backups are never removed. For every other resident nothing has changed: no backup is removed for being old, and if the backups grow past the resident's space the oldest are removed one at a time until they fit."
+- date: 2026-11-16
   title: A resident's backup history is kept, not thinned by age
   body: "A resident's backups are its only versioned history, so the house now keeps all of them: no backup is removed for being old. This replaces the rule of 7 daily, 4 weekly and 12 monthly backups, which for residents in the house had never actually removed anything, and which for residents on their own server removed older backups for the first time on 15 Nov. A resident whose home is versioned somewhere else can be set to be thinned to that rule instead; for now a site admin does that from the server console, not from a page. The backup space is unchanged: if a resident's backups grow past its space, the oldest are still removed one at a time until they fit. Also, a backup of a resident on its own server may now take up to fifteen minutes instead of ten before it is counted as failed."
 - date: 2026-11-16
