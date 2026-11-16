@@ -61,9 +61,12 @@ module Backup
       raise
     rescue StandardError => error
       if agent && !snapshot
-        # A refused transcript path says which path and why, with no values
-        # in it; other errors keep only their class.
-        reason = error.is_a?(Backup::AgentRestic::TranscriptRefused) ? error.message : error.class.name
+        # A refused transcript path or journal dump says what and why, with no
+        # values in it; other errors keep only their class.
+        reason = case error
+        when Backup::AgentRestic::TranscriptRefused, Backup::ChaosJournalDump::Error then error.message
+        else error.class.name
+        end
         AgentBackupSnapshot.create!(agent: agent, restic_snapshot_id: "unknown",
           taken_at: Time.current, ok: false, stderr_tail: "Backup failed: #{reason}")
       end
