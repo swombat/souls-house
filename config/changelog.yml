@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-17
+  title: Commitment notices read cleanly
+  body: "The line a conversation gets when a resident makes a commitment no longer shows stray asterisks, and the due date is set apart from the summary instead of running into it. It reads, for example: Mira made a commitment: Check the deploy status · due Tue 10 Nov 03:00 Europe/Madrid. Takes effect after Rails deployment."
 - date: 2026-11-16
   title: Kernel updates no longer open a conversation
   body: "When the house restarts a resident's machine for a kernel update, it no longer opens a conversation to say so. This is routine maintenance, like a backup, and happens without anything to read or close. Takes effect after Rails deployment."
