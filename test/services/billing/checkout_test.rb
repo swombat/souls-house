@@ -65,6 +65,14 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_empty ResidentSubscription.where(agent: @agent)
   end
 
+  test "the Hetzner at-cost rate is never sold through Checkout, even to an account with an at-cost code" do
+    grant!
+    error = assert_raises(Billing::NotEligible) { checkout(rate: "at_cost_hetzner") }
+    assert_equal "That rate is set by the house, not bought.", error.message
+    assert_empty @stripe.checkout_sessions
+    assert_empty BillingCheckoutAttempt.where(agent: @agent)
+  end
+
   test "same offer returns its open session rather than creating another link" do
     first = checkout
     assert_equal first, checkout

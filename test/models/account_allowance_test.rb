@@ -81,6 +81,20 @@ class AccountAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("0"), entitlement(@first).allowance_limit, "still nothing at cost"
   end
 
+  test "a resident at cost on a Hetzner machine syncs at that rate and draws nothing either" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: users(:user_1))
+    pay!("sub_1", @first, price: LIFE_AT_COST_HETZNER_PRICE)
+
+    assert_equal "at_cost_hetzner", entitlement(@first).rate
+    assert_equal "life", entitlement(@first).tier
+    assert_equal BigDecimal("0"), entitlement(@first).allowance_limit
+    configured do
+      error = assert_raises(HouseInference::Error) { reserve!(@first) }
+      assert_equal "house_allowance_none", error.code
+    end
+  end
+
   test "when a resident ends, the others keep drawing, and the month's spend still counts" do
     pay!("sub_1", @first)
     pay!("sub_2", @second)

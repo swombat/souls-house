@@ -39,6 +39,14 @@ Claude Fable 5.2 (added November 9, 2026, launch day): input 8, cache read
 Earlier Fable ids keep the Fable 5 rule (10 / 50). Recheck against Anthropic's
 pricing page.
 
+Qwen4 Max (added November 16, 2026; general availability November 16 on
+Alibaba Cloud Model Studio's newly-released-models list): input 1.50, cache read
+0.075, cache write 1.875, output 4.50 per million tokens, from the OpenRouter
+endpoint for `qwen/qwen4-max` (Alibaba provider, tag `alibaba`, the only one
+listed; served as `qwen/qwen4-max-20261115`). The dated served id matches the
+same rule. Routed through OpenRouter only. Text pricing only; image/video input
+is not modelled.
+
 Qwen3.8 Omni Flash (added October 8, 2026): input 0.15, cache read 0.016,
 output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
 (Alibaba provider, the only one listed). No cache-write rate is quoted, so

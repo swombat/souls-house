@@ -180,6 +180,61 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert lume.reload.can_post_site_announcements?
   end
 
+  # The picker lists only active residents, so its list can never name an
+  # inactive one. Saving must not read that absence as "switch it off".
+  test "saving the list leaves the mark on a resident the page does not show" do
+    hidden = agents(:inactive_agent)
+    assert_not hidden.active?
+    hidden.update_columns(backup_never_removed: true)
+    lume = agents(:research_assistant)
+    sign_in @admin
+
+    get admin_settings_path
+    assert_not_includes inertia_shared_props["backup_never_removed_residents"].pluck("id"), hidden.to_param
+
+    patch admin_settings_path, params: { setting: { backup_never_removed_resident_ids: [ "", lume.to_param ] } }
+    assert hidden.reload.backup_never_removed?
+    patch admin_settings_path, params: { setting: { backup_never_removed_resident_ids: [ "" ] } }
+    assert hidden.reload.backup_never_removed?
+    assert_not lume.reload.backup_never_removed?
+  end
+
+  test "a non-admin cannot change whose backups are never removed" do
+    lume = agents(:research_assistant)
+    other = agents(:code_reviewer)
+    other.update_columns(backup_never_removed: true)
+    sign_in @user
+
+    patch admin_settings_path, params: { setting: { backup_never_removed_resident_ids: [ "", lume.to_param ] } }
+
+    assert_redirected_to root_path
+    assert_not lume.reload.backup_never_removed?
+    assert other.reload.backup_never_removed?
+  end
+
+  test "admin picks the residents whose backups are never removed" do
+    lume = agents(:research_assistant)
+    other = agents(:code_reviewer)
+    other.update_columns(backup_never_removed: true)
+    sign_in @admin
+
+    patch admin_settings_path, params: { setting: { backup_never_removed_resident_ids: [ "", lume.to_param ] } }
+
+    assert_redirected_to admin_settings_path
+    assert lume.reload.backup_never_removed?
+    assert_not other.reload.backup_never_removed?, "a resident left out of the list is switched off"
+    audit = AuditLog.where(action: "update_settings").last
+    assert_equal [ [ lume.to_param ], [ other.to_param ] ], audit.data.values_at("backup_never_removed_on", "backup_never_removed_off")
+
+    get admin_settings_path
+    listed = inertia_shared_props["backup_never_removed_residents"].index_by { |r| r["id"] }
+    assert listed[lume.to_param]["backup_never_removed"]
+    assert_not listed[other.to_param]["backup_never_removed"]
+
+    patch admin_settings_path, params: { setting: { site_name: "Still here" } }
+    assert lume.reload.backup_never_removed?, "a form without the list leaves the marks alone"
+  end
+
   test "admin sets the stalled-thread interval and picks the accounts it may read" do
     mine = accounts(:personal_account)
     other = accounts(:team_account)

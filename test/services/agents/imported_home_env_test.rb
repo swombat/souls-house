@@ -71,6 +71,7 @@ module Agents
       args = Agents::Sandbox.new(@agent).send(:home_profile_env_args)
       assert_equal ImportedHomeEnv.for(@agent).flat_map { |name, value| [ "-e", "#{name}=#{value}" ] }, args
       assert_includes args, "SOULSHOUSE_GITHUB_IMPORT_ID=#{@request.id}"
+      assert_includes args, "SOULSHOUSE_HOME_SYNC_STRATEGY=standard"
       assert_includes args, 'SOULSHOUSE_HOME_SYNC_CONFIGURATION={"auto_commit_paths":["notes"]}'
     end
 

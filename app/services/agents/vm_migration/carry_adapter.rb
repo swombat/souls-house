@@ -66,6 +66,7 @@ module Agents
         @requests = 0
         @mutex = Mutex.new
         @handlers = []
+        @draining = []
         @sockets = []
       end
 
@@ -96,7 +97,7 @@ module Agents
         @server&.close rescue nil
         @acceptor&.join(STOP_GRACE) || @acceptor&.kill
         @mutex.synchronize { @sockets.dup }.each { |socket| socket.close rescue nil }
-        @mutex.synchronize { @handlers.dup }.each { |thread| thread.join(STOP_GRACE) || thread.kill }
+        @mutex.synchronize { @handlers + @draining }.each { |thread| thread.join(STOP_GRACE) || thread.kill }
         nil
       end
 
@@ -150,13 +151,12 @@ module Agents
         socket.close rescue nil
         # Leaves the count as it finishes, so a client arriving just after
         # is not refused busy by a handler that is only exiting.
-        @mutex.synchronize { @sockets.delete(socket); @handlers.delete(Thread.current) }
+        @mutex.synchronize { @sockets.delete(socket); @handlers.delete(Thread.current); @draining.delete(Thread.current) }
       end
 
+      # Refused on the acceptor, with no thread and no waiting.
       def refuse_now(socket)
-        socket.write_nonblock(head_for(Response.new(503, {}, "carry_busy"), close: true) + "carry_busy", exception: false)
-      rescue IOError, SystemCallError
-        nil
+        refuse_now_with(socket, Response.new(503, {}, "carry_busy"))
       ensure
         socket.close rescue nil
       end
@@ -165,7 +165,19 @@ module Agents
       # had already sent, so closing does not reset the connection before the
       # client has read the answer. The drain has an absolute limit and
       # stops when the adapter does.
+      #
+      # The connection gives up its MAX_CONNECTIONS slot before it answers.
+      # A client may connect again the moment it has read the answer, and
+      # must not find the slot still held by a handler that is only draining:
+      # it would be refused busy, and that refusal arrives as a reset (master
+      # a552b274, 14 Nov; the handler was still counted after the client
+      # returned more often than not). Draining has its own cap of the same
+      # size; past it, the connection is refused the acceptor's way.
       def refuse_and_close(socket, response)
+        unless start_draining
+          refuse_now_with(socket, response)
+          return
+        end
         write(socket, response, close: true)
         socket.shutdown(Socket::SHUT_WR)
         drained = 0
@@ -182,6 +194,28 @@ module Agents
         nil
       ensure
         socket.close rescue nil
+      end
+
+      def start_draining
+        @mutex.synchronize do
+          @handlers.delete(Thread.current)
+          next false if @draining.size >= MAX_CONNECTIONS
+
+          @draining << Thread.current
+          true
+        end
+      end
+
+      # One write and one read, neither waiting. Closing over unread request
+      # bytes resets the connection, and a reset throws away the answer the
+      # client has not read yet; so whatever the client has already sent is
+      # read and dropped first. Bytes still in flight can still reset it.
+      def refuse_now_with(socket, response)
+        socket.write_nonblock(head_for(response, close: true) + response.body.to_s, exception: false)
+        socket.shutdown(Socket::SHUT_WR)
+        socket.read_nonblock(64.kilobytes, exception: false)
+      rescue IOError, SystemCallError
+        nil
       end
 
       # nil when the client closed (or went idle) between requests.

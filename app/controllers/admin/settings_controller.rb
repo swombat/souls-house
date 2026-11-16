@@ -10,8 +10,10 @@ class Admin::SettingsController < ApplicationController
       ),
       follow_through_residents: -> { follow_through_residents },
       site_announcement_residents: -> { site_announcement_residents },
+      backup_never_removed_residents: -> { backup_never_removed_residents },
       stalled_sweep_accounts: -> { stalled_sweep_accounts },
       vm_births: -> { Agents::VmBirthPolicy.current.as_json },
+      spare_servers: -> { SpareServers.new.status },
       billing: -> { billing_status },
       field_ocr: -> { FieldOcr.status_json },
       field_tweets: -> { FieldTweets.status_json }
@@ -31,13 +33,14 @@ class Admin::SettingsController < ApplicationController
       setting.update(setting_params).tap do |ok|
         update_follow_through_residents if ok && params[:setting]&.key?(:follow_through_resident_ids)
         update_site_announcement_residents if ok && params[:setting]&.key?(:site_announcement_resident_ids)
+        update_backup_never_removed_residents if ok && params[:setting]&.key?(:backup_never_removed_resident_ids)
         update_stalled_sweep_accounts if ok && params[:setting]&.key?(:stalled_sweep_account_ids)
       end
     end
 
     if saved
       audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@site_announcement_changes.to_h,
-        **@stalled_sweep_changes.to_h)
+        **@stalled_sweep_changes.to_h, **@backup_never_removed_changes.to_h)
       redirect_to admin_settings_path, notice: "Settings updated"
     else
       redirect_to admin_settings_path, inertia: { errors: setting.errors.to_hash }
@@ -89,6 +92,10 @@ class Admin::SettingsController < ApplicationController
       :stalled_sweep_wake,
       :new_residents_on_vm,
       :vm_resident_limit,
+      :spare_server_limit,
+      :spare_cx23_target,
+      :spare_cx33_target,
+      :spare_cx43_target,
       :billing_enabled,
       :free_trial_enabled,
       :paid_fallback_enabled,
@@ -168,6 +175,43 @@ class Admin::SettingsController < ApplicationController
     @site_announcement_changes = {
       site_announcements_on: Agent.where(id: turned_on).map(&:to_param),
       site_announcements_off: Agent.where(id: turned_off).map(&:to_param)
+    }.compact_blank
+  end
+
+  # Every resident that is not archived, each with whether the house never
+  # removes its backups (agents.backup_never_removed; Backup::Fit).
+  def backup_never_removed_residents
+    Agent.active.includes(:account).sort_by { |a| [ a.account&.name.to_s.downcase, a.name.to_s.downcase ] }.map do |agent|
+      {
+        id: agent.to_param,
+        name: agent.name,
+        account: agent.account&.name,
+        icon: agent.icon,
+        avatar_url: agent.avatar_url,
+        colour: agent.colour,
+        paused: agent.paused?,
+        backup_never_removed: agent.backup_never_removed?
+      }
+    end
+  end
+
+  # The form sends the full list of picked residents among those the page
+  # shows (Agent.active); one of those left out is off. A resident the page
+  # does not show keeps its mark: saving the settings for any other reason
+  # must not take away its protection.
+  def update_backup_never_removed_residents
+    picked = Array(params[:setting][:backup_never_removed_resident_ids]).compact_blank.filter_map do |param|
+      Agent.find_by_obfuscated_id(param)&.id
+    rescue StandardError
+      nil
+    end
+    turned_on = Agent.active.where(id: picked, backup_never_removed: false).pluck(:id)
+    turned_off = Agent.active.where(backup_never_removed: true).where.not(id: picked).pluck(:id)
+    Agent.where(id: turned_on).update_all(backup_never_removed: true, updated_at: Time.current)
+    Agent.where(id: turned_off).update_all(backup_never_removed: false, updated_at: Time.current)
+    @backup_never_removed_changes = {
+      backup_never_removed_on: Agent.where(id: turned_on).map(&:to_param),
+      backup_never_removed_off: Agent.where(id: turned_off).map(&:to_param)
     }.compact_blank
   end
 

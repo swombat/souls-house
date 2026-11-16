@@ -207,6 +207,32 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
     assert_empty @objects
   end
 
+  # Master a552b274 (14 Nov): a refused handler was still counted against
+  # MAX_CONNECTIONS after its client had the answer, so a quick next request
+  # could be refused busy, and that refusal arrived as a reset (""). The
+  # slot must already be free when the client has its answer.
+  test "a refused connection frees its slot before it answers" do
+    open_adapter do |adapter|
+      user, password = credential(adapter)
+      auth = "Authorization: Basic #{Base64.strict_encode64("#{user}:#{password}")}\r\n"
+      held = 30.times.map do
+        answer = raw(adapter, "GET /config HTTP/1.1\r\n#{auth}#{auth}\r\n")
+        [ answer[0, 12], slots_held(adapter) ]
+      end
+      assert_equal [ [ "HTTP/1.1 400", 0 ] ], held.uniq
+    end
+  end
+
+  test "a busy refusal reaches a client whose request has arrived" do
+    open_adapter do |adapter|
+      held = trickle(adapter, Agents::VmMigration::CarryAdapter::MAX_CONNECTIONS)
+      wait_until { slots_held(adapter) == Agents::VmMigration::CarryAdapter::MAX_CONNECTIONS }
+      assert_match %r{\AHTTP/1.1 503}, raw(adapter, "GET /config HTTP/1.1\r\n\r\n")
+    ensure
+      held&.each { |socket| socket.close rescue nil }
+    end
+  end
+
   test "a past deadline refuses every repository request" do
     open_adapter(deadline: Agents::BoundedCommand.now - 1) do |adapter|
       assert_equal "", raw(adapter, "GET /config HTTP/1.1\r\n\r\n").then { |text| text.start_with?("HTTP/1.1 503") ? "" : text }
@@ -236,8 +262,13 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  # Handlers and drainers: every thread the adapter started for a client.
   def adapter_threads(adapter)
-    adapter.instance_variable_get(:@handlers).select(&:alive?)
+    %i[@handlers @draining].flat_map { |name| adapter.instance_variable_get(name) }.select(&:alive?)
+  end
+
+  def slots_held(adapter)
+    adapter.instance_variable_get(:@mutex).synchronize { adapter.instance_variable_get(:@handlers).size }
   end
 
   def trickle(adapter, count)
@@ -255,7 +286,8 @@ class Agents::VmMigrationCarryAdapterTest < ActiveSupport::TestCase
       sleep 0.3
       extra.each { |socket| socket.write("E") rescue nil }
       sleep 0.2
-      # Two handlers and the acceptor, never one thread per refused client.
+      # Two handlers and the acceptor (no drainers here: these are refused
+      # on the acceptor), never one thread per refused client.
       assert_operator Thread.list.count(&:alive?), :<=, baseline + 3
       held.each { |socket| socket.write("E") }
       started = Agents::BoundedCommand.now

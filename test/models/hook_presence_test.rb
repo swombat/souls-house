@@ -57,6 +57,46 @@ class HookPresenceTest < ActiveSupport::TestCase
     assert_equal "off", @agent.reload.hook_expectations.dig("stop", "state")
   end
 
+  # 15 Nov, jgDQRJ: the owner switched an unwanted wake expectation off, and the
+  # yellow marks stayed on ten conversations until the resident ran there again.
+  test "switching an event off clears the newest warned run in each conversation at once" do
+    @agent.set_hook_expectation!("session_start", "expected", source: "owner")
+    other = @agent.account.chats.create!(manual_responses: true, agents: [ @agent ])
+    older = finish(hooks: inventory(%w[before_turn stop]))
+    newest = finish(hooks: inventory(%w[before_turn stop]))
+    elsewhere = finish(hooks: inventory(%w[before_turn stop]), chat: other)
+    assert newest.reload.hook_warning.present?
+    assert Chat.hook_warning_residents_for([ @chat, other ]).values.flatten.include?(@agent.name)
+
+    @agent.set_hook_expectation!("session_start", "off", source: "owner")
+
+    assert_nil newest.reload.hook_warning
+    assert_nil elsewhere.reload.hook_warning
+    assert older.reload.hook_warning.present?, "only the newest run per conversation is re-checked"
+    assert_equal({}, Chat.hook_warning_residents_for([ @chat, other ]))
+  end
+
+  test "setting an event expected does not flag old runs retroactively" do
+    run = finish(hooks: inventory(%w[before_turn stop]))
+    assert_nil run.reload.hook_warning
+
+    @agent.set_hook_expectation!("session_start", "expected", source: "owner")
+
+    assert_nil run.reload.hook_warning
+  end
+
+  test "setting an event expected leaves an already-warned run's warning as it was" do
+    @agent.set_hook_expectation!("session_start", "expected", source: "owner")
+    run = finish(hooks: inventory(%w[stop]))
+    before = run.reload.hook_warning
+    assert before.present?
+    assert_not_includes before, "before_turn"
+
+    @agent.set_hook_expectation!("before_turn", "expected", source: "owner")
+
+    assert_equal before, run.reload.hook_warning
+  end
+
   test "disabled, unapproved and inactive hooks each say so" do
     finish(hooks: inventory([]).merge("hooks" => [ hook("w", "session_start"), hook("b", "before_turn"), hook("s", "stop") ]))
     hooks = inventory([]).merge("hooks" => [
@@ -208,8 +248,8 @@ class HookPresenceTest < ActiveSupport::TestCase
     { "id" => "house-#{event}", "event" => event, "status" => status }
   end
 
-  def finish(hooks:, outcome: "resumed", status: "ok", returncode: 0)
-    run = AgentRuntimeInteraction.create!(agent: @agent, chat: @chat, trigger_kind: "manual",
+  def finish(hooks:, outcome: "resumed", status: "ok", returncode: 0, chat: @chat)
+    run = AgentRuntimeInteraction.create!(agent: @agent, chat: chat, trigger_kind: "manual",
       session_id: "s-#{SecureRandom.hex(4)}", endpoint_url: "https://runtime.example.test", started_at: Time.current)
     telemetry = { "schema_version" => 1, "session" => { "outcome" => outcome } }
     telemetry["hooks"] = hooks if hooks

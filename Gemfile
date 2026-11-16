@@ -43,7 +43,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
-gem "solid_queue", "~> 1.7.0"
+gem "solid_queue", "~> 1.7.2"
 gem "solid_cable", "~> 3.0", ">= 3.0.12" # Fix the broadcast/disconnect deadlock (rails/solid_cable#72).
 
 # Reduces boot times through caching; required in config/boot.rb
@@ -99,12 +99,12 @@ group :development do
 end
 
 group :test do
-  gem "minitest", "~> 6.0"
+  gem "minitest", "~> 6.1"
   # Minitest 6 moved Minitest::Mock and Object#stub into their own gem.
   gem "minitest-mock"
   # Test runner used by bin/test and CI: forked workers, class scheduling,
   # timeouts and flaky-test retries. `bin/rails test` still works as a fallback.
-  gem "padded_cell", "~> 0.2.0"
+  gem "padded_cell", "~> 0.4.0"
 
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
@@ -124,7 +124,7 @@ gem "hashids"
 
 gem "ruby-openai"
 
-gem "pagy", "~> 43.8.1"
+gem "pagy", "~> 43.8.2"
 
 gem "active_storage_validations"
 

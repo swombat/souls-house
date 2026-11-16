@@ -60,6 +60,32 @@ test('switches new residents onto their own server with a cap and shows the excl
   expect(body.get('setting[vm_resident_limit]')).toBe('2');
 });
 
+test('sets the spare-server cap and targets and shows what is waiting and held', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, spare_server_limit: 0, spare_cx33_target: 0 },
+    spare_servers: {
+      limit: 0,
+      counted: 1,
+      types: [{ server_type: 'cx33', waiting: 2, target: 0, held: 1 }],
+      servers: [{ public_id: 'cpo-abc', server_type: 'cx33', location: 'nbg1', state: 'provisioned' }],
+      project_limit_hit_at: '2026-11-15T22:45:00Z',
+    },
+  });
+  expect(screen.getByTestId('spare-project-limit')).toHaveTextContent(
+    'the project has reached its own limit on servers'
+  );
+  expect(screen.getByTestId('spare-cx33-status')).toHaveTextContent('2 waiting, 1 held or on order.');
+  expect(screen.getByTestId('spare-servers-list')).toHaveTextContent('CX33 in nbg1: provisioned');
+  const limit = screen.getByLabelText('Most servers held with no resident on them');
+  await fireEvent.input(limit, { target: { value: '2' } });
+  await fireEvent.input(screen.getByLabelText('CX33 (Medium) to keep spare'), { target: { value: '1' } });
+  await fireEvent.submit(limit.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[spare_server_limit]')).toBe('2');
+  expect(body.get('setting[spare_cx33_target]')).toBe('1');
+  expect(body.get('setting[spare_cx23_target]')).toBe('0');
+});
+
 test('says plainly when the switch is on and births are being refused', () => {
   render(Settings, {
     setting: { site_name: 'Test House', max_accounts: 30, new_residents_on_vm: true, vm_resident_limit: 1 },
@@ -146,6 +172,25 @@ test('sets the reflexes scope to one of three states, with no resident picker', 
   await fireEvent.click(within(reflexScope).getByRole('radio', { name: 'Enabled' }));
   expect(within(reflexScope).getByRole('radio', { name: 'Enabled' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent("Every resident's posts are checked");
+});
+
+test('picks the residents whose backups are never removed', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off' },
+    backup_never_removed_residents: [
+      { id: 'BJZbJx', name: 'Wing', account: 'Nexus', backup_never_removed: false },
+      { id: 'AYawJx', name: 'Dora', account: 'Other', backup_never_removed: true },
+    ],
+  });
+  expect(screen.getByText('Residents whose backups are never removed')).toBeVisible();
+  expect(screen.getByText(/the house removes none of its backups, however much space they take/)).toBeVisible();
+
+  await fireEvent.click(screen.getByLabelText('Never remove backups of Wing'));
+  await fireEvent.click(screen.getByLabelText('Never remove backups of Dora'));
+
+  await fireEvent.submit(screen.getByLabelText('Find a resident whose backups are never removed').closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.getAll('setting[backup_never_removed_resident_ids][]')).toEqual(['', 'BJZbJx']);
 });
 
 test('switches residents on for site announcements and says the switch grants nothing else', async () => {

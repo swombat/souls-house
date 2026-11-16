@@ -240,12 +240,60 @@ class Worker:
             self.run(["docker", "rm", "-f", name], timeout=30)
             raise
 
+    def wait_for_backups(self):
+        """A release switch stops the job worker and cuts off any VM thinning
+        or VM backup it is running (a thinning takes about twenty minutes on a
+        large repository, and a cut one pauses that resident's backups until
+        it has been recovered). So the switch waits for them, up to a limit.
+
+        This is a best effort, not a barrier: after the last check Kamal still
+        pulls the image and boots and health-checks web before it stops the
+        job worker, and a backup that starts in that time is cut off.
+
+        An answer the house could not give is unknown, not idle. Once a backup
+        has been seen running, unknown answers are waited through like busy
+        ones, to the limit. Before one has been seen, three unknown answers in
+        a row let the deploy go on, so that a house whose web is down can
+        still be deployed. How the wait ended stays in `backup_wait`, which no
+        later step overwrites."""
+        script = (CODE / "backup-in-flight.rb").read_text()
+        deadline = time.monotonic() + self.settings.get("backup_wait_seconds", 2400)
+        seen, unread = [], 0
+        while True:
+            try:
+                busy = self.rails(script)
+                residents, unread = sorted(set(busy["thinning"]) | set(busy["backing_up"])), 0
+            except Exception:
+                residents, unread = None, unread + 1
+            if residents == []:
+                self.report("backups idle", backup_wait="waited" if seen else "idle")
+                return
+            if residents:
+                seen = residents
+            if residents is None and not seen and unread >= 3:
+                self.report("could not read running backups; deploying", backup_wait="unread")
+                return
+            if time.monotonic() >= deadline:
+                self.report("backups still running; deploying anyway",
+                            backup_wait="limit" if residents else "limit_unread", backups_cut_off=seen)
+                return
+            if residents:
+                self.report("waiting for running backups", waiting_for_backups=residents)
+            else:
+                self.report("could not read running backups; asking again")
+            time.sleep(15)
+
     def deploy_rails(self):
-        self.report("deploying Rails")
+        self.report("building Rails")
         # Kamal deploy takes its own production deploy lock: Mac/Dell operators
         # contend for the same lock. No separate acquire (that would deadlock it).
-        self.kamal("deploy", "--skip-hooks", "--version", self.data["rails_revision"])
+        # Built and pushed first, so that the wait below ends a pull and a
+        # web boot before the job worker stops, not a whole build before it.
         revision = self.data["rails_revision"]
+        self.kamal("build", "push", "--skip-hooks", "--version", revision)
+        self.wait_for_backups()
+        self.report("deploying Rails")
+        self.kamal("deploy", "--skip-push", "--skip-hooks", "--version", revision)
         for role in ("web", "jobs"):
             versions = self.run(["docker", "ps", "--filter", "label=service=souls-house",
                                  "--filter", f"label=role={role}",

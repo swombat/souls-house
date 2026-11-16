@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -501,6 +501,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.boolean "active", default: true, null: false
     t.integer "backup_interval_hours", default: 24, null: false
     t.jsonb "backup_history", default: {}, null: false
+    t.boolean "backup_keep_all", default: true, null: false
+    t.boolean "backup_never_removed", default: false, null: false
     t.integer "backup_keep_daily", default: 7, null: false
     t.integer "backup_keep_monthly", default: 12, null: false
     t.integer "backup_keep_weekly", default: 4, null: false
@@ -934,8 +936,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
   end
 
   create_table "cloud_procurement_operations", force: :cascade do |t|
-    t.bigint "agent_placement_id", null: false
-    t.bigint "requested_by_id", null: false
+    t.bigint "agent_placement_id"
+    t.bigint "requested_by_id"
     t.string "public_id", null: false
     t.string "state", default: "planned", null: false
     t.string "approval_reference", null: false
@@ -959,15 +961,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "placement_generation", default: 1, null: false
+    t.string "purpose", default: "placement", null: false
+    t.string "placement_label"
     t.index ["agent_placement_id"], name: "index_cloud_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL (ARRAY[('refused'::character varying)::text, ('deleted'::character varying)::text]))"
     t.index ["location", "state"], name: "index_cloud_procurement_operations_on_location_and_state"
     t.index ["provider_name"], name: "index_cloud_procurement_operations_on_provider_name", unique: true
     t.index ["provider_server_id"], name: "index_cloud_procurement_operations_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
+    t.index ["purpose", "server_type", "state"], name: "index_cloud_procurement_operations_on_purpose_type_state"
     t.index ["public_id"], name: "index_cloud_procurement_operations_on_public_id", unique: true
     t.index ["requested_by_id"], name: "index_cloud_procurement_operations_on_requested_by_id"
     t.check_constraint "image_id > 0", name: "cloud_procurement_operations_positive_image_id"
     t.check_constraint "placement_generation >= 1", name: "cloud_procurement_operations_positive_placement_generation"
     t.check_constraint "provider_server_id > 0", name: "cloud_procurement_operations_positive_server_id"
+    t.check_constraint "(purpose::text = 'placement'::text) = (agent_placement_id IS NOT NULL)", name: "cloud_procurement_operations_purpose_matches_placement"
+    t.check_constraint "purpose::text = ANY (ARRAY['placement'::character varying, 'spare'::character varying, 'move_source'::character varying]::text[])", name: "cloud_procurement_operations_purpose"
     t.check_constraint "state::text = ANY (ARRAY['planned'::character varying::text, 'create_in_flight'::character varying::text, 'reconciling'::character varying::text, 'provisioned'::character varying::text, 'unknown'::character varying::text, 'refused'::character varying::text, 'needs_review'::character varying::text, 'deleting'::character varying::text, 'deleted'::character varying::text])", name: "cloud_procurement_operations_state"
   end
 
@@ -2583,7 +2590,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
@@ -2611,7 +2618,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2696,7 +2703,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -3067,6 +3074,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.string "companion_linux_amd64_download_sha256", limit: 64
     t.string "companion_linux_arm64_download_url", limit: 500
     t.string "companion_linux_arm64_download_sha256", limit: 64
+    t.integer "spare_server_limit", default: 0, null: false
+    t.integer "spare_cx23_target", default: 0, null: false
+    t.integer "spare_cx33_target", default: 0, null: false
+    t.integer "spare_cx43_target", default: 0, null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|
@@ -3396,6 +3407,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
     t.index ["release_requested_at"], name: "index_vm_rollbacks_releasing", where: "(released_at IS NULL)"
     t.index ["release_requested_by_id"], name: "index_vm_rollbacks_on_release_requested_by_id"
     t.index ["requested_by_id"], name: "index_vm_rollbacks_on_requested_by_id"
+  end
+
+  create_table "vm_server_moves", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "agent_placement_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.bigint "source_operation_id", null: false
+    t.bigint "target_operation_id", null: false
+    t.bigint "runner_enrollment_id", null: false
+    t.string "public_id", null: false
+    t.string "phase", default: "stopping", null: false
+    t.bigint "source_server_id", null: false
+    t.bigint "target_server_id", null: false
+    t.bigint "snapshot_image_id"
+    t.bigint "snapshot_action_id"
+    t.bigint "rebuild_action_id"
+    t.datetime "phase_started_at", null: false
+    t.datetime "stop_requested_at"
+    t.datetime "poweroff_requested_at"
+    t.datetime "source_off_at"
+    t.bigint "verify_command_id"
+    t.bigint "set_aside_operation_id"
+    t.bigint "release_operation_id"
+    t.bigint "released_by_id"
+    t.datetime "release_asked_at"
+    t.datetime "release_claimed_at"
+    t.datetime "switched_at"
+    t.datetime "rebuilt_at"
+    t.datetime "verified_at"
+    t.datetime "released_at"
+    t.string "failure"
+    t.string "revert_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_vm_server_moves_on_agent_id"
+    t.index ["agent_id"], name: "index_vm_server_moves_one_open_per_agent", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('rebuilding'::character varying)::text, ('verifying'::character varying)::text, ('reverting'::character varying)::text]))"
+    t.index ["public_id"], name: "index_vm_server_moves_on_public_id", unique: true
+    t.index ["requested_by_id"], name: "index_vm_server_moves_on_requested_by_id"
+    t.index ["target_operation_id"], name: "index_vm_server_moves_one_open_per_target", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('rebuilding'::character varying)::text, ('verifying'::character varying)::text, ('reverting'::character varying)::text]))"
+    t.check_constraint "phase::text = ANY (ARRAY['stopping'::character varying::text, 'snapshotting'::character varying::text, 'rebuilding'::character varying::text, 'verifying'::character varying::text, 'moved'::character varying::text, 'reverting'::character varying::text, 'reverted'::character varying::text, 'releasing'::character varying::text, 'released'::character varying::text])", name: "vm_server_moves_phase"
   end
 
   create_table "watched_repositories", force: :cascade do |t|
@@ -3799,6 +3850,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_093000) do
   add_foreign_key "vm_rollbacks", "agents"
   add_foreign_key "vm_rollbacks", "users", column: "release_requested_by_id"
   add_foreign_key "vm_rollbacks", "users", column: "requested_by_id"
+  add_foreign_key "vm_server_moves", "agent_placements"
+  add_foreign_key "vm_server_moves", "agents"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "release_operation_id"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "set_aside_operation_id"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "source_operation_id"
+  add_foreign_key "vm_server_moves", "cloud_procurement_operations", column: "target_operation_id"
+  add_foreign_key "vm_server_moves", "runner_enrollments"
+  add_foreign_key "vm_server_moves", "users", column: "released_by_id"
+  add_foreign_key "vm_server_moves", "users", column: "requested_by_id"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
   add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade

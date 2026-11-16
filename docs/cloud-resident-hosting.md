@@ -230,3 +230,137 @@ resident through its runner (`ops/deploy/roll-vm-resident.rb`):
 
 Not covered: the runner program itself (`host-runner/`) still ships only with
 a VM's user_data, so a runner change reaches existing VMs only by rebuilding them.
+
+## Spare servers (eRyZBY)
+
+Hetzner's larger shared types are on sale for minutes at a time, so the house
+buys them when it sees them. `HetznerAvailabilityCheckJob` (every five
+minutes) hands the answer it just got to `SpareServers.replenish!`, which
+orders, per type:
+
+    residents waiting for the type + the type's spare target
+      - spares of that type held or on order
+
+A resident is waiting when it is ready on its own server, its plan in force
+names a bigger server type than its provisioned purchase, and no cleanup has
+been asked for. A spare is a `CloudProcurementOperation` with
+`purpose: "spare"`: no placement, no requester, no runner enrollment and no
+user_data. Its server carries the placement label `spare`. It goes through
+the same one-create-request, reconcile-never-retry path as every other
+purchase and becomes `provisioned` once Hetzner says it is running.
+
+Limits, all in Site Admin > Settings > Spare servers and all 0 by default:
+
+- `spare_server_limit`: the most spares that may exist or might exist
+  (every unresolved spare purchase counts). 0 switches buying off.
+- `spare_cx23_target`, `spare_cx33_target`, `spare_cx43_target`: how many
+  of each to keep beyond those residents are waiting for.
+
+Counting and planning happen in one transaction under the procurement
+admission lock. A refused order (stock that was gone) is settled as refused,
+and that type and location are skipped for 20 minutes.
+
+Hetzner's stock flag is not trusted as a verdict. On 2026-11-15 it had CX23
+and CX33 unavailable everywhere while the house bought one of each. So when
+the house is short of a type and no allowed location is flagged, it tries
+one location per check, the one tried longest ago. A refusal with
+`resource_limit_exceeded` is the Hetzner project's own server limit, not
+stock: all spare buying then rests for an hour, and the Site Admin card says
+so. Any approved EU
+location is used: a resident moves onto a spare by disk copy, so it has no
+location to match.
+
+Every check first recovers what a stopped worker left: a spare still
+`planned` is submitted (the one-shot claim sends at most one request), and a
+spare left settling with no reconcile for three minutes gets its reconcile
+job again. Neither sends a second create for an uncertain purchase.
+
+`bin/rails vm:spares` prints the state; with `RELEASE=<cpo-id>` and
+`REQUESTED_BY=<site admin email>` it deletes one spare.
+
+Nothing in this section puts a resident on a spare. That is the move, a
+separate step.
+
+## Moving a resident to another server (eRyZBY)
+
+`Agents::ServerMove` moves a resident from the server it runs on to a spare,
+by disk copy. Hetzner will rarely resize a server in place when the larger
+type is short, and a spare is a server the house already owns.
+
+    hold turns -> shut the old server down -> snapshot its disk ->
+    switch the house's records to the new server -> rebuild the new server
+    from the snapshot -> its runner reports from the new server -> moved
+
+Why a copy is enough: the runner reads its server id from Hetzner's metadata
+service on every report, and the house accepts a report only from the server
+the enrollment expects. The copy, started on the new server, reports as the
+new server with the same runner key. Nothing else on the disk names the
+server. The resident's container starts with the machine, as after a reboot.
+
+One `VmServerMove` row per attempt holds both servers, the snapshot, the
+provider actions and the phase. `VmServerMoveJob` steps it every 20 seconds;
+`VmBirthSweepJob` restarts one left with no job. Each step reads the
+provider before asking for anything, so a crash repeats nothing: a snapshot
+is adopted by its label, a rebuild by the server's action history.
+
+What holds:
+
+- The old server is powered off and never changed. Its purchase becomes
+  `move_source` with no placement; the spare's purchase becomes the
+  placement's. Until `release!`, going back is: power the new server off,
+  switch the records back, power the old one on. A failure in any phase, or
+  a phase past its deadline, does that by itself.
+- Only one of the two servers is on at a time. A server that came on anyway
+  is refused by the house (server mismatch).
+- A move starts only for an idle resident (the kernel-reboot idle check,
+  under the turn admission gate), with a verified backup from the last 26
+  hours. While it is open the resident's turns wait in the queue.
+- A reporting runner is not a working resident. The move is finished only
+  when a `start_resident` sent after the new server's first report comes
+  back done and running: the runner keeps the home volumes and answers only
+  after the resident's authenticated `/health`. Going back is confirmed the
+  same way.
+- Backups and kernel reboots are not admitted while a move is open.
+- The proof that the resident answered belongs to one boot: a start sent
+  before the server's current boot began is sent again.
+- Going back always takes the old server to off first, unless this move has
+  itself seen it off: no marker can prove a shutdown was never sent.
+- Nothing is deleted before a site admin releases the move. A release needs
+  the server reporting from where the move left the resident, the resident's
+  own answer to a start sent for that release (the first release call sends
+  it and refuses; the answer the move was verified by is never reused, since
+  a resident can stop without its server restarting), and a verified backup
+  taken since the move settled and since that boot. The backup protects the
+  home; it is not evidence the resident is up (a backup succeeds for a
+  stopped container).
+  It is claimed in the database first (phase `releasing`), which shuts out
+  going back; it deletes only the purchase this move's own switch set aside
+  (recorded on the move then, `set_aside_operation`), and the snapshot. A release
+  cut short is finished by the job or the sweep. After a release the move
+  cannot be undone.
+- A disabled account's settled move is released without those checks: a
+  disabled account keeps no servers.
+
+Operator commands:
+
+    bin/rails "vm:move[<agent id>]" REQUESTED_BY=<admin email>             # dry run: every gate
+    bin/rails "vm:move[<agent id>]" REQUESTED_BY=... MODE=apply [TARGET=<cpo-id>]
+    bin/rails vm:moves                                                      # the newest ten
+    bin/rails vm:moves RELEASE=<vsm-id> REQUESTED_BY=...                    # delete old server + snapshot
+    bin/rails vm:moves REVERT=<vsm-id> REASON=... REQUESTED_BY=...          # back to the old server
+
+Not built: a button in Site Admin, moving to a smaller disk, and using a
+spare for a new resident's birth (a spare has no runner until a disk with
+one is copied onto it).
+
+Seen against Hetzner on 2026-11-15 (a throwaway resident's CX23 copied onto
+a spare CX23 by hand): shutdown took 9 s and the action is `shutdown_server`;
+a snapshot of 2.4 GB took 27 s (`create_image`), with the server `off`
+throughout; the rebuild took 27 s (`rebuild_server`, no root password
+returned), the server going `rebuilding` then `running`. On the copy:
+cloud-init finished, the hostname became the spare's, the firewall, Docker
+and the runner were active, the resident container was up, the metadata
+service gave the new server id, and the runner's config was intact. The
+house refused the copy's reports (server mismatch) while its records still
+named the old server. Power actions are `stop_server` and `start_server`.
+Not yet seen: the disk growing when the new server's is bigger.

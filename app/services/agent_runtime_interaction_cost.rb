@@ -18,6 +18,8 @@ class AgentRuntimeInteractionCost
   NOVEMBER_11_MODELS = %w[google/gemini-4-carbon].freeze
   NOVEMBER_13_PRICING_AS_OF = Date.new(2026, 11, 13)
   NOVEMBER_13_MODELS = %w[google/gemini-4-hydrogen thinkingmachines/inkling-2-small].freeze
+  NOVEMBER_16_PRICING_AS_OF = Date.new(2026, 11, 16)
+  NOVEMBER_16_MODELS = %w[qwen/qwen4-max].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
@@ -101,6 +103,7 @@ class AgentRuntimeInteractionCost
     [ /minimax\/minimax-m3\z/, "minimax/minimax-m3", 0.3, 1.2 ],
     [ /\A(?:moonshotai\/)?kimi-k3\.1-pro\z/, "moonshotai/kimi-k3.1-pro", 2, 10 ],
     [ /moonshotai\/kimi-k2\.7-code\z/, "moonshotai/kimi-k2.7-code", 0.82, 3.75 ],
+    [ /\A(?:qwen\/)?qwen4-max(?:-\d{8})?\z/, "qwen/qwen4-max", 1.5, 4.5 ],
     [ /\A(?:qwen\/)?qwen3\.8-max-prime\z/, "qwen/qwen3.8-max-prime", 4, 12 ],
     [ /\A(?:qwen\/)?qwen3\.8-max(?:-\d{4})?\z/, "qwen/qwen3.8-max", 2, 6 ],
     [ /qwen\/qwen3\.7-max\z/, "qwen/qwen3.7-max", 1.475, 4.425 ],
@@ -153,6 +156,7 @@ class AgentRuntimeInteractionCost
     "moonshotai/kimi-k2.7-code" => 0.16,
     "qwen/qwen3.7-max" => 0.295,
     "qwen/qwen3.8-omni-flash" => 0.016,
+    "qwen/qwen4-max" => 0.075,
     "qwen/qwen3.8-max-prime" => 0.5,
     "qwen/qwen3.8-max" => 0.25,
     "z-ai/glm-5.3-prime" => 0.56,
@@ -176,6 +180,7 @@ class AgentRuntimeInteractionCost
     "google/gemini-2.5-flash" => 0.08333333333333334,
     "google/gemini-2.5-flash-lite" => 0.08333333333333334,
     "qwen/qwen3.7-max" => 1.84375,
+    "qwen/qwen4-max" => 1.875,
     "meta/muse-ember" => 0.125
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
 
@@ -243,7 +248,8 @@ class AgentRuntimeInteractionCost
 
   def pricing_as_of(price)
     model = price&.dig(:model)
-    date = if NOVEMBER_13_MODELS.include?(model) then NOVEMBER_13_PRICING_AS_OF
+    date = if NOVEMBER_16_MODELS.include?(model) then NOVEMBER_16_PRICING_AS_OF
+    elsif NOVEMBER_13_MODELS.include?(model) then NOVEMBER_13_PRICING_AS_OF
     elsif NOVEMBER_11_MODELS.include?(model) then NOVEMBER_11_PRICING_AS_OF
     elsif NOVEMBER_9_MODELS.include?(model) then NOVEMBER_9_PRICING_AS_OF
     elsif NOVEMBER_MODELS.include?(model) then NOVEMBER_PRICING_AS_OF

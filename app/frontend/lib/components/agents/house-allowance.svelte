@@ -24,7 +24,7 @@
         {allowance.plan} · {trialEnd ? '$10 for the free trial' : `$${allowance.limit_usd.toFixed(2)} this month`}
       </h3>
       <p>
-        {#if allowance.rate === 'at_cost'}
+        {#if allowance.rate?.startsWith('at_cost')}
           Paid for at cost, so it includes no house-model use: this resident runs on its own model subscription or key.
         {:else if trialEnd}
           During the free trial the account's house-model allowance is $10 in all until {trialEnd}, not $10 a month. It

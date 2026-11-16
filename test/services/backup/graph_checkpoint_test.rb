@@ -88,7 +88,49 @@ class Backup::GraphCheckpointTest < ActiveSupport::TestCase
     assert_includes backup, "--exclude-caches"
   end
 
+  test "a resident that keeps everything is never asked to forget a backup" do
+    assert @agent.backup_keep_all?, "keeping everything is the default"
+    commands = []
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*command) { commands << command; [ "", "", Struct.new(:success?).new(true) ] }) do
+          assert_nil Backup::AgentResticJob.new.send(:prune!, @agent)
+        end
+      end
+    end
+    assert_empty commands
+  end
+
+  test "a resident whose backups are never removed is not thinned by rules even with keep-all off" do
+    @agent.update!(backup_keep_all: false, backup_never_removed: true)
+    commands = []
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*command) { commands << command; [ "", "", Struct.new(:success?).new(true) ] }) do
+          assert_nil Backup::AgentResticJob.new.send(:prune!, @agent)
+        end
+      end
+    end
+    assert_empty commands
+  end
+
+  test "a resident thinned by rules has its whole history treated as one group" do
+    @agent.update!(backup_keep_all: false)
+    commands = []
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*command) { commands << command; [ "", "", Struct.new(:success?).new(true) ] }) do
+          assert_nil Backup::AgentResticJob.new.send(:prune!, @agent)
+        end
+      end
+    end
+    forget = commands.sole
+    at = forget.index("forget")
+    assert_equal [ "forget", "--group-by", "paths", "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "12", "--prune" ], forget[at..]
+  end
+
   test "a failed prune is recorded on the snapshot instead of ignored" do
+    @agent.update!(backup_keep_all: false)
     job = Backup::AgentResticJob.new
     snapshot = AgentBackupSnapshot.create!(agent: @agent, restic_snapshot_id: "abc", ok: true, taken_at: Time.current)
     failed = Struct.new(:success?).new(false)

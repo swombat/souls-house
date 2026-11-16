@@ -48,7 +48,7 @@ module Billing
         end
         Array(products).each { |product| switchable.concat(Array(product[:prices]).map(&:to_s)) }
       end
-      at_cost = Tier.all.flat_map { |tier| tier.offer("at_cost").price_ids }
+      at_cost = Tier.all.flat_map { |tier| Tier::AT_COST_RATES.flat_map { |rate| tier.offer(rate).price_ids } }
       result = { checked_at: now.iso8601, switchable_prices: switchable.uniq, at_cost_switchable: switchable.uniq & at_cost }
       result[:unknown_configurations] = unknown if unknown.any?
       result[:card_update_disabled] = no_card if no_card.any?

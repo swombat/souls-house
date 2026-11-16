@@ -79,8 +79,23 @@ class Billing::TierTest < ActiveSupport::TestCase
       assert_equal "#{tier.name} at cost", offer.name
       assert_equal tier.size, offer.as_json[:size]
       assert_equal tier.id, tier.offer.id
-      assert_equal [ tier.offer, offer ], tier.offers
+      assert_equal [ tier.offer, offer, tier.offer("at_cost_hetzner") ], tier.offers
     end
+  end
+
+  test "each plan has a Hetzner at-cost offer, priced on the machine that size is placed on" do
+    assert_equal [ 8, 11, 20 ].map { |usd| BigDecimal(usd) },
+      Billing::Tier.all.map { |tier| tier.offer("at_cost_hetzner").monthly_usd }
+    Billing::Tier.all.each do |tier|
+      offer = tier.offer("at_cost_hetzner")
+      assert offer.at_cost?
+      assert_not offer.sold?
+      assert_equal 0, offer.allowance_usd
+      assert_equal "#{tier.id}_at_cost_hetzner", offer.id
+      assert_equal "#{tier.name} at cost (Hetzner)", offer.name
+      assert offer.as_json[:at_cost]
+    end
+    assert_equal %w[standard at_cost], Billing::Tier::SOLD_RATES
   end
 
   test "a Stripe price resolves to one offer, standard or at cost" do
@@ -138,6 +153,20 @@ class Billing::TierTest < ActiveSupport::TestCase
     end
   end
 
+  # The Hetzner column: net list price from the Hetzner API (2026-11-16,
+  # fsn1/nbg1, excluding VAT) plus the €0.50 primary IPv4, at ECB 1.115.
+  HETZNER_EUR_NET = { "cx23" => 5.49, "cx33" => 8.49, "cx43" => 15.99 }.freeze
+
+  test "every Hetzner at-cost offer covers its server and what it drags, rounded up to the dollar" do
+    Billing::Tier.all.each do |tier|
+      cost = (HETZNER_EUR_NET.fetch(tier.server_type) + 0.50) * 1.115
+      price = tier.offer("at_cost_hetzner").monthly_usd
+      kept = price - (price * 0.025 + 0.27)
+      assert kept >= cost, "#{tier.name} at cost (Hetzner) keeps $#{kept.round(2)} of $#{price} against $#{cost.round(2)}"
+      assert price < (cost + 0.27) / 0.975 + 1, "#{tier.name} at cost (Hetzner) is padded beyond the next dollar"
+    end
+  end
+
   test "Small's worst month is the CX23, because Small on Boat all month would not pay for itself" do
     small = Billing::Tier.find!("conversation")
     boat_all_month = small.boat_full_month_usd.to_f
@@ -174,11 +203,12 @@ class Billing::TierTest < ActiveSupport::TestCase
 
   # The cheapest account on each plan: the add-on and one Small resident
   # drawing the account's whole $10 allowance, and the plan's searches,
-  # transcription (Scribe, $0.22/h) and backups (S3, $0.023/GB), all used up.
+  # transcription (Scribe, $0.22/h) and that resident's own backup space
+  # (Backup::Space, S3 at $0.023/GB), all used up.
   def cheapest_account_cost(plan)
     small = Billing::Tier.find!("conversation")
     size_cost(small) + Billing::Tier::ACCOUNT_ALLOWANCE_USD.to_f + plan.swarm_searches * 0.064 +
-      plan.transcription_hours * 0.22 + plan.backup_gb * 0.023 +
+      plan.transcription_hours * 0.22 + Backup::Space::GB_BY_SIZE.fetch("small") * 0.023 +
       (plan.free? ? 0 : plan.monthly_usd.to_f * 0.029 + 0.30)
   end
 

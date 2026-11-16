@@ -71,6 +71,7 @@ module Billing
 
     def check_offer!
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
+      raise NotEligible, "That rate is set by the house, not bought." unless @offer.sold?
       grant = @agent.account.grant_for(@offer)
       unless @offer.standard? || grant
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."

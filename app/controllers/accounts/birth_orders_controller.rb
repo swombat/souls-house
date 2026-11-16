@@ -46,7 +46,7 @@ class Accounts::BirthOrdersController < ApplicationController
     attrs[:system_prompt] = "" if open_beginning
     tier = Billing::Tier.find(params.require(:tier)) || raise(Billing::PaidBirth::Refused, "Choose a plan.")
     rate = params[:rate].presence || "standard"
-    raise Billing::PaidBirth::Refused, "Choose a plan." unless Billing::Tier::RATES.include?(rate)
+    raise Billing::PaidBirth::Refused, "Choose a plan." unless Billing::Tier::SOLD_RATES.include?(rate)
     return if provider_key_refused?
     return create_trial(attrs, open_beginning, tier, rate) if ActiveModel::Type::Boolean.new.cast(params[:trial])
 

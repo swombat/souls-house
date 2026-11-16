@@ -137,6 +137,10 @@ test('a transcript brought with its audio shows turns, times only where given, a
   const component = await mount(RecordingPage, {
     props: {
       recording: supplied,
+      // The controller always sends the transcript prop; without it the page
+      // sees revision 'rev1' with no words, asks for them (router.reload) and
+      // the reload navigates the test page away mid-assertion.
+      transcript: { revision: 'rev1', words: [] },
       speakers: suppliedSpeakers,
       voices: [],
       members_without_voice: [],

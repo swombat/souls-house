@@ -30,14 +30,40 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "change_plan", user: @user)
 
     get account_billing_path(@account)
-    assert_equal %w[conversation conversation_at_cost life life_at_cost work work_at_cost],
-      inertia_shared_props["change_offers"].map { |offer| offer["id"] }
+    assert_equal %w[conversation conversation_at_cost conversation_at_cost_hetzner life life_at_cost life_at_cost_hetzner
+      work work_at_cost work_at_cost_hetzner], inertia_shared_props["change_offers"].map { |offer| offer["id"] }
 
     sign_in(users(:regular_user))
     with_stripe do
       post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "work" }
     end
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier, "only the owner changes plans"
+  end
+
+  test "a resident at cost on Hetzner resizes at the Hetzner price, and Hetzner can't be checked out" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: @user)
+    @agent.update!(model_id: "openrouter/auto")
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: LIFE_AT_COST_HETZNER_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe do
+      Billing::BillSync.new("sub_1", client: @stripe).call
+      post plan_change_account_billing_path(@account), params: { agent_id: @agent.to_param, tier: "work" }
+    end
+
+    assert_redirected_to account_billing_path(@account)
+    row = ResidentSubscription.find_by!(agent: @agent)
+    assert_equal [ "work", "at_cost_hetzner", WORK_AT_COST_HETZNER_PRICE ], [ row.tier, row.rate, row.stripe_price_id ]
+    assert_equal WORK_AT_COST_HETZNER_PRICE, @stripe.subscription("sub_1")[:items][:data].sole[:price][:id]
+
+    other = agents(:code_reviewer)
+    with_stripe do
+      post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
+    end
+    assert_response :bad_request
+    assert_not ResidentSubscription.exists?(agent: other)
   end
 
   test "shows each hosted resident's plan and the catalogue" do

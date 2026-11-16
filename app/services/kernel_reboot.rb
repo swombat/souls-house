@@ -56,6 +56,8 @@ module KernelReboot
     ResidentTurn.transaction do
       ResidentTurn.connection.execute("SELECT pg_advisory_xact_lock(#{Agents::RemoteRuntime::TURN_GATE})")
       agent.with_lock do
+        # Read again under the turn gate, which a move's start also holds.
+        return if VmServerMove.open.exists?(agent_id: agent.id)
         return unless idle?(agent, enrollment)
 
         RunnerCommand.enqueue!(enrollment:, kind: KIND, payload: {})
@@ -71,6 +73,8 @@ module KernelReboot
 
     placement = AgentPlacement.uncached { AgentPlacement.find_by(id: enrollment.agent_placement_id) }
     return false unless placement&.backend == "hetzner_cloud" && placement.state == "ready"
+    # A move between servers stops and starts the machine itself.
+    return false if VmServerMove.uncached { VmServerMove.open.exists?(agent_id: placement.agent_id) }
 
     facts = facts_of(enrollment)
     return false unless required?(facts)

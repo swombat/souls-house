@@ -121,7 +121,9 @@ RUN groupmod --new-name agent node \
 # explicitly: the Anthropic login ceremony parser is tested against it.
 # Opus 5.5 subscription requests require Claude Code 2.1.280 or newer;
 # Fable 5.2 requires 2.1.290 and is first in the model catalog at 2.1.321.
-ARG CLAUDE_CODE_VERSION=2.1.321
+# 2.1.325 (16 Nov 2026): zstd response-decoding security fix, and recent turns
+# no longer go missing from a session resumed after an unclean exit.
+ARG CLAUDE_CODE_VERSION=2.1.325
 RUN bun install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 
@@ -153,11 +155,13 @@ RUN case "${TARGETARCH}" in \
 # recoverable in print mode instead of failing the whole clamped turn.
 # 1.5.8 (13 Nov 2026) is needed for Gemini 4 Hydrogen and Argon on subscription
 # sign-ins: `agy models` under 1.1.22 listed neither for Chris; under 1.5.8 both.
+# 1.5.9 (16 Nov 2026): HTTP MCP custom headers are no longer forwarded to
+# another host on redirect; `agy acp` reports a failed turn's real error.
 # Build ids come from https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/releases
-ARG ANTIGRAVITY_VERSION=1.5.8
-ARG ANTIGRAVITY_BUILD=4602374149505024
-ARG ANTIGRAVITY_AMD64_SHA512=f08faaee588327dba8722bdc60f26a14f6915a8f2d756ed7959cde0a706d4e62fd9f831ab1a077dace5f947caaa6e851457df5023180bb8d3f54386804a3787f
-ARG ANTIGRAVITY_ARM64_SHA512=7b040bfb8fb96f7550a8a66cd0ac28cb3e6e40e427f1e9810bfe1bf23c417cb9b363e36b2fc8ed645fe1ee518b0106f50f03de7084e95ede4591a893527360d1
+ARG ANTIGRAVITY_VERSION=1.5.9
+ARG ANTIGRAVITY_BUILD=4515810895593472
+ARG ANTIGRAVITY_AMD64_SHA512=d01eb13ba7750eed18907f1ae8860864371e0ad9064415e8d033d22b4bd7b9b4e4c7f962058520b452d67db1c33163d9a889d55a7dffa159596ec6cd91a87b79
+ARG ANTIGRAVITY_ARM64_SHA512=16c632a09b81f598f7652bc11180861f9d2ee4408ffa161dadc83b2010de7a9cd055e97b4b46cd01903e35c0e8bf21d8262462ba7c5f168cc6dada9ac3d522c0
 RUN case "${TARGETARCH}" in \
       amd64) artifact=cli_linux_x64.tar.gz; platform=linux-x64; checksum="${ANTIGRAVITY_AMD64_SHA512}" ;; \
       arm64) artifact=cli_linux_arm64.tar.gz; platform=linux-arm; checksum="${ANTIGRAVITY_ARM64_SHA512}" ;; \

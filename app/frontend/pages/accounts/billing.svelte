@@ -294,7 +294,7 @@
               <Badge variant={stateVariant(entitlement)}>{stateLabel(resident)}</Badge>
               {#if entitlement?.tier && entitlement.source === 'stripe'}
                 <Badge variant="outline"
-                  >{tierName(entitlement.tier)}{entitlement.rate === 'at_cost' ? ' at cost' : ''}</Badge>
+                  >{tierName(entitlement.tier)}{entitlement.rate?.startsWith('at_cost') ? ' at cost' : ''}</Badge>
               {/if}
               {#if residentPrice(entitlement) && !onTrial(resident)}
                 <span class="text-sm text-muted-foreground" data-testid="resident-price"

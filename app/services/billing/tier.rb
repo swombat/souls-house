@@ -51,8 +51,20 @@ module Billing
     # once plans open; nothing enforces them until checkout is gated on it.
     CONNECTIONS = %w[google_workspace telegram whatsapp x github dns].freeze
 
-    # The rates a tier can be bought at (Billing::Offer).
-    RATES = %w[standard at_cost].freeze
+    # The rates a tier can be bought at (Billing::Offer). There are two
+    # at-cost rates because an at-cost resident pays for the machine it
+    # actually lives on (Daniel, YzmwQJ 2026-11-16: "Then we need at_cost_boat
+    # and at_cost_hetzner"). "at_cost" is the Boat rate: it was the only one
+    # until then, and the name stays because it is in the database, Stripe
+    # metadata, billing-code effects and the credentials keys.
+    RATES = %w[standard at_cost at_cost_hetzner].freeze
+    AT_COST_RATES = %w[at_cost at_cost_hetzner].freeze
+
+    # The rates a buyer chooses between. Which machine a resident lives on is
+    # a hosting fact, not a choice, so the Hetzner rate is put on a
+    # subscription by the operator who placed the resident there, and
+    # recognised everywhere a rate is read.
+    SOLD_RATES = %w[standard at_cost].freeze
 
     # At cost, per tier, in USD a month (Daniel, jBVrDj 2026-10-28): the
     # machine at its worst month and Stripe's UK fee on an EU card, rounded up
@@ -62,7 +74,14 @@ module Billing
     # month (re-costed 2026-11-14, ePoEyY). No house-model allowance. Re-cost
     # by hand when a provider or the exchange rate moves: that makes a new
     # Stripe price, and the old id stays in the list (#619).
-    AT_COST_MONTHLY_USD = { "conversation" => BigDecimal("8"), "life" => BigDecimal("28"), "work" => BigDecimal("56") }.freeze
+    #
+    # at_cost_hetzner is the same method on the Hetzner type a resident of
+    # that size lives on (server_type: CX23, CX33, CX43), net list price
+    # read from the Hetzner API on 2026-11-16, with its IPv4.
+    AT_COST_MONTHLY_USD = {
+      "at_cost" => { "conversation" => BigDecimal("8"), "life" => BigDecimal("28"), "work" => BigDecimal("56") }.freeze,
+      "at_cost_hetzner" => { "conversation" => BigDecimal("8"), "life" => BigDecimal("11"), "work" => BigDecimal("20") }.freeze
+    }.freeze
 
     # The house-model allowance, per account per UTC month, shared by every
     # resident whose plan funds calls at the standard rate.
