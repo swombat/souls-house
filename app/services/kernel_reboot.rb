@@ -97,8 +97,8 @@ module KernelReboot
   end
 
   # On every heartbeat: a reboot_host answered done, then a boot after it was
-  # issued, is a completed reboot. Recorded once, the owner told once, and the
-  # turns that waited are dispatched.
+  # issued, is a completed reboot. It is recorded once and the turns that
+  # waited are dispatched.
   def observe!(enrollment, now: Time.current)
     command = latest_unrecorded(enrollment)
     return unless command
