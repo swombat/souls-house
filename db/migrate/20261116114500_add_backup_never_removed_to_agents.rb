@@ -2,7 +2,8 @@
 # "For the Nexus gang, we keep everything. For any others, we keep the last X
 # days, whatever fits in the plan"). For a resident with this set the house
 # removes no backup, neither by age nor to fit its backup space (Backup::Fit).
-# Off by default: everyone else keeps as much history as fits.
+# Off by default: everyone else keeps as much history as fits. Site admins
+# pick the residents in Site Admin > Settings.
 class AddBackupNeverRemovedToAgents < ActiveRecord::Migration[8.1]
 
   def change
