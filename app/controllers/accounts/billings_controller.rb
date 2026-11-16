@@ -48,7 +48,7 @@ class Accounts::BillingsController < ApplicationController
     agent = billable_agents.find(params[:agent_id])
     tier = Billing::Tier.find(params[:tier]) || raise(ActionController::BadRequest, "Unknown plan")
     rate = params[:rate].presence || "standard"
-    raise ActionController::BadRequest, "Unknown rate" unless Billing::Tier::RATES.include?(rate)
+    raise ActionController::BadRequest, "Unknown rate" unless Billing::Tier::SOLD_RATES.include?(rate)
 
     if ResidentSubscription.live.exists?(agent: agent)
       raise Billing::AlreadySubscribed, "#{agent.name} already has a subscription; change it from Manage billing"

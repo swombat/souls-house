@@ -567,6 +567,9 @@ class FakeStripe
     CONVERSATION_AT_COST_PRICE = "price_test_conversation_at_cost".freeze
     LIFE_AT_COST_PRICE = "price_test_life_at_cost".freeze
     WORK_AT_COST_PRICE = "price_test_work_at_cost".freeze
+    CONVERSATION_AT_COST_HETZNER_PRICE = "price_test_conversation_at_cost_hetzner".freeze
+    LIFE_AT_COST_HETZNER_PRICE = "price_test_life_at_cost_hetzner".freeze
+    WORK_AT_COST_HETZNER_PRICE = "price_test_work_at_cost_hetzner".freeze
     PARTNERS_PRICE = "price_test_account_partners".freeze
     COLLEAGUES_PRICE = "price_test_account_colleagues".freeze
 
@@ -576,6 +579,8 @@ class FakeStripe
       CONVERSATION_PRICE => [ "prod_test_conversation", 2499 ], LIFE_PRICE => [ "prod_test_life", 4999 ],
       WORK_PRICE => [ "prod_test_work", 9999 ], CONVERSATION_AT_COST_PRICE => [ "prod_test_conversation", 999 ],
       LIFE_AT_COST_PRICE => [ "prod_test_life", 1999 ], WORK_AT_COST_PRICE => [ "prod_test_work", 3999 ],
+      CONVERSATION_AT_COST_HETZNER_PRICE => [ "prod_test_conversation", 800 ],
+      LIFE_AT_COST_HETZNER_PRICE => [ "prod_test_life", 1100 ], WORK_AT_COST_HETZNER_PRICE => [ "prod_test_work", 2000 ],
       PARTNERS_PRICE => [ "prod_test_partners", 1999 ], COLLEAGUES_PRICE => [ "prod_test_colleagues", 4999 ]
     }.freeze
 
@@ -585,6 +590,9 @@ class FakeStripe
       "STRIPE_PRICE_WORK" => WORK_PRICE,
       "STRIPE_PRICE_CONVERSATION_AT_COST" => CONVERSATION_AT_COST_PRICE, "STRIPE_PRICE_LIFE_AT_COST" => LIFE_AT_COST_PRICE,
       "STRIPE_PRICE_WORK_AT_COST" => WORK_AT_COST_PRICE,
+      "STRIPE_PRICE_CONVERSATION_AT_COST_HETZNER" => CONVERSATION_AT_COST_HETZNER_PRICE,
+      "STRIPE_PRICE_LIFE_AT_COST_HETZNER" => LIFE_AT_COST_HETZNER_PRICE,
+      "STRIPE_PRICE_WORK_AT_COST_HETZNER" => WORK_AT_COST_HETZNER_PRICE,
       "STRIPE_PRICE_ACCOUNT_PARTNERS" => PARTNERS_PRICE, "STRIPE_PRICE_ACCOUNT_COLLEAGUES" => COLLEAGUES_PRICE
     }.freeze
 

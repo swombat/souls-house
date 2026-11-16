@@ -556,7 +556,7 @@ class Account < ApplicationRecord
 
   # What this account can buy now: every purchasable offer at a rate it holds.
   def purchasable_offers
-    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.purchasable? && eligible_for?(offer) }
+    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.sold? && offer.purchasable? && eligible_for?(offer) }
   end
 
   def recording_unlimited? = includes_site_admin?

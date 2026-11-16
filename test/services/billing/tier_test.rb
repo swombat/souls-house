@@ -79,8 +79,23 @@ class Billing::TierTest < ActiveSupport::TestCase
       assert_equal "#{tier.name} at cost", offer.name
       assert_equal tier.size, offer.as_json[:size]
       assert_equal tier.id, tier.offer.id
-      assert_equal [ tier.offer, offer ], tier.offers
+      assert_equal [ tier.offer, offer, tier.offer("at_cost_hetzner") ], tier.offers
     end
+  end
+
+  test "each plan has a Hetzner at-cost offer, priced on the machine that size is placed on" do
+    assert_equal [ 8, 11, 20 ].map { |usd| BigDecimal(usd) },
+      Billing::Tier.all.map { |tier| tier.offer("at_cost_hetzner").monthly_usd }
+    Billing::Tier.all.each do |tier|
+      offer = tier.offer("at_cost_hetzner")
+      assert offer.at_cost?
+      assert_not offer.sold?
+      assert_equal 0, offer.allowance_usd
+      assert_equal "#{tier.id}_at_cost_hetzner", offer.id
+      assert_equal "#{tier.name} at cost (Hetzner)", offer.name
+      assert offer.as_json[:at_cost]
+    end
+    assert_equal %w[standard at_cost], Billing::Tier::SOLD_RATES
   end
 
   test "a Stripe price resolves to one offer, standard or at cost" do
@@ -135,6 +150,20 @@ class Billing::TierTest < ActiveSupport::TestCase
       kept = price - (price * 0.025 + 0.27)
       assert kept >= cost, "#{tier.name} at cost keeps $#{kept.round(2)} of $#{price} against a cost of $#{cost.round(2)}"
       assert price < (cost + 0.27) / 0.975 + 1, "#{tier.name} at cost is padded beyond the next dollar"
+    end
+  end
+
+  # The Hetzner column: net list price from the Hetzner API (2026-11-16,
+  # fsn1/nbg1, excluding VAT) plus the €0.50 primary IPv4, at ECB 1.115.
+  HETZNER_EUR_NET = { "cx23" => 5.49, "cx33" => 8.49, "cx43" => 15.99 }.freeze
+
+  test "every Hetzner at-cost offer covers its server and what it drags, rounded up to the dollar" do
+    Billing::Tier.all.each do |tier|
+      cost = (HETZNER_EUR_NET.fetch(tier.server_type) + 0.50) * 1.115
+      price = tier.offer("at_cost_hetzner").monthly_usd
+      kept = price - (price * 0.025 + 0.27)
+      assert kept >= cost, "#{tier.name} at cost (Hetzner) keeps $#{kept.round(2)} of $#{price} against $#{cost.round(2)}"
+      assert price < (cost + 0.27) / 0.975 + 1, "#{tier.name} at cost (Hetzner) is padded beyond the next dollar"
     end
   end
 

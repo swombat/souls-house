@@ -6,6 +6,7 @@
 # docs/proposals/2026-10-28-billing-codes-at-cost.md). A Stripe price
 # resolves to exactly one offer.
 module Billing
+
   Offer = Data.define(:tier, :rate) do
     def self.for_price(price_id)
       return nil if price_id.blank?
@@ -20,12 +21,19 @@ module Billing
     end
 
     def standard? = rate == "standard"
-    def at_cost? = rate == "at_cost"
+    def at_cost? = Tier::AT_COST_RATES.include?(rate)
+    def sold? = Tier::SOLD_RATES.include?(rate)
 
     # The key under which the offer's Stripe prices are configured.
     def id = standard? ? tier.id : "#{tier.id}_#{rate}"
-    def name = standard? ? tier.name : "#{tier.name} at cost"
-    def monthly_usd = standard? ? tier.monthly_usd : Tier::AT_COST_MONTHLY_USD.fetch(tier.id)
+
+    def name
+      return tier.name if standard?
+
+      rate == "at_cost_hetzner" ? "#{tier.name} at cost (Hetzner)" : "#{tier.name} at cost"
+    end
+
+    def monthly_usd = standard? ? tier.monthly_usd : Tier::AT_COST_MONTHLY_USD.fetch(rate).fetch(tier.id)
     # The account's monthly house-model allowance a resident bought at this
     # rate may draw on, shared with the account's other standard-rate
     # residents. At cost draws on none.
@@ -52,8 +60,9 @@ module Billing
     def features = tier.features.merge(allowance_usd: Billing.usd(allowance_usd))
 
     def as_json(*)
-      { id: id, tier: tier.id, size: tier.size, rate: rate, name: name, monthly_usd: Billing.usd(monthly_usd),
+      { id: id, tier: tier.id, size: tier.size, rate: rate, at_cost: at_cost?, name: name, monthly_usd: Billing.usd(monthly_usd),
         allowance_usd: Billing.usd(allowance_usd), purchasable: purchasable?, features: features }
     end
   end
+
 end
