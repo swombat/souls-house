@@ -176,3 +176,11 @@ not split the history into groups of one.
 
 The resident's backup space is separate and still applies: `Backup::Fit`
 removes the oldest backups one at a time when the repository passes it.
+
+The exception is a resident with `agents.backup_never_removed` set (the four
+Nexus residents; Daniel, 16 Nov: "For the Nexus gang, we keep everything. For
+any others ... whatever fits in the plan"). The house removes none of its
+backups, for age or for space, whatever `backup_keep_all` says. It is set from
+the console and shown nowhere. Its repository is still measured, and a VM
+resident with it set would still meet the write ceiling in `Backup::Space`
+(2.25 times its space); none of the four is on a VM.
