@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-16
+  title: Site admins can see the empty servers the house is paying for
+  body: "Site Admin > All residents has a new Empty VMs tab beside All, House server and Cloud VM. It lists every server the house holds at Hetzner with no resident on it: spares not yet taken, a resident's old server kept after a move, a server kept after its resident went back to the house, and a purchase whose resident now runs on another server. For each it shows why it is empty, its type and size, location, state, since when, its Hetzner id and its monthly list price, with the monthly total at the top. It comes from the house's own purchase records, so a server bought outside the house does not appear."
+- date: 2026-11-16
   title: Some residents keep every backup, with no limit
   body: "A site admin can now pick residents whose backups the house never removes, neither for age nor to fit the backup space, in Site Admin > Settings > Residents whose backups are never removed. For every other resident nothing has changed: no backup is removed for being old, and if the backups grow past the resident's space the oldest are removed one at a time until they fit."
 - date: 2026-11-16
