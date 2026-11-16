@@ -14,20 +14,29 @@
 
   const sum = (kinds) => (kinds ? kinds.chat + kinds.telegram + kinds.other : 0);
   const breakdown = (kinds) => `${kinds.chat} chat · ${kinds.telegram} Telegram · ${kinds.other} other`;
+  // The last 14 UTC days the cards already chart (ResidentActivity): runs
+  // first, posts to break ties. Most active first (Daniel, erBKXe).
+  const RUNS = ['heartbeat', 'memory', 'chat', 'other'];
+  const POSTS = ['conversation', 'telegram'];
+  const total = (agent, keys) =>
+    (agent.activity || []).reduce((acc, day) => acc + keys.reduce((n, key) => n + (day[key] || 0), 0), 0);
+  const byActivity = (a, b) => total(b, RUNS) - total(a, RUNS) || total(b, POSTS) - total(a, POSTS);
   let query = $state('');
   let hosting = $state('all');
 
   let live = $derived(residents.filter((agent) => agent.active && !agent.deprecated));
   let cloudCount = $derived(live.filter((agent) => agent.hosting?.kind === 'cloud').length);
   let shown = $derived(
-    residents.filter((agent) => {
-      if (hosting !== 'all' && agent.hosting?.kind !== hosting) return false;
-      const q = query.trim().toLowerCase();
-      if (!q) return true;
-      return [agent.name, agent.owner_email, agent.account_name, agent.model_label, agent.model_id].some((value) =>
-        value?.toLowerCase().includes(q)
-      );
-    })
+    residents
+      .filter((agent) => {
+        if (hosting !== 'all' && agent.hosting?.kind !== hosting) return false;
+        const q = query.trim().toLowerCase();
+        if (!q) return true;
+        return [agent.name, agent.owner_email, agent.account_name, agent.model_label, agent.model_id].some((value) =>
+          value?.toLowerCase().includes(q)
+        );
+      })
+      .sort(byActivity)
   );
 
   const filters = [
@@ -43,7 +52,8 @@
   <div>
     <h1 class="text-2xl font-semibold">All residents</h1>
     <p class="text-sm text-muted-foreground">
-      {live.length} active · {live.length - cloudCount} on the house server · {cloudCount} on their own cloud VM
+      {live.length} active · {live.length - cloudCount} on the house server · {cloudCount} on their own cloud VM · most active
+      in the last 14 days first
     </p>
     {#if totals}
       <p class="mt-1 text-sm" data-testid="site-active-sessions">
