@@ -7,23 +7,23 @@
 # subscription. Public cards lead with from_usd (the add-on plus one small
 # resident), never with Companions' $0 add-on.
 #
-# Transcription hours and backup space are the account's, one pool however
-# many residents it has (Daniel, jaMWBj 2026-11-13). They carry across the
-# ladder the sizes had (Small's, Medium's, Large's). Field recordings are held
-# to the transcription hours, per rolling 30 days
-# (Account#transcription_ms_limit); composer voice notes and Telegram audio are
-# not metered yet, and nothing stops backups at backup_gb. So neither is in
-# features or shown on the plan cards: a number that is only partly enforced
-# is not an allowance (ePoEyY).
+# Transcription hours are the account's, one pool however many residents it
+# has (Daniel, jaMWBj 2026-11-13). They carry across the ladder the sizes had
+# (Small's, Medium's, Large's). Field recordings are held to them, per rolling
+# 30 days (Account#transcription_ms_limit); composer voice notes and Telegram
+# audio are not metered yet.
+#
+# Backup space is not the account's: each resident has its own, by its size
+# (Backup::Space), and its backups are thinned to fit it (Backup::Fit).
 module Billing
   class AccountPlan
 
     IDS = %w[companions partners colleagues].freeze
     DEFAULT_ID = "companions".freeze
 
-    attr_reader :id, :name, :monthly_usd, :members, :swarm_searches, :transcription_hours, :backup_gb
+    attr_reader :id, :name, :monthly_usd, :members, :swarm_searches, :transcription_hours
 
-    def initialize(id:, name:, monthly_usd:, members:, swarm_searches:, subagents:, transcription_hours:, backup_gb:)
+    def initialize(id:, name:, monthly_usd:, members:, swarm_searches:, subagents:, transcription_hours:)
       @id = id
       @name = name
       @monthly_usd = BigDecimal(monthly_usd)
@@ -31,16 +31,15 @@ module Billing
       @swarm_searches = swarm_searches
       @subagents = subagents
       @transcription_hours = transcription_hours
-      @backup_gb = backup_gb
     end
 
     CATALOGUE = [
       new(id: "companions", name: "Companions", monthly_usd: "0", members: "one", swarm_searches: 0, subagents: false,
-        transcription_hours: 5, backup_gb: 10),
+        transcription_hours: 5),
       new(id: "partners", name: "Partners", monthly_usd: "20", members: "several", swarm_searches: 20, subagents: false,
-        transcription_hours: 20, backup_gb: 50),
+        transcription_hours: 20),
       new(id: "colleagues", name: "Colleagues", monthly_usd: "50", members: "several", swarm_searches: 100,
-        subagents: true, transcription_hours: 40, backup_gb: 200)
+        subagents: true, transcription_hours: 40)
     ].freeze
 
     def self.all = CATALOGUE
