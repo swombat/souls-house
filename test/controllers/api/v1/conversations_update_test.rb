@@ -43,10 +43,10 @@ module Api
         assert_equal "Original", chat.reload.title
       end
 
-      test "blank, non-string and overlong titles are refused" do
+      test "blank, non-string, NUL-bearing and overlong titles are refused" do
         chat = room_with([ @agent ], title: "Original")
 
-        [ "", "   ", 42, "x" * (ConversationsController::TITLE_MAX_LENGTH + 1) ].each do |bad|
+        [ "", "   ", 42, "a\0b", "x" * (ConversationsController::TITLE_MAX_LENGTH + 1) ].each do |bad|
           rename(chat, { title: bad })
           assert_response :unprocessable_entity, "expected 422 for #{bad.inspect}"
         end

@@ -31,9 +31,8 @@ module Api
         assert_operator mine["seats"], :>=, 1
 
         member_ids = @home.memberships.confirmed.pluck(:user_id)
-        if member_ids.exclude?(users(:site_admin_user).id)
-          assert_includes body["site_admins"].map { |s| s["reads"] }, AccessDirectory.reads_any
-        end
+        assert_not_includes member_ids, users(:site_admin_user).id, "fixture: the site admin must be an outsider here"
+        assert_includes body["site_admins"].map { |s| s["reads"] }, AccessDirectory.reads_any
         assert_match(/Telegram/, body["not_covered"])
       end
 
