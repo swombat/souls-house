@@ -67,9 +67,10 @@ class ChatThinkingTest < ActiveSupport::TestCase
     end
   end
 
-  test "Astra and Gemini 3.8 are top picks and available in their provider groups" do
+  test "GPT-6.2 Astra, GPT-6.2 Sol and Gemini 3.8 are top picks and available in their provider groups" do
     {
-      "openai/gpt-6-astra" => [ "GPT-6 Astra", "OpenAI", "gpt-6-astra" ],
+      "openai/gpt-6.2-astra" => [ "GPT-6.2 Astra", "OpenAI", "gpt-6.2-astra" ],
+      "openai/gpt-6.2-sol" => [ "GPT-6.2 Sol", "OpenAI", "gpt-6.2-sol" ],
       "google/gemini-3.8-flash" => [ "Gemini 3.8 Flash", "Google", "gemini-3.8-flash" ]
     }.each do |id, (label, group, provider_id)|
       entries = Chat::MODELS.select { |model| model[:model_id] == id }
@@ -78,6 +79,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       assert Chat.supports_thinking?(id)
       assert_equal provider_id, Chat.provider_model_id(id)
     end
+    assert_equal [ "OpenAI" ], Chat::MODELS.select { |model| model[:model_id] == "openai/gpt-6-astra" }.pluck(:group)
     assert Chat.model_config("openai/gpt-5.6-sol")
     assert Chat.model_config("google/gemini-3.7-flash")
     assert Chat.supports_audio_input?("google/gemini-3.8-flash")
@@ -334,13 +336,16 @@ class ChatThinkingTest < ActiveSupport::TestCase
     assert_equal "grok-4.7", top_xai_model[:provider_model_id]
   end
 
-  test "Top Models includes exactly one latest flagship per lab" do
+  # One latest flagship per lab, except OpenAI: GPT-6.2 Astra and Sol both,
+  # on Daniel's ask (souls.house YAqvNY eDbmBM, 2026-11-17).
+  test "Top Models includes the latest flagship per lab" do
     top_model_ids = Chat::MODELS
       .select { |model| model[:group] == "Top Models" }
       .map { |model| model[:model_id] }
 
     assert_equal [
-      "openai/gpt-6-astra",
+      "openai/gpt-6.2-astra",
+      "openai/gpt-6.2-sol",
       "anthropic/claude-opus-5.5",
       "deepseek/deepseek-v4-pro-0813",
       "google/gemini-3.8-flash",

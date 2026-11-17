@@ -13,10 +13,17 @@ module Chat::ModelSelection
   MODELS = [
     # Top Models - Flagship from each major provider
     {
-      model_id: "openai/gpt-6-astra",
-      label: "GPT-6 Astra",
+      model_id: "openai/gpt-6.2-astra",
+      label: "GPT-6.2 Astra",
       group: "Top Models",
-      provider_model_id: "gpt-6-astra",
+      provider_model_id: "gpt-6.2-astra",
+      thinking: { supported: true }
+    },
+    {
+      model_id: "openai/gpt-6.2-sol",
+      label: "GPT-6.2 Sol",
+      group: "Top Models",
+      provider_model_id: "gpt-6.2-sol",
       thinking: { supported: true }
     },
     {

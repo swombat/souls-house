@@ -248,7 +248,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     house_models = inertia_shared_props.fetch("grouped_models").fetch("On the house")
     assert_equal [ "house/claude-haiku-5.5", "house/deepseek-v4.1-flash" ], house_models.pluck("model_id")
     top_models = inertia_shared_props.fetch("grouped_models").fetch("Top Models")
-    assert_includes top_models.pluck("model_id"), "openai/gpt-6-astra"
+    assert_includes top_models.pluck("model_id"), "openai/gpt-6.2-astra"
     assert_includes top_models.pluck("model_id"), "google/gemini-3.8-flash"
   end
 

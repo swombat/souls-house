@@ -153,7 +153,8 @@ same provider lists a "fast" tier at double the price and a long-context tier
 above 272k prompt tokens that these estimates do not model. Direct ids
 `gpt-6.2-astra` and `gpt-6.2-sol`. Reasoning efforts low to max (no "none"),
 default medium, matching OpenRouter's supported efforts (the openai_max
-profile; GPT-6 Astra's "ultra" is not offered). Not in Top Models. Recheck against OpenAI's
+profile; GPT-6 Astra's "ultra" is not offered). Both are in Top Models in place
+of GPT-6 Astra (Daniel, YAqvNY eDbmBM). Recheck against OpenAI's
 pricing page, which returned HTTP 403 from the house.
 
 GPT-6.1 Terra (added October 26, 2026, the day OpenAI released it; system card
