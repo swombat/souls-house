@@ -32,7 +32,9 @@ class Accounts::BirthOrdersControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[conversation life work], billing.fetch("tiers").map { |tier| tier["id"] }
     assert_equal %w[companions partners colleagues], billing.fetch("account_plans").map { |plan| plan["id"] }
     # The Plan step names the account's plan.
-    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, billing.fetch("account_plan"))
+    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil, "chosen" => "companions" },
+      billing.fetch("account_plan"))
+    assert_equal true, billing.fetch("included_available"), "the first resident is the one the plan includes"
     refute billing.key?("trial"), "the trial is one top-level prop, as on the Billing tab"
     assert_equal account_birth_orders_path(@account), billing.fetch("birth_orders_url")
     assert_equal false, billing.fetch("adds_to_bill"), "no live subscription: the card path"
