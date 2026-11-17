@@ -243,9 +243,15 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: services/telegram-connector
         # requirements.txt pins the whole tree; --no-deps as in the Docker build.
+        # Postgres is the job's service: a missing server fails, never skips.
+        # The suite runs twice: every Harness on SQLite, then on Postgres.
+        env:
+          COMMS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          COMMS_TEST_REQUIRE_POSTGRES: "1"
         run: |
           python3 -m pip install --no-deps -r requirements.txt
           python3 -m unittest discover -s tests -t . -p '*test*.py'
+          COMMS_TEST_STORE=postgres python3 -m unittest discover -s tests -t . -p '*test*.py'
 
   result:
     name: CI result

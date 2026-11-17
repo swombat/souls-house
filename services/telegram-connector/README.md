@@ -1,4 +1,4 @@
-# Telegram connector (S2a)
+# Telegram connector (S2a, S2b slices 1–2)
 
 The house's Telegram connector: a private-network Kamal accessory
 (`souls-house-comms-telegram`) holding the Telegram *user* sessions of
@@ -19,8 +19,10 @@ connector/sync.py      Telegram data → events, committed with the progress the
 connector/telegram.py  the Telethon side (RealTelegram, HouseSession); the seam fake.py replaces
 connector/convert.py   Telegram objects → the event shapes app/lib/comms_events.rb accepts
 connector/rails.py     signed, ordered delivery of the outbox to Rails
-connector/store.py     SQLite store; sessions, secrets and outbox bodies sealed (AES-GCM)
-connector/lease.py     single ownership: flock on <data>/.lease
+connector/store.py     the store: Postgres (production) or SQLite (tests); sealed columns (AES-GCM)
+connector/storethread.py  the one thread that uses the store's connection; fail-stop watchdog
+connector/migrate.py   SQLite → Postgres (and the explicit rollback), verified row by row
+connector/lease.py     single ownership: flock on <data>/.owner
 connector/harden.py    RLIMIT_CORE=0, PR_SET_DUMPABLE=0, umask 077
 connector/fake.py      a fake Telegram for the tests and the Rails end-to-end test
 ```
@@ -143,11 +145,13 @@ carryover, queued again right after the new `connected`.
 ## Delivery guarantees (Mira's S2a boundaries)
 
 **Single owner.** Before it opens the store or any Telegram client the
-process takes an exclusive `flock` on `<data>/.lease` and holds it for its
+process takes an exclusive `flock` on `<data>/.owner` and holds it for its
 whole life; the kernel releases it however the process ends. A second process
 on the same volume (an overlapping deploy, a container started by hand)
 logs `waiting for the data lease` and starts nothing — no store, no server,
-no client — until the holder has exited. Kamal runs the accessory as one
+no client — until the holder has exited. It then takes the store's
+Postgres advisory lock (see "Store"), which makes a process on another
+volume wait the same way; that lock only ever makes a process wait. Kamal runs the accessory as one
 named container; `kamal accessory reboot` removes the old container before it
 starts the new one. Sessions are only ever created here by QR login; the
 Dell's session file is never used.
@@ -174,7 +178,7 @@ updates for good. The connector therefore does not use it:
 - pushed updates only wake the account's own loop, which calls
   `updates.getDifference` (and `updates.getChannelDifference` for synced
   supergroups) from the state in the connector's store;
-- each answer's events and the state it reaches are written in **one SQLite
+- each answer's events and the state it reaches are written in **one store
   transaction** (`sync.Ingest.commit`); the same for each backfill page and
   its cursor. Until it commits nothing moved, and Telegram replays the same
   updates.
@@ -208,12 +212,90 @@ are AES-GCM sealed under HKDF-SHA256(`COMMS_STORE_KEY`, salt
 message text, name or password in clear (tested with canaries).
 Nor the phone number or login code of a phone sign-in.
 
+## Store (S2b slice 2)
+
+The store is the connector's own Postgres database, `comms_telegram`, with
+its own login role. The schema is `PG_SCHEMA` in `store.py` (the S2a tables;
+sealed columns `bytea`; a `schema_version` row, and a connector refuses a
+newer schema than it knows). SQLite remains for the tests, the load harness
+and the migration; `COMMS_STORE=sqlite` is refused except with the fake
+provider.
+
+**Off the event loop.** The slice 1 baseline (`load/REPORT.md`) found every
+store call synchronous on the loop thread: a restart froze the loop for 4.9 s
+at 1,000 accounts. Now one thread, the store thread, is the only user of the
+store's connection, and everything else awaits it (`storethread.AsyncStore`).
+Jobs run one at a time in the order they were submitted, the order the loop
+used to issue them, so the guarantees above are unchanged. Store work that
+must not interleave with another coroutine's is one job: each `Ingest` is
+filled and committed in one job (it reads the store as it goes), and so are
+a dialog refresh, a checkpoint and a backfill page with the re-reads they
+depend on. A gap reset counts itself inside its own job, so a history page
+fetched before the reset and committed after it is still dropped.
+
+A submitted job always runs to its end: cancelling the coroutine waiting for
+it stops the waiting, never the job, and never rolls it back. Shutdown runs
+every job already queued, then closes the connection. Queue wait and
+execution time are recorded apart (`StoreThread.stats`, reported per phase by
+the load harness): a loop that no longer stalls can still hide a queue that
+does.
+
+**Ownership until slice 3.** One accessory, one volume. The volume flock is
+the guard, as in S2a. The advisory lock (`pg_try_advisory_lock`, held on the
+store connection for the process's life) makes a second process on another
+volume wait; it never authorises taking over. **This is not fencing.**
+Postgres releases the lock as soon as it considers the connection gone, and
+the old process may not know yet: its Telegram clients run until it exits.
+Nothing here replaces a process on another volume or host; slice 3 brings
+leases, fencing tokens and a supervisor that confirms death before transfer.
+
+**Fail-stop.** If the store connection fails (any `psycopg.OperationalError`
+or `InterfaceError`, including a server-side timeout) or goes silent, the
+process exits (code 75) and never reconnects in place. `unless-stopped`
+(Kamal's accessory default) restarts it, and the new process takes the volume
+flock and the advisory lock again before it opens any client. Detection
+bounds with the defaults (`StoreThread`: heartbeat 5 s, deadline 10 s, tick
+1 s; the connection: keepalives, `tcp_user_timeout` 10 s, `statement_timeout`
+10 s):
+
+| The store connection… | The process exits within |
+|---|---|
+| errors, while busy | the failing call (immediately) |
+| errors, while idle | the next heartbeat ping: ≤ 6 s |
+| goes silent (a black-holed route, a hung server), while busy | the job's deadline: ≤ 11 s after the job started |
+| goes silent while idle | heartbeat + deadline + ticks: ≤ 17 s |
+
+Until it exits, its Telegram clients may still receive updates, but nothing
+it fetches can commit, so nothing durable moves and Telegram replays the same
+updates to whoever owns the session next. Tested: an error, a stall and an
+idle failed ping (`tests/test_store_thread.py`); on Postgres, a backend killed
+while idle, a black-holed proxy (bytes swallowed, sockets kept open, no error
+ever raised), and the real process exiting 75 after `pg_terminate_backend`
+(`tests/test_process_postgres.py`).
+
+**Migration** (`python -m connector.migrate`, docstring there): with the
+accessory stopped, it holds `.lease`, `.owner` and the advisory lock
+throughout, copies every table as bytes (nothing decrypted), compares every
+row and column before committing and again after, and keeps the source
+(renamed). It refuses a destination that holds anything else. At cutover
+`.lease` becomes a directory, so the pre-migration image refuses to start
+(`reason=lease`) rather than open an empty store, and this image refuses a
+volume that still has `telegram.sqlite3` or a `.lease` file. Rollback is
+`postgres-to-sqlite` (same checks), never a plain restart of the old image;
+migrating again after a rollback needs `empty-postgres
+--yes-delete-the-postgres-copy` first.
+
 ## Test
 
 ```sh
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 make test PYTHON=.venv/bin/python
 ```
+
+With `COMMS_TEST_DATABASE_URL` (a server and a database to administer from,
+e.g. `postgresql://postgres:postgres@localhost:5432/postgres`) the Postgres
+tests run on fresh databases; `COMMS_TEST_STORE=postgres` runs every Harness
+test on Postgres too. CI runs both, with `COMMS_TEST_REQUIRE_POSTGRES=1`.
 
 `tests/test_replay.py` and `tests/test_process.py` cover crashes at each
 point of the ingest path (in process, and a real `os._exit` mid-transaction
@@ -239,7 +321,9 @@ COMMS_TELEGRAM_CONNECTOR_PYTHON=$PWD/services/telegram-connector/.venv/bin/pytho
 | `COMMS_TLS_CLIENT_CA` | The house CA that signed Rails's client certificate. |
 | `COMMS_TLS_CLIENT_NAME` | The client certificate's CN or DNS SAN that is accepted (`rails`). |
 | `COMMS_LISTEN` | Default `0.0.0.0:8443`. |
-| `COMMS_DATA_DIR` | Default `/data`. |
+| `COMMS_DATA_DIR` | Default `/data`. Holds the volume lock (`.owner`). |
+| `COMMS_DATABASE_URL` | `postgresql://comms_telegram:…@souls-house-postgres:5432/comms_telegram`: the store. Required. |
+| `COMMS_STORE` | `postgres` (default) or `sqlite` (refused unless the provider is `fake`; tests only). |
 | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | The Telegram application users sign in through (Daniel's existing app for now; §6.1 is overruled for S2a). Secrets only. |
 | `TELEGRAM_PROVIDER` | `telethon` (default) or `fake` (refused unless `COMMS_ALLOW_FAKE=1`; tests only). |
 
@@ -267,13 +351,38 @@ hidden (the catalog requires `CommsConnector::TELEGRAM_ENV`).
      -extfile <(printf "subjectAltName=DNS:souls-house-comms-telegram\nextendedKeyUsage=serverAuth") -out telegram.pem
    ```
    readable by uid 65532.
-3. **Secrets** in `.kamal/secrets`: `COMMS_STORE_KEY`, `COMMS_COMMAND_KEY`
-   (shared with WhatsApp if it runs), `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`.
-4. **`config/house.env`**: `HOUSE_COMMS_TELEGRAM_IMAGE`,
+3. **Database.** On the house Postgres, once:
+   ```sh
+   bin/kamal accessory exec postgres --interactive --reuse "psql -U souls_house -d postgres"
+   CREATE ROLE comms_telegram LOGIN PASSWORD '<openssl rand -base64 32>';
+   CREATE DATABASE comms_telegram OWNER comms_telegram;
+   REVOKE ALL ON DATABASE comms_telegram FROM PUBLIC;
+   ```
+   The connector's role owns only its database and has no grant on Rails's.
+   Rails's role is the cluster's superuser, so it *could* read
+   `comms_telegram`; what it would find there is sealed under
+   `COMMS_STORE_KEY`, which Rails does not hold.
+4. **Secrets** in `.kamal/secrets`: `COMMS_STORE_KEY`, `COMMS_COMMAND_KEY`
+   (shared with WhatsApp if it runs), `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`,
+   `COMMS_DATABASE_URL`.
+5. **`config/house.env`**: `HOUSE_COMMS_TELEGRAM_IMAGE`,
    `HOUSE_COMMS_TELEGRAM_DIGEST`, `HOUSE_COMMS_TLS_DIR`.
-5. `bin/kamal accessory boot comms-telegram`, then deploy the app. Telegram
+6. `bin/kamal accessory boot comms-telegram`, then deploy the app. Telegram
    appears on the owner's integrations page; the owner connects with a fresh
    QR scan and grants residents.
+
+**Moving a running S2a connector to Postgres** (slice 2): steps 3 and 4,
+then, with the new image's digest in `config/house.env`:
+```sh
+bin/kamal accessory stop comms-telegram
+docker run --rm --network kamal -v comms_telegram:/data -e COMMS_DATABASE_URL \
+  <image>@<digest> python -m connector.migrate sqlite-to-postgres
+bin/kamal accessory reboot comms-telegram
+```
+The migration prints counts per table and, per connection, outbox rows,
+highest sequence and `next_seq`; keep that output. Rollback: stop the
+accessory, `python -m connector.migrate postgres-to-sqlite` the same way,
+then boot the previous image's digest.
 
 ## Not yet proven
 
@@ -288,5 +397,9 @@ hidden (the catalog requires `CommsConnector::TELEGRAM_ENV`).
   the tests passed there.
 - Secret chats are not readable (Telethon has no support); forum topics are
   flattened.
-- S2b (worker pool, per-host supervisor, cross-tenant fairness, the 1,000
-  account load test) is not built.
+- S2b: slice 1 (the load harness and its baseline) and slice 2 (this store)
+  are built; leases with fencing, the supervisor, multiple workers and
+  fairness are not.
+- The Postgres store has no backup of its own yet (S2a's SQLite volume had
+  none either): an encrypted dump and a test-key restore come in the next
+  pull request of slice 2.
