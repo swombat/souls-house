@@ -36,7 +36,7 @@ class ExternalAgentWakeRequest
       requested_by: requested_by,
       session_id: session_id,
       endpoint_url: endpoint_url,
-      request_text: request,
+      request_text: HeartbeatNoteText.redact(request),
       provider_auth_mode: auth_mode
     ) do |interaction|
       # A resident that can't make the run is told so on the run, not sent it.
@@ -101,12 +101,9 @@ class ExternalAgentWakeRequest
   end
 
   # Shown back verbatim as the resident's own words, not as an instruction
-  # from the house.
+  # from the house. Only the delivered request carries it; see HeartbeatNoteText.
   def heartbeat_note_section
-    note = agent.heartbeat_note
-    return if note.blank?
-
-    "Last time, you left yourself this (your own words, not an instruction from the house):\n\n#{note.lines.map { |line| "> #{line.chomp}" }.join("\n")}"
+    HeartbeatNoteText.section(agent.heartbeat_note)
   end
 
 end

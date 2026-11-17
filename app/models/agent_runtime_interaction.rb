@@ -192,6 +192,13 @@ class AgentRuntimeInteraction < ApplicationRecord
       return
     end
     full_invocation_text = body.delete("full_invocation_text")
+    if trigger_kind == "wake"
+      full_invocation_text = HeartbeatNoteText.redact(full_invocation_text)
+      %w[stdout stderr].each { |key| body[key] = HeartbeatNoteText.redact(body[key]) }
+    end
+    # `self.`: a bare local here would shadow the attribute as nil.
+    kept_stdout = trigger_kind == "wake" ? HeartbeatNoteText.redact(self.stdout) : self.stdout
+    kept_stderr = trigger_kind == "wake" ? HeartbeatNoteText.redact(self.stderr) : self.stderr
     telemetry = body["telemetry"].presence || {}
     runtime = telemetry["runtime"].presence || {}
     session = telemetry["session"].presence || {}
@@ -219,8 +226,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       transport_status: from_callback ? transport_status : result[:status],
       runtime_status: body["status"],
       runtime_returncode: body["returncode"],
-      stdout: from_callback ? stdout : body["stdout"],
-      stderr: from_callback ? stderr : body["stderr"],
+      stdout: from_callback ? kept_stdout : body["stdout"],
+      stderr: from_callback ? kept_stderr : body["stderr"],
       full_invocation_text: full_invocation_text,
       chaos_session_id: session["chaos_process_id"] || body["chaos_session_id"],
       session_resumed: body.key?("session_resumed") ? body["session_resumed"] : derived_session_flag(session, "resumed"),

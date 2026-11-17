@@ -40,6 +40,46 @@ class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
     assert text.rstrip.end_with?("> Ask Mira about sparrows.")
   end
 
+  test "a real wake delivers the note but stores no copy of it anywhere on the run" do
+    sentinel = "SENTINEL-NOTE-#{SecureRandom.hex(6)}"
+    agent = agents(:research_assistant)
+    agent.update!(
+      runtime: "external",
+      uuid: SecureRandom.uuid_v7,
+      endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "tr_valid",
+      health_state: "healthy",
+      consecutive_health_failures: 0,
+      heartbeat_note: "#{sentinel} first line\n\n#{sentinel} after a blank line"
+    )
+    agent.account.update!(openrouter_api_key: "test-router")
+    delivered = nil
+    echoed = "#{HeartbeatNoteText::HEADER}\n\n> #{sentinel} first line\n> \n> #{sentinel} after a blank line\n"
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| delivered = JSON.parse(request.body)["request"]; true }
+      .to_return(status: 200, body: {
+        status: "ok", returncode: 0,
+        full_invocation_text: "system\n\n#{echoed}\nafter",
+        stdout: "tail #{echoed}", stderr: echoed
+      }.to_json)
+
+    ExternalAgentWakeRequest.new(agent: agent).send(:perform)
+
+    assert_requested stub
+    assert_includes delivered, "> #{sentinel} first line\n> \n> #{sentinel} after a blank line"
+    run = AgentRuntimeInteraction.where(agent: agent, trigger_kind: "wake").last
+    stored = [ run.request_text, run.full_invocation_text, run.stdout, run.stderr, run.response_body.to_json ]
+    stored.each { |value| assert_not_includes value.to_s, sentinel }
+    assert_includes run.request_text, HeartbeatNoteText::WITHHELD
+    assert_includes run.full_invocation_text, "#{HeartbeatNoteText::WITHHELD}\n\nafter"
+    assert_includes run.request_text, "This time is yours."
+  end
+
+  test "redaction leaves text without a note alone" do
+    assert_equal "plain > quote", HeartbeatNoteText.redact("plain > quote")
+    assert_nil HeartbeatNoteText.redact(nil)
+  end
+
   test "persistent wake sessions default on but an explicit fresh choice remains off" do
     assert Agent.new.persistent_wake_session?
     assert_not Agent.new(persistent_wake_session: false).persistent_wake_session?
