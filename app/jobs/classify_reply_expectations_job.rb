@@ -34,7 +34,11 @@ class ClassifyReplyExpectationsJob < ApplicationJob
         # A model cannot veto an explicit tag. Resolve against the same room
         # roster, then keep the normal membership/reply/dismissal guards below.
         direct_ids = message.reply_attention_conversational? ? DirectReplyMentions.call(message: message, users: users) : []
-        recipients = results.fetch(message.id, {}).merge(direct_ids.index_with { 1.0 })
+        # An inferred flag reaches only someone who has written here or whom
+        # the message names (InferredReplyRecipients); a tag is never filtered.
+        inferred = results.fetch(message.id, {})
+        inferred = inferred.slice(*InferredReplyRecipients.call(message: message, user_ids: inferred.keys, users: users))
+        recipients = inferred.merge(direct_ids.index_with { 1.0 })
         # Reconcile only open inferences; human dismissals and completed replies
         # are never reset by an edit or a retry.
         ReplyExpectation.where(message: message).state_open.where.not(user_id: recipients.keys).destroy_all
