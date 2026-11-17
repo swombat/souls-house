@@ -58,6 +58,53 @@ module Backup
       assert_equal 1, result.removed
       assert_in_delta 2.days.ago, Time.zone.parse(result.oldest_at), 5
       assert_equal 2, @agent.reload.backup_history["snapshots"]
+      assert_equal 1, @agent.backup_history["thinning_removed"]
+    end
+
+    test "the history counts what a thinning removed, by id, including what fitting the space removed" do
+      @agent.update!(backup_keep_all: false)
+      list = [ snapshot(40), snapshot(30), snapshot(2), snapshot(1) ]
+      sizes = [ 3.gigabytes, 1.gigabyte ]
+      run = lambda do |_agent, *args|
+        case args.first
+        when "snapshots" then JSON.generate(list)
+        when "stats" then JSON.generate("total_size" => sizes.shift || 1.gigabyte)
+        when "forget" then (args[1] == "--group-by" ? list.shift(1) : list.reject! { |s| s["id"] == args[1] }) && ""
+        else ""
+        end
+      end
+      Backup::Space.stub(:bytes_for, 2.gigabytes) do
+        result = VmThinning.new(run:).call(@agent)
+        assert_equal 2, result.removed
+      end
+      assert_equal 2, @agent.reload.backup_history["thinning_removed"]
+      assert_equal 2, @agent.backup_history["snapshots"]
+    end
+
+    test "a night with nothing to remove records zero, not a missing count" do
+      VmThinning.new(run: restic([ snapshot(2), snapshot(1) ])).call(@agent)
+      assert_equal 0, @agent.reload.backup_history["thinning_removed"]
+    end
+
+    test "restic runs with the resident's own persistent cache, not --no-cache" do
+      argv = nil
+      status = Struct.new(:success?).new(true)
+      Rails.env.stub(:test?, false) do
+        Backup::AgentRestic.stub(:aws_value, "x") do
+          Backup::AgentRestic.stub(:region, "r") do
+            Backup::AgentRestic.stub(:repository_url, "s3:repo") do
+              Open3.stub(:capture3, ->(*args) { argv = args; [ "[]", "", status ] }) do
+                VmThinning.new.send(:run, @agent, "snapshots", "--json")
+              end
+            end
+          end
+        end
+      end
+      assert_not_includes argv, "--no-cache"
+      volume = "vm-backup-thin-cache-#{@agent.uuid}:#{VmThinning::CACHE_DIR}"
+      assert_equal volume, argv[argv.index("-v") + 1]
+      assert_equal [ "--cache-dir", VmThinning::CACHE_DIR, "snapshots", "--json" ], argv.last(4)
+      assert argv.index("-v") < argv.index(VmSnapshotVerifier::IMAGE), "the volume is a docker option, before the image"
     end
 
     test "a thinning that leaves nothing is a failure, never a success" do
