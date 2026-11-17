@@ -15,7 +15,7 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
   setup do
     Setting.instance.update!(allow_chats: true, speech_engine_scope: "account_choice")
     @account = accounts(:personal_account)
-    @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "account-eleven-key")
+    @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "account-eleven-key", granted_plan: "partners") # ElevenLabs comes with Partners (SpeechEngine)
     @agent = @account.agents.create!(name: "Speaker", system_prompt: "Test", runtime: "external")
     @agent.update_column(:voice_id, "voice-123")
     @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Listen")

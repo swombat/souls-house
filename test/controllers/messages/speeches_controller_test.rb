@@ -14,7 +14,8 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
     @user = users(:user_1)
     @account = accounts(:personal_account)
     @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: "sk-test-voice-mode",
-      speech_engine: "elevenlabs", eleven_labs_api_key: "account-eleven-key")
+      speech_engine: "elevenlabs", eleven_labs_api_key: "account-eleven-key",
+      granted_plan: "partners") # ElevenLabs comes with Partners and Colleagues (SpeechEngine)
     @agent = @account.agents.create!(name: "Speaker", system_prompt: "Test", runtime: "external")
     @agent.update_column(:voice_id, "voice-123")
     @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Voice")
@@ -88,8 +89,9 @@ class Messages::SpeechesControllerTest < ActionDispatch::IntegrationTest
     assert_not_requested stub
   end
 
-  test "a Conversation resident in an ElevenLabs account is read by Phonon, so nothing streams" do
+  test "a resident of a Companions account set to ElevenLabs is read by Phonon, so nothing streams" do
     stub = stub_request(:post, STREAM_URL)
+    @account.update!(granted_plan: nil)
     ResidentEntitlement.create!(agent: @agent, account: @account, source: "stripe", state: "active", tier: "conversation")
 
     speak(@reply)
