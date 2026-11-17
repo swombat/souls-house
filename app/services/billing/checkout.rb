@@ -26,6 +26,7 @@ module Billing
         # plan's own, and the plan comes on the bill with it (Included).
         @requested = @offer
         Checkout.release_expired!(@agent.account, client: @client)
+        FirstBill.refuse_if_waiting!(@agent.account, error: AlreadySubscribed, except_agent: @agent)
         @offer = Included.offer_for(@agent.account, @offer, except_agent: @agent) if @offer.sold?
         @plan = @offer.included? ? @agent.account.plan_to_pay_for : nil
         entitlement = ResidentEntitlement.for_agent!(@agent)

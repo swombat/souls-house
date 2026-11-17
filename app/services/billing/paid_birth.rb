@@ -85,7 +85,6 @@ module Billing
       # and after earlier orders are settled, and never inferred again.
       CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
-        refuse_second_first_bill!(account, creator)
         # Decided here, under the lock, after earlier orders are settled: the
         # account's first catalogue resident is its plan's own (Included).
         Checkout.release_expired!(account, client: @client)
@@ -97,6 +96,7 @@ module Billing
         end
 
         # A first bill: the plan comes on it with its included resident.
+        refuse_second_first_bill!(account, creator)
         plan = offer.included? ? account.plan_to_pay_for : nil
         raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?
 
@@ -142,6 +142,9 @@ module Billing
 
       order = CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
+        # Re-checked under the lock: a bill another person's start opened
+        # meanwhile makes this not a first bill.
+        raise Refused, "This account already has a bill; the free trial is for a first resident." if Reconcile.applies?(account)
         refuse_second_first_bill!(account, creator)
         customer = BillingCustomer.for!(account, client: @client)
         Checkout.release_expired!(account, client: @client)
@@ -335,17 +338,12 @@ module Billing
     # replaced (its subscription cancelled). An earlier paid one is never
     # replaced: it is completed, and the new request is refused, so nobody
     # pays twice for one intention.
-    # One first bill per account (A's leftover): settle_earlier! settles only
-    # this person's earlier orders, so another member's first bill, opened and
-    # not yet paid, would otherwise sit beside a second subscription. Called
-    # under the account's lock, so two starts in the same moment are taken in
-    # turn and the second sees the first's order.
+    # One first bill per account (FirstBill): settle_earlier! settles only
+    # this person's earlier orders; anyone else's first bill still waiting,
+    # or an open Checkout, refuses this one. Under the account's lock.
     def refuse_second_first_bill!(account, creator)
-      waiting = ResidentBirthOrder.pending.where(account: account).where.not(kind: "item").where.not(creator: creator)
-      return unless waiting.exists?
-
-      raise Refused, "Someone in this account has already started its first bill, and it isn't paid yet. " \
-                     "Once it is paid, add this resident to that bill; if it isn't, it lapses and you can start again."
+      Checkout.release_expired!(account, client: @client)
+      FirstBill.refuse_if_waiting!(account, error: Refused, except_creator: creator)
     end
 
     def settle_earlier!(account, creator)

@@ -35,7 +35,7 @@ class Billing::OneFirstBillTest < ActiveSupport::TestCase
     assert order.pending?
     assert_equal 1, subscriptions.size
     error = assert_raises(Billing::PaidBirth::Refused) { start!(@other, "Bea") }
-    assert_match(/already started its first bill/, error.message)
+    assert_equal Billing::FirstBill::WAITING, error.message
     assert_equal 1, subscriptions.size, "no second subscription"
   end
 
@@ -46,7 +46,35 @@ class Billing::OneFirstBillTest < ActiveSupport::TestCase
         attributes: { name: "Bea", system_prompt: "", model_id: "openrouter/auto" },
         success_url: "https://house.test/ok", cancel_url: "https://house.test/no")
     end
-    assert_match(/already started its first bill/, error.message)
+    assert_equal Billing::FirstBill::WAITING, error.message
+  end
+
+  test "another person's order paid but not yet born (failed) refuses a first bill too" do
+    order, = start!(@owner, "Aria")
+    order.update_columns(state: "failed")
+    assert_raises(Billing::PaidBirth::Refused) { start!(@other, "Bea") }
+    assert_equal 1, subscriptions.size
+  end
+
+  # A Checkout's url, with the lock as checkout_test runs it under fixture
+  # transactions (the lock itself is CheckoutLifecycleTest's).
+  def checkout_url(agent)
+    Billing::CheckoutLock.stub(:synchronize, ->(_agent, &operation) { operation.call }) do
+      Billing::Checkout.new(agent:, tier: @tier, client: @stripe,
+        success_url: "https://house.test/ok", cancel_url: "https://house.test/no").url
+    end
+  end
+
+  test "a Checkout for a resident already here is refused while someone's first bill waits" do
+    start!(@owner, "Aria")
+    error = assert_raises(Billing::AlreadySubscribed) { checkout_url(agents(:code_reviewer)) }
+    assert_equal Billing::FirstBill::WAITING, error.message
+  end
+
+  test "an open Checkout refuses a paid creation's first bill" do
+    assert checkout_url(agents(:code_reviewer))
+    error = assert_raises(Billing::PaidBirth::Refused) { start!(@owner, "Aria") }
+    assert_equal Billing::FirstBill::WAITING, error.message
   end
 
   # Negative control: the same person starting again replaces their own order
