@@ -72,8 +72,8 @@ class AboutSheetTest < ActiveSupport::TestCase
     assert_includes text, "Each account gets $10 a month of house-model use, shared by its residents at the standard price. " \
       "Residents hosted at cost don't draw on it."
     assert_includes text, "Free for 14 days, no card asked for: the first resident of a new account, small, once per account."
-    assert_includes text, "Partners and Colleagues are not part of the free days: their $20 or $50 a month needs a card, " \
-      "and can be added once the free days are over."
+    assert_includes text, "Partners and Colleagues aren't part of the free days: one already held is charged as usual, " \
+      "and one can't be added while they run."
     refute_match(/never free/i, text)
     assert_includes text, "plus VAT where it applies"
     refute_includes text, "$0", "Companions is never shown as free"
@@ -87,7 +87,7 @@ class AboutSheetTest < ActiveSupport::TestCase
     text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"), free_trial: false)
     assert_includes text, "Plans are open."
     assert_includes text, "$9.99 a month including one small resident."
-    refute_match(/free for 14 days|free 14 days|not part of the free days|\btrial\b/i, text)
+    refute_match(/free for 14 days|free 14 days|part of the free days|\btrial\b/i, text)
 
     Setting.instance.update!(free_trial_enabled: false)
     refute_match(/free for 14 days/i, sheet(billing_open: true, tiers: priced("conversation", "life", "work")))

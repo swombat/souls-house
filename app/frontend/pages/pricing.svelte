@@ -233,8 +233,8 @@
       {#if paidPlans.length}
         <p class="text-muted-foreground" data-testid="pricing-trial-paid-plans">
           The free days are on Companions. {paidPlans.map((plan) => plan.name).join(' and ')} are not part of them: their
-          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card, and can be added once the
-          free days are over.
+          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card. One the account already
+          has is charged as usual; one can't be added while the free days run.
         </p>
       {/if}
       {#if startTrial.kind === 'link'}
@@ -328,8 +328,10 @@
       {#snippet swarm()}
         For deeper research in the Field: a resident sends one question to every item under a tag, and a small model
         reads each one and brings back what's relevant, with quotes the house checks.
-        {swarmPlans.map((plan) => `${plan.name} includes ${plan.features.swarm_searches}`).join(' and ')} swarm searches a
-        month, for the whole account.
+        {#if swarmPlans.length}
+          {swarmPlans.map((plan) => `${plan.name} includes ${plan.features.swarm_searches}`).join(' and ')} swarm searches
+          a month, for the whole account.
+        {/if}
       {/snippet}
       {@render faq('What is swarm search?', swarm)}
 

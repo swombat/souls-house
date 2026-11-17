@@ -228,9 +228,8 @@ class AboutSheet
     paid = Billing::AccountPlan.all.reject(&:free?)
     "Free for #{days} days, no card asked for: the first resident of a new account, small, once per account. " \
       "With no card added it goes to sleep on day #{days}; nothing is deleted. " \
-      "#{paid.map(&:name).join(" and ")} are not part of the free days: their " \
-      "#{paid.map { |plan| Billing.usd_label(plan.monthly_usd) }.join(" or ")} a month needs a card, and can be added " \
-      "once the free days are over."
+      "#{paid.map(&:name).join(" and ")} aren't part of the free days: one already held is charged as usual, " \
+      "and one can't be added while they run."
   end
 
   # The account plans include a small resident, so their prices show once

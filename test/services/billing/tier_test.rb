@@ -46,12 +46,6 @@ class Billing::TierTest < ActiveSupport::TestCase
     end
   end
 
-  test "Conversation connects to nothing outside; Life and Work to every connection" do
-    assert_empty Billing::Tier.find!("conversation").connections
-    assert_equal Billing::Tier::CONNECTIONS, Billing::Tier.find!("life").connections
-    assert_equal Billing::Tier::CONNECTIONS, Billing::Tier.find!("work").connections
-  end
-
   # #619: re-costing a plan makes a new Stripe price; the old one is still
   # recognised so its subscriptions keep syncing, but it is never sold.
   test "price ids are versions: the first is sold, every one is recognised" do

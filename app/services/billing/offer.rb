@@ -37,7 +37,7 @@ module Billing
     # The account's monthly house-model allowance a resident bought at this
     # rate may draw on, shared with the account's other standard-rate
     # residents. At cost draws on none.
-    def allowance_usd = standard? ? tier.allowance_usd : BigDecimal("0")
+    def allowance_usd = standard? ? Tier::ACCOUNT_ALLOWANCE_USD : BigDecimal("0")
 
     # Stripe price ids differ between test and live mode, so they are
     # configuration. An offer may have several, current first: re-costing

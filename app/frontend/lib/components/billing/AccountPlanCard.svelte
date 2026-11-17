@@ -104,8 +104,9 @@
             The new price starts today. Stripe puts the difference for the rest of this period on the next invoice.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, on top of the
-            residents. It is charged from today{trialShown ? ', is not part of the free days,' : ''} and needs a card:
-            Stripe asks for one.
+            residents. It is charged from today and needs a card: Stripe asks for one.{trialShown
+              ? " It isn't part of the free days, and can't be added while a resident's free days run."
+              : ''}
           {/if}
         </p>
       </div>

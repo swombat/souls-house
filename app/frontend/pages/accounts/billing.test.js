@@ -222,7 +222,7 @@ describe('account plan and the free 14 days', () => {
     expect(screen.getByTestId('resident-trial')).toHaveTextContent(
       'Add a card from Manage billing to keep Aria awake after 24 Nov 2026'
     );
-    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("is not part of the free days");
+    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("can't be added while a resident's free days run");
     expect(screen.queryByRole('button', { name: /^Move to (Medium|Large)/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Manage billing' }).length).toBeGreaterThan(0);
   });

@@ -1,6 +1,8 @@
 <script>
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Switch } from '$lib/components/shadcn/switch';
+  import { page } from '@inertiajs/svelte';
+  import { billingNumbers } from '$lib/billing-numbers';
 
   let { form, status = {} } = $props();
 </script>
@@ -31,7 +33,7 @@
       <span class="font-medium">Offer the free trial</span>
     </label>
     <p class="text-sm text-muted-foreground">
-      An account that pays for its residents can have one small resident free for 14 days, once, without a card. With no
+      An account that pays for its residents can have one small resident free for {billingNumbers($page.props).trialDays} days, once, without a card. With no
       card by then the resident goes to sleep; nothing is deleted.
     </p>
 

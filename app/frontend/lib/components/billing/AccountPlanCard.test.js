@@ -51,7 +51,7 @@ test('the default plan: Companions, with both paid plans offered and their charg
 
   const terms = screen.getByTestId('account-plan-terms');
   expect(terms).toHaveTextContent('Partners is $20 a month + VAT; Colleagues is $50 a month + VAT');
-  expect(terms).toHaveTextContent("charged from today, is not part of the free days, and needs a card");
+  expect(terms).toHaveTextContent("It isn't part of the free days, and can't be added while a resident's free days run.");
   expect(terms).toHaveTextContent('needs a card');
 
   await fireEvent.click(screen.getByRole('button', { name: 'Move to Partners · $20 a month' }));

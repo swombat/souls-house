@@ -89,7 +89,7 @@ test('residents by size, then model use, then the free 14 days, which the paid p
   const trial = screen.getByTestId('pricing-trial');
   expect(trial).toHaveTextContent('Free for 14 days, no card asked for');
   expect(screen.getByTestId('pricing-trial-paid-plans')).toHaveTextContent(
-    'Partners and Colleagues are not part of them: their $20 or $50 a month needs a card, and can be added once the free days are over.'
+    "Partners and Colleagues are not part of them: their $20 or $50 a month needs a card. One the account already has is charged as usual; one can't be added while the free days run."
   );
   expect(document.body).not.toHaveTextContent(/never free/i);
 });
