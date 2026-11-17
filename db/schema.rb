@@ -80,7 +80,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
     t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
-    t.check_constraint "plan::text = ANY (ARRAY['partners'::character varying::text, 'colleagues'::character varying::text])", name: "account_subscriptions_plan_paid"
+    t.check_constraint "plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "accounts", force: :cascade do |t|
@@ -126,6 +126,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.string "speech_engine", default: "phonon", null: false
     t.text "eleven_labs_api_key"
     t.string "granted_plan"
+    t.string "chosen_plan"
     t.datetime "trial_started_at"
     t.boolean "plan_offer_enabled", default: false, null: false
     t.boolean "show_chat_codes", default: false, null: false
@@ -133,6 +134,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
+    t.check_constraint "chosen_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_chosen_plan_known"
     t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_granted_plan_known"
   end
 
@@ -2585,6 +2587,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.jsonb "item_quote"
     t.datetime "item_submitted_at"
     t.bigint "bill_change_id"
+    t.string "plan"
+    t.string "plan_stripe_price_id"
     t.index ["bill_change_id"], name: "index_resident_birth_orders_on_bill_change_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('born'::character varying)::text, ('failed'::character varying)::text])))"
@@ -2597,7 +2601,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
@@ -2623,7 +2627,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2708,7 +2712,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_160000) do
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|

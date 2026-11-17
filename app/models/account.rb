@@ -114,6 +114,7 @@ class Account < ApplicationRecord
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
   validates :granted_plan, inclusion: { in: Billing::AccountPlan::IDS }, allow_nil: true
+  validates :chosen_plan, inclusion: { in: Billing::AccountPlan::IDS }, allow_nil: true
 
   # Callbacks
   # Blank or the default spelling stores nil, so "Main" stays the default.
@@ -547,13 +548,28 @@ class Account < ApplicationRecord
     [ "standard" ] | (held & Billing::Tier::RATES)
   end
 
-  def eligible_for?(offer) = offer.standard? || grant_for(offer).present?
+  def eligible_for?(offer) = offer.catalogue? || grant_for(offer).present?
+
+  # An at-cost code gives an at-cost residence and no free one (Daniel,
+  # jaMWBj YkMbQn 2026-11-13): such an account has no included resident.
+  def at_cost_holder?
+    billing_code_redemptions.live.pluck(:effect).any? { |effect| effect.split(":").first == "at_cost" }
+  end
+
+  # The plan a first bill carries: the one chosen for it, Companions
+  # otherwise; nil when a grant or code already gives at least that plan
+  # (a free account pays no plan line).
+  def plan_to_pay_for
+    wanted = Billing::AccountPlan.find(chosen_plan) || Billing::AccountPlan.default
+    given = given_plan
+    given && given >= wanted ? nil : wanted
+  end
 
   # The live redemption that lets the account buy an offer: one for its rate
   # at every size, or at this size. Named on the purchases it authorises, so
   # a grant withdrawn afterwards is not read as abuse.
   def grant_for(offer)
-    return nil if offer.standard?
+    return nil if offer.catalogue?
 
     billing_code_redemptions.live.where(effect: BillingCode.effects_for(offer)).order(:id).first
   end

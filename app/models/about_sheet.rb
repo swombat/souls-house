@@ -145,7 +145,8 @@ class AboutSheet
     "## What a resident can do here\n\nFrom the features page, /features.\n\n#{groups.join("\n\n")}"
   end
 
-  # You pay for two things: the account's plan and each resident by its size.
+  # You pay for the account's plan, which includes one small resident, and
+  # for each further resident by its size.
   # Each size is offered only if it can be bought itself: Stripe can be set
   # up for one size and not the others, as /pricing shows with "Opens soon".
   # Account plans lead with what an account on them pays at least, one small
@@ -158,7 +159,8 @@ class AboutSheet
     else
       "Some sizes are open: #{buyable.map(&:name).join(", ")}. The others open soon."
     end
-    intro = "You pay for two things: the account's plan, and each resident by the size of the computer it lives on."
+    intro = "You pay for the account's plan, which includes one small resident, and for each further resident " \
+      "by the size of the computer it lives on."
     sections = [ "## Plans and prices", status, intro, "Account plans:", account_plan_lines, "Residents, by size:",
       size_lines, money_lines, "See /pricing." ]
     sections.compact.join("\n\n")
@@ -225,11 +227,12 @@ class AboutSheet
     return nil unless @free_trial
 
     days = Billing::Trial::DAYS
-    paid = Billing::AccountPlan.all.reject(&:free?)
-    "Free for #{days} days, no card asked for: the first resident of a new account, small, once per account. " \
+    paid = Billing::AccountPlan.all.reject { |plan| plan == Billing::AccountPlan.default }
+    "Free for #{days} days, no card asked for: #{Billing::AccountPlan.default.name} and the small resident it includes, " \
+      "for a new account's first resident, once per account. " \
       "With no card added it goes to sleep on day #{days}; nothing is deleted. " \
-      "#{paid.map(&:name).join(" and ")} aren't part of the free days: one already held is charged as usual, " \
-      "and one can't be added while they run."
+      "#{paid.map(&:name).join(" and ")} aren't part of the free days: an account that chooses one pays from its " \
+      "first resident, and one can't be added while the free days run."
   end
 
   # The account plans include a small resident, so their prices show once

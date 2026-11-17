@@ -42,6 +42,13 @@ module Billing
       ResidentSubscription.live.where(account:).exists? || AccountSubscription.live.where(account:).exists?
     end
 
+    # The op that puts a resident already in the account onto its bill at
+    # this size: at the included rate when it is the plan's own resident
+    # (Billing::Included).
+    def self.add_ops(account, agent, offer)
+      [ { op: "add", agent_id: agent.id, price: Included.offer_for(account, offer).price_id } ]
+    end
+
     def initialize(account:, client: Billing.client, now: Time.current)
       @account = account
       @client = client
@@ -52,6 +59,7 @@ module Billing
       ops = ops.map { |op| op.to_h.stringify_keys.compact }
       CheckoutLock.synchronize_residents(@account) do
         settle_earlier!
+        ops = with_successor(ops)
         parent = parent!(ops)
         base = BillSync.remote_lines(parent, client: @client)
         raise NotReady, "#{DRIFTED} Contact #{Billing.contact_email}." unless base == BillSync.house_lines(parent.id)
@@ -69,7 +77,10 @@ module Billing
     def propose_end(agent, by: nil)
       row = ResidentSubscription.live.find_by(agent:, account: @account) ||
         raise(Refused, "#{agent.name} has no plan on this account's bill.")
-      alone = BillSync.house_lines(row.stripe_subscription_id).values.sum == 1
+      # Alone: no other resident on the bill. Its plan line, if any, goes
+      # with the bill.
+      alone = !ResidentSubscription.live.where(stripe_subscription_id: row.stripe_subscription_id)
+        .where.not(id: row.id).exists?
       propose([ alone ? { op: "end_bill", agent_id: agent.id } : { op: "end", agent_id: agent.id } ], by:)
     end
 
@@ -139,6 +150,30 @@ module Billing
       change
     end
 
+    # The plan includes its resident, so it never stays on a bill without
+    # one: when the included resident ends, the oldest standard-rate
+    # resident left becomes the included one (a promote op), or, with none,
+    # the plan line leaves too (a plan op with no price). Worked out once,
+    # here, and stored on the change, so a replay judges the same ops.
+    def with_successor(ops)
+      ends = ops.select { |op| op["op"] == "end" }
+      return ops if ends.empty? || ops.any? { |op| op["op"].in?(%w[promote plan]) }
+
+      ends.each do |op|
+        row = row!(op)
+        next unless row.rate == "included"
+
+        successor = Included.successor(row.stripe_subscription_id, row.agent_id)
+        if successor
+          ops += [ { "op" => "promote", "agent_id" => successor.agent_id,
+                     "price" => successor.offer.tier.offer("included").price_id } ]
+        elsif AccountSubscription.live.exists?(stripe_subscription_id: row.stripe_subscription_id)
+          ops += [ { "op" => "plan" } ]
+        end
+      end
+      ops
+    end
+
     # The one subscription every op is about, brought in first.
     def parent!(ops)
       ids = ops.map { |op| subscription_of(op) }.uniq
@@ -153,7 +188,7 @@ module Billing
     end
 
     def subscription_of(op)
-      if op["op"].in?(%w[end resize end_bill keep_bill]) && op["agent_id"]
+      if op["op"].in?(%w[end resize promote end_bill keep_bill]) && op["agent_id"]
         return row!(op).stripe_subscription_id
       end
 
@@ -211,6 +246,14 @@ module Billing
           end
           lines[row.stripe_price_id] -= 1
           lines[op["price"]] += 1
+        when "promote"
+          row = row!(op)
+          offer = Offer.for_price(op["price"])
+          unless row.rate == "standard" && offer&.included? && offer.price_id == op["price"] && offer.tier.id == row.tier
+            raise Refused, "That resident can't become the plan's included one."
+          end
+          lines[row.stripe_price_id] -= 1
+          lines[op["price"]] += 1
         when "plan"
           current = AccountSubscription.live.find_by(stripe_subscription_id: parent.id)
           plan = op["price"].presence && AccountPlan.for_price(op["price"])
@@ -225,6 +268,13 @@ module Billing
 
           lines[current.stripe_price_id] -= 1 if current
           lines[op["price"]] += 1 if plan
+          if plan && !current && ops.none? { |other| other["op"].in?(%w[add birth]) }
+            raise Refused, "A plan is bought with the resident it includes."
+          end
+          # The plan leaves a bill only with its included resident.
+          if !plan && current && ops.none? { |other| other["op"] == "end" && row!(other).rate == "included" }
+            raise Refused, "The plan stays while its included resident is on the bill."
+          end
         end
       end
       lines = lines.select { |_price, quantity| quantity.positive? }
@@ -247,9 +297,10 @@ module Billing
 
       agent = @account.agents.find(op.fetch("agent_id"))
       raise AlreadySubscribed, "#{agent.name} already has a plan." if ResidentSubscription.live.exists?(agent:)
-      unless offer.standard? || @account.grant_for(offer)
+      unless offer.catalogue? || @account.grant_for(offer)
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
       end
+      included!(offer)
       if offer.at_cost? && HouseInference::Offering.find(agent.model_id.to_s)
         raise NotEligible, "At cost includes no house-model allowance. Choose a model on your own subscription " \
           "or key in the resident's settings first."
@@ -268,10 +319,21 @@ module Billing
       unless order.offer.purchasable? && order.offer.price_id == op["price"]
         raise NotConfigured, "That plan has no Stripe price configured"
       end
-      unless order.offer.standard? || @account.grant_for(order.offer)
+      unless order.offer.catalogue? || @account.grant_for(order.offer)
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
       end
+      included!(order.offer, except_order: order)
       op["price"]
+    end
+
+    # A catalogue resident is at the rate Billing::Included gives it: the
+    # included one only when the account has none, standard otherwise.
+    def included!(offer, except_order: nil)
+      return unless offer.catalogue?
+      return if Included.offer_for(@account, offer, except_order:) == offer
+
+      raise Refused, offer.included? ? "This account already has its plan's included resident." :
+        "This resident is the plan's included one; it is sold at the included price."
     end
 
     # Whether the subscription is ending because the house ended it: its last

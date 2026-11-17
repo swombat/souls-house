@@ -1,7 +1,9 @@
 # The server-owned catalogue of resident sizes. A Stripe price that isn't
-# here is refused. Every resident is paid for by its size; what the account
-# can do (members, swarm searches, sub-agents) is its plan, a separate charge
-# (Billing::AccountPlan). The ids are the original plan names and stay: they
+# here is refused. An account pays for its plan (Billing::AccountPlan), which
+# includes one Small resident; that resident is on the bill at the included
+# rate (its size less a Small), and every further resident at its size
+# (Daniel, jaMWBj jRyMoO/ebamzw 2026-11-13, ePoEyY JygPKB 2026-11-14). The
+# ids are the original plan names and stay: they
 # are in the database, Stripe metadata and the credentials keys. People see
 # the size: Small, Medium, Large (2026-11-10).
 #
@@ -51,8 +53,15 @@ module Billing
     # and at_cost_hetzner"). "at_cost" is the Boat rate: it was the only one
     # until then, and the name stays because it is in the database, Stripe
     # metadata, billing-code effects and the credentials keys.
-    RATES = %w[standard at_cost at_cost_hetzner].freeze
+    #
+    # "included" is the plan's own resident: the size less a Small, so a
+    # Small is $0 and a bigger one costs the difference. The house puts a
+    # resident on it, never the buyer (Billing::Included).
+    RATES = %w[standard at_cost at_cost_hetzner included].freeze
     AT_COST_RATES = %w[at_cost at_cost_hetzner].freeze
+    # Catalogue-priced rates: no grant needed, and they draw on the
+    # account's house-model allowance.
+    CATALOGUE_RATES = %w[standard included].freeze
 
     # The rates a buyer chooses between. Which machine a resident lives on is
     # a hosting fact, not a choice, so the Hetzner rate is put on a

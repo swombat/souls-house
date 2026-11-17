@@ -28,7 +28,7 @@
 class BillChange < ApplicationRecord
 
   STATES = %w[proposed submitted applied abandoned].freeze
-  OPS = %w[add birth end resize plan end_bill keep_bill].freeze
+  OPS = %w[add birth end resize promote plan end_bill keep_bill].freeze
 
   belongs_to :account
   belongs_to :requested_by, class_name: "User", optional: true

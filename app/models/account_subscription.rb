@@ -12,7 +12,7 @@ class AccountSubscription < ApplicationRecord
 
   validates :stripe_subscription_id, presence: true, uniqueness: true
   validates :stripe_status, presence: true
-  validates :plan, inclusion: { in: ->(_) { Billing::AccountPlan.all.reject(&:free?).map(&:id) } }
+  validates :plan, inclusion: { in: ->(_) { Billing::AccountPlan::IDS } }
 
   scope :live, -> { where(stripe_status: LIVE_STATUSES) }
 

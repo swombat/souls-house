@@ -42,9 +42,11 @@ class ResidentBirthOrder < ApplicationRecord
   validates :tier, inclusion: { in: ->(_) { Billing::Tier.all.map(&:id) } }
   validates :rate, inclusion: { in: Billing::Tier::RATES }
   validates :kind, inclusion: { in: %w[subscription item] }
-  # The free trial is a small resident at the standard rate (Billing::Trial).
+  # The free trial is Companions and the small resident it includes
+  # (Billing::Trial), at a catalogue rate: the included one.
   validates :tier, inclusion: { in: [ Billing::Trial::TIER ] }, if: :trial?
-  validates :rate, inclusion: { in: [ Billing::Trial::RATE ] }, if: :trial?
+  validates :rate, inclusion: { in: Billing::Tier::CATALOGUE_RATES }, if: :trial?
+  validates :plan, inclusion: { in: Billing::AccountPlan::IDS }, allow_nil: true
 
   scope :pending, -> { where(state: "pending") }
   scope :expired, ->(now = Time.current) { pending.where(expires_at: ..now) }

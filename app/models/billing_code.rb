@@ -101,7 +101,7 @@ class BillingCode < ApplicationRecord
     paid = account.account_subscriptions.where.not(stripe_status: PLAN_OVER).order(:id).last
     if paid && paid.plan_record <= plan
       return "This code gives the #{plan.name} plan free, and this account is paying for #{paid.plan_record.name}. " \
-        "Move the account to #{Billing::AccountPlan.default.name} in Billing first, then use the code, so nothing is charged twice."
+        "Write to #{Billing.contact_email} to move it onto the code, so nothing is charged twice."
     end
     if AccountPlanCheckoutAttempt.unresolved.exists?(account:) ||
         BillChange.submitted.where(account:).any? { |change| change.ops.any? { |op| op["op"] == "plan" } }

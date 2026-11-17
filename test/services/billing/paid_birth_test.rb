@@ -19,6 +19,13 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
 
   def paid_birth = Billing::PaidBirth.new(client: @stripe)
 
+  # An order as a deploy before 17 Nov opened it: one standard line, no plan.
+  def legacy_order!(description: "Small hosting for Aria")
+    ResidentBirthOrder.create!(account: @account, creator: @owner, tier: "conversation", rate: "standard",
+      stripe_price_id: CONVERSATION_PRICE, stripe_description: description, stripe_payment_method_id: "pm_visa",
+      birth_attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" }, open_beginning: false)
+  end
+
   def start!(**overrides)
     paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier,
       attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" }.merge(overrides))
@@ -37,7 +44,14 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_equal "Aria", order.resident_name
     params, opts = @stripe.created_subscriptions.sole
     assert_equal "cus_1", params[:customer]
-    assert_equal [ { price: CONVERSATION_PRICE } ], params[:items]
+    # The plan includes its resident: the first bill is the plan and that
+    # resident at the included price (Daniel, jaMWBj jRyMoO 2026-11-13).
+    assert_equal [ { price: COMPANIONS_PRICE }, { price: CONVERSATION_INCLUDED_PRICE } ], params[:items]
+    assert_equal [ "companions", COMPANIONS_PRICE ], [ order.plan, order.plan_stripe_price_id ]
+    assert_equal [ "included", CONVERSATION_INCLUDED_PRICE ], [ order.rate, order.stripe_price_id ]
+    assert_equal "companions", params[:metadata][:plan]
+    assert_equal "included", params[:metadata][:rate]
+    assert_equal "Companions plan, including Aria (Small)", params[:description]
     assert_equal "pm_visa", params[:default_payment_method]
     assert_equal "default_incomplete", params[:payment_behavior]
     assert_equal({ enabled: true }, params[:automatic_tax])
@@ -45,6 +59,59 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     assert_nil params[:metadata][:agent_id]
     assert_equal "souls-house-birth-order-#{order.reference}", opts[:idempotency_key]
     assert_match(/\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/, order.reference)
+  end
+
+  test "the first bill carries the plan the account chose, its resident included at the size less a Small" do
+    @account.update!(chosen_plan: "partners")
+    @tier = Billing::Tier.find!("life")
+    order, = start!
+    params, = @stripe.created_subscriptions.sole
+    assert_equal [ { price: PARTNERS_PRICE }, { price: LIFE_INCLUDED_PRICE } ], params[:items]
+    assert_equal BigDecimal("30"), order.offer.monthly_usd, "a Medium as the included resident costs the difference"
+    assert_equal "Partners plan, including Aria (Medium)", params[:description]
+  end
+
+  test "a given plan is a free account: no plan line, and its Small is free" do
+    # Daniel, jaMWBj YkMbQn 2026-11-13: "a discount code that gives people a
+    # free account ... for each account size".
+    @account.update!(granted_plan: "partners", chosen_plan: "partners")
+    order, = start!
+    params, = @stripe.created_subscriptions.sole
+    assert_equal [ { price: CONVERSATION_INCLUDED_PRICE } ], params[:items]
+    assert_nil order.plan
+    assert_nil params[:metadata][:plan]
+    assert_equal "included", order.rate
+
+    # Negative control: a lower grant than the plan chosen still pays for the
+    # plan chosen.
+    ResidentBirthOrder.delete_all
+    @stripe = FakeStripe.new.tap do |stripe|
+      stripe.put_payment_method("pm_visa")
+      stripe.put_customer("cus_1", default_payment_method: "pm_visa")
+    end
+    @account.update!(granted_plan: "companions", chosen_plan: "colleagues")
+    order, = start!
+    assert_equal "colleagues", order.plan
+  end
+
+  test "an at-cost code gives no free residence: a Small bought at the catalogue price is standard, with no plan line" do
+    # Daniel, jaMWBj YkMbQn 2026-11-13: "an at-cost residence, no free residence".
+    BillingCode.redeem!(code: BillingCode.create!(code: "ATCOST", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    order, = start!
+    params, = @stripe.created_subscriptions.sole
+    assert_equal [ { price: CONVERSATION_PRICE } ], params[:items]
+    assert_equal "standard", order.rate
+    assert_nil order.plan
+  end
+
+  test "the buyer can't ask for the included rate; the house decides it" do
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "included",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    end
+    assert_match(/set by the house/, error.message)
+    assert_equal 0, @stripe.created_subscriptions.size
   end
 
   test "only an account that pays, its owner, a card and a complete draft can start" do
@@ -360,15 +427,17 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     @stripe.fail_next_subscription_create(created: true)
     assert_raises(Billing::PaidBirth::Uncertain) { start! }
     order = ResidentBirthOrder.sole
-    assert_equal CONVERSATION_PRICE, order.stripe_price_id
-    assert_equal "standard", order.rate
+    assert_equal CONVERSATION_INCLUDED_PRICE, order.stripe_price_id
+    assert_equal "included", order.rate
 
-    ENV["STRIPE_PRICE_CONVERSATION"] = "price_test_conversation_v2,#{CONVERSATION_PRICE}"
-    assert_equal "price_test_conversation_v2", @tier.price_id
+    ENV["STRIPE_PRICE_CONVERSATION_INCLUDED"] = "price_test_conversation_included_v2,#{CONVERSATION_INCLUDED_PRICE}"
+    ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"] = "price_test_account_companions_v2,#{COMPANIONS_PRICE}"
+    assert_equal "price_test_conversation_included_v2", @tier.offer("included").price_id
     paid_birth.payment(order)
 
     assert_equal 1, @stripe.created_subscriptions.size
-    assert_equal [ { price: CONVERSATION_PRICE } ], @stripe.created_subscriptions.sole.first[:items]
+    assert_equal [ { price: COMPANIONS_PRICE }, { price: CONVERSATION_INCLUDED_PRICE } ],
+      @stripe.created_subscriptions.sole.first[:items]
   end
 
   test "an at-cost order opens the at-cost price and says so to Stripe" do
@@ -390,9 +459,9 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
   # existed is replayed by this one under the same idempotency key, so a
   # standard order's payload must be exactly what that deploy sent.
   test "a standard order's payload is exactly the pre-rates shape, and a replay sends it again unchanged" do
+    order = legacy_order!
     @stripe.fail_next_subscription_create(created: true)
-    assert_raises(Billing::PaidBirth::Uncertain) { start! }
-    order = ResidentBirthOrder.sole
+    assert_raises(Billing::PaidBirth::Uncertain) { paid_birth.payment(order) }
     first, = @stripe.created_subscriptions.sole
     assert_equal({
       customer: "cus_1",
@@ -415,9 +484,9 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
   # order opened before then has no pinned description, and its replay must
   # send the old name byte for byte.
   test "an order from before the rename replays with its old description" do
+    order = legacy_order!
     @stripe.fail_next_subscription_create(created: true)
-    assert_raises(Billing::PaidBirth::Uncertain) { start! }
-    order = ResidentBirthOrder.sole
+    assert_raises(Billing::PaidBirth::Uncertain) { paid_birth.payment(order) }
     first, = @stripe.created_subscriptions.sole
     assert_equal "Small hosting for Aria", first[:description]
     assert_equal "Small hosting for Aria", order.stripe_description

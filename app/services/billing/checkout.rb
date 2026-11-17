@@ -22,6 +22,11 @@ module Billing
         if Reconcile.applies?(@agent.account)
           raise AlreadySubscribed, "This account already pays through one subscription; add #{@agent.name} to it from the Billing tab."
         end
+        # The account's first bill: its first catalogue resident is its
+        # plan's own, and the plan comes on the bill with it (Included).
+        @requested = @offer
+        @offer = Included.offer_for(@agent.account, @offer, except_agent: @agent) if @offer.sold?
+        @plan = @offer.included? ? @agent.account.plan_to_pay_for : nil
         entitlement = ResidentEntitlement.for_agent!(@agent)
         customer = remote { BillingCustomer.for!(@agent.account, client: @client) }
         attempt = BillingCheckoutAttempt.unresolved.find_by(agent: @agent, kind: "checkout")
@@ -42,7 +47,7 @@ module Billing
         payload = params(customer, key, grant)
         # No surrounding transaction: this write has committed when create runs.
         attempt = BillingCheckoutAttempt.create!(agent: @agent, account: @agent.account,
-          tier: @offer.tier.id, rate: @offer.rate, stripe_price_id: payload[:line_items].first[:price],
+          tier: @offer.tier.id, rate: @offer.rate, stripe_price_id: @offer.price_id,
           billing_code_redemption: grant,
           idempotency_key: key, create_params: payload)
         session = recover!(attempt)
@@ -71,9 +76,10 @@ module Billing
 
     def check_offer!
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
-      raise NotEligible, "That rate is set by the house, not bought." unless @offer.sold?
+      raise NotConfigured, "The #{@plan.name} plan has no Stripe price configured" if @plan && !@plan.purchasable?
+      raise NotEligible, "That rate is set by the house, not bought." unless (@requested || @offer).sold?
       grant = @agent.account.grant_for(@offer)
-      unless @offer.standard? || grant
+      unless @offer.catalogue? || grant
         raise NotEligible, "This account can't buy plans at that rate. Redeem your billing code first."
       end
       if @offer.at_cost? && HouseInference::Offering.find(@agent.model_id.to_s)
@@ -148,13 +154,20 @@ module Billing
     def params(customer, key, grant)
       metadata = { agent_id: @agent.id.to_s, account_id: @agent.account_id.to_s,
         tier: @offer.tier.id, checkout_attempt: key }
-      unless @offer.standard?
+      if @offer.at_cost?
         metadata.merge!(rate: @offer.rate, redemption_id: grant.id.to_s)
+      elsif @offer.included?
+        metadata[:rate] = @offer.rate
       end
+      metadata[:plan] = @plan.id if @plan
+      line_items = [ { price: @offer.price_id, quantity: 1 } ]
+      line_items.unshift({ price: @plan.price_id, quantity: 1 }) if @plan
+      description = @plan ? "#{@plan.name} plan, including #{@agent.name} (#{@offer.tier.name})" :
+        "#{@offer.name} hosting for #{@agent.name}"
       {
         mode: "subscription", customer: customer.stripe_customer_id, client_reference_id: @agent.id.to_s,
-        line_items: [ { price: @offer.price_id, quantity: 1 } ],
-        subscription_data: { metadata: metadata, description: "#{@offer.name} hosting for #{@agent.name}" },
+        line_items: line_items,
+        subscription_data: { metadata: metadata, description: description },
         metadata: metadata, automatic_tax: { enabled: true }, tax_id_collection: { enabled: true },
         billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
         success_url: @success_url, cancel_url: @cancel_url

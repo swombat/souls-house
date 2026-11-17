@@ -57,7 +57,7 @@ class Accounts::BillingsController < ApplicationController
     # An account that already pays gets one more line on its bill, quoted
     # first; otherwise Stripe's Checkout opens its first subscription.
     if Billing::Reconcile.applies?(current_account)
-      change = reconcile.propose([ { op: "add", agent_id: agent.id, price: tier.offer(rate).price_id } ], by: Current.user)
+      change = reconcile.propose(Billing::Reconcile.add_ops(current_account, agent, tier.offer(rate)), by: Current.user)
       return redirect_to account_billing_path(current_account, add: change.id)
     end
 
@@ -142,8 +142,9 @@ class Accounts::BillingsController < ApplicationController
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 
-  # An account that already pays gets its plan as a line on the same bill,
-  # quoted first; otherwise Stripe's Checkout opens a subscription for it.
+  # A plan is bought with the resident it includes, never alone. An account
+  # that pays already changes its plan line, quoted first; one that doesn't
+  # yet chooses the plan its first bill carries, and nothing is charged now.
   def account_plan_checkout
     plan = Billing::AccountPlan.find(params[:plan]) || raise(ActionController::BadRequest, "Unknown plan")
     if Billing::Reconcile.applies?(current_account)
@@ -151,15 +152,11 @@ class Accounts::BillingsController < ApplicationController
       return redirect_to account_billing_path(current_account, add: change.id)
     end
 
-    url = Billing::AccountPlanCheckout.new(
-      account: current_account,
-      plan: plan,
-      success_url: account_billing_url(current_account, checkout: "success"),
-      cancel_url: account_billing_url(current_account)
-    ).url
-    audit("start_account_plan_checkout", current_account, plan: plan.id)
-    inertia_location url
-  rescue Billing::AccountPlanCheckout::Refused, *BILL_ERRORS => error
+    current_account.update!(chosen_plan: plan.id)
+    audit("choose_account_plan", current_account, plan: plan.id)
+    redirect_to account_billing_path(current_account),
+      notice: "#{plan.name} it is. It starts with your first resident, which it includes; nothing is charged until then."
+  rescue *BILL_ERRORS => error
     redirect_to account_billing_path(current_account), alert: billing_error_message(error)
   end
 

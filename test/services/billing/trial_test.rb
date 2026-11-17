@@ -26,7 +26,7 @@ class Billing::TrialTest < ActiveSupport::TestCase
       success_url: ->(order) { "#{SUCCESS}/#{order.to_param}" }, cancel_url: CANCEL)
   end
 
-  test "the trial opens a card-optional Checkout for a small resident, without a card, creating nothing yet" do
+  test "the trial opens a card-optional Checkout for Companions and its small resident, without a card, creating nothing yet" do
     order = nil
     assert_no_difference [ "Agent.count", "ResidentSubscription.count" ] do
       order, url = start_trial!
@@ -36,7 +36,8 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert order.trial?
     assert order.pending?
     assert_equal "conversation", order.tier
-    assert_equal "standard", order.rate
+    assert_equal "included", order.rate
+    assert_equal "companions", order.plan
     assert_equal "cs_test_1", order.stripe_checkout_session_id
     assert_not_nil @account.reload.trial_started_at
     assert_empty @stripe.created_subscriptions, "a trial never opens a subscription itself"
@@ -47,11 +48,14 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert_equal "if_required", params[:payment_method_collection]
     assert_equal 14, params.dig(:subscription_data, :trial_period_days)
     assert_equal({ end_behavior: { missing_payment_method: "cancel" } }, params.dig(:subscription_data, :trial_settings))
-    assert_equal [ { price: CONVERSATION_PRICE, quantity: 1 } ], params[:line_items]
-    metadata = { birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation", trial: "1" }
+    # The trial is Companions with the Small it includes: $9.99 after 14 days.
+    assert_equal [ { price: COMPANIONS_PRICE, quantity: 1 }, { price: CONVERSATION_INCLUDED_PRICE, quantity: 1 } ],
+      params[:line_items]
+    metadata = { birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation", trial: "1",
+                 rate: "included", plan: "companions" }
     assert_equal metadata, params[:metadata]
     assert_equal metadata, params.dig(:subscription_data, :metadata)
-    assert_equal "Small hosting for Aria", params.dig(:subscription_data, :description)
+    assert_equal "Companions plan, including Aria (Small)", params.dig(:subscription_data, :description)
     assert_equal({ enabled: true }, params[:automatic_tax])
     assert_equal "required", params[:billing_address_collection]
     assert_equal "#{SUCCESS}/#{order.to_param}", params[:success_url]
@@ -71,7 +75,8 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert_equal "souls-house-birth-order-#{order.reference}", opts[:idempotency_key]
     assert_equal %i[automatic_tax customer default_payment_method description expand items metadata payment_behavior
       payment_settings].sort, params.keys.sort
-    assert_equal({ birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation" }, params[:metadata])
+    assert_equal({ birth_order: order.reference, account_id: @account.id.to_s, tier: "conversation", rate: "included",
+      plan: "companions" }, params[:metadata])
     assert_not order.trial?
     assert_nil @account.reload.trial_started_at, "a paid birth claims no trial"
     assert_empty @stripe.checkout_sessions
@@ -108,6 +113,9 @@ class Billing::TrialTest < ActiveSupport::TestCase
     assert entitlement.active?
     assert_equal BigDecimal("10"), entitlement.allowance_limit, "the trial's $10"
     assert_equal [ order.agent_id ], ResidentSubscription.where(stripe_subscription_id: "sub_trial").pluck(:agent_id)
+    assert_equal "included", subscription.rate
+    plan = AccountSubscription.find_by!(stripe_subscription_id: "sub_trial")
+    assert_equal [ "companions", COMPANIONS_PRICE, "trialing" ], [ plan.plan, plan.stripe_price_id, plan.stripe_status ]
   end
 
   test "once per account: a born trial is never offered again, to anyone" do
@@ -193,6 +201,17 @@ class Billing::TrialTest < ActiveSupport::TestCase
     @account.update!(billing_required: false)
     assert_not Billing::Trial.eligible?(@account)
     @account.update!(billing_required: true)
+
+    # The trial is Companions: an account that chose a bigger plan pays from
+    # the start, and one holding an at-cost code has no free residence.
+    @account.update!(chosen_plan: "partners")
+    assert_not Billing::Trial.eligible?(@account)
+    @account.update!(chosen_plan: "companions")
+    assert Billing::Trial.eligible?(@account), "control: choosing Companions back offers it again"
+    redemption = BillingCode.redeem!(code: BillingCode.create!(code: "ATCOST", effect: "at_cost",
+      created_by: users(:site_admin_user)).code, account: @account, by: @owner)
+    assert_not Billing::Trial.eligible?(@account.reload)
+    redemption.destroy!
 
     agent = agents(:research_assistant)
     ResidentSubscription.create!(agent: agent, account: @account, stripe_subscription_id: "sub_old", tier: "conversation",

@@ -2,12 +2,13 @@ require "test_helper"
 
 class Billing::AccountPlanTest < ActiveSupport::TestCase
 
-  test "three plans in order, with their add-on and from prices" do
+  test "three plans in order, each priced with its Small resident included" do
     plans = Billing::AccountPlan.all
     assert_equal %w[companions partners colleagues], plans.map(&:id)
     assert_equal %w[Companions Partners Colleagues], plans.map(&:name)
-    assert_equal [ 0, 20, 50 ].map { |usd| BigDecimal(usd) }, plans.map(&:monthly_usd)
-    assert_equal %w[9.99 29.99 59.99].map { |usd| BigDecimal(usd) }, plans.map(&:from_usd)
+    # Daniel, ePoEyY JygPKB 2026-11-14: "$9.99 / $29.99 / $59.99".
+    assert_equal %w[9.99 29.99 59.99].map { |usd| BigDecimal(usd) }, plans.map(&:monthly_usd)
+    assert_equal plans.map(&:monthly_usd), plans.map(&:from_usd), "the least an account on the plan pays is the plan"
     assert_equal plans, plans.reverse.sort
     assert Billing::AccountPlan.find!("companions") < Billing::AccountPlan.find!("partners")
     assert Billing::AccountPlan.find!("partners") < Billing::AccountPlan.find!("colleagues")
@@ -29,26 +30,30 @@ class Billing::AccountPlanTest < ActiveSupport::TestCase
     assert_equal "partners", Billing::AccountPlan.highest("bogus", "partners").id
   end
 
-  test "JSON leads with from_usd as a decimal string; Companions is never sold" do
+  test "JSON prices as decimal strings; Companions is sold like the others" do
+    saved = ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"]
+    ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"] = "price_env_companions"
     json = Billing::AccountPlan.find!("companions").as_json
-    assert_equal({ id: "companions", name: "Companions", monthly_usd: "0.00", from_usd: "9.99", purchasable: false,
+    assert_equal({ id: "companions", name: "Companions", monthly_usd: "9.99", from_usd: "9.99", purchasable: true,
       features: { members: "one", swarm_searches: 0, subagents: false, transcription_hours: 5 } }, json)
     assert_equal "29.99", Billing::AccountPlan.find!("partners").as_json[:from_usd]
     assert_equal "59.99", Billing::AccountPlan.find!("colleagues").as_json[:from_usd]
+  ensure
+    ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"] = saved
   end
 
-  test "Stripe prices: credentials first, then ENV, a list whose first is sold; Companions has none" do
+  test "Stripe prices: credentials first, then ENV, a list whose first is sold; Companions too" do
     saved = ENV.slice("STRIPE_PRICE_ACCOUNT_PARTNERS", "STRIPE_PRICE_ACCOUNT_COLLEAGUES", "STRIPE_PRICE_ACCOUNT_COMPANIONS")
     ENV["STRIPE_PRICE_ACCOUNT_PARTNERS"] = "price_partners_new, price_partners_old"
-    ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"] = "price_should_be_ignored"
+    ENV["STRIPE_PRICE_ACCOUNT_COMPANIONS"] = "price_env_companions"
     ENV["STRIPE_PRICE_ACCOUNT_COLLEAGUES"] = "price_env_colleagues"
     partners = Billing::AccountPlan.find!("partners")
     assert_equal %w[price_partners_new price_partners_old], partners.price_ids
     assert_equal "price_partners_new", partners.price_id
     assert partners.purchasable?
     assert_equal partners, Billing::AccountPlan.for_price("price_partners_old")
-    assert_empty Billing::AccountPlan.find!("companions").price_ids
-    assert_nil Billing::AccountPlan.for_price("price_should_be_ignored")
+    assert_equal %w[price_env_companions], Billing::AccountPlan.find!("companions").price_ids
+    assert_equal "companions", Billing::AccountPlan.for_price("price_env_companions").id
     assert_nil Billing::AccountPlan.for_price("price_nowhere")
     assert_nil Billing::AccountPlan.for_price(nil)
 

@@ -42,8 +42,8 @@ class ResidentEntitlement < ApplicationRecord
 
   scope :in_grace, -> { where(state: "grace") }
   # Residents whose paid plan draws on the account's house-model allowance:
-  # in force (active or in grace) at the standard rate.
-  scope :on_account_allowance, -> { where(source: "stripe", state: %w[active grace], rate: "standard") }
+  # in force (active or in grace) at a catalogue rate (standard or included).
+  scope :on_account_allowance, -> { where(source: "stripe", state: %w[active grace], rate: Billing::Tier::CATALOGUE_RATES) }
   scope :grace_expired, ->(now = Time.current) { in_grace.where(grace_deadline: ..now) }
 
   after_commit :schedule_grace_deadline, if: -> { saved_change_to_grace_deadline? && grace? }
@@ -144,7 +144,7 @@ class ResidentEntitlement < ApplicationRecord
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
     return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
-    return BigDecimal("0") unless rate == "standard"
+    return BigDecimal("0") unless Billing::Tier::CATALOGUE_RATES.include?(rate)
 
     trial_started_at = Billing::Trial.allowance_started_at(account_id)
     return Billing::Tier::ACCOUNT_ALLOWANCE_USD unless trial_started_at
@@ -241,7 +241,7 @@ class ResidentEntitlement < ApplicationRecord
 
   # When the account's free trial ends, while its allowance is the trial's.
   def trial_ends_at
-    return nil if complimentary? || rate != "standard" || !Billing::Trial.allowance_started_at(account_id)
+    return nil if complimentary? || !Billing::Tier::CATALOGUE_RATES.include?(rate) || !Billing::Trial.allowance_started_at(account_id)
 
     ResidentSubscription.where(account_id: account_id, stripe_status: "trialing").minimum(:trial_end)
   end

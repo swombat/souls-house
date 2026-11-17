@@ -30,8 +30,12 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "change_plan", user: @user)
 
     get account_billing_path(@account)
-    assert_equal %w[conversation conversation_at_cost conversation_at_cost_hetzner life life_at_cost life_at_cost_hetzner
-      work work_at_cost work_at_cost_hetzner], inertia_shared_props["change_offers"].map { |offer| offer["id"] }
+    # Every size at every rate, the included one too: a resident moves
+    # between sizes at its own rate, so the plan's own resident is offered
+    # the other sizes at the included price.
+    assert_equal %w[conversation conversation_at_cost conversation_at_cost_hetzner conversation_included life life_at_cost
+      life_at_cost_hetzner life_included work work_at_cost work_at_cost_hetzner work_included],
+      inertia_shared_props["change_offers"].map { |offer| offer["id"] }
 
     sign_in(users(:regular_user))
     with_stripe do
@@ -99,26 +103,23 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
       inertia_shared_props["account_plan"])
   end
 
-  test "the owner buys an account plan through Checkout, audited; a member can't" do
+  test "with no bill yet the owner chooses the plan the first bill carries, audited and charging nothing; a member can't" do
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
-    with_stripe do
-      post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }, headers: { "X-Inertia" => "true" }
-    end
-    assert_response :conflict
-    assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", response.headers["X-Inertia-Location"]
-    params, = @stripe.checkout_sessions.sole
-    assert_equal "account_plan", params.dig(:metadata, :kind)
-    assert AuditLog.exists?(action: "start_account_plan_checkout", user: @user)
-
-    with_stripe do
-      post account_plan_checkout_account_billing_path(@account), params: { plan: "companions" }
-    end
+    with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" } }
     assert_redirected_to account_billing_path(@account)
-    assert_match(/Companions comes with every account/, flash[:alert])
+    assert_match(/Partners it is\. It starts with your first resident/, flash[:notice])
+    assert_equal "partners", @account.reload.chosen_plan
+    assert_equal "companions", @account.plan.id, "nothing is given or charged before the first resident"
+    assert_empty @stripe.checkout_sessions, "a plan is never bought alone"
+    assert_empty @stripe.created_subscriptions
+    assert AuditLog.exists?(action: "choose_account_plan", user: @user)
+
+    with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "companions" } }
+    assert_equal "companions", @account.reload.chosen_plan
 
     sign_in(users(:regular_user))
     with_stripe { post account_plan_checkout_account_billing_path(@account), params: { plan: "colleagues" } }
-    assert_equal 1, @stripe.checkout_sessions.size, "only the owner pays"
+    assert_equal "companions", @account.reload.chosen_plan, "only the owner chooses"
   end
 
   test "the owner moves the account between Partners and Colleagues, audited" do
@@ -166,7 +167,9 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "https://checkout.stripe.com/c/pay/cs_test_1", response.headers["X-Inertia-Location"]
     params, opts = @stripe.checkout_sessions.sole
     assert_equal "subscription", params[:mode]
-    assert_equal [ { price: FakeStripe::Helpers::CONVERSATION_PRICE, quantity: 1 } ], params[:line_items]
+    # The account's first bill: its plan, and this resident as the one it includes.
+    assert_equal [ { price: FakeStripe::Helpers::COMPANIONS_PRICE, quantity: 1 },
+                   { price: FakeStripe::Helpers::CONVERSATION_INCLUDED_PRICE, quantity: 1 } ], params[:line_items]
     assert_equal @agent.id.to_s, params.dig(:subscription_data, :metadata, :agent_id)
     assert params.dig(:automatic_tax, :enabled)
     assert params.dig(:tax_id_collection, :enabled)
@@ -276,7 +279,9 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     @stripe.put_payment_method("pm_1")
     @stripe.put_customer("cus_1", default_payment_method: "pm_1")
     @stripe.put_shared_subscription(id: "sub_acct", account: @account, customer: "cus_1", status: "active",
-      items: [ { agent: @agent, price: LIFE_PRICE, id: "si_a" } ])
+      items: [ { agent: @agent, price: LIFE_INCLUDED_PRICE, id: "si_a" }, { price: COMPANIONS_PRICE, id: "si_plan" } ])
+    AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_acct", stripe_status: "active",
+      plan: "companions", stripe_price_id: COMPANIONS_PRICE)
     with_stripe do
       seed_bill!
       post account_plan_checkout_account_billing_path(@account), params: { plan: "partners" }
@@ -295,7 +300,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_match(/The Partners plan is on Partners now|next bill/, flash[:notice])
     assert_equal "partners", @account.reload.plan.id
     assert_equal [ "sub_acct" ], AccountSubscription.live.where(account: @account).pluck(:stripe_subscription_id)
-    assert_equal({ LIFE_PRICE => 1, PARTNERS_PRICE => 1 }, Billing::BillSync.house_lines("sub_acct"))
+    assert_equal({ LIFE_INCLUDED_PRICE => 1, PARTNERS_PRICE => 1 }, Billing::BillSync.house_lines("sub_acct"))
     assert AuditLog.exists?(action: "change_account_plan", user: @user)
   end
 

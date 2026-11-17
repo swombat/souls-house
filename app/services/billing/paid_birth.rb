@@ -85,16 +85,25 @@ module Billing
       # and after earlier orders are settled, and never inferred again.
       CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
+        # Decided here, under the lock, after earlier orders are settled: the
+        # account's first catalogue resident is its plan's own (Included).
+        offer = Included.offer_for(account, offer)
+        raise NotConfigured, "That plan has no Stripe price configured" unless offer.purchasable?
         if Reconcile.applies?(account)
           next [ start_item!(account: account, creator: creator, attributes: attributes, open_beginning: open_beginning,
             offer: offer), nil, nil ]
         end
 
-        # The price is pinned on the order: an uncertain create is replayed with
+        # A first bill: the plan comes on it with its included resident.
+        plan = offer.included? ? account.plan_to_pay_for : nil
+        raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?
+
+        # The prices are pinned on the order: an uncertain create is replayed with
         # the same idempotency key, so its parameters must not move when the
         # catalogue is re-costed in between (#619).
         order = ResidentBirthOrder.create!(account: account, creator: creator, tier: tier.id, rate: offer.rate,
-          stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+          stripe_price_id: offer.price_id, stripe_description: description(offer, plan, attributes[:name]),
+          plan: plan&.id, plan_stripe_price_id: plan&.price_id,
           billing_code_redemption: account.grant_for(offer),
           birth_attributes: attributes.to_h, open_beginning: open_beginning)
         order.update!(stripe_payment_method_id: payment_method.id)
@@ -122,13 +131,21 @@ module Billing
       unless Trial.unspent?(account) || ResidentBirthOrder.pending.exists?(account: account, creator: creator, trial: true)
         raise Refused, Trial::SPENT
       end
+      # A trial opens the account's first bill; an account with one adds to it.
+      raise Refused, "This account already has a bill; the free trial is for a first resident." if Reconcile.applies?(account)
 
       settle_earlier!(account, creator)
       customer = BillingCustomer.for!(account, client: @client)
       order = nil
+      offer = Included.offer_for(account, offer)
+      plan = offer.included? ? account.plan_to_pay_for : nil
+      raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?
+      raise NotConfigured, "That plan has no Stripe price configured" unless offer.purchasable?
+
       Trial.claim!(account) do
         order = ResidentBirthOrder.create!(account: account, creator: creator, tier: offer.tier.id, rate: offer.rate,
-          stripe_price_id: offer.price_id, stripe_description: "#{offer.name} hosting for #{attributes[:name]}",
+          stripe_price_id: offer.price_id, stripe_description: description(offer, plan, attributes[:name]),
+          plan: plan&.id, plan_stripe_price_id: plan&.price_id,
           birth_attributes: attributes.to_h, open_beginning: open_beginning, trial: true)
         success_url = success_url.call(order) if success_url.respond_to?(:call)
         order.update!(checkout_create_params: trial_checkout_params(order, customer, success_url, cancel_url))
@@ -244,11 +261,12 @@ module Billing
       metadata = { birth_order: order.reference, account_id: order.account_id.to_s, tier: offer.tier.id }
       unless offer.standard?
         metadata[:rate] = offer.rate
-        metadata[:redemption_id] = order.billing_code_redemption_id.to_s
+        metadata[:redemption_id] = order.billing_code_redemption_id.to_s if offer.at_cost?
       end
+      metadata[:plan] = order.plan if order.plan_stripe_price_id.present?
       subscription = @client.v1.subscriptions.create({
         customer: customer.stripe_customer_id,
-        items: [ { price: order.stripe_price_id.presence || offer.price_id } ],
+        items: order_items(order),
         default_payment_method: order.stripe_payment_method_id,
         payment_behavior: "default_incomplete",
         payment_settings: { save_default_payment_method: "on_subscription" },
@@ -264,13 +282,31 @@ module Billing
       raise Uncertain.new(order)
     end
 
+    # The first bill's lines: the plan, when the order pays for one, then the
+    # resident. An order from before plans included their resident has only
+    # the resident's, byte-for-byte as it was sent.
+    def order_items(order)
+      resident = { price: order.stripe_price_id.presence || order.offer.price_id }
+      return [ resident ] if order.plan_stripe_price_id.blank?
+
+      [ { price: order.plan_stripe_price_id }, resident ]
+    end
+
+    # What Stripe shows on the subscription: the plan by name when the first
+    # bill pays for one.
+    def description(offer, plan, name)
+      return "#{offer.name} hosting for #{name}" unless plan
+
+      "#{plan.name} plan, including #{name} (#{offer.tier.name})"
+    end
+
     # Orders opened before the description was pinned (2026-11-10) used the
     # sizes' old names; a replay must send exactly that.
     LEGACY_NAMES = { "conversation" => "Conversation", "life" => "Life", "work" => "Work" }.freeze
 
     def legacy_description(order)
       name = LEGACY_NAMES.fetch(order.tier)
-      name = "#{name} at cost" unless order.offer.standard?
+      name = "#{name} at cost" if order.offer.at_cost?
       "#{name} hosting for #{order.resident_name}"
     end
 
@@ -463,9 +499,13 @@ module Billing
     # paid order's subscription payload and key are untouched by this.
     def trial_checkout_params(order, customer, success_url, cancel_url)
       metadata = { birth_order: order.reference, account_id: order.account_id.to_s, tier: order.tier, trial: "1" }
+      unless order.offer.standard?
+        metadata[:rate] = order.rate
+      end
+      metadata[:plan] = order.plan if order.plan_stripe_price_id.present?
       {
         mode: "subscription", customer: customer.stripe_customer_id, client_reference_id: "birth-order-#{order.reference}",
-        line_items: [ { price: order.stripe_price_id, quantity: 1 } ],
+        line_items: order_items(order).map { |item| item.merge(quantity: 1) },
         payment_method_collection: "if_required",
         subscription_data: {
           trial_period_days: Trial::DAYS,

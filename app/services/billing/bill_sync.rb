@@ -114,16 +114,24 @@ module Billing
     end
 
     # A first purchase: the house holds nothing on this subscription, it is
-    # paid, it carries one line of one, and its metadata names what was
-    # bought. Anything else on a subscription with no rows is left as drift.
+    # paid, and its metadata names what was bought. It carries one line of
+    # one, or, when the metadata names a plan, two: that plan's and its
+    # included resident's (Billing::Included). Anything else on a
+    # subscription with no rows is left as drift.
     def adopt!(remote, lines, account)
-      return unless remote.status.in?(PAID) && lines.values == [ 1 ]
+      return unless remote.status.in?(PAID) && lines.values.all?(1)
       return if ResidentSubscription.exists?(stripe_subscription_id: remote.id) ||
         AccountSubscription.exists?(stripe_subscription_id: remote.id)
 
-      price = lines.keys.first
       named = metadata(remote)
-      if named["kind"] == AccountPlanCheckout::KIND
+      if named["plan"].present?
+        adopt_with_plan!(remote, lines, account, named)
+        return
+      end
+      return unless lines.size == 1
+
+      price = lines.keys.first
+      if named["kind"] == "account_plan" # Checkouts for a plan alone, before 17 Nov
         plan = AccountPlan.for_price(price) || return
         if account.account_subscriptions.live.exists?
           raise InvalidSubscription, "Account #{account.id} already has a live plan; #{remote.id} is a second one"
@@ -132,23 +140,50 @@ module Billing
           stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
       end
 
+      adopt_resident!(remote, account, price, named)
+    end
+
+    # The plan and its included resident, adopted together or not at all.
+    def adopt_with_plan!(remote, lines, account, named)
+      plan = AccountPlan.find(named["plan"]) || return
+      plan_price = lines.keys.find { |price| plan.price_ids.include?(price) }
+      return unless plan_price && lines.size == 2
+
+      price = (lines.keys - [ plan_price ]).sole
+      return unless Offer.for_price(price)&.included?
+      if account.account_subscriptions.live.exists?
+        raise InvalidSubscription, "Account #{account.id} already has a live plan; #{remote.id} is a second one"
+      end
+
+      ApplicationRecord.transaction do
+        next unless adopt_resident!(remote, account, price, named)
+
+        AccountSubscription.create!(account:, stripe_subscription_id: remote.id, plan: plan.id,
+          stripe_price_id: plan_price, stripe_status: remote.status, last_synced_at: @now)
+      end
+    end
+
+    # The resident's row of a first purchase; nil when there is no resident
+    # to give it to.
+    def adopt_resident!(remote, account, price, named)
       offer = Offer.for_price(price) || return
       order = named["birth_order"].presence && ResidentBirthOrder.find_by(reference: named["birth_order"], account:)
       agent = order ? order.agent : account.agents.find_by(id: named["agent_id"])
       return if agent.nil? || ResidentSubscription.live.exists?(agent:)
 
-      ResidentSubscription.create!(agent:, account:, stripe_subscription_id: remote.id, tier: offer.tier.id,
+      row = ResidentSubscription.create!(agent:, account:, stripe_subscription_id: remote.id, tier: offer.tier.id,
         rate: offer.rate, stripe_price_id: price, stripe_status: remote.status, last_synced_at: @now)
       flag_ungranted!(remote, agent, offer, named)
       BillingCheckoutAttempt.unresolved.where(idempotency_key: named["checkout_attempt"], agent_id: agent.id)
         .update_all(resolved_at: @now, updated_at: @now) if named["checkout_attempt"].present?
+      row
     end
 
     # A recognised at-cost price is accepted (the money is taken; refusing
     # would strand it) and a missing grant is reported, unless the purchase
     # names the redemption that authorised it: this account's, for this rate.
     def flag_ungranted!(remote, agent, offer, named)
-      return if offer.standard? || account_grants?(agent.account, offer, named["redemption_id"])
+      return if offer.catalogue? || account_grants?(agent.account, offer, named["redemption_id"])
 
       AuditLog.create!(account: agent.account, action: "billing_rate_without_grant", auditable: agent,
         data: { "stripe_subscription_id" => remote.id, "rate" => offer.rate })
@@ -236,6 +271,10 @@ module Billing
       offer = Offer.for_price(op.fetch("price")) || raise(InvalidSubscription, "No offer at #{op["price"].inspect}")
       row_of(remote, op).update!(tier: offer.tier.id, rate: offer.rate, stripe_price_id: op.fetch("price"))
     end
+
+    # The resident that becomes the plan's included one: its rate and price
+    # change, its size does not.
+    def apply_promote(remote, account, op) = apply_resize(remote, account, op)
 
     def apply_plan(remote, account, op)
       current = AccountSubscription.live.find_by(stripe_subscription_id: remote.id)

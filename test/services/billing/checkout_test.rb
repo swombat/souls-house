@@ -25,18 +25,22 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
       account: @agent.account, by: users(:user_1))
   end
 
-  test "a standard session pins its exact price metadata and payload on a unique attempt" do
+  test "a first bill's session pins the plan and its included resident, metadata and payload on a unique attempt" do
     checkout
     params, opts = @stripe.checkout_sessions.sole
     pin = BillingCheckoutAttempt.find_by!(agent: @agent)
     assert_equal pin.idempotency_key, opts[:idempotency_key]
-    assert_equal [ { price: LIFE_PRICE, quantity: 1 } ], params[:line_items]
+    # The plan includes its resident: a Medium is the plan's own at $30.
+    assert_equal [ { price: COMPANIONS_PRICE, quantity: 1 }, { price: LIFE_INCLUDED_PRICE, quantity: 1 } ], params[:line_items]
+    assert_equal [ "included", LIFE_INCLUDED_PRICE ], [ pin.rate, pin.stripe_price_id ]
     assert_equal @agent.id.to_s, params.dig(:metadata, :agent_id)
     assert_equal @agent.account_id.to_s, params.dig(:metadata, :account_id)
     assert_equal "life", params.dig(:metadata, :tier)
     assert_equal pin.idempotency_key, params.dig(:metadata, :checkout_attempt)
-    assert_nil params.dig(:metadata, :rate)
-    assert_equal "Medium hosting for #{@agent.name}", params.dig(:subscription_data, :description)
+    assert_equal "included", params.dig(:metadata, :rate)
+    assert_equal "companions", params.dig(:metadata, :plan)
+    assert_nil params.dig(:metadata, :redemption_id)
+    assert_equal "Companions plan, including #{@agent.name} (Medium)", params.dig(:subscription_data, :description)
     assert_not params.key?(:expires_at), "Expiry must be relative to Stripe execution, not the intent commit"
     assert_equal JSON.parse(params.to_json), pin.create_params
   end

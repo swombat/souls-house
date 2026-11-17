@@ -572,6 +572,10 @@ class FakeStripe
     WORK_AT_COST_HETZNER_PRICE = "price_test_work_at_cost_hetzner".freeze
     PARTNERS_PRICE = "price_test_account_partners".freeze
     COLLEAGUES_PRICE = "price_test_account_colleagues".freeze
+    COMPANIONS_PRICE = "price_test_account_companions".freeze
+    CONVERSATION_INCLUDED_PRICE = "price_test_conversation_included".freeze
+    LIFE_INCLUDED_PRICE = "price_test_life_included".freeze
+    WORK_INCLUDED_PRICE = "price_test_work_included".freeze
 
     # Catalogue prices as Stripe holds them: price id => [product, unit amount].
     # A tier's standard and at-cost prices share its product.
@@ -581,7 +585,10 @@ class FakeStripe
       LIFE_AT_COST_PRICE => [ "prod_test_life", 1999 ], WORK_AT_COST_PRICE => [ "prod_test_work", 3999 ],
       CONVERSATION_AT_COST_HETZNER_PRICE => [ "prod_test_conversation", 800 ],
       LIFE_AT_COST_HETZNER_PRICE => [ "prod_test_life", 1100 ], WORK_AT_COST_HETZNER_PRICE => [ "prod_test_work", 2000 ],
-      PARTNERS_PRICE => [ "prod_test_partners", 1999 ], COLLEAGUES_PRICE => [ "prod_test_colleagues", 4999 ]
+      PARTNERS_PRICE => [ "prod_test_partners", 2999 ], COLLEAGUES_PRICE => [ "prod_test_colleagues", 5999 ],
+      COMPANIONS_PRICE => [ "prod_test_companions", 999 ],
+      CONVERSATION_INCLUDED_PRICE => [ "prod_test_conversation", 0 ], LIFE_INCLUDED_PRICE => [ "prod_test_life", 3000 ],
+      WORK_INCLUDED_PRICE => [ "prod_test_work", 6000 ]
     }.freeze
 
     STRIPE_ENV = {
@@ -593,7 +600,10 @@ class FakeStripe
       "STRIPE_PRICE_CONVERSATION_AT_COST_HETZNER" => CONVERSATION_AT_COST_HETZNER_PRICE,
       "STRIPE_PRICE_LIFE_AT_COST_HETZNER" => LIFE_AT_COST_HETZNER_PRICE,
       "STRIPE_PRICE_WORK_AT_COST_HETZNER" => WORK_AT_COST_HETZNER_PRICE,
-      "STRIPE_PRICE_ACCOUNT_PARTNERS" => PARTNERS_PRICE, "STRIPE_PRICE_ACCOUNT_COLLEAGUES" => COLLEAGUES_PRICE
+      "STRIPE_PRICE_ACCOUNT_PARTNERS" => PARTNERS_PRICE, "STRIPE_PRICE_ACCOUNT_COLLEAGUES" => COLLEAGUES_PRICE,
+      "STRIPE_PRICE_ACCOUNT_COMPANIONS" => COMPANIONS_PRICE,
+      "STRIPE_PRICE_CONVERSATION_INCLUDED" => CONVERSATION_INCLUDED_PRICE,
+      "STRIPE_PRICE_LIFE_INCLUDED" => LIFE_INCLUDED_PRICE, "STRIPE_PRICE_WORK_INCLUDED" => WORK_INCLUDED_PRICE
     }.freeze
 
     # The house's rows for a shared subscription the fake holds, one per item
