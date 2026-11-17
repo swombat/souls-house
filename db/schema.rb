@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -810,6 +810,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
   create_table "billing_code_redemptions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "billing_code_id", null: false
+    t.datetime "bill_plan_pending_since"
     t.string "effect", null: false
     t.bigint "redeemed_by_id", null: false
     t.datetime "redeemed_at", null: false
@@ -818,6 +819,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "billing_code_id"], name: "index_billing_code_redemptions_once_per_account", unique: true
+    t.index ["bill_plan_pending_since"], name: "index_billing_code_redemptions_on_bill_plan_pending_since", where: "(bill_plan_pending_since IS NOT NULL)"
     t.index ["account_id"], name: "index_billing_code_redemptions_live_by_account", where: "(withdrawn_at IS NULL)"
     t.index ["account_id"], name: "index_billing_code_redemptions_on_account_id"
     t.index ["billing_code_id"], name: "index_billing_code_redemptions_on_billing_code_id"

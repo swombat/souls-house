@@ -13,7 +13,7 @@ class Admin::BillingCodesController < ApplicationController
       effect_labels: BillingCode::EFFECTS.index_with { |effect| BillingCode.label(effect) },
       codes: BillingCode.includes(:created_by).by_recency.map(&:as_json),
       redemptions: BillingCodeRedemption.includes(:billing_code, :account, :redeemed_by).order(redeemed_at: :desc)
-        .limit(200).map(&:as_json)
+        .limit(200).map { |redemption| redemption.as_json.merge(bills_plan: bills_plan(redemption)) }
     }
   end
 
@@ -42,7 +42,7 @@ class Admin::BillingCodesController < ApplicationController
     audit("withdraw_billing_code_redemption", redemption, code: redemption.billing_code.code,
       account_id: redemption.account_id)
     withdrawn = "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}."
-    change = (Billing::PlanAfterGrant.restore!(redemption.account, by: Current.user) if redemption.effect.start_with?("plan:"))
+    change = Billing::PlanAfterGrant.withdrawn!(redemption, by: Current.user)
     redirect_to admin_billing_codes_path, notice: [ withdrawn, plan_notice(redemption.account, change) ].join(" ")
   rescue *PLAN_ERRORS => error
     redirect_to admin_billing_codes_path,
@@ -58,6 +58,11 @@ class Admin::BillingCodesController < ApplicationController
   def plan_notice(account, change)
     return "Plans already bought are unchanged." unless change
 
+    if change.ends_bill?
+      audit("end_bill_after_grant", account, bill_change_id: change.id, applied: change.applied?)
+      return "It has no card to pay for its plan, so its bill is set to end at the end of the paid period; its residents fall asleep then, kept."
+    end
+
     plan = Billing::AccountPlan.for_price(change.ops.first["price"])
     audit("bill_plan_after_grant", account, plan: plan.id, bill_change_id: change.id, applied: change.applied?)
     if change.applied?
@@ -65,6 +70,15 @@ class Admin::BillingCodesController < ApplicationController
     else
       "#{plan.name} is being added to its bill; Stripe is still confirming."
     end
+  end
+
+  # What withdrawing a live plan redemption would put on the account's bill,
+  # for the dialog to name before the click.
+  def bills_plan(redemption)
+    return nil unless redemption.live?
+
+    plan = Billing::PlanAfterGrant.preview(redemption)
+    plan && { name: plan.name, monthly_usd: Billing.usd(plan.monthly_usd) }
   end
 
   def require_site_admin

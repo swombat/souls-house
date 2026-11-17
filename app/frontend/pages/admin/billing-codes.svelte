@@ -38,7 +38,10 @@
   }
 
   function withdraw(redemption) {
-    if (!confirm(`Withdraw ${redemption.account}’s grant from ${redemption.code}? If this code gave the account its plan and it has a bill, the bill takes on the account's own plan (the one it chose, else Companions) at that plan's price; the resident the plan includes keeps its current price. Other plans already bought are unchanged.`)) return;
+    const billed = redemption.bills_plan
+      ? ` ${redemption.account}’s bill will take on ${redemption.bills_plan.name} at $${redemption.bills_plan.monthly_usd} a month + VAT (the resident it includes keeps its price), or, with no card on the account, be set to end at the end of its paid period.`
+      : ' Nothing on its bill changes.';
+    if (!confirm(`Withdraw ${redemption.account}’s grant from ${redemption.code}?${billed}`)) return;
     busy = `withdraw:${redemption.id}`;
     router.patch(`/admin/billing_code_redemptions/${redemption.id}/withdraw`, {}, { onFinish: () => (busy = null) });
   }

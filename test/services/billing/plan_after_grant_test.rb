@@ -47,18 +47,34 @@ class Billing::PlanAfterGrantTest < ActiveSupport::TestCase
     BillingCode.redeem!(code: "GRANT-#{effect.tr(':', '-').upcase}", account: @account, by: @owner)
   end
 
-  test "withdrawing a plan code puts Companions back on the bill: $9.99, its Small still included at $0" do
+  def withdraw!(redemption)
+    redemption.withdraw!(by: @admin)
+    Billing::PlanAfterGrant.withdrawn!(redemption, by: @admin, client: @stripe)
+  end
+
+  test "withdrawing a plan code puts Companions on the bill: $9.99, its Small still included at $0" do
     redemption = redeem!("plan:companions")
     sub = first_bill!("conversation")
     assert_equal 0, monthly(sub), "while the grant stands, the account is free"
-    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe), "nothing to put back while it stands"
+    assert_equal "Companions", Billing::PlanAfterGrant.preview(redemption).name, "the dialog names it before the click"
 
-    redemption.withdraw!(by: @admin)
-    change = Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe)
+    change = withdraw!(redemption)
     assert change&.applied?
     assert_equal 999, monthly(sub)
     assert_equal({ COMPANIONS_PRICE => 1, CONVERSATION_INCLUDED_PRICE => 1 }, Billing::BillSync.house_lines(sub))
-    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe), "once is all: the plan is paid for now"
+    assert_nil redemption.reload.bill_plan_pending_since, "the intent is spent"
+    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe), "once is all"
+  end
+
+  # Mira, #1023 P1: a withdrawal made before this rule (no intent recorded)
+  # is never read as permission to add a plan.
+  test "an earlier withdrawal with no recorded intent is never acted on" do
+    redemption = redeem!("plan:companions")
+    sub = first_bill!("conversation")
+    redemption.withdraw!(by: @admin)
+    assert_nil Billing::PlanAfterGrant.restore!(@account, by: nil, client: @stripe)
+    assert_empty Billing::PlanAfterGrant.pending_accounts
+    assert_equal 0, monthly(sub)
   end
 
   test "the plan chosen before the grant is the one paid for after it, with a bigger included resident's difference" do
@@ -66,17 +82,18 @@ class Billing::PlanAfterGrantTest < ActiveSupport::TestCase
     redemption = redeem!("plan:colleagues")
     sub = first_bill!("life")
     assert_equal 3000, monthly(sub)
-    redemption.withdraw!(by: @admin)
-    Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe)
+    assert_equal "Partners", Billing::PlanAfterGrant.preview(redemption).name
+    withdraw!(redemption)
     assert_equal 2999 + 3000, monthly(sub)
   end
 
-  test "an account still given a plan by another grant keeps it free" do
+  test "an account still given a plan by another grant keeps it free, and the dialog says nothing changes" do
     first = redeem!("plan:companions")
     redeem!("plan:partners")
     sub = first_bill!("conversation")
-    first.withdraw!(by: @admin)
-    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe)
+    assert_nil Billing::PlanAfterGrant.preview(first)
+    assert_nil withdraw!(first)
+    assert_nil first.reload.bill_plan_pending_since
     assert_equal 0, monthly(sub)
   end
 
@@ -95,19 +112,31 @@ class Billing::PlanAfterGrantTest < ActiveSupport::TestCase
     sub = first_bill!("conversation")
     BillingCode.create!(code: "AT-COST", effect: "at_cost", created_by: @admin)
     BillingCode.redeem!(code: "AT-COST", account: @account, by: @owner)
-    redemption.withdraw!(by: @admin)
-    assert_not Billing::PlanAfterGrant.needed?(@account)
-    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe)
+    assert_nil Billing::PlanAfterGrant.preview(redemption)
+    assert_nil withdraw!(redemption)
     assert_equal 0, monthly(sub)
   end
 
-  test "a restore Stripe refuses for now (the bill past due) is pending for the sweep, and lands once it can" do
+  # Mira, #1023 P2: no card, so the plan can't be paid: the bill is set to end
+  # and its residents sleep then, rather than staying funded and retried.
+  test "with no card the bill is set to end at the period's end, and nothing is charged" do
+    redemption = redeem!("plan:companions")
+    sub = first_bill!("conversation")
+    @stripe.put_customer("cus_1", default_payment_method: nil)
+    @stripe.subscription(sub)[:default_payment_method] = nil
+    change = withdraw!(redemption)
+    assert change.ends_bill?
+    assert @stripe.subscriptions.retrieve(sub).cancel_at_period_end
+    assert_equal 0, monthly(sub)
+    assert_empty Billing::PlanAfterGrant.pending_accounts
+  end
+
+  test "a restore Stripe refuses for now (the bill past due) stays pending for the sweep, and lands once it can" do
     redemption = redeem!("plan:companions")
     sub = first_bill!("conversation")
     @stripe.set_subscription_status(sub, "past_due")
     Billing::BillSync.new(sub, client: @stripe).call
-    redemption.withdraw!(by: @admin)
-    assert_raises(Billing::Reconcile::Refused) { Billing::PlanAfterGrant.restore!(@account, by: nil, client: @stripe) }
+    assert_raises(Billing::Reconcile::Refused) { withdraw!(redemption) }
     assert_equal [ @account.id ], Billing::PlanAfterGrant.pending_accounts.map(&:id)
 
     @stripe.set_subscription_status(sub, "active")
