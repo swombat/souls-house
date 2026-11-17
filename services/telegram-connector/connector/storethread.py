@@ -35,19 +35,6 @@ log = logging.getLogger("telegram.store")
 
 EXIT_STORE_LOST = 75
 
-# The store thread blocks on the database socket many times per job and has
-# to take the GIL back after each wait. With CPython's default 5 ms switch
-# interval, a busy event loop makes it wait up to 5 ms every time (the GIL
-# "convoy"): measured here, a loop kept busy in pure Python cut the store
-# thread from ~8,000 trivial jobs/s to under 3. At 0.5 ms it was ~150/s
-# under the same fully busy loop. The connector sets this at start; the
-# load harness does the same.
-SWITCH_INTERVAL = 0.0005
-
-
-def tune_interpreter():
-    import sys
-    sys.setswitchinterval(SWITCH_INTERVAL)
 
 
 def exit_now(reason):

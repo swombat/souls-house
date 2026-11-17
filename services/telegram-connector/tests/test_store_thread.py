@@ -149,19 +149,6 @@ class StoreThreadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["store_error:Lost"], recorder.reasons)
 
 
-class InterpreterTest(unittest.TestCase):
-    def test_the_switch_interval_is_shortened_for_the_store_thread(self):
-        import sys
-        from connector.storethread import SWITCH_INTERVAL, tune_interpreter
-        before = sys.getswitchinterval()
-        try:
-            tune_interpreter()
-            self.assertAlmostEqual(SWITCH_INTERVAL, sys.getswitchinterval())
-            self.assertLess(SWITCH_INTERVAL, 0.005, "below CPython's default")
-        finally:
-            sys.setswitchinterval(before)
-
-
 class BlackHole:
     """A TCP proxy to the Postgres server that can stop forwarding while
     keeping both connections open: a server that has gone silent, not one

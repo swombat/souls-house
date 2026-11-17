@@ -42,7 +42,7 @@ from connector.account import Settings
 from connector.fake import ALICE, BOB, FAMILY, TEAM, World
 from connector.manager import Manager
 from connector.store import TABLES, Crypto, PostgresBackend, Store, connect_postgres
-from connector.storethread import SWITCH_INTERVAL, serve, tune_interpreter
+from connector.storethread import serve
 
 STORE_KEY = "k" * 40
 MARK = "LOADT"          # message bodies: LOADT|<injected perf_counter>|<n>
@@ -319,9 +319,7 @@ class LoadHarness:
         else:
             self.store = Store(self.path, Crypto(STORE_KEY))
         if self.args.switch_interval:
-            sys.setswitchinterval(self.args.switch_interval)
-        else:
-            tune_interpreter()  # as the connector does at start
+            sys.setswitchinterval(self.args.switch_interval)  # an experiment; the connector keeps CPython's
         self.astore = serve(self.store, stats_keep=2_000_000)
         self.manager = RoutedManager(self.worlds, self.astore, None, self.rails.post, self.settings, b"load")
 
@@ -532,7 +530,7 @@ async def run_with(args, problems):
         "host": {"python": platform.python_version(), "cpus": os.cpu_count(), "platform": platform.platform(),
                  "store_dir": args.workdir or tempfile.gettempdir(),
                  "store": "postgres" if args.database_url else "sqlite",
-                 "switch_interval_s": args.switch_interval or SWITCH_INTERVAL},
+                 "switch_interval_s": args.switch_interval or sys.getswitchinterval()},
         "settings": {name: getattr(harness.settings, name) for name in dir(Settings)
                      if not name.startswith("_") and not callable(getattr(Settings, name))},
         "rss_mb": {"before_worlds": round(rss_before_worlds, 1), "after_worlds": round(rss_mb(), 1)},
@@ -656,7 +654,7 @@ def parse(argv=None):
     p.add_argument("--restart", type=int, default=1)
     p.add_argument("--workdir", default=None, help="where the SQLite store lives (default: system temp)")
     p.add_argument("--switch-interval", type=float, default=None,
-                   help="override sys.setswitchinterval (default: the connector's)")
+                   help="override sys.setswitchinterval (default: CPython's, as the connector)")
     p.add_argument("--database-url", default=None,
                    help="run on Postgres instead of SQLite; its connector tables are DROPPED first (scratch only)")
     p.add_argument("--keep", action="store_true")
