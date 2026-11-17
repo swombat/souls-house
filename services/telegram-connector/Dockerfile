@@ -14,10 +14,13 @@ RUN python -m venv /venv \
  && /venv/bin/pip check
 COPY connector ./connector
 COPY tests ./tests
+# tests/test_load_harness.py imports the S2b load driver; it is needed for the
+# test run only and is removed with the tests, so it never reaches the image.
+COPY load ./load
 # The connector's tests (fake Telegram, fake Rails, real TLS, real
 # subprocesses) must pass in the image's own Python before it ships.
 RUN /venv/bin/python -m unittest discover -s tests -t . \
- && rm -rf tests \
+ && rm -rf tests load \
  && /venv/bin/python -m compileall -q connector /venv \
  && mkdir -p /out/data
 
