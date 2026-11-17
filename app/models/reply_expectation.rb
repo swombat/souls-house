@@ -35,22 +35,33 @@ class ReplyExpectation < ApplicationRecord
   after_create_commit -> { message.chat.announce_listing_change }
 
   def self.summary_for(user, account:, chat: nil)
-    counts = visible_to(user).state_open.group("chats.account_id", "chats.id")
-      .pluck("chats.account_id", "chats.id", Arel.sql("COUNT(*)"), Arel.sql("MAX(messages.id)"))
+    # A conversation whose tag hides it from the list keeps its own eye (the
+    # list still shows it under "show hidden") but stays out of every badge
+    # that adds conversations up: the total, the account and the room counts.
+    counts = visible_to(user).state_open
+      .joins("LEFT JOIN visual_tags ON visual_tags.id = chats.visual_tag_id")
+      .group("chats.account_id", "chats.id", "visual_tags.hides_from_list")
+      .pluck("chats.account_id", "chats.id", Arel.sql("COUNT(*)"), Arel.sql("MAX(messages.id)"),
+        Arel.sql("COALESCE(visual_tags.hides_from_list, FALSE)"))
     accounts = Account.where(id: counts.map(&:first)).index_by(&:id)
     chats = Chat.where(id: counts.filter_map { |aid, cid| cid if aid == account&.id }).index_by(&:id)
     by_account = Hash.new(0)
     by_chat = {}
     by_room = Hash.new(0)
     through_messages = {}
-    counts.each do |aid, cid, count, through_id|
-      by_account[accounts.fetch(aid).to_param] += 1
+    counted = 0
+    counts.each do |aid, cid, count, through_id, hidden|
+      unless hidden
+        counted += 1
+        by_account[accounts.fetch(aid).to_param] += 1
+      end
       next unless chats.key?(cid)
       by_chat[chats.fetch(cid).to_param] = count
+      through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
+      next if hidden
       # Conversations waiting on you, per room ("main" for no room).
       room_id = chats.fetch(cid).room_id
       by_room[room_id ? Room.encode_id(room_id) : "main"] += 1
-      through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
     end
     message_ids = if chat && chat.account_id == account&.id
       # Oldest first: the conversation's jump-to-mention button walks them newest to oldest.
@@ -59,7 +70,7 @@ class ReplyExpectation < ApplicationRecord
     else
       []
     end
-    { total: counts.size, accounts: by_account, chats: by_chat, rooms: by_room, through_messages: through_messages, messages: message_ids }
+    { total: counted, accounts: by_account, chats: by_chat, rooms: by_room, through_messages: through_messages, messages: message_ids }
   end
 
   # The person's open flags in one account (and optionally one conversation),

@@ -325,6 +325,31 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
         self.assertIn("turn.started", [event["type"] for event in self.events()])
         self.reporter.finish(({"status": "ok"}, 200))
 
+    def test_hook_run_events_survive_for_the_parser_in_conversation_runs(self):
+        # jaMBVj, 17 Nov: after Chaos 47.15.0 every conversation run reported
+        # runs_reported=false because this reader dropped hook.* lines.
+        script = """
+import json
+print(json.dumps({"type":"process.started","process_id":"session"}),flush=True)
+print(json.dumps({"type":"hook.started","turn_id":"t","id":"chaos://hooks/wake","event_name":"before_turn","status":"running","started_at":1}),flush=True)
+print(json.dumps({"type":"hook.completed","turn_id":"t","id":"chaos://hooks/wake","event_name":"before_turn","status":"completed","started_at":1,"completed_at":2,"duration_ms":40}),flush=True)
+print(json.dumps({"type":"item.completed","item":{"type":"reasoning","text":"PRIVATE"}}),flush=True)
+print(json.dumps({"type":"hook.completed","turn_id":"t","id":"chaos://hooks/stop","event_name":"stop","status":"failed","started_at":3,"completed_at":4,"duration_ms":9}),flush=True)
+print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=True)
+"""
+        result = self.reporter.run([sys.executable, "-c", script], "synthetic", {}, 3)
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(2, result.stdout.count('"hook.completed"'))
+        self.assertNotIn("PRIVATE", result.stdout)
+        shim = load_shim()
+        if shim is not None:
+            runs = shim.parse_events(result.stdout)["hook_runs"]
+            self.assertEqual([
+                {"id": "wake", "event": "before_turn", "status": "completed", "duration_ms": 40},
+                {"id": "stop", "event": "stop", "status": "failed", "duration_ms": 9},
+            ], runs)
+        self.reporter.finish(({"status": "ok"}, 200))
+
     def test_stderr_cannot_block_stdout_drain(self):
         script = "import sys;sys.stderr.write('x'*200000);print('{\"type\":\"turn.started\"}',flush=True)"
         result = self.reporter.run([sys.executable, "-c", script], "", {}, 3)
