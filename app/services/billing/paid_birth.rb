@@ -85,6 +85,7 @@ module Billing
       # and after earlier orders are settled, and never inferred again.
       CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
+        refuse_second_first_bill!(account, creator)
         # Decided here, under the lock, after earlier orders are settled: the
         # account's first catalogue resident is its plan's own (Included).
         Checkout.release_expired!(account, client: @client)
@@ -139,22 +140,26 @@ module Billing
       # A trial opens the account's first bill; an account with one adds to it.
       raise Refused, "This account already has a bill; the free trial is for a first resident." if Reconcile.applies?(account)
 
-      settle_earlier!(account, creator)
-      customer = BillingCustomer.for!(account, client: @client)
-      order = nil
-      Checkout.release_expired!(account, client: @client)
-      offer = Included.offer_for(account, offer)
-      plan = offer.included? ? account.plan_to_pay_for : nil
-      raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?
-      raise NotConfigured, "That plan has no Stripe price configured" unless offer.purchasable?
+      order = CheckoutLock.synchronize_residents(account) do
+        settle_earlier!(account, creator)
+        refuse_second_first_bill!(account, creator)
+        customer = BillingCustomer.for!(account, client: @client)
+        Checkout.release_expired!(account, client: @client)
+        offer = Included.offer_for(account, offer)
+        plan = offer.included? ? account.plan_to_pay_for : nil
+        raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?
+        raise NotConfigured, "That plan has no Stripe price configured" unless offer.purchasable?
 
-      Trial.claim!(account) do
-        order = ResidentBirthOrder.create!(account: account, creator: creator, tier: offer.tier.id, rate: offer.rate,
-          stripe_price_id: offer.price_id, stripe_description: description(offer, plan, attributes[:name]),
-          plan: plan&.id, plan_stripe_price_id: plan&.price_id,
-          birth_attributes: attributes.to_h, open_beginning: open_beginning, trial: true)
-        success_url = success_url.call(order) if success_url.respond_to?(:call)
-        order.update!(checkout_create_params: trial_checkout_params(order, customer, success_url, cancel_url))
+        claimed = nil
+        Trial.claim!(account) do
+          claimed = ResidentBirthOrder.create!(account: account, creator: creator, tier: offer.tier.id, rate: offer.rate,
+            stripe_price_id: offer.price_id, stripe_description: description(offer, plan, attributes[:name]),
+            plan: plan&.id, plan_stripe_price_id: plan&.price_id,
+            birth_attributes: attributes.to_h, open_beginning: open_beginning, trial: true)
+          success_url = success_url.call(claimed) if success_url.respond_to?(:call)
+          claimed.update!(checkout_create_params: trial_checkout_params(claimed, customer, success_url, cancel_url))
+        end
+        claimed
       end
       session = resolve_checkout!(order)
       raise Refused, "Stripe didn't open the free trial. Try again in a moment." unless session.status == "open"
@@ -330,6 +335,19 @@ module Billing
     # replaced (its subscription cancelled). An earlier paid one is never
     # replaced: it is completed, and the new request is refused, so nobody
     # pays twice for one intention.
+    # One first bill per account (A's leftover): settle_earlier! settles only
+    # this person's earlier orders, so another member's first bill, opened and
+    # not yet paid, would otherwise sit beside a second subscription. Called
+    # under the account's lock, so two starts in the same moment are taken in
+    # turn and the second sees the first's order.
+    def refuse_second_first_bill!(account, creator)
+      waiting = ResidentBirthOrder.pending.where(account: account).where.not(kind: "item").where.not(creator: creator)
+      return unless waiting.exists?
+
+      raise Refused, "Someone in this account has already started its first bill, and it isn't paid yet. " \
+                     "Once it is paid, add this resident to that bill; if it isn't, it lapses and you can start again."
+    end
+
     def settle_earlier!(account, creator)
       ResidentBirthOrder.where(account: account, creator: creator, state: %w[pending failed]).find_each do |earlier|
         next settle_item_order!(earlier) if earlier.item?
