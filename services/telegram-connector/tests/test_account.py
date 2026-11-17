@@ -70,8 +70,8 @@ class ConnectAndSyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, h.world.logouts)
         self.assertEqual(set(), h.world.sessions)
         self.assertIsNone(h.store.connection("svc_1"))
-        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0])
-        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) FROM chats").fetchone()[0])
+        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) AS n FROM outbox").fetchone()["n"])
+        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) AS n FROM chats").fetchone()["n"])
 
     async def test_a_session_ended_from_the_phone_is_reported_logged_out(self):
         self.h = h = Harness()
@@ -140,8 +140,7 @@ class LoginTest(unittest.IsolatedAsyncioTestCase):
         await wait_for(lambda: h.rails.connections["svc_1"]["status"] == "connected")
         dump = "\n".join(h.store.db.dump())
         self.assertNotIn("hunter2-CANARY", dump)
-        with open(h.path, "rb") as handle:
-            self.assertNotIn(b"CANARY", handle.read())
+        self.assertNotIn(b"CANARY", h.raw_bytes())
 
     async def test_flood_wait_during_login(self):
         self.h = h = Harness()

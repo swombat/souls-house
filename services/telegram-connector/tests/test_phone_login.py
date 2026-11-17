@@ -65,8 +65,7 @@ class PhoneLoginTest(unittest.IsolatedAsyncioTestCase):
 
     def assert_never_kept(self, h, *secrets):
         dump = "\n".join(h.store.db.dump())
-        with open(h.path, "rb") as handle:
-            raw = handle.read()
+        raw = h.raw_bytes()
         posted = repr(h.rails.posts)
         logs = "\n".join(self.capture.lines)
         for secret in secrets:
