@@ -28,8 +28,8 @@
     planAllowance = null,
   } = $props();
 
-  // A user's one on-the-house resident (HouseInferenceGrant), not the account's allowance.
-  let onTheHouse = $derived(billingNumbers($page.props).onTheHouseAllowance);
+  // A resident on the house draws on the account's allowance (Billing::Allowance).
+  let onTheHouse = $derived(billingNumbers($page.props).accountAllowance);
   let allowanceText = $derived(planAllowance ? usd(Math.max(...planAllowance.map(Number))) : null);
 
   const providerNames = {
@@ -87,7 +87,7 @@
               The account includes {allowanceText} a month of the house's models, shared by its residents at the standard
               price.
             {:else}
-              The house pays for a small model, up to {onTheHouse} a month.
+              The house pays for a small model, from the account's {onTheHouse} a month.
             {/if}
           </span>
         </span>
@@ -118,7 +118,7 @@
           <span class="font-medium">Included with the account.</span>
           <span class="text-muted-foreground">No key needed. You choose the size at the last step.</span>
         {:else}
-          <span class="font-medium">On the house · {onTheHouse} per month.</span>
+          <span class="font-medium">On the house · the account's {onTheHouse} a month.</span>
           <span class="text-muted-foreground">No key needed. One funded resident per person.</span>
         {/if}
       </p>

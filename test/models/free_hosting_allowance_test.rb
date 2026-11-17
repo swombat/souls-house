@@ -1,8 +1,8 @@
 require "test_helper"
 
-# Free hosting carries a $10 monthly house-model allowance of its own
-# (Daniel, jygXOY/jlnVNY, 2026-10-30): residents from before paying was
-# possible keep working when the per-user grant is spent.
+# Free hosting keeps residents from before paying was possible on the house
+# model (Daniel, jygXOY/jlnVNY, 2026-10-30), drawing on the account's one $10
+# (Billing::Allowance; Daniel, eRyZBY JbaKgE, 2026-11-17), not one of their own.
 class FreeHostingAllowanceTest < ActiveSupport::TestCase
 
   setup do
@@ -29,7 +29,7 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
 
   def configured(&) = HouseInference::Offering.stub(:configured?, true, &)
 
-  test "a free resident's calls go to its own $10 ledger, not the user's grant" do
+  test "a free resident's calls go to its entitlement's ledger, not the user's grant" do
     @agent.update!(model_id: @model)
     entitlement = free!(@agent)
     assert_equal BigDecimal("10"), entitlement.allowance_limit
@@ -42,20 +42,22 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     assert_equal "free", HouseInference::Allowance.presentation(@agent)[:source]
   end
 
-  test "a spent grant no longer stops a free resident, and two free residents of one user are independent" do
+  test "two free residents and a house grant in one account share one $10; another account's spend doesn't count" do
     [ @agent, @other ].each { |agent| agent.update!(model_id: @model) }
     grant = HouseInferenceGrant.create!(user: @user, agent: @agent)
-    spend!(grant, @agent, 10.5)
+    spend!(grant, @agent, 4)
     first = free!(@agent)
     second = free!(@other)
-    # Neither claims the one free grant, so neither is refused for the other.
-    assert_nil HouseInferenceGrant.assign!(@other, @user)
+    stranger = agents(:other_account_agent)
+    free!(stranger).then { |entitlement| spend!(entitlement, stranger, 50) }
+    assert_equal BigDecimal("10"), first.allowance_limit
+    assert_equal BigDecimal("6"), first.allowance_remaining, "the grant's $4 is the account's"
+    assert_equal BigDecimal("6"), second.allowance_remaining, "one pot, not one each"
     configured do
-      assert first.reserve_house_call!(@offering, @model, agent_id: @agent.id)
-      spend!(second, @other, 9.9)
-      error = assert_raises(HouseInference::Error) { second.reserve_house_call!(@offering, @model, agent_id: @other.id) }
+      spend!(second, @other, 5.5)
+      error = assert_raises(HouseInference::Error) { first.reserve_house_call!(@offering, @model, agent_id: @agent.id) }
       assert_equal "house_allowance_exhausted", error.code
-      assert_match(/free allowance is used up/, error.message)
+      assert_match(/account's house-model allowance is used up/, error.message)
     end
   end
 

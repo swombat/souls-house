@@ -27,7 +27,7 @@ describe('Runtime step', () => {
     render(RuntimeStep, { grouped_models, houseOffered: true, selectedModel: 'house/claude-haiku-5.5' });
     expect(screen.getByRole('radio', { name: /I don't have my own keys/ })).toBeTruthy();
     expect(screen.getByRole('radio', { name: /I have my own keys/ })).toBeTruthy();
-    expect(screen.queryByText(/On the house · \$10 per month/)).toBeNull();
+    expect(screen.queryByText(/On the house · the account's \$10 a month/)).toBeNull();
     expect(screen.queryByTestId('own-keys-path')).toBeNull();
     expect(screen.queryByText(/heartbeat/i)).toBeNull();
   });
@@ -37,7 +37,7 @@ describe('Runtime step', () => {
     await fireEvent.click(screen.getByRole('radio', { name: /I don't have my own keys/ }));
     expect(screen.getByRole('radio', { name: /Claude Haiku 5.5/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /DeepSeek V4.1 Flash/ })).toBeTruthy();
-    expect(screen.getByText(/On the house · \$10 per month/)).toBeTruthy();
+    expect(screen.getByText(/On the house · the account's \$10 a month/)).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'House inference allowance' })).toBeNull();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
@@ -53,7 +53,7 @@ describe('Runtime step', () => {
     });
     await fireEvent.click(screen.getByRole('radio', { name: /I have my own keys/ }));
     expect(screen.getByLabelText('Anthropic API key')).toBeTruthy();
-    expect(screen.queryByText(/On the house · \$10 per month/)).toBeNull();
+    expect(screen.queryByText(/On the house · the account's \$10 a month/)).toBeNull();
   });
 
   it('says so when the key is already saved', async () => {

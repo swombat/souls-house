@@ -1,6 +1,9 @@
+# A resident put on the house by a person: which resident runs on a house
+# model at the house's expense. It carries no allowance of its own; the
+# resident draws on its account's (Billing::Allowance), the same $10 as every
+# other resident there.
 class HouseInferenceGrant < ApplicationRecord
 
-  MONTHLY_LIMIT = BigDecimal('10')
   belongs_to :user
   belongs_to :agent, optional: true
   has_many :house_inference_calls, dependent: :restrict_with_error
@@ -80,8 +83,8 @@ class HouseInferenceGrant < ApplicationRecord
       raise HouseInference::Error.new('A house-funded call is already in progress. Try again shortly.', code: 'house_inference_busy', status: 429)
     end
     month = HouseInference::Offering.month
-    if spent(month) >= MONTHLY_LIMIT
-      raise HouseInference::Error.new("The #{Billing.usd_label(MONTHLY_LIMIT)} house allowance is used up. It resets at the start of next month (UTC).", code: 'house_allowance_exhausted', status: 402)
+    if Billing::Allowance.remaining(agent.account_id, month:) <= 0
+      raise HouseInference::Error.new("This account's #{Billing.usd_label(Billing::Allowance.monthly_usd)} house allowance is used up. It resets at the start of next month (UTC).", code: 'house_allowance_exhausted', status: 402)
     end
     # The free house-wide ceiling covers free grants only; paid plans are
     # bounded by their own allowances.
@@ -92,9 +95,11 @@ class HouseInferenceGrant < ApplicationRecord
 
   def presentation
     month = HouseInference::Offering.month
-    used = spent(month)
-    { limit_usd: MONTHLY_LIMIT.to_f, used_usd: used.to_f,
-      remaining_usd: [ MONTHLY_LIMIT - used, 0 ].max.to_f,
+    account_id = agent&.account_id
+    limit = account_id ? Billing::Allowance.limit(account_id, month:) : Billing::Allowance.monthly_usd
+    used = account_id ? Billing::Allowance.spent(account_id, month:) : spent(month)
+    { limit_usd: limit.to_f, used_usd: used.to_f,
+      remaining_usd: [ limit - used, 0 ].max.to_f,
       resets_at: month.next_month.iso8601, configured: HouseInference::Offering.configured? }
   end
 

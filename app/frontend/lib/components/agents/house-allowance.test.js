@@ -14,16 +14,16 @@ describe('House allowance', () => {
     });
     expect(screen.getByText(/\$7.13 remaining/)).toBeTruthy();
     expect(screen.getByText(/Fireworks’ US endpoint/)).toBeTruthy();
-    expect(screen.getByText(/One funded resident per user/)).toBeTruthy();
+    expect(screen.getByText(/One funded resident per person/)).toBeTruthy();
   });
-  it('describes a free-hosting allowance as the resident’s own, not a per-user grant', () => {
+  it('describes free hosting as drawing on the account’s allowance, not one of its own', () => {
     render(HouseAllowance, {
       selectedModel: 'house/claude-haiku-5.5',
       allowance: { source: 'free', limit_usd: 10, remaining_usd: 4.5, resets_at: '2026-11-01', configured: true },
     });
-    expect(screen.getByText(/Free hosting · \$10 per month/)).toBeTruthy();
-    expect(screen.getByText(/isn't\s+shared with your other residents/)).toBeTruthy();
-    expect(screen.queryByText(/One funded resident per user/)).toBeNull();
+    expect(screen.getByText(/Free hosting · the account's \$10 a month/)).toBeTruthy();
+    expect(screen.getByText(/shared by the account's residents/)).toBeTruthy();
+    expect(screen.queryByText(/One funded resident per person/)).toBeNull();
     expect(screen.queryByText(/One funded model call runs at a time/)).toBeNull();
     expect(screen.getByText(/\$4.50 remaining/)).toBeTruthy();
   });

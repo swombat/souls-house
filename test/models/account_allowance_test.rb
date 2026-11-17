@@ -171,22 +171,22 @@ class AccountAllowanceTest < ActiveSupport::TestCase
     end
   end
 
-  test "free hosting keeps its own $10, apart from the account's" do
+  # Daniel, eRyZBY JbaKgE, 2026-11-17: one $10 per account. A free-hosted
+  # resident draws on it with the paid ones; it has none of its own.
+  test "free hosting draws on the account's $10 with the paid residents, not a $10 of its own" do
     free = agents(:with_save_memory_tool)
     free.update!(model_id: @model)
     complimentary = ResidentEntitlement.create!(agent: free, account: @account, source: "complimentary",
       state: "complimentary", complimentary_granted_at: Time.current)
     pay!("sub_1", @first)
-    spend!(@first, 10)
-    assert_equal BigDecimal("0"), entitlement(@first).allowance_remaining
-
-    assert_equal BigDecimal("10"), complimentary.allowance_remaining
+    spend!(@first, 9.5)
+    assert_equal BigDecimal("0.5"), complimentary.allowance_remaining, "the paid resident's spend is the account's"
     configured do
-      reserve!(free).settle!({ "cost" => 0.5 })
-      assert_raises(HouseInference::Error) { reserve!(@first, "0.01") }
+      error = assert_raises(HouseInference::Error) { reserve!(free) }
+      assert_equal "house_allowance_exhausted", error.code
     end
-    assert_equal BigDecimal("9.5"), complimentary.allowance_remaining
-    assert_equal BigDecimal("10"), entitlement(@first).allowance_spent, "its spend isn't the account's"
+    assert_equal BigDecimal("9.5"), complimentary.allowance_spent
+    assert_equal BigDecimal("9.5"), entitlement(@first).allowance_spent
   end
 
 end
