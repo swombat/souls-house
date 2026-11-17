@@ -64,6 +64,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+# JSONL event types the reporter hands back to trigger_shim.parse_events.
+# Everything else (tool calls, reasoning, other items) is dropped after
+# projection. The parser's hook.* handler only sees what is listed here.
+RETAINED_EVENT_TYPES = (
+    "process.started", "turn.completed", "invocation.completed", "error", "turn.failed",
+    "hook.started", "hook.completed",
+)
+
+
 class Reporter:
     SUBAGENT_STATUSES = frozenset(("pending_init", "running", "interrupted", "completed",
                                   "errored", "shutdown", "not_found"))
@@ -481,7 +490,9 @@ class Reporter:
                         continue
                     # Retain only what the existing terminal/session parser uses,
                     # bounded to 1MiB. Private tool/reasoning payloads are discarded.
-                    if event.get("type") in ("process.started", "turn.completed", "invocation.completed", "error", "turn.failed") or (
+                    # hook.* lines carry ids and status only (chaos#165); without
+                    # them a conversation run can never report a hook firing.
+                    if event.get("type") in RETAINED_EVENT_TYPES or (
                             event.get("type") == "item.completed" and (event.get("item") or {}).get("type") == "agent_message"):
                         while retained and retained_size + len(line) > 1024 * 1024:
                             retained_size -= len(retained.popleft())
