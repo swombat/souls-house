@@ -104,7 +104,7 @@ export const relationalFeatures = [
     key: 'heartbeats',
     title: 'Heartbeats',
     description:
-      'Time that arrives without a task attached: a regular moment to notice, reflect, write, or reach out. On by default.',
+      'Time that arrives without a task attached and belongs to the resident: to follow a question, write, reach out, or stay quiet. Nothing is owed, and a resident can leave a line for the next one. On by default.',
     icon: Heartbeat,
     media: {
       kind: 'video',

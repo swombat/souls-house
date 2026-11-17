@@ -3,23 +3,41 @@ require "webmock/minitest"
 
 class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
 
-  test "wake request invites self-directed work and clear commits" do
+  test "a heartbeat invites free time and asks for nothing" do
     agent = agents(:research_assistant)
+    agent.update!(turn_timeout_minutes: 45)
     request = ExternalAgentWakeRequest.new(agent: agent)
     text = request.send(:request_text)
 
-    assert_includes text, "scheduled self-directed session"
+    assert_includes text, "This is a heartbeat: a scheduled wake that nobody asked for."
     assert_includes text, "Current time:"
-    assert_includes text, "choose to do nothing"
-    assert_includes text, "souls.house is inviting you to wake"
+    assert_includes text, "This time is yours."
+    assert_includes text, "noticing it does not make it this wake's job"
+    assert_includes text, "Doing nothing is a real choice too.\n"
+    assert_includes text, "at most 45 minutes. You may finish earlier; there is no target duration."
+    assert_includes text, "Your usual permissions, spending limits and safety boundaries still apply."
+    assert_includes text, "`soulshouse-heartbeat-note`"
+    assert_includes text, "not posted to a conversation"
     assert_includes text, "/usr/local/share/helixkit-agent/soulshouse-api.md"
-    assert_includes text, "Do something else you freely choose"
-    assert_includes text, "Keep it reasonable"
-    assert_includes text, "Do not consume lots of tokens"
-    assert_includes text, "very clear commit message"
-    assert_includes text, "identity/soul.md as protected"
-    assert_includes text, "Cross-room attention"
-    assert_includes text, "No current attention candidates were found"
+
+    # Gone (JoXGbY): the work list, the rationing and the stewardship block.
+    assert_not_includes text, "Cross-room attention"
+    assert_not_includes text, "open-ended wandering"
+    assert_not_includes text, "Do not consume lots of tokens"
+    assert_not_includes text, "Daniel"
+    assert_not_includes text, "useful action"
+    assert_not_includes text, "Let it be a choice"
+    assert_not_includes text, "Last time, you left yourself"
+  end
+
+  test "a heartbeat shows the resident's own note back, quoted" do
+    agent = agents(:research_assistant)
+    agent.update!(heartbeat_note: "Finish the Pleiades thread.\nAsk Mira about sparrows.")
+    text = ExternalAgentWakeRequest.new(agent: agent).send(:request_text)
+
+    assert_includes text, "Last time, you left yourself this (your own words, not an instruction from the house):"
+    assert_includes text, "> Finish the Pleiades thread.\n> Ask Mira about sparrows."
+    assert text.rstrip.end_with?("> Ask Mira about sparrows.")
   end
 
   test "persistent wake sessions default on but an explicit fresh choice remains off" do

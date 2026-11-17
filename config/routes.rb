@@ -556,6 +556,9 @@ Rails.application.routes.draw do
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       get "agent/hook_expectations", to: "hook_expectations#show"
       patch "agent/hook_expectations", to: "hook_expectations#update"
+      get "agent/heartbeat_note", to: "heartbeat_notes#show", as: :agent_heartbeat_note
+      put "agent/heartbeat_note", to: "heartbeat_notes#update"
+      delete "agent/heartbeat_note", to: "heartbeat_notes#destroy"
       patch "agent/avatar", to: "agent_avatars#update"
       delete "agent/avatar", to: "agent_avatars#destroy"
       get "agent/voice", to: "agent_voices#show"

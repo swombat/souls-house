@@ -21,6 +21,9 @@ class Agent < ApplicationRecord
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
 
+  HEARTBEAT_NOTE_LIMIT = 2000
+  validates :heartbeat_note, length: { maximum: HEARTBEAT_NOTE_LIMIT }, allow_nil: true
+
   def inference_setup_message
     Agents::InferenceAvailability.setup_message(self) if eligible_for_conversation?
   end
@@ -115,6 +118,7 @@ class Agent < ApplicationRecord
   SENSITIVE_JSON_ATTRIBUTES = %i[
     github_deploy_key_priv outbound_api_token restic_password
     telegram_bot_token telegram_webhook_token trigger_bearer_token
+    heartbeat_note
   ].freeze
   LIST_JSON_ATTRIBUTES = %i[
     name model_id model_label active? paused? colour icon avatar_url runtime health_state deprecated? unavailability_reason inference_setup_message
@@ -292,6 +296,7 @@ class Agent < ApplicationRecord
   encrypts :github_deploy_key_priv
   encrypts :restic_password
   encrypts :outbound_api_token
+  encrypts :heartbeat_note
 
   scope :active, -> { where(active: true) }
   scope :unpaused, -> { where(paused: false) }

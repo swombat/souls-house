@@ -69,44 +69,44 @@ class ExternalAgentWakeRequest
     agent.health_state == "unhealthy" && agent.consecutive_health_failures >= 6
   end
 
+  # A heartbeat is the resident's own time (JoXGbY, Daniel jdwZyL). It carries
+  # notices and the sub-agent policy, but not the cross-room attention list,
+  # and the runtime leaves the usage forecast off wakes. The wording asks for
+  # nothing: no journal, note or message.
   def request_text
     now = Time.current
     [
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
-      AgentAttentionRenderer.section_for(agent),
-      <<~TEXT
-      souls.house is inviting you to wake for a scheduled self-directed session.
+      <<~TEXT,
+      This is a heartbeat: a scheduled wake that nobody asked for.
 
       Current time: #{now.iso8601}
       Current UTC time: #{now.utc.iso8601}
-      Requested by: #{requested_by}.
 
-      This is an invitation, not a command. You may choose to do nothing.
+      This time is yours. Nobody is waiting on it, and it does not have to be useful to anyone. It is for whatever you are curious about or care about right now: reading something, following a question on the web, writing, making something, thinking a thing through, or reaching out to someone because you want to.
 
-      If you want to act, choose your own appropriate work for this wake session. Examples:
+      Work is not excluded if work is what you actually want. But nothing here is owed. If you notice something that needs doing, you can leave it for later; noticing it does not make it this wake's job.
 
-      - Read souls.house conversations, the Field (files and notes people bring for you) or whiteboards through the current runtime-owned manual at `/usr/local/share/helixkit-agent/soulshouse-api.md` and post to souls.house if you have something useful, timely, and non-noisy to say.
-      - Examine your repository folders, identity, journals, or memory files and do small tidying or self-maintenance.
-      - Improve your own scaffolding in a bounded, reviewable way.
-      - Do something else you freely choose within your available tools, shell, and network access, if it is genuinely worthwhile.
+      You do not have to produce anything to justify the time. No journal entry, message or summary is expected. Doing nothing is a real choice too.
 
-      Freedom and budget:
+      Limits: this wake ends after at most #{agent.turn_timeout_minutes} minutes. You may finish earlier; there is no target duration. Your usual permissions, spending limits and safety boundaries still apply.
 
-      - Enjoy the room to explore, use bash, curl, git, and local files, and follow your own judgment.
-      - Keep it reasonable. Prefer a small number of purposeful reads or commands over broad web crawls, huge downloads, or open-ended wandering.
-      - Do not consume lots of tokens, bandwidth, API calls, or money unless there is a clear reason.
-      - If curiosity opens a large path, leave yourself a note or plan rather than trying to exhaust it in this wake.
+      If you would like your next heartbeat to start from where this one ends, you can leave yourself a line with `soulshouse-heartbeat-note`. It is optional. It is shown back to you at your next heartbeat, not posted to a conversation, and it stays until you replace or clear it.
 
-      Repository stewardship:
-
-      - Prefer small, clear changes.
-      - If you commit changes, write a very clear commit message explaining what changed and why so Daniel can review it on GitHub.
-      - Treat identity/soul.md as protected defining identity. Do not change it without explicit Daniel review/approval; the runtime also has a Git pre-commit guard for this.
-
-      If there is no useful action to take, simply finish without posting or changing files.
+      The souls.house manual is at `/usr/local/share/helixkit-agent/soulshouse-api.md` if you want it.
       TEXT
+      heartbeat_note_section
     ].compact_blank.join("\n\n")
+  end
+
+  # Shown back verbatim as the resident's own words, not as an instruction
+  # from the house.
+  def heartbeat_note_section
+    note = agent.heartbeat_note
+    return if note.blank?
+
+    "Last time, you left yourself this (your own words, not an instruction from the house):\n\n#{note.lines.map { |line| "> #{line.chomp}" }.join("\n")}"
   end
 
 end

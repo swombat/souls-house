@@ -448,13 +448,16 @@ def trigger():
         if request_delta:
             request_delta = append_runtime_notice(request_delta, discovery_notice)
         memory_notice = graph_memory_notice(payload.get("memory"))
+        # A heartbeat is the resident's own time (JoXGbY): no usage forecast in
+        # its prompt. A limited subscription was already refused above.
+        notice_snapshot = None if payload.get("trigger_kind") == "wake" else subscription_snapshot
         if persistent_session:
             response = persistent_trigger(
                 session_id, prompt, request_delta, model, timeout_secs,
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
-                subscription_snapshot=subscription_snapshot,
+                subscription_snapshot=notice_snapshot,
                 session_policy=session_policy,
                 **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
@@ -462,7 +465,7 @@ def trigger():
             response = legacy_trigger(
                 session_id, prompt, model, timeout_secs,
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
-                subscription_snapshot=subscription_snapshot,
+                subscription_snapshot=notice_snapshot,
                 **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
         # Let go of the session before announcing the end. The house marks the

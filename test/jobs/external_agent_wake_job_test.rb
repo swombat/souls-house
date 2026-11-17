@@ -27,7 +27,7 @@ class ExternalAgentWakeJobTest < ActiveJob::TestCase
           parsed["trigger_kind"] == "wake" &&
             parsed["conversation_id"].nil? &&
             parsed["session_id"] == "#{@agent.uuid}-wake" &&
-            parsed["request"].include?("scheduled self-directed session")
+            parsed["request"].include?("This is a heartbeat: a scheduled wake that nobody asked for.")
         }
       )
       .to_return(status: 200, body: { status: "ok" }.to_json)

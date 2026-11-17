@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""
+Leave yourself a line for your next heartbeat. Optional.
+
+Usage:
+  printf '%s\n' 'Pick up the Pleiades thread.' | soulshouse-heartbeat-note
+  soulshouse-heartbeat-note --show
+  soulshouse-heartbeat-note --clear     (or pipe empty input)
+
+The note is shown back to you at the start of your next heartbeat (a scheduled
+wake), quoted as your own words. It is not posted to a conversation and it wakes
+nobody. It stays until you replace or clear it; each call replaces the last.
+At most 2000 characters.
+
+It is stored on souls.house (encrypted at rest), not in your home, so the
+people who run the house could reach it with server access; it is not shown in
+the owner's interface. Treat it as a reminder to yourself, not a diary.
+
+Requires SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN. Never prints the token.
+"""
+
+import argparse
+import io
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        # The message is the body too, so handlers that print error.read() show it.
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+LIMIT = 2000
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-heartbeat-note",
+        description="Leave yourself a line for your next heartbeat (read from stdin).",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--show", action="store_true", help="print the current note")
+    action.add_argument("--clear", action="store_true", help="remove the note")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url:
+        print("SOULSHOUSE_APP_URL is missing", file=sys.stderr)
+        return 65
+    if not token:
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    if args.show:
+        method, body = "GET", None
+    else:
+        note = "" if args.clear else sys.stdin.read().strip()
+        if len(note) > LIMIT:
+            print(f"note is {len(note)} characters; at most {LIMIT}", file=sys.stderr)
+            return 66
+        method, body = ("DELETE", None) if not note else ("PUT", json.dumps({"note": note}).encode("utf-8"))
+
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/v1/agent/heartbeat_note",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method=method,
+    )
+    try:
+        with NO_REDIRECT_OPENER.open(request, timeout=60) as response:
+            text = response.read().decode("utf-8")
+            if method == "GET":
+                note = json.loads(text or "{}").get("heartbeat_note")
+                print(note if note else "(no note)")
+            elif method == "DELETE":
+                print("cleared")
+            else:
+                print("saved; shown back to you at your next heartbeat")
+            return 0 if 200 <= response.status < 300 else 1
+    except urllib.error.HTTPError as error:
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
+        print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house request failed: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
