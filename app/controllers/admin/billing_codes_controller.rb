@@ -41,8 +41,15 @@ class Admin::BillingCodesController < ApplicationController
     redemption.withdraw!(by: Current.user)
     audit("withdraw_billing_code_redemption", redemption, code: redemption.billing_code.code,
       account_id: redemption.account_id)
+    restored = Billing::PlanAfterGrant.restore!(redemption.account, by: Current.user)
+    plan = restored && redemption.account.plan_to_pay_for
     redirect_to admin_billing_codes_path,
-      notice: "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}. Plans already bought are unchanged."
+      notice: "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}. " +
+        (plan ? "Its bill now carries #{plan.name} again, at #{Billing.usd_label(plan.monthly_usd)} a month; its included resident stays at no charge." :
+          "Plans already bought are unchanged.")
+  rescue Billing::Reconcile::Refused, Billing::Reconcile::Uncertain, Billing::NotReady, Stripe::StripeError => error
+    redirect_to admin_billing_codes_path,
+      alert: "The grant is withdrawn, but the plan couldn't be put back on #{redemption.account.name}'s bill: #{error.message}"
   end
 
   private
