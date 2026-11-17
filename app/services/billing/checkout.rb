@@ -14,6 +14,7 @@ module Billing
     def url
       @deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + OPERATION_BUDGET
       CheckoutLock.synchronize(@agent) do
+        FirstBill.relink!(@agent.account, client: @client)
         if ResidentSubscription.live.exists?(agent: @agent)
           raise AlreadySubscribed, "#{@agent.name} already has a subscription; change it from Manage billing"
         end
@@ -26,6 +27,7 @@ module Billing
         # plan's own, and the plan comes on the bill with it (Included).
         @requested = @offer
         Checkout.release_expired!(@agent.account, client: @client)
+        FirstBill.refuse_if_waiting!(@agent.account, error: AlreadySubscribed, except_agent: @agent)
         @offer = Included.offer_for(@agent.account, @offer, except_agent: @agent) if @offer.sold?
         @plan = @offer.included? ? @agent.account.plan_to_pay_for : nil
         entitlement = ResidentEntitlement.for_agent!(@agent)
