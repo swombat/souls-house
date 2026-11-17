@@ -30,6 +30,28 @@ class ReplyAttentionRakeTest < ActiveSupport::TestCase
     assert @tagged.reload.state_open?
   end
 
+  test "APPLY judges the flag as it stands under the lock, not as first selected" do
+    ENV["APPLY"] = "1"
+    # Between selection and the lock, the message is edited to name the person
+    # and reclassified as a direct @tag. The cleanup must leave it alone.
+    silent_message = @silent.message
+    original = Chat.instance_method(:with_lock)
+    Chat.define_method(:with_lock) do |*args, &block|
+      if id == silent_message.chat_id && !Thread.current[:reply_cleanup_interleaved]
+        Thread.current[:reply_cleanup_interleaved] = true
+        silent_message.update_columns(content: "Test, could you look?")
+        ReplyExpectation.where(message_id: silent_message.id)
+          .update_all(classifier_version: ReplyExpectation::DIRECT_MENTION_VERSION)
+      end
+      original.bind_call(self, *args, &block)
+    end
+    capture_io { @task.invoke }
+    assert @silent.reload.state_open?
+  ensure
+    Chat.send(:remove_method, :with_lock) if Chat.instance_methods(false).include?(:with_lock)
+    Thread.current[:reply_cleanup_interleaved] = nil
+  end
+
   private
 
   def flag(content, version: ReplyExpectationClassifier::VERSION)
