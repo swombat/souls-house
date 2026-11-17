@@ -57,7 +57,10 @@ for phase in ("onboard", "steady", "restart"):
     ROWS.append((f"loop lag {phase} p50 / p99 / max (ms)", lambda r, p=phase: " / ".join(
         ms(g(r, "loop_lag_s", p, q)) for q in ("p50", "p99", "max"))))
 ROWS += [
-    ("restart: all accounts' first message (s)", lambda r: g(r, "restart", "first_message_all_accounts_s")),
+    ("restart: stop → booted (s)", lambda r: g(r, "restart", "boot_s")),
+    ("restart: booted → every account's first message (s)", lambda r: g(r, "restart", "first_message_all_accounts_s")),
+    ("restart: stop → every account's first message (s)", lambda r: round(
+        g(r, "restart", "boot_s") + g(r, "restart", "first_message_all_accounts_s"), 2)),
 ]
 for phase in ("onboard", "steady_and_drain", "restart"):
     ROWS.append((f"store jobs {phase}: n; queue wait p50 / p99 / max (ms)", lambda r, p=phase: (

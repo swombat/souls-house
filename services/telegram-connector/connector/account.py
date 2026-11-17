@@ -700,11 +700,12 @@ class Account:
             self.dirty_channels.add(channel_id)
         self.sync_wake.set()
 
-    async def resume(self):
+    async def resume(self, row=None):
         """At boot: a connection with a session reconnects and syncs from
-        its stored state; one without just delivers what it holds."""
+        its stored state; one without just delivers what it holds. `row`:
+        the connection as boot already read it (no store job per account)."""
         self.ensure_delivery()
-        row = await self._row()
+        row = row if row is not None else await self._row()
         if row is None or row["status"] != "connected" or row["session"] is None:
             return
         self._spawn("resume", self._resume())

@@ -23,19 +23,25 @@ class Manager:
         if account is None and (create or await self.store.connection(ref) is not None):
             # Checked again: another command may have made it while this one
             # waited on the store.
-            account = self.accounts.get(ref)
-            if account is None:
-                account = Account(ref, self.store, self.factory, self.post, self.settings, self.log_key,
-                                  on_gone=self._gone)
-                self.accounts[ref] = account
+            account = self.accounts.get(ref) or self._new_account(ref)
+        return account
+
+    def _new_account(self, ref):
+        account = Account(ref, self.store, self.factory, self.post, self.settings, self.log_key,
+                          on_gone=self._gone)
+        self.accounts[ref] = account
         return account
 
     def _gone(self, ref):
         self.accounts.pop(ref, None)
 
     async def boot(self):
+        # One read for every connection; each account starts from its row,
+        # without a store job of its own (1,000 sequential lookups queued
+        # behind the accounts already resumed made boot take ~10 s).
         for row in await self.store.connections():
-            await (await self.account(row["ref"])).resume()
+            account = self.accounts.get(row["ref"]) or self._new_account(row["ref"])
+            await account.resume(row)
 
     async def close(self):
         for account in list(self.accounts.values()):

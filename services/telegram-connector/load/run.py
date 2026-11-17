@@ -80,15 +80,11 @@ class RoutedManager(Manager):
         super().__init__(*args, **kwargs)
         self.worlds = worlds
 
-    async def account(self, ref, create=False):
+    def _new_account(self, ref):
         world = self.worlds.get(ref)
-        if world is not None and ref not in self.accounts:
-            # The base looks the connection up on the store thread; the
-            # factory must still be this ref's when it builds the Account.
-            exists = create or await self.store.connection(ref) is not None
+        if world is not None:
             self.factory = world.factory
-            return await super().account(ref, exists)
-        return await super().account(ref, create)
+        return super()._new_account(ref)
 
 
 # -- a lean Rails ---------------------------------------------------------------------
