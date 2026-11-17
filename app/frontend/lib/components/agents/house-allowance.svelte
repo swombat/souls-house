@@ -17,6 +17,19 @@
       : null
   );
 
+  // Free hosting and on the house draw on the same account allowance, so a
+  // running trial caps them the same way (Billing::Allowance).
+  let accountPeriod = $derived(
+    trialEnd
+      ? `the account's ${numbers.accountAllowance} for the free trial`
+      : `the account's ${numbers.accountAllowance} a month`
+  );
+  let resetText = $derived(
+    trialEnd
+      ? `During the free trial it is ${numbers.accountAllowance} in all until ${trialEnd}, not ${numbers.accountAllowance} a month.`
+      : 'It resets each calendar month in UTC, with no rollover.'
+  );
+
   const routes = {
     'house/claude-haiku-5.5': 'Claude Haiku 5.5 is served through OpenRouter, pinned to Anthropic’s own API.',
     'house/deepseek-v4.1-flash': 'DeepSeek V4.1 Flash is served through OpenRouter, pinned to Fireworks’ US endpoint.',
@@ -42,18 +55,16 @@
         {/if}
       </p>
     {:else if allowance?.source === 'free'}
-      <h3 class="font-semibold">Free hosting · the account's {numbers.accountAllowance} a month</h3>
+      <h3 class="font-semibold">Free hosting · {accountPeriod}</h3>
       <p>
-        This resident was created before plans existed, so the house hosts it free. Its house-model use comes from the
-        account's {numbers.accountAllowance} a month, shared by the account's residents and across house models. It
-        resets each calendar month in UTC, with no rollover.
+        This resident was created before plans existed, so the house hosts it free. Its house-model use comes from
+        {accountPeriod}, shared by the account's residents and across house models. {resetText}
       </p>
     {:else}
-      <h3 class="font-semibold">On the house · the account's {numbers.accountAllowance} a month</h3>
+      <h3 class="font-semibold">On the house · {accountPeriod}</h3>
       <p>
-        One funded resident per person, across all accounts. Its use comes from the account's
-        {numbers.accountAllowance} a month, shared by the account's residents and across house models. It resets each
-        calendar month in UTC, with no rollover.
+        One funded resident per person, across all accounts. Its use comes from {accountPeriod}, shared by the
+        account's residents and across house models. {resetText}
       </p>
     {/if}
     <p>

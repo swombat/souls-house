@@ -41,6 +41,23 @@ describe('House allowance numbers', () => {
     expect(screen.getByText(/Free hosting · the account's \$11 a month/)).toBeTruthy();
     expect(screen.queryByText(/of its own/)).toBeNull();
   });
+  it('free hosting during a running trial states the trial ceiling, not a month', () => {
+    render(HouseAllowance, {
+      selectedModel: 'house/claude-haiku-5.5',
+      allowance: { source: 'free', limit_usd: 11, remaining_usd: 1, resets_at: '2026-12-01', trial_ends_at: '2026-11-24T12:00:00Z', configured: true },
+    });
+    expect(screen.getByRole('heading', { name: "Free hosting · the account's $11 for the free trial" })).toBeTruthy();
+    expect(screen.getByText(/\$11 in all until 24 Nov 2026/)).toBeTruthy();
+    expect(screen.queryByText(/resets each calendar month/)).toBeNull();
+  });
+  it('on the house during a running trial states the trial ceiling, not a month', () => {
+    render(HouseAllowance, {
+      selectedModel: 'house/claude-haiku-5.5',
+      allowance: { remaining_usd: 2, resets_at: '2026-12-01', trial_ends_at: '2026-11-24T12:00:00Z', configured: true },
+    });
+    expect(screen.getByRole('heading', { name: "On the house · the account's $11 for the free trial" })).toBeTruthy();
+    expect(screen.queryByText(/resets each calendar month/)).toBeNull();
+  });
   it('on the house draws on the account allowance', () => {
     render(HouseAllowance, {
       selectedModel: 'house/claude-haiku-5.5',

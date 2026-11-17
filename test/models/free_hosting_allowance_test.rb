@@ -61,6 +61,29 @@ class FreeHostingAllowanceTest < ActiveSupport::TestCase
     end
   end
 
+  # Mira, #1022: an at-cost plan that ends returns a grandfathered resident to
+  # free hosting with the at-cost rate still on the row. Its free hosting is
+  # funded all the same, at either at-cost rate.
+  %w[at_cost at_cost_hetzner].each do |rate|
+    test "free hosting restored after an ended #{rate} plan draws on the account's $10" do
+      @agent.update!(model_id: @model)
+      entitlement = free!(@agent)
+      sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: "sub_#{rate}",
+        tier: "life", rate:, stripe_status: "active")
+      entitlement.apply_subscription!(sub, now: @now)
+      assert_equal BigDecimal("0"), entitlement.reload.allowance_limit, "at cost draws nothing while it is paid"
+      sub.update!(stripe_status: "canceled")
+      entitlement.apply_subscription!(sub, now: @now)
+      entitlement.reload
+      assert entitlement.complimentary?
+      assert_equal rate, entitlement.rate, "the case: the ended plan's rate stays on the row"
+      assert_equal BigDecimal("10"), entitlement.allowance_limit
+      configured do
+        assert entitlement.reserve_house_call!(@offering, @model, agent_id: @agent.id)
+      end
+    end
+  end
+
   test "free allowances share the house-wide ceiling with the grants" do
     @agent.update!(model_id: @model)
     entitlement = free!(@agent)

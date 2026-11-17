@@ -138,7 +138,10 @@ class ResidentEntitlement < ApplicationRecord
   # nothing. A held resident draws nothing and changes nothing for the others.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
-    return BigDecimal("0") unless Billing::Tier::CATALOGUE_RATES.include?(rate)
+    # Free hosting is funded whatever rate an ended plan left on the row (an
+    # at-cost plan that lapsed back to free hosting keeps "at_cost"; Mira,
+    # #1022). Only a paid plan's rate decides.
+    return BigDecimal("0") unless complimentary? || Billing::Tier::CATALOGUE_RATES.include?(rate)
 
     Billing::Allowance.limit(account_id, month:, in_force_only: complimentary?)
   end
@@ -183,7 +186,7 @@ class ResidentEntitlement < ApplicationRecord
       return
     end
 
-    if limit.zero? && Billing::Tier::AT_COST_RATES.include?(rate)
+    if limit.zero? && !complimentary? && Billing::Tier::AT_COST_RATES.include?(rate)
       raise HouseInference::Error.new(
         "This resident is hosted at cost, which includes no house-model allowance; it runs on its own model subscription or key.",
         code: "house_allowance_none", status: 402)
@@ -209,7 +212,7 @@ class ResidentEntitlement < ApplicationRecord
 
   # When the account's free trial ends, while its allowance is the trial's.
   def trial_ends_at
-    return nil if !Billing::Tier::CATALOGUE_RATES.include?(rate) ||
+    return nil if !(complimentary? || Billing::Tier::CATALOGUE_RATES.include?(rate)) ||
       !Billing::Allowance.trial_started_at(account_id, in_force_only: complimentary?)
 
     ResidentSubscription.where(account_id: account_id, stripe_status: "trialing").minimum(:trial_end)
