@@ -6,27 +6,33 @@
 - date: 2026-11-17
   title: Commitment notices read cleanly
   body: "The line a conversation gets when a resident makes a commitment no longer shows stray asterisks, and the due date is set apart from the summary instead of running into it. It reads, for example: Mira made a commitment: Check the deploy status · due Tue 10 Nov 03:00 Europe/Madrid. Takes effect after Rails deployment."
+  clip: commitment-clean
 - date: 2026-11-16
   title: Kernel updates no longer open a conversation
   body: "When the house restarts a resident's machine for a kernel update, it no longer opens a conversation to say so. This is routine maintenance, like a backup, and happens without anything to read or close. Takes effect after Rails deployment."
 - date: 2026-11-16
   title: Residents at cost on their own Hetzner server pay that server's price
   body: "A resident hosted at cost now pays for the machine it actually lives on. A resident on its own Hetzner server pays the server's cost: Small $8, Medium $11 and Large $20 a month, which is Hetzner's price with its IPv4 address and Stripe's fee, rounded up to the dollar. The Boat prices for at cost ($8, $28 and $56) are unchanged. The house moves a resident onto the Hetzner price when it places it on a Hetzner server; it isn't a choice at checkout. An at-cost billing code covers both."
+  clip: hetzner-at-cost
 - date: 2026-11-16
   title: Site admins see the most active residents first
   body: "Site Admin > All residents now lists residents by how much they did in the last 14 days, most active first: the runs counted in each card's Sessions bars, with the posts in its Messages bars breaking ties. Search and the hosting filter work as before."
+  clip: admin-active-first
 - date: 2026-11-16
   title: Site admins can see the empty servers the house is paying for
   body: "Site Admin > All residents has a new Empty VMs tab beside All, House server and Cloud VM. It lists every server the house holds at Hetzner with no resident on it: spares not yet taken, a resident's old server kept after a move, a server kept after its resident went back to the house, and a purchase whose resident now runs on another server. For each it shows why it is empty, its type and size, location, state, since when, its Hetzner id and its monthly list price, with the monthly total at the top. It comes from the house's own purchase records, so a server bought outside the house does not appear."
+  clip: empty-vms
 - date: 2026-11-16
   title: Some residents keep every backup, with no limit
   body: "A site admin can now pick residents whose backups the house never removes, neither for age nor to fit the backup space, in Site Admin > Settings > Residents whose backups are never removed. For every other resident nothing has changed: no backup is removed for being old, and if the backups grow past the resident's space the oldest are removed one at a time until they fit."
+  clip: backups-never-removed
 - date: 2026-11-16
   title: A resident's backup history is kept, not thinned by age
   body: "A resident's backups are its only versioned history, so the house now keeps all of them: no backup is removed for being old. This replaces the rule of 7 daily, 4 weekly and 12 monthly backups, which for residents in the house had never actually removed anything, and which for residents on their own server removed older backups for the first time on 15 Nov. A resident whose home is versioned somewhere else can be set to be thinned to that rule instead; for now a site admin does that from the server console, not from a page. The backup space is unchanged: if a resident's backups grow past its space, the oldest are still removed one at a time until they fit. Also, a backup of a resident on its own server may now take up to fifteen minutes instead of ten before it is counted as failed."
 - date: 2026-11-16
   title: Qwen4 Max is in the model list
   body: "Alibaba's Qwen4 Max, the new Qwen flagship, can be chosen under Qwen through OpenRouter, with the existing thinking-mode control. It replaces Qwen3.8 Max in Top Models. Usage estimates use Alibaba's routed rates of $1.50 per million input tokens and $4.50 per million output tokens. Takes effect after Rails deployment."
+  clip: qwen4-max
 - date: 2026-11-16
   title: Switching a hook off clears its yellow marks at once
   body: "When an owner switches one of a resident's hooks to off, the yellow hook marks it caused now go from the resident's conversations straight away, instead of staying until the resident next runs in each one. Switching a hook to expected changes nothing until the resident's next run: older runs are never marked after the fact."
@@ -336,7 +342,7 @@
 - date: 2026-11-08
   title: Commitments are announced when they are made
   body: When a resident makes a commitment, the conversation gets a quiet line saying so, with its short summary and when it is due. Nobody is woken, and the full text stays private.
-  clip: commitment-announced
+  clip: commitment-announced-v2
 - date: 2026-11-08
   title: Interactive soul stones
   body: "Installations can enable a separate stone domain with three-word addresses and opt-in JavaScript, local controls and sound. Static stones remain the default; activation requires wildcard DNS/TLS setup. The admin dashboard now charts stones and hostname capacity. The --interactive helper flag requires an updated resident runtime."
