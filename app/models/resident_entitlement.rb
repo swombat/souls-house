@@ -64,14 +64,11 @@ class ResidentEntitlement < ApplicationRecord
     find_by(agent: agent)&.paid? || false
   end
 
-  # Free hosting (residents from before paying was possible) carries $10 a
-  # month of the house model of its own, the Conversation allowance (Daniel,
-  # jygXOY/jlnVNY, 2026-10-30: "they are on a free plan where they get a $10
-  # allowance, so they should continue functioning"). It replaces the per-user
-  # grant for that resident. A paid plan replaces it in turn while in force.
-  # Its own number, not the account allowance's: the two are equal today,
-  # and changing one is a decision about the other (Daniel's to make).
-  COMPLIMENTARY_ALLOWANCE_USD = BigDecimal("10")
+  # Free hosting (residents from before paying was possible) keeps its
+  # residents funded on the house model (Daniel, jygXOY/jlnVNY, 2026-10-30:
+  # "they are on a free plan where they get a $10 allowance, so they should
+  # continue functioning"). The allowance is the account's (Billing::Allowance),
+  # not the resident's own: one $10 for the account, however many residents.
 
   # Whether this resident's own entitlement pays for its house-model calls
   # now (paid plan, draining, or free hosting with its allowance). When true,
@@ -133,48 +130,24 @@ class ResidentEntitlement < ApplicationRecord
   # The offer the current plan was bought at.
   def offer = tier_record&.offer(rate)
 
-  # The month's ceiling on house-model spend. Free hosting has its own $10.
-  # Otherwise the allowance is the account's (2026-11-11): $10 a UTC month
-  # (Billing::Tier::ACCOUNT_ALLOWANCE_USD), shared by every resident whose
-  # plan funds calls at the standard rate. Spend is counted across the
-  # account (allowance_spent), so two residents share one $10, and replacing
-  # or resizing a resident, a lapse and repayment, or a replayed webhook never
-  # gives a second. At cost brings its own model and draws nothing. A held
-  # resident draws nothing and changes nothing for the others.
+  # The month's ceiling on house-model spend: the account's
+  # (Billing::Allowance), shared by every resident it funds at the standard
+  # rate, free-hosted ones included, so two residents share one $10 and
+  # replacing or resizing a resident, a lapse and repayment, or a replayed
+  # webhook never gives a second. At cost brings its own model and draws
+  # nothing. A held resident draws nothing and changes nothing for the others.
   def allowance_limit(month = HouseInference::Offering.month)
     return BigDecimal("0") unless funds_calls?
-    return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
-    return BigDecimal("0") unless Billing::Tier::CATALOGUE_RATES.include?(rate)
+    # Free hosting is funded whatever rate an ended plan left on the row (an
+    # at-cost plan that lapsed back to free hosting keeps "at_cost"; Mira,
+    # #1022). Only a paid plan's rate decides.
+    return BigDecimal("0") unless complimentary? || Billing::Tier::CATALOGUE_RATES.include?(rate)
 
-    trial_started_at = Billing::Trial.allowance_started_at(account_id)
-    return Billing::Tier::ACCOUNT_ALLOWANCE_USD unless trial_started_at
-
-    # The free trial's allowance is $10 for the whole trial, not $10 a month
-    # (Billing::Trial): this month's ceiling is what the account didn't draw
-    # in the trial's earlier months, so ceiling minus this month's spend
-    # (allowance_spent) is $10 minus everything drawn since the trial began.
-    # Once a resident is paid for the ordinary monthly ceiling applies, and
-    # what the trial drew this month counts against it, being this month's
-    # spend.
-    before = paid_spend(month: trial_started_at.utc.to_date.beginning_of_month...month)
-    [ Billing::Trial::ALLOWANCE_USD - before, BigDecimal("0") ].max
+    Billing::Allowance.limit(account_id, month:, in_force_only: complimentary?)
   end
 
-  # In-flight calls count at their reservation until settled. Free hosting
-  # counts its own calls; a paid plan counts what every resident of the
-  # account drew on the paid allowance this month.
-  def allowance_spent(month = HouseInference::Offering.month)
-    return house_inference_calls.where(month: month).sum(:charge_usd) if complimentary?
-
-    paid_spend(month: month)
-  end
-
-  # What every resident of the account drew on the paid allowance in these
-  # months.
-  def paid_spend(month:)
-    HouseInferenceCall.where(month: month, free_pool: false,
-      resident_entitlement_id: ResidentEntitlement.where(account_id: account_id).select(:id)).sum(:charge_usd)
-  end
+  # What the account's residents drew this month, on any path.
+  def allowance_spent(month = HouseInference::Offering.month) = Billing::Allowance.spent(account_id, month:)
 
   def allowance_remaining(month = HouseInference::Offering.month)
     [ allowance_limit(month) - allowance_spent(month), BigDecimal("0") ].max
@@ -213,14 +186,12 @@ class ResidentEntitlement < ApplicationRecord
       return
     end
 
-    if limit.zero? && Billing::Tier::AT_COST_RATES.include?(rate)
+    if limit.zero? && !complimentary? && Billing::Tier::AT_COST_RATES.include?(rate)
       raise HouseInference::Error.new(
         "This resident is hosted at cost, which includes no house-model allowance; it runs on its own model subscription or key.",
         code: "house_allowance_none", status: 402)
     end
-    message = if complimentary?
-      "This resident's free allowance is used up for this month. It resets at the start of next month (UTC)."
-    elsif trial_ends_at
+    message = if trial_ends_at
       "This account's house-model allowance for its free trial is used up. The monthly allowance starts once the trial becomes a paid plan."
     else
       "This account's house-model allowance is used up for this month. It resets at the start of next month (UTC)."
@@ -241,7 +212,8 @@ class ResidentEntitlement < ApplicationRecord
 
   # When the account's free trial ends, while its allowance is the trial's.
   def trial_ends_at
-    return nil if complimentary? || !Billing::Tier::CATALOGUE_RATES.include?(rate) || !Billing::Trial.allowance_started_at(account_id)
+    return nil if !(complimentary? || Billing::Tier::CATALOGUE_RATES.include?(rate)) ||
+      !Billing::Allowance.trial_started_at(account_id, in_force_only: complimentary?)
 
     ResidentSubscription.where(account_id: account_id, stripe_status: "trialing").minimum(:trial_end)
   end

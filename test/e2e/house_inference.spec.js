@@ -23,7 +23,7 @@ test('house funding is explicit, explains privacy and enforces one resident with
     };
     await selectHouse(residents[0]);
     const allowance = page.getByRole('region', { name: 'House inference allowance' });
-    await expect(allowance).toContainText('One funded resident per user');
+    await expect(allowance).toContainText('One funded resident per person');
     await expect(allowance).toContainText('Fireworks’ US endpoint');
     await page.getByRole('button', { name: 'Update Resident', exact: true }).click();
     await expect(page).toHaveURL(/\/residents$/);

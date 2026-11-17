@@ -5,7 +5,7 @@
 # the ordinary ended-subscription path puts the resident to sleep, deleting
 # nothing; with a card (added in Stripe's portal) it becomes active and nothing
 # else changes. While it is trialing the account's house-model allowance is
-# $10 for the whole trial, not $10 a month (ResidentEntitlement#allowance_limit).
+# $10 for the whole trial, not $10 a month (Billing::Allowance).
 #
 # Once per account, ever. Offered to an account that pays per resident, has
 # never had a trial and has never had a ResidentSubscription, while Site
@@ -30,10 +30,6 @@ module Billing
   module Trial
 
     DAYS = 14
-    # The house-model allowance for the whole trial, not a month of it
-    # (ResidentEntitlement#allowance_limit). Its own number: equal to the
-    # account's monthly allowance today, not bound to it.
-    ALLOWANCE_USD = BigDecimal("10")
     TIER = "conversation".freeze
     RATE = "standard".freeze
     HOLDING_STATES = %w[pending born failed].freeze
@@ -105,13 +101,15 @@ module Billing
     # unfinished turn (ResidentEntitlement#draining?). If the account has
     # never paid for a standard-rate resident, that turn is the trial's and
     # keeps the trial's ceiling: a trial cancelled mid-turn must not find a
-    # fresh month's $10.
-    def allowance_started_at(account_id)
+    # fresh month's $10. That fallback is only for such a turn: a resident
+    # funded another way (free hosting, on the house) asks with
+    # in_force_only, so a trial that ended unpaid never caps it.
+    def allowance_started_at(account_id, in_force_only: false)
       drawing = ResidentSubscription.where(
         id: ResidentEntitlement.where(account_id: account_id).on_account_allowance.select(:current_subscription_id)
       )
       statuses = drawing.distinct.pluck(:stripe_status)
-      return nil unless statuses == [ "trialing" ] || (statuses.empty? && never_paid?(account_id))
+      return nil unless statuses == [ "trialing" ] || (!in_force_only && statuses.empty? && never_paid?(account_id))
 
       Account.where(id: account_id).pick(:trial_started_at) || drawing.minimum(:created_at)
     end

@@ -25,9 +25,6 @@ class PricingPageTest < ActionDispatch::IntegrationTest
   test "every page shares billing_numbers from the enforcing constants" do
     expected = {
       "account_allowance_usd" => Billing.usd(Billing::Tier::ACCOUNT_ALLOWANCE_USD),
-      "trial_allowance_usd" => Billing.usd(Billing::Trial::ALLOWANCE_USD),
-      "free_hosting_allowance_usd" => Billing.usd(ResidentEntitlement::COMPLIMENTARY_ALLOWANCE_USD),
-      "on_the_house_allowance_usd" => Billing.usd(HouseInferenceGrant::MONTHLY_LIMIT),
       "trial_days" => Billing::Trial::DAYS,
       "grace_days" => 14
     }

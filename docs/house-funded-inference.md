@@ -9,9 +9,12 @@ remain unchanged. It needs no personal key and never falls through to one.
 - One grant per sponsoring **user**, across all accounts; one resident per grant.
   Claiming requires permission to manage the account's credentials. Existing
   collaborators do not become new sponsors when editing that resident.
-- $10 per UTC calendar month, no rollover, shared across house offerings. Switch
-  the current resident to a personal model before assigning the grant elsewhere.
-  Disabled residents retain their slot. Replacements retain the grant and ledger.
+- The grant carries no allowance of its own. The resident draws on its
+  account's one house-model allowance (`Billing::Allowance`): $10 per UTC
+  calendar month, no rollover, shared by every resident the account funds at
+  the standard rate (paid, included, granted, free-hosted or on the house) and
+  across house offerings. Switch the current resident to a personal model
+  before assigning the grant elsewhere. Disabled residents retain their slot.
 - Every inference call (including wakes, tools, compaction and subagents) uses the
   same gateway and grant. Only the currently selected model is accepted. A
   resident can use separately configured personal providers outside this route;
@@ -21,10 +24,9 @@ remain unchanged. It needs no personal key and never falls through to one.
   house-wide monthly ceiling (default **$300**, configurable with
   `HOUSE_INFERENCE_MONTHLY_LIMIT_USD`; zero closes admission).
 - Reserve **$0.75** before a call and replace it with the upstream's reported
-  `usage.cost` after completion (rounded up to the ledger’s $0.00000001 precision). Admit only while the month's total is below
-  $10. Thus the final call can take the total above $10, but by **less than
-  $0.75** under the pinned route's enforced request/price bounds. No later call
-  is admitted. Concurrent calls cannot each take the last slice.
+  `usage.cost` after completion (rounded up to the ledger’s $0.00000001 precision). Admit only while the reservation fits in
+  what the account has left, so the account's total never passes its allowance.
+  Concurrent calls cannot each take the last slice.
 - Missing or uncertain usage keeps the conservative charge. A process crash leaves
   a pending record and blocks new calls, including across a month boundary, until
   reconciliation. Network retries are never hidden within the gateway.
