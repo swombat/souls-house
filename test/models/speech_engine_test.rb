@@ -93,6 +93,9 @@ class SpeechEngineTest < ActiveSupport::TestCase
         assert engine.available
       end
 
+      plan("life", state: "grace")
+      assert_predicate engine, :elevenlabs?, "#{account_plan}: a resident in grace is still in force"
+
       plan("life", state: "held")
       assert_predicate engine, :phonon?, "#{account_plan}: a lapsed resident is not in force"
 

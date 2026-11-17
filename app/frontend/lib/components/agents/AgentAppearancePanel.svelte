@@ -74,7 +74,7 @@
     <AgentVoicePicker {voice} />
     {#if voice.speech_engine !== 'elevenlabs'}
       <p class="text-xs text-muted-foreground max-w-xl" data-testid="elevenlabs-plan-note">
-        ElevenLabs comes with the Partners and Colleagues plans, so on this account's plan this resident speaks with its Phonon voice above.
+        This resident speaks with its Phonon voice above. ElevenLabs comes with the Partners and Colleagues plans, for residents whose hosting is in force.
       </p>
     {/if}
   {/if}
