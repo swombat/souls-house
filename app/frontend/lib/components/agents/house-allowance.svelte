@@ -1,8 +1,14 @@
 <script>
+  import { page } from '@inertiajs/svelte';
+  import { billingNumbers } from '$lib/billing-numbers';
+
   let { selectedModel, allowance = null } = $props();
 
-  // During the account's free trial the allowance is $10 for the whole trial,
-  // not $10 a month (ResidentEntitlement#allowance_presentation).
+  // Four different allowances, each its own server constant (billing_numbers).
+  const numbers = $derived(billingNumbers($page.props));
+
+  // During the account's free trial the allowance is one amount for the whole
+  // trial, not a month of it (ResidentEntitlement#allowance_presentation).
   let trialEnd = $derived(
     allowance?.trial_ends_at
       ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeZone: 'UTC' }).format(
@@ -21,30 +27,31 @@
   <section class="rounded-lg border p-4 space-y-2 text-sm" aria-label="House inference allowance">
     {#if allowance?.source === 'plan'}
       <h3 class="font-semibold">
-        {allowance.plan} · {trialEnd ? '$10 for the free trial' : `$${allowance.limit_usd.toFixed(2)} this month`}
+        {allowance.plan} · {trialEnd ? `${numbers.trialAllowance} for the free trial` : `$${allowance.limit_usd.toFixed(2)} this month`}
       </h3>
       <p>
         {#if allowance.rate?.startsWith('at_cost')}
           Paid for at cost, so it includes no house-model use: this resident runs on its own model subscription or key.
         {:else if trialEnd}
-          During the free trial the account's house-model allowance is $10 in all until {trialEnd}, not $10 a month. It
-          is shared by the account's residents at the standard price and across house models. If the resident is kept
-          after the trial, the allowance becomes $10 a month.
+          During the free trial the account's house-model allowance is {numbers.trialAllowance} in all until {trialEnd}, not
+          {numbers.trialAllowance} a month. It is shared by the account's residents at the standard price and across house
+          models. If the resident is kept after the trial, the allowance becomes {numbers.accountAllowance} a month.
         {:else}
-          The account gets $10 a month of house-model use, shared by its residents at the standard price and across
-          house models. It resets each calendar month in UTC, with no rollover. The free $10 allowance isn't used while
-          the resident is paid for.
+          The account gets {numbers.accountAllowance} a month of house-model use, shared by its residents at the standard
+          price and across house models. It resets each calendar month in UTC, with no rollover. The free
+          {numbers.onTheHouseAllowance} allowance isn't used while the resident is paid for.
         {/if}
       </p>
     {:else if allowance?.source === 'free'}
-      <h3 class="font-semibold">Free hosting · $10 per month</h3>
+      <h3 class="font-semibold">Free hosting · {numbers.freeHostingAllowance} per month</h3>
       <p>
-        This resident was created before plans existed, so it has $10 of house models a month of its own. It isn't
+        This resident was created before plans existed, so it has {numbers.freeHostingAllowance} of house models a month
+        of its own. It isn't
         shared with your other residents, doesn't move to another resident, and resets each calendar month in UTC, with
         no rollover. Your personal free allowance isn't used for it.
       </p>
     {:else}
-      <h3 class="font-semibold">On the house · $10 per month</h3>
+      <h3 class="font-semibold">On the house · {numbers.onTheHouseAllowance} per month</h3>
       <p>
         One funded resident per user, across all accounts. The allowance is shared across house models and follows you
         if you replace the resident. It resets each calendar month in UTC, with no rollover.

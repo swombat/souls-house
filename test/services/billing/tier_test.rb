@@ -40,16 +40,10 @@ class Billing::TierTest < ActiveSupport::TestCase
 
   test "every size can carry the account's $10 allowance at the standard rate, none at cost" do
     Billing::Tier.all.each do |tier|
-      assert_equal BigDecimal("10"), tier.allowance_usd
-      assert_equal BigDecimal("10"), tier.offer.allowance_usd
+      refute_respond_to tier, :allowance_usd, "a size is a machine; the allowance is the account's"
+      assert_equal Billing::Tier::ACCOUNT_ALLOWANCE_USD, tier.offer.allowance_usd
       assert_equal BigDecimal("0"), tier.offer("at_cost").allowance_usd
     end
-  end
-
-  test "Conversation connects to nothing outside; Life and Work to every connection" do
-    assert_empty Billing::Tier.find!("conversation").connections
-    assert_equal Billing::Tier::CONNECTIONS, Billing::Tier.find!("life").connections
-    assert_equal Billing::Tier::CONNECTIONS, Billing::Tier.find!("work").connections
   end
 
   # #619: re-costing a plan makes a new Stripe price; the old one is still

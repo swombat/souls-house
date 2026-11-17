@@ -3,19 +3,21 @@ import { vi } from 'vitest';
 
 vi.mock('@inertiajs/svelte', async () => {
   const { writable } = await import('svelte/store');
-  return { page: writable({ props: { site_settings: { allow_signups: true } } }) };
+  const { BILLING_NUMBERS } = await import('../test/billing-numbers-fixture.js');
+  return { page: writable({ props: { site_settings: { allow_signups: true }, billing_numbers: BILLING_NUMBERS } }) };
 });
 
 const { default: Pricing } = await import('./pricing.svelte');
 const { page } = await import('@inertiajs/svelte');
 
-const signedOut = { site_settings: { allow_signups: true } };
+const { BILLING_NUMBERS } = await import('../test/billing-numbers-fixture.js');
+const signedOut = { site_settings: { allow_signups: true }, billing_numbers: BILLING_NUMBERS };
 afterEach(() => page.set({ props: signedOut }));
 
 const tiers = [
   { id: 'conversation', name: 'Small', size: 'small', monthly_usd: '9.99', allowance_usd: '10.00', purchasable: true },
-  { id: 'life', name: 'Medium', size: 'medium', monthly_usd: '19.99', allowance_usd: '10.00', purchasable: true },
-  { id: 'work', name: 'Large', size: 'large', monthly_usd: '49.99', allowance_usd: '10.00', purchasable: true },
+  { id: 'life', name: 'Medium', size: 'medium', monthly_usd: '39.99', allowance_usd: '10.00', purchasable: true },
+  { id: 'work', name: 'Large', size: 'large', monthly_usd: '69.99', allowance_usd: '10.00', purchasable: true },
 ];
 const accountPlans = [
   {
@@ -65,7 +67,7 @@ test('three account plan cards lead with what an account pays, one small residen
   expect(within(card('companions')).getByRole('link', { name: 'Begin someone' })).toBeInTheDocument();
 });
 
-test('residents by size, then model use, then the free 14 days with the paid plans never free', () => {
+test('residents by size, then model use, then the free 14 days, which the paid plans are not part of', () => {
   render(Pricing, {
     tiers,
     account_plans: accountPlans,
@@ -75,8 +77,8 @@ test('residents by size, then model use, then the free 14 days with the paid pla
   });
   const sizes = screen.getByTestId('pricing-sizes');
   expect(within(sizes).getByRole('heading', { name: 'Medium' })).toBeInTheDocument();
-  expect(sizes).toHaveTextContent('$19.99');
-  expect(sizes).toHaveTextContent('+$10 a month as your included resident');
+  expect(sizes).toHaveTextContent('$39.99');
+  expect(sizes).toHaveTextContent('+$30 a month as your included resident');
   expect(screen.getByTestId('pricing-model-use')).toHaveTextContent(
     "Each account gets $10 a month of the house's own model"
   );
@@ -87,8 +89,48 @@ test('residents by size, then model use, then the free 14 days with the paid pla
   const trial = screen.getByTestId('pricing-trial');
   expect(trial).toHaveTextContent('Free for 14 days, no card asked for');
   expect(screen.getByTestId('pricing-trial-paid-plans')).toHaveTextContent(
-    "Partners and Colleagues are never free: their $20 or $50 a month is charged from the day you choose one, also while a resident's free 14 days are running, and needs a card."
+    "Partners and Colleagues are not part of them: their $20 or $50 a month needs a card. One the account already has is charged as usual; one can't be added while the free days run."
   );
+  expect(document.body).not.toHaveTextContent(/never free/i);
+});
+
+test('the numbers it states are the server constants, not copies (negative control)', () => {
+  page.set({
+    props: {
+      ...signedOut,
+      billing_numbers: { ...BILLING_NUMBERS, account_allowance_usd: '12.50', trial_days: 21, grace_days: 9 },
+    },
+  });
+  const plans = accountPlans.map((plan) =>
+    plan.id === 'partners' ? { ...plan, features: { ...plan.features, swarm_searches: 33 } } : plan
+  );
+  render(Pricing, {
+    tiers,
+    account_plans: plans,
+    billing_open: true,
+    contact_email: 'hello@example.com',
+    free_trial_enabled: true,
+  });
+  expect(screen.getByTestId('pricing-model-use')).toHaveTextContent("Each account gets $12.50 a month of the house's own model");
+  expect(screen.getByTestId('pricing-trial')).toHaveTextContent('Free for 21 days');
+  expect(screen.getByTestId('pricing-trial')).toHaveTextContent('goes to sleep on day 21');
+  expect(document.body).toHaveTextContent('Partners includes 33 and Colleagues includes 100 swarm searches a month');
+  expect(document.body).toHaveTextContent('there are 9 days to fix the card first');
+  expect(document.body).not.toHaveTextContent(/\$10 a month|14 days|includes 20/);
+});
+
+test('how to cancel says what End plan does, not a portal that cannot cancel', () => {
+  render(Pricing, {
+    tiers,
+    account_plans: accountPlans,
+    billing_open: true,
+    contact_email: 'hello@example.com',
+    free_trial_enabled: false,
+  });
+  expect(document.body).toHaveTextContent('with End plan on the resident');
+  expect(document.body).toHaveTextContent('the unused part of the month is credit on the next bill');
+  expect(document.body).toHaveTextContent('To end a Partners or Colleagues plan, write to hello@example.com');
+  expect(document.body).not.toHaveTextContent(/Stripe's billing page|Stripe's portal/);
 });
 
 test('with the trial switched off there is no free line at all', () => {
@@ -180,12 +222,12 @@ describe('residents by size, as cards', () => {
     expect(sizeCard('small').querySelector('[data-size-included]')).toHaveTextContent('Included in every plan');
     expect(sizeCard('small').querySelector('[data-size-badge]')).toHaveTextContent('What most residents need');
     expect(sizeCard('medium').querySelector('[data-size-badge]')).toBeNull();
-    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$19.99');
+    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$39.99');
     expect(sizeCard('medium').querySelector('[data-size-included]')).toHaveTextContent(
-      '+$10 a month as your included resident'
+      '+$30 a month as your included resident'
     );
     expect(sizeCard('large').querySelector('[data-size-included]')).toHaveTextContent(
-      '+$40 a month as your included resident'
+      '+$60 a month as your included resident'
     );
     expect(sizeCard('small').querySelectorAll('[data-size-uses] li')).toHaveLength(3);
     expect(sizeCard('medium')).toHaveTextContent('Writing code');
@@ -221,7 +263,7 @@ describe('residents by size, as cards', () => {
     const closed = withMachines.map((tier) => (tier.id === 'work' ? { ...tier, purchasable: false } : tier));
     render(Pricing, { tiers: closed, account_plans: accountPlans, billing_open: true });
     expect(sizeCard('large').querySelector('[data-size-price]')).toHaveTextContent('Opens soon');
-    expect(sizeCard('large')).not.toHaveTextContent('$49.99');
-    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$19.99');
+    expect(sizeCard('large')).not.toHaveTextContent('$69.99');
+    expect(sizeCard('medium').querySelector('[data-size-price]')).toHaveTextContent('$39.99');
   });
 });

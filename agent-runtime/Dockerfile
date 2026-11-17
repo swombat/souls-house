@@ -235,9 +235,6 @@ COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instru
 COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 COPY docs/capability-discovery.md /usr/local/share/helixkit-agent/capability-discovery.md
 COPY docs/message-helper-input.md /usr/local/share/helixkit-agent/message-helper-input.md
-# The sheet about souls.house as of this image (#566). The runtime fetches a
-# current one from the house each fresh session; this is the fallback.
-COPY docs/about-souls-house.md /usr/local/share/helixkit-agent/about-souls-house.md
 # Permanent legacy stub. Residents' own memories and notes cite the old manual
 # path; it stays installed forever and points at the current manual.
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md

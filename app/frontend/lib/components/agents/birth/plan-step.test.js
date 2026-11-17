@@ -15,7 +15,7 @@ const tiers = [
     id: 'life',
     name: 'Medium',
     size: 'medium',
-    monthly_usd: '19.99',
+    monthly_usd: '39.99',
     allowance_usd: '10.00',
     purchasable: true,
     features: { hosting: true, allowance_usd: '10.00' },
@@ -154,13 +154,13 @@ test('medium and large sit behind a plain disclosure, priced against small', () 
   const bigger = screen.getByTestId('plan-bigger');
   expect(bigger).toHaveTextContent('Need a bigger computer?');
   expect(bigger.open).toBe(false);
-  expect(bigger).toHaveTextContent('$10 a month more than small');
+  expect(bigger).toHaveTextContent('$30 a month more than small');
 });
 
 test('a medium resident already chosen opens the disclosure', () => {
   render(PlanStep, { billing, residentName: 'Aria', tier: 'life' });
   expect(screen.getByTestId('plan-bigger').open).toBe(true);
-  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $19.99 + VAT for Aria's first month.");
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $39.99 + VAT for Aria's first month.");
 });
 
 test('names the account plan and links to Billing, without choosing it here', () => {
@@ -196,7 +196,7 @@ test('the free 14 days: a small resident asks for no card and says so', () => {
 test('the free 14 days are for small only: medium is paid from today', () => {
   render(PlanStep, { billing, residentName: 'Aria', tier: 'life', trial: { eligible: true, days: 14 } });
   expect(screen.queryByTestId('plan-trial')).toBeNull();
-  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $19.99 + VAT for Aria's first month.");
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $39.99 + VAT for Aria's first month.");
   expect(screen.getByRole('button', { name: 'Add a card' })).toBeVisible();
 });
 

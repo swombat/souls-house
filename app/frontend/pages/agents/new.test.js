@@ -350,7 +350,7 @@ describe('the Plan step button', () => {
     });
 
     test('choosing Large after a Small quote forgets it: the next Create starts a fresh order', async () => {
-      const large = { ...small, id: 'business', tier: 'business', size: 'large', name: 'Large', monthly_usd: '49.99' };
+      const large = { ...small, id: 'business', tier: 'business', size: 'large', name: 'Large', monthly_usd: '69.99' };
       const largePayment = {
         ...itemPayment,
         order: { ...itemPayment.order, id: 'o4', tier: 'business' },
@@ -371,7 +371,7 @@ describe('the Plan step button', () => {
       await fireEvent.click(screen.getByRole('radio', { name: 'Large' }));
 
       await waitFor(() => expect(screen.queryByTestId('birth-add-confirm')).toBeNull());
-      await fireEvent.click(await screen.findByRole('button', { name: 'Create Aria · $49.99 a month + VAT' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Create Aria · $69.99 a month + VAT' }));
       await screen.findByTestId('birth-add-confirm');
       expect(payAgain).not.toHaveBeenCalled();
       expect(payForResident).toHaveBeenLastCalledWith(expect.objectContaining({ tier: 'business' }));

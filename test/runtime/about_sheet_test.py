@@ -78,26 +78,27 @@ class AboutSheetDeliveryTest(unittest.TestCase):
         status = about_sheet.refresh(fetch=lambda url, token: self.fail("fetched again"), now=NOW)
         self.assertEqual(status, "fresh")
 
-    def test_absent_copy_falls_back_to_the_baked_one(self):
+    def test_a_stray_copy_in_the_docs_folder_is_never_read(self):
+        # An older image left one there; it said $20 / $50 / $100 for weeks.
         (self.docs / "about-souls-house.md").write_text(SHEET)
         with patch.dict(os.environ, {"SOULSHOUSE_BEARER_TOKEN": ""}):
             status = about_sheet.refresh(now=NOW)
         self.assertTrue(status.startswith("failed"))
         self.assertFalse(self.live.exists())
         note = about_sheet.hosting_note(status, now=NOW)
-        self.assertIn(str(self.docs / "about-souls-house.md"), note)
-        self.assertIn("built into this runtime image", note)
+        self.assertNotIn(str(self.docs), note)
+        self.assertIn("No sheet about souls.house is available", note)
 
     def test_no_copy_at_all_says_so_and_points_elsewhere(self):
         note = about_sheet.hosting_note("failed: OSError", now=NOW)
         self.assertIn("No sheet about souls.house is available", note)
         self.assertIn("account's owner", note)
 
-    def test_the_image_ships_the_baked_copy(self):
+    def test_the_image_ships_the_fetcher_and_no_copy_of_the_sheet(self):
         dockerfile = (RUNTIME / "Dockerfile").read_text()
-        self.assertIn("COPY docs/about-souls-house.md /usr/local/share/helixkit-agent/about-souls-house.md", dockerfile)
         self.assertIn("about_sheet.py", dockerfile)
-        self.assertTrue((RUNTIME / "docs" / "about-souls-house.md").read_text().startswith(about_sheet.HEADING))
+        self.assertNotIn("about-souls-house.md", dockerfile)
+        self.assertFalse((RUNTIME / "docs" / "about-souls-house.md").exists())
 
 
 class FreshSessionPromptTest(unittest.TestCase):

@@ -2,8 +2,8 @@
 # at a rate (what it costs and what house-model allowance it includes). The
 # standard rate is the plan as published. At cost is the plan at the price of
 # its machine and what the machine drags with it, with no allowance: an
-# at-cost resident brings its own model (jBVrDj, 2026-10-28;
-# docs/proposals/2026-10-28-billing-codes-at-cost.md). A Stripe price
+# at-cost resident brings its own model (jBVrDj, 2026-10-28; the proposal
+# never reached master, it is in git history at 67cf0adc). A Stripe price
 # resolves to exactly one offer.
 module Billing
 
@@ -37,7 +37,7 @@ module Billing
     # The account's monthly house-model allowance a resident bought at this
     # rate may draw on, shared with the account's other standard-rate
     # residents. At cost draws on none.
-    def allowance_usd = standard? ? tier.allowance_usd : BigDecimal("0")
+    def allowance_usd = standard? ? Tier::ACCOUNT_ALLOWANCE_USD : BigDecimal("0")
 
     # Stripe price ids differ between test and live mode, so they are
     # configuration. An offer may have several, current first: re-costing

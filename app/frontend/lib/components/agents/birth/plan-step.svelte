@@ -3,7 +3,7 @@
   // choose the resident's size, and the card it is paid with. Stripe's own
   // embedded form takes a new card; nothing is charged until the resident is
   // created with the button below this step. The account's plan is not chosen
-  // here: one line names it and links to Billing. When the account's free 14
+  // here: one line names it and links to Billing. When the account's free
   // days apply (trial.eligible, a small resident at the standard price), no
   // card is asked for.
   //
@@ -36,7 +36,7 @@
     // Why this draft can't be paid for on the chosen plan, if it can't.
     blocked = null,
     busy = false,
-    // The account's free 14 days, { eligible, days } from the server.
+    // The account's free trial, { eligible, days } from the server.
     trial = null,
     // The account's Billing tab, where its plan is changed.
     billingUrl = null,
@@ -60,14 +60,14 @@
   let atCost = $derived(chosen?.rate === 'at_cost');
   let name = $derived(residentName.trim() || 'your resident');
   let free = $derived(trialApplies(trial, chosen));
-  let trialDays = $derived(trial?.days ?? 14);
+  let trialDays = $derived(trial?.days);
   // The account's plan, if the server sent it (billing.account_plan).
   let accountPlan = $derived(
     billing.account_plan
       ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.id) || null
       : null
   );
-  // Partners and Colleagues are never part of the free 14 days.
+  // Partners and Colleagues are not part of the free days.
   let accountPlanPaid = $derived(Number(accountPlan?.monthly_usd) > 0);
 
   let cardFormOpen = $state(false);

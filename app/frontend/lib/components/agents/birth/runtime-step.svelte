@@ -8,6 +8,8 @@
   import { CheckCircle, Gift, Key } from 'phosphor-svelte';
   import { slide } from 'svelte/transition';
   import { usd } from '$lib/pricing';
+  import { page } from '@inertiajs/svelte';
+  import { billingNumbers } from '$lib/billing-numbers';
 
   // Two paths: bring your own model key, or let the house pay for one of its two small models.
   // Each path shows only what it needs; the longer explanations wait behind "Show more".
@@ -26,6 +28,8 @@
     planAllowance = null,
   } = $props();
 
+  // A user's one on-the-house resident (HouseInferenceGrant), not the account's allowance.
+  let onTheHouse = $derived(billingNumbers($page.props).onTheHouseAllowance);
   let allowanceText = $derived(planAllowance ? usd(Math.max(...planAllowance.map(Number))) : null);
 
   const providerNames = {
@@ -83,7 +87,7 @@
               The account includes {allowanceText} a month of the house's models, shared by its residents at the standard
               price.
             {:else}
-              The house pays for a small model, up to $10 a month.
+              The house pays for a small model, up to {onTheHouse} a month.
             {/if}
           </span>
         </span>
@@ -114,7 +118,7 @@
           <span class="font-medium">Included with the account.</span>
           <span class="text-muted-foreground">No key needed. You choose the size at the last step.</span>
         {:else}
-          <span class="font-medium">On the house · $10 per month.</span>
+          <span class="font-medium">On the house · {onTheHouse} per month.</span>
           <span class="text-muted-foreground">No key needed. One funded resident per person.</span>
         {/if}
       </p>
