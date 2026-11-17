@@ -12,6 +12,8 @@
   let busy = $state(false);
   let missed = $state(false);
   let flashTimer;
+  let flashed = null;
+  const RING = ['ring-2', 'ring-red-500', 'dark:ring-red-400'];
 
   $effect(() => {
     chatId;
@@ -25,13 +27,22 @@
       : `Go to the messages that mentioned you (${ids.length}). Tap again for the one before.`
   );
 
-  function flash(element) {
-    const card = element.closest('[data-message-card]') ?? element;
-    const classes = ['ring-2', 'ring-red-500', 'dark:ring-red-400'];
+  function unflash() {
     clearTimeout(flashTimer);
-    card.classList.add(...classes);
-    flashTimer = setTimeout(() => card.classList.remove(...classes), 2000);
+    flashed?.classList.remove(...RING);
+    flashed = null;
   }
+
+  // One ring at a time: a new jump takes the ring off the last message
+  // before it rings the next, so a quick second tap can't strand one.
+  function flash(element) {
+    unflash();
+    flashed = element.closest('[data-message-card]') ?? element;
+    flashed.classList.add(...RING);
+    flashTimer = setTimeout(unflash, 2000);
+  }
+
+  $effect(() => unflash);
 
   async function jump() {
     if (busy) return;

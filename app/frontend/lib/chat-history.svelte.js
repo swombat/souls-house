@@ -155,7 +155,9 @@ export function createChatHistory(context) {
   // Scroll to the element `find` returns, loading older history page by
   // page until it appears or history runs out. Resolves to the element, or
   // null. Used by the jump-to-mention button; a jump is the reader moving,
-  // so the entry's bottom pin lets go first.
+  // so the entry's bottom pin lets go first. A page load that moves nothing
+  // (failed fetch, same oldest id) ends the walk: one tap, at most one
+  // failed request.
   async function reveal(find, { maxPages = 50, maxWaits = 400 } = {}) {
     releaseEntry?.();
     const id = context().chat.id;
@@ -176,7 +178,9 @@ export function createChatHistory(context) {
       }
       if (!hasMore || pages >= maxPages) return null;
       pages += 1;
+      const before = oldestId;
       await loadMore();
+      if (oldestId === before) return null;
     }
   }
 
