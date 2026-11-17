@@ -233,8 +233,10 @@ class FakeStripe
         id = "sub_new_#{@created_subscriptions.size}"
         items = params[:items].each_with_index.map { |item, index| { id: "si_#{id}_#{index}", price: price_object(item[:price]), quantity: item[:quantity] || 1, current_period_end: 1.month.from_now.to_i } }
         refuse_shared_price!(items)
+        # Stripe settles a first invoice of $0 at once: active, nothing to pay.
+        free = items.sum { |item| item[:price][:unit_amount].to_i * item[:quantity] }.zero?
         @subscriptions[id] = {
-          id: id, object: "subscription", status: "incomplete", customer: params[:customer],
+          id: id, object: "subscription", status: free ? "active" : "incomplete", customer: params[:customer],
           cancel_at_period_end: false, metadata: params[:metadata].transform_keys(&:to_s),
           default_payment_method: params[:default_payment_method], idempotency_key: opts[:idempotency_key],
           create_params: params.except(:expand).deep_dup,
@@ -551,6 +553,8 @@ class FakeStripe
   end
 
   def with_invoice(subscription)
+    return subscription.merge(latest_invoice: { id: "in_#{subscription[:id]}", status: "paid" }) if subscription[:status] == "active"
+
     subscription.merge(latest_invoice: { id: "in_#{subscription[:id]}", status: "open",
       confirmation_secret: { type: "payment_intent", client_secret: "pi_#{subscription[:id]}_secret" } })
   end

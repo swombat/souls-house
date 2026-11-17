@@ -32,7 +32,8 @@ module Billing
         attempt = BillingCheckoutAttempt.unresolved.find_by(agent: @agent, kind: "checkout")
         if attempt
           session = recover!(attempt)
-          if attempt.tier == @offer.tier.id && attempt.rate == @offer.rate && session.status == "open"
+          if attempt.tier == @offer.tier.id && attempt.rate == @offer.rate && session.status == "open" &&
+              attempt.create_params.dig("metadata", "plan") == @plan&.id
             publish!(attempt, session, entitlement)
             next session.url
           end

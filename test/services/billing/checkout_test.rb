@@ -45,6 +45,25 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_equal JSON.parse(params.to_json), pin.create_params
   end
 
+  test "an open Checkout is reused only while its plan line is still the one the first bill would carry" do
+    checkout
+    first = BillingCheckoutAttempt.find_by!(agent: @agent)
+    assert_equal "companions", first.create_params.dig("metadata", "plan")
+    @agent.account.update!(chosen_plan: "partners")
+    checkout
+    assert_equal [ "expired" ], @stripe.expired_sessions.map { |id| @stripe.session_states[id][:status] }.uniq
+    assert_equal "partners", BillingCheckoutAttempt.unresolved.find_by!(agent: @agent).create_params.dig("metadata", "plan")
+  end
+
+  test "an open first-bill Checkout for one resident means another resident is not the included one" do
+    checkout
+    other = agents(:code_reviewer)
+    assert_not Billing::Included.available?(@agent.account), "the open Checkout already carries the included resident"
+    assert Billing::Included.available?(@agent.account, except_agent: @agent), "control: not counting its own resident"
+    assert_equal "standard", Billing::Included.offer_for(@agent.account, Billing::Tier.find!("conversation").offer).rate
+    assert_equal @agent.account, other.account
+  end
+
   test "at cost requires a grant and tells a house-model owner where to change models" do
     assert_raises(Billing::NotEligible) { checkout(rate: "at_cost") }
     grant!

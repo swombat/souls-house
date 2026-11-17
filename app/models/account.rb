@@ -524,8 +524,12 @@ class Account < ApplicationRecord
   # subscription as Stripe has it.
   def account_plan_json(now = Time.current)
     # chosen: the plan a first bill will carry, while the account has none.
+    # bill: whether the account already pays a bill (with or without a plan
+    # line on it). includes_resident: false for an account holding an at-cost
+    # code, which has no included resident.
+    bill = Billing::Reconcile.applies?(self)
     { id: plan(now).id, source: plan_source(now), subscription: live_plan_subscription&.as_json,
-      chosen: (plan_to_pay_for&.id unless Billing::Reconcile.applies?(self)) }
+      chosen: (plan_to_pay_for&.id unless bill), bill: bill, includes_resident: !at_cost_holder? }
   end
 
   # Why this account can't take another member, or nil when it can. Members

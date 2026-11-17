@@ -100,14 +100,14 @@ test('a subscription: says what it costs and when it renews, and moves by changi
   );
 });
 
-test('a subscription ending says the account goes back to Companions and nobody is removed', () => {
+test('a subscription ending says the plan ends with the bill and nobody is removed', () => {
   show({
     id: 'colleagues',
     source: 'subscription',
     subscription: { status: 'active', current_period_end: '2026-12-10T00:00:00Z', cancel_at_period_end: true },
   });
   expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
-    'It ends on 10 Dec 2026, and the account goes back to Companions. Nobody is removed from it.'
+    'It ends with the bill on 10 Dec 2026. Nobody is removed from the account.'
   );
 });
 
@@ -121,6 +121,17 @@ test('during the free days the plan says when they end and offers no move', () =
     'Companions is free until 1 Dec 2026, its small resident with it. After that it is $9.99 a month + VAT.'
   );
   expect(screen.queryByTestId('account-plan-moves')).toBeNull();
+});
+
+test('a bill with no plan line offers no plan, and an account with an at-cost code is not told of an included resident', () => {
+  show({ id: 'colleagues', source: 'grant', subscription: null, chosen: null, bill: true, includes_resident: false });
+  expect(screen.queryByTestId('account-plan-moves')).toBeNull();
+  expect(screen.getByTestId('account-plan')).not.toHaveTextContent('One small resident included');
+
+  // Control: the same grant with no bill yet offers the higher plan, and the resident it includes.
+  show({ id: 'partners', source: 'grant', subscription: null, chosen: null, bill: false, includes_resident: true });
+  expect(screen.getAllByTestId('account-plan').at(-1)).toHaveTextContent('One small resident included');
+  expect(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' })).toBeVisible();
 });
 
 test('a failed payment offers no move, only the way to fix it', () => {

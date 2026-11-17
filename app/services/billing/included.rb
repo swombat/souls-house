@@ -40,7 +40,13 @@ module Billing
 
       waiting = ResidentBirthOrder.pending.where(account:, rate: "included")
       waiting = waiting.where.not(id: except_order.id) if except_order
-      !waiting.exists?
+      return false if waiting.exists?
+
+      # A first bill opened as a Checkout for another resident and not yet
+      # paid or expired already carries the included resident.
+      open = BillingCheckoutAttempt.unresolved.where(account:, rate: "included")
+      open = open.where.not(agent_id: except_agent) if except_agent
+      !open.exists?
     end
 
     # The resident that becomes the included one when the included resident

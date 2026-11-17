@@ -108,6 +108,10 @@ module Billing
           birth_attributes: attributes.to_h, open_beginning: open_beginning)
         order.update!(stripe_payment_method_id: payment_method.id)
         subscription = open_subscription!(order)
+        # A free account's first bill can be $0 (its plan given, a Small
+        # included): Stripe settles it at once, with no payment to confirm.
+        next [ order, nil, payment_method.id ] if subscription.status.in?(PAID)
+
         [ order, client_secret(subscription), payment_method.id ]
       end
     end

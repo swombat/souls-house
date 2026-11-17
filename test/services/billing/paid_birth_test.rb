@@ -75,23 +75,28 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
     # Daniel, jaMWBj YkMbQn 2026-11-13: "a discount code that gives people a
     # free account ... for each account size".
     @account.update!(granted_plan: "partners", chosen_plan: "partners")
-    order, = start!
+    order, secret, = start!
     params, = @stripe.created_subscriptions.sole
     assert_equal [ { price: CONVERSATION_INCLUDED_PRICE } ], params[:items]
     assert_nil order.plan
     assert_nil params[:metadata][:plan]
     assert_equal "included", order.rate
+    # A $0 first bill is settled by Stripe at once: nothing to pay, and the
+    # resident is born on it.
+    assert_nil secret
+    paid_birth.complete!(order)
+    assert order.reload.born?
+    assert_equal "included", ResidentSubscription.find_by!(agent: order.agent).rate
+    assert_empty AccountSubscription.where(account: @account), "a free account has no plan line"
+  end
 
-    # Negative control: a lower grant than the plan chosen still pays for the
-    # plan chosen.
-    ResidentBirthOrder.delete_all
-    @stripe = FakeStripe.new.tap do |stripe|
-      stripe.put_payment_method("pm_visa")
-      stripe.put_customer("cus_1", default_payment_method: "pm_visa")
-    end
+  test "control: a grant lower than the plan chosen still pays for the plan chosen" do
     @account.update!(granted_plan: "companions", chosen_plan: "colleagues")
-    order, = start!
+    order, secret, = start!
     assert_equal "colleagues", order.plan
+    assert_equal [ { price: COLLEAGUES_PRICE }, { price: CONVERSATION_INCLUDED_PRICE } ],
+      @stripe.created_subscriptions.sole.first[:items]
+    assert secret, "a bill with money on it is paid by card"
   end
 
   test "an at-cost code gives no free residence: a Small bought at the catalogue price is standard, with no plan line" do

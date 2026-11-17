@@ -41,6 +41,9 @@
 
   let moves = $derived.by(() => {
     if (!base || !canPay) return [];
+    // A bill with no plan line on it (at cost only, or from before plans
+    // included a resident) gets no plan from here: a plan comes with its resident.
+    if (accountPlan?.bill && !subscriptionLive) return [];
     // The bill can't change while its free days run, nor while a payment is owed.
     if (subscriptionLive && subscription?.status !== 'active') return [];
     const rank = ORDER.indexOf(current.id);
@@ -84,8 +87,8 @@
       {:else if source === 'subscription' && subscription?.status === 'past_due'}
         The last payment for {current.name} failed. Update the card from Manage billing.
       {:else if source === 'subscription' && subscription?.cancel_at_period_end}
-        {current.name} is {usd(current.monthly_usd)} a month + VAT. It ends on {date(subscription.current_period_end)},
-        and the account goes back to Companions. Nobody is removed from it.
+        {current.name} is {usd(current.monthly_usd)} a month + VAT. It ends with the bill on
+        {date(subscription.current_period_end)}. Nobody is removed from the account.
       {:else if source === 'subscription' && trialing}
         {current.name} is free until {date(subscription.current_period_end)}, its small resident with it. After that
         it is {usd(current.monthly_usd)} a month + VAT. The plan can be changed once the free days are over.
@@ -100,7 +103,11 @@
       {/if}
     </p>
 
-    <PlanIncludes plan={chosen ?? current} withResident={true} class="mt-3 text-sm" iconClass="text-primary/70" />
+    <PlanIncludes
+      plan={chosen ?? current}
+      withResident={accountPlan?.includes_resident !== false}
+      class="mt-3 text-sm"
+      iconClass="text-primary/70" />
 
     {#if moves.length}
       <div class="mt-4 space-y-3 border-t pt-4" data-testid="account-plan-moves">

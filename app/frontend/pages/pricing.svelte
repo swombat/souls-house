@@ -46,7 +46,7 @@
   // Every plan includes one small resident, so a plan can be bought once the
   // small size can.
   function actionFor(plan) {
-    const purchasable = Boolean(small?.purchasable) && (plan.purchasable || Number(plan.monthly_usd) === 0);
+    const purchasable = Boolean(small?.purchasable) && plan.purchasable;
     return planAction({ plan: { ...plan, purchasable }, billingOpen, user, account, isAccountAdmin, allowSignups });
   }
 

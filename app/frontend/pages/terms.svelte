@@ -46,9 +46,10 @@
     plan. If it is the only resident on your bill, the whole bill, account plan included, ends at the end of the period
     you have already paid for and the resident keeps running until then. The bill will not renew; amounts already owed
     from earlier changes may still be billed. If other residents share the bill, that resident comes off it at once and
-    the unused part of the period is credited against your next bill; if it was the resident your plan includes, another
-    resident on the bill takes its place. You can move the account to a smaller plan from the Billing tab. For anything
-    else, email us at <a href="mailto:hello@souls.house">hello@souls.house</a>.
+    the unused part of the period is credited against your next bill; if it was the resident your plan includes, the
+    longest-standing resident on the bill at its size's full price takes its place, and if there is none, the plan ends
+    with it. You can move the account to a smaller plan from the Billing tab. For anything else, email us at
+    <a href="mailto:hello@souls.house">hello@souls.house</a>.
   </p>
   <p>
     <strong>Failed payments.</strong> If a payment fails, you have 14 days to update your payment details. If the payment
