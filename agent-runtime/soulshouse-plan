@@ -32,12 +32,16 @@ top of this help. `soulshouse-plan offer off` stops that, `offer on` says
 yes, and `offer` alone shows where it stands. Your off beats your owner's on,
 you can change your answer at any time, and your owner sees it.
 """
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 
 WORKSPACE = "house-jobs"
@@ -318,11 +322,22 @@ COMMANDS = {"start": cmd_start, "tick": cmd_tick, "block": cmd_block, "unblock":
             "drop": cmd_drop, "add": cmd_add, "done": cmd_done, "cancel": cmd_cancel, "show": cmd_show}
 
 
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the offer request carries the house credential,
+    and urllib would re-send it to whatever origin the Location names (#502)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
 def cmd_offer(args):
     """GET or PATCH /api/v1/plan_offer for the calling resident."""
-    import urllib.error
-    import urllib.request
-
     if len(args) > 1 or (args and args[0] not in ("on", "off")):
         raise PlanError("usage: soulshouse-plan offer [on|off]")
     base = (os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL") or "").rstrip("/")
@@ -335,7 +350,7 @@ def cmd_offer(args):
     request = urllib.request.Request(f"{base}/api/v1/plan_offer", data=data, method=method, headers={
         "Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=20) as response:
             body = json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
         try:
