@@ -53,7 +53,9 @@ class ReplyExpectation < ApplicationRecord
       through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
     end
     message_ids = if chat && chat.account_id == account&.id
-      visible_to(user).state_open.where(messages: { chat_id: chat.id }).pluck(:message_id).map { |id| Message.encode_id(id) }
+      # Oldest first: the conversation's jump-to-mention button walks them newest to oldest.
+      visible_to(user).state_open.where(messages: { chat_id: chat.id }).order("messages.id")
+        .pluck(:message_id).map { |id| Message.encode_id(id) }
     else
       []
     end

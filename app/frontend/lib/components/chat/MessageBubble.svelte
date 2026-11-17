@@ -91,7 +91,7 @@
               <Trash size={20} weight="regular" />
             </button>
           {/if}
-          <Card.Root class="{getBubbleClass(message.author_colour)} min-w-0 w-fit">
+          <Card.Root class="{getBubbleClass(message.author_colour)} min-w-0 w-fit" data-message-card>
             <Card.Content class="p-4">
               <ReplyAttentionEye {accountId} {chatId} messageId={message.id} />
               <StoneCards stones={message.stones_json || []} />
@@ -151,7 +151,7 @@
   {:else}
     <div class="flex justify-start group">
       <div class="min-w-0 max-w-[85%] md:max-w-[70%]">
-        <Card.Root class={getBubbleClass(message.author_colour)}>
+        <Card.Root class={getBubbleClass(message.author_colour)} data-message-card>
           <Card.Content class="p-4">
             {#if progressContinued}
               <div class="text-xs text-muted-foreground mb-3">Continued</div>

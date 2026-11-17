@@ -152,6 +152,34 @@ export function createChatHistory(context) {
     });
   }
 
+  // Scroll to the element `find` returns, loading older history page by
+  // page until it appears or history runs out. Resolves to the element, or
+  // null. Used by the jump-to-mention button; a jump is the reader moving,
+  // so the entry's bottom pin lets go first.
+  async function reveal(find, { maxPages = 50, maxWaits = 400 } = {}) {
+    releaseEntry?.();
+    const id = context().chat.id;
+    let pages = 0;
+    let waits = 0;
+    for (;;) {
+      await tick();
+      if (context().chat.id !== id || !container) return null;
+      const element = find(container);
+      if (element) {
+        element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return element;
+      }
+      if (loading) {
+        if (++waits > maxWaits) return null;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      if (!hasMore || pages >= maxPages) return null;
+      pages += 1;
+      await loadMore();
+    }
+  }
+
   async function loadMore() {
     if (loading || !hasMore || !oldestId || !container) return;
     const current = context();
@@ -244,6 +272,7 @@ export function createChatHistory(context) {
     update,
     remove,
     scrollToBottom,
+    reveal,
     append(message) {
       context().setRecent(appendMessageIfMissing(context().recent, message));
     },
