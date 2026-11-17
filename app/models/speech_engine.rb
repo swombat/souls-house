@@ -2,13 +2,15 @@
 # (jEDyze, Daniel in YgDwre enwVgQ). Phonon, running in the person's browser on
 # WebGPU, is the default. ElevenLabs is an engine an account opts into, only
 # where the site offers it (Setting#speech_engine_for), with the account's own
-# ElevenLabs key, and only for residents on a Life or Work plan or on the house.
+# ElevenLabs key, and only for residents of a Partners or Colleagues account
+# (Billing::AccountPlan; Daniel, eRyZBY 17 Nov: "Only Partners and Colleagues
+# gets ElevenLabs"), whatever the resident's size.
 #
 # There is no fallback in either direction: an account on ElevenLabs without a
 # key gets an error, not Phonon, and not the house's ElevenLabs credential; a
-# browser that can't run Phonon shows an error, not ElevenLabs. A Conversation
-# resident in an ElevenLabs account speaks with Phonon: that is the plan rule,
-# decided before anything is tried, not a substitute after a failure.
+# browser that can't run Phonon shows an error, not ElevenLabs. A resident of a
+# Companions account set to ElevenLabs speaks with Phonon: that is the plan
+# rule, decided before anything is tried, not a substitute after a failure.
 #
 # Every speech surface asks here: voice mode's streamed speech, Listen's stored
 # audio, and the speech text the browser hands to Phonon.
@@ -16,10 +18,8 @@ module SpeechEngine
 
   PHONON = "phonon"
   ELEVENLABS = "elevenlabs"
-  # Plans whose residents may speak through ElevenLabs. Residents on the house
-  # (a complimentary entitlement, or none in an account that doesn't pay per
-  # resident) count as these, as for sub-agents (Agent::Subagents).
-  ELEVENLABS_TIERS = %w[life work].freeze
+  # Account plans whose residents may speak through ElevenLabs.
+  ELEVENLABS_PLANS = %w[partners colleagues].freeze
 
   Status = Struct.new(:engine, :available, :reason, keyword_init: true) do
     def phonon? = engine == PHONON
@@ -52,15 +52,20 @@ module SpeechEngine
     Status.new(engine:, available: true, reason: nil)
   end
 
-  # Whether this resident's plan lets it speak through ElevenLabs.
+  # Whether this resident's account plan lets it speak through ElevenLabs. As
+  # for sub-agents (Agent::Subagents): the account's plan is one of
+  # ELEVENLABS_PLANS and the resident's own hosting is in force (active,
+  # grace or complimentary), or it has no entitlement and no birth order (on
+  # the house).
   def self.elevenlabs_plan?(agent)
     return false if agent.nil?
+    return false unless agent.account&.plan&.id.in?(ELEVENLABS_PLANS)
 
     entitlement = ResidentEntitlement.find_by(agent_id: agent.id)
     return !ResidentBirthOrder.exists?(agent_id: agent.id) if entitlement.nil?
     return true if entitlement.complimentary? || entitlement.complimentary_granted_at.present?
 
-    entitlement.tier.in?(ELEVENLABS_TIERS) && entitlement.state.in?(Billing::Tier::IN_FORCE_STATES)
+    entitlement.state.in?(Billing::Tier::IN_FORCE_STATES)
   end
 
   # Whether the site lets accounts pick ElevenLabs at all (the account setting

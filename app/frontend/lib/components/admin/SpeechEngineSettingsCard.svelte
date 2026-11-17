@@ -17,13 +17,13 @@
       value: 'account_choice',
       label: "Account's choice",
       explain:
-        "Each account chooses Phonon (the default) or ElevenLabs. ElevenLabs needs the account's own ElevenLabs key and only reads medium and large residents (and residents on the house); small residents speak with Phonon.",
+        "Each account chooses Phonon (the default) or ElevenLabs. ElevenLabs needs the account's own ElevenLabs key and only reads residents of Partners and Colleagues accounts; residents of Companions accounts speak with Phonon.",
     },
     {
       value: 'enabled',
       label: 'ElevenLabs for everyone',
       explain:
-        "Every account speaks with ElevenLabs, whatever it chose. An account without its own ElevenLabs key gets an error instead of speech (the house's key is never used), and small residents still speak with Phonon.",
+        "Every account speaks with ElevenLabs, whatever it chose. An account without its own ElevenLabs key gets an error instead of speech (the house's key is never used), and residents of Companions accounts still speak with Phonon.",
     },
   ];
 
