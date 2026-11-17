@@ -8,7 +8,7 @@ Run with the connector stopped (`bin/kamal accessory stop comms-telegram`),
 in the connector's image, with the volume mounted and COMMS_DATABASE_URL set:
 
   docker run --rm -v comms_telegram:/data -e COMMS_DATABASE_URL=... \\
-      <image> python -m connector.migrate sqlite-to-postgres
+      --entrypoint python <image> -m connector.migrate sqlite-to-postgres
 
 Ownership, throughout: the volume's locks (the old image's `.lease` and this
 image's `.owner`, both exclusive, non-blocking) and the database's advisory
