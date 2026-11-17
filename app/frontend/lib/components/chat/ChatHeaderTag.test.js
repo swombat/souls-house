@@ -87,3 +87,21 @@ test('outside the list, a refreshed chat prop takes the clock away (cancelled wh
   await view.rerender({ chat: { ...chat, next_commitment: null }, account });
   expect(screen.queryByTestId('commitment-mark')).toBeNull();
 });
+
+test('the conversation code shows under the title only when the account has it on, and a tap copies it', async () => {
+  page.set({ props: { visual_tags: visualTags, chats: [] } });
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+  const off = render(ChatHeader, { chat: { ...chat, id: 'ewMarJ' }, account });
+  expect(screen.queryByTestId('chat-code-button')).toBeNull();
+  off.unmount();
+
+  render(ChatHeader, { chat: { ...chat, id: 'ewMarJ' }, account: { ...account, show_chat_codes: true } });
+  const button = screen.getByTestId('chat-code-button');
+  expect(button).toHaveTextContent('ewMarJ');
+  expect(button).toHaveAccessibleName('Copy conversation code ewMarJ');
+  await fireEvent.click(button);
+  expect(writeText).toHaveBeenCalledWith('ewMarJ');
+  expect(await screen.findByRole('button', { name: 'Copied ewMarJ' })).toBeInTheDocument();
+});
