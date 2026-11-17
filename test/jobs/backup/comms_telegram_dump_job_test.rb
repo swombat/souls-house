@@ -8,10 +8,16 @@ class Backup::CommsTelegramDumpJobTest < ActiveJob::TestCase
     File.write(File.join(@bin, "docker"), <<~'SH')
       #!/bin/sh
       if [ "$1" = inspect ]; then
-        case "$FAKE_DOCKER" in stopped) echo false ;; missing) echo "No such object" >&2; exit 1 ;; *) echo true ;; esac
+        case "$FAKE_DOCKER" in stopped) echo false ;; missing) echo "No such object" >&2; exit 1 ;;
+          hang_inspect) sleep 60 ;; *) echo true ;; esac
         exit 0
       fi
+      [ -n "$FAKE_DOCKER_ARGS" ] && echo "$@" > "$FAKE_DOCKER_ARGS"
       case "$FAKE_DOCKER" in
+        hang) sleep 60 ;;
+        noisy) i=0; while [ $i -lt 20000 ]; do echo 'a diagnostic line that is fifty bytes or so long..' >&2; i=$((i+1)); done
+               printf 'TGBACKUP\001'
+               echo '{"chunks": 1, "connections": 2, "done": "dump", "tables": {"outbox": 3}}' >&2 ;;
         ok) printf 'TGBACKUP\001\000\000\000\002{}\377\376binary\000tail'
             echo '{"chunks": 1, "connections": 2, "done": "dump", "tables": {"outbox": 3}}' >&2 ;;
         old) echo '/usr/local/bin/python: No module named connector.backup' >&2; exit 1 ;;
@@ -36,12 +42,22 @@ class Backup::CommsTelegramDumpJobTest < ActiveJob::TestCase
     FileUtils.rm_rf(@bin)
   end
 
-  def run_job(mode)
+  def run_job(mode, inspect_timeout: 30, dump_timeout: 60)
     ENV["FAKE_DOCKER"] = mode
     job = Backup::CommsTelegramDumpJob.new
-    job.stub(:upload!, ->(path, key) { @uploads << [ key, File.binread(path) ] }) do
-      job.stub(:prune!, ->(key) { @pruned = key }) { job.perform_now }
+    job.stub(:inspect_timeout, inspect_timeout) do
+      job.stub(:dump_timeout, dump_timeout) do
+        job.stub(:upload!, ->(path, key) { @uploads << [ key, File.binread(path) ] }) do
+          job.stub(:prune!, ->(key) { @pruned = key }) { job.perform_now }
+        end
+      end
     end
+  end
+
+  def timed
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    yield
+    Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
   end
 
   def prune_with(ages_in_days, uploaded:)
@@ -64,6 +80,42 @@ class Backup::CommsTelegramDumpJobTest < ActiveJob::TestCase
     # Only old ones left besides the new dump: the newest three survive regardless.
     assert_equal %w[comms-telegram/2.tgbackup comms-telegram/3.tgbackup],
                  prune_with([ 15, 16, 17, 18 ], uploaded: "comms-telegram/new.tgbackup").sort
+  end
+
+  test "fewer than three dumps are all kept, however old: 14 days is a target, not a maximum" do
+    assert_empty prune_with([ 40 ], uploaded: "comms-telegram/new.tgbackup")
+    assert_empty prune_with([ 40, 90 ], uploaded: "comms-telegram/new.tgbackup")
+  end
+
+  test "a hung docker inspect is a named failure within its deadline" do
+    error = nil
+    elapsed = timed { error = assert_raises(Backup::CommsTelegramDumpJob::Failed) { run_job("hang_inspect", inspect_timeout: 1) } }
+    assert_equal "inspect_timeout", error.message
+    assert_operator elapsed, :<, 10
+  end
+
+  test "a hung dump is killed with its process group and named" do
+    error = nil
+    elapsed = timed { error = assert_raises(Backup::CommsTelegramDumpJob::Failed) { run_job("hang", dump_timeout: 1) } }
+    assert_equal "dump_timeout", error.message
+    assert_operator elapsed, :<, 10
+    assert_empty @uploads
+  end
+
+  test "the dump inside the container carries its own shorter deadline" do
+    args = File.join(@bin, "args")
+    ENV["FAKE_DOCKER_ARGS"] = args
+    run_job("ok")
+    argv = File.read(args).split
+    assert_equal %w[exec souls-house-comms-telegram python -m connector.backup dump --deadline], argv[0, 7]
+    assert_operator argv[7].to_i, :<, Backup::CommsTelegramDumpJob::TIMEOUT.to_i
+  ensure
+    ENV.delete("FAKE_DOCKER_ARGS")
+  end
+
+  test "a megabyte of diagnostics keeps the closing summary and stays bounded" do
+    run_job("noisy")
+    assert_equal 1, @uploads.size
   end
 
   test "never prunes unless the new dump is in the bucket" do

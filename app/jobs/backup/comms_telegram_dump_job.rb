@@ -25,10 +25,15 @@ module Backup
     class Failed < StandardError; end
 
     CONTAINER = "souls-house-comms-telegram".freeze
-    COMMAND = %w[python -m connector.backup dump].freeze
+    # The dump's own deadline, inside the container: killing the `docker exec`
+    # client below need not end the process Docker started there, so the dump
+    # ends itself (exit 124) before this job gives up on the client.
+    DEADLINE = 10.minutes
+    COMMAND = [ "python", "-m", "connector.backup", "dump", "--deadline", DEADLINE.to_i.to_s ].freeze
     MAGIC = "TGBACKUP".b.freeze
-    TIMEOUT = 15.minutes
-    MAX_STDERR = 64.kilobytes
+    TIMEOUT = DEADLINE + 2.minutes
+    INSPECT_TIMEOUT = 30.seconds
+    MAX_STDERR = 64.kilobytes # the retained tail; the rest is read and dropped
     PREFIX = "comms-telegram/".freeze
     # The bucket has no lifecycle rule, so this prefix prunes itself: a
     # dump holds sealed sessions, and an owner who disconnects should not
@@ -55,41 +60,72 @@ module Backup
     private
 
     def ensure_running!
-      output, _err, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}}", CONTAINER)
+      status, output = run_bounded([ "docker", "inspect", "--format", "{{.State.Running}}", CONTAINER ],
+                                   timeout: inspect_timeout, reason: "inspect_timeout")
       raise Failed, "connector_not_running" unless status.success? && output.strip == "true"
     end
 
-    # Binary stdout straight to the file; stderr to a bounded tempfile.
+    # Binary stdout straight to the file; stderr drained into a bounded tail,
+    # which keeps the connector's closing JSON line however much came before.
     def dump!(path)
-      Tempfile.create("comms-telegram-dump-err") do |err|
-        pid = Process.spawn("docker", "exec", CONTAINER, *COMMAND,
-                            in: File::NULL, out: [ path, "wb" ], err: err.path)
-        status = wait_for(pid)
-        diagnostics = File.open(err.path, "rb") { |io| io.read(MAX_STDERR) }.to_s
-        report = last_json(diagnostics)
-        unless status.success?
-          raise Failed, "connector_image_lacks_backup" if diagnostics.include?("No module named connector.backup")
-          raise Failed, "dump_#{safe(report['refused'] || report['failed'])}" if report
-          raise Failed, "dump_exit_#{status.exitstatus.to_i}"
-        end
-        raise Failed, "dump_unconfirmed" unless report && report["done"] == "dump"
-        head = File.open(path, "rb") { |io| io.read(MAGIC.bytesize) }
-        raise Failed, "dump_malformed" unless head == MAGIC
-        report.slice("tables", "connections", "chunks").merge("bytes" => File.size(path))
+      status, _, diagnostics = run_bounded([ "docker", "exec", CONTAINER, *COMMAND ],
+                                           out_path: path, timeout: dump_timeout, reason: "dump_timeout")
+      report = last_json(diagnostics)
+      unless status.success?
+        raise Failed, "connector_image_lacks_backup" if diagnostics.include?("No module named connector.backup")
+        raise Failed, "dump_#{safe(report['refused'] || report['failed'])}" if report
+        raise Failed, "dump_exit_#{status.exitstatus.to_i}"
       end
+      raise Failed, "dump_unconfirmed" unless report && report["done"] == "dump"
+      head = File.open(path, "rb") { |io| io.read(MAGIC.bytesize) }
+      raise Failed, "dump_malformed" unless head == MAGIC
+      report.slice("tables", "connections", "chunks").merge("bytes" => File.size(path))
     end
 
-    def wait_for(pid)
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + TIMEOUT
+    def inspect_timeout = INSPECT_TIMEOUT
+    def dump_timeout = TIMEOUT
+
+    # Runs argv in its own process group with a deadline. Returns the status,
+    # captured stdout (when no out_path; bounded like stderr) and stderr's tail.
+    def run_bounded(argv, timeout:, reason:, out_path: nil)
+      err_r, err_w = IO.pipe
+      out_r, out_w = out_path ? [ nil, nil ] : IO.pipe
+      pid = Process.spawn(*argv, in: File::NULL, out: out_path ? [ out_path, "wb" ] : out_w, err: err_w,
+                          pgroup: true)
+      err_w.close
+      out_w&.close
+      stderr_tail = String.new(encoding: Encoding::BINARY)
+      stdout_tail = String.new(encoding: Encoding::BINARY)
+      readers = [ Thread.new { drain_tail(err_r, stderr_tail) } ]
+      readers << Thread.new { drain_tail(out_r, stdout_tail) } if out_r
+      status = wait_for(pid, timeout, reason)
+      [ status, stdout_tail, stderr_tail ]
+    ensure
+      readers&.each { |thread| thread.join(5) }
+      [ err_r, err_w, out_r, out_w ].compact.each { |io| io.close unless io.closed? }
+      readers&.each { |thread| thread.join(1) }
+    end
+
+    def drain_tail(io, tail)
+      loop do
+        tail << io.readpartial(16.kilobytes)
+        tail.slice!(0, tail.bytesize - MAX_STDERR) if tail.bytesize > MAX_STDERR
+      end
+    rescue EOFError, IOError
+      tail.force_encoding(Encoding::UTF_8).scrub!
+    end
+
+    def wait_for(pid, timeout, reason)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
       loop do
         _, status = Process.wait2(pid, Process::WNOHANG)
         return status if status
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-          Process.kill("TERM", pid)
+          Process.kill("TERM", -pid) rescue nil
           sleep 2
-          Process.kill("KILL", pid) if Process.wait2(pid, Process::WNOHANG).nil?
+          Process.kill("KILL", -pid) rescue nil
           Process.wait(pid) rescue nil
-          raise Failed, "dump_timeout"
+          raise Failed, reason
         end
         sleep 0.2
       end

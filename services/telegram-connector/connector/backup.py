@@ -13,8 +13,9 @@ the volume's locks and the database's advisory lock throughout, refuses a
 database with any row in any connector table, imports in one transaction, and
 commits only after the last chunk's tag, the trailer and a read-back of every
 table have all checked out. Anything else rolls back and leaves the database
-empty. On a fresh volume it also leaves `.lease` a directory, as the
-migration does, so the image from before the move cannot start there.
+empty. Before importing it makes `.lease` a directory, as the migration
+does, so the image from before the move cannot start there; a refusal at that
+step leaves the database empty, and nothing fallible follows the commit.
 
 Nothing is decrypted on the way: sealed columns travel as the bytes they are.
 What the dump adds is a second seal over the whole stream, under a key that
@@ -389,6 +390,13 @@ def restore(data_dir, database_url, master_key, source):
         nonempty = [t for t in TABLES if backend.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone()]
         if nonempty:
             raise migrate.Refused("database_not_empty:" + ",".join(nonempty))
+        # The old-image interlock comes before any import: its refusal (no
+        # atomic exchange) leaves the destination empty, and nothing that can
+        # fail runs after the commit. A directory .lease left by a restore that
+        # then fails is harmless; the volume is for this image either way.
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        migrate.retire_old_lease(data_dir, stamp)
+        migrate._fsync_dir(data_dir)
         seen = {}
         backend.begin()
         try:
@@ -412,9 +420,6 @@ def restore(data_dir, database_url, master_key, source):
         except BaseException:
             backend.rollback()
             raise
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        migrate.retire_old_lease(data_dir, stamp)
-        migrate._fsync_dir(data_dir)
         return {"tables": trailer["counts"], "connections": len(header["sequences"]),
                 "created_at": header["created_at"]}
     finally:
@@ -425,10 +430,15 @@ def _check_readback(conn, header, trailer):
     for table in TABLES:
         digest, n = hashlib.sha256(), 0
         cols = header["columns"][table]
-        for record in conn.execute(f"SELECT {', '.join(cols)} FROM {table} ORDER BY {_order(table)}"):
-            row = {k: (bytes(v) if isinstance(v, memoryview) else v) for k, v in dict(record).items()}
-            _row_digest(digest, row)
-            n += 1
+        # A server-side cursor, as in dump: the read-back streams, it does not
+        # buffer a whole table (the restore transaction is open, as DECLARE needs).
+        with conn.cursor(name=f"readback_{table}") as cursor:
+            cursor.itersize = 500
+            cursor.execute(f"SELECT {', '.join(cols)} FROM {table} ORDER BY {_order(table)}")
+            for record in cursor:
+                row = {k: (bytes(v) if isinstance(v, memoryview) else v) for k, v in dict(record).items()}
+                _row_digest(digest, row)
+                n += 1
         if n != trailer["counts"][table] or digest.hexdigest() != trailer["digests"][table]:
             raise Invalid(f"readback:{table}")
     for ref, expected in header["sequences"].items():
@@ -440,6 +450,25 @@ def _check_readback(conn, header, trailer):
 
 # -- command line ----------------------------------------------------------------------
 
+def _arm_deadline(seconds):
+    """The dump's own lifetime bound. Rails kills only its `docker exec`
+    client, which need not end the process Docker started in the container;
+    this ends it from inside. The connection goes with the process, and with it
+    the snapshot. One write to fd 2 (no logging locks), then os._exit."""
+    import threading
+
+    def expire():
+        try:
+            os.write(2, b'{"failed": "deadline"}\n')
+        finally:
+            os._exit(124)
+
+    timer = threading.Timer(seconds, expire)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 def main(argv=None, env=os.environ, stdin=None, stdout=None, stderr=None):
     stdin = stdin or sys.stdin.buffer
     stdout = stdout or sys.stdout.buffer
@@ -448,6 +477,8 @@ def main(argv=None, env=os.environ, stdin=None, stdout=None, stderr=None):
     parser.add_argument("command", choices=["dump", "restore", "verify"])
     parser.add_argument("--data-dir", default=env.get("COMMS_DATA_DIR", "/data"))
     parser.add_argument("--in", dest="path", help="restore/verify: read this file instead of stdin")
+    parser.add_argument("--deadline", type=float, default=float(env.get("COMMS_BACKUP_DEADLINE", "600")),
+                        help="dump: exit 124 after this many seconds, whatever is happening")
     args = parser.parse_args(argv)
     key = env.get("COMMS_STORE_KEY", "")
     url = env.get("COMMS_DATABASE_URL", "")
@@ -464,7 +495,11 @@ def main(argv=None, env=os.environ, stdin=None, stdout=None, stderr=None):
     from . import migrate
     try:
         if args.command == "dump":
-            return report(dict(dump(url, key, stdout), done="dump"), 0)
+            timer = _arm_deadline(args.deadline)
+            try:
+                return report(dict(dump(url, key, stdout), done="dump"), 0)
+            finally:
+                timer.cancel()
         source = open(args.path, "rb") if args.path else stdin
         try:
             if args.command == "verify":

@@ -7,7 +7,10 @@ import io
 import json
 import os
 import struct
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -100,7 +103,9 @@ class BackupTest(unittest.TestCase):
             self.restore(data, key)
         self.assertTrue(str(caught.exception).startswith(reason), str(caught.exception))
         self.assertTrue(empty(self.target.url))
-        self.assertFalse(os.path.isdir(os.path.join(self.volume, ".lease")))
+        # The interlock is taken before any import, so a failed restore leaves
+        # the old image locked out and the destination empty.
+        self.assertTrue(os.path.isdir(os.path.join(self.volume, ".lease")))
 
     def test_wrong_key_fails_closed(self):
         self.assert_refused_and_empty(self.dump(), "tag", key="w" * 40)
@@ -140,6 +145,17 @@ class BackupTest(unittest.TestCase):
     def test_a_failed_read_back_rolls_everything_back(self):
         with mock.patch.object(backup, "_check_readback", side_effect=backup.Invalid("readback:outbox")):
             self.assert_refused_and_empty(self.dump(), "readback")
+
+    def test_an_interlock_refusal_imports_nothing(self):
+        # No atomic exchange on this filesystem: the restore must refuse
+        # before importing, not after a commit.
+        data = self.dump()
+        with mock.patch.object(migrate, "exchange", side_effect=OSError("EINVAL")):
+            with self.assertRaises(migrate.Refused) as caught:
+                self.restore(data)
+        self.assertEqual("cutover_needs_atomic_exchange", str(caught.exception))
+        self.assertTrue(empty(self.target.url))
+        self.assertFalse(os.path.isdir(os.path.join(self.volume, ".lease")))
 
     def test_refuses_a_database_with_any_connector_row(self):
         conn = connect_postgres(self.target.url)
@@ -181,6 +197,36 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(0, backup.main(["restore", "--data-dir", self.volume], env=env,
                                         stdin=io.BytesIO(out.getvalue()), stderr=err))
         migrate.compare(contents(self.source.url), contents(self.target.url))
+
+    def test_a_failed_restore_can_be_retried(self):
+        # The interlock is up and the target empty after a failure, so the
+        # same command with a good dump simply completes.
+        good = self.dump()
+        bad = bytearray(good)
+        bad[-40] ^= 0x01
+        self.assert_refused_and_empty(bytes(bad), "tag")
+        self.restore(good)
+        migrate.compare(contents(self.source.url), contents(self.target.url))
+        self.assertTrue(os.path.isdir(os.path.join(self.volume, ".lease")))
+
+
+class DeadlineTest(unittest.TestCase):
+    def test_a_dump_that_outlives_its_deadline_exits_124(self):
+        # Stands in for a dump wedged inside the container after Rails has
+        # given up on its docker exec client: the process ends itself.
+        script = (
+            "import sys, time\n"
+            "from connector import backup\n"
+            "backup.dump = lambda *a, **k: time.sleep(60)\n"
+            "sys.exit(backup.main(['dump', '--deadline', '0.5'], env={'COMMS_STORE_KEY': 'k' * 40,"
+            " 'COMMS_DATABASE_URL': 'postgresql://x@127.0.0.1:1/x'}))\n"
+        )
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        started = time.monotonic()
+        done = subprocess.run([sys.executable, "-c", script], cwd=root, capture_output=True, timeout=30)
+        self.assertEqual(124, done.returncode)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual({"failed": "deadline"}, json.loads(done.stderr.decode().strip().splitlines()[-1]))
 
 
 if __name__ == "__main__":

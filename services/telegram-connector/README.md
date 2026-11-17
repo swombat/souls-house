@@ -312,9 +312,13 @@ refuses a database with a row in any connector table, imports in one
 transaction and commits only when every chunk's tag, the trailer's counts and
 digests, the header's sequences and a read-back of every table agree; any
 failure rolls back and leaves the database empty. It restores the carryover
-sequence generator too, and on a fresh volume makes `.lease` the directory
-that keeps the pre-migration image out. `verify` makes the stream checks
-without a database.
+sequence generator too. Before it imports anything it makes `.lease` the
+directory that keeps the pre-migration image out (a no-op if it already is),
+so a refusal there leaves the database empty, and nothing that can fail runs
+after the commit. A failed restore therefore leaves an empty database with the
+old image already locked out, and the same command with a good dump completes.
+The read-back streams through a server-side cursor, as the dump does.
+`verify` makes the stream checks without a database.
 
 Nightly, `FullBackupJob` enqueues `Backup::CommsTelegramDumpJob`, which runs
 `dump` inside the running accessory (`docker exec`) and puts the ciphertext in
@@ -324,10 +328,18 @@ is skipped only when the connector is off (no `COMMS_CONNECTOR_URL`); a
 configured connector that is not running, an image without the command, a
 refusal, a timeout or a dump that does not start with the format's magic is a
 failed job of its own, named by a fixed reason, while the house dump goes
-ahead. The bucket has no lifecycle rule, so the job prunes its prefix after
-each successful upload: dumps older than 14 days go, the newest three stay.
-A disconnected owner's session can therefore outlive the disconnect in
-backups by up to 14 days.
+ahead. Every step has a deadline: `docker inspect` 30 s; the dump itself 10
+minutes, enforced inside the container by `--deadline` (the process exits 124
+and its connection, with the snapshot, goes with it), because killing the
+`docker exec` client need not end the process Docker started; and the client
+12 minutes, killed with its process group. stderr is drained as it comes and
+only its last 64 KiB kept, which holds the closing JSON line. The bucket has no lifecycle rule, so the job prunes its prefix after
+each successful upload: dumps older than 14 days go, except that the newest
+three always stay. That is a target, not a hard limit: pruning runs only after
+a successful upload, so while dumps fail nothing is pruned, and the newest
+three can be older than 14 days. A disconnected owner's session therefore
+outlives the disconnect in backups by about 14 days when backups are healthy,
+and for longer when they are not.
 
 **What the backup is worth.** Exactly as much as `COMMS_STORE_KEY`: without
 the key a dump is noise, by design, and backing the key up is outside this
