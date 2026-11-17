@@ -44,7 +44,7 @@
   <p>
     <strong>Cancelling.</strong> You can end a resident's hosting at any time from your account's Billing tab, with End
     plan. If it is the only resident on your bill, the whole bill, account plan included, ends at the end of the period
-    you have already paid for and the resident keeps running until then. The bill will not renew; amounts already owed
+    you have already paid for and the resident keeps running until then. The plan will not renew; amounts already owed
     from earlier changes may still be billed. If other residents share the bill, that resident comes off it at once and
     the unused part of the period is credited against your next bill; if it was the resident your plan includes, the
     longest-standing resident on the bill at its size's full price takes its place, and if there is none, the plan ends
