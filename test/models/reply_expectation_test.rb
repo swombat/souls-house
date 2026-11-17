@@ -109,6 +109,37 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal 0, summary[:total]
   end
 
+  test "a conversation under a hiding tag keeps its own eye but leaves the badge totals" do
+    record(@ask)
+    shown = @chat.account.chats.create!(title: "Still shown")
+    record(shown.messages.create!(role: "assistant", content: "Test User, still here?"))
+    done = @chat.account.visual_tags.create!(label: "Done", icon: "Checks", colour: "green", hides_from_list: true)
+    assert_equal 2, summary[:total]
+
+    @chat.update!(visual_tag: done)
+
+    assert_equal 1, summary[:total]
+    assert_equal 1, summary[:accounts][@chat.account.to_param]
+    assert_equal({ "main" => 1 }, summary[:rooms])
+    assert_equal({ @chat.to_param => 1, shown.to_param => 1 }, summary[:chats])
+    assert_equal @ask.to_param, summary[:through_messages][@chat.to_param]
+
+    done.update!(hides_from_list: false)
+    assert_equal 2, summary[:total]
+  end
+
+  test "hiding a tag or tagging a conversation refreshes the person's badge" do
+    record(@ask)
+    done = @chat.account.visual_tags.create!(label: "Done", icon: "Checks", colour: "green")
+    @chat.update!(visual_tag: done)
+    refreshed = []
+    ReplyExpectation.stub(:refresh_for, ->(uid) { refreshed << uid }) do
+      done.update!(hides_from_list: true)
+      @chat.update!(visual_tag: nil)
+    end
+    assert_equal [ @user.id, @user.id ], refreshed
+  end
+
   test "archiving dismisses flags and late inference cannot bring them back on restore" do
     expectation = record(@ask)
     late = @chat.messages.create!(role: "assistant", content: "A late ask")
