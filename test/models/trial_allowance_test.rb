@@ -117,6 +117,23 @@ class TrialAllowanceTest < ActiveSupport::TestCase
   # Mira's second review: Stripe cancels a trial that crossed the 1st while a
   # turn is still running. The turn stays funded for the drain window, on what
   # is left of the trial's $10, not on a fresh month's.
+  # Opus review of #1022: a trial that ended unpaid must not cap the account's
+  # other residents (free hosting, on the house) for good. Only a trial in
+  # force sets the trial's ceiling for them.
+  test "after a trial ends unpaid, a free-hosted resident has the account's ordinary $10 a month" do
+    trial_end = Time.utc(2026, 11, 8, 12)
+    sync!("sub_trial", @first, status: "trialing", period_end: trial_end, trial_end: trial_end)
+    spend!(BigDecimal("9")) # October, in the trial
+    travel_to trial_end
+    sync!("sub_trial", @first, status: "canceled", period_end: trial_end, trial_end: trial_end)
+    assert Billing::Trial.never_paid?(@account.id), "the case: a trial that ended without ever being paid"
+    free = ResidentEntitlement.create!(agent: @second, account: @account, source: "complimentary",
+      state: "complimentary", complimentary_granted_at: Time.current)
+    assert_equal BigDecimal("10"), free.allowance_limit, "November's $10, not $10 minus the trial's $9"
+    assert_equal BigDecimal("10"), free.allowance_remaining
+    assert_nil free.trial_ends_at
+  end
+
   test "a trial cancelled mid-turn keeps the trial's ceiling while the turn drains" do
     trial_end = Time.utc(2026, 11, 8, 12)
     sync!("sub_trial", @first, status: "trialing", period_end: trial_end, trial_end: trial_end)

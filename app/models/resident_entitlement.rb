@@ -140,7 +140,7 @@ class ResidentEntitlement < ApplicationRecord
     return BigDecimal("0") unless funds_calls?
     return BigDecimal("0") unless Billing::Tier::CATALOGUE_RATES.include?(rate)
 
-    Billing::Allowance.limit(account_id, month:)
+    Billing::Allowance.limit(account_id, month:, in_force_only: complimentary?)
   end
 
   # What the account's residents drew this month, on any path.
@@ -209,7 +209,8 @@ class ResidentEntitlement < ApplicationRecord
 
   # When the account's free trial ends, while its allowance is the trial's.
   def trial_ends_at
-    return nil if complimentary? || !Billing::Tier::CATALOGUE_RATES.include?(rate) || !Billing::Trial.allowance_started_at(account_id)
+    return nil if !Billing::Tier::CATALOGUE_RATES.include?(rate) ||
+      !Billing::Allowance.trial_started_at(account_id, in_force_only: complimentary?)
 
     ResidentSubscription.where(account_id: account_id, stripe_status: "trialing").minimum(:trial_end)
   end

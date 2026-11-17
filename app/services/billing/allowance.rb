@@ -37,17 +37,22 @@ module Billing
     # This month's ceiling. In the free trial it is what the account didn't
     # draw in the trial's earlier months, so ceiling minus this month's
     # spend is the allowance minus everything drawn since the trial began.
-    def self.limit(account_id, month: HouseInference::Offering.month)
-      started = Trial.allowance_started_at(account_id)
+    # in_force_only: only a trial running now caps it (Trial); a paid plan's
+    # resident passes false so its unfinished turn after a cancelled trial
+    # keeps the trial's ceiling.
+    def self.limit(account_id, month: HouseInference::Offering.month, in_force_only: true)
+      started = trial_started_at(account_id, in_force_only:)
       return monthly_usd unless started
 
       before = spent(account_id, month: started.utc.to_date.beginning_of_month...month)
       [ monthly_usd - before, BigDecimal("0") ].max
     end
 
-    def self.remaining(account_id, month: HouseInference::Offering.month)
-      [ limit(account_id, month:) - spent(account_id, month:), BigDecimal("0") ].max
+    def self.remaining(account_id, month: HouseInference::Offering.month, in_force_only: true)
+      [ limit(account_id, month:, in_force_only:) - spent(account_id, month:), BigDecimal("0") ].max
     end
+
+    def self.trial_started_at(account_id, in_force_only: true) = Trial.allowance_started_at(account_id, in_force_only:)
 
   end
 end

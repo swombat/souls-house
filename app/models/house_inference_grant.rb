@@ -55,14 +55,17 @@ class HouseInferenceGrant < ApplicationRecord
       unless self.agent_id == agent_id
         raise HouseInference::Error.new('The house allowance has moved to another resident.', status: 403)
       end
-      check!(model_id)
+      check!(model_id, offering.fetch(:reservation_usd))
       month = HouseInference::Offering.month
       house_inference_calls.create!(month: month, model_id: model_id, free_pool: true,
         provider_route: offering.fetch(:provider), charge_usd: offering.fetch(:reservation_usd), agent_id: agent_id)
     end
   end
 
-  def check!(model_id)
+  # reservation: the call's upper bound, which must fit in what the account
+  # has left (strict, as for a plan's resident), so the account never passes
+  # its allowance. Without one, the offering's.
+  def check!(model_id, reservation = HouseInference::Offering.find(model_id)&.fetch(:reservation_usd))
     raise HouseInference::Error.new('House inference has not been configured by the operator.') unless HouseInference::Offering.configured?
     if HouseInferenceCall.where(status: 'overrun').exists?
       raise HouseInference::Error.new('House inference is paused pending a billing review.')
@@ -83,8 +86,13 @@ class HouseInferenceGrant < ApplicationRecord
       raise HouseInference::Error.new('A house-funded call is already in progress. Try again shortly.', code: 'house_inference_busy', status: 429)
     end
     month = HouseInference::Offering.month
-    if Billing::Allowance.remaining(agent.account_id, month:) <= 0
-      raise HouseInference::Error.new("This account's #{Billing.usd_label(Billing::Allowance.monthly_usd)} house allowance is used up. It resets at the start of next month (UTC).", code: 'house_allowance_exhausted', status: 402)
+    if Billing::Allowance.remaining(agent.account_id, month:) < (reservation || 0).to_d
+      message = if Billing::Allowance.trial_started_at(agent.account_id)
+        "This account's house-model allowance for its free trial is used up. The monthly allowance starts once the trial becomes a paid plan."
+      else
+        "This account's #{Billing.usd_label(Billing::Allowance.monthly_usd)} house allowance is used up. It resets at the start of next month (UTC)."
+      end
+      raise HouseInference::Error.new(message, code: 'house_allowance_exhausted', status: 402)
     end
     # The free house-wide ceiling covers free grants only; paid plans are
     # bounded by their own allowances.
@@ -98,9 +106,12 @@ class HouseInferenceGrant < ApplicationRecord
     account_id = agent&.account_id
     limit = account_id ? Billing::Allowance.limit(account_id, month:) : Billing::Allowance.monthly_usd
     used = account_id ? Billing::Allowance.spent(account_id, month:) : spent(month)
+    trial_ends_at = account_id && Billing::Allowance.trial_started_at(account_id) &&
+      ResidentSubscription.where(account_id:, stripe_status: 'trialing').minimum(:trial_end)
     { limit_usd: limit.to_f, used_usd: used.to_f,
       remaining_usd: [ limit - used, 0 ].max.to_f,
-      resets_at: month.next_month.iso8601, configured: HouseInference::Offering.configured? }
+      resets_at: month.next_month.iso8601, trial_ends_at: trial_ends_at&.iso8601,
+      configured: HouseInference::Offering.configured? }
   end
 
 end

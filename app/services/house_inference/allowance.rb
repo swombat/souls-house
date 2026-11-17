@@ -1,7 +1,8 @@
 module HouseInference
-  # What the resident pages show about house-model funding: the resident's
-  # own allowance (paid plan or free hosting) when it has one in force,
-  # otherwise the per-user free grant.
+  # What the resident pages show about house-model funding: through the
+  # resident's plan or free hosting when it has one in force, otherwise
+  # through the grant that put it on the house. Either way the allowance is
+  # the account's (Billing::Allowance).
   module Allowance
 
     def self.presentation(agent)

@@ -103,19 +103,28 @@ class HouseInferenceGrantTest < ActiveSupport::TestCase
     end
   end
 
-  test 'overspend is less than one dollar and next call is refused' do
+  test 'a call is admitted only when its whole reservation fits, so the account never passes $10' do
     @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
-      provider_route: @offering[:provider], charge_usd: 9.99, status: 'settled')
+      provider_route: @offering[:provider], charge_usd: 9.25, status: 'settled')
     HouseInference::Offering.stub(:configured?, true) do
       call = @grant.reserve!(@offering, @agent.model_id)
       call.settle!
-      assert_operator @grant.spent, :<, 11
+      assert_operator @grant.spent, :<=, 10
       error = assert_raises(HouseInference::Error) { @grant.reserve!(@offering, @agent.model_id) }
       assert_equal 'house_allowance_exhausted', error.code
       travel_to Time.utc(2026, 12, 1) do
         assert_equal 0, @grant.spent
         assert @grant.reserve!(@offering, @agent.model_id)
       end
+    end
+  end
+
+  test 'money left that the reservation does not fit refuses the call (negative control for the strict rule)' do
+    @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+      provider_route: @offering[:provider], charge_usd: 9.30, status: 'settled')
+    HouseInference::Offering.stub(:configured?, true) do
+      error = assert_raises(HouseInference::Error) { @grant.reserve!(@offering, @agent.model_id) }
+      assert_equal 'house_allowance_exhausted', error.code
     end
   end
 

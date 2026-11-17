@@ -10,8 +10,9 @@ class HouseInferenceCall < ApplicationRecord
   validates :charge_usd, numericality: { greater_than_or_equal_to: 0 }
 
   scope :on_grants, -> { where.not(house_inference_grant_id: nil) }
-  # Calls the house paid for out of free allowances (per-user grants and free
-  # hosting's own allowance). They share the house-wide ceiling. Fixed when the
+  # Calls the house paid for with nothing paid behind them (residents on the
+  # house through a grant, and free hosting). They share the house-wide
+  # ceiling, and count against their account's allowance like any other. Fixed when the
   # call is reserved, so a plan starting or ending later doesn't move past
   # spend between pools.
   scope :free, -> { where(free_pool: true) }

@@ -101,13 +101,15 @@ module Billing
     # unfinished turn (ResidentEntitlement#draining?). If the account has
     # never paid for a standard-rate resident, that turn is the trial's and
     # keeps the trial's ceiling: a trial cancelled mid-turn must not find a
-    # fresh month's $10.
-    def allowance_started_at(account_id)
+    # fresh month's $10. That fallback is only for such a turn: a resident
+    # funded another way (free hosting, on the house) asks with
+    # in_force_only, so a trial that ended unpaid never caps it.
+    def allowance_started_at(account_id, in_force_only: false)
       drawing = ResidentSubscription.where(
         id: ResidentEntitlement.where(account_id: account_id).on_account_allowance.select(:current_subscription_id)
       )
       statuses = drawing.distinct.pluck(:stripe_status)
-      return nil unless statuses == [ "trialing" ] || (statuses.empty? && never_paid?(account_id))
+      return nil unless statuses == [ "trialing" ] || (!in_force_only && statuses.empty? && never_paid?(account_id))
 
       Account.where(id: account_id).pick(:trial_started_at) || drawing.minimum(:created_at)
     end
