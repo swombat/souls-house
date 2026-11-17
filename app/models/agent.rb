@@ -11,6 +11,7 @@ class Agent < ApplicationRecord
   include Agent::Memory
   include Agent::Predecessor
   include Agent::Subagents
+  include Agent::PlanOffer
   include Agent::ModelSwitching
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
@@ -322,7 +323,7 @@ class Agent < ApplicationRecord
                        :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
                        :allowance_brake_threshold_percent, :scheduled_wakes_essential, :allowance_brake_status,
                        :session_context_budget_tokens, :turn_timeout_minutes,
-                       :subagents_enabled?, :subagent_models,
+                       :subagents_enabled?, :subagent_models, :plan_offer_enabled?,
                        :switchable_model_ids, :resident_may_switch_model?,
                   except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
     # Keep credentials out even if a caller supplies runtime serialization options

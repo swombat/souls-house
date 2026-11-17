@@ -55,6 +55,8 @@ class AccountsController < ApplicationController
       resident_handoff_cap: @account.resident_handoff_cap,
       telegram_bot_wake_limit: @account.telegram_bot_wake_limit,
       reflexes_enabled: @account.reflexes_enabled,
+      plan_offer_enabled: @account.plan_offer_enabled,
+      plan_offer_available: @account.plan_offer_available?,
       reflexes_site_scope: Setting.instance.reflexes_scope,
       voice_mode_enabled: @account.voice_mode_enabled,
       voice_mode_site_scope: Setting.instance.voice_mode_scope,
@@ -141,7 +143,7 @@ class AccountsController < ApplicationController
   def account_params
     permitted = [ :name ]
     if @account.manageable_by?(Current.user)
-      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key)
+      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key, :plan_offer_enabled)
     end
     params.require(:account).permit(permitted)
   end

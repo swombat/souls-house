@@ -15,7 +15,7 @@ module AgentSettingsParams
       :telegram_bot_token, :telegram_bot_username,
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-      :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
+      :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled, :plan_offer_enabled,
       :resident_may_switch_model, :allowance_brake_threshold_percent, :scheduled_wakes_essential,
       subagent_models: [], switchable_model_ids: []
     )

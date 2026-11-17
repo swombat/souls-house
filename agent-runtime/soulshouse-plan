@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Show the room where you are in a job with several steps, if you want to.
 
+If you choose to undertake a long task, you can share a changeable plan so
+others can follow along. Optional; no plan is needed for conversation or quiet.
+
 With a plan, the run card under your work shows one line while you go, for
 example "3 of 7 · running the tests", and keeps the last state when the run
-ends. Without one it shows what it always showed. Nothing asks you to use it.
+ends. Without one it shows what it always showed. Nothing requires it.
 
 Usage:
   soulshouse-plan start "Title" "first step" "second step" ...
@@ -15,12 +18,19 @@ Usage:
   soulshouse-plan done              # the job is finished (every step ticked or dropped)
   soulshouse-plan cancel "why"      # abandon the job
   soulshouse-plan show
+  soulshouse-plan offer [on|off]    # your answer to the plan offer (see below)
 
 Steps are numbered from 1 in the order given. The plan lives in your own
 Chaos database (a workspace named "house-jobs"), attached to the session you
 are running in; the house only sees titles and states, through your run card,
 and only while you share working narration. Starting a new plan cancels the
 one this session still has open.
+
+The plan offer: if your account owner switches it on for you, the first
+reminder to post in a long conversation run also carries the sentence at the
+top of this help. `soulshouse-plan offer off` stops that, `offer on` says
+yes, and `offer` alone shows where it stands. Your off beats your owner's on,
+you can change your answer at any time, and your owner sees it.
 """
 import json
 import os
@@ -308,9 +318,63 @@ COMMANDS = {"start": cmd_start, "tick": cmd_tick, "block": cmd_block, "unblock":
             "drop": cmd_drop, "add": cmd_add, "done": cmd_done, "cancel": cmd_cancel, "show": cmd_show}
 
 
+def cmd_offer(args):
+    """GET or PATCH /api/v1/plan_offer for the calling resident."""
+    import urllib.error
+    import urllib.request
+
+    if len(args) > 1 or (args and args[0] not in ("on", "off")):
+        raise PlanError("usage: soulshouse-plan offer [on|off]")
+    base = (os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL") or "").rstrip("/")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN") or ""
+    if not base or not token:
+        raise PlanError("SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN are needed for the offer")
+    data, method = None, "GET"
+    if args:
+        data, method = json.dumps({"answer": args[0]}).encode(), "PATCH"
+    request = urllib.request.Request(f"{base}/api/v1/plan_offer", data=data, method=method, headers={
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read() or b"{}").get("error")
+        except ValueError:
+            detail = None
+        raise PlanError(f"the house refused ({error.code}): {detail or error.reason}")
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        raise PlanError(f"could not reach the house: {error}")
+    return describe_offer(body.get("plan_offer") or {})
+
+
+OFFER_STATES = {
+    "unavailable": "not offered: your account doesn't have plans for long tasks switched on",
+    "off": "not offered: your owner hasn't switched it on for you",
+    "declined": "off, by your answer; your owner's switch can't turn it back on",
+    "asked": "on: your owner switched it on and you haven't answered (say on or off)",
+    "on": "on, and you said yes; `soulshouse-plan offer off` stops it",
+}
+
+
+def describe_offer(status):
+    line = OFFER_STATES.get(status.get("state"), f"state {status.get('state')!r}")
+    answer = status.get("answer")
+    if answer:
+        line += f" (your answer: {answer}, {status.get('answered_at')})"
+    return f"plan offer: {line}"
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(__doc__.strip())
+        return 0
+    if argv[0] == "offer":
+        try:
+            print(cmd_offer(argv[1:]))
+        except PlanError as error:
+            print(f"soulshouse-plan: {error}", file=sys.stderr)
+            return 1
         return 0
     command = COMMANDS.get(argv[0])
     if command is None:

@@ -77,6 +77,7 @@ test('provider edit subscriptions preserve broad maps and reconcile rendered sta
     'cost_report',
     'reflexes',
     'subagents_available',
+    'plan_offer',
     'voice',
   ]);
   expect(subscribeToModel).toHaveBeenCalledWith('IntegrationStatus', 'first', [

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -128,6 +128,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_150000) do
     t.text "eleven_labs_api_key"
     t.string "granted_plan"
     t.datetime "trial_started_at"
+    t.boolean "plan_offer_enabled", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -612,6 +613,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_150000) do
     t.integer "allowance_brake_threshold_percent"
     t.boolean "scheduled_wakes_essential", default: false, null: false
     t.jsonb "hook_expectations", default: {}, null: false
+    t.boolean "plan_offer_enabled", default: false, null: false
+    t.datetime "plan_offer_asked_at"
+    t.string "plan_offer_answer"
+    t.datetime "plan_offer_answered_at"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"

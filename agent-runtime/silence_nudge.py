@@ -50,6 +50,18 @@ VOICE_FIRST_AFTER_SECS = 20
 VOICE_REPEAT_SECS = 20
 VOICE_NOTICE_TTL_SECS = 20
 
+# The plan offer (#864 slice 3): when souls.house says so in the trigger
+# payload (`plan_offer`), the run's first nudge carries one more sentence,
+# Wing's wording, the same as Agent::PlanOffer::OFFER and
+# `soulshouse-plan --help`. Once per run, never in voice mode, never on its own.
+PLAN_OFFER = ("If you choose to undertake a long task, you can share a changeable plan so others "
+              "can follow along. Optional; no plan is needed for conversation or quiet.")
+
+
+def plan_offer_text():
+    return (f"{PLAN_OFFER} (`soulshouse-plan --help` shows how; "
+            "`soulshouse-plan offer off` stops this offer.)")
+
 _support = {}
 _support_lock = threading.Lock()
 
@@ -154,7 +166,7 @@ def _rendered_fields(messages):
 class SilenceClock:
     def __init__(self, run_id, conversation_id, started_at, directory=None,
                  first_after=FIRST_AFTER_SECS, repeat=REPEAT_SECS, ttl=NOTICE_TTL_SECS,
-                 voice=False):
+                 voice=False, plan_offer=False):
         base = Path(directory or os.environ.get("SOULSHOUSE_STEER_DIR")
                     or Path(tempfile.gettempdir()) / "soulshouse-steer")
         self.path = base / f"{run_id}.json"
@@ -164,6 +176,8 @@ class SilenceClock:
         self.repeat = repeat
         self.ttl = ttl
         self.voice = voice
+        self.plan_offer = plan_offer and not voice
+        self.plan_offered = False
         self.last_post_at = None
         self.last_notice_at = None
         self.notices = 0
@@ -244,6 +258,9 @@ class SilenceClock:
                     and now - self.last_notice_at < self.repeat:
                 return None
             text = notice_text(silence, self.conversation_id, self.voice)
+            if self.plan_offer and not self.plan_offered:
+                text = f"{text}\n\n{plan_offer_text()}"
+                self.plan_offered = True
             self.notices += 1
             self.nudge = {"text": text, "expires_at": now + self.ttl}
             self._new_notice()
@@ -290,7 +307,8 @@ class SilenceClock:
             self._close_gap(now)
         self.withdraw()
         return {"silence_notices": self.notices,
-                "longest_silence_secs": int(self.longest_silence)}
+                "longest_silence_secs": int(self.longest_silence),
+                "plan_offered": self.plan_offered}
 
     def withdraw(self):
         try:

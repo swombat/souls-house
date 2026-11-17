@@ -253,4 +253,27 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     assert_equal @opus, sent["model"]
   end
 
+
+  # #864 slice 3: the payload carries plan_offer only while the offer is in
+  # force; the runtime then adds the sentence to the run's first nudge.
+  test "the runtime payload carries plan_offer only while the offer is in force" do
+    agent = agents(:research_assistant)
+    agent.account.update_columns(granted_plan: "colleagues", plan_offer_enabled: true)
+    chat = agent.account.chats.create!(title: "Plan payload", manual_responses: true, agents: [ agent ])
+    chat.messages.create!(role: "user", user: users(:user_1), content: "A long job.", suppress_automatic_dispatch: true)
+    request = -> { ExternalAgentResponseRequest.new(agent: agent.reload, chat: chat, wake_source_kinds: [ "human" ]) }
+    assert_nil request.call.send(:trigger_payload)[:plan_offer]
+
+    agent.update!(plan_offer_enabled: true)
+    assert_equal true, request.call.send(:trigger_payload)[:plan_offer]
+    # The one question is in the notices until answered; there is no wake line.
+    assert_includes request.call.send(:request_text), "[plan offer · asked until"
+    agent.answer_plan_offer!("on")
+    assert_equal true, request.call.send(:trigger_payload)[:plan_offer]
+    assert_not_includes request.call.send(:request_text), Agent::PlanOffer::OFFER, "no wake line"
+
+    agent.answer_plan_offer!("off")
+    assert_nil request.call.send(:trigger_payload)[:plan_offer]
+  end
+
 end

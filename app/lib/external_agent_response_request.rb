@@ -185,6 +185,8 @@ class ExternalAgentResponseRequest
     # The runtime's silence clock speeds up for a spoken turn (every ~20 s
     # rather than at two minutes); it can't see the transcript, so say so.
     payload = payload.merge(voice_mode: true) if voice_mode_wake?
+    # The first silence nudge of the run offers a plan (Agent::PlanOffer, #864).
+    payload = payload.merge(plan_offer: true) if agent.plan_offer_active?
     payload
   end
 

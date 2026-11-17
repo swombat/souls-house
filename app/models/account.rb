@@ -109,6 +109,7 @@ class Account < ApplicationRecord
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :resident_handoff_cap_in_range
   validate :telegram_bot_wake_limit_in_range
+  validate :plan_offer_allowed_by_plan, if: -> { plan_offer_enabled? && plan_offer_enabled_changed? }
   validate :resident_room_belongs_to_account
   validates :main_room_name, length: { maximum: 40 }, format: { without: /\0/, message: "must not contain NUL" }
   validates :main_room_description, length: { maximum: 280 }, format: { without: /\0/, message: "must not contain NUL" }
@@ -490,6 +491,12 @@ class Account < ApplicationRecord
     Billing::AccountPlan.highest(given_plan, paid_plan_subscription(now)&.plan)
   end
 
+  # The plan offer (Agent::PlanOffer, #864) comes with Colleagues. The account
+  # switch is off by default; with it on, the owner switches it on per resident.
+  def plan_offer_available?(now = Time.current)
+    plan(now).id == "colleagues"
+  end
+
   # The plan held with nothing to pay: a site admin's grant, or a live
   # billing-code redemption's, whichever is higher. Nil when neither.
   def given_plan
@@ -728,6 +735,10 @@ class Account < ApplicationRecord
   def resident_room_belongs_to_account
     errors.add(:resident_room, "must belong to this account") if resident_room && resident_room.account_id != id
     errors.add(:resident_room, "#{resident_room.name} is archived") if resident_room&.archived? && will_save_change_to_resident_room_id?
+  end
+
+  def plan_offer_allowed_by_plan
+    errors.add(:plan_offer_enabled, "Plans for long tasks come with the Colleagues plan") unless plan_offer_available?
   end
 
 end

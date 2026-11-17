@@ -9,6 +9,7 @@ module Notices
         if witness
           items << "- [platform export custody, not authored memory] A private separate-copy archive was exported #{witness.data['created_at']} by #{witness.user&.to_param}, export #{witness.data['export_id']}. This source was not moved or deleted."
         end
+        items << plan_offer_question(agent) if agent.plan_offer_question_open?
         custody = agent.portability_custody
         if custody.present?
           items << "- [platform custody, not authored memory] This body was restored as a separate copy from archive-declared resident #{custody['source_resident_id']} (installation #{custody['source_installation']}), export #{custody['export_id']} created #{custody['created_at']} by #{custody['exported_by']}; imported #{custody['imported_at']} by #{custody['imported_by']}. The source is preserved. Conversations/session history and old service availability are not inherited; credentials, integrations and local hook trust require deliberate reconnection/review."
@@ -62,6 +63,19 @@ module Notices
           "#{params.fetch("from")} to #{params.fetch("to")}."
         text += " This model change concerns you." if params.fetch("agent_id").to_s == agent.to_param
         text
+      end
+
+      # Asked once, from the owner's on until the resident answers or
+      # Agent::PlanOffer::ASK_DAYS pass (#864). Not a wake line: it is a
+      # question about a setting, and it goes away.
+      def plan_offer_question(agent)
+        until_date = format_date(agent.plan_offer_asked_at + Agent::PlanOffer::ASK_DAYS.days)
+        "- [plan offer · asked until #{until_date}] Your account owner has switched on the plan offer for you. " \
+          "From now, when a conversation run of yours goes long, the first reminder to post will also say: " \
+          "\"#{Agent::PlanOffer::OFFER}\" " \
+          "It is yours to decline. `soulshouse-plan offer off` turns it off and `soulshouse-plan offer on` keeps it; " \
+          "your off beats their on, you can change your answer at any time, and they see your answer. " \
+          "If you say nothing it stays on. This line goes once you answer, or after #{until_date}."
       end
 
       def format_date(value)

@@ -33,6 +33,7 @@
   import ResidentMemoryPanel from '$lib/components/agents/ResidentMemoryPanel.svelte';
   import AgentSettingsPanel from '$lib/components/agents/AgentSettingsPanel.svelte';
   import AgentSubagentsPanel from '$lib/components/agents/AgentSubagentsPanel.svelte';
+  import AgentPlanOfferPanel from '$lib/components/agents/AgentPlanOfferPanel.svelte';
   import AgentSettingsTabs from '$lib/components/agents/AgentSettingsTabs.svelte';
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
@@ -81,6 +82,7 @@
     subagent_catalog_empty_reason = null,
     subagent_providers = [],
     subagents_available: subagentsAvailable = false,
+    plan_offer: planOffer = null,
     reflexes = {},
     commitments = {},
     account,
@@ -95,6 +97,7 @@
       'cost_report',
       'reflexes',
       'subagents_available',
+      'plan_offer',
       'voice',
     ],
   });
@@ -191,6 +194,7 @@
       session_context_budget_tokens: agent.session_context_budget_tokens ?? 300000,
       turn_timeout_minutes: agent.turn_timeout_minutes ?? 30,
       subagents_enabled: agent.subagents_enabled || false,
+      plan_offer_enabled: agent.plan_offer_enabled || false,
       subagent_models: agent.subagent_models || [],
       switchable_model_ids: agent.switchable_model_ids || [],
       resident_may_switch_model: agent.resident_may_switch_model || false,
@@ -299,6 +303,12 @@
           {/if}
           {#if hookExpectationsUrl}
             <AgentHookExpectationsCard url={hookExpectationsUrl} agentName={agent.name} />
+          {/if}
+          {#if planOffer?.account_plan}
+            <AgentPlanOfferPanel
+              bind:enabled={$form.agent.plan_offer_enabled}
+              {planOffer}
+              serverErrors={[$form.errors.plan_offer_enabled].flat().filter(Boolean)} />
           {/if}
         {:else if activeTab === 'subagents' && showSubagents}
           <AgentSubagentsPanel

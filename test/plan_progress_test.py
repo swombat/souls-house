@@ -113,6 +113,92 @@ class HelperTest(unittest.TestCase):
             self.assertNotIn("Traceback", result.stderr)
 
 
+class OfferTest(unittest.TestCase):
+    """`soulshouse-plan offer` against a local stand-in for /api/v1/plan_offer."""
+
+    def setUp(self):
+        self.seen = []
+        self.reply = (200, {"plan_offer": {"state": "asked", "answer": None}})
+        test = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def handle_one(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length)) if length else None
+                test.seen.append((self.command, self.path, self.headers.get("Authorization"), body))
+                status, payload = test.reply
+                data = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            do_GET = do_PATCH = handle_one
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.env = {"PATH": os.environ["PATH"], "HOME": tempfile.gettempdir(),
+                    "SOULSHOUSE_APP_URL": f"http://127.0.0.1:{self.server.server_address[1]}/",
+                    "SOULSHOUSE_BEARER_TOKEN": "tok"}
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def offer(self, *args, env=None):
+        return subprocess.run([sys.executable, str(HELPER), "offer", *args], capture_output=True, text=True,
+                              env=env or self.env, timeout=30)
+
+    def test_help_carries_the_offer_sentence(self):
+        result = subprocess.run([sys.executable, str(HELPER), "--help"], capture_output=True, text=True, timeout=30)
+        text = " ".join(result.stdout.split())
+        self.assertIn("If you choose to undertake a long task, you can share a changeable plan so others can "
+                      "follow along. Optional; no plan is needed for conversation or quiet.", text)
+        self.assertIn("soulshouse-plan offer [on|off]", text)
+
+    def test_offer_alone_reads_where_it_stands(self):
+        result = self.offer()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([("GET", "/api/v1/plan_offer", "Bearer tok", None)], self.seen)
+        self.assertIn("you haven't answered", result.stdout)
+
+    def test_off_and_on_are_sent_as_the_answer(self):
+        self.reply = (200, {"plan_offer": {"state": "declined", "answer": "off", "answered_at": "2026-11-17T09:00:00Z"}})
+        result = self.offer("off")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(("PATCH", "/api/v1/plan_offer", "Bearer tok", {"answer": "off"}), self.seen[-1])
+        self.assertIn("off, by your answer", result.stdout)
+        self.reply = (200, {"plan_offer": {"state": "on", "answer": "on"}})
+        self.assertEqual(0, self.offer("on").returncode)
+        self.assertEqual({"answer": "on"}, self.seen[-1][3])
+
+    def test_anything_else_is_refused_without_a_request(self):
+        for args in (["maybe"], ["on", "off"]):
+            result = self.offer(*args)
+            self.assertEqual(1, result.returncode)
+            self.assertIn("usage: soulshouse-plan offer [on|off]", result.stderr)
+        self.assertEqual([], self.seen)
+
+    def test_a_refusal_is_said_plainly(self):
+        self.reply = (403, {"error": "Only a resident can answer its own plan offer"})
+        result = self.offer("off")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("403", result.stderr)
+        self.assertIn("Only a resident", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_without_credentials_it_says_so(self):
+        env = {k: v for k, v in self.env.items() if k != "SOULSHOUSE_BEARER_TOKEN"}
+        result = self.offer(env=env)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("SOULSHOUSE_BEARER_TOKEN", result.stderr)
+        self.assertEqual([], self.seen)
+
+
 class ReporterPlanTest(unittest.TestCase):
     def setUp(self):
         self.chaos = FakeChaos()

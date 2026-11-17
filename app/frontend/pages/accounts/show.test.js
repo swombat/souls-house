@@ -34,6 +34,8 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'resident_handoff_cap',
     'telegram_bot_wake_limit',
     'reflexes_enabled',
+    'plan_offer_enabled',
+    'plan_offer_available',
     'voice_mode_enabled',
     'speech_engine',
     'eleven_labs_key_present',
@@ -245,4 +247,29 @@ test('reflexes card says when the site overrides the account switch, and keeps t
 
   await view.rerender({ ...props, can_manage: false, reflexes_site_scope: 'enabled' });
   expect(screen.getByTestId('reflexes-site-override')).toBeVisible();
+});
+
+test('plans for long tasks switch saves immediately when the plan allows it', async () => {
+  render(General, { ...props, plan_offer_available: true, plan_offer_enabled: false });
+  expect(screen.queryByTestId('plan-offer-unavailable')).toBeNull();
+  await fireEvent.click(screen.getByTestId('plan-offer-enabled'));
+  const [path, data] = router.put.mock.calls.at(-1);
+  expect(path).toBe('/accounts/first');
+  expect(data).toEqual({ account: { plan_offer_enabled: true } });
+});
+
+test('plans for long tasks is not shown outside Colleagues', () => {
+  render(General, { ...props, plan_offer_available: false, plan_offer_enabled: false });
+  expect(screen.queryByTestId('plan-offer-enabled')).toBeNull();
+  expect(screen.queryByTestId('plan-offer-unavailable')).toBeNull();
+});
+
+test('plans for long tasks switch is disabled with a note when left on after the plan lapsed, and readonly for non-managers', async () => {
+  const view = render(General, { ...props, plan_offer_available: false, plan_offer_enabled: true });
+  expect(screen.getByTestId('plan-offer-enabled')).toBeDisabled();
+  expect(screen.getByTestId('plan-offer-unavailable')).toHaveTextContent('Comes with the Colleagues plan.');
+
+  await view.rerender({ ...props, can_manage: false, plan_offer_available: true, plan_offer_enabled: true });
+  expect(screen.queryByTestId('plan-offer-enabled')).toBeNull();
+  expect(screen.getByTestId('plan-offer-enabled-readonly')).toHaveTextContent('on for this account');
 });

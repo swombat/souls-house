@@ -75,6 +75,38 @@ class SilenceClockTest(unittest.TestCase):
         self.assertIn("20s", clock.tick(1065))
         self.assertEqual(3, clock.notices)
 
+    def plan_clock(self, **options):
+        return silence_nudge.SilenceClock("run-p", "wYGwgY", 1000.0, directory=self.dir.name,
+                                          first_after=120, repeat=180, ttl=90, **options)
+
+    def test_the_plan_offer_rides_on_the_first_nudge_only(self):
+        clock = self.plan_clock(plan_offer=True)
+        first = clock.tick(1120)
+        self.assertIn(silence_nudge.PLAN_OFFER, first)
+        self.assertIn("soulshouse-plan offer off", first)
+        self.assertTrue(first.startswith("[souls.house runtime notice, not a message from a person]"))
+        self.assertIn(silence_nudge.PLAN_OFFER, json.loads(clock.path.read_text())["text"])
+        later = clock.tick(1300)
+        self.assertNotIn(silence_nudge.PLAN_OFFER, later)
+        self.assertTrue(clock.finish(1400)["plan_offered"])
+
+    def test_no_nudge_means_no_offer(self):
+        clock = self.plan_clock(plan_offer=True)
+        self.assertIsNone(clock.tick(1119))
+        clock.observe_post(1100)
+        self.assertIsNone(clock.tick(1200))
+        self.assertFalse(clock.path.exists())
+        self.assertFalse(clock.finish(1210)["plan_offered"])
+
+    def test_without_the_flag_the_nudge_is_unchanged(self):
+        text = self.plan_clock().tick(1120)
+        self.assertNotIn("plan", text)
+
+    def test_a_spoken_turn_never_carries_the_offer(self):
+        clock = self.plan_clock(plan_offer=True, voice=True)
+        self.assertNotIn(silence_nudge.PLAN_OFFER, clock.tick(1120))
+        self.assertFalse(clock.plan_offered)
+
     def test_a_typed_turn_keeps_the_two_minute_wording(self):
         text = silence_nudge.notice_text(120, "wYGwgY")
         self.assertNotIn("Voice mode", text)
@@ -101,7 +133,7 @@ class SilenceClockTest(unittest.TestCase):
         self.clock.observe_post(1030)
         self.clock.tick(1500)
         summary = self.clock.finish(1600)
-        self.assertEqual({"silence_notices": 1, "longest_silence_secs": 570}, summary)
+        self.assertEqual({"silence_notices": 1, "longest_silence_secs": 570, "plan_offered": False}, summary)
         self.assertFalse(self.clock.path.exists())
 
     def test_finish_counts_a_run_that_never_posted(self):
@@ -430,6 +462,17 @@ class ReporterSilenceTest(unittest.TestCase):
             self.module.VOICE_FIRST_AFTER_SECS, self.module.VOICE_REPEAT_SECS = saved
         self.assertTrue(self.reporter.silence.voice)
         self.assertTrue(any("Voice mode" in text for text in seen["notices"]), seen["notices"])
+
+    def test_the_trigger_flag_reaches_the_clock(self):
+        self.reporter.conversation_id = "wYGwgY"
+        self.reporter.plan_offer = True
+        self.run_fake(self.fake_chaos("no such flag here"))
+        self.assertTrue(self.reporter.silence.plan_offer)
+
+    def test_without_the_trigger_flag_the_clock_offers_nothing(self):
+        self.reporter.conversation_id = "wYGwgY"
+        self.run_fake(self.fake_chaos("no such flag here"))
+        self.assertFalse(self.reporter.silence.plan_offer)
 
     def test_a_typed_turn_arms_the_ordinary_clock(self):
         self.reporter.conversation_id = "wYGwgY"
