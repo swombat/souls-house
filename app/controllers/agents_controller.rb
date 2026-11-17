@@ -91,6 +91,7 @@ class AgentsController < ApplicationController
       subagent_providers: -> { load_catalog.call.providers },
       subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
       subagents_available: -> { @agent.subagents_available? },
+      plan_offer: -> { @agent.plan_offer_status },
       reflexes: -> { reflexes_props },
       commitments: -> { commitments_props },
       # Count/provider partials must not mint another registration token.

@@ -104,6 +104,7 @@ class Reporter:
         self.silence = None
         # Set by the trigger shim from the payload: the waking turn was spoken.
         self.voice_mode = False
+        self.plan_offer = False
         # The resident's plan (#864): which Chaos session this run is, the env
         # its chaos ran with, and the last plan sent, so only changes are sent.
         self.process_id = None
@@ -601,7 +602,8 @@ class Reporter:
             else:
                 self.silence = silence_nudge.SilenceClock(
                     self.run_id, conversation_id, time.time(),
-                    first_after=silence_nudge.FIRST_AFTER_SECS, repeat=silence_nudge.REPEAT_SECS)
+                    first_after=silence_nudge.FIRST_AFTER_SECS, repeat=silence_nudge.REPEAT_SECS,
+                    plan_offer=self.plan_offer)
         if not silence_nudge.supports_steer_file(args[0]):
             return args
         env["SOULSHOUSE_STEER_FILE"] = str(self.silence.path)

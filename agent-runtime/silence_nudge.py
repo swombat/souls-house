@@ -50,6 +50,18 @@ VOICE_FIRST_AFTER_SECS = 20
 VOICE_REPEAT_SECS = 20
 VOICE_NOTICE_TTL_SECS = 20
 
+# The plan offer (#864 slice 3): when souls.house says so in the trigger
+# payload (`plan_offer`), the run's first nudge carries one more sentence,
+# Wing's wording, the same as Agent::PlanOffer::OFFER and
+# `soulshouse-plan --help`. Once per run, never in voice mode, never on its own.
+PLAN_OFFER = ("If you choose to undertake a long task, you can share a changeable plan so others "
+              "can follow along. Optional; no plan is needed for conversation or quiet.")
+
+
+def plan_offer_text():
+    return (f"{PLAN_OFFER} (`soulshouse-plan --help` shows how; "
+            "`soulshouse-plan offer off` stops this offer.)")
+
 _support = {}
 _support_lock = threading.Lock()
 
@@ -154,7 +166,7 @@ def _rendered_fields(messages):
 class SilenceClock:
     def __init__(self, run_id, conversation_id, started_at, directory=None,
                  first_after=FIRST_AFTER_SECS, repeat=REPEAT_SECS, ttl=NOTICE_TTL_SECS,
-                 voice=False):
+                 voice=False, plan_offer=False):
         base = Path(directory or os.environ.get("SOULSHOUSE_STEER_DIR")
                     or Path(tempfile.gettempdir()) / "soulshouse-steer")
         self.path = base / f"{run_id}.json"
@@ -164,6 +176,13 @@ class SilenceClock:
         self.repeat = repeat
         self.ttl = ttl
         self.voice = voice
+        self.plan_offer = plan_offer and not voice
+        self.plan_offered = False
+        # The notice id the offer was first written under. A later notice id
+        # (a fresh room message re-rendering a live nudge) leaves it out, so
+        # chaos can't deliver it twice; an undelivered first notice that gets
+        # replaced loses it, which is the cheaper failure (#1009 review).
+        self.plan_offer_notice_id = None
         self.last_post_at = None
         self.last_notice_at = None
         self.notices = 0
@@ -246,9 +265,12 @@ class SilenceClock:
             text = notice_text(silence, self.conversation_id, self.voice)
             self.notices += 1
             self.nudge = {"text": text, "expires_at": now + self.ttl}
-            self._new_notice()
+            offering = self.plan_offer and not self.plan_offered
+            if offering:
+                self.plan_offered = True
+            self._new_notice(offer=offering)
             self.last_notice_at = now
-            return text
+            return f"{text}\n\n{plan_offer_text()}" if offering else text
 
     def expire(self, now):
         """Drop parts past their own expiry, keeping the notice id."""
@@ -261,13 +283,15 @@ class SilenceClock:
             if changed:
                 self._render()
 
-    def _new_notice(self):
+    def _new_notice(self, offer=False):
         # Called with the lock held. Messages shown under the previous id may
         # have been delivered with it; the shim can't know, so say so.
         if self.notice_id is not None:
             self.written.update(self.pending_ids)
         self.revision += 1
         self.notice_id = f"{self.path.stem}-{self.revision}"
+        if offer:
+            self.plan_offer_notice_id = self.notice_id
         self._render()
 
     def _render(self):
@@ -279,6 +303,8 @@ class SilenceClock:
             expiries.append(self.messages_expire_at)
         if self.nudge is not None:
             parts.append(self.nudge["text"])
+            if self.plan_offer_notice_id is not None and self.plan_offer_notice_id == self.notice_id:
+                parts.append(plan_offer_text())
             expiries.append(self.nudge["expires_at"])
         if not parts:
             self.withdraw()
@@ -290,7 +316,8 @@ class SilenceClock:
             self._close_gap(now)
         self.withdraw()
         return {"silence_notices": self.notices,
-                "longest_silence_secs": int(self.longest_silence)}
+                "longest_silence_secs": int(self.longest_silence),
+                "plan_offered": self.plan_offered}
 
     def withdraw(self):
         try:

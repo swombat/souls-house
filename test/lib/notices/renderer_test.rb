@@ -58,6 +58,38 @@ module Notices
       assert_includes text, "The house will be quiet this evening."
     end
 
+    test "the plan offer is asked from its first run, until answered or its days pass" do
+      subject = agents(:research_assistant)
+      subject.account.update_columns(granted_plan: "colleagues", plan_offer_enabled: true)
+      travel_to Time.zone.local(2026, 11, 17, 9) do
+        subject.update!(plan_offer_enabled: true)
+      end
+      # Idle for a week: the question waits for the first run (#1009 review).
+      travel_to Time.zone.local(2026, 11, 24, 9) do
+        text = Renderer.section_for(subject).to_s
+        assert_includes text, "[plan offer · asked until 27 November 2026]"
+        assert_includes text, Agent::PlanOffer::OFFER
+        assert_includes text, "soulshouse-plan offer off"
+        assert_includes text, "your off beats their on"
+        assert_equal Time.current, subject.reload.plan_offer_ask_shown_at
+        assert subject.plan_offer_active?
+      end
+      travel_to Time.zone.local(2026, 11, 26, 9) do
+        assert_includes Renderer.section_for(subject).to_s, "asked until 27 November 2026", "the date holds"
+      end
+      travel_to Time.zone.local(2026, 11, 27, 10) do
+        assert_not_includes Renderer.section_for(subject).to_s, "plan offer"
+      end
+    end
+
+    test "an answered plan offer asks nothing" do
+      subject = agents(:research_assistant)
+      subject.account.update_columns(granted_plan: "colleagues", plan_offer_enabled: true)
+      subject.update!(plan_offer_enabled: true)
+      subject.answer_plan_offer!("on")
+      assert_not_includes Renderer.section_for(subject).to_s, "plan offer"
+    end
+
     test "returns nil when no active notices exist" do
       Notice.create!(
         scope: "system",

@@ -12,6 +12,7 @@
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
   import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
+  import PlanOfferCard from '$lib/components/accounts/PlanOfferCard.svelte';
   import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
   import SpeechEngineCard from '$lib/components/accounts/SpeechEngineCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
@@ -29,6 +30,8 @@
     telegram_bot_wake_limit = 3,
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
+    plan_offer_enabled = false,
+    plan_offer_available = false,
     voice_mode_enabled = false,
     voice_mode_site_scope = 'account_choice',
     voice_mode_transcription_key = false,
@@ -49,6 +52,8 @@
         'resident_handoff_cap',
         'telegram_bot_wake_limit',
         'reflexes_enabled',
+        'plan_offer_enabled',
+        'plan_offer_available',
         'voice_mode_enabled',
         'speech_engine',
         'eleven_labs_key_present',
@@ -156,6 +161,14 @@
     enabled={reflexes_enabled}
     canManage={can_manage}
     siteScope={reflexes_site_scope} />
+
+  {#if plan_offer_available || plan_offer_enabled}
+    <PlanOfferCard
+      accountId={account.id}
+      enabled={plan_offer_enabled}
+      available={plan_offer_available}
+      canManage={can_manage} />
+  {/if}
 
   <VoiceModeCard
     accountId={account.id}

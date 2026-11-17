@@ -495,6 +495,7 @@ Rails.application.routes.draw do
         resources :users, only: :index
       end
       # The key's own person: profile, settings, avatar and accounts. Human keys only.
+      resource :plan_offer, only: %i[show update]
       resource :me, only: %i[show update], controller: "me" do
         resource :avatar, only: %i[update destroy], controller: "me/avatars"
       end
