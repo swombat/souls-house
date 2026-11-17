@@ -90,6 +90,34 @@ class SilenceClockTest(unittest.TestCase):
         self.assertNotIn(silence_nudge.PLAN_OFFER, later)
         self.assertTrue(clock.finish(1400)["plan_offered"])
 
+    def test_a_fresh_room_message_never_redelivers_the_offer(self):
+        # #1009 review (Mel): a message arriving while the first nudge is live
+        # starts a new notice id carrying the nudge again; the offer must not
+        # ride along under that new id.
+        clock = self.plan_clock(plan_offer=True)
+        clock.tick(1120)
+        first = json.loads(clock.path.read_text())
+        self.assertIn(silence_nudge.PLAN_OFFER, first["text"])
+        clock.observe_messages([room_message("m1", "Still there?")], 1130)
+        second = json.loads(clock.path.read_text())
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertIn("Still there?", second["text"])
+        self.assertIn("No visible post from you", second["text"], "the nudge itself stays")
+        self.assertNotIn(silence_nudge.PLAN_OFFER, second["text"])
+        # A later edit to that message re-renders under the same new id, still without it.
+        clock.observe_messages([room_message("m1", "Still there? (edited)")], 1135)
+        self.assertNotIn(silence_nudge.PLAN_OFFER, json.loads(clock.path.read_text())["text"])
+
+    def test_a_post_withdrawing_the_nudge_drops_the_offer_under_the_same_id(self):
+        clock = self.plan_clock(plan_offer=True)
+        clock.observe_messages([room_message("m1", "hello")], 1010)
+        clock.tick(1120)
+        notice_id = json.loads(clock.path.read_text())["id"]
+        clock.observe_post(1125)
+        after = json.loads(clock.path.read_text())
+        self.assertEqual(notice_id, after["id"])
+        self.assertNotIn(silence_nudge.PLAN_OFFER, after["text"])
+
     def test_no_nudge_means_no_offer(self):
         clock = self.plan_clock(plan_offer=True)
         self.assertIsNone(clock.tick(1119))

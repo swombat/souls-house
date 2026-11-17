@@ -12,8 +12,10 @@
   let unavailable = $derived(state === 'unavailable');
   let status = $derived.by(() => {
     switch (state) {
+      case 'waiting':
+        return `Turned on ${formatDate(planOffer.asked_at)}. They'll be asked the next time they run; until then nothing is offered.`;
       case 'asked':
-        return `Asked on ${formatDate(planOffer.asked_at)}; no answer yet. Until they answer, the offer is on.`;
+        return `Asked on ${formatDate(planOffer.ask_shown_at)}; no answer yet. Until they answer, the offer is on.`;
       case 'on':
         return `They said yes on ${formatDate(planOffer.answered_at)}. They can turn it off themselves.`;
       case 'declined':

@@ -615,6 +615,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_090000) do
     t.jsonb "hook_expectations", default: {}, null: false
     t.boolean "plan_offer_enabled", default: false, null: false
     t.datetime "plan_offer_asked_at"
+    t.datetime "plan_offer_ask_shown_at"
     t.string "plan_offer_answer"
     t.datetime "plan_offer_answered_at"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"

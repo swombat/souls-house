@@ -13,8 +13,8 @@ class Api::V1::PlanOffersControllerTest < ActionDispatch::IntegrationTest
   test "a resident reads where its offer stands" do
     get api_v1_plan_offer_url, headers: auth(@token)
     assert_response :success
-    assert_equal "asked", response.parsed_body.dig("plan_offer", "state")
-    assert response.parsed_body.dig("plan_offer", "active")
+    assert_equal "waiting", response.parsed_body.dig("plan_offer", "state")
+    assert_not response.parsed_body.dig("plan_offer", "active")
   end
 
   test "a resident turns it off and on again" do

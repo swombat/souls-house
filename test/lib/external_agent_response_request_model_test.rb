@@ -265,9 +265,11 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     assert_nil request.call.send(:trigger_payload)[:plan_offer]
 
     agent.update!(plan_offer_enabled: true)
-    assert_equal true, request.call.send(:trigger_payload)[:plan_offer]
+    assert_nil request.call.send(:trigger_payload)[:plan_offer], "not offered before being asked"
     # The one question is in the notices until answered; there is no wake line.
-    assert_includes request.call.send(:request_text), "[plan offer · asked until"
+    asking = request.call
+    assert_includes asking.send(:request_text), "[plan offer · asked until"
+    assert_equal true, asking.send(:trigger_payload)[:plan_offer], "asked and offered in the same run"
     agent.answer_plan_offer!("on")
     assert_equal true, request.call.send(:trigger_payload)[:plan_offer]
     assert_not_includes request.call.send(:request_text), Agent::PlanOffer::OFFER, "no wake line"

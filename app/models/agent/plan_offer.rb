@@ -5,8 +5,12 @@
 #
 # It needs three things: the account's switch (Account#plan_offer_enabled,
 # Colleagues only), the owner's switch on this resident, and no "off" from
-# the resident. When the owner turns it on, the resident is asked once, in
-# its notices (Notices::Renderer), until it answers or ASK_DAYS pass. The
+# the resident. When the owner turns it on, the resident is asked in its
+# notices (Notices::Renderer): the question waits for the resident's next run
+# however long that takes, then stays until it answers or ASK_DAYS pass from
+# when it first surfaced. The offer itself starts only once the question has
+# surfaced (or the resident said on), so nobody is offered without being
+# asked (#1009 review). The
 # resident answers with `soulshouse-plan offer on|off`
 # (Api::V1::PlanOffersController). Its off beats the owner's on, and a yes
 # doesn't bind: it can say off at any time. The owner sees the answer on the
@@ -35,16 +39,29 @@ module Agent::PlanOffer
     account.present? && account.plan_offer_available? && account.plan_offer_enabled?
   end
 
-  # The run's first nudge carries the offer.
+  # The run's first nudge carries the offer: both switches on, no off from
+  # the resident, and the resident has been asked (or said on).
   def plan_offer_active?
-    plan_offer_enabled? && plan_offer_answer != "off" && plan_offer_available?
+    plan_offer_owner_side? && plan_offer_answer != "off" &&
+      (plan_offer_answer == "on" || plan_offer_ask_shown_at.present?)
   end
 
-  # The owner turned it on and the resident hasn't answered yet, within the
-  # days it is asked for.
+  # The owner turned it on and the resident hasn't answered: open until it
+  # has surfaced, then for ASK_DAYS after that.
   def plan_offer_question_open?(now = Time.current)
-    plan_offer_active? && plan_offer_answer.nil? && plan_offer_asked_at.present? &&
-      plan_offer_asked_at > now - ASK_DAYS.days
+    plan_offer_owner_side? && plan_offer_answer.nil? &&
+      (plan_offer_ask_shown_at.nil? || plan_offer_ask_shown_at > now - ASK_DAYS.days)
+  end
+
+  # Called by Notices::Renderer when it puts the question into a run's text.
+  def plan_offer_ask_surfaced!(now = Time.current)
+    return if plan_offer_ask_shown_at.present?
+
+    update_column(:plan_offer_ask_shown_at, now)
+  end
+
+  def plan_offer_ask_until
+    (plan_offer_ask_shown_at || Time.current) + ASK_DAYS.days
   end
 
   def answer_plan_offer!(answer)
@@ -55,7 +72,8 @@ module Agent::PlanOffer
   end
 
   # What the owner and the resident see. `state` is one word:
-  # unavailable (the account can't have it or hasn't switched it on), off (the owner's switch),
+  # unavailable (the account can't have it or hasn't switched it on), off (the
+  # owner's switch), waiting (on, the question hasn't reached a run yet),
   # declined (the resident said off), asked (on, no answer yet), on.
   def plan_offer_status
     {
@@ -65,6 +83,7 @@ module Agent::PlanOffer
       answer: plan_offer_answer,
       answered_at: plan_offer_answered_at&.iso8601,
       asked_at: plan_offer_asked_at&.iso8601,
+      ask_shown_at: plan_offer_ask_shown_at&.iso8601,
       active: plan_offer_active?,
       state: plan_offer_state
     }
@@ -74,6 +93,7 @@ module Agent::PlanOffer
     return "unavailable" unless plan_offer_available?
     return "off" unless plan_offer_enabled?
     return "declined" if plan_offer_answer == "off"
+    return "waiting" if plan_offer_answer.nil? && plan_offer_ask_shown_at.nil?
     return "asked" if plan_offer_answer.nil?
 
     "on"
@@ -81,14 +101,22 @@ module Agent::PlanOffer
 
   private
 
+  def plan_offer_owner_side?
+    plan_offer_enabled? && plan_offer_available?
+  end
+
   def plan_offer_allowed_by_account
     return if plan_offer_available?
 
     errors.add(:plan_offer_enabled, "Plans for long tasks come with the Colleagues plan, once the account has switched them on")
   end
 
+  # An unanswered question is asked afresh each time the owner turns it on.
   def stamp_plan_offer_ask
-    self.plan_offer_asked_at = Time.current if plan_offer_answer.nil?
+    return unless plan_offer_answer.nil?
+
+    self.plan_offer_asked_at = Time.current
+    self.plan_offer_ask_shown_at = nil
   end
 
 end

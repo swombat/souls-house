@@ -40,20 +40,36 @@ class Agent::PlanOfferTest < ActiveSupport::TestCase
     assert @agent.valid?
   end
 
-  test "turning it on asks the resident and makes it active" do
+  test "turning it on asks the resident; the offer starts once the question has surfaced" do
     switch_account_on
     freeze_time do
       @agent.update!(plan_offer_enabled: true)
       assert_equal Time.current, @agent.plan_offer_asked_at
-      assert @agent.plan_offer_active?
       assert @agent.plan_offer_question_open?
+      assert_not @agent.plan_offer_active?, "not offered before being asked"
+      assert_equal "waiting", @agent.plan_offer_state
+
+      @agent.plan_offer_ask_surfaced!
+      assert @agent.plan_offer_active?
       assert_equal "asked", @agent.plan_offer_state
     end
   end
 
-  test "the question closes after its days or once answered" do
+  test "an idle resident is still asked when it first runs, days later (#1009 review)" do
     switch_account_on
     @agent.update!(plan_offer_enabled: true)
+    travel 10.days do
+      assert @agent.reload.plan_offer_question_open?
+      assert_not @agent.plan_offer_active?
+      @agent.plan_offer_ask_surfaced!
+      assert @agent.plan_offer_question_open?(Agent::PlanOffer::ASK_DAYS.days.from_now - 1.minute)
+    end
+  end
+
+  test "the question closes its days after surfacing, or once answered" do
+    switch_account_on
+    @agent.update!(plan_offer_enabled: true)
+    @agent.plan_offer_ask_surfaced!
     assert_not @agent.plan_offer_question_open?(Agent::PlanOffer::ASK_DAYS.days.from_now + 1.minute)
     assert @agent.plan_offer_active?, "silence leaves it on"
 
@@ -65,6 +81,7 @@ class Agent::PlanOfferTest < ActiveSupport::TestCase
   test "the resident's off beats the owner's on, and a yes doesn't bind" do
     switch_account_on
     @agent.update!(plan_offer_enabled: true)
+    @agent.plan_offer_ask_surfaced!
     @agent.answer_plan_offer!("on")
     @agent.answer_plan_offer!("off")
     assert_not @agent.plan_offer_active?
@@ -85,6 +102,8 @@ class Agent::PlanOfferTest < ActiveSupport::TestCase
   test "an account that leaves Colleagues stops the offer even with both switches left on" do
     switch_account_on
     @agent.update!(plan_offer_enabled: true)
+    @agent.plan_offer_ask_surfaced!
+    assert @agent.plan_offer_active?
     @account.update_columns(granted_plan: "partners")
     assert_not @agent.reload.plan_offer_active?
     assert_equal "unavailable", @agent.plan_offer_state
@@ -93,8 +112,20 @@ class Agent::PlanOfferTest < ActiveSupport::TestCase
   test "the account switch off stops it too" do
     switch_account_on
     @agent.update!(plan_offer_enabled: true)
+    @agent.plan_offer_ask_surfaced!
+    assert @agent.plan_offer_active?
     @account.update!(plan_offer_enabled: false)
     assert_not @agent.reload.plan_offer_active?
+  end
+
+  test "an unanswered question is asked afresh when the owner turns it on again" do
+    switch_account_on
+    @agent.update!(plan_offer_enabled: true)
+    @agent.plan_offer_ask_surfaced!
+    @agent.update!(plan_offer_enabled: false)
+    @agent.update!(plan_offer_enabled: true)
+    assert_nil @agent.plan_offer_ask_shown_at
+    assert_equal "waiting", @agent.plan_offer_state
   end
 
   test "only on and off are answers" do

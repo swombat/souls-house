@@ -17,9 +17,14 @@ const status = () => screen.getByTestId('plan-offer-status');
 
 describe('AgentPlanOfferPanel', () => {
   it('asked: says when, and that the offer is on until they answer', () => {
-    render(AgentPlanOfferPanel, { enabled: true, planOffer: offer('asked', { asked_at: '2026-11-10T10:00:00Z' }) });
+    render(AgentPlanOfferPanel, { enabled: true, planOffer: offer('asked', { ask_shown_at: '2026-11-10T10:00:00Z' }) });
     expect(status()).toHaveTextContent(/^Asked on .*2026.*; no answer yet\. Until they answer, the offer is on\.$/);
     expect(checkbox()).not.toBeDisabled();
+  });
+
+  it('waiting: says they will be asked at their next run', () => {
+    render(AgentPlanOfferPanel, { enabled: true, planOffer: offer('waiting', { asked_at: '2026-11-10T10:00:00Z' }) });
+    expect(status()).toHaveTextContent(/^Turned on .*2026\. They'll be asked the next time they run; until then nothing is offered\.$/);
   });
 
   it('on: says they said yes', () => {
