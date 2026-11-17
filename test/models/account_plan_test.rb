@@ -17,7 +17,9 @@ class AccountPlanTest < ActiveSupport::TestCase
 
   test "Companions by default, from nobody" do
     assert_equal "companions", @team.plan.id
-    assert_equal({ id: "companions", source: "default", subscription: nil }, @team.account_plan_json)
+    assert_equal({ id: "companions", source: "default", subscription: nil, chosen: "companions" }, @team.account_plan_json)
+    @team.update!(chosen_plan: "colleagues")
+    assert_equal "colleagues", @team.account_plan_json[:chosen], "the plan the first bill will carry"
   end
 
   test "a site admin's grant is the plan when nothing is paid" do

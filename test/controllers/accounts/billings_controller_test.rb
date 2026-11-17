@@ -87,19 +87,22 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     resident = props["residents"].find { |row| row["id"] == @agent.to_param }
     assert_equal "complimentary", resident.dig("entitlement", "state")
     assert_equal Billing::AccountPlan.all.as_json.map(&:deep_stringify_keys), props["account_plans"]
-    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil }, props["account_plan"])
+    assert_equal({ "id" => "companions", "source" => "default", "subscription" => nil, "chosen" => "companions" },
+      props["account_plan"])
   end
 
   test "the account plan prop names its source and the live subscription" do
     @account.update!(granted_plan: "partners")
     get account_billing_path(@account)
-    assert_equal({ "id" => "partners", "source" => "grant", "subscription" => nil }, inertia_shared_props["account_plan"])
+    assert_equal({ "id" => "partners", "source" => "grant", "subscription" => nil, "chosen" => nil },
+      inertia_shared_props["account_plan"], "a free account has no plan line to choose")
 
     AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_a", plan: "colleagues",
       stripe_status: "active", current_period_end: Time.utc(2026, 12, 10), cancel_at_period_end: true)
     get account_billing_path(@account)
     assert_equal({ "id" => "colleagues", "source" => "subscription",
-      "subscription" => { "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true } },
+      "subscription" => { "status" => "active", "current_period_end" => "2026-12-10T00:00:00Z", "cancel_at_period_end" => true },
+      "chosen" => nil },
       inertia_shared_props["account_plan"])
   end
 

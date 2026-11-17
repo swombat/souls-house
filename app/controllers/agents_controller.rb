@@ -289,7 +289,11 @@ class AgentsController < ApplicationController
       birth_orders_url: account_birth_orders_path(current_account),
       # A new resident joins the account's live subscription (eoXAEj 2b):
       # no card terms, the quote comes after Create.
-      adds_to_bill: Billing::Reconcile.applies?(current_account)
+      adds_to_bill: Billing::Reconcile.applies?(current_account),
+      # Whether a resident bought now at the catalogue price is the one the
+      # account's plan includes (Billing::Included): it costs its size less
+      # a Small.
+      included_available: Billing::Included.available?(current_account)
     }
   end
 
