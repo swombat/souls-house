@@ -271,9 +271,11 @@ module Billing
 
           lines[current.stripe_price_id] -= 1 if current
           lines[op["price"]] += 1 if plan
-          # A bill that already carries its included resident (one a grant
-          # made free, the grant now gone) takes its plan back on its own.
-          carries_included = lines.any? { |price, quantity| quantity.positive? && Offer.for_price(price)&.included? }
+          # A bill that already carries its included resident, on an account
+          # given no plan (a plan code withdrawn, PlanAfterGrant), takes on its
+          # plan by itself. An account still given a plan can't buy one alone.
+          carries_included = @account.given_plan.nil? &&
+            lines.any? { |price, quantity| quantity.positive? && Offer.for_price(price)&.included? }
           if plan && !current && !carries_included && ops.none? { |other| other["op"].in?(%w[add birth]) }
             raise Refused, "A plan is bought with the resident it includes."
           end

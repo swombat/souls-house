@@ -22,6 +22,14 @@ module Billing
 
       ResidentEntitlement.grace_expired(now).find_each { |entitlement| entitlement.expire_grace!(now: now) }
 
+      # A withdrawn plan code whose plan Stripe couldn't take on yet (a bill
+      # in its trial, past due or ending): tried again until it lands.
+      PlanAfterGrant.pending_accounts.each do |account|
+        PlanAfterGrant.restore!(account, by: nil)
+      rescue StandardError => error
+        Rails.error.report(error, handled: true, context: { subsystem: "billing", account_id: account.id })
+      end
+
       # An unreadable item's hold runs out even if Stripe sends nothing more.
       ResidentBirthOrder.items_unborn(now).find_each do |order|
         PaidBirth.new.resume_item!(order)

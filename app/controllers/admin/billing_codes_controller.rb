@@ -41,18 +41,31 @@ class Admin::BillingCodesController < ApplicationController
     redemption.withdraw!(by: Current.user)
     audit("withdraw_billing_code_redemption", redemption, code: redemption.billing_code.code,
       account_id: redemption.account_id)
-    restored = Billing::PlanAfterGrant.restore!(redemption.account, by: Current.user)
-    plan = restored && redemption.account.plan_to_pay_for
+    withdrawn = "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}."
+    change = (Billing::PlanAfterGrant.restore!(redemption.account, by: Current.user) if redemption.effect.start_with?("plan:"))
+    redirect_to admin_billing_codes_path, notice: [ withdrawn, plan_notice(redemption.account, change) ].join(" ")
+  rescue *PLAN_ERRORS => error
     redirect_to admin_billing_codes_path,
-      notice: "#{redemption.account.name} no longer holds: #{BillingCode.label(redemption.effect)}. " +
-        (plan ? "Its bill now carries #{plan.name} again, at #{Billing.usd_label(plan.monthly_usd)} a month; its included resident stays at no charge." :
-          "Plans already bought are unchanged.")
-  rescue Billing::Reconcile::Refused, Billing::Reconcile::Uncertain, Billing::NotReady, Stripe::StripeError => error
-    redirect_to admin_billing_codes_path,
-      alert: "The grant is withdrawn, but the plan couldn't be put back on #{redemption.account.name}'s bill: #{error.message}"
+      alert: "#{withdrawn} Its plan couldn't be put on its bill yet (#{error.message}); the house retries this until it can."
   end
 
   private
+
+  PLAN_ERRORS = [ Billing::Reconcile::Refused, Billing::Reconcile::QuoteChanged, Billing::Reconcile::Uncertain,
+                  Billing::NotReady, Billing::NotEligible, Billing::NotConfigured, Billing::AlreadySubscribed,
+                  Stripe::StripeError ].freeze
+
+  def plan_notice(account, change)
+    return "Plans already bought are unchanged." unless change
+
+    plan = Billing::AccountPlan.for_price(change.ops.first["price"])
+    audit("bill_plan_after_grant", account, plan: plan.id, bill_change_id: change.id, applied: change.applied?)
+    if change.applied?
+      "Its bill now carries #{plan.name}, #{Billing.usd_label(plan.monthly_usd)} a month; the resident it includes keeps its price."
+    else
+      "#{plan.name} is being added to its bill; Stripe is still confirming."
+    end
+  end
 
   def require_site_admin
     redirect_to root_path unless Current.user&.is_site_admin?

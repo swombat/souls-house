@@ -80,6 +80,43 @@ class Billing::PlanAfterGrantTest < ActiveSupport::TestCase
     assert_equal 0, monthly(sub)
   end
 
+  # Opus review of #1023: the relaxed rule must not let an account still
+  # given a plan buy a higher one alone (it couldn't then come back down).
+  test "an account still given a plan can't buy a plan alone, included resident or not" do
+    redeem!("plan:companions")
+    first_bill!("conversation")
+    reconcile = Billing::Reconcile.new(account: @account, client: @stripe)
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
+    assert_match(/bought with the resident it includes/, error.message)
+  end
+
+  test "an at-cost holder is never put on a plan" do
+    redemption = redeem!("plan:companions")
+    sub = first_bill!("conversation")
+    BillingCode.create!(code: "AT-COST", effect: "at_cost", created_by: @admin)
+    BillingCode.redeem!(code: "AT-COST", account: @account, by: @owner)
+    redemption.withdraw!(by: @admin)
+    assert_not Billing::PlanAfterGrant.needed?(@account)
+    assert_nil Billing::PlanAfterGrant.restore!(@account, by: @admin, client: @stripe)
+    assert_equal 0, monthly(sub)
+  end
+
+  test "a restore Stripe refuses for now (the bill past due) is pending for the sweep, and lands once it can" do
+    redemption = redeem!("plan:companions")
+    sub = first_bill!("conversation")
+    @stripe.set_subscription_status(sub, "past_due")
+    Billing::BillSync.new(sub, client: @stripe).call
+    redemption.withdraw!(by: @admin)
+    assert_raises(Billing::Reconcile::Refused) { Billing::PlanAfterGrant.restore!(@account, by: nil, client: @stripe) }
+    assert_equal [ @account.id ], Billing::PlanAfterGrant.pending_accounts.map(&:id)
+
+    @stripe.set_subscription_status(sub, "active")
+    Billing::BillSync.new(sub, client: @stripe).call
+    Billing::PlanAfterGrant.restore!(@account, by: nil, client: @stripe)
+    assert_equal 999, monthly(sub)
+    assert_empty Billing::PlanAfterGrant.pending_accounts
+  end
+
   test "a plan never bought alone: with no included resident on the bill the plan op is still refused" do
     rows = { agents(:research_assistant) => CONVERSATION_PRICE }
     @stripe.put_shared_subscription(id: "sub_old", account: @account, customer: "cus_1", status: "active",
