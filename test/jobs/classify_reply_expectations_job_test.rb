@@ -84,7 +84,7 @@ class ClassifyReplyExpectationsJobTest < ActiveSupport::TestCase
   end
 
   test "an oversized message neither starves a smaller ask nor endlessly reschedules" do
-    smaller = @chat.messages.create!(role: "assistant", content: "A small new ask")
+    smaller = @chat.messages.create!(role: "assistant", content: "Test, a small new ask")
     UtilityInference.stub :decide, ->(state:, questions:) {
       raise UtilityInference::InputTooLong if state[:messages].any? { |m| m[:id] == @ask.id }
       questions.transform_values { 0.95 }
@@ -128,6 +128,35 @@ class ClassifyReplyExpectationsJobTest < ActiveSupport::TestCase
       perform_job { @chat.messages.create!(role: "user", user: @user, content: "Answer") }
     end
     assert ReplyExpectation.find_by!(message: @ask).state_answered?
+  end
+
+  test "an inferred flag skips a member who has not written here and is not named" do
+    unnamed = @chat.messages.create!(role: "assistant", content: "Could you check this?")
+    UtilityInference.stub :decide, ->(state:, questions:) { questions.transform_values { 0.95 } } do
+      perform_job
+    end
+    assert ReplyExpectation.find_by!(message: @ask).state_open?, "named by first name"
+    assert_nil ReplyExpectation.find_by(message: unnamed), "no owner fallback for a silent guess"
+    assert_not unnamed.reload.reply_attention_pending?
+  end
+
+  test "an inferred flag reaches a member who has written earlier in the conversation" do
+    @chat.messages.create!(role: "user", user: @user, content: "Here is the plan")
+    later = @chat.messages.create!(role: "assistant", content: "Could you check this?")
+    UtilityInference.stub :decide, ->(state:, questions:) { questions.transform_values { 0.95 } } do
+      perform_job
+    end
+    assert ReplyExpectation.find_by!(message: later).state_open?
+  end
+
+  test "a tag still reaches someone who has neither written nor been inferred" do
+    @user.profile.update!(first_name: "Daniel", last_name: "Tenner")
+    tagged = @chat.messages.create!(role: "assistant", content: "@Daniel could you check this?")
+    UtilityInference.stub :decide, ->(state:, questions:) { questions.transform_values { 0.95 } } do
+      perform_job(recipients: [])
+    end
+    expectation = ReplyExpectation.find_by!(message: tagged, user: @user)
+    assert_equal ReplyExpectation::DIRECT_MENTION_VERSION, expectation.classifier_version
   end
 
   private
