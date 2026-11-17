@@ -126,7 +126,10 @@ class Deliverer:
             return Outcome.FAILED, 0
         delivered = 0
         while True:
-            rows = await store.pending(ref, self.batch)
+            # One store job: the batch and the sequence it was read under.
+            # Every row in it is below that next_seq, so Rails committing at
+            # or above it means numbers this store never sent.
+            rows, next_seq = await store.run(lambda s: (s.pending(ref, self.batch), s.connection(ref)["next_seq"]))
             if not rows:
                 return Outcome.DONE, delivered
             for row in rows:
@@ -141,7 +144,7 @@ class Deliverer:
                     return Outcome.REVOKED, delivered
                 committed = reply.get("committed_seq") if isinstance(reply, dict) else None
                 if status in (200, 409) and isinstance(committed, int):
-                    if committed >= (await store.connection(ref))["next_seq"]:
+                    if committed >= next_seq:
                         # Rails has committed numbers this store never
                         # issued: nothing it acknowledges here was applied.
                         # Check the sequence again before sending anything.

@@ -79,13 +79,15 @@ class Stats:
 
 
 class StoreThread:
-    def __init__(self, store, on_fatal=exit_now, op_deadline=10.0, heartbeat=5.0, tick=1.0):
+    def __init__(self, store, on_fatal=exit_now, op_deadline=10.0, heartbeat=5.0, tick=1.0, stats_keep=20000):
         self.store = store
         self.on_fatal = on_fatal
         self.op_deadline = op_deadline
         self.heartbeat = heartbeat
         self.tick = tick
-        self.stats = Stats()
+        # Per-job samples kept for percentiles (the maxima are exact); the
+        # load harness keeps every job of a phase.
+        self.stats = Stats(stats_keep)
         self._queue = queue.SimpleQueue()
         self._closed = False
         self._dead = None

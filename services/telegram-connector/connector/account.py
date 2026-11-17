@@ -835,8 +835,13 @@ class Account:
         """A batch to fill and commit on the store thread: it reads the store
         as it goes, so filling it and committing it run there as one job
         (`self.store.run`), atomic with respect to every other store job."""
-        row = row or await self._row()
-        return Ingest(self.store.sync, self.ref, row["self_id"], self.me)
+        if self.me is not None:
+            # The signed-in account; the same id the store holds as self_id
+            # (_finish_login writes both), without a store job per batch.
+            self_id = self.me.id
+        else:
+            self_id = (row or await self._row())["self_id"]
+        return Ingest(self.store.sync, self.ref, self_id, self.me)
 
     def _ingested(self, ingest):
         """After a live commit: delivery has rows, and a synced chat seen for

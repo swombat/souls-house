@@ -317,7 +317,7 @@ class LoadHarness:
             self.store = Store(backend, Crypto(STORE_KEY))
         else:
             self.store = Store(self.path, Crypto(STORE_KEY))
-        self.astore = serve(self.store)
+        self.astore = serve(self.store, stats_keep=2_000_000)
         self.manager = RoutedManager(self.worlds, self.astore, None, self.rails.post, self.settings, b"load")
 
     def store_stats(self, phase):
