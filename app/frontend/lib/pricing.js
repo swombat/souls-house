@@ -87,7 +87,8 @@ export function planAction({ plan, billingOpen, user, account, isAccountAdmin, a
 
   if (user) {
     if (account && isAccountAdmin) {
-      const label = Number(plan.monthly_usd) > 0 ? `Choose ${plan.name} in Billing` : 'Go to Billing';
+      // Every account starts on Companions: nobody is asked to choose it.
+      const label = plan.id === 'companions' ? 'Go to Billing' : `Choose ${plan.name} in Billing`;
       return { kind: 'link', label, href: `/accounts/${account.id}/billing` };
     }
     return { kind: 'note', label: "The account's owner chooses its plan, on the Billing tab." };

@@ -16,7 +16,7 @@ import {
 const partners = {
   id: 'partners',
   name: 'Partners',
-  monthly_usd: '20.00',
+  monthly_usd: '29.99',
   from_usd: '29.99',
   purchasable: true,
   features: { members: 'several', swarm_searches: 20, subagents: false },
@@ -24,7 +24,7 @@ const partners = {
 const companions = {
   id: 'companions',
   name: 'Companions',
-  monthly_usd: '0.00',
+  monthly_usd: '9.99',
   from_usd: '9.99',
   purchasable: true,
   features: { members: 'one', swarm_searches: 0, subagents: false },
@@ -32,7 +32,7 @@ const companions = {
 const colleagues = {
   id: 'colleagues',
   name: 'Colleagues',
-  monthly_usd: '50.00',
+  monthly_usd: '59.99',
   from_usd: '59.99',
   purchasable: true,
   features: { members: 'several', swarm_searches: 100, subagents: true },

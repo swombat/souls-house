@@ -15,15 +15,15 @@ const accountPlans = [
   {
     id: 'companions',
     name: 'Companions',
-    monthly_usd: '0.00',
+    monthly_usd: '9.99',
     from_usd: '9.99',
-    purchasable: false,
+    purchasable: true,
     features: { members: 'one', swarm_searches: 0, subagents: false },
   },
   {
     id: 'partners',
     name: 'Partners',
-    monthly_usd: '20.00',
+    monthly_usd: '29.99',
     from_usd: '29.99',
     purchasable: true,
     features: { members: 'several', swarm_searches: 20, subagents: false },
@@ -182,7 +182,7 @@ describe('account plan and the free 14 days', () => {
   it('shows the account plan card above the sizes', () => {
     render(Billing, props());
     expect(screen.getByTestId('account-plan')).toHaveTextContent('Companions');
-    expect(screen.getByRole('button', { name: 'Move to Partners · $20 a month' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose Partners · $29.99 a month' })).toBeInTheDocument();
   });
 
   it('renders without account plan, trial or trial_ends_at props', () => {
@@ -222,7 +222,7 @@ describe('account plan and the free 14 days', () => {
     expect(screen.getByTestId('resident-trial')).toHaveTextContent(
       'Add a card from Manage billing to keep Aria awake after 24 Nov 2026'
     );
-    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("can't be added while a resident's free days run");
+    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent('Only Companions has the free days.');
     expect(screen.queryByRole('button', { name: /^Move to (Medium|Large)/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Manage billing' }).length).toBeGreaterThan(0);
   });
