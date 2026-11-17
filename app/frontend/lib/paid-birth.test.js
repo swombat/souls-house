@@ -46,6 +46,25 @@ test('pays with the saved card, then waits for the house to say the resident is 
   expect(phases).toEqual(['starting', 'paying', 'confirming']);
 });
 
+test('a first bill Stripe settled at once ($0, a free account) asks for no card, only the confirmation', async () => {
+  postJson
+    .mockResolvedValueOnce({ ...started, client_secret: null, paid: true })
+    .mockResolvedValueOnce({ order: { state: 'born' }, redirect_to: '/accounts/a/agents/x/onboarding' });
+  const phases = [];
+
+  const result = await payForResident({
+    billing,
+    agent: { name: 'Aria' },
+    tier: 'conversation',
+    onPhase: (phase) => phases.push(phase),
+    pollMs: 0,
+  });
+
+  expect(stripe.confirmCardPayment).not.toHaveBeenCalled();
+  expect(result.redirectTo).toBe('/accounts/a/agents/x/onboarding');
+  expect(phases).toEqual(['starting', 'confirming']);
+});
+
 test('a decline is thrown with the payment, so it can be paid again', async () => {
   postJson.mockResolvedValueOnce(started);
   stripe.confirmCardPayment.mockResolvedValue({ error: { message: 'Your card was declined.' } });

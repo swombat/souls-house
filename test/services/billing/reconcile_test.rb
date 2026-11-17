@@ -70,7 +70,6 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert change.applied?
     assert paid?(@b)
     assert_equal({ CONVERSATION_PRICE => 2 }, Billing::BillSync.house_lines("sub_acct"))
-    assert_equal [ { price: CONVERSATION_PRICE, quantity: 2 } ], Billing::Bill.new(@account).items
   end
 
   test "a resident at another price is a new line; ending one of two takes its line off now and leaves the other" do
@@ -130,21 +129,89 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "resize", agent_id: @b.id, price: WORK_AT_COST_PRICE } ]) }
   end
 
-  test "the plan is a line on the same bill: bought, changed and dropped" do
-    bill!(@a => CONVERSATION_PRICE)
+  test "the plan is a line on the same bill: changed, and never bought or dropped apart from its resident" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE)
     go!([ { op: "plan", price: PARTNERS_PRICE } ])
     assert_equal "partners", @account.reload.plan.id
-    assert_equal({ CONVERSATION_PRICE => 1, PARTNERS_PRICE => 1 }, remote)
+    assert_equal({ CONVERSATION_INCLUDED_PRICE => 1, PARTNERS_PRICE => 1 }, remote)
 
     go!([ { op: "plan", price: COLLEAGUES_PRICE } ])
     assert_equal "colleagues", @account.reload.plan.id
-    assert_equal({ CONVERSATION_PRICE => 1, COLLEAGUES_PRICE => 1 }, remote)
+    assert_equal({ CONVERSATION_INCLUDED_PRICE => 1, COLLEAGUES_PRICE => 1 }, remote)
     assert_equal 1, AccountSubscription.live.where(account: @account).count
 
-    go!([ { op: "plan", price: nil } ])
-    assert_equal "companions", @account.reload.plan.id
-    assert_equal({ CONVERSATION_PRICE => 1 }, remote)
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: nil } ]) }
+    assert_match(/stays while its included resident/, error.message)
     assert paid?(@a)
+  end
+
+  test "a bill with no plan line gets none by itself: a plan alone is refused, and a resident added is at its size" do
+    bill!(@a => LIFE_AT_COST_PRICE)
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
+    assert_match(/bought with the resident it includes/, error.message)
+    assert_equal [ { op: "add", agent_id: @b.id, price: CONVERSATION_PRICE } ],
+      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("conversation").offer, client: @stripe)
+  end
+
+  test "a resident added to a bill with a plan is at its size; the plan's own is the included one" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE)
+    assert_equal [ { op: "add", agent_id: @b.id, price: LIFE_PRICE } ],
+      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("life").offer, client: @stripe)
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@b, LIFE_INCLUDED_PRICE) ]) }
+    assert_match(/already has its plan's included resident/, error.message)
+    go!([ add(@b, LIFE_PRICE) ])
+    assert_equal({ CONVERSATION_INCLUDED_PRICE => 1, COMPANIONS_PRICE => 1, LIFE_PRICE => 1 }, remote)
+  end
+
+  test "ending the included resident makes the oldest one left the included one, in the same change" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, @b => LIFE_PRICE, @c => CONVERSATION_PRICE, plan: PARTNERS_PRICE)
+    ResidentSubscription.find_by!(agent: @c).update_columns(created_at: 1.day.from_now)
+    change = reconcile.propose_end(@a)
+    assert_equal [ { "op" => "end", "agent_id" => @a.id },
+                   { "op" => "promote", "agent_id" => @b.id, "price" => LIFE_INCLUDED_PRICE } ], change.ops
+    # The plan already paid for a Small: the Medium left drops from $39.99 to $30.
+    assert_equal 2999 + 3000 + 2499, change.quote["recurring_total"], "Partners, the Medium included, the Small at its size"
+    reconcile.confirm(change, digest: change.digest)
+
+    assert_equal({ PARTNERS_PRICE => 1, LIFE_INCLUDED_PRICE => 1, CONVERSATION_PRICE => 1 }, remote)
+    assert_equal %w[life included], ResidentSubscription.live.find_by!(agent: @b).then { |row| [ row.tier, row.rate ] }
+    assert_equal "included", ResidentEntitlement.find_by!(agent: @b).rate
+    assert_not paid?(@a)
+    assert paid?(@b)
+    assert_equal "partners", @account.reload.plan.id
+  end
+
+  test "ending the included resident with only at cost left takes the plan line off with it" do
+    grant!("at_cost")
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, @b => LIFE_AT_COST_PRICE, plan: COMPANIONS_PRICE)
+    change = reconcile.propose_end(@a)
+    assert_equal [ { "op" => "end", "agent_id" => @a.id }, { "op" => "plan" } ], change.ops
+    reconcile.confirm(change, digest: change.digest)
+
+    assert_equal({ LIFE_AT_COST_PRICE => 1 }, remote)
+    assert_empty AccountSubscription.live.where(account: @account)
+    assert paid?(@b)
+  end
+
+  test "a past-due account can still end its included resident when only at cost is left: the plan line leaves too" do
+    grant!("at_cost")
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, @b => LIFE_AT_COST_PRICE, plan: COMPANIONS_PRICE, status: "past_due")
+    change = reconcile.propose_end(@a)
+    assert_equal [ { "op" => "end", "agent_id" => @a.id }, { "op" => "plan" } ], change.ops
+    assert reconcile.confirm(change, digest: change.digest).applied?
+    assert_equal({ LIFE_AT_COST_PRICE => 1 }, remote)
+    assert_empty AccountSubscription.live.where(account: @account)
+
+    # Control: the same past-due bill still can't grow.
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@c, LIFE_AT_COST_PRICE) ]) }
+    assert_match(/last payment/, error.message)
+  end
+
+  test "ending the only resident of a bill with a plan ends the whole bill, plan and all" do
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE)
+    change = reconcile.propose_end(@a)
+    assert_equal [ { "op" => "end_bill", "agent_id" => @a.id } ], change.ops
+    assert change.quote["ends"]
   end
 
   test "a timeout after Stripe applied the change: the retry replays the same key and nothing is added twice" do
@@ -290,7 +357,8 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_not paid?(@a)
     assert_not paid?(@b)
     assert_equal "companions", @account.reload.plan.id
-    assert_empty Billing::Bill.new(@account).items
+    assert_empty ResidentSubscription.live.where(account: @account)
+    assert_empty AccountSubscription.live.where(account: @account)
   end
 
   test "a quote is only confirmed while the house would still propose it: a grant withdrawn since refuses it" do
@@ -346,7 +414,7 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     bill!(@b => LIFE_AT_COST_PRICE, id: "sub_two")
     assert paid?(@a)
     assert paid?(@b)
-    assert_equal [ { price: LIFE_AT_COST_PRICE, quantity: 2 } ], Billing::Bill.new(@account).items
+    assert_equal [ { LIFE_AT_COST_PRICE => 1 } ] * 2, %w[sub_one sub_two].map { |id| Billing::BillSync.house_lines(id) }
 
     change = reconcile.propose_end(@b)
     assert_equal "sub_two", change.stripe_subscription_id
@@ -373,14 +441,51 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
   end
 
   test "a plan the account holds free is not bought, nor a quote for it confirmed" do
-    bill!(@a => CONVERSATION_PRICE)
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE)
     change = reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ])
-    grant!("plan:partners")
+    # A site admin's grant (a code would be refused while a plan is paid for:
+    # BillingCode#plan_refusal).
+    @account.update!(granted_plan: "partners")
 
     assert_raises(Billing::Reconcile::QuoteChanged) { reconcile.confirm(change, digest: change.digest) }
     assert_empty @stripe.subscription_updates
     assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
     assert reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]), "a higher plan can still be bought"
+  end
+
+
+  # The one account paying on 17 Nov 2026, as it stands: an at-cost code, a
+  # site grant of Colleagues, a Medium and a Large at the Hetzner at-cost
+  # rate on one subscription, no plan line. "No existing paying account's
+  # monthly total changes" (eRyZBY), held as a test.
+  test "the account paying at cost keeps exactly its lines and total: no plan line, no included resident, ever" do
+    grant!("at_cost")
+    @account.update!(granted_plan: "colleagues")
+    bill!(@a => LIFE_AT_COST_HETZNER_PRICE, @b => WORK_AT_COST_HETZNER_PRICE)
+    before = remote
+    assert_equal({ LIFE_AT_COST_HETZNER_PRICE => 1, WORK_AT_COST_HETZNER_PRICE => 1 }, before)
+    assert_equal 1100 + 2000, before.sum { |price, quantity| @stripe.price_object(price)[:unit_amount] * quantity }
+
+    sync
+    assert_equal before, remote, "bringing the bill in changes nothing"
+    assert_equal before, Billing::BillSync.house_lines("sub_acct")
+    assert_empty AccountSubscription.where(account: @account)
+    assert_nil @account.reload.plan_to_pay_for, "the plan is given: nothing to pay for it"
+    assert_not Billing::Included.available?(@account), "an at-cost residence, no free residence"
+    assert_equal %w[at_cost_hetzner at_cost_hetzner], ResidentSubscription.live.where(account: @account).pluck(:rate)
+
+    # A resident bought at the catalogue price is at its size, and brings no plan line.
+    assert_equal [ { op: "add", agent_id: @c.id, price: CONVERSATION_PRICE } ],
+      Billing::Reconcile.add_ops(@account, @c, Billing::Tier.find!("conversation").offer, client: @stripe)
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]) }
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@c, CONVERSATION_INCLUDED_PRICE) ]) }
+    assert_equal before, remote, "and nothing was sent"
+    assert_empty @stripe.subscription_updates
+
+    # Control: it is the at-cost code that holds this. Without it, the same
+    # account's given plan would include a resident.
+    BillingCodeRedemption.where(account: @account).find_each { |redemption| redemption.withdraw!(by: users(:site_admin_user)) }
+    assert Billing::Included.available?(@account.reload)
   end
 
 end

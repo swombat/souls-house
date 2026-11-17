@@ -1,11 +1,14 @@
-# What an account can do, paid for separately from its residents (each
-# resident is paid for by its size, Billing::Tier). Ordered: companions <
-# partners < colleagues; Account#plan is the higher of a site admin's grant
-# and a paid AccountSubscription, companions by default.
-#
-# Companions is free on top of the residents and has no Stripe price and no
-# subscription. Public cards lead with from_usd (the add-on plus one small
-# resident), never with Companions' $0 add-on.
+# What an account pays for: its plan, which includes one Small resident and
+# the account's $10 a month of house-model use (Daniel, jaMWBj jRyMoO
+# 2026-11-13: "you're paying for the companion plan and you get a free
+# resident"; ebamzw: "everybody gets a free residence ... with 10 bucks of
+# free tokens"; ePoEyY JygPKB 2026-11-14: "$9.99 / $29.99 / $59.99"). The
+# included resident is on the bill at the included rate (its size less a
+# Small, Billing::Included); every further resident at its size. Ordered:
+# companions < partners < colleagues; Account#plan is the highest of a site
+# admin's grant, a plan code and a paid AccountSubscription, companions by
+# default. A plan is bought with the account's first resident and never
+# alone: a paying account always has its included resident.
 #
 # Transcription hours are the account's, one pool however many residents it
 # has (Daniel, jaMWBj 2026-11-13). They carry across the ladder the sizes had
@@ -34,11 +37,11 @@ module Billing
     end
 
     CATALOGUE = [
-      new(id: "companions", name: "Companions", monthly_usd: "0", members: "one", swarm_searches: 0, subagents: false,
+      new(id: "companions", name: "Companions", monthly_usd: "9.99", members: "one", swarm_searches: 0, subagents: false,
         transcription_hours: 5),
-      new(id: "partners", name: "Partners", monthly_usd: "20", members: "several", swarm_searches: 20, subagents: false,
+      new(id: "partners", name: "Partners", monthly_usd: "29.99", members: "several", swarm_searches: 20, subagents: false,
         transcription_hours: 20),
-      new(id: "colleagues", name: "Colleagues", monthly_usd: "50", members: "several", swarm_searches: 100,
+      new(id: "colleagues", name: "Colleagues", monthly_usd: "59.99", members: "several", swarm_searches: 100,
         subagents: true, transcription_hours: 40)
     ].freeze
 
@@ -75,19 +78,15 @@ module Billing
     def several_members? = members == "several"
     def subagents? = @subagents
     def swarm_search? = swarm_searches.positive?
-    def free? = monthly_usd.zero?
 
-    # The add-on and one small resident: what an account on this plan pays
-    # at least.
-    def from_usd = monthly_usd + Tier.find!("conversation").monthly_usd
+    # What an account on this plan pays at least: the plan, its Small
+    # included.
+    def from_usd = monthly_usd
 
     # Same list semantics as Billing::Offer#price_ids: current first, retired
     # ids recognised but never sold. Credentials stripe.prices.account_<id>
     # as one id or a list; ENV STRIPE_PRICE_ACCOUNT_<ID> comma-separated.
-    # Companions has none.
     def price_ids
-      return [] if free?
-
       key = "account_#{id}"
       configured = Rails.application.credentials.dig(:stripe, :prices, key.to_sym).presence ||
         ENV["STRIPE_PRICE_#{key.upcase}"].presence

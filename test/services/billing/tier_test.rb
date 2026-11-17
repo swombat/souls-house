@@ -73,8 +73,24 @@ class Billing::TierTest < ActiveSupport::TestCase
       assert_equal "#{tier.name} at cost", offer.name
       assert_equal tier.size, offer.as_json[:size]
       assert_equal tier.id, tier.offer.id
-      assert_equal [ tier.offer, offer, tier.offer("at_cost_hetzner") ], tier.offers
+      assert_equal [ tier.offer, offer, tier.offer("at_cost_hetzner"), tier.offer("included") ], tier.offers
     end
+  end
+
+  test "the included offer is the size less a Small: Small free, Medium and Large the difference" do
+    # Daniel, jaMWBj ebamzw 2026-11-13: "everybody gets a free residence".
+    assert_equal [ 0, 30, 60 ].map { |usd| BigDecimal(usd) }, Billing::Tier.all.map { |tier| tier.offer("included").monthly_usd }
+    Billing::Tier.all.each do |tier|
+      offer = tier.offer("included")
+      assert offer.included? && offer.catalogue? && !offer.standard? && !offer.at_cost?
+      refute offer.sold?, "the buyer never chooses the included rate; the house does"
+      assert_equal Billing::Tier::ACCOUNT_ALLOWANCE_USD, offer.allowance_usd, "it draws on the account's allowance"
+      assert_equal "#{tier.id}_included", offer.id
+      assert_equal "#{tier.name}, included in the plan", offer.name
+    end
+    # Negative control: at cost is never catalogue, so it needs a grant and
+    # draws on nothing.
+    refute Billing::Tier.find!("life").offer("at_cost_hetzner").catalogue?
   end
 
   test "each plan has a Hetzner at-cost offer, priced on the machine that size is placed on" do
@@ -195,7 +211,7 @@ class Billing::TierTest < ActiveSupport::TestCase
     end
   end
 
-  # The cheapest account on each plan: the add-on and one Small resident
+  # The cheapest account on each plan: the plan, its included Small resident
   # drawing the account's whole $10 allowance, and the plan's searches,
   # transcription (Scribe, $0.22/h) and that resident's own backup space
   # (Backup::Space, S3 at $0.023/GB), all used up.
@@ -203,11 +219,11 @@ class Billing::TierTest < ActiveSupport::TestCase
     small = Billing::Tier.find!("conversation")
     size_cost(small) + Billing::Tier::ACCOUNT_ALLOWANCE_USD.to_f + plan.swarm_searches * 0.064 +
       plan.transcription_hours * 0.22 + Backup::Space::GB_BY_SIZE.fetch("small") * 0.023 +
-      (plan.free? ? 0 : plan.monthly_usd.to_f * 0.029 + 0.30)
+      plan.monthly_usd.to_f * 0.029 + 0.30
   end
 
   test "Partners and Colleagues keep a positive margin at full use with one Small resident drawing the allowance" do
-    Billing::AccountPlan.all.reject(&:free?).each do |plan|
+    Billing::AccountPlan.all.reject { |plan| plan == Billing::AccountPlan.default }.each do |plan|
       cost = cheapest_account_cost(plan)
       assert cost < plan.from_usd, "#{plan.name} costs $#{cost.round(2)} at full use against $#{plan.from_usd}"
     end

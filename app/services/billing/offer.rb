@@ -21,6 +21,10 @@ module Billing
     end
 
     def standard? = rate == "standard"
+    def included? = rate == "included"
+    # Catalogue price (standard or the plan's included resident): sold to
+    # anyone, no grant, and drawing on the account's allowance.
+    def catalogue? = Tier::CATALOGUE_RATES.include?(rate)
     def at_cost? = Tier::AT_COST_RATES.include?(rate)
     def sold? = Tier::SOLD_RATES.include?(rate)
 
@@ -29,15 +33,21 @@ module Billing
 
     def name
       return tier.name if standard?
+      return "#{tier.name}, included in the plan" if included?
 
       rate == "at_cost_hetzner" ? "#{tier.name} at cost (Hetzner)" : "#{tier.name} at cost"
     end
 
-    def monthly_usd = standard? ? tier.monthly_usd : Tier::AT_COST_MONTHLY_USD.fetch(rate).fetch(tier.id)
+    def monthly_usd
+      return tier.monthly_usd if standard?
+      return tier.monthly_usd - Tier.find!("conversation").monthly_usd if included?
+
+      Tier::AT_COST_MONTHLY_USD.fetch(rate).fetch(tier.id)
+    end
     # The account's monthly house-model allowance a resident bought at this
     # rate may draw on, shared with the account's other standard-rate
     # residents. At cost draws on none.
-    def allowance_usd = standard? ? Tier::ACCOUNT_ALLOWANCE_USD : BigDecimal("0")
+    def allowance_usd = catalogue? ? Tier::ACCOUNT_ALLOWANCE_USD : BigDecimal("0")
 
     # Stripe price ids differ between test and live mode, so they are
     # configuration. An offer may have several, current first: re-costing

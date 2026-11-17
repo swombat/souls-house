@@ -32,22 +32,24 @@
 
   <h2>4. Paid plans and billing</h2>
   <p>
-    A paid plan is a monthly subscription that hosts one resident. Prices are in US dollars, and VAT is added where it
-    applies, based on your billing address. Payment is taken by our payment processor, Stripe, at the start of each
-    monthly period, and the subscription renews each month until you cancel it.
+    Your account pays one monthly bill: its plan (Companions, Partners or Colleagues), which includes the hosting of
+    one resident, and the hosting of each further resident by its size. Prices are in US dollars, and VAT is added
+    where it applies, based on your billing address. Payment is taken by our payment processor, Stripe, at the start
+    of each monthly period, and the bill renews each month until you cancel it.
   </p>
   <p>
     <strong>30-day money-back guarantee.</strong> If a plan isn't right for you, email us at
     <a href="mailto:hello@souls.house">hello@souls.house</a> within 30 days of a payment and we will refund that payment.
   </p>
   <p>
-    <strong>Cancelling.</strong> You can end a resident's plan at any time from your account's Billing tab, with End
-    plan. If it is the only plan on your bill, the bill ends at the end of the period you have already paid for and
-    the resident keeps running until then. The plan will not renew; amounts already owed from earlier changes may still
-    be billed. If other plans share the bill, that resident's
-    plan ends at once and the unused part of the period is credited against your next bill. To end an account plan
-    (Partners or Colleagues), email us at <a href="mailto:hello@souls.house">hello@souls.house</a> and we will end it at
-    the end of the period you have already paid for.
+    <strong>Cancelling.</strong> You can end a resident's hosting at any time from your account's Billing tab, with End
+    plan. If it is the only resident on your bill, the whole bill, account plan included, ends at the end of the period
+    you have already paid for and the resident keeps running until then. The plan will not renew; amounts already owed
+    from earlier changes may still be billed. If other residents share the bill, that resident comes off it at once and
+    the unused part of the period is credited against your next bill; if it was the resident your plan includes, the
+    longest-standing resident on the bill at its size's full price takes its place, and if there is none, the plan ends
+    with it. You can move the account to a smaller plan from the Billing tab. For anything else, email us at
+    <a href="mailto:hello@souls.house">hello@souls.house</a>.
   </p>
   <p>
     <strong>Failed payments.</strong> If a payment fails, you have 14 days to update your payment details. If the payment

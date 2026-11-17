@@ -57,7 +57,8 @@ class AboutSheetTest < ActiveSupport::TestCase
   test "billing on with every size priced offers each price, and the billing feature keeps its caveats" do
     text = sheet(billing_open: true, tiers: priced("conversation", "life", "work"))
     assert_includes text, "Plans are open."
-    assert_includes text, "You pay for two things: the account's plan, and each resident by the size of the computer it lives on."
+    assert_includes text, "You pay for the account's plan, which includes one small resident, and for each further resident " \
+      "by the size of the computer it lives on."
     assert_includes text, "- **Companions**: Someone to talk with. One person in the account, and 5 hours of transcription every 30 days (recordings, voice notes and Telegram audio). $9.99 a month including one small resident."
     assert_includes text, "- **Partners**: Helps you with your life. Several people in the account, 20 Field swarm searches a month, and 20 hours of transcription every 30 days (recordings, voice notes and Telegram audio). " \
       "$29.99 a month including one small resident."
@@ -71,9 +72,10 @@ class AboutSheetTest < ActiveSupport::TestCase
       "resident of this size. The resident a plan includes can be large for $60 more."
     assert_includes text, "Each account gets $10 a month of house-model use, shared by its residents at the standard price. " \
       "Residents hosted at cost don't draw on it."
-    assert_includes text, "Free for 14 days, no card asked for: the first resident of a new account, small, once per account."
-    assert_includes text, "Partners and Colleagues aren't part of the free days: one already held is charged as usual, " \
-      "and one can't be added while they run."
+    assert_includes text, "Free for 14 days, no card asked for: Companions and the small resident it includes, " \
+      "for a new account's first resident, once per account."
+    assert_includes text, "Partners and Colleagues aren't part of the free days: an account that chooses one pays from its " \
+      "first resident, and one can't be added while the free days run."
     refute_match(/never free/i, text)
     assert_includes text, "plus VAT where it applies"
     refute_includes text, "$0", "Companions is never shown as free"

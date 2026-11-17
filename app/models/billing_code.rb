@@ -10,7 +10,7 @@ class BillingCode < ApplicationRecord
   # What a code can grant: plans at cost, for every size or for one, or an
   # account plan with nothing to pay for it.
   EFFECTS = ([ "at_cost" ] + Billing::Tier.all.map { |tier| "at_cost:#{tier.id}" } +
-    (Billing::AccountPlan.all - [ Billing::AccountPlan.default ]).map { |plan| "plan:#{plan.id}" }).freeze
+    Billing::AccountPlan.all.map { |plan| "plan:#{plan.id}" }).freeze
   FORMAT = /\A[A-Z0-9][A-Z0-9-]{2,39}\z/
 
   belongs_to :created_by, class_name: "User"
@@ -101,14 +101,23 @@ class BillingCode < ApplicationRecord
     paid = account.account_subscriptions.where.not(stripe_status: PLAN_OVER).order(:id).last
     if paid && paid.plan_record <= plan
       return "This code gives the #{plan.name} plan free, and this account is paying for #{paid.plan_record.name}. " \
-        "Move the account to #{Billing::AccountPlan.default.name} in Billing first, then use the code, so nothing is charged twice."
+        "Write to #{Billing.contact_email} to move it onto the code, so nothing is charged twice."
     end
-    if AccountPlanCheckoutAttempt.unresolved.exists?(account:) ||
+    if AccountPlanCheckoutAttempt.unresolved.exists?(account:) || first_bill_with_plan_open?(account) ||
         BillChange.submitted.where(account:).any? { |change| change.ops.any? { |op| op["op"] == "plan" } }
       return "A payment for this account's plan is still being confirmed. Try the code again in a few minutes."
     end
 
     nil
+  end
+
+  # A first bill that charges a plan and could still be paid: a resident's
+  # Checkout naming a plan, or a paid creation's order carrying one. A code
+  # that gives the plan free waits until it is paid or dropped, so the plan
+  # is never both given and charged.
+  def first_bill_with_plan_open?(account)
+    ResidentBirthOrder.where(account:, state: %w[pending failed]).where.not(plan_stripe_price_id: nil).exists? ||
+      BillingCheckoutAttempt.unresolved.where(account:).any? { |attempt| attempt.create_params.dig("metadata", "plan").present? }
   end
 
   def revoke!(now: Time.current)

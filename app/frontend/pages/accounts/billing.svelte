@@ -82,7 +82,10 @@
     );
     const tier = rate === 'standard' ? tiers.find((candidate) => candidate.id === entitlement.tier) : null;
     const amount = match?.monthly_usd ?? tier?.monthly_usd;
-    return amount === undefined ? null : `${usd(amount)} a month`;
+    if (amount === undefined) return null;
+    // The plan's own resident: a Small is in the plan, a bigger one the difference.
+    if (rate === 'included') return Number(amount) > 0 ? `${usd(amount)} a month on top of the plan` : 'Included in the plan';
+    return `${usd(amount)} a month`;
   }
 
   // A resident can start a new subscription unless one is already paying,
@@ -295,7 +298,11 @@
               <Badge variant={stateVariant(entitlement)}>{stateLabel(resident)}</Badge>
               {#if entitlement?.tier && entitlement.source === 'stripe'}
                 <Badge variant="outline"
-                  >{tierName(entitlement.tier)}{entitlement.rate?.startsWith('at_cost') ? ' at cost' : ''}</Badge>
+                  >{tierName(entitlement.tier)}{entitlement.rate?.startsWith('at_cost')
+                      ? ' at cost'
+                      : entitlement.rate === 'included'
+                        ? ', the plan\'s own'
+                        : ''}</Badge>
               {/if}
               {#if residentPrice(entitlement) && !onTrial(resident)}
                 <span class="text-sm text-muted-foreground" data-testid="resident-price"

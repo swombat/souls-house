@@ -25,20 +25,67 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
       account: @agent.account, by: users(:user_1))
   end
 
-  test "a standard session pins its exact price metadata and payload on a unique attempt" do
+  test "a first bill's session pins the plan and its included resident, metadata and payload on a unique attempt" do
     checkout
     params, opts = @stripe.checkout_sessions.sole
     pin = BillingCheckoutAttempt.find_by!(agent: @agent)
     assert_equal pin.idempotency_key, opts[:idempotency_key]
-    assert_equal [ { price: LIFE_PRICE, quantity: 1 } ], params[:line_items]
+    # The plan includes its resident: a Medium is the plan's own at $30.
+    assert_equal [ { price: COMPANIONS_PRICE, quantity: 1 }, { price: LIFE_INCLUDED_PRICE, quantity: 1 } ], params[:line_items]
+    assert_equal [ "included", LIFE_INCLUDED_PRICE ], [ pin.rate, pin.stripe_price_id ]
     assert_equal @agent.id.to_s, params.dig(:metadata, :agent_id)
     assert_equal @agent.account_id.to_s, params.dig(:metadata, :account_id)
     assert_equal "life", params.dig(:metadata, :tier)
     assert_equal pin.idempotency_key, params.dig(:metadata, :checkout_attempt)
-    assert_nil params.dig(:metadata, :rate)
-    assert_equal "Medium hosting for #{@agent.name}", params.dig(:subscription_data, :description)
+    assert_equal "included", params.dig(:metadata, :rate)
+    assert_equal "companions", params.dig(:metadata, :plan)
+    assert_nil params.dig(:metadata, :redemption_id)
+    assert_equal "Companions plan, including #{@agent.name} (Medium)", params.dig(:subscription_data, :description)
     assert_not params.key?(:expires_at), "Expiry must be relative to Stripe execution, not the intent commit"
     assert_equal JSON.parse(params.to_json), pin.create_params
+  end
+
+  test "an open Checkout is reused only while its plan line is still the one the first bill would carry" do
+    checkout
+    first = BillingCheckoutAttempt.find_by!(agent: @agent)
+    assert_equal "companions", first.create_params.dig("metadata", "plan")
+    @agent.account.update!(chosen_plan: "partners")
+    checkout
+    assert_equal [ "expired" ], @stripe.expired_sessions.map { |id| @stripe.session_states[id][:status] }.uniq
+    assert_equal "partners", BillingCheckoutAttempt.unresolved.find_by!(agent: @agent).create_params.dig("metadata", "plan")
+  end
+
+  test "an open first-bill Checkout for one resident means another resident is not the included one" do
+    checkout
+    other = agents(:code_reviewer)
+    assert_not Billing::Included.available?(@agent.account), "the open Checkout already carries the included resident"
+    assert Billing::Included.available?(@agent.account, except_agent: @agent), "control: not counting its own resident"
+    assert_equal "standard", Billing::Included.offer_for(@agent.account, Billing::Tier.find!("conversation").offer).rate
+    assert_equal @agent.account, other.account
+  end
+
+  test "a Checkout Stripe has expired stops holding the included resident and plan codes; one still open or uncertain keeps them" do
+    checkout
+    account = @agent.account
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    assert_not Billing::Included.available?(account)
+    assert BillingCode.new.send(:first_bill_with_plan_open?, account)
+
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert_nil attempt.reload.resolved_at, "an open session still holds them"
+
+    @stripe.v1.checkout.sessions.expire(attempt.stripe_session_id)
+    uncertain = BillingCheckoutAttempt.create!(agent: agents(:code_reviewer), account:, tier: "conversation",
+      rate: "included", stripe_price_id: CONVERSATION_INCLUDED_PRICE, idempotency_key: "key-uncertain",
+      create_params: { "metadata" => { "plan" => "companions" } })
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert attempt.reload.resolved_at, "Stripe says expired: released"
+    assert_nil uncertain.reload.resolved_at, "no session yet: it may still be payable, so it is kept"
+    assert_not Billing::Included.available?(account), "the uncertain one still holds the included resident"
+
+    uncertain.update!(resolved_at: Time.current)
+    assert Billing::Included.available?(account)
+    assert_not BillingCode.new.send(:first_bill_with_plan_open?, account)
   end
 
   test "at cost requires a grant and tells a house-model owner where to change models" do

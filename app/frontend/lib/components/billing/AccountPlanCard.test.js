@@ -10,15 +10,15 @@ const accountPlans = [
   {
     id: 'companions',
     name: 'Companions',
-    monthly_usd: '0.00',
+    monthly_usd: '9.99',
     from_usd: '9.99',
-    purchasable: false,
+    purchasable: true,
     features: { members: 'one', swarm_searches: 0, subagents: false },
   },
   {
     id: 'partners',
     name: 'Partners',
-    monthly_usd: '20.00',
+    monthly_usd: '29.99',
     from_usd: '29.99',
     purchasable: true,
     features: { members: 'several', swarm_searches: 20, subagents: false },
@@ -26,7 +26,7 @@ const accountPlans = [
   {
     id: 'colleagues',
     name: 'Colleagues',
-    monthly_usd: '50.00',
+    monthly_usd: '59.99',
     from_usd: '59.99',
     purchasable: true,
     features: { members: 'several', swarm_searches: 100, subagents: true },
@@ -40,27 +40,42 @@ function show(accountPlan, canPay = true, trialShown = true) {
 
 beforeEach(() => post.mockReset());
 
-test('the default plan: Companions, with both paid plans offered and their charge stated before the click', async () => {
-  show({ id: 'companions', source: 'default', subscription: null });
+test('no bill yet: the plan the first bill will carry, the others to choose, and nothing charged by choosing', async () => {
+  show({ id: 'companions', source: 'default', subscription: null, chosen: 'companions' });
   const card = screen.getByTestId('account-plan');
   expect(card).toHaveTextContent('Account plan');
   expect(card).toHaveTextContent('Companions');
-  expect(screen.getByTestId('account-plan-source')).toHaveTextContent('Every account starts on Companions.');
+  expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
+    "Your first resident's bill will carry Companions: $9.99 a month + VAT, with that resident included. " +
+      'Nothing is charged until then.'
+  );
   expect(card).toHaveTextContent('One person in the account');
+  expect(card).toHaveTextContent('One small resident included');
   expect(card).not.toHaveTextContent('$0');
 
   const terms = screen.getByTestId('account-plan-terms');
-  expect(terms).toHaveTextContent('Partners is $20 a month + VAT; Colleagues is $50 a month + VAT');
-  expect(terms).toHaveTextContent("It isn't part of the free days, and can't be added while a resident's free days run.");
-  expect(terms).toHaveTextContent('needs a card');
+  expect(terms).toHaveTextContent('Partners is $29.99 a month + VAT; Colleagues is $59.99 a month + VAT, one small');
+  expect(terms).toHaveTextContent('Choosing one charges nothing now: it starts with your first resident.');
+  expect(terms).toHaveTextContent('Only Companions has the free days.');
+  expect(screen.queryByRole('button', { name: /Companions/ })).toBeNull();
 
-  await fireEvent.click(screen.getByRole('button', { name: 'Move to Partners · $20 a month' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Choose Partners · $29.99 a month' }));
   expect(post).toHaveBeenCalledWith(
     '/accounts/acc/billing/account_plan_checkout',
     { plan: 'partners' },
     expect.any(Object)
   );
-  expect(screen.getByRole('button', { name: 'Move to Colleagues · $50 a month' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' })).toBeVisible();
+});
+
+test('a plan chosen for the first bill is the one shown, and Companions can be chosen back', () => {
+  show({ id: 'companions', source: 'default', subscription: null, chosen: 'colleagues' });
+  expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
+    "Your first resident's bill will carry Colleagues: $59.99 a month + VAT"
+  );
+  expect(screen.getByTestId('account-plan')).toHaveTextContent('100 swarm searches a month');
+  expect(screen.getByRole('button', { name: 'Choose Companions · $9.99 a month' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Colleagues/ })).toBeNull();
 });
 
 test('a subscription: says what it costs and when it renews, and moves by changing the price', async () => {
@@ -70,13 +85,14 @@ test('a subscription: says what it costs and when it renews, and moves by changi
     subscription: { status: 'active', current_period_end: '2026-12-10T00:00:00Z', cancel_at_period_end: false },
   });
   expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
-    'Partners is $20 a month + VAT, on top of the residents. Renews on 10 Dec 2026.'
+    'Partners is $29.99 a month + VAT, one small resident included; any further resident is its size. Renews on 10 Dec 2026.'
   );
   expect(screen.getByTestId('account-plan')).toHaveTextContent('20 swarm searches a month');
   expect(screen.queryByRole('button', { name: /Move to Partners/ })).toBeNull();
   expect(screen.getByTestId('account-plan-terms')).toHaveTextContent('The new price starts today.');
 
-  await fireEvent.click(screen.getByRole('button', { name: 'Move to Colleagues · $50 a month' }));
+  expect(screen.getByRole('button', { name: 'Move to Companions · $9.99 a month' })).toBeVisible();
+  await fireEvent.click(screen.getByRole('button', { name: 'Move to Colleagues · $59.99 a month' }));
   expect(post).toHaveBeenCalledWith(
     '/accounts/acc/billing/account_plan_change',
     { plan: 'colleagues' },
@@ -84,15 +100,38 @@ test('a subscription: says what it costs and when it renews, and moves by changi
   );
 });
 
-test('a subscription ending says the account goes back to Companions and nobody is removed', () => {
+test('a subscription ending says the plan ends with the bill and nobody is removed', () => {
   show({
     id: 'colleagues',
     source: 'subscription',
     subscription: { status: 'active', current_period_end: '2026-12-10T00:00:00Z', cancel_at_period_end: true },
   });
   expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
-    'It ends on 10 Dec 2026, and the account goes back to Companions. Nobody is removed from it.'
+    'It ends with the bill on 10 Dec 2026. Nobody is removed from the account.'
   );
+});
+
+test('during the free days the plan says when they end and offers no move', () => {
+  show({
+    id: 'companions',
+    source: 'subscription',
+    subscription: { status: 'trialing', current_period_end: '2026-12-01T00:00:00Z', cancel_at_period_end: false },
+  });
+  expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
+    'Companions is free until 1 Dec 2026, its small resident with it. After that it is $9.99 a month + VAT.'
+  );
+  expect(screen.queryByTestId('account-plan-moves')).toBeNull();
+});
+
+test('a bill with no plan line offers no plan, and an account with an at-cost code is not told of an included resident', () => {
+  show({ id: 'colleagues', source: 'grant', subscription: null, chosen: null, bill: true, includes_resident: false });
+  expect(screen.queryByTestId('account-plan-moves')).toBeNull();
+  expect(screen.getByTestId('account-plan')).not.toHaveTextContent('One small resident included');
+
+  // Control: the same grant with no bill yet offers the higher plan, and the resident it includes.
+  show({ id: 'partners', source: 'grant', subscription: null, chosen: null, bill: false, includes_resident: true });
+  expect(screen.getAllByTestId('account-plan').at(-1)).toHaveTextContent('One small resident included');
+  expect(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' })).toBeVisible();
 });
 
 test('a failed payment offers no move, only the way to fix it', () => {
@@ -111,8 +150,9 @@ test('a plan given by the house says so and offers nothing that would lower it',
   expect(screen.getByTestId('account-plan-source')).toHaveTextContent(
     'The house gave this account Partners. There is nothing to pay for it.'
   );
-  expect(screen.queryByRole('button', { name: /Move to Partners/ })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Move to Colleagues · $50 a month' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Partners/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Companions/ })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Choose Colleagues · $59.99 a month' })).toBeVisible();
 });
 
 test('Colleagues given by the house offers no purchase at all', () => {
@@ -134,8 +174,8 @@ test('renders nothing when the props carry no account plan', () => {
 });
 
 test('an account the tab offers no free trial is never told about one, and still sees the charge', () => {
-  show({ id: 'companions', source: 'default', subscription: null }, true, false);
+  show({ id: 'companions', source: 'default', subscription: null, chosen: 'companions' }, true, false);
   const terms = screen.getByTestId('account-plan-terms');
-  expect(terms).toHaveTextContent('It is charged from today and needs a card: Stripe asks for one.');
+  expect(terms).toHaveTextContent('Choosing one charges nothing now: it starts with your first resident.');
   expect(terms).not.toHaveTextContent(/free/i);
 });

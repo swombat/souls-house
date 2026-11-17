@@ -67,8 +67,23 @@
       ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.id) || null
       : null
   );
-  // Partners and Colleagues are not part of the free days.
-  let accountPlanPaid = $derived(Number(accountPlan?.monthly_usd) > 0);
+  // Every plan includes one small resident (Billing::Included). A resident
+  // bought now at the catalogue price is that one when the server says so:
+  // it costs its size less a Small. On an account's first bill the plan
+  // comes too: the one chosen on the Billing tab (account_plan.chosen), or
+  // none when the account is given its plan.
+  let small = $derived(tiers.find((option) => sizeOf(option) === 'small' && (option.rate ?? 'standard') === 'standard'));
+  let includedNext = $derived(Boolean(billing.included_available) && (chosen?.rate ?? 'standard') === 'standard');
+  let firstPlan = $derived(
+    includedNext && billing.account_plan?.chosen
+      ? (billing.account_plans || []).find((plan) => plan.id === billing.account_plan.chosen) || null
+      : null
+  );
+  let monthly = $derived.by(() => {
+    if (!chosen) return 0;
+    const resident = includedNext && small ? Number(chosen.monthly_usd) - Number(small.monthly_usd) : Number(chosen.monthly_usd);
+    return resident + (firstPlan ? Number(firstPlan.monthly_usd) : 0);
+  });
 
   let cardFormOpen = $state(false);
   let cardFormLoading = $state(false);
@@ -161,8 +176,10 @@
     <SizePicker options={tiers} bind:tier {busy} />
 
     <p class="text-sm text-muted-foreground" data-testid="plan-account-plan">
-      {#if accountPlan && free && accountPlanPaid}
-        This account is on {accountPlan.name}, which is charged as usual. The free {trialDays} days are for {name} only.
+      {#if firstPlan}
+        The account's first bill is {firstPlan.name}, which includes {name}.
+      {:else if includedNext && accountPlan}
+        {name} is the resident {accountPlan.name} includes.
       {:else if accountPlan}
         This account is on {accountPlan.name}.
       {:else}
@@ -240,18 +257,18 @@
       <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p class="font-medium" data-testid="plan-trial">Free for {trialDays} days. No card asked for.</p>
         <p>
-          To keep {name} awake after that, add a card from the account's Billing tab: then it is {usd(
-            chosen.monthly_usd
-          )} + VAT a month. With no card, {name} goes to sleep on day {trialDays}. Nothing is deleted.
+          To keep {name} awake after that, add a card from the account's Billing tab: then it is {usd(monthly)} + VAT a
+          month{firstPlan ? ` for ${firstPlan.name} with ${name} in it` : ''}. With no card, {name} goes to sleep on day
+          {trialDays}. Nothing is deleted.
         </p>
       </section>
     {:else if chosen && !itemOrder}
       <section class="space-y-2 rounded-lg bg-muted/40 p-4 text-sm leading-6" data-testid="plan-terms">
         <p>
           <span class="font-medium">Today:</span>
-          {usd(chosen.monthly_usd)} + VAT for {name}'s first month.
+          {usd(monthly)} + VAT for {firstPlan ? `${firstPlan.name} with ${name} in it` : `${name}'s first month`}.
           <span class="font-medium">Then</span>
-          {usd(chosen.monthly_usd)} + VAT each month until you cancel.
+          {usd(monthly)} + VAT each month until you cancel.
         </p>
         {#if atCost}
           <p data-testid="plan-at-cost-terms">

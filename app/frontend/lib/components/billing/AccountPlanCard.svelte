@@ -2,17 +2,20 @@
   // The Billing tab's account plan: which one the account is on, where it
   // comes from (a subscription, a grant from the house, or the default), what
   // it includes, and the plans it can move to. Each move says what it costs
-  // before the click. Moving between paid plans is a price change on the
-  // live subscription. Stripe's portal can't cancel (Billing::Portal), and
-  // no button here ends a paid account plan yet: /pricing and the Terms say
-  // to write to the house.
+  // before the click. Every plan includes one small resident, and a plan is
+  // never bought alone (Billing::AccountPlan): an account that pays changes
+  // the plan on its bill; one with no bill yet chooses the plan its first
+  // resident's bill will carry, and nothing is charged until then. Stripe's
+  // portal can't cancel (Billing::Portal), and no button here ends a paid
+  // account plan yet: /pricing and the Terms say to write to the house.
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
   import PlanIncludes from '$lib/components/billing/PlanIncludes.svelte';
   import { accountPlanTaglines, usd } from '$lib/pricing';
 
-  // accountPlan: { id, source: subscription|grant|default, subscription }.
+  // accountPlan: { id, source: subscription|grant|default, subscription,
+  // chosen: the plan a first bill will carry, while there is no bill }.
   // trialShown: the tab mentions a free trial (one is offered, or running), so
   // a move says it isn't part of it.
   let { account, accountPlan, accountPlans = [], canPay = false, trialShown = false } = $props();
@@ -26,16 +29,26 @@
   let source = $derived(accountPlan?.source ?? 'default');
   let subscription = $derived(accountPlan?.subscription ?? null);
   let subscriptionLive = $derived(LIVE.includes(subscription?.status));
-  // A live subscription changes price in place; without one, a paid plan is a
-  // new Stripe Checkout.
+  // A live subscription changes price in place; without one, the plan is
+  // chosen for the first bill and nothing is charged.
   let changing = $derived(subscriptionLive);
+  let chosen = $derived(
+    !subscriptionLive && accountPlan?.chosen ? accountPlans.find((plan) => plan.id === accountPlan.chosen) || null : null
+  );
+  // The plan the moves are measured from: the one paid for, or the one chosen.
+  let base = $derived(chosen ?? current);
+  let trialing = $derived(subscription?.status === 'trialing');
 
   let moves = $derived.by(() => {
-    if (!current || !canPay) return [];
-    if (subscriptionLive && !['active', 'trialing'].includes(subscription?.status)) return [];
+    if (!base || !canPay) return [];
+    // A bill with no plan line on it (at cost only, or from before plans
+    // included a resident) gets no plan from here: a plan comes with its resident.
+    if (accountPlan?.bill && !subscriptionLive) return [];
+    // The bill can't change while its free days run, nor while a payment is owed.
+    if (subscriptionLive && subscription?.status !== 'active') return [];
     const rank = ORDER.indexOf(current.id);
     return accountPlans.filter((plan) => {
-      if (!plan.purchasable || Number(plan.monthly_usd) <= 0 || plan.id === current.id) return false;
+      if (!plan.purchasable || plan.id === base.id) return false;
       // A plan the house gave is never lowered by a purchase.
       if (source === 'grant') return ORDER.indexOf(plan.id) > rank;
       return true;
@@ -74,17 +87,27 @@
       {:else if source === 'subscription' && subscription?.status === 'past_due'}
         The last payment for {current.name} failed. Update the card from Manage billing.
       {:else if source === 'subscription' && subscription?.cancel_at_period_end}
-        {current.name} is {usd(current.monthly_usd)} a month + VAT. It ends on {date(subscription.current_period_end)},
-        and the account goes back to Companions. Nobody is removed from it.
+        {current.name} is {usd(current.monthly_usd)} a month + VAT. It ends with the bill on
+        {date(subscription.current_period_end)}. Nobody is removed from the account.
+      {:else if source === 'subscription' && trialing}
+        {current.name} is free until {date(subscription.current_period_end)}, its small resident with it. After that
+        it is {usd(current.monthly_usd)} a month + VAT. The plan can be changed once the free days are over.
       {:else if source === 'subscription'}
-        {current.name} is {usd(current.monthly_usd)} a month + VAT, on top of the residents.
-        {#if subscription?.current_period_end}Renews on {date(subscription.current_period_end)}.{/if}
+        {current.name} is {usd(current.monthly_usd)} a month + VAT, one small resident included; any further resident
+        is its size. {#if subscription?.current_period_end}Renews on {date(subscription.current_period_end)}.{/if}
+      {:else if chosen}
+        Your first resident's bill will carry {chosen.name}: {usd(chosen.monthly_usd)} a month + VAT, with that resident
+        included. Nothing is charged until then.
       {:else}
-        Every account starts on Companions. It costs nothing on top of the residents.
+        Every account starts on Companions.
       {/if}
     </p>
 
-    <PlanIncludes plan={current} withResident={false} class="mt-3 text-sm" iconClass="text-primary/70" />
+    <PlanIncludes
+      plan={chosen ?? current}
+      withResident={accountPlan?.includes_resident !== false}
+      class="mt-3 text-sm"
+      iconClass="text-primary/70" />
 
     {#if moves.length}
       <div class="mt-4 space-y-3 border-t pt-4" data-testid="account-plan-moves">
@@ -95,7 +118,7 @@
               <span class="text-muted-foreground">· {accountPlanTaglines[plan.id] ?? ''}</span>
             </p>
             <Button size="sm" variant="outline" onclick={() => move(plan)} disabled={busy !== null}>
-              {busy === plan.id ? 'Opening…' : `Move to ${plan.name} · ${usd(plan.monthly_usd)} a month`}
+              {busy === plan.id ? 'Saving…' : `${changing ? 'Move to' : 'Choose'} ${plan.name} · ${usd(plan.monthly_usd)} a month`}
             </Button>
           </div>
         {/each}
@@ -103,9 +126,9 @@
           {#if changing}
             The new price starts today. Stripe puts the difference for the rest of this period on the next invoice.
           {:else}
-            {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, on top of the
-            residents. It is charged from today and needs a card: Stripe asks for one.{trialShown
-              ? " It isn't part of the free days, and can't be added while a resident's free days run."
+            {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, one small
+            resident included. Choosing one charges nothing now: it starts with your first resident.{trialShown
+              ? " Only Companions has the free days."
               : ''}
           {/if}
         </p>

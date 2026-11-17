@@ -60,6 +60,8 @@ export async function payForResident({
   }
   if (payment.checkout_url) return { checkoutUrl: payment.checkout_url, payment };
   if (payment.item_quote) return { itemQuote: payment.item_quote, payment };
+  // Settled already (a $0 first bill): nothing to pay, only to confirm.
+  if (payment.paid) return confirm({ payment, onPhase, pollMs });
   // Stripe.js is needed only when a card payment is: not for a trial, and not
   // for an item order.
   let stripe;

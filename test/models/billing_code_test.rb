@@ -134,7 +134,8 @@ class BillingCodeTest < ActiveSupport::TestCase
   test "only known effects make a code" do
     assert_includes BillingCode::EFFECTS, "at_cost:conversation"
     assert_includes BillingCode::EFFECTS, "plan:colleagues"
-    assert_not_includes BillingCode::EFFECTS, "plan:companions"
+    # A free account at each account size (Daniel, jaMWBj YkMbQn 2026-11-13).
+    assert_includes BillingCode::EFFECTS, "plan:companions"
     assert_not BillingCode.new(code: "X-Y-Z", effect: "plan:everything", created_by: @admin).valid?
     assert_equal "The Partners plan, free", BillingCode.label("plan:partners")
     assert_equal "At cost, every size", BillingCode.label("at_cost")
@@ -152,6 +153,23 @@ class BillingCodeTest < ActiveSupport::TestCase
       idempotency_key: "key-1", create_params: { "mode" => "subscription" })
     assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
     attempt.update!(resolved_at: @now)
+
+    # A first bill that charges a plan: a resident's Checkout naming one, or
+    # a paid creation's order carrying one.
+    agent = agents(:research_assistant)
+    checkout = BillingCheckoutAttempt.create!(agent:, account: @account, tier: "conversation", rate: "included",
+      stripe_price_id: "price_y", idempotency_key: "key-3",
+      create_params: { "mode" => "subscription", "metadata" => { "plan" => "companions" } })
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    checkout.update!(resolved_at: @now)
+    order = ResidentBirthOrder.create!(account: @account, creator: @owner, tier: "conversation", rate: "included",
+      stripe_price_id: "price_y", plan: "companions", plan_stripe_price_id: "price_z",
+      birth_attributes: { name: "Aria" }, open_beginning: true)
+    assert_match(/still being confirmed/, assert_raises(BillingCode::Refused, &redeem).message)
+    order.update_columns(state: "abandoned")
+    # Control: an open Checkout with no plan line on it doesn't hold the code back.
+    BillingCheckoutAttempt.create!(agent:, account: @account, tier: "conversation", rate: "standard",
+      stripe_price_id: "price_y", idempotency_key: "key-4", create_params: { "mode" => "subscription", "metadata" => {} })
 
     change = BillChange.create!(account: @account, stripe_subscription_id: "sub_acct", idempotency_key: "key-2",
       ops: [ { "op" => "plan", "price" => "price_x" } ], base: {}, lines: { "price_x" => 1 }, params: {}, quote: {},

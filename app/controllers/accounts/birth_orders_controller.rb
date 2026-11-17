@@ -53,7 +53,10 @@ class Accounts::BirthOrdersController < ApplicationController
     order, client_secret, payment_method_id = Billing::PaidBirth.new.start!(account: current_account,
       creator: Current.user, attributes: attrs, open_beginning: open_beginning, tier: tier, rate: rate)
     audit("start_paid_birth", order, tier: tier.id, rate: rate, resident_name: order.resident_name, kind: order.kind)
-    render json: payment_json(order, client_secret, payment_method_id), status: :created
+    json = payment_json(order, client_secret, payment_method_id)
+    # Already settled ($0 first bill): the browser goes straight to confirm.
+    json[:paid] = true if client_secret.nil? && !order.item? && !order.trial?
+    render json: json, status: :created
   end
 
   # The owner confirms an item order's quote: the resident is added to the

@@ -22,8 +22,8 @@ const tiers = [
   },
 ];
 const accountPlans = [
-  { id: 'companions', name: 'Companions', monthly_usd: '0.00', from_usd: '9.99', purchasable: false },
-  { id: 'partners', name: 'Partners', monthly_usd: '20.00', from_usd: '29.99', purchasable: true },
+  { id: 'companions', name: 'Companions', monthly_usd: '9.99', from_usd: '9.99', purchasable: true },
+  { id: 'partners', name: 'Partners', monthly_usd: '29.99', from_usd: '29.99', purchasable: true },
 ];
 const billing = {
   can_pay: true,
@@ -241,13 +241,45 @@ test('a refused free trial says so in the step, with nothing about cards', () =>
   expect(alert).not.toHaveTextContent(/card/i);
 });
 
-test('an account on a paid plan is told the free days are for the resident only', () => {
+test("a first bill is the chosen plan with this resident in it: Partners and a Medium is $59.99", async () => {
   render(PlanStep, {
-    billing: { ...billing, account_plan: { id: 'partners', source: 'subscription', subscription: null } },
+    billing: {
+      ...billing,
+      included_available: true,
+      account_plan: { id: 'companions', source: 'default', subscription: null, chosen: 'partners' },
+    },
+    residentName: 'Aria',
+    tier: 'life',
+  });
+  expect(screen.getByTestId('plan-account-plan')).toHaveTextContent("The account's first bill is Partners, which includes Aria.");
+  // Partners $29.99, and a Medium as the resident it includes, $39.99 less a Small.
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent('Today: $59.99 + VAT for Partners with Aria in it.');
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent('Then $59.99 + VAT each month until you cancel.');
+});
+
+test('a resident bought beside the included one costs its size, and the plan is not on its bill again', () => {
+  render(PlanStep, {
+    billing: {
+      ...billing,
+      included_available: false,
+      account_plan: { id: 'partners', source: 'default', subscription: null, chosen: null },
+    },
+    residentName: 'Aria',
+    tier: 'life',
+  });
+  expect(screen.getByTestId('plan-account-plan')).toHaveTextContent('This account is on Partners.');
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $39.99 + VAT for Aria's first month.");
+});
+
+test('the trial says what the plan with its small resident costs after the free days', () => {
+  render(PlanStep, {
+    billing: {
+      ...billing,
+      included_available: true,
+      account_plan: { id: 'companions', source: 'default', subscription: null, chosen: 'companions' },
+    },
     residentName: 'Aria',
     trial: { eligible: true, days: 14 },
   });
-  expect(screen.getByTestId('plan-account-plan')).toHaveTextContent(
-    'This account is on Partners, which is charged as usual. The free 14 days are for Aria only.'
-  );
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent('then it is $9.99 + VAT a month for Companions with Aria in it.');
 });

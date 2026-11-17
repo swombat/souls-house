@@ -7,7 +7,8 @@ class Accounts::BillingCodesController < ApplicationController
   before_action :require_account_owner!
 
   def create
-    close_plan_checkout!(params.require(:code))
+    # A first-bill Checkout Stripe has expired no longer holds a plan code back.
+    Billing::Checkout.release_expired!(current_account)
     redemption = BillingCode.redeem!(code: params.require(:code), account: current_account, by: Current.user)
     audit("redeem_billing_code", redemption, code: redemption.billing_code.code, effect: redemption.effect)
     redirect_to account_billing_path(current_account), notice: accepted(redemption)
@@ -17,13 +18,6 @@ class Accounts::BillingCodesController < ApplicationController
   end
 
   private
-
-  # A code for a free plan first ends any Checkout for the plan that could
-  # still be paid, so the plan is never both given and bought.
-  def close_plan_checkout!(code)
-    record = BillingCode.find_by("lower(code) = ?", code.to_s.strip.downcase)
-    Billing::AccountPlanCheckout.close!(current_account) if record && BillingCode.plan_of(record.effect)
-  end
 
   def accepted(redemption)
     if (plan = BillingCode.plan_of(redemption.effect))

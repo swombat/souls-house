@@ -23,15 +23,15 @@ const accountPlans = [
   {
     id: 'companions',
     name: 'Companions',
-    monthly_usd: '0.00',
+    monthly_usd: '9.99',
     from_usd: '9.99',
-    purchasable: false,
+    purchasable: true,
     features: { members: 'one', swarm_searches: 0, subagents: false },
   },
   {
     id: 'partners',
     name: 'Partners',
-    monthly_usd: '20.00',
+    monthly_usd: '29.99',
     from_usd: '29.99',
     purchasable: true,
     features: { members: 'several', swarm_searches: 20, subagents: false },
@@ -39,7 +39,7 @@ const accountPlans = [
   {
     id: 'colleagues',
     name: 'Colleagues',
-    monthly_usd: '50.00',
+    monthly_usd: '59.99',
     from_usd: '59.99',
     purchasable: true,
     features: { members: 'several', swarm_searches: 100, subagents: true },
@@ -87,9 +87,9 @@ test('residents by size, then model use, then the free 14 days, which the paid p
   );
   expect(screen.getByTestId('pricing-model-use')).not.toHaveTextContent('first resident');
   const trial = screen.getByTestId('pricing-trial');
-  expect(trial).toHaveTextContent('Free for 14 days, no card asked for');
+  expect(trial).toHaveTextContent('Free for 14 days, no card asked for: Companions and the small resident it includes');
   expect(screen.getByTestId('pricing-trial-paid-plans')).toHaveTextContent(
-    "Partners and Colleagues are not part of them: their $20 or $50 a month needs a card. One the account already has is charged as usual; one can't be added while the free days run."
+    "Partners and Colleagues are not part of them: their $29.99 or $59.99 a month needs a card. An account that chooses one pays from its first resident, and one can't be added while the free days run."
   );
   expect(document.body).not.toHaveTextContent(/never free/i);
 });
@@ -129,7 +129,8 @@ test('how to cancel says what End plan does, not a portal that cannot cancel', (
   });
   expect(document.body).toHaveTextContent('with End plan on the resident');
   expect(document.body).toHaveTextContent('the unused part of the month is credit on the next bill');
-  expect(document.body).toHaveTextContent('To end a Partners or Colleagues plan, write to hello@example.com');
+  expect(document.body).toHaveTextContent("it ends with the account's last resident, and a smaller plan is a move on the Billing tab");
+  expect(document.body).not.toHaveTextContent('To end a Partners or Colleagues plan');
   expect(document.body).not.toHaveTextContent(/Stripe's billing page|Stripe's portal/);
 });
 

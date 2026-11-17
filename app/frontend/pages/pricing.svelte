@@ -44,9 +44,9 @@
 
   const small = $derived(tiers.find((tier) => sizeOf(tier) === 'small'));
   // Every plan includes one small resident, so a plan can be bought once the
-  // small size can; Companions has no price of its own.
+  // small size can.
   function actionFor(plan) {
-    const purchasable = Boolean(small?.purchasable) && (plan.purchasable || Number(plan.monthly_usd) === 0);
+    const purchasable = Boolean(small?.purchasable) && plan.purchasable;
     return planAction({ plan: { ...plan, purchasable }, billingOpen, user, account, isAccountAdmin, allowSignups });
   }
 
@@ -62,7 +62,8 @@
   const numbers = $derived(billingNumbers($page.props));
   const allowance = $derived(numbers.accountAllowance);
   const swarmPlans = $derived(accountPlans.filter((plan) => Number(plan.features?.swarm_searches) > 0));
-  const paidPlans = $derived(accountPlans.filter((plan) => Number(plan.monthly_usd) > 0));
+  // The plans above the first: the free days are on the first (Companions).
+  const paidPlans = $derived(accountPlans.slice(1));
   const showTrial = $derived(
     trialShown({ billingOpen, freeTrialEnabled, smallPurchasable: Boolean(small?.purchasable), user, trial })
   );
@@ -84,7 +85,8 @@
     </h1>
     <p class="mt-6 text-lg text-balance text-muted-foreground">
       {#if billingOpen}
-        You pay for the account's plan, and for each resident by the size of the computer it lives on.
+        You pay for the account's plan, which includes one small resident, and for each further resident by the size
+        of the computer it lives on.
       {:else}
         Hosting is free today with your own model key. Paid plans open soon.
       {/if}
@@ -227,14 +229,15 @@
       class="mx-auto mt-12 max-w-3xl space-y-2 rounded-2xl border p-6 text-sm leading-relaxed"
       data-testid="pricing-trial">
       <p class="font-medium">
-        Free for {numbers.trialDays} days, no card asked for: the first resident of a new account, small, once per account.
+        Free for {numbers.trialDays} days, no card asked for: {accountPlans[0]?.name ?? 'Companions'} and the small
+        resident it includes, for a new account's first resident, once per account.
       </p>
       <p class="text-muted-foreground">With no card added, it goes to sleep on day {numbers.trialDays}. Nothing is deleted.</p>
       {#if paidPlans.length}
         <p class="text-muted-foreground" data-testid="pricing-trial-paid-plans">
-          The free days are on Companions. {paidPlans.map((plan) => plan.name).join(' and ')} are not part of them: their
-          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card. One the account already
-          has is charged as usual; one can't be added while the free days run.
+          {paidPlans.map((plan) => plan.name).join(' and ')} are not part of them: their
+          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card. An account that
+          chooses one pays from its first resident, and one can't be added while the free days run.
         </p>
       {/if}
       {#if startTrial.kind === 'link'}
@@ -339,10 +342,10 @@
         From the account's Billing tab, with End plan on the resident. If it is the only thing on the bill, the bill
         ends at the end of the month you have paid for and the resident runs until then. If other residents or a plan
         share the bill, that resident comes off it at once, and the unused part of the month is credit on the next
-        bill. To end a {paidPlans.map((plan) => plan.name).join(' or ')} plan, write to {contactEmail}. A resident whose
-        payment stops goes to sleep; if a payment fails there are {numbers.graceDays} days to fix the card first. An
-        account whose {paidPlans.map((plan) => plan.name).join(' or ')} plan ends goes back to Companions. Nobody already
-        in the account is removed, and nothing is deleted.
+        bill. The plan is on the bill with its included resident: it ends with the account's last resident, and a
+        smaller plan is a move on the Billing tab. A resident whose payment stops goes to sleep; if a payment fails
+        there are {numbers.graceDays} days to fix the card first. Nobody already in the account is removed, and nothing
+        is deleted.
       {/snippet}
       {@render faq('How do I cancel?', cancel)}
 

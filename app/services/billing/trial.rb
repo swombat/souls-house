@@ -50,8 +50,12 @@ module Billing
     def offered?(account)
       return false unless account&.billing_required?
       return false unless Setting.instance.free_trial_enabled?
+      # The trial is Companions and the Small it includes; an account that
+      # chose a bigger plan, or holds an at-cost code, pays from the start.
+      return false unless account.plan_to_pay_for == AccountPlan.default && !account.at_cost_holder?
 
-      Billing.configured? && offer.purchasable?
+      Billing.configured? && offer.purchasable? && offer.tier.offer("included").purchasable? &&
+        AccountPlan.default.purchasable?
     end
 
     def unspent?(account)
@@ -112,11 +116,11 @@ module Billing
       Account.where(id: account_id).pick(:trial_started_at) || drawing.minimum(:created_at)
     end
 
-    # No standard-rate subscription of the account has had a paid period:
+    # No catalogue-rate subscription of the account has had a paid period:
     # each one's current period still ends with its trial. A subscription
     # with no trial on record counts as paid.
     def never_paid?(account_id)
-      subscriptions = ResidentSubscription.where(account_id: account_id, rate: "standard")
+      subscriptions = ResidentSubscription.where(account_id: account_id, rate: Tier::CATALOGUE_RATES)
       subscriptions.exists? &&
         subscriptions.where("trial_end IS NULL OR current_period_end IS NULL OR current_period_end > trial_end").none?
     end
