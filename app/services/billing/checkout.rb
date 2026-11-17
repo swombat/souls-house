@@ -14,6 +14,7 @@ module Billing
     def url
       @deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + OPERATION_BUDGET
       CheckoutLock.synchronize(@agent) do
+        FirstBill.relink!(@agent.account, client: @client)
         if ResidentSubscription.live.exists?(agent: @agent)
           raise AlreadySubscribed, "#{@agent.name} already has a subscription; change it from Manage billing"
         end

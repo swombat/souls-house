@@ -77,6 +77,34 @@ class Billing::OneFirstBillTest < ActiveSupport::TestCase
     assert_equal Billing::FirstBill::WAITING, error.message
   end
 
+  # Mira, #1024: born, but BillSync never linked the subscription.
+  test "a first bill born but never linked opens no second subscription: linked under the lock, or refused" do
+    order, = start!(@owner, "Aria")
+    @stripe.set_subscription_status(order.stripe_subscription_id, "active")
+    order.update_columns(state: "born")
+    assert Billing::FirstBill.unlinked(@account).exists?, "the case: paid and born, no ResidentSubscription"
+    assert_not Billing::Reconcile.applies?(@account)
+
+    begin
+      second, = start!(@other, "Bea")
+      assert second.item?, "linked under the lock: Bea goes onto that bill"
+    rescue Billing::PaidBirth::Refused => error
+      assert_equal Billing::FirstBill::WAITING, error.message
+    end
+    assert_equal 1, subscriptions.size
+  end
+
+  test "a first bill born and still unlinkable refuses a new first bill, for its own creator too" do
+    order, = start!(@owner, "Aria")
+    order.update_columns(state: "born")
+    ResidentSubscription.where(stripe_subscription_id: order.stripe_subscription_id).delete_all
+    Billing::BillSync.stub(:new, ->(*, **) { raise StandardError, "Stripe down" }) do
+      error = assert_raises(Billing::PaidBirth::Refused) { start!(@owner, "Bea") }
+      assert_equal Billing::FirstBill::WAITING, error.message
+    end
+    assert_equal 1, subscriptions.size
+  end
+
   # Negative control: the same person starting again replaces their own order
   # (settle_earlier!), as before; only someone else's waiting bill refuses.
   test "the same person starting again is not refused by their own waiting order" do

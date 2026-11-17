@@ -85,6 +85,7 @@ module Billing
       # and after earlier orders are settled, and never inferred again.
       CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
+        FirstBill.relink!(account, client: @client)
         # Decided here, under the lock, after earlier orders are settled: the
         # account's first catalogue resident is its plan's own (Included).
         Checkout.release_expired!(account, client: @client)
@@ -142,6 +143,7 @@ module Billing
 
       order = CheckoutLock.synchronize_residents(account) do
         settle_earlier!(account, creator)
+        FirstBill.relink!(account, client: @client)
         # Re-checked under the lock: a bill another person's start opened
         # meanwhile makes this not a first bill.
         raise Refused, "This account already has a bill; the free trial is for a first resident." if Reconcile.applies?(account)
