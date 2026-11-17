@@ -1,6 +1,7 @@
 import { writable, readable } from 'svelte/store';
 import { vi } from 'vitest';
 import Link from '../Link.svelte';
+import { BILLING_NUMBERS } from '../../billing-numbers-fixture.js';
 
 // Export the mocked Link component
 export { Link };
@@ -45,6 +46,8 @@ export const page = readable({
     user: null,
     errors: {},
     flash: {},
+    // Shared by the server with every page (Billing.public_numbers).
+    billing_numbers: BILLING_NUMBERS,
   },
   component: 'TestComponent',
   url: '/',

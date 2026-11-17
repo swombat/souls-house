@@ -2,8 +2,8 @@
 # at a rate (what it costs and what house-model allowance it includes). The
 # standard rate is the plan as published. At cost is the plan at the price of
 # its machine and what the machine drags with it, with no allowance: an
-# at-cost resident brings its own model (jBVrDj, 2026-10-28;
-# docs/proposals/2026-10-28-billing-codes-at-cost.md). A Stripe price
+# at-cost resident brings its own model (jBVrDj, 2026-10-28; the proposal
+# never reached master, it is in git history at 67cf0adc). A Stripe price
 # resolves to exactly one offer.
 module Billing
 

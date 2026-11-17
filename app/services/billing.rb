@@ -61,6 +61,22 @@ module Billing
     "$#{ActiveSupport::NumberHelper.number_to_rounded(BigDecimal(amount.to_s), precision: 2, strip_insignificant_zeros: true)}"
   end
 
+  # The numbers the house's copy states, from the constants that enforce
+  # them, so no page keeps a copy that can drift (shared with every page as
+  # billing_numbers). The four allowances are different things that happen
+  # to be $10 each today: the account's month, the free trial's whole run, a
+  # free-hosted resident's own month, and a user's one on-the-house resident.
+  def self.public_numbers
+    {
+      account_allowance_usd: usd(Tier::ACCOUNT_ALLOWANCE_USD),
+      trial_allowance_usd: usd(Trial::ALLOWANCE_USD),
+      free_hosting_allowance_usd: usd(ResidentEntitlement::COMPLIMENTARY_ALLOWANCE_USD),
+      on_the_house_allowance_usd: usd(HouseInferenceGrant::MONTHLY_LIMIT),
+      trial_days: Trial::DAYS,
+      grace_days: GRACE_PERIOD.in_days.to_i
+    }
+  end
+
   def self.test_mode?
     secret_key.to_s.start_with?("sk_test_", "rk_test_")
   end

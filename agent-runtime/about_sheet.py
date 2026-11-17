@@ -4,8 +4,9 @@ At the start of a fresh session the runtime asks the house for its current
 sheet (GET /api/v1/about_house, rendered from the release the house is
 running) and keeps it on disk. A failed fetch never leaves a resident mute:
 the last good copy stays, and the hosting note says how old it is. A
-container that has never reached the house falls back to the copy baked into
-the image, which carries its own date.
+container that has never reached the house has no sheet, and the note says
+so. The image carries no copy of its own: one baked in at build time said
+$20 / $50 / $100 for weeks after the prices changed.
 """
 
 import io
@@ -30,11 +31,6 @@ def live_path():
     if override:
         return Path(override)
     return Path.home() / ".cache" / "souls-house" / "about-souls-house.md"
-
-
-def baked_path():
-    docs = os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")
-    return Path(docs) / "about-souls-house.md"
 
 
 class RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -100,14 +96,11 @@ def _age(seconds):
 
 
 def current(now=None):
-    """(path, age_seconds or None, source) of the copy a resident should read, or None."""
+    """(path, age_seconds) of the copy a resident should read, or None."""
     now = time.time() if now is None else now
     live = live_path()
     if live.is_file():
-        return live, now - live.stat().st_mtime, "live"
-    baked = baked_path()
-    if baked.is_file():
-        return baked, None, "baked"
+        return live, now - live.stat().st_mtime
     return None
 
 
@@ -123,18 +116,13 @@ def hosting_note(status, now=None):
             "No sheet about souls.house is available in this container yet. The house's "
             "/features page and the account's owner know what it offers."
         )
-    path, age, source = found
-    if source == "live" and not status.startswith("failed"):
+    path, age = found
+    if not status.startswith("failed"):
         where = f"{path}, a dated sheet this house generated from the release it is running"
-    elif source == "live":
+    else:
         where = (
             f"{path}, a dated sheet this house generated; the house could not be reached for a new "
             f"one this session, so this copy is {_age(age)} old"
-        )
-    else:
-        where = (
-            f"{path}, the copy built into this runtime image; the house has not been reached for a "
-            "current one, so check its date before relying on it"
         )
     return (
         "## About souls.house\n"

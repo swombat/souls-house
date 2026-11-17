@@ -30,6 +30,10 @@ module Billing
   module Trial
 
     DAYS = 14
+    # The house-model allowance for the whole trial, not a month of it
+    # (ResidentEntitlement#allowance_limit). Its own number: equal to the
+    # account's monthly allowance today, not bound to it.
+    ALLOWANCE_USD = BigDecimal("10")
     TIER = "conversation".freeze
     RATE = "standard".freeze
     HOLDING_STATES = %w[pending born failed].freeze

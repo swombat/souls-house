@@ -3,7 +3,9 @@
   // comes from (a subscription, a grant from the house, or the default), what
   // it includes, and the plans it can move to. Each move says what it costs
   // before the click. Moving between paid plans is a price change on the
-  // live subscription; cancelling is in Stripe's portal (Manage billing).
+  // live subscription. Stripe's portal can't cancel (Billing::Portal), and
+  // no button here ends a paid account plan yet: /pricing and the Terms say
+  // to write to the house.
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
@@ -102,8 +104,8 @@
             The new price starts today. Stripe puts the difference for the rest of this period on the next invoice.
           {:else}
             {moves.map((plan) => `${plan.name} is ${usd(plan.monthly_usd)} a month + VAT`).join('; ')}, on top of the
-            residents. It is charged from today{trialShown ? ", also while a resident's free 14 days are running," : ''}
-            and needs a card: Stripe asks for one.
+            residents. It is charged from today{trialShown ? ', is not part of the free days,' : ''} and needs a card:
+            Stripe asks for one.
           {/if}
         </p>
       </div>

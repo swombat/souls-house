@@ -7,16 +7,17 @@
 #
 # A size is a machine and nothing else (Daniel, jaMWBj 2026-11-13: "The
 # resident is just a machine size. The allowances are per account."). The
-# transcription hours and backup space are the account plan's
-# (Billing::AccountPlan), like swarm searches and the house-model allowance.
+# transcription hours are the account plan's (Billing::AccountPlan), like
+# swarm searches; the house-model allowance is the account's. Backup space is
+# each resident's, by its size (Backup::Space).
 # Each size is priced as if its Boat machine ran a whole 31-day month (Daniel, jaMWBj
 # 2026-11-13); tier_test holds the working. Small is the exception: it sleeps
 # on Boat after 15 idle minutes, and a Small awake most of the day moves to a
 # CX23, so its worst month is the CX23's, not Boat small's (ePoEyY).
 # Change a number here and re-cost it. The house-model allowance is $10 a
 # month per account, shared by its standard-rate residents
-# (ResidentEntitlement#allowance_limit). allowance_usd here is that account
-# allowance, which a standard-rate resident of any size draws on.
+# (ResidentEntitlement#allowance_limit); every size states that same account
+# allowance (features), which a standard-rate resident of any size draws on.
 #
 # memory_gb and cpu_shares are the container limits while residents still live
 # on the shared house server. boat_size is the machine a size is sold as.
@@ -43,13 +44,6 @@ module Billing
       "cx33" => { vcpus: 4, ram_gb: 8, disk_gb: 80 },
       "cx43" => { vcpus: 8, ram_gb: 16, disk_gb: 160 }
     }.freeze
-
-    # Outside services a resident on the plan may be connected to. Named by
-    # relationship (Daniel, WjNvXj 2026-10-14): Conversation talks with you,
-    # Life helps run your life, Work does serious work beside you. A plan with
-    # no connections is conversation only. These say what a plan WILL grant
-    # once plans open; nothing enforces them until checkout is gated on it.
-    CONNECTIONS = %w[google_workspace telegram whatsapp x github dns].freeze
 
     # The rates a tier can be bought at (Billing::Offer). There are two
     # at-cost rates because an at-cost resident pays for the machine it
@@ -89,30 +83,26 @@ module Billing
 
     SIZES = %w[small medium large].freeze
 
-    attr_reader :id, :name, :size, :monthly_usd, :allowance_usd, :memory_gb, :cpu_shares, :server_type,
-      :boat_size, :connections
+    attr_reader :id, :name, :size, :monthly_usd, :memory_gb, :cpu_shares, :server_type, :boat_size
 
-    def initialize(id:, name:, size:, monthly_usd:, memory_gb:, cpu_shares:, server_type:, boat_size:,
-      connections: [])
+    def initialize(id:, name:, size:, monthly_usd:, memory_gb:, cpu_shares:, server_type:, boat_size:)
       @id = id
       @name = name
       @size = size
       @monthly_usd = BigDecimal(monthly_usd)
-      @allowance_usd = ACCOUNT_ALLOWANCE_USD
       @memory_gb = memory_gb
       @cpu_shares = cpu_shares
       @server_type = server_type
       @boat_size = boat_size
-      @connections = connections
     end
 
     CATALOGUE = [
       new(id: "conversation", name: "Small", size: "small", monthly_usd: "9.99", memory_gb: 4, cpu_shares: 1024,
         server_type: "cx23", boat_size: "small"),
       new(id: "life", name: "Medium", size: "medium", monthly_usd: "39.99", memory_gb: 8, cpu_shares: 2048,
-        server_type: "cx33", boat_size: "default", connections: CONNECTIONS),
+        server_type: "cx33", boat_size: "default"),
       new(id: "work", name: "Large", size: "large", monthly_usd: "69.99", memory_gb: 16, cpu_shares: 4096,
-        server_type: "cx43", boat_size: "large", connections: CONNECTIONS)
+        server_type: "cx43", boat_size: "large")
     ].freeze
 
     # Entitlement states in which a resident's plan is in force.
@@ -154,17 +144,16 @@ module Billing
     # creation wizard and the about-sheet. Only what a size delivers today:
     # hosting for one resident, and the account's house-model allowance it
     # draws on, shared with the account's other standard-rate residents
-    # (allowance_usd). Swarm searches and sub-agents are the account plan's
-    # (Billing::AccountPlan#features). Connections above are not shown until
-    # they ship; add them here when they do.
+    # (ACCOUNT_ALLOWANCE_USD). Swarm searches and sub-agents are the account
+    # plan's (Billing::AccountPlan#features).
     def features
-      { hosting: true, allowance_usd: Billing.usd(allowance_usd) }
+      { hosting: true, allowance_usd: Billing.usd(ACCOUNT_ALLOWANCE_USD) }
     end
 
     # Money is a two-place decimal string in JSON ("9.99"), never a float.
     def as_json(*)
       {
-        id: id, name: name, size: size, monthly_usd: Billing.usd(monthly_usd), allowance_usd: Billing.usd(allowance_usd),
+        id: id, name: name, size: size, monthly_usd: Billing.usd(monthly_usd), allowance_usd: Billing.usd(ACCOUNT_ALLOWANCE_USD),
         purchasable: purchasable?, features: features
       }
     end

@@ -4,8 +4,8 @@ import { router } from '@inertiajs/svelte';
 import Billing from './billing.svelte';
 
 const tiers = [
-  { id: 'life', name: 'Medium', size: 'medium', monthly_usd: '19.99', purchasable: true, features: {} },
-  { id: 'work', name: 'Large', size: 'large', monthly_usd: '49.99', purchasable: true, features: {} },
+  { id: 'life', name: 'Medium', size: 'medium', monthly_usd: '39.99', purchasable: true, features: {} },
+  { id: 'work', name: 'Large', size: 'large', monthly_usd: '69.99', purchasable: true, features: {} },
 ];
 const standard = { ...tiers[0], tier: 'life', rate: 'standard' };
 const atCost = { ...standard, id: 'life_at_cost', name: 'Medium at cost', rate: 'at_cost', monthly_usd: '11.00' };
@@ -52,7 +52,7 @@ describe('existing resident checkout', () => {
   it('offers eligible purchasable at-cost hosting and posts the resident, tier and rate', async () => {
     render(Billing, props());
 
-    expect(screen.getByRole('button', { name: 'Medium · $19.99 a month' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Medium · $39.99 a month' })).toBeInTheDocument();
     expect(screen.queryByText(/at cost is coming/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('billing-at-cost')).toHaveTextContent('with no house-model allowance');
     expect(screen.getByTestId('billing-at-cost')).toHaveTextContent(
@@ -72,7 +72,7 @@ describe('existing resident checkout', () => {
   it('does not invent at-cost offers for an ineligible account', () => {
     render(Billing, props({ offers: [standard], codes: { eligible_rates: ['standard'], redemptions: [] } }));
 
-    expect(screen.getByRole('button', { name: 'Medium · $19.99 a month' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Medium · $39.99 a month' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /at cost/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId('billing-at-cost')).not.toBeInTheDocument();
   });
@@ -95,7 +95,7 @@ describe('existing resident checkout', () => {
     delete legacy.offers;
     render(Billing, legacy);
 
-    expect(screen.getByRole('button', { name: 'Medium · $19.99 a month' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Medium · $39.99 a month' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /at cost/i })).not.toBeInTheDocument();
   });
 
@@ -126,7 +126,7 @@ describe('live subscriptions', () => {
       })
     );
 
-    const name = rate === 'at_cost' ? 'Move to Large at cost · $20 a month' : 'Move to Large · $49.99 a month';
+    const name = rate === 'at_cost' ? 'Move to Large at cost · $20 a month' : 'Move to Large · $69.99 a month';
     expect(screen.getAllByRole('button', { name: /^Move to (Small|Medium|Large).*· \$/ })).toHaveLength(1);
     await fireEvent.click(screen.getByRole('button', { name }));
 
@@ -174,7 +174,7 @@ describe('live subscriptions', () => {
       })
     );
     expect(screen.getByText('Medium', { selector: '[data-slot="badge"], span' })).toBeInTheDocument();
-    expect(screen.getByTestId('resident-price')).toHaveTextContent('$19.99 a month');
+    expect(screen.getByTestId('resident-price')).toHaveTextContent('$39.99 a month');
   });
 });
 
@@ -222,7 +222,7 @@ describe('account plan and the free 14 days', () => {
     expect(screen.getByTestId('resident-trial')).toHaveTextContent(
       'Add a card from Manage billing to keep Aria awake after 24 Nov 2026'
     );
-    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("also while a resident's free 14 days");
+    expect(screen.getByTestId('account-plan-terms')).toHaveTextContent("is not part of the free days");
     expect(screen.queryByRole('button', { name: /^Move to (Medium|Large)/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Manage billing' }).length).toBeGreaterThan(0);
   });

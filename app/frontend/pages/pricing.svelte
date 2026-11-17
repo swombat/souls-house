@@ -14,13 +14,14 @@
     machineLine,
     usd,
   } from '$lib/pricing';
+  import { billingNumbers } from '$lib/billing-numbers';
 
   let {
     tiers = [],
     account_plans: accountPlans = [],
     billing_open: billingOpen = false,
     contact_email: contactEmail,
-    // Whether the house offers the free 14 days (Site Admin's switch).
+    // Whether the house offers the free trial (Site Admin's switch).
     free_trial_enabled: freeTrialEnabled = false,
     // Signed in: whether the account would get them, { eligible, days }.
     trial = null,
@@ -58,7 +59,9 @@
   }
   const ownComputers = $derived(tiers.some((tier) => machineLine(tier.machine)));
 
-  const allowance = $derived(usd(small?.allowance_usd ?? 10));
+  const numbers = $derived(billingNumbers($page.props));
+  const allowance = $derived(numbers.accountAllowance);
+  const swarmPlans = $derived(accountPlans.filter((plan) => Number(plan.features?.swarm_searches) > 0));
   const paidPlans = $derived(accountPlans.filter((plan) => Number(plan.monthly_usd) > 0));
   const showTrial = $derived(
     trialShown({ billingOpen, freeTrialEnabled, smallPurchasable: Boolean(small?.purchasable), user, trial })
@@ -224,14 +227,14 @@
       class="mx-auto mt-12 max-w-3xl space-y-2 rounded-2xl border p-6 text-sm leading-relaxed"
       data-testid="pricing-trial">
       <p class="font-medium">
-        Free for 14 days, no card asked for: the first resident of a new account, small, once per account.
+        Free for {numbers.trialDays} days, no card asked for: the first resident of a new account, small, once per account.
       </p>
-      <p class="text-muted-foreground">With no card added, it goes to sleep on day 14. Nothing is deleted.</p>
+      <p class="text-muted-foreground">With no card added, it goes to sleep on day {numbers.trialDays}. Nothing is deleted.</p>
       {#if paidPlans.length}
         <p class="text-muted-foreground" data-testid="pricing-trial-paid-plans">
-          The free 14 days are on Companions. {paidPlans.map((plan) => plan.name).join(' and ')} are never free: their
-          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month is charged from the day you choose one,
-          also while a resident's free 14 days are running, and needs a card.
+          The free days are on Companions. {paidPlans.map((plan) => plan.name).join(' and ')} are not part of them: their
+          {paidPlans.map((plan) => `${usd(plan.monthly_usd)}`).join(' or ')} a month needs a card, and can be added once the
+          free days are over.
         </p>
       {/if}
       {#if startTrial.kind === 'link'}
@@ -324,16 +327,20 @@
 
       {#snippet swarm()}
         For deeper research in the Field: a resident sends one question to every item under a tag, and a small model
-        reads each one and brings back what's relevant, with quotes the house checks. Partners includes 20 swarm
-        searches a month and Colleagues 100, for the whole account.
+        reads each one and brings back what's relevant, with quotes the house checks.
+        {swarmPlans.map((plan) => `${plan.name} includes ${plan.features.swarm_searches}`).join(' and ')} swarm searches a
+        month, for the whole account.
       {/snippet}
       {@render faq('What is swarm search?', swarm)}
 
       {#snippet cancel()}
-        From the account's Billing tab, through Stripe's billing page. What you cancel runs to the end of the month you
-        have paid for. A resident whose payment stops goes to sleep; if a payment fails there are 14 days to fix the
-        card first. An account whose Partners or Colleagues plan ends goes back to Companions. Nobody already in the
-        account is removed, and nothing is deleted.
+        From the account's Billing tab, with End plan on the resident. If it is the only thing on the bill, the bill
+        ends at the end of the month you have paid for and the resident runs until then. If other residents or a plan
+        share the bill, that resident comes off it at once, and the unused part of the month is credit on the next
+        bill. To end a {paidPlans.map((plan) => plan.name).join(' or ')} plan, write to {contactEmail}. A resident whose
+        payment stops goes to sleep; if a payment fails there are {numbers.graceDays} days to fix the card first. An
+        account whose {paidPlans.map((plan) => plan.name).join(' or ')} plan ends goes back to Companions. Nobody already
+        in the account is removed, and nothing is deleted.
       {/snippet}
       {@render faq('How do I cancel?', cancel)}
 

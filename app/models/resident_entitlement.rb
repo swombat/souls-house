@@ -11,11 +11,6 @@ class ResidentEntitlement < ApplicationRecord
   DRAIN = 30.minutes
   SOURCES = %w[complimentary stripe].freeze
 
-  # Per-resident month markers from when each paid plan had its own
-  # allowance. Nothing reads or writes them since the allowance became the
-  # account's; a later migration drops them.
-  self.ignored_columns += %w[allowance_month allowance_limit_usd]
-
   belongs_to :agent
   belongs_to :account
   belongs_to :current_subscription, class_name: "ResidentSubscription", optional: true
@@ -74,7 +69,9 @@ class ResidentEntitlement < ApplicationRecord
   # jygXOY/jlnVNY, 2026-10-30: "they are on a free plan where they get a $10
   # allowance, so they should continue functioning"). It replaces the per-user
   # grant for that resident. A paid plan replaces it in turn while in force.
-  COMPLIMENTARY_ALLOWANCE_USD = BigDecimal(Billing::Tier.find!("conversation").allowance_usd.to_s)
+  # Its own number, not the account allowance's: the two are equal today,
+  # and changing one is a decision about the other (Daniel's to make).
+  COMPLIMENTARY_ALLOWANCE_USD = BigDecimal("10")
 
   # Whether this resident's own entitlement pays for its house-model calls
   # now (paid plan, draining, or free hosting with its allowance). When true,
@@ -149,9 +146,8 @@ class ResidentEntitlement < ApplicationRecord
     return COMPLIMENTARY_ALLOWANCE_USD if complimentary?
     return BigDecimal("0") unless rate == "standard"
 
-    limit = Billing::Tier::ACCOUNT_ALLOWANCE_USD
     trial_started_at = Billing::Trial.allowance_started_at(account_id)
-    return limit unless trial_started_at
+    return Billing::Tier::ACCOUNT_ALLOWANCE_USD unless trial_started_at
 
     # The free trial's allowance is $10 for the whole trial, not $10 a month
     # (Billing::Trial): this month's ceiling is what the account didn't draw
@@ -161,7 +157,7 @@ class ResidentEntitlement < ApplicationRecord
     # what the trial drew this month counts against it, being this month's
     # spend.
     before = paid_spend(month: trial_started_at.utc.to_date.beginning_of_month...month)
-    [ limit - before, BigDecimal("0") ].max
+    [ Billing::Trial::ALLOWANCE_USD - before, BigDecimal("0") ].max
   end
 
   # In-flight calls count at their reservation until settled. Free hosting

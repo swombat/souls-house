@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -105,7 +105,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_140000) do
     t.boolean "use_system_ai_credentials", default: false, null: false
     t.text "xai_api_key"
     t.text "zai_api_key"
-    t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.boolean "recognise_voices", default: true, null: false
     t.boolean "reflexes_enabled", default: false, null: false
     t.boolean "founding", default: false, null: false
@@ -2617,8 +2616,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_140000) do
     t.string "checkout_session_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.date "allowance_month"
-    t.decimal "allowance_limit_usd", precision: 14, scale: 8
     t.string "rate", default: "standard", null: false
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
     t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true

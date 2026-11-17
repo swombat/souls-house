@@ -20,6 +20,23 @@ class PricingPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Every page gets the numbers its copy states from the constants that
+  # enforce them, signed in or out; no page keeps a copy (lib/billing-numbers.js).
+  test "every page shares billing_numbers from the enforcing constants" do
+    expected = {
+      "account_allowance_usd" => Billing.usd(Billing::Tier::ACCOUNT_ALLOWANCE_USD),
+      "trial_allowance_usd" => Billing.usd(Billing::Trial::ALLOWANCE_USD),
+      "free_hosting_allowance_usd" => Billing.usd(ResidentEntitlement::COMPLIMENTARY_ALLOWANCE_USD),
+      "on_the_house_allowance_usd" => Billing.usd(HouseInferenceGrant::MONTHLY_LIMIT),
+      "trial_days" => Billing::Trial::DAYS,
+      "grace_days" => 14
+    }
+    get pricing_path
+    assert_equal expected, inertia_shared_props["billing_numbers"]
+    get terms_path
+    assert_equal expected, inertia_shared_props["billing_numbers"]
+  end
+
   test "plan cards carry the catalogue's prices, allowances and what each plan includes" do
     without_stripe_env do
       get pricing_path
@@ -30,7 +47,7 @@ class PricingPageTest < ActionDispatch::IntegrationTest
         assert_equal tier.name, card["name"]
         assert_equal tier.size, card["size"]
         assert_equal Billing.usd(tier.monthly_usd), card["monthly_usd"]
-        assert_equal Billing.usd(tier.allowance_usd), card["allowance_usd"]
+        assert_equal Billing.usd(Billing::Tier::ACCOUNT_ALLOWANCE_USD), card["allowance_usd"]
         assert_equal tier.features.stringify_keys, card["features"]
       end
       assert_equal %w[conversation life work], tiers.map { |row| row["id"] }

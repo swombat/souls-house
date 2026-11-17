@@ -81,7 +81,7 @@ class HouseInferenceGrant < ApplicationRecord
     end
     month = HouseInference::Offering.month
     if spent(month) >= MONTHLY_LIMIT
-      raise HouseInference::Error.new('The $10 house allowance is used up. It resets at the start of next month (UTC).', code: 'house_allowance_exhausted', status: 402)
+      raise HouseInference::Error.new("The #{Billing.usd_label(MONTHLY_LIMIT)} house allowance is used up. It resets at the start of next month (UTC).", code: 'house_allowance_exhausted', status: 402)
     end
     # The free house-wide ceiling covers free grants only; paid plans are
     # bounded by their own allowances.

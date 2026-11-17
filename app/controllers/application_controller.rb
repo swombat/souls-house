@@ -28,6 +28,7 @@ class ApplicationController < ActionController::Base
         pending_invitations: -> { PendingInvitations.summary_for(Current.user) },
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
+        billing_numbers: Billing.public_numbers,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
         # Site admin in an account they are not a confirmed member of: what they see
         # here, members' access aside, they see only as site admin (shown in red).
@@ -43,7 +44,8 @@ class ApplicationController < ActionController::Base
     else
       {
         theme_preference: cookies[:theme],
-        site_settings: shared_site_settings
+        site_settings: shared_site_settings,
+        billing_numbers: Billing.public_numbers
       }
     end
   end

@@ -1,9 +1,5 @@
 class Account < ApplicationRecord
 
-  # The flat weekly transcription limit that the plan's hours replaced
-  # (transcription_ms_limit); dropped once no running code selects it.
-  self.ignored_columns += %w[recording_ms_weekly_limit]
-
   include JsonAttributes
   include SyncAuthorizable
   include Broadcastable
@@ -543,7 +539,8 @@ class Account < ApplicationRecord
                          "to invite someone.".freeze
 
   # The rates this account may buy plans at: standard always, plus any rate a
-  # live billing-code redemption grants (docs/proposals/2026-10-28-billing-codes-at-cost.md).
+  # live billing-code redemption grants (jBVrDj, 2026-10-28; the proposal is in
+  # git history at 67cf0adc, it never reached master).
   # The redemption is the grant; there is no flag here.
   def eligible_rates
     held = billing_code_redemptions.live.distinct.pluck(:effect).map { |effect| effect.split(":").first }

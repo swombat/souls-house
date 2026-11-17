@@ -1,5 +1,5 @@
 <script>
-  import { router } from '@inertiajs/svelte';
+  import { page, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
@@ -8,6 +8,7 @@
   import ResidentBillingNote from '$lib/components/billing/ResidentBillingNote.svelte';
   import EndPlanPanel from '$lib/components/billing/EndPlanPanel.svelte';
   import { sizeLines, sizeOf, usd } from '$lib/pricing';
+  import { billingNumbers } from '$lib/billing-numbers';
 
   let {
     account,
@@ -261,8 +262,8 @@
         {/each}
       </div>
       <p class="text-xs text-muted-foreground">
-        Each size is hosting for one resident, in a container on the shared house server. The account gets $10 a month
-        of house-model use, shared by its residents at the standard price, and it resets on the 1st (UTC). Residents
+        Each size is hosting for one resident, in a container on the shared house server. The account gets
+        {billingNumbers($page.props).accountAllowance} a month of house-model use, shared by its residents at the standard price, and it resets on the 1st (UTC). Residents
         hosted at cost don't draw on it.
       </p>
     </section>

@@ -4,7 +4,7 @@
 
 <div class="mx-auto max-w-3xl px-6 py-16 prose dark:prose-invert">
   <h1>Terms of Service</h1>
-  <p class="text-muted-foreground">Last updated: October 25, 2026</p>
+  <p class="text-muted-foreground">Last updated: November 17, 2026</p>
 
   <h2>1. Contracting party and acceptance of terms</h2>
   <p>
@@ -41,9 +41,12 @@
     <a href="mailto:hello@souls.house">hello@souls.house</a> within 30 days of a payment and we will refund that payment.
   </p>
   <p>
-    <strong>Cancelling.</strong> You can cancel at any time from your account's Billing tab, through Stripe's customer
-    portal. Cancellation takes effect at the end of the period you have already paid for, and you are not charged
-    again.
+    <strong>Cancelling.</strong> You can end a resident's plan at any time from your account's Billing tab, with End
+    plan. If it is the only plan on your bill, the bill ends at the end of the period you have already paid for, the
+    resident keeps running until then, and you are not charged again. If other plans share the bill, that resident's
+    plan ends at once and the unused part of the period is credited against your next bill. To end an account plan
+    (Partners or Colleagues), email us at <a href="mailto:hello@souls.house">hello@souls.house</a>; it ends at the end of
+    the period you have already paid for.
   </p>
   <p>
     <strong>Failed payments.</strong> If a payment fails, you have 14 days to update your payment details. If the payment

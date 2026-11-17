@@ -82,7 +82,7 @@ class PagesController < ApplicationController
       name: tier.name,
       size: tier.size,
       monthly_usd: Billing.usd(tier.monthly_usd),
-      allowance_usd: Billing.usd(tier.allowance_usd),
+      allowance_usd: Billing.usd(Billing::Tier::ACCOUNT_ALLOWANCE_USD),
       purchasable: tier.purchasable?,
       features: tier.features
     }.merge(pricing_machine(tier))

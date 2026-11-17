@@ -43,6 +43,27 @@ class TrialAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("3.5"), entitlement.allowance_remaining
   end
 
+  # Negative control: the trial's ceiling is its own constant. Moving it moves
+  # the trial and nothing else; the account's monthly allowance stays.
+  test "the trial's allowance is Billing::Trial::ALLOWANCE_USD, not the account's" do
+    swap_const(Billing::Trial, :ALLOWANCE_USD, BigDecimal("4")) do
+      assert_equal BigDecimal("4"), entitlement.allowance_limit
+      assert_equal BigDecimal("10"), Billing::Tier::ACCOUNT_ALLOWANCE_USD
+      assert_equal "4.00", Billing.public_numbers[:trial_allowance_usd]
+      assert_equal "10.00", Billing.public_numbers[:account_allowance_usd]
+    end
+  end
+
+  def swap_const(owner, name, value)
+    old = owner.const_get(name)
+    owner.send(:remove_const, name)
+    owner.const_set(name, value)
+    yield
+  ensure
+    owner.send(:remove_const, name)
+    owner.const_set(name, old)
+  end
+
   test "crossing the 1st gives no second $10: the trial's earlier draws come off the new month's ceiling" do
     spend!(7)
     assert_equal BigDecimal("3"), entitlement.allowance_remaining
