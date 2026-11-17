@@ -25,7 +25,11 @@ module Backup
   #
   # `run` is restic for this resident's repository: called with restic's
   # arguments, returns its stdout, raises on failure. `physical` returns the
-  # repository's size in storage, or nil where that can't be asked.
+  # repository's size in storage, or nil where that can't be asked. `before`
+  # is the snapshot list read before a thinning began (Backup::VmThinning);
+  # given it, the history also records how many of those backups are gone
+  # (thinning_removed), counted by id against what is left, so a backup the
+  # thinning did not actually remove is never counted.
   class Fit
 
     class Failed < StandardError; end
@@ -33,8 +37,9 @@ module Backup
 
     STILL_TIGHT = 0.8
 
-    def initialize(agent, run:, physical: -> { Space.physical_bytes(agent) }, now: Time.current)
+    def initialize(agent, run:, physical: -> { Space.physical_bytes(agent) }, now: Time.current, before: nil)
       @agent = agent
+      @before = before
       @run = run
       @physical = physical
       @now = now
@@ -71,15 +76,22 @@ module Backup
       # still near its space, so it does not flicker off on a quiet night.
       thinned = !@agent.backup_never_removed? && (forgot || (referenced > space && !over) ||
         (@agent.backup_history["thinned_to_fit"] == true && stored > space * STILL_TIGHT))
-      @agent.update!(backup_history: {
+      history = {
         "snapshots" => kept.size, "oldest_at" => kept.first && parse_time(kept.first["time"])&.iso8601,
         "stored_bytes" => stored, "referenced_bytes" => referenced,
         "thinned_to_fit" => thinned, "over_space" => over, "read_at" => @now.iso8601
-      })
+      }
+      history["thinning_removed"] = removed_count(kept) if @before
+      @agent.update!(backup_history: history)
       @agent.backup_history
     end
 
     private
+
+    def removed_count(kept)
+      left = kept.map { |snapshot| snapshot["id"] }
+      @before.count { |snapshot| snapshot.is_a?(Hash) && snapshot["id"].present? && left.exclude?(snapshot["id"]) }
+    end
 
     # Oldest first.
     def snapshots

@@ -51,6 +51,8 @@ module Backup
     # Recovery's own steps are short ones.
     RECOVERY_TIMEOUT_SECONDS = 5 * 60
     DOCKER_TIMEOUT_SECONDS = 60
+    # Where the resident's cache volume is mounted in the thinning container.
+    CACHE_DIR = "/restic-cache"
     # How long a mark is believed after its last renewal. One command cannot
     # run this long, kill grace included, so past it the job that held the
     # mark is not running one.
@@ -100,9 +102,8 @@ module Backup
 
       # Then the resident's backup space: thin further if it is over, and
       # record what the repository holds.
-      history = Fit.new(agent, run: ->(*args) { run(agent, *args) }).call
-      Result.new(kept: history["snapshots"], removed: [ before.size - history["snapshots"], 0 ].max,
-        oldest_at: history["oldest_at"])
+      history = Fit.new(agent, run: ->(*args) { run(agent, *args) }, before:).call
+      Result.new(kept: history["snapshots"], removed: history["thinning_removed"], oldest_at: history["oldest_at"])
     rescue Fit::Failed => error
       raise Failed, error.message, cause: nil
     end
@@ -121,6 +122,15 @@ module Backup
     # One name per resident, so a container a dead job left behind can be
     # found and removed, and two thinnings of one repository cannot coexist.
     def container_name(agent) = "vm-backup-thin-#{agent.uuid}"
+
+    # restic's cache for this resident's repository, kept between nights in a
+    # named Docker volume on the daemon that runs the thinning container, so a
+    # thinning reads the repository's index once and not every night (17 Nov
+    # 2026: Alanis took 27 minutes with nothing to remove, under --no-cache).
+    # Docker creates it on first use. It is only a cache: a lost or deleted
+    # volume costs one slow night, never data. One per resident, and never
+    # shared, because two thinnings of one repository cannot run together.
+    def cache_volume(agent) = "vm-backup-thin-cache-#{agent.uuid}"
 
     # Locks are removed only once no thinning container can still be writing.
     def remove_container!(agent)
@@ -167,7 +177,8 @@ module Backup
         "-e", "AWS_DEFAULT_REGION=#{AgentRestic.region}",
         "-e", "RESTIC_PASSWORD=#{agent.restic_password}",
         "-e", "RESTIC_REPOSITORY=#{AgentRestic.repository_url(agent)}",
-        VmSnapshotVerifier::IMAGE, "--no-cache", *args ]
+        "-v", "#{cache_volume(agent)}:#{CACHE_DIR}",
+        VmSnapshotVerifier::IMAGE, "--cache-dir", CACHE_DIR, *args ]
       out, err, status = Open3.capture3(*argv)
       return out if status.success?
 

@@ -12,6 +12,13 @@ module Backup
       # was queued before the disable or forced: their servers are being
       # deleted and nothing of theirs should start.
       return if agent.account.disabled?
+      # A resident that is switched off and whose server has been retired has
+      # nothing to back up: its data went with the server and its backups
+      # stay as they are. Until 17 Nov 2026 each one got a failed row every
+      # night ("Agents::RemoteRuntime::Unavailable"). A resident whose server
+      # is retired while it is still switched on is not skipped: that is a
+      # fault, and its failed row says so.
+      return if retired?(agent)
       if Agents::RemoteRuntime.remote?(agent)
         return VmResident.issue!(placement: Agents::RemoteRuntime.placement_for(agent))
       end
@@ -74,6 +81,11 @@ module Backup
     end
 
     private
+
+    def retired?(agent)
+      placement = Agents::RemoteRuntime.placement_for(agent)
+      agent.runtime == "offline" && placement&.backend == "hetzner_cloud" && placement.state == "retired"
+    end
 
     def init_restic_repo!(agent)
       cmd = restic_env(agent) + [ Backup::AgentRestic::IMAGE, "init" ]
