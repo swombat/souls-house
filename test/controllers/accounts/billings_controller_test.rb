@@ -44,7 +44,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier, "only the owner changes plans"
   end
 
-  test "a resident at cost on Hetzner resizes at the Hetzner price, and Hetzner can't be checked out" do
+  test "a resident at cost on Hetzner resizes at the Hetzner price; one on the house server can't be sold the Hetzner rate" do
     BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
     BillingCode.redeem!(code: "HOST", account: @account, by: @user)
     @agent.update!(model_id: "openrouter/auto")
@@ -66,8 +66,10 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     with_stripe do
       post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
     end
-    assert_response :bad_request
-    assert_not ResidentSubscription.exists?(agent: other)
+    assert_not ResidentSubscription.where(agent: other, rate: "at_cost_hetzner").exists?
+    change = BillChange.order(:id).last
+    assert_includes change.params.to_json, LIFE_AT_COST_PRICE, "on the house server: Boat's at-cost price, quoted first"
+    assert_not_includes change.params.to_json, LIFE_AT_COST_HETZNER_PRICE
   end
 
   test "shows each hosted resident's plan and the catalogue" do

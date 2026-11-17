@@ -13,7 +13,7 @@
   let rates = $derived([...new Set(options.map((offer) => offer.rate || 'standard'))]);
   let rate = $derived(chosen?.rate || 'standard');
   let shown = $derived(options.filter((offer) => (offer.rate || 'standard') === rate));
-  const RATE_LABELS = { standard: 'Standard', at_cost: 'At cost' };
+  const RATE_LABELS = { standard: 'Standard', at_cost: 'At cost', at_cost_hetzner: 'At cost' };
 
   function chooseRate(next) {
     if (next === rate) return;
@@ -54,7 +54,7 @@
       onchange={() => (tier = option.id)} />
     <span class="flex items-start justify-between gap-2">
       <span class="font-semibold"
-        >{option.rate === 'at_cost' ? option.name.replace(/ at cost$/, '') : option.name}</span>
+        >{option.rate?.startsWith('at_cost') ? option.name.replace(/ at cost( \(Hetzner\))?$/, '') : option.name}</span>
       {#if selected}<CheckCircle class="size-5 shrink-0 text-primary" weight="fill" />{/if}
     </span>
     <span class="mt-1 text-sm text-muted-foreground">{sizeLines[sizeOf(option)] ?? ''}</span>

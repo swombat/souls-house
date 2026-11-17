@@ -78,6 +78,28 @@ test('offers at cost beside standard when the account holds a code, and says wha
   expect(screen.getByTestId('plan-at-cost-terms')).toHaveTextContent('includes no house-model allowance');
 });
 
+test('the Hetzner at-cost rate reads as at cost: the switch, the card name and the terms', () => {
+  const offers = [
+    { ...tiers[0], tier: 'conversation', rate: 'standard' },
+    {
+      id: 'life_at_cost_hetzner',
+      tier: 'life',
+      size: 'medium',
+      rate: 'at_cost_hetzner',
+      name: 'Medium at cost (Hetzner)',
+      monthly_usd: '11.00',
+      purchasable: true,
+      features: { hosting: true, allowance_usd: '0.00' },
+    },
+  ];
+  render(PlanStep, { billing: { ...billing, offers }, residentName: 'Aria', tier: 'life_at_cost_hetzner' });
+
+  expect(screen.getByRole('button', { name: 'At cost' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('radio', { name: /Medium at cost \(Hetzner\)/ })).toBeChecked();
+  expect(screen.getByTestId('plan-terms')).toHaveTextContent("Today: $11 + VAT for Aria's first month.");
+  expect(screen.getByTestId('plan-at-cost-terms')).toHaveTextContent('includes no house-model allowance');
+});
+
 test('the rate switch moves to the same plan at the other rate', async () => {
   const offers = [
     { ...tiers[0], tier: 'conversation', rate: 'standard' },

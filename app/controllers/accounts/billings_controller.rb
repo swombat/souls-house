@@ -47,7 +47,8 @@ class Accounts::BillingsController < ApplicationController
   def checkout
     agent = billable_agents.find(params[:agent_id])
     tier = Billing::Tier.find(params[:tier]) || raise(ActionController::BadRequest, "Unknown plan")
-    rate = params[:rate].presence || "standard"
+    # "At cost" is the client's choice; which at-cost rate is the machine's.
+    rate = Billing::Tier.sold_rate(params[:rate].presence || "standard", agent)
     raise ActionController::BadRequest, "Unknown rate" unless Billing::Tier::SOLD_RATES.include?(rate)
 
     if ResidentSubscription.live.exists?(agent: agent)

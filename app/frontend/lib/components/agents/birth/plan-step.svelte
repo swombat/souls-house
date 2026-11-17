@@ -57,7 +57,7 @@
   // code for it); older props carry only tiers, which are the standard offers.
   let tiers = $derived(billing.offers?.length ? billing.offers : billing.tiers || []);
   let chosen = $derived(tiers.find((candidate) => candidate.id === tier) || null);
-  let atCost = $derived(chosen?.rate === 'at_cost');
+  let atCost = $derived(Boolean(chosen?.rate?.startsWith('at_cost')));
   let name = $derived(residentName.trim() || 'your resident');
   let free = $derived(trialApplies(trial, chosen));
   let trialDays = $derived(trial?.days);

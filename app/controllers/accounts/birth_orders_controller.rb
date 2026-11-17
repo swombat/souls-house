@@ -45,7 +45,8 @@ class Accounts::BirthOrdersController < ApplicationController
     open_beginning = ActiveModel::Type::Boolean.new.cast(attrs.delete(:open_beginning))
     attrs[:system_prompt] = "" if open_beginning
     tier = Billing::Tier.find(params.require(:tier)) || raise(Billing::PaidBirth::Refused, "Choose a plan.")
-    rate = params[:rate].presence || "standard"
+    # "At cost" is the client's choice; which at-cost rate is the machine's.
+    rate = Billing::Tier.sold_rate(params[:rate].presence || "standard")
     raise Billing::PaidBirth::Refused, "Choose a plan." unless Billing::Tier::SOLD_RATES.include?(rate)
     return if provider_key_refused?
     return create_trial(attrs, open_beginning, tier, rate) if ActiveModel::Type::Boolean.new.cast(params[:trial])

@@ -239,6 +239,8 @@ module Billing
       raise Refused, "Paying for residents isn't open on this house yet." unless Billing.configured?
       raise Refused, "That plan can't be bought yet." unless offer&.purchasable?
       raise Refused, "That rate is set by the house, not bought." unless offer.sold?
+      # Which at-cost rate is the machine's (Tier.at_cost_rate_for), not the caller's.
+      raise Refused, "That rate is set by the house, not bought." if offer.at_cost? && offer.rate != Tier.at_cost_rate_for
       raise Refused, "This account can't buy plans at that rate." unless account.eligible_for?(offer)
     end
 

@@ -581,8 +581,12 @@ class Account < ApplicationRecord
   end
 
   # What this account can buy now: every purchasable offer at a rate it holds.
+  # At cost, the one rate a new resident would be sold at (Tier.sold_rate).
   def purchasable_offers
-    Billing::Tier.all.flat_map(&:offers).select { |offer| offer.sold? && offer.purchasable? && eligible_for?(offer) }
+    at_cost = Billing::Tier.at_cost_rate_for
+    Billing::Tier.all.flat_map(&:offers).select do |offer|
+      offer.sold? && (!offer.at_cost? || offer.rate == at_cost) && offer.purchasable? && eligible_for?(offer)
+    end
   end
 
   def recording_unlimited? = includes_site_admin?
