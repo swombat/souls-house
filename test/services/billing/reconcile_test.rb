@@ -439,4 +439,39 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]), "a higher plan can still be bought"
   end
 
+
+  # The one account paying on 17 Nov 2026, as it stands: an at-cost code, a
+  # site grant of Colleagues, a Medium and a Large at the Hetzner at-cost
+  # rate on one subscription, no plan line. "No existing paying account's
+  # monthly total changes" (eRyZBY), held as a test.
+  test "the account paying at cost keeps exactly its lines and total: no plan line, no included resident, ever" do
+    grant!("at_cost")
+    @account.update!(granted_plan: "colleagues")
+    bill!(@a => LIFE_AT_COST_HETZNER_PRICE, @b => WORK_AT_COST_HETZNER_PRICE)
+    before = remote
+    assert_equal({ LIFE_AT_COST_HETZNER_PRICE => 1, WORK_AT_COST_HETZNER_PRICE => 1 }, before)
+    assert_equal 1100 + 2000, before.sum { |price, quantity| @stripe.price_object(price)[:unit_amount] * quantity }
+
+    sync
+    assert_equal before, remote, "bringing the bill in changes nothing"
+    assert_equal before, Billing::BillSync.house_lines("sub_acct")
+    assert_empty AccountSubscription.where(account: @account)
+    assert_nil @account.reload.plan_to_pay_for, "the plan is given: nothing to pay for it"
+    assert_not Billing::Included.available?(@account), "an at-cost residence, no free residence"
+    assert_equal %w[at_cost_hetzner at_cost_hetzner], ResidentSubscription.live.where(account: @account).pluck(:rate)
+
+    # A resident bought at the catalogue price is at its size, and brings no plan line.
+    assert_equal [ { op: "add", agent_id: @c.id, price: CONVERSATION_PRICE } ],
+      Billing::Reconcile.add_ops(@account, @c, Billing::Tier.find!("conversation").offer)
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]) }
+    assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@c, CONVERSATION_INCLUDED_PRICE) ]) }
+    assert_equal before, remote, "and nothing was sent"
+    assert_empty @stripe.subscription_updates
+
+    # Control: it is the at-cost code that holds this. Without it, the same
+    # account's given plan would include a resident.
+    BillingCodeRedemption.where(account: @account).find_each { |redemption| redemption.withdraw!(by: users(:site_admin_user)) }
+    assert Billing::Included.available?(@account.reload)
+  end
+
 end
