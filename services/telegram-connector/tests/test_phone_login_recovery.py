@@ -31,7 +31,7 @@ class PhoneLoginRecoveryTest(unittest.IsolatedAsyncioTestCase):
                                            callback_secret_version=1)
         self.assertEqual(200, status, reply)
         await wait_for(lambda: h.world.qr_waiting.is_set())
-        self.account = h.manager.account("svc_1")
+        self.account = await h.manager.account("svc_1")
         return h
 
     async def command(self, op, **fields):

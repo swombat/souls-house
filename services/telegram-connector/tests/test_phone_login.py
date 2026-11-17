@@ -64,7 +64,7 @@ class PhoneLoginTest(unittest.IsolatedAsyncioTestCase):
         return h.rails.connections["svc_1"]
 
     def assert_never_kept(self, h, *secrets):
-        dump = "\n".join(h.store.db.iterdump())
+        dump = "\n".join(h.store.db.dump())
         with open(h.path, "rb") as handle:
             raw = handle.read()
         posted = repr(h.rails.posts)
@@ -79,7 +79,7 @@ class PhoneLoginTest(unittest.IsolatedAsyncioTestCase):
         h = self.harness()
         await self.start(h)
         await wait_for(lambda: self.rails(h)["qr"] is not None)
-        account = h.manager.account("svc_1")
+        account = await h.manager.account("svc_1")
         fields = {"generation": 1, "phone": PHONE}
         status, reply = await h.manager.command("svc_1", "request_code", fields)
         self.assertEqual((200, {"outcome": "code_sent", "delivery": "app", "length": len(CODE),
@@ -183,7 +183,7 @@ class PhoneLoginTest(unittest.IsolatedAsyncioTestCase):
         status, reply = await h.manager.command("svc_1", "request_code", {"generation": 1, "phone": "07700 900123"})
         self.assertEqual((200, {"outcome": "phone_invalid"}), (status, reply))
         self.assertEqual(0, h.world.codes_sent)
-        account = h.manager.account("svc_1")
+        account = await h.manager.account("svc_1")
         self.assertEqual("qr", account.login_phase)
         self.assertIn("login", account.tasks)
         # The QR still signs in.

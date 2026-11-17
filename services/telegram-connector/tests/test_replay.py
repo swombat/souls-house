@@ -90,7 +90,7 @@ class ReplayTest(unittest.IsolatedAsyncioTestCase):
         await h.connect()
         await wait_for(lambda: state["left"] == 0)
         await h.restart()
-        account = h.manager.account("svc_1")
+        account = await h.manager.account("svc_1")
         await settle(account)
         alice = h.rails.bodies("svc_1", f"user:{ALICE}")
         self.assertEqual(29, sum(1 for body in alice.values() if body and body.startswith("old ")))
@@ -103,7 +103,7 @@ class ReplayTest(unittest.IsolatedAsyncioTestCase):
         await h.restart()
         cursor = h.store.chat("svc_1", f"user:{ALICE}")["backfill_offset"]
         h.world.requests.clear()
-        await settle(h.manager.account("svc_1"))
+        await settle(await h.manager.account("svc_1"))
         first = [r for r in h.world.requests if r[0] == "history" and r[1] == f"user:{ALICE}"][0]
         self.assertEqual(cursor, first[2], "backfill resumed from its committed cursor")
 
@@ -121,7 +121,7 @@ class ReplayTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(h.store.connection("svc_1")["pts"], h.world.visible_pts(), "state did not run ahead of the outbox")
         # A restart while saturated loses nothing either.
         await h.restart()
-        account = h.manager.account("svc_1")
+        account = await h.manager.account("svc_1")
         await asyncio.sleep(0.2)
         self.assertLessEqual(h.store.pending_count("svc_1"), 4)
         del h.rails.refuse_types["message.upsert"]

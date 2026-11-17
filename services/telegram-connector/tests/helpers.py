@@ -13,6 +13,7 @@ import tempfile
 from connector.account import Account, Settings
 from connector.fake import World
 from connector.manager import Manager
+from connector.storethread import serve
 from connector.store import Crypto, Store
 
 LOGIN_EVENTS = {"pairing.qr", "login.qr", "login.code_sent", "login.password_required", "login.failed",
@@ -210,13 +211,16 @@ class Harness:
         self.open()
 
     def open(self):
-        self.store = Store(self.path, Crypto(STORE_KEY))
-        self.manager = Manager(self.store, self.world.factory, self.rails.post, self.settings, b"log")
+        # store: the synchronous store, for the tests' own reads and checks;
+        # astore: the same store behind its thread, as the connector holds it.
+        self.astore = serve(Store(self.path, Crypto(STORE_KEY)), heartbeat=0)
+        self.store = self.astore.view()
+        self.manager = Manager(self.astore, self.world.factory, self.rails.post, self.settings, b"log")
 
     async def restart(self):
         """A new process on the same store and the same Telegram."""
         await self.manager.close()
-        self.store.db.close()
+        self.astore.close()
         for client in list(self.world.clients):
             await client.disconnect()
         self.open()
@@ -231,11 +235,11 @@ class Harness:
         await wait_for(lambda: self.world.qr_waiting.is_set())
         self.world.scanned.set()
         await wait_for(lambda: self.rails.connections[ref]["status"] == "connected")
-        return self.manager.account(ref)
+        return await self.manager.account(ref)
 
     async def close(self):
         await self.manager.close()
-        self.store.db.close()
+        self.astore.close()
 
 
 async def wait_for(predicate, timeout=5.0, interval=0.01):
@@ -249,5 +253,9 @@ async def wait_for(predicate, timeout=5.0, interval=0.01):
 
 async def settle(account, rails_connection=None, timeout=5.0):
     """Waits until backfill is done and the outbox is empty."""
-    store, ref = account.store, account.ref
+    store, ref = account.store.view(), account.ref
+    if "sync" in account.tasks:
+        # The first pass commits the dialogs: before it, an empty outbox and
+        # no pending backfill mean nothing yet, not settled.
+        await wait_for(account.first_pass.is_set, timeout)
     await wait_for(lambda: not store.pending_backfill(ref) and store.pending_count(ref) == 0, timeout)

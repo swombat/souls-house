@@ -1,6 +1,12 @@
-"""The connector's own store: SQLite on the connector's volume.
+"""The connector's own store.
 
-S2a runs one connector process, so a single SQLite file is the whole store.
+Production keeps it in its own Postgres database (`comms_telegram`, slice
+S2b-2); SQLite remains for tests, the load harness and the one-shot migration
+(connector/migrate.py). The SQL below is written once, in the dialect both
+accept (`?` placeholders are rewritten for Postgres), and runs on one
+connection that only the store thread uses (connector/storethread.py), so
+the event loop never waits on it.
+
 Secret and content columns (the Telegram session, the callback secret, every
 outbox and carryover body) are AES-GCM under
 a key derived per connection from COMMS_STORE_KEY, so the file alone (or a
@@ -76,6 +82,68 @@ CREATE TABLE IF NOT EXISTS command_nonces (
 );
 """
 
+# The same tables in Postgres. Types widen where SQLite's INTEGER is 64-bit
+# (channel ids, pts, Telegram ids); sealed columns are bytea. `ord` keeps the
+# carryover's order as SQLite's AUTOINCREMENT did.
+PG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS connections (
+  ref TEXT PRIMARY KEY,
+  generation BIGINT NOT NULL DEFAULT 0,
+  secret_version BIGINT NOT NULL DEFAULT 0,
+  callback_secret BYTEA,
+  session BYTEA,
+  status TEXT NOT NULL DEFAULT 'new',
+  identity TEXT,
+  pts BIGINT, qts BIGINT, date BIGINT,
+  self_id BIGINT,
+  next_seq BIGINT NOT NULL DEFAULT 1,
+  seq_known BIGINT NOT NULL DEFAULT 0,
+  updated_at DOUBLE PRECISION
+);
+CREATE TABLE IF NOT EXISTS chats (
+  ref TEXT NOT NULL, chat TEXT NOT NULL,
+  synced BIGINT NOT NULL, kind TEXT,
+  participants BIGINT,
+  backfill_offset BIGINT, backfill_count BIGINT NOT NULL DEFAULT 0,
+  backfill_done BIGINT NOT NULL DEFAULT 0, history_from TEXT,
+  PRIMARY KEY (ref, chat)
+);
+CREATE TABLE IF NOT EXISTS carryover (
+  ref TEXT NOT NULL, ord BIGSERIAL PRIMARY KEY, body BYTEA NOT NULL
+);
+CREATE TABLE IF NOT EXISTS channels (
+  ref TEXT NOT NULL, channel_id BIGINT NOT NULL, pts BIGINT NOT NULL,
+  PRIMARY KEY (ref, channel_id)
+);
+CREATE TABLE IF NOT EXISTS peer_messages (
+  ref TEXT NOT NULL, message_id BIGINT NOT NULL, chat TEXT NOT NULL,
+  PRIMARY KEY (ref, message_id)
+);
+CREATE TABLE IF NOT EXISTS outbox (
+  ref TEXT NOT NULL, seq BIGINT NOT NULL, body BYTEA NOT NULL,
+  delivered BIGINT NOT NULL DEFAULT 0, created_at DOUBLE PRECISION NOT NULL,
+  PRIMARY KEY (ref, seq)
+);
+CREATE INDEX IF NOT EXISTS outbox_pending ON outbox (ref, delivered, seq);
+CREATE TABLE IF NOT EXISTS command_nonces (
+  command_id TEXT PRIMARY KEY, seen_at DOUBLE PRECISION NOT NULL
+);
+"""
+
+SCHEMA_VERSION = 1
+
+# Every table and its primary key, in the order the migration copies them.
+TABLES = {
+    "connections": ("ref",),
+    "chats": ("ref", "chat"),
+    "carryover": ("ord",),
+    "channels": ("ref", "channel_id"),
+    "peer_messages": ("ref", "message_id"),
+    "outbox": ("ref", "seq"),
+    "command_nonces": ("command_id",),
+}
+
 
 # Occupies an outbox sequence number without changing anything Rails shows:
 # Rails applies connector.availability in any connection state.
@@ -111,17 +179,132 @@ class Crypto:
         return AESGCM(self._key(ref)).decrypt(sealed[:12], sealed[12:], ref.encode()).decode()
 
 
+_PG_SQL = {}
+
+
+def _pg(sql):
+    """The shared SQL with Postgres placeholders (none of it holds a literal
+    `?` or `%`)."""
+    text = _PG_SQL.get(sql)
+    if text is None:
+        text = _PG_SQL[sql] = sql.replace("?", "%s")
+    return text
+
+
+class SqliteBackend:
+    """Tests, the load harness and the migration's source/destination."""
+
+    dialect = "sqlite"
+    fatal = ()
+
+    def __init__(self, path):
+        self.conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=FULL")
+        self.conn.executescript(SCHEMA)
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(sql, params)
+
+    def begin(self):
+        self.conn.execute("BEGIN IMMEDIATE")
+
+    def commit(self):
+        self.conn.execute("COMMIT")
+
+    def rollback(self):
+        self.conn.execute("ROLLBACK")
+
+    def ping(self):
+        self.conn.execute("SELECT 1").fetchone()
+
+    def dump(self):
+        """Everything stored, as text (tests check no secret is in it)."""
+        return list(self.conn.iterdump())
+
+    def close(self):
+        self.conn.close()
+
+
+# Held by the connector process for its whole life, on the store connection
+# (see __main__ and storethread). It makes a second process wait; it never
+# authorises taking over from one that might still be alive (that is slice
+# 3's fencing). Fixed: "TGCONN01" as eight bytes.
+ADVISORY_LOCK_KEY = int.from_bytes(b"TGCONN01", "big") - (1 << 63)
+
+
+def connect_postgres(url):
+    """One connection, in autocommit mode (transactions are explicit), with
+    keepalives and timeouts so that a dead or silent server shows up as an
+    error within seconds rather than as a call that never returns."""
+    import psycopg
+    from psycopg.rows import dict_row
+    return psycopg.connect(
+        url, autocommit=True, row_factory=dict_row, connect_timeout=10,
+        keepalives=1, keepalives_idle=5, keepalives_interval=2, keepalives_count=3,
+        tcp_user_timeout=10000, application_name="comms-telegram",
+        options="-c statement_timeout=10000 -c lock_timeout=10000 -c idle_in_transaction_session_timeout=30000",
+    )
+
+
+class SchemaTooNew(Exception):
+    pass
+
+
+class PostgresBackend:
+    dialect = "postgres"
+
+    def __init__(self, conn):
+        import psycopg
+        self.fatal = (psycopg.OperationalError, psycopg.InterfaceError)
+        self.conn = conn
+        self.conn.execute(PG_SCHEMA)
+        row = self.conn.execute("SELECT max(version) AS version FROM schema_version").fetchone()
+        if row["version"] is None:
+            self.conn.execute("INSERT INTO schema_version (version) VALUES (%s)", (SCHEMA_VERSION,))
+        elif row["version"] > SCHEMA_VERSION:
+            raise SchemaTooNew(row["version"])
+
+    def execute(self, sql, params=()):
+        return self.conn.execute(_pg(sql), params)
+
+    def begin(self):
+        self.conn.execute("BEGIN")
+
+    def commit(self):
+        self.conn.execute("COMMIT")
+
+    def rollback(self):
+        self.conn.execute("ROLLBACK")
+
+    def ping(self):
+        self.conn.execute("SELECT 1").fetchone()
+
+    def dump(self):
+        lines = []
+        for table in TABLES:
+            for row in self.conn.execute(f"SELECT * FROM {table}").fetchall():
+                lines.append(f"{table} {row!r}")
+        return lines
+
+    def try_advisory_lock(self):
+        return self.conn.execute("SELECT pg_try_advisory_lock(%s) AS ok", (ADVISORY_LOCK_KEY,)).fetchone()["ok"]
+
+    def close(self):
+        self.conn.close()
+
+
 class Store:
-    def __init__(self, path, crypto):
+    """Synchronous. In the running connector only the store thread calls it
+    (connector/storethread.py); tests may call it directly."""
+
+    def __init__(self, backend, crypto):
         self.crypto = crypto
         # Tests and the fake-provider e2e set this to inject a crash at a
         # named point (see faults()). Never set in production.
         self.fault = None
-        self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.executescript(SCHEMA)
+        self.db = SqliteBackend(backend) if isinstance(backend, (str, os.PathLike)) else backend
         # next_seq of each connection as this process found it, before it
         # issued anything (see the module docstring), and the connections
         # whose sequence has been checked with Rails in this process.
@@ -148,7 +331,7 @@ class Store:
         return self.db.execute("SELECT * FROM connections ORDER BY ref").fetchall()
 
     def ensure_connection(self, ref):
-        self.db.execute("INSERT OR IGNORE INTO connections (ref, updated_at) VALUES (?, ?)", (ref, time.time()))
+        self.db.execute("INSERT INTO connections (ref, updated_at) VALUES (?, ?) ON CONFLICT (ref) DO NOTHING", (ref, time.time()))
         return self.connection(ref)
 
     def update_connection(self, ref, **fields):
@@ -245,8 +428,12 @@ class Store:
         )
 
     def remember_peer(self, ref, message_id, chat):
-        self.db.execute("INSERT OR REPLACE INTO peer_messages (ref, message_id, chat) VALUES (?, ?, ?)",
+        self.db.execute("INSERT INTO peer_messages (ref, message_id, chat) VALUES (?, ?, ?) "
+                        "ON CONFLICT (ref, message_id) DO UPDATE SET chat = excluded.chat",
                         (ref, message_id, chat))
+
+    def delete_channel(self, ref, channel_id):
+        self.db.execute("DELETE FROM channels WHERE ref = ? AND channel_id = ?", (ref, channel_id))
 
     def peer_of(self, ref, message_id):
         row = self.db.execute("SELECT chat FROM peer_messages WHERE ref = ? AND message_id = ?",
@@ -366,11 +553,13 @@ class Store:
         return json.loads(self.crypto.open(ref, sealed))
 
     def pending_count(self, ref):
-        return self.db.execute("SELECT COUNT(*) FROM outbox WHERE ref = ? AND delivered = 0", (ref,)).fetchone()[0]
+        return self.db.execute("SELECT COUNT(*) AS n FROM outbox WHERE ref = ? AND delivered = 0",
+                               (ref,)).fetchone()["n"]
 
     def oldest_pending_age(self, ref):
-        row = self.db.execute("SELECT MIN(created_at) FROM outbox WHERE ref = ? AND delivered = 0", (ref,)).fetchone()
-        return row[0] and time.time() - row[0]
+        row = self.db.execute("SELECT MIN(created_at) AS oldest FROM outbox WHERE ref = ? AND delivered = 0",
+                              (ref,)).fetchone()
+        return row["oldest"] and time.time() - row["oldest"]
 
     def mark_delivered(self, ref, through_seq):
         self.db.execute("UPDATE outbox SET delivered = 1 WHERE ref = ? AND seq <= ? AND delivered = 0",
@@ -383,11 +572,12 @@ class Store:
 
     def consume_command_id(self, command_id, now, retention):
         self.db.execute("DELETE FROM command_nonces WHERE seen_at < ?", (now - retention,))
-        try:
-            self.db.execute("INSERT INTO command_nonces (command_id, seen_at) VALUES (?, ?)", (command_id, now))
-            return True
-        except sqlite3.IntegrityError:
-            return False
+        cursor = self.db.execute("INSERT INTO command_nonces (command_id, seen_at) VALUES (?, ?) "
+                                 "ON CONFLICT (command_id) DO NOTHING", (command_id, now))
+        return cursor.rowcount == 1
+
+    def ping(self):
+        self.db.ping()
 
 
 class _Transaction:
@@ -395,9 +585,12 @@ class _Transaction:
         self.db = db
 
     def __enter__(self):
-        self.db.execute("BEGIN IMMEDIATE")
+        self.db.begin()
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        self.db.execute("ROLLBACK" if exc_type else "COMMIT")
+        if exc_type:
+            self.db.rollback()
+        else:
+            self.db.commit()
         return False

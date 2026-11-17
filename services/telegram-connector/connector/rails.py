@@ -58,7 +58,7 @@ def events_path(ref):
 async def post_event(store, ref, post, event):
     """One unsequenced event (login.qr, connector.availability), not stored.
     Returns the HTTP status, or None when Rails could not be reached."""
-    secret = store.callback_secret(ref)
+    secret = await store.callback_secret(ref)
     if not secret:
         return None
     body = json.dumps(event, separators=(",", ":"), ensure_ascii=False).encode()
@@ -79,10 +79,10 @@ async def learn_sequence(store, ref, post):
     rows at or below what Rails committed, and Rails would acknowledge them
     without applying them; store.reconcile_sequence renumbers them past it.
     Returns True once checked."""
-    row = store.connection(ref)
-    if row is None or store.sequence_checked(ref):
+    row, checked, secret = await store.run(
+        lambda s: (s.connection(ref), s.sequence_checked(ref), s.callback_secret(ref)))
+    if row is None or checked:
         return True
-    secret = store.callback_secret(ref)
     if not secret:
         return False
     body = json.dumps(dict(NOOP_EVENT, seq=PROBE_SEQ), separators=(",", ":")).encode()
@@ -94,7 +94,7 @@ async def learn_sequence(store, ref, post):
         return False
     committed = reply.get("committed_seq") if isinstance(reply, dict) else None
     if status == 409 and isinstance(committed, int):
-        if store.reconcile_sequence(ref, committed) and row["next_seq"] > 1:
+        if await store.reconcile_sequence(ref, committed) and row["next_seq"] > 1:
             log.warning("store is behind Rails (restored from an older copy?); "
                         "undelivered events renumbered past Rails' sequence")
         return True
@@ -119,14 +119,14 @@ class Deliverer:
         """Delivers what it can. Returns (outcome, rows newly delivered); stops
         at the first failure so order is kept."""
         store, ref = self.store, self.ref
-        secret = store.callback_secret(ref)
+        secret = await store.callback_secret(ref)
         if not secret:
             return Outcome.FAILED, 0
         if not await learn_sequence(store, ref, self.post):
             return Outcome.FAILED, 0
         delivered = 0
         while True:
-            rows = store.pending(ref, self.batch)
+            rows = await store.pending(ref, self.batch)
             if not rows:
                 return Outcome.DONE, delivered
             for row in rows:
@@ -141,15 +141,15 @@ class Deliverer:
                     return Outcome.REVOKED, delivered
                 committed = reply.get("committed_seq") if isinstance(reply, dict) else None
                 if status in (200, 409) and isinstance(committed, int):
-                    if committed >= store.connection(ref)["next_seq"]:
+                    if committed >= (await store.connection(ref))["next_seq"]:
                         # Rails has committed numbers this store never
                         # issued: nothing it acknowledges here was applied.
                         # Check the sequence again before sending anything.
                         log.warning("Rails is ahead of every event this store issued; checking the sequence again")
-                        store.forget_sequence_check(ref)
+                        await store.forget_sequence_check(ref)
                         return Outcome.FAILED, delivered
                     self.refusals.pop(row["seq"], None)
-                    store.mark_delivered(ref, committed)
+                    await store.mark_delivered(ref, committed)
                     if committed < row["seq"]:
                         # A gap: Rails wants an earlier row, which is still
                         # pending unless it was committed. Start again from
@@ -166,7 +166,7 @@ class Deliverer:
                     self.refusals = {row["seq"]: count}
                     if count >= POISON_LIMIT:
                         log.warning("event refused %s times (%s); replaced by a no-op", count, error)
-                        store.replace_pending(ref, row["seq"], NOOP_EVENT)
+                        await store.replace_pending(ref, row["seq"], NOOP_EVENT)
                         self.refusals = {}
                         break  # read the rewritten row again
                 else:

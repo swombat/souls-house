@@ -8,6 +8,7 @@ import unittest
 
 from telethon.tl import types
 
+from connector.storethread import serve
 from connector import commands, rails
 from connector.store import NOOP_EVENT, Crypto, Store
 from connector.sync import Ingest, chunks
@@ -135,7 +136,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         with store.transaction():
             store.enqueue("svc_1", {"type": "message.upsert", "messages": [
                 {"provider_message_id": "1", "chat": "user:1", "sent_at": "2026-10-13T00:00:00Z", "body": "x"}]})
-        outcome, count = await rails.Deliverer(store, "svc_1", fake.post).run_once()
+        outcome, count = await rails.Deliverer(serve(store, heartbeat=0), "svc_1", fake.post).run_once()
         self.assertEqual((rails.Outcome.DONE, 1), (outcome, count))
         self.assertEqual(18, connection["committed"])
         self.assertEqual("x", connection["messages"][("user:1", "1")]["body"], "applied, not acknowledged unapplied")

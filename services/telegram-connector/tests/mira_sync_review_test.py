@@ -63,8 +63,8 @@ class SyncReviewTest(unittest.IsolatedAsyncioTestCase):
         # checkpoint, before the next iteration waits for capacity.
         original_checkpoint = account._checkpoint
 
-        def checkpoint(through):
-            original_checkpoint(through)
+        async def checkpoint(through):
+            await original_checkpoint(through)
             raise StopIterationProbe()
 
         account._checkpoint = checkpoint

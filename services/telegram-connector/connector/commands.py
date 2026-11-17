@@ -41,7 +41,8 @@ def sign(key, key_id, connection, operation, command_id, issued_at, body):
 def verify(*, keys, headers, connection, operation, body, now, consume):
     """Returns the parsed body. `keys` maps key id → key (current and, during
     a rotation, previous). `consume(command_id)` records the id and returns
-    False if it was already seen."""
+    False if it was already seen; None leaves that to the caller (the server
+    records it on the store thread once this returns)."""
     key_id = headers.get("X-Comms-Key-Id", "")
     command_id = headers.get("X-Comms-Command-Id", "")
     issued_at = headers.get("X-Comms-Issued-At", "")
@@ -67,6 +68,6 @@ def verify(*, keys, headers, connection, operation, body, now, consume):
     if (fields.get("connection") != connection or fields.get("operation") != operation
             or fields.get("command_id") != command_id or str(fields.get("issued_at")) != issued_at):
         raise Refused("body_mismatch")
-    if not consume(command_id):
+    if consume is not None and not consume(command_id):
         raise Refused("replayed_command")
     return fields

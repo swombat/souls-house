@@ -15,7 +15,7 @@ class PR350PhoneReviewRegressions(unittest.IsolatedAsyncioTestCase):
         await self.command("start_login", generation=1, callback_secret="s" * 64,
                            callback_secret_version=1)
         await wait_for(lambda: self.h.world.qr_waiting.is_set())
-        self.account = self.h.manager.account("svc_1")
+        self.account = await self.h.manager.account("svc_1")
 
     async def asyncTearDown(self):
         await self.h.close()
