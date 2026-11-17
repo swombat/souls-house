@@ -77,6 +77,9 @@ Rails.application.config.filter_parameters += [ /\A(?:words|text)\z/ ]
 # masked here in SQL binds too.
 Rails.application.config.filter_parameters += [ /\Achat\z/, /\Aprovider_chat_id\z/ ]
 
+# A resident's note to their next heartbeat is theirs (JoXGbY).
+Rails.application.config.filter_parameters += [ /\Aheartbeat_note\z/ ]
+
 # Rails copies filter_parameters into ActiveRecord::Base.filter_attributes when
 # ActiveRecord loads. BreakerMachines defines a state machine on require, which
 # loads ActiveRecord during Bundler.require, before any initializer here has

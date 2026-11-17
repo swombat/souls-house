@@ -105,6 +105,56 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal true, JSON.parse(out)
   end
 
+  test "a heartbeat trigger carries no usage forecast; other triggers do" do
+    out = run_shim_python(<<~PY)
+      import types
+      mod.graph_memory_notice = lambda payload: None
+      snapshot = {"provider": "anthropic", "status": "ok", "windows": []}
+      mod.subscription_usage = lambda provider, model: snapshot
+      seen = {}
+      def capture(*args, **kwargs):
+          seen[kind] = kwargs.get("subscription_snapshot", "missing")
+          return {"status": "ok"}
+      mod.legacy_trigger = capture
+      mod.persistent_trigger = capture
+      for kind in ("wake", "conversation"):
+          payload = {
+              "session_id": f"usage-{kind}", "request": "full", "trigger_kind": kind,
+              "auth_mode": "oauth_account", "provider": "anthropic",
+          }
+          mod.request = types.SimpleNamespace(
+              headers={"Authorization": "Bearer tr_test"},
+              get_json=lambda silent=True: payload,
+          )
+          assert mod.trigger() == {"status": "ok"}
+      print(json.dumps({"wake": seen["wake"], "conversation": seen["conversation"] is snapshot}))
+    PY
+
+    result = JSON.parse(out)
+    assert_nil result["wake"], "a heartbeat carries no usage forecast (JoXGbY)"
+    assert result["conversation"], "other triggers keep the usage notice"
+  end
+
+  test "trigger still refuses a limited subscription on a heartbeat" do
+    out = run_shim_python(<<~PY)
+      import types
+      mod.graph_memory_notice = lambda payload: None
+      mod.subscription_usage = lambda provider, model: {"provider": "anthropic", "status": "limited", "windows": []}
+      called = []
+      mod.legacy_trigger = lambda *a, **k: called.append(1) or {"status": "ok"}
+      payload = {"session_id": "usage-limited", "request": "full", "trigger_kind": "wake",
+                 "auth_mode": "oauth_account", "provider": "anthropic"}
+      mod.request = types.SimpleNamespace(
+          headers={"Authorization": "Bearer tr_test"},
+          get_json=lambda silent=True: payload,
+      )
+      response, code = mod.trigger()
+      print(json.dumps({"code": code, "called": bool(called)}))
+    PY
+
+    assert_equal({ "code" => 429, "called" => false }, JSON.parse(out))
+  end
+
   test "trigger includes sibling count in full and resume prompts and cleans up" do
     out = run_shim_python(<<~PY)
       import types

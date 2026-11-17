@@ -50,6 +50,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-voice" => { args: %w[remove] },
     "soulshouse-quiet-reason" => { args: %w[c1], stdin: "busy elsewhere",
                                    env: { "SOULSHOUSE_RUNTIME_CHAT_ID" => "c1", "SOULSHOUSE_RUNTIME_RUN_ID" => "r1" } },
+    "soulshouse-heartbeat-note" => { args: [], stdin: "next time" },
     "soulshouse-usage" => { args: [] },
     "soulshouse-send-telegram" => { args: %w[alice hello] },
     "soulshouse-x" => { args: %w[search redirect guards] },
