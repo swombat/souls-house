@@ -266,14 +266,14 @@ log handlers are doing (tested with another thread holding the logging lock). `u
 flock and the advisory lock again before it opens any client. Detection
 bounds with the defaults (`StoreThread`: heartbeat 5 s, deadline 10 s, tick
 1 s; the connection: keepalives, `tcp_user_timeout` 10 s, `statement_timeout`
-10 s):
+10 s). Each bound includes the 0.5 s the exit timer gives the diagnostic line:
 
 | The store connection… | The process exits within |
 |---|---|
-| errors, while busy | the failing call (immediately) |
-| errors, while idle | the next heartbeat ping: ≤ 6 s |
-| goes silent (a black-holed route, a hung server), while busy | the job's deadline: ≤ 11 s after the job started |
-| goes silent while idle | heartbeat + deadline + ticks: ≤ 17 s |
+| errors, while busy | the failing call, then the exit timer: ≤ 0.5 s |
+| errors, while idle | the next heartbeat ping: ≤ 6.5 s |
+| goes silent (a black-holed route, a hung server), while busy | the job's deadline: ≤ 11.5 s after the job started |
+| goes silent while idle | heartbeat + deadline + ticks: ≤ 17.5 s |
 
 Until it exits, its Telegram clients may still receive updates, but nothing
 it fetches can commit, so nothing durable moves and Telegram replays the same
@@ -289,13 +289,75 @@ throughout, copies every table as bytes (nothing decrypted), compares every
 row and column before committing and again after, and keeps the source
 (renamed). It refuses a destination that holds anything else. At cutover
 `.lease` becomes a directory in one atomic exchange (`renameat2`
-`RENAME_EXCHANGE`; the path is never free, tested with an old-image process
-polling through every step), so the pre-migration image refuses to start
+`RENAME_EXCHANGE`; the path is never free, tested with a poller thread that
+opens and flocks `.lease` independently, as the old image does, through
+every step), so the pre-migration image refuses to start
 (`reason=lease`) rather than open an empty store, and this image refuses a
 volume that still has `telegram.sqlite3` or a `.lease` file. Rollback is
 `postgres-to-sqlite` (same checks), never a plain restart of the old image;
 migrating again after a rollback needs `empty-postgres
 --yes-delete-the-postgres-copy` first.
+
+## Backup (S2b slice 2)
+
+`python -m connector.backup` (format and checks in its docstring).
+`dump` takes one consistent snapshot (its own read-only `REPEATABLE READ`
+connection, beside the running connector, no ownership lock) and writes it
+to stdout sealed with AES-256-GCM in 1 MiB chunks, under a key made for that
+dump alone: `HKDF-SHA256(COMMS_STORE_KEY, salt = 32 random bytes, info =
+"souls-house-telegram-backup-v1")`. Sealed columns stay sealed inside it;
+nothing is decrypted, and no plaintext goes to a file, stdout or a log.
+`restore`, with the accessory stopped, holds the same locks as the migration,
+refuses a database with a row in any connector table, imports in one
+transaction and commits only when every chunk's tag, the trailer's counts and
+digests, the header's sequences and a read-back of every table agree; any
+failure rolls back and leaves the database empty. It restores the carryover
+sequence generator too. Before it imports anything it makes `.lease` the
+directory that keeps the pre-migration image out (a no-op if it already is),
+so a refusal there leaves the database empty, and nothing that can fail runs
+after the commit. A failed restore therefore leaves an empty database with the
+old image already locked out, and the same command with a good dump completes.
+The read-back streams through a server-side cursor, as the dump does.
+`verify` makes the stream checks without a database.
+
+Nightly, `FullBackupJob` enqueues `Backup::CommsTelegramDumpJob`, which runs
+`dump` inside the running accessory (`docker exec`) and puts the ciphertext in
+the house's backup bucket under `comms-telegram/`. Rails moves only
+ciphertext: it never holds `COMMS_STORE_KEY` or the connector's role. The job
+is skipped only when the connector is off (no `COMMS_CONNECTOR_URL`); a
+configured connector that is not running, an image without the command, a
+refusal, a timeout or a dump that does not start with the format's magic is a
+failed job of its own, named by a fixed reason, while the house dump goes
+ahead. Every step has a deadline: `docker inspect` 30 s; the dump itself 10
+minutes, enforced inside the container by `--deadline` (the process exits 124
+and its connection, with the snapshot, goes with it), because killing the
+`docker exec` client need not end the process Docker started; and the client
+12 minutes, killed with its process group. stderr is drained as it comes and
+only its last 64 KiB kept, which holds the closing JSON line. The bucket has no lifecycle rule, so the job prunes its prefix after
+each successful upload: dumps older than 14 days go, except that the newest
+three always stay. That is a target, not a hard limit: pruning runs only after
+a successful upload, so while dumps fail nothing is pruned, and the newest
+three can be older than 14 days. A disconnected owner's session therefore
+outlives the disconnect in backups by about 14 days when backups are healthy,
+and for longer when they are not.
+
+**What the backup is worth.** Exactly as much as `COMMS_STORE_KEY`: without
+the key a dump is noise, by design, and backing the key up is outside this
+store (it lives in the host's deploy secrets). Restoring brings back the
+sessions, the outbox (delivered and pending), the carryover and the sync
+cursors as they were at the snapshot. Messages already committed in Rails are
+in Rails either way; events still pending in the outbox after the snapshot,
+and history not yet ingested, are not protected by Rails. The restore test
+(`tests/test_backup.py`) uses a test key: it proves the format and the
+fixture path, not a production restore.
+
+Restore, with the accessory stopped and an empty `comms_telegram`:
+```sh
+bin/kamal accessory stop comms-telegram
+docker run --rm -i --network kamal -v comms_telegram:/data -e COMMS_DATABASE_URL -e COMMS_STORE_KEY \
+  <image>@<digest> python -m connector.backup restore < <dump>.tgbackup
+bin/kamal accessory reboot comms-telegram
+```
 
 ## Test
 
@@ -326,7 +388,7 @@ COMMS_TELEGRAM_CONNECTOR_PYTHON=$PWD/services/telegram-connector/.venv/bin/pytho
 
 | Variable | |
 |---|---|
-| `COMMS_STORE_KEY` | At least 32 characters (`openssl rand -base64 32`). Losing it means signing in again, not losing history (messages live in Rails). |
+| `COMMS_STORE_KEY` | At least 32 characters (`openssl rand -base64 32`). Losing it means signing in again and makes every backup unreadable; messages already committed in Rails stay there. |
 | `COMMS_COMMAND_KEY` | The same value as Rails's `COMMS_COMMAND_KEY`; at least 32 characters. `COMMS_COMMAND_KEY_ID` defaults to `k1`. |
 | `COMMS_RAILS_URL` | Rails's private origin, e.g. `http://souls-house-web:3000`. No path. |
 | `COMMS_TLS_CERT`, `COMMS_TLS_KEY` | The connector's certificate (SAN `souls-house-comms-telegram`) and key. |
@@ -412,6 +474,6 @@ then boot the previous image's digest.
 - S2b: slice 1 (the load harness and its baseline) and slice 2 (this store)
   are built; leases with fencing, the supervisor, multiple workers and
   fairness are not.
-- The Postgres store has no backup of its own yet (S2a's SQLite volume had
-  none either): an encrypted dump and a test-key restore come in the next
-  pull request of slice 2.
+- The backup's restore is proven on fixtures with a test key, not on
+  production data; the nightly job's `docker exec` and upload have not run
+  against the real accessory until the first night after deployment.

@@ -28,6 +28,7 @@ class FullBackupJobTest < ActiveJob::TestCase
     assert_includes attempted, @agent_a.id
     assert_includes attempted, @agent_b.id
     assert @dumped, "database dump should still run after an agent failure in nightly mode"
+    assert_enqueued_jobs 1, only: Backup::CommsTelegramDumpJob
   end
 
   test "fail_fast run aborts before the database dump when an agent backup fails" do
