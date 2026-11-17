@@ -130,6 +130,17 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_not @team_account.reload.reflexes_enabled?
   end
 
+  test "showing conversation codes is off by default and a manager switches it per account" do
+    assert_not @team_account.show_chat_codes?
+    get account_path(@team_account)
+    assert_equal false, inertia_props.dig("props", "show_chat_codes")
+
+    patch account_path(@team_account), params: { account: { show_chat_codes: true } }
+    assert_redirected_to @team_account
+    assert @team_account.reload.show_chat_codes?
+    assert_equal true, @team_account.as_json["show_chat_codes"]
+  end
+
   test "the voice mode switch saves under any site scope and the page carries the scope and the key check" do
     @team_account.update!(use_system_ai_credentials: false, openai_api_key: nil)
     %w[disabled enabled account_choice].each do |scope|

@@ -6,6 +6,7 @@
   import ChatActionsMenu from '$lib/components/chat/ChatActionsMenu.svelte';
   import ChatTitleEditor from '$lib/components/chat/ChatTitleEditor.svelte';
   import ChatTokenStatus from '$lib/components/chat/ChatTokenStatus.svelte';
+  import ChatCodeButton from '$lib/components/chat/ChatCodeButton.svelte';
   import VisualTagPicker from '$lib/components/chat/VisualTagPicker.svelte';
   import ReadAloudToggle from '$lib/components/chat/ReadAloudToggle.svelte';
   import { commitmentMarkLabel, handoffStuckLabel, hookWarningLabel, runErrorLabel } from '$lib/chat-display';
@@ -219,7 +220,12 @@
     </Button>
     <div class="flex-1 min-w-0">
       <ChatTitleEditor {chat} {titleIsLoading} onSaveTitle={saveTitle} />
-      <ChatTokenStatus {chat} {agents} {allMessages} {tokenWarningLevel} />
+      <div class="flex items-center gap-2 flex-wrap">
+        {#if chat?.id && account?.show_chat_codes}
+          <ChatCodeButton code={chat.id} />
+        {/if}
+        <ChatTokenStatus {chat} {agents} {allMessages} {tokenWarningLevel} />
+      </div>
     </div>
 
     <!-- Tag on the title's row, the conversation menu under it. -->

@@ -34,6 +34,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'resident_handoff_cap',
     'telegram_bot_wake_limit',
     'reflexes_enabled',
+    'show_chat_codes',
     'plan_offer_enabled',
     'plan_offer_available',
     'voice_mode_enabled',
