@@ -71,16 +71,19 @@ module Billing
 
     # The at-cost rate a resident is sold at: its machine's (Daniel, eRyZBY
     # jrBROG 17 Nov: Hetzner at cost for code holders, availability
-    # allowing). An existing resident pays for the placement it has: on
-    # Hetzner the Hetzner rate, otherwise (the house server, Boat) "at_cost"
-    # as before. A new resident is born on Hetzner while the site puts new
+    # allowing). An existing resident pays for the placement it runs on (a
+    # pending or ready one; a staged or failed migration still runs on the
+    # house): on Hetzner the Hetzner rate, otherwise (the house server, Boat)
+    # "at_cost" as before. A new resident is born on Hetzner while the site puts new
     # residents on their own VM (Agents::VmBirthPolicy, which also refuses
-    # the birth before any money moves when no server can be had). Boat takes
+    # the birth before any money moves when no server can be had). The rate
+    # is read when the order is taken: flipping that setting while a paid
+    # birth waits would give its bill the other machine's rate. Boat takes
     # no births yet; when it does, its placement policy must keep a resident
     # sold at the Hetzner rate on Hetzner, or change its bill first.
     def self.at_cost_rate_for(agent = nil)
       backend = if agent
-        AgentPlacement.where(agent_id: agent.id).where.not(state: "retired").order(:id).last&.backend
+        AgentPlacement.where(agent_id: agent.id, state: %w[pending ready]).order(:id).last&.backend
       elsif Agents::VmBirthPolicy.current.enabled?
         "hetzner_cloud"
       end

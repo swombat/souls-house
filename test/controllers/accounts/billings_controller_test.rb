@@ -63,13 +63,40 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal WORK_AT_COST_HETZNER_PRICE, @stripe.subscription("sub_1")[:items][:data].sole[:price][:id]
 
     other = agents(:code_reviewer)
-    with_stripe do
-      post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
+    assert_difference -> { BillChange.count }, 1 do
+      with_stripe do
+        post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
+      end
     end
+    assert_response :redirect
     assert_not ResidentSubscription.where(agent: other, rate: "at_cost_hetzner").exists?
     change = BillChange.order(:id).last
     assert_includes change.params.to_json, LIFE_AT_COST_PRICE, "on the house server: Boat's at-cost price, quoted first"
     assert_not_includes change.params.to_json, LIFE_AT_COST_HETZNER_PRICE
+  end
+
+  test "a resident on Hetzner asking for at cost is quoted the Hetzner price on the add-to-bill path" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: @user)
+    @agent.update!(model_id: "openrouter/auto")
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: LIFE_AT_COST_HETZNER_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
+
+    other = agents(:code_reviewer)
+    other.update!(model_id: "openrouter/auto")
+    AgentPlacement.create!(agent: other, backend: "hetzner_cloud", kind: "migration", state: "staged").update_columns(state: "ready")
+    assert_difference -> { BillChange.count }, 1 do
+      with_stripe do
+        post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "work", rate: "at_cost" }
+      end
+    end
+    assert_response :redirect
+    change = BillChange.order(:id).last
+    assert_includes change.params.to_json, WORK_AT_COST_HETZNER_PRICE
+    assert_not_includes change.params.to_json, WORK_AT_COST_PRICE + '"', "not Boat's price"
   end
 
   test "shows each hosted resident's plan and the catalogue" do

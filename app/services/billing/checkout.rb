@@ -97,6 +97,7 @@ module Billing
       raise NotConfigured, "The #{@offer.name} plan has no Stripe price configured" unless @offer.purchasable?
       raise NotConfigured, "The #{@plan.name} plan has no Stripe price configured" if @plan && !@plan.purchasable?
       raise NotEligible, "That rate is set by the house, not bought." unless (@requested || @offer).sold?
+      # The guard that matters for at cost: sold? admits both at-cost rates.
       if @offer.at_cost? && @offer.rate != Tier.at_cost_rate_for(@agent)
         raise NotEligible, "That rate is set by the house, not bought."
       end

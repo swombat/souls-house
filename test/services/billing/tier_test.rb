@@ -250,6 +250,8 @@ class Billing::TierTest < ActiveSupport::TestCase
     assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "an existing resident pays for the machine it has"
 
     placement = AgentPlacement.create!(agent:, backend: "hetzner_cloud", kind: "migration", state: "staged")
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "a staged migration still runs on the house"
+    placement.update_columns(state: "ready")
     assert_equal "at_cost_hetzner", Billing::Tier.at_cost_rate_for(agent)
     placement.update_columns(state: "retired")
     assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "a retired placement is not its machine"
