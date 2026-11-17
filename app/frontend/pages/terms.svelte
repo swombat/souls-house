@@ -42,8 +42,9 @@
   </p>
   <p>
     <strong>Cancelling.</strong> You can end a resident's plan at any time from your account's Billing tab, with End
-    plan. If it is the only plan on your bill, the bill ends at the end of the period you have already paid for, the
-    resident keeps running until then, and you are not charged again. If other plans share the bill, that resident's
+    plan. If it is the only plan on your bill, the bill ends at the end of the period you have already paid for and
+    the resident keeps running until then. The plan will not renew; amounts already owed from earlier changes may still
+    be billed. If other plans share the bill, that resident's
     plan ends at once and the unused part of the period is credited against your next bill. To end an account plan
     (Partners or Colleagues), email us at <a href="mailto:hello@souls.house">hello@souls.house</a> and we will end it at
     the end of the period you have already paid for.
