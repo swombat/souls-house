@@ -35,6 +35,20 @@ log = logging.getLogger("telegram.store")
 
 EXIT_STORE_LOST = 75
 
+# The store thread blocks on the database socket many times per job and has
+# to take the GIL back after each wait. With CPython's default 5 ms switch
+# interval, a busy event loop makes it wait up to 5 ms every time (the GIL
+# "convoy"): measured here, a loop kept busy in pure Python cut the store
+# thread from ~8,000 trivial jobs/s to under 3. At 0.5 ms it was ~150/s
+# under the same fully busy loop. The connector sets this at start; the
+# load harness does the same.
+SWITCH_INTERVAL = 0.0005
+
+
+def tune_interpreter():
+    import sys
+    sys.setswitchinterval(SWITCH_INTERVAL)
+
 
 def exit_now(reason):
     log.error("store lost; exiting: reason=%s", reason)
@@ -58,10 +72,19 @@ class Stats:
         self.run = collections.deque(maxlen=keep)
         self.wait_max = 0.0
         self.run_max = 0.0
+        self.kinds = collections.Counter()
+        self.kind_seconds = collections.Counter()
+        self.wait_total = 0.0
+        self.run_total = 0.0
 
-    def record(self, wait, run):
+    def record(self, wait, run, kind=None):
         with self.lock:
             self.jobs += 1
+            self.wait_total += wait
+            self.run_total += run
+            if kind:
+                self.kinds[kind] += 1
+                self.kind_seconds[kind] += run
             self.wait.append(wait)
             self.run.append(run)
             self.wait_max = max(self.wait_max, wait)
@@ -70,9 +93,14 @@ class Stats:
     def snapshot(self, reset=False):
         with self.lock:
             data = {"jobs": self.jobs, "wait": list(self.wait), "run": list(self.run),
-                    "wait_max": self.wait_max, "run_max": self.run_max}
+                    "wait_max": self.wait_max, "run_max": self.run_max, "kinds": dict(self.kinds),
+                    "kind_seconds": dict(self.kind_seconds),
+                    "wait_total": self.wait_total, "run_total": self.run_total}
             if reset:
                 self.jobs, self.wait_max, self.run_max = 0, 0.0, 0.0
+                self.wait_total = self.run_total = 0.0
+                self.kinds.clear()
+                self.kind_seconds.clear()
                 self.wait.clear()
                 self.run.clear()
             return data
@@ -104,20 +132,21 @@ class StoreThread:
 
     # -- submitting -------------------------------------------------------------
 
-    def submit(self, fn, *args, **kwargs):
+    def submit(self, fn, *args, job_kind=None, **kwargs):
         future = concurrent.futures.Future()
         with self._submit_lock:
             if self._closed:
                 raise Closed()
             if self._dead:
                 raise Closed(self._dead)
-            self._queue.put((fn, args, kwargs, future, time.monotonic()))
+            self._queue.put((fn, args, kwargs, future, time.monotonic(), job_kind))
         return future
 
-    async def call(self, fn, *args, **kwargs):
+    async def call(self, fn, *args, job_kind=None, **kwargs):
         """Runs fn(*args) on the store thread and returns its result. The
-        job is shielded: cancelling the caller does not cancel it."""
-        future = asyncio.wrap_future(self.submit(fn, *args, **kwargs))
+        job is shielded: cancelling the caller does not cancel it. `job_kind`
+        names the job in the statistics."""
+        future = asyncio.wrap_future(self.submit(fn, *args, job_kind=job_kind, **kwargs))
         future.add_done_callback(_consume)
         return await asyncio.shield(future)
 
@@ -128,7 +157,7 @@ class StoreThread:
             item = self._queue.get()
             if item is None:
                 break
-            fn, args, kwargs, future, submitted = item
+            fn, args, kwargs, future, submitted, kind = item
             if not future.set_running_or_notify_cancel():
                 continue
             started = time.monotonic()
@@ -136,19 +165,19 @@ class StoreThread:
             try:
                 result = fn(*args, **kwargs)
             except BaseException as error:  # noqa: BLE001 (handed to the caller)
-                self._finish(submitted, started)
+                self._finish(submitted, started, kind)
                 if self.store.db.fatal and isinstance(error, self.store.db.fatal):
                     self._fail(f"store_error:{type(error).__name__}")
                 future.set_exception(error)
             else:
-                self._finish(submitted, started)
+                self._finish(submitted, started, kind)
                 future.set_result(result)
 
-    def _finish(self, submitted, started):
+    def _finish(self, submitted, started, kind=None):
         finished = time.monotonic()
         self.busy_since = None
         self.last_finished = finished
-        self.stats.record(started - submitted, finished - started)
+        self.stats.record(started - submitted, finished - started, kind)
 
     def _fail(self, reason):
         if self._dead:
@@ -170,7 +199,7 @@ class StoreThread:
                 return
             if busy is None and now - self.last_finished >= self.heartbeat and (pinging is None or pinging.done()):
                 try:
-                    pinging = self.submit(self.store.ping)
+                    pinging = self.submit(self.store.ping, job_kind="heartbeat")
                 except Closed:
                     return
 
@@ -187,6 +216,11 @@ class StoreThread:
         self._thread.join(timeout)
         if not self._thread.is_alive():
             self.store.db.close()
+
+
+def _kind(fn):
+    # e.g. "Account.account_difference.apply": where the job came from.
+    return getattr(fn, "__qualname__", "job").replace(".<locals>", "").replace("<lambda>", "λ")
 
 
 def _consume(future):
@@ -211,12 +245,12 @@ class AsyncStore:
             return attribute
 
         async def call(*args, **kwargs):
-            return await self.thread.call(attribute, *args, **kwargs)
+            return await self.thread.call(attribute, *args, job_kind=name, **kwargs)
         call.__name__ = name
         return call
 
     async def run(self, fn):
-        return await self.thread.call(fn, self.sync)
+        return await self.thread.call(fn, self.sync, job_kind=_kind(fn))
 
     async def unit(self, fn):
         store = self.sync
@@ -224,7 +258,7 @@ class AsyncStore:
         def job():
             with store.transaction():
                 return fn(store)
-        return await self.thread.call(job)
+        return await self.thread.call(job, job_kind=_kind(fn))
 
     def view(self):
         return BlockingView(self.thread)

@@ -37,7 +37,7 @@ from .account import Settings
 from .lease import Held, Lease
 from .manager import Manager
 from .store import ADVISORY_LOCK_KEY, Crypto, PostgresBackend, SchemaTooNew, Store, connect_postgres
-from .storethread import serve
+from .storethread import serve, tune_interpreter
 
 
 class JsonFormatter(logging.Formatter):
@@ -181,6 +181,7 @@ async def run(env):
         if store is None:
             lease.release()
             return 0 if stop.is_set() else refuse("database")
+    tune_interpreter()
     astore = serve(store)
     fault = env.get("COMMS_FAULT")
     if fault and world is not None:

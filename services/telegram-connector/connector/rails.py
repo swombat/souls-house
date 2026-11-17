@@ -119,10 +119,11 @@ class Deliverer:
         """Delivers what it can. Returns (outcome, rows newly delivered); stops
         at the first failure so order is kept."""
         store, ref = self.store, self.ref
-        secret = await store.callback_secret(ref)
+        # One store job for what every wake needs first.
+        secret, checked = await store.run(lambda s: (s.callback_secret(ref), s.sequence_checked(ref)))
         if not secret:
             return Outcome.FAILED, 0
-        if not await learn_sequence(store, ref, self.post):
+        if not checked and not await learn_sequence(store, ref, self.post):
             return Outcome.FAILED, 0
         delivered = 0
         while True:

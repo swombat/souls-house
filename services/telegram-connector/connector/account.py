@@ -42,7 +42,7 @@ from telethon import errors
 from telethon.tl import types
 
 from . import convert, rails
-from .sync import Ingest
+from .sync import Ingest, SnapshotMiss
 from .telegram import is_logged_out
 
 log = logging.getLogger("telegram.account")
@@ -97,6 +97,11 @@ class Settings:
             if not hasattr(self, name):
                 raise AttributeError(name)
             setattr(self, name, value)
+
+
+# A chat's backfill cursor: a history page built from one reading of these
+# commits only if they are unchanged when it commits.
+CURSOR_COLUMNS = ("backfill_offset", "backfill_count", "backfill_done", "history_from", "synced")
 
 
 class Refused(Exception):
@@ -241,7 +246,7 @@ class Account:
 
     async def cancel_login(self, generation):
         async with self.lock:
-            row = (await self._row())
+            row = await self._row()
             if row is None:
                 return {"status": "cancelled"}
             if not isinstance(generation, int) or generation < row["generation"]:
@@ -273,7 +278,7 @@ class Account:
         Returns {"outcome": code_sent|phone_invalid|phone_banned|unsupported|
         password_required|accepted|expired|flood_wait|failed}."""
         async with self.lock:
-            row = (await self._row())
+            row = await self._row()
             if (row is None or generation != row["generation"] or row["status"] != "logging_in"
                     or self.awaiting_password is not None):
                 raise Refused("not_logging_in")
@@ -367,7 +372,7 @@ class Account:
         accepted|password_required|code_invalid|code_expired|
         phone_unregistered|flood_wait|failed}."""
         async with self.lock:
-            row = (await self._row())
+            row = await self._row()
             pending = self.phone_login
             if (row is None or generation != row["generation"] or pending is None
                     or pending["generation"] != generation or self.client is None
@@ -404,7 +409,7 @@ class Account:
         """The password is used for SRP and dropped: never stored, queued or
         logged. Returns {"outcome": accepted|password_invalid|flood_wait|failed}."""
         async with self.lock:
-            row = (await self._row())
+            row = await self._row()
             if row is None or generation != row["generation"] or self.awaiting_password != generation or not self.client:
                 raise Refused("not_waiting_for_password")
             try:
@@ -432,7 +437,7 @@ class Account:
             return {"status": "logged_out"}
 
     async def search(self, query, chat, limit, scope):
-        row = (await self._row())
+        row = await self._row()
         if row is None or row["status"] != "connected" or self.client is None:
             raise Refused("not_connected")
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
@@ -578,7 +583,7 @@ class Account:
             await asyncio.wait_for(self.code_done.wait(), remaining)
         except asyncio.TimeoutError:
             async with self.lock:
-                row = (await self._row())
+                row = await self._row()
                 if self.phone_login is not None and row is not None and row["generation"] == generation:
                     await self._login_failed(generation, "expired")
 
@@ -666,7 +671,7 @@ class Account:
     async def _discard_session(self):
         """Before a new attempt: the old session (if any) is logged out at
         Telegram, best effort, so it does not linger in Active Sessions."""
-        row = (await self._row())
+        row = await self._row()
         client = self.client
         if client is None and row is not None and row["session"] is not None:
             try:
@@ -699,7 +704,7 @@ class Account:
         """At boot: a connection with a session reconnects and syncs from
         its stored state; one without just delivers what it holds."""
         self.ensure_delivery()
-        row = (await self._row())
+        row = await self._row()
         if row is None or row["status"] != "connected" or row["session"] is None:
             return
         self._spawn("resume", self._resume())
@@ -709,7 +714,7 @@ class Account:
         while True:
             try:
                 async with self.lock:
-                    row = (await self._row())
+                    row = await self._row()
                     if row is None or row["status"] != "connected":
                         return
                     self.client = self.factory(await self.store.session(self.ref))
@@ -831,7 +836,7 @@ class Account:
                 pass
             self.sync_wake.clear()
 
-    async def _ingest(self, row=None):
+    async def _ingest(self, row=None, known=None):
         """A batch to fill and commit on the store thread: it reads the store
         as it goes, so filling it and committing it run there as one job
         (`self.store.run`), atomic with respect to every other store job."""
@@ -841,7 +846,7 @@ class Account:
             self_id = self.me.id
         else:
             self_id = (row or await self._row())["self_id"]
-        return Ingest(self.store.sync, self.ref, self_id, self.me)
+        return Ingest(self.store.sync, self.ref, self_id, self.me, known=known)
 
     def _ingested(self, ingest):
         """After a live commit: delivery has rows, and a synced chat seen for
@@ -1053,76 +1058,99 @@ class Account:
         """One page of one chat's history, newest first, committed with the
         chat's backfill cursor. A page whose request was in flight while a
         gap reset the cursors is dropped: the next page starts from the
-        reset (newest) end, so the gap's messages are fetched."""
-        settings = self.settings
+        reset (newest) end, so the gap's messages are fetched.
+
+        The page is built on the loop from the chat's row as read before the
+        fetch, and only committed on the store thread, where the row is read
+        again: if a reset counted itself meanwhile, or the cursor moved, the
+        page is dropped and the next one starts from the stored cursor."""
         chat = await self.store.chat(self.ref, chat_key)
         if chat is None or chat["backfill_done"] or not chat["synced"]:
             return
         resets = self.backfill_resets
-        messages, users, chats = await self.client.history(chat_key, chat["backfill_offset"], settings.backfill_page)
+        messages, users, chats = await self.client.history(chat_key, chat["backfill_offset"], self.settings.backfill_page)
         if resets != self.backfill_resets:
             log.info("history page dropped after a gap reset: account=%s", self.id)
             return
-        ingest = await self._ingest()
+        ingest = await self._ingest(known={chat_key: chat})
+        try:
+            built = self._history_page(chat, chat_key, messages, users, chats, ingest)
+        except SnapshotMiss:
+            built = None  # a message outside this chat: built on the store thread instead
 
         def page(store):
             # Checked again on the store thread: a reset job queued ahead of
             # this one has run by now (it counts inside its own job).
             if resets != self.backfill_resets:
                 return "reset"
-            chat = store.chat(self.ref, chat_key)
-            if chat is None or chat["backfill_done"] or not chat["synced"]:
+            current = store.chat(self.ref, chat_key)
+            if current is None or current["backfill_done"] or not current["synced"]:
                 return None
-            cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=settings.backfill_days)
-            room = settings.backfill_max - chat["backfill_count"]
-            keep = []
-            reached_cutoff = capped = False
-            for message in messages:
-                date = message.date if message.date.tzinfo else message.date.replace(tzinfo=datetime.timezone.utc)
-                if date < cutoff:
-                    reached_cutoff = True
-                    break
-                if len(keep) >= room:
-                    capped = True
-                    break
-                keep.append(message)
-            if not reached_cutoff and chat["backfill_count"] + len(keep) >= settings.backfill_max:
-                capped = True
-            done = len(messages) < settings.backfill_page or reached_cutoff or capped
-            offset = min((m.id for m in messages), default=chat["backfill_offset"])
-            ingest.add_entities(users, chats)
-            for message in keep:
-                ingest.message(message)
-            # The oldest message kept so far, carried across pages in the chat's
-            # history_from column (published to Rails only when done).
-            oldest = convert.iso(keep[-1].date) if keep else chat["history_from"]
-            history_from = oldest
-            after = []
-            if done:
-                # history_from: how far back this chat's synced history reaches.
-                # The window when the cutoff ended it, or when the chat's whole
-                # history was shorter (nothing before its oldest message); only
-                # as far as the oldest message kept when the count cap ended it
-                # (never more than what was fetched).
-                if reached_cutoff:
-                    history_from = convert.iso(cutoff)
-                elif capped:
-                    history_from = oldest or now_iso()
-                else:
-                    history_from = oldest or convert.iso(cutoff)  # the chat's whole history
-                after.append({"type": "chat.upsert", "chats": [
-                    {"provider_chat_id": chat_key, "sync_state": {"synced": True, "history_from": history_from}}]})
-            count = chat["backfill_count"] + len(keep)
-
-            def progress(store):
-                store.set_backfill(self.ref, chat_key, offset, count, done, history_from)
-            ingest.commit(progress, after_events=after, label="backfill")
+            if built is None:
+                fresh = Ingest(store, self.ref, ingest.self_id, self.me)
+                page_ingest, progress, after = self._history_page(current, chat_key, messages, users, chats, fresh)
+            elif any(current[c] != chat[c] for c in CURSOR_COLUMNS):
+                return "moved"
+            else:
+                page_ingest, progress, after = built
+            page_ingest.commit(progress, after_events=after, label="backfill")
             return "committed"
         outcome = await self.store.run(page)
         if outcome == "reset":
             log.info("history page dropped after a gap reset: account=%s", self.id)
+        elif outcome == "moved":
+            log.info("history page dropped: its cursor moved: account=%s", self.id)
         elif outcome == "committed":
             self.delivery_wake.set()
+
+    def _history_page(self, chat, chat_key, messages, users, chats, ingest):
+        """What one history page commits, from the chat's row: the batch,
+        the cursor update, and the chat.upsert that ends the backfill."""
+        settings = self.settings
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=settings.backfill_days)
+        room = settings.backfill_max - chat["backfill_count"]
+        keep = []
+        reached_cutoff = capped = False
+        for message in messages:
+            date = message.date if message.date.tzinfo else message.date.replace(tzinfo=datetime.timezone.utc)
+            if date < cutoff:
+                reached_cutoff = True
+                break
+            if len(keep) >= room:
+                capped = True
+                break
+            keep.append(message)
+        if not reached_cutoff and chat["backfill_count"] + len(keep) >= settings.backfill_max:
+            capped = True
+        done = len(messages) < settings.backfill_page or reached_cutoff or capped
+        offset = min((m.id for m in messages), default=chat["backfill_offset"])
+        ingest.add_entities(users, chats)
+        for message in keep:
+            ingest.message(message)
+        # The oldest message kept so far, carried across pages in the chat's
+        # history_from column (published to Rails only when done).
+        oldest = convert.iso(keep[-1].date) if keep else chat["history_from"]
+        history_from = oldest
+        after = []
+        if done:
+            # history_from: how far back this chat's synced history reaches.
+            # The window when the cutoff ended it, or when the chat's whole
+            # history was shorter (nothing before its oldest message); only
+            # as far as the oldest message kept when the count cap ended it
+            # (never more than what was fetched).
+            if reached_cutoff:
+                history_from = convert.iso(cutoff)
+            elif capped:
+                history_from = oldest or now_iso()
+            else:
+                history_from = oldest or convert.iso(cutoff)  # the chat's whole history
+            after.append({"type": "chat.upsert", "chats": [
+                {"provider_chat_id": chat_key, "sync_state": {"synced": True, "history_from": history_from}}]})
+        count = chat["backfill_count"] + len(keep)
+
+        def progress(store):
+            store.set_backfill(self.ref, chat_key, offset, count, done, history_from)
+        return ingest, progress, after
 
     # -- delivery ----------------------------------------------------------------------
 

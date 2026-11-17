@@ -34,6 +34,7 @@ import platform
 import random
 import resource
 import shutil
+import sys
 import tempfile
 import time
 
@@ -41,7 +42,7 @@ from connector.account import Settings
 from connector.fake import ALICE, BOB, FAMILY, TEAM, World
 from connector.manager import Manager
 from connector.store import TABLES, Crypto, PostgresBackend, Store, connect_postgres
-from connector.storethread import serve
+from connector.storethread import SWITCH_INTERVAL, serve, tune_interpreter
 
 STORE_KEY = "k" * 40
 MARK = "LOADT"          # message bodies: LOADT|<injected perf_counter>|<n>
@@ -317,6 +318,10 @@ class LoadHarness:
             self.store = Store(backend, Crypto(STORE_KEY))
         else:
             self.store = Store(self.path, Crypto(STORE_KEY))
+        if self.args.switch_interval:
+            sys.setswitchinterval(self.args.switch_interval)
+        else:
+            tune_interpreter()  # as the connector does at start
         self.astore = serve(self.store, stats_keep=2_000_000)
         self.manager = RoutedManager(self.worlds, self.astore, None, self.rails.post, self.settings, b"load")
 
@@ -325,7 +330,11 @@ class LoadHarness:
         snap = self.astore.thread.stats.snapshot(reset=True)
         self.store_stats_phase[phase] = {
             "jobs": snap["jobs"], "queue_wait_s": summary(snap["wait"]), "execution_s": summary(snap["run"]),
-            "queue_wait_max_s": round(snap["wait_max"], 4), "execution_max_s": round(snap["run_max"], 4)}
+            "queue_wait_max_s": round(snap["wait_max"], 4), "execution_max_s": round(snap["run_max"], 4),
+            "kinds": dict(sorted(snap["kinds"].items(), key=lambda kv: -kv[1])),
+            # Seconds the store thread spent executing each kind of job, and in all.
+            "kind_seconds": {k: round(v, 3) for k, v in sorted(snap["kind_seconds"].items(), key=lambda kv: -kv[1])},
+            "execution_total_s": round(snap["run_total"], 2), "queue_wait_total_s": round(snap["wait_total"], 2)}
         return self.store_stats_phase[phase]
 
     async def close_process(self):
@@ -522,7 +531,8 @@ async def run_with(args, problems):
         "label": args.label, "args": vars(args),
         "host": {"python": platform.python_version(), "cpus": os.cpu_count(), "platform": platform.platform(),
                  "store_dir": args.workdir or tempfile.gettempdir(),
-                 "store": "postgres" if args.database_url else "sqlite"},
+                 "store": "postgres" if args.database_url else "sqlite",
+                 "switch_interval_s": args.switch_interval or SWITCH_INTERVAL},
         "settings": {name: getattr(harness.settings, name) for name in dir(Settings)
                      if not name.startswith("_") and not callable(getattr(Settings, name))},
         "rss_mb": {"before_worlds": round(rss_before_worlds, 1), "after_worlds": round(rss_mb(), 1)},
@@ -645,6 +655,8 @@ def parse(argv=None):
     p.add_argument("--drain-timeout", type=float, default=300.0)
     p.add_argument("--restart", type=int, default=1)
     p.add_argument("--workdir", default=None, help="where the SQLite store lives (default: system temp)")
+    p.add_argument("--switch-interval", type=float, default=None,
+                   help="override sys.setswitchinterval (default: the connector's)")
     p.add_argument("--database-url", default=None,
                    help="run on Postgres instead of SQLite; its connector tables are DROPPED first (scratch only)")
     p.add_argument("--keep", action="store_true")

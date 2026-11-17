@@ -147,6 +147,14 @@ class IngestTest(unittest.TestCase):
         self.store = Store(os.path.join(tempfile.mkdtemp(), "s.sqlite3"), Crypto("k" * 40))
         self.store.ensure_connection("svc_1")
 
+    def test_a_snapshot_batch_never_reads_the_store_for_another_chat(self):
+        from connector.sync import SnapshotMiss
+        row = {"chat": "user:2", "synced": 1, "participants": None}
+        ingest = Ingest(None, "svc_1", 1, known={"user:2": row})
+        self.assertTrue(ingest.synced("user:2"))
+        with self.assertRaises(SnapshotMiss):
+            ingest.synced("user:3")
+
     def test_batches_are_bounded_in_items_and_bytes(self):
         items = [{"body": "é" * 4000} for _ in range(400)]
         batches = list(chunks(items))
