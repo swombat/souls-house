@@ -222,7 +222,7 @@ and the migration; `COMMS_STORE=sqlite` is refused except with the fake
 provider.
 
 **Off the event loop.** The slice 1 baseline (`load/REPORT.md`) found every
-store call synchronous on the loop thread: a restart froze the loop for 4.9 s
+store call synchronous on the loop thread: a restart froze the loop for 5.5 s
 at 1,000 accounts. Now one thread, the store thread, is the only user of the
 store's connection, and everything else awaits it (`storethread.AsyncStore`).
 Jobs run one at a time in the order they were submitted, the order the loop
@@ -232,6 +232,12 @@ filled and committed in one job (it reads the store as it goes), and so are
 a dialog refresh, a checkpoint and a backfill page with the re-reads they
 depend on. A gap reset counts itself inside its own job, so a history page
 fetched before the reset and committed after it is still dropped.
+
+One connection is also a throughput limit: a restart's store work (about 20
+jobs per account) now queues instead of freezing the loop, and at 1,000
+accounts it ends about 11 s after the stop, where the frozen SQLite restart
+ended after about 9 s (`load/REPORT.md`, slice 2). More connections, sharded
+by connection, would raise it; not built.
 
 A submitted job always runs to its end: cancelling the coroutine waiting for
 it stops the waiting, never the job, and never rolls it back. Shutdown runs
