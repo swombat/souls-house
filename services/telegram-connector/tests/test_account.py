@@ -70,8 +70,8 @@ class ConnectAndSyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, h.world.logouts)
         self.assertEqual(set(), h.world.sessions)
         self.assertIsNone(h.store.connection("svc_1"))
-        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0])
-        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) FROM chats").fetchone()[0])
+        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) AS n FROM outbox").fetchone()["n"])
+        self.assertEqual(0, h.store.db.execute("SELECT COUNT(*) AS n FROM chats").fetchone()["n"])
 
     async def test_a_session_ended_from_the_phone_is_reported_logged_out(self):
         self.h = h = Harness()
@@ -138,10 +138,9 @@ class LoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((200, {"outcome": "accepted"}), (status, reply))
         self.assertNotIn("password", fields, "the password is taken out of the command fields")
         await wait_for(lambda: h.rails.connections["svc_1"]["status"] == "connected")
-        dump = "\n".join(h.store.db.iterdump())
+        dump = "\n".join(h.store.db.dump())
         self.assertNotIn("hunter2-CANARY", dump)
-        with open(h.path, "rb") as handle:
-            self.assertNotIn(b"CANARY", handle.read())
+        self.assertNotIn(b"CANARY", h.raw_bytes())
 
     async def test_flood_wait_during_login(self):
         self.h = h = Harness()
@@ -157,7 +156,7 @@ class LoginTest(unittest.IsolatedAsyncioTestCase):
         invalidated = h.rails.cancel_login("svc_1")
         status, reply = await h.manager.command("svc_1", "cancel_login", {"generation": invalidated})
         self.assertEqual((200, {"status": "cancelled"}), (status, reply))
-        self.assertNotIn("login", h.manager.account("svc_1").tasks)
+        self.assertNotIn("login", (await h.manager.account("svc_1")).tasks)
         # A delayed or replayed start for the cancelled generation cannot reopen it.
         status, reply = await self.start(h, generation=1)
         self.assertEqual((409, {"error": "stale_generation"}), (status, reply))

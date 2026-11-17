@@ -1,4 +1,4 @@
-# Load measurement (S2b slice 1)
+# Load measurement (S2b slices 1–2)
 
 `run.py` measures the connector *as it is* (S2a: one process, SQLite, every
 connected account held live) under many accounts, so that later S2b slices
@@ -13,6 +13,15 @@ python -m load.run --label baseline-1000 --accounts 1000 --duration 300 --workdi
 
 Results go to `load/results/<label>.json` (summary plus one sample per
 second); `REPORT.md` holds the readings.
+
+Since slice 2 the store sits behind the store thread, as in the connector.
+`--database-url postgresql://...` runs on Postgres instead of SQLite; the
+connector's tables in that database are **dropped first**, so point it only
+at a scratch database. Every result then also records, per phase (onboard,
+steady + drain, restart), the store jobs: how many, queue wait and execution
+time (percentiles and maxima), and the count and execution seconds of each
+kind of job. `--switch-interval` overrides CPython's GIL switch interval for
+an experiment; the connector keeps the default.
 
 ## What runs
 

@@ -42,7 +42,7 @@ from telethon import errors
 from telethon.tl import types
 
 from . import convert, rails
-from .sync import Ingest
+from .sync import Ingest, SnapshotMiss
 from .telegram import is_logged_out
 
 log = logging.getLogger("telegram.account")
@@ -99,6 +99,11 @@ class Settings:
             setattr(self, name, value)
 
 
+# A chat's backfill cursor: a history page built from one reading of these
+# commits only if they are unchanged when it commits.
+CURSOR_COLUMNS = ("backfill_offset", "backfill_count", "backfill_done", "history_from", "synced")
+
+
 class Refused(Exception):
     def __init__(self, code, status=409):
         super().__init__(code)
@@ -147,6 +152,9 @@ class Account:
         self.login_phase = None
         self.login_ready = asyncio.Event()
         self.dirty_channels = set()
+        # Set once the sync loop has finished a pass (dialogs and
+        # differences committed); tests and the load harness wait on it.
+        self.first_pass = asyncio.Event()
         self.backlogged = False
         self.flood_until = 0.0
         # Bumped whenever a gap resets history cursors: a history page that
@@ -156,8 +164,8 @@ class Account:
 
     # -- helpers ----------------------------------------------------------------
 
-    def _row(self):
-        return self.store.connection(self.ref)
+    async def _row(self):
+        return await self.store.connection(self.ref)
 
     def _spawn(self, name, coro):
         task = asyncio.get_running_loop().create_task(coro, name=f"{name}")
@@ -193,10 +201,11 @@ class Account:
             except BaseException:
                 pass
 
-    def _enqueue(self, *events):
-        with self.store.transaction():
+    async def _enqueue(self, *events):
+        def enqueue(store):
             for event in events:
-                self.store.enqueue(self.ref, event)
+                store.enqueue(self.ref, event)
+        await self.store.unit(enqueue)
         self.delivery_wake.set()
 
     def ensure_delivery(self):
@@ -207,7 +216,7 @@ class Account:
 
     async def start_login(self, generation, secret, version):
         async with self.lock:
-            row = self.store.ensure_connection(self.ref)
+            row = await self.store.ensure_connection(self.ref)
             if not isinstance(generation, int) or generation <= row["generation"]:
                 raise Refused("stale_generation")
             if not isinstance(version, int) or version < row["secret_version"]:
@@ -216,11 +225,13 @@ class Account:
             await self._discard_session()
             # Rails refuses the old session's chats and messages while the
             # new attempt is pairing; they wait in the carryover.
-            self.store.set_aside_pending(self.ref, lambda event: event.get("type") in DATA_EVENTS)
-            with self.store.transaction():
-                self.store.set_callback_secret(self.ref, secret, version)
-                self.store.wipe_sync_state(self.ref)
-                self.store.update_connection(self.ref, generation=generation, status="logging_in")
+            def begin(store):
+                store.set_aside_pending(self.ref, lambda event: event.get("type") in DATA_EVENTS)
+                with store.transaction():
+                    store.set_callback_secret(self.ref, secret, version)
+                    store.wipe_sync_state(self.ref)
+                    store.update_connection(self.ref, generation=generation, status="logging_in")
+            await self.store.run(begin)
             self.awaiting_password = None
             self.password_done = asyncio.Event()
             self.phone_login = None
@@ -235,16 +246,17 @@ class Account:
 
     async def cancel_login(self, generation):
         async with self.lock:
-            row = self._row()
+            row = await self._row()
             if row is None:
                 return {"status": "cancelled"}
             if not isinstance(generation, int) or generation < row["generation"]:
                 raise Refused("stale_generation")
             await self._cancel("login", "sync", "backfill", "resume")
             await self._discard_session()
-            with self.store.transaction():
-                self.store.wipe_sync_state(self.ref)
-                self.store.update_connection(self.ref, generation=generation, status="cancelled")
+            def cancel(store):
+                store.wipe_sync_state(self.ref)
+                store.update_connection(self.ref, generation=generation, status="cancelled")
+            await self.store.unit(cancel)
             self.awaiting_password = None
             self.phone_login = None
             self.login_phase = None
@@ -266,7 +278,7 @@ class Account:
         Returns {"outcome": code_sent|phone_invalid|phone_banned|unsupported|
         password_required|accepted|expired|flood_wait|failed}."""
         async with self.lock:
-            row = self._row()
+            row = await self._row()
             if (row is None or generation != row["generation"] or row["status"] != "logging_in"
                     or self.awaiting_password is not None):
                 raise Refused("not_logging_in")
@@ -349,7 +361,7 @@ class Account:
             value = sent.get(key)
             if value is not None:
                 state[key] = value
-        self._enqueue({"type": "login.code_sent", "generation": generation, **state})
+        await self._enqueue({"type": "login.code_sent", "generation": generation, **state})
         log.info("login code sent: account=%s delivery=%s", self.id, delivery)
         return {"outcome": "code_sent", **state}
 
@@ -360,7 +372,7 @@ class Account:
         accepted|password_required|code_invalid|code_expired|
         phone_unregistered|flood_wait|failed}."""
         async with self.lock:
-            row = self._row()
+            row = await self._row()
             pending = self.phone_login
             if (row is None or generation != row["generation"] or pending is None
                     or pending["generation"] != generation or self.client is None
@@ -397,7 +409,7 @@ class Account:
         """The password is used for SRP and dropped: never stored, queued or
         logged. Returns {"outcome": accepted|password_invalid|flood_wait|failed}."""
         async with self.lock:
-            row = self._row()
+            row = await self._row()
             if row is None or generation != row["generation"] or self.awaiting_password != generation or not self.client:
                 raise Refused("not_waiting_for_password")
             try:
@@ -425,7 +437,7 @@ class Account:
             return {"status": "logged_out"}
 
     async def search(self, query, chat, limit, scope):
-        row = self._row()
+        row = await self._row()
         if row is None or row["status"] != "connected" or self.client is None:
             raise Refused("not_connected")
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
@@ -433,9 +445,9 @@ class Account:
         limit = max(1, min(int(limit or 20), 50))
         if scope not in ("synced", "all_dialogs"):
             raise Refused("bad_scope", 422)
-        synced = {c["chat"] for c in self.store.chats(self.ref, synced=True)}
+        synced = {c["chat"] for c in await self.store.chats(self.ref, synced=True)}
         if chat is not None:
-            if not isinstance(chat, str) or self.store.chat(self.ref, chat) is None:
+            if not isinstance(chat, str) or await self.store.chat(self.ref, chat) is None:
                 raise Refused("unknown_chat", 404)
             if scope == "synced" and chat not in synced:
                 raise Refused("chat_not_synced", 403)
@@ -535,7 +547,7 @@ class Account:
             await self._login_failed(generation, "failed")
             return
         async with self.lock:
-            if self._row()["generation"] != generation:
+            if (await self._row())["generation"] != generation:
                 return
             await self._finish_login(user, generation)
 
@@ -571,7 +583,7 @@ class Account:
             await asyncio.wait_for(self.code_done.wait(), remaining)
         except asyncio.TimeoutError:
             async with self.lock:
-                row = self._row()
+                row = await self._row()
                 if self.phone_login is not None and row is not None and row["generation"] == generation:
                     await self._login_failed(generation, "expired")
 
@@ -592,7 +604,7 @@ class Account:
         event = {"type": "login.password_required", "generation": generation}
         if hint:
             event["hint"] = hint[:200]
-        self._enqueue(event)
+        await self._enqueue(event)
         self.awaiting_password = generation
         try:
             await asyncio.wait_for(self.password_done.wait(), self.settings.password_window)
@@ -610,10 +622,11 @@ class Account:
         self.code_deadline = None
         self.login_ready.set()
         await self._drop_client()
-        with self.store.transaction():
-            self.store.enqueue(self.ref, event)
-            self.store.wipe_sync_state(self.ref)
-            self.store.update_connection(self.ref, status="failed")
+        def failed(store):
+            store.enqueue(self.ref, event)
+            store.wipe_sync_state(self.ref)
+            store.update_connection(self.ref, status="failed")
+        await self.store.unit(failed)
         self.delivery_wake.set()
         log.info("login failed: account=%s code=%s", self.id, code)
 
@@ -639,14 +652,17 @@ class Account:
         if getattr(user, "username", None):
             identity["username"] = user.username
         identity = {key: value for key, value in identity.items() if value}
-        with self.store.transaction():
-            self.store.set_session(self.ref, self.client.session_string())
-            self.store.update_connection(
+        session_string = self.client.session_string()
+
+        def connected(store):
+            store.set_session(self.ref, session_string)
+            store.update_connection(
                 self.ref, status="connected", self_id=user.id,
                 pts=state.pts, qts=state.qts, date=int(state.date.timestamp()))
-            self.store.enqueue(self.ref, {"type": "status.changed", "status": "connected",
-                                          "generation": generation, "identity": identity})
-            self.store.take_carryover(self.ref)
+            store.enqueue(self.ref, {"type": "status.changed", "status": "connected",
+                                     "generation": generation, "identity": identity})
+            store.take_carryover(self.ref)
+        await self.store.unit(connected)
         self.delivery_wake.set()
         log.info("connected: account=%s", self.id)
         self._start_runtime()
@@ -655,11 +671,11 @@ class Account:
     async def _discard_session(self):
         """Before a new attempt: the old session (if any) is logged out at
         Telegram, best effort, so it does not linger in Active Sessions."""
-        row = self._row()
+        row = await self._row()
         client = self.client
         if client is None and row is not None and row["session"] is not None:
             try:
-                client = self.factory(self.store.session(self.ref))
+                client = self.factory(await self.store.session(self.ref))
                 await asyncio.wait_for(client.connect(), 10)
             except BaseException:
                 client = None
@@ -684,11 +700,12 @@ class Account:
             self.dirty_channels.add(channel_id)
         self.sync_wake.set()
 
-    async def resume(self):
+    async def resume(self, row=None):
         """At boot: a connection with a session reconnects and syncs from
-        its stored state; one without just delivers what it holds."""
+        its stored state; one without just delivers what it holds. `row`:
+        the connection as boot already read it (no store job per account)."""
         self.ensure_delivery()
-        row = self._row()
+        row = row if row is not None else await self._row()
         if row is None or row["status"] != "connected" or row["session"] is None:
             return
         self._spawn("resume", self._resume())
@@ -698,10 +715,10 @@ class Account:
         while True:
             try:
                 async with self.lock:
-                    row = self._row()
+                    row = await self._row()
                     if row is None or row["status"] != "connected":
                         return
-                    self.client = self.factory(self.store.session(self.ref))
+                    self.client = self.factory(await self.store.session(self.ref))
                     await self.client.connect()
                     if not await self.client.is_authorized():
                         await self._logged_out(cancel=False)
@@ -728,22 +745,23 @@ class Account:
         if cancel:
             await self._cancel("sync", "backfill")
         await self._drop_client()
-        row = self._row()
-        with self.store.transaction():
-            self.store.wipe_sync_state(self.ref)
-            self.store.update_connection(self.ref, status="logged_out")
-            self.store.enqueue(self.ref, {"type": "status.changed", "status": "logged_out",
-                                          "generation": row["generation"]})
+        def logged_out(store):
+            row = store.connection(self.ref)
+            store.wipe_sync_state(self.ref)
+            store.update_connection(self.ref, status="logged_out")
+            store.enqueue(self.ref, {"type": "status.changed", "status": "logged_out",
+                                     "generation": row["generation"]})
+        await self.store.unit(logged_out)
         self.delivery_wake.set()
         log.info("logged out by Telegram: account=%s", self.id)
 
-    def _over_cap(self):
+    async def _over_cap(self):
         settings = self.settings
-        pending = self.store.pending_count(self.ref)
+        pending, age = await self.store.run(
+            lambda store: (store.pending_count(self.ref), store.oldest_pending_age(self.ref)))
         if self.backlogged:
             return pending >= settings.outbox_low
-        age = self.store.oldest_pending_age(self.ref) or 0
-        return pending >= settings.outbox_cap or age >= settings.outbox_max_age
+        return pending >= settings.outbox_cap or (age or 0) >= settings.outbox_max_age
 
     async def _availability(self, state, reason=None):
         event = {"type": "connector.availability", "state": state, "since": now_iso()}
@@ -753,7 +771,7 @@ class Account:
 
     async def wait_capacity(self):
         """Blocks while the outbox is saturated. Fetches nothing meanwhile."""
-        while self._over_cap():
+        while await self._over_cap():
             if not self.backlogged:
                 self.backlogged = True
                 log.warning("outbox saturated; ingestion paused: account=%s", self.id)
@@ -783,7 +801,7 @@ class Account:
                 started = time.time()
                 complete = await self.account_difference()
                 if loop.time() - last_channels >= settings.channel_poll_interval:
-                    self.dirty_channels.update(self.store.channel_pts(self.ref))
+                    self.dirty_channels.update(await self.store.channel_pts(self.ref))
                     last_channels = loop.time()
                 while self.dirty_channels:
                     await self.wait_capacity()
@@ -792,9 +810,10 @@ class Account:
                     established = started
                 if loop.time() - last_checkpoint >= settings.checkpoint_interval:
                     fresh = established if established is not None and established != published else None
-                    self._checkpoint(fresh)
+                    await self._checkpoint(fresh)
                     if fresh is not None:
                         published, last_checkpoint = fresh, loop.time()
+                self.first_pass.set()
                 delay = 1.0
             except asyncio.CancelledError:
                 raise
@@ -818,8 +837,17 @@ class Account:
                 pass
             self.sync_wake.clear()
 
-    def _ingest(self):
-        return Ingest(self.store, self.ref, self._row()["self_id"], self.me)
+    async def _ingest(self, row=None, known=None):
+        """A batch to fill and commit on the store thread: it reads the store
+        as it goes, so filling it and committing it run there as one job
+        (`self.store.run`), atomic with respect to every other store job."""
+        if self.me is not None:
+            # The signed-in account; the same id the store holds as self_id
+            # (_finish_login writes both), without a store job per batch.
+            self_id = self.me.id
+        else:
+            self_id = (row or await self._row())["self_id"]
+        return Ingest(self.store.sync, self.ref, self_id, self.me, known=known)
 
     def _ingested(self, ingest):
         """After a live commit: delivery has rows, and a synced chat seen for
@@ -828,38 +856,54 @@ class Account:
         if ingest.new_synced_chats:
             self.backfill_wake.set()
 
-    def _history_reset(self):
+    def _reset_history(self):
+        """Inside the job that resets history cursors (on the store thread):
+        a history page fetched before it, whose job runs after it, sees the
+        new count and is dropped (backfill_page)."""
         self.backfill_resets += 1
+
+    def _history_reset(self):
         self.backfill_wake.set()
 
     async def _refresh_dialogs(self, force):
         dialogs = await self.client.dialogs()
-        ingest = self._ingest()
-        known_channels = self.store.channel_pts(self.ref)
-        new_channels = {}
+        ingest = await self._ingest()
+        known = {c["chat"]: c for c in await self.store.chats(self.ref)}
+        listed = []
         for dialog in dialogs:
             entity = dialog.entity
             participants = dialog.participants
             key = convert.entity_key(entity)
             if key is None:
                 continue
-            known = self.store.chat(self.ref, key)
+            stored = known.get(key)
             if (isinstance(entity, types.Channel) and entity.megagroup and participants is None
-                    and (known is None or known["participants"] is None)):
+                    and (stored is None or stored["participants"] is None)):
                 try:
                     participants = await self.client.participants(entity.id)
                 except errors.FloodWaitError:
                     participants = None
                 except Exception:
                     participants = None
-            synced = ingest.note_chat(entity, participants, last_activity=dialog.date, force=force)
-            if synced and isinstance(entity, types.Channel) and entity.id not in known_channels and dialog.channel_pts:
-                new_channels[entity.id] = dialog.channel_pts
-        if ingest.new_chats or new_channels:
+            listed.append((dialog, participants))
+
+        def apply(store):
+            known_channels = store.channel_pts(self.ref)
+            new_channels = {}
+            for dialog, participants in listed:
+                entity = dialog.entity
+                synced = ingest.note_chat(entity, participants, last_activity=dialog.date, force=force)
+                if synced and isinstance(entity, types.Channel) and entity.id not in known_channels and dialog.channel_pts:
+                    new_channels[entity.id] = dialog.channel_pts
+            if not (ingest.new_chats or new_channels):
+                return False
+
             def progress(store):
                 for channel_id, pts in new_channels.items():
                     store.set_channel_pts(self.ref, channel_id, pts)
             ingest.commit(progress, label="dialogs")
+            return True
+        if await self.store.run(apply):
             self.delivery_wake.set()
             self.backfill_wake.set()
 
@@ -869,15 +913,16 @@ class Account:
         the end, False when saturation stopped it with Telegram holding more
         (the stored state is then behind Telegram's)."""
         while True:
-            if self._over_cap():
+            if await self._over_cap():
                 return False
-            row = self._row()
+            row = await self._row()
             diff = await self.client.get_difference(row["pts"], row["date"], row["qts"])
-            ingest = self._ingest()
+            ingest = await self._ingest(row)
             if isinstance(diff, types.updates.DifferenceEmpty):
                 date = int(diff.date.timestamp())
                 if date != row["date"]:
-                    ingest.commit(lambda store: store.update_connection(self.ref, date=date), label="live")
+                    await self.store.run(lambda _store: ingest.commit(
+                        lambda store: store.update_connection(self.ref, date=date), label="live"))
                 return True
             if isinstance(diff, types.updates.DifferenceTooLong):
                 # Telegram will not replay the gap: take its pts and fetch the
@@ -886,16 +931,20 @@ class Account:
                     store.update_connection(self.ref, pts=pts)
                     store.restart_backfill(self.ref, [c["chat"] for c in store.chats(self.ref, synced=True)
                                                       if not c["chat"].startswith("channel:")])
-                ingest.commit(too_long, label="live")
+                    self._reset_history()
+                await self.store.run(lambda _store: ingest.commit(too_long, label="live"))
                 self._history_reset()
                 log.warning("difference too long; history refetched: account=%s", self.id)
                 continue
             state = diff.state if isinstance(diff, types.updates.Difference) else diff.intermediate_state
-            ingest.difference(diff)
 
-            def progress(store, state=state):
-                store.update_connection(self.ref, pts=state.pts, qts=state.qts, date=int(state.date.timestamp()))
-            ingest.commit(progress, label="live")
+            def apply(_store, diff=diff, state=state):
+                ingest.difference(diff)
+
+                def progress(store):
+                    store.update_connection(self.ref, pts=state.pts, qts=state.qts, date=int(state.date.timestamp()))
+                ingest.commit(progress, label="live")
+            await self.store.run(apply)
             self.dirty_channels.update(ingest.dirty_channels)
             self._ingested(ingest)
             if isinstance(diff, types.updates.Difference):
@@ -904,60 +953,71 @@ class Account:
     async def channel_difference(self, channel_id):
         """Like account_difference, for one channel. Returns False when
         saturation stopped it (the channel stays dirty)."""
-        pts = self.store.channel_pts(self.ref).get(channel_id)
+        pts = (await self.store.channel_pts(self.ref)).get(channel_id)
         if pts is None:
             return True
         while True:
-            if self._over_cap():
+            if await self._over_cap():
                 self.dirty_channels.add(channel_id)
                 return False
             try:
                 diff = await self.client.get_channel_difference(channel_id, pts)
             except (errors.ChannelPrivateError, errors.ChannelInvalidError):
-                with self.store.transaction():
-                    self.store.db.execute("DELETE FROM channels WHERE ref = ? AND channel_id = ?", (self.ref, channel_id))
+                await self.store.unit(lambda store: store.delete_channel(self.ref, channel_id))
                 return True
-            ingest = self._ingest()
+            ingest = await self._ingest()
             if isinstance(diff, types.updates.ChannelDifferenceEmpty):
                 if diff.pts != pts:
-                    ingest.commit(lambda store, p=diff.pts: store.set_channel_pts(self.ref, channel_id, p), label="channel")
+                    await self.store.run(lambda _store, p=diff.pts: ingest.commit(
+                        lambda store: store.set_channel_pts(self.ref, channel_id, p), label="channel"))
                 return True
             if isinstance(diff, types.updates.ChannelDifferenceTooLong):
-                ingest.add_entities(diff.users, diff.chats)
-                for message in diff.messages:
-                    ingest.message(message)
                 new_pts = diff.dialog.pts
 
                 def too_long(store, p=new_pts):
                     store.set_channel_pts(self.ref, channel_id, p)
                     store.restart_backfill(self.ref, [f"channel:{channel_id}"])
-                ingest.commit(too_long, label="channel")
+                    self._reset_history()
+
+                def apply(_store, diff=diff):
+                    ingest.add_entities(diff.users, diff.chats)
+                    for message in diff.messages:
+                        ingest.message(message)
+                    ingest.commit(too_long, label="channel")
+                await self.store.run(apply)
                 self._history_reset()
                 self._ingested(ingest)
                 return True
-            ingest.difference(diff)
-            ingest.commit(lambda store, p=diff.pts: store.set_channel_pts(self.ref, channel_id, p), label="channel")
+
+            def apply(_store, diff=diff):
+                ingest.difference(diff)
+                ingest.commit(lambda store, p=diff.pts: store.set_channel_pts(self.ref, channel_id, p), label="channel")
+            await self.store.run(apply)
             self._ingested(ingest)
             pts = diff.pts
             if diff.final:
                 return True
 
-    def _checkpoint(self, through):
+    async def _checkpoint(self, through):
         """Every synced, backfilled chat is in the outbox up to `through` (the
         start of a pass whose differences all ran to the end; None when no
         new one has), and this event is queued after those rows, so Rails
         never shows a checkpoint ahead of its data."""
         if through is None:
             return
-        chats = [{"provider_chat_id": c["chat"], "synced_through": now_iso(
-                    datetime.datetime.fromtimestamp(through, datetime.timezone.utc))}
-                 for c in self.store.chats(self.ref, synced=True) if c["backfill_done"]]
-        if not chats:
-            return
-        with self.store.transaction():
-            for start in range(0, len(chats), 200):
-                self.store.enqueue(self.ref, {"type": "sync.checkpoint", "chats": chats[start:start + 200]})
-        self.delivery_wake.set()
+        synced_through = now_iso(datetime.datetime.fromtimestamp(through, datetime.timezone.utc))
+
+        def checkpoint(store):
+            chats = [{"provider_chat_id": c["chat"], "synced_through": synced_through}
+                     for c in store.chats(self.ref, synced=True) if c["backfill_done"]]
+            if not chats:
+                return False
+            with store.transaction():
+                for start in range(0, len(chats), 200):
+                    store.enqueue(self.ref, {"type": "sync.checkpoint", "chats": chats[start:start + 200]})
+            return True
+        if await self.store.run(checkpoint):
+            self.delivery_wake.set()
 
     # -- backfill ----------------------------------------------------------------------
 
@@ -970,7 +1030,7 @@ class Account:
                 if loop.time() < self.flood_until:
                     await asyncio.sleep(self.flood_until - loop.time())
                     continue
-                chats = self.store.pending_backfill(self.ref)
+                chats = await self.store.pending_backfill(self.ref)
                 if not chats:
                     self.backfill_wake.clear()
                     await self.backfill_wake.wait()
@@ -999,19 +1059,55 @@ class Account:
         """One page of one chat's history, newest first, committed with the
         chat's backfill cursor. A page whose request was in flight while a
         gap reset the cursors is dropped: the next page starts from the
-        reset (newest) end, so the gap's messages are fetched."""
-        settings = self.settings
-        chat = self.store.chat(self.ref, chat_key)
+        reset (newest) end, so the gap's messages are fetched.
+
+        The page is built on the loop from the chat's row as read before the
+        fetch, and only committed on the store thread, where the row is read
+        again: if a reset counted itself meanwhile, or the cursor moved, the
+        page is dropped and the next one starts from the stored cursor."""
+        chat = await self.store.chat(self.ref, chat_key)
         if chat is None or chat["backfill_done"] or not chat["synced"]:
             return
         resets = self.backfill_resets
-        messages, users, chats = await self.client.history(chat_key, chat["backfill_offset"], settings.backfill_page)
+        messages, users, chats = await self.client.history(chat_key, chat["backfill_offset"], self.settings.backfill_page)
         if resets != self.backfill_resets:
             log.info("history page dropped after a gap reset: account=%s", self.id)
             return
-        chat = self.store.chat(self.ref, chat_key)
-        if chat is None or chat["backfill_done"] or not chat["synced"]:
-            return
+        ingest = await self._ingest(known={chat_key: chat})
+        try:
+            built = self._history_page(chat, chat_key, messages, users, chats, ingest)
+        except SnapshotMiss:
+            built = None  # a message outside this chat: built on the store thread instead
+
+        def page(store):
+            # Checked again on the store thread: a reset job queued ahead of
+            # this one has run by now (it counts inside its own job).
+            if resets != self.backfill_resets:
+                return "reset"
+            current = store.chat(self.ref, chat_key)
+            if current is None or current["backfill_done"] or not current["synced"]:
+                return None
+            if built is None:
+                fresh = Ingest(store, self.ref, ingest.self_id, self.me)
+                page_ingest, progress, after = self._history_page(current, chat_key, messages, users, chats, fresh)
+            elif any(current[c] != chat[c] for c in CURSOR_COLUMNS):
+                return "moved"
+            else:
+                page_ingest, progress, after = built
+            page_ingest.commit(progress, after_events=after, label="backfill")
+            return "committed"
+        outcome = await self.store.run(page)
+        if outcome == "reset":
+            log.info("history page dropped after a gap reset: account=%s", self.id)
+        elif outcome == "moved":
+            log.info("history page dropped: its cursor moved: account=%s", self.id)
+        elif outcome == "committed":
+            self.delivery_wake.set()
+
+    def _history_page(self, chat, chat_key, messages, users, chats, ingest):
+        """What one history page commits, from the chat's row: the batch,
+        the cursor update, and the chat.upsert that ends the backfill."""
+        settings = self.settings
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=settings.backfill_days)
         room = settings.backfill_max - chat["backfill_count"]
         keep = []
@@ -1029,7 +1125,6 @@ class Account:
             capped = True
         done = len(messages) < settings.backfill_page or reached_cutoff or capped
         offset = min((m.id for m in messages), default=chat["backfill_offset"])
-        ingest = self._ingest()
         ingest.add_entities(users, chats)
         for message in keep:
             ingest.message(message)
@@ -1056,8 +1151,7 @@ class Account:
 
         def progress(store):
             store.set_backfill(self.ref, chat_key, offset, count, done, history_from)
-        ingest.commit(progress, after_events=after, label="backfill")
-        self.delivery_wake.set()
+        return ingest, progress, after
 
     # -- delivery ----------------------------------------------------------------------
 
@@ -1097,7 +1191,7 @@ class Account:
             await self._discard_session()
         else:
             await self._drop_client()
-        self.store.delete_connection(self.ref)
+        await self.store.delete_connection(self.ref)
         if self.on_gone:
             self.on_gone(self.ref)
 

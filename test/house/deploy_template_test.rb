@@ -183,7 +183,8 @@ class DeployTemplateTest < ActiveSupport::TestCase
       assert_includes accessory.fetch("volumes"), "/srv/comms-tls:/tls:ro"
       assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
       assert_equal true, accessory.fetch("options").fetch("read-only")
-      assert_equal %w[COMMS_STORE_KEY COMMS_COMMAND_KEY TELEGRAM_API_ID TELEGRAM_API_HASH], accessory.fetch("env").fetch("secret")
+      assert_equal %w[COMMS_STORE_KEY COMMS_COMMAND_KEY TELEGRAM_API_ID TELEGRAM_API_HASH COMMS_DATABASE_URL],
+                   accessory.fetch("env").fetch("secret")
       assert_equal "rails", accessory.dig("env", "clear", "COMMS_TLS_CLIENT_NAME")
       assert_equal "/tls/telegram.pem", accessory.dig("env", "clear", "COMMS_TLS_CERT")
 

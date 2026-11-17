@@ -345,9 +345,11 @@ accessories:
     # Telegram session. An accessory is one named container, never rolled:
     # `bin/kamal accessory reboot comms-telegram` stops and removes the old
     # one before the new one starts, and the process also takes a flock on
-    # /data/.lease before it opens the store or any Telegram client, so a
-    # straggler or a second container on the volume waits, unavailable,
-    # until the holder has exited.
+    # /data/.owner, then Postgres's advisory lock, before it opens the store
+    # or any Telegram client, so a straggler or a second container waits,
+    # unavailable, until the holder has exited. Losing the store connection
+    # ends the process (README "Store"); the restart policy brings it back
+    # through the same locks.
     image: <%= comms_telegram_image %>@<%= comms_telegram_digest %>
     host: <%= house_host %>
     env:
@@ -364,8 +366,12 @@ accessories:
         - COMMS_COMMAND_KEY
         - TELEGRAM_API_ID # The Telegram application the house signs users in through.
         - TELEGRAM_API_HASH
+        # postgresql://comms_telegram:...@souls-house-postgres:5432/comms_telegram: the store's own
+        # database and role (S2b slice 2; README "Store"). The image refuses to start without it,
+        # and refuses a volume whose SQLite store was not migrated (connector.migrate).
+        - COMMS_DATABASE_URL
     volumes:
-      - comms_telegram:/data # The sessions and the outbox. Losing it costs a new sign-in, not history.
+      - comms_telegram:/data # The volume lock (.owner); the store itself is in Postgres since S2b slice 2.
       - <%= comms_tls_dir %>:/tls:ro
     options:
       ulimit: core=0 # No core may hold a session key, a password or messages.

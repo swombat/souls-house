@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import unittest
 
+from connector.storethread import serve
 from connector.rails import Deliverer, Outcome
 from connector.store import Crypto, Store
 from tests.helpers import STORE_KEY, FakeRails
@@ -30,7 +31,7 @@ class RestoreTest(unittest.IsolatedAsyncioTestCase):
         store.set_callback_secret("svc_1", "s" * 64, 1)
         with store.transaction():
             store.enqueue("svc_1", message(1))
-        self.assertEqual((Outcome.DONE, 1), await Deliverer(store, "svc_1", rails.post).run_once())
+        self.assertEqual((Outcome.DONE, 1), await Deliverer(serve(store, heartbeat=0), "svc_1", rails.post).run_once())
         store.db.close()
         shutil.copy(path, path + ".backup")  # the backup: next_seq 2
 
@@ -38,7 +39,7 @@ class RestoreTest(unittest.IsolatedAsyncioTestCase):
         with store.transaction():
             for n in range(2, 8):
                 store.enqueue("svc_1", message(n))
-        self.assertEqual(Outcome.DONE, (await Deliverer(store, "svc_1", rails.post).run_once())[0])
+        self.assertEqual(Outcome.DONE, (await Deliverer(serve(store, heartbeat=0), "svc_1", rails.post).run_once())[0])
         store.db.close()
         self.assertEqual(7, c["committed"])
 
@@ -48,7 +49,7 @@ class RestoreTest(unittest.IsolatedAsyncioTestCase):
             for n in range(100, 110):
                 store.enqueue("svc_1", message(n))
         self.assertEqual(12, store.connection("svc_1")["next_seq"], "past Rails' 7 already")
-        outcome, _count = await Deliverer(store, "svc_1", rails.post).run_once()
+        outcome, _count = await Deliverer(serve(store, heartbeat=0), "svc_1", rails.post).run_once()
         self.assertEqual(Outcome.DONE, outcome)
         self.assertEqual({str(n) for n in range(100, 110)} | {str(n) for n in range(1, 8)},
                          {mid for (_chat, mid) in c["messages"]})
@@ -62,7 +63,7 @@ class RestoreTest(unittest.IsolatedAsyncioTestCase):
         c = rails.connect("svc_1", "s" * 64, status="connected")
         store.ensure_connection("svc_1")
         store.set_callback_secret("svc_1", "s" * 64, 1)
-        deliverer = Deliverer(store, "svc_1", rails.post)
+        deliverer = Deliverer(serve(store, heartbeat=0), "svc_1", rails.post)
         self.assertEqual(Outcome.DONE, (await deliverer.run_once())[0])  # checked: Rails at 0
         c["committed"] = 30  # Rails moved past this store while it was running
         with store.transaction():

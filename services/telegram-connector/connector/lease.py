@@ -20,8 +20,8 @@ class Held(Exception):
 
 
 class Lease:
-    def __init__(self, data_dir):
-        self.path = os.path.join(data_dir, ".lease")
+    def __init__(self, data_dir, name=".lease"):
+        self.path = os.path.join(data_dir, name)
         self.fd = None
 
     def try_acquire(self):

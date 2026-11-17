@@ -69,6 +69,7 @@ class ProcessTest(unittest.IsolatedAsyncioTestCase):
             "COMMS_TLS_CERT": self.tls["server_cert"], "COMMS_TLS_KEY": self.tls["server_key"],
             "COMMS_TLS_CLIENT_CA": self.tls["ca"], "COMMS_TLS_CLIENT_NAME": "rails",
             "COMMS_DATA_DIR": self.data, "TELEGRAM_PROVIDER": "fake", "COMMS_ALLOW_FAKE": "1",
+            "COMMS_STORE": "sqlite",
             "TELEGRAM_FAKE_DIR": os.path.join(self.dir, "telegram"), "TELEGRAM_FAKE_MARKER": CANARY,
         }
         env.update({k: v for k, v in overrides.items() if v is not None})

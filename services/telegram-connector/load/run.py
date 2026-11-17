@@ -34,13 +34,15 @@ import platform
 import random
 import resource
 import shutil
+import sys
 import tempfile
 import time
 
 from connector.account import Settings
 from connector.fake import ALICE, BOB, FAMILY, TEAM, World
 from connector.manager import Manager
-from connector.store import Crypto, Store
+from connector.store import TABLES, Crypto, PostgresBackend, Store, connect_postgres
+from connector.storethread import serve
 
 STORE_KEY = "k" * 40
 MARK = "LOADT"          # message bodies: LOADT|<injected perf_counter>|<n>
@@ -78,11 +80,11 @@ class RoutedManager(Manager):
         super().__init__(*args, **kwargs)
         self.worlds = worlds
 
-    def account(self, ref, create=False):
+    def _new_account(self, ref):
         world = self.worlds.get(ref)
         if world is not None:
             self.factory = world.factory
-        return super().account(ref, create)
+        return super()._new_account(ref)
 
 
 # -- a lean Rails ---------------------------------------------------------------------
@@ -261,9 +263,11 @@ class Sampler:
     async def sampler(self):
         while True:
             await asyncio.sleep(1.0)
-            store = self.harness.store
+            astore = self.harness.astore
             started = time.perf_counter()
-            pending = store.db.execute("SELECT COUNT(*) FROM outbox WHERE delivered = 0").fetchone()[0]
+            # On the store thread, like every store call: the loop never waits on the database.
+            pending = await astore.run(lambda store: store.db.execute(
+                "SELECT COUNT(*) AS n FROM outbox WHERE delivered = 0").fetchone()["n"])
             query = time.perf_counter() - started
             usage = resource.getrusage(resource.RUSAGE_SELF)
             self.samples.append({
@@ -301,16 +305,36 @@ class LoadHarness:
         self.search_errors = {"normal": 0, "abusive": 0}
         self.counter = 0
         self.t0 = time.perf_counter()
+        self.store_stats_phase = {}
         self.open()
 
     def open(self):
-        self.store = Store(self.path, Crypto(STORE_KEY))
-        self.manager = RoutedManager(self.worlds, self.store, None, self.rails.post, self.settings, b"load")
+        if self.args.database_url:
+            backend = PostgresBackend(connect_postgres(self.args.database_url))
+            self.store = Store(backend, Crypto(STORE_KEY))
+        else:
+            self.store = Store(self.path, Crypto(STORE_KEY))
+        if self.args.switch_interval:
+            sys.setswitchinterval(self.args.switch_interval)  # an experiment; the connector keeps CPython's
+        self.astore = serve(self.store, stats_keep=2_000_000)
+        self.manager = RoutedManager(self.worlds, self.astore, None, self.rails.post, self.settings, b"load")
+
+    def store_stats(self, phase):
+        """Queue wait and execution per store job since the last call."""
+        snap = self.astore.thread.stats.snapshot(reset=True)
+        self.store_stats_phase[phase] = {
+            "jobs": snap["jobs"], "queue_wait_s": summary(snap["wait"]), "execution_s": summary(snap["run"]),
+            "queue_wait_max_s": round(snap["wait_max"], 4), "execution_max_s": round(snap["run_max"], 4),
+            "kinds": dict(sorted(snap["kinds"].items(), key=lambda kv: -kv[1])),
+            # Seconds the store thread spent executing each kind of job, and in all.
+            "kind_seconds": {k: round(v, 3) for k, v in sorted(snap["kind_seconds"].items(), key=lambda kv: -kv[1])},
+            "execution_total_s": round(snap["run_total"], 2), "queue_wait_total_s": round(snap["wait_total"], 2)}
+        return self.store_stats_phase[phase]
 
     async def close_process(self):
         """What a container stop does: the manager closes, clients drop, the store closes."""
         await self.manager.close()
-        self.store.db.close()
+        await asyncio.to_thread(self.astore.close)
         for world in self.worlds.values():
             for client in list(world.clients):
                 await client.disconnect()
@@ -337,19 +361,19 @@ class LoadHarness:
             await asyncio.sleep(0.5)
         return {ref: self.rails.connected_at[ref] - started[ref] for ref in self.rails.connected_at}
 
-    def backfill_state(self):
-        rows = self.store.db.execute(
-            "SELECT ref, MIN(backfill_done) AS done FROM chats WHERE synced = 1 GROUP BY ref").fetchall()
-        return sum(1 for row in rows if row[1]), len(rows)
+    async def backfill_state(self):
+        rows = await self.astore.run(lambda store: store.db.execute(
+            "SELECT ref, MIN(backfill_done) AS done FROM chats WHERE synced = 1 GROUP BY ref").fetchall())
+        return sum(1 for row in rows if row["done"]), len(rows)
 
     async def wait_backfill(self, timeout):
         started = time.perf_counter()
         while time.perf_counter() - started < timeout:
-            done, total = self.backfill_state()
+            done, total = await self.backfill_state()
             if total and done == len(self.refs):
                 break
             await asyncio.sleep(1.0)
-        return time.perf_counter() - started, self.backfill_state()
+        return time.perf_counter() - started, await self.backfill_state()
 
     # steady traffic
     def inject(self, ref, chat=None):
@@ -454,6 +478,24 @@ class LoadHarness:
                 "delivery": self.delivery(keys)}
 
 
+def reset_database(url):
+    """A scratch database: the connector's tables go before a run."""
+    conn = connect_postgres(url)
+    try:
+        for table in list(TABLES) + ["schema_version"]:
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+    finally:
+        conn.close()
+
+
+def database_bytes(url):
+    conn = connect_postgres(url)
+    try:
+        return conn.execute("SELECT pg_database_size(current_database()) AS n").fetchone()["n"]
+    finally:
+        conn.close()
+
+
 QUIET = []
 
 
@@ -473,6 +515,8 @@ async def main(args):
 
 async def run_with(args, problems):
     rss_before_worlds = rss_mb()
+    if args.database_url:
+        reset_database(args.database_url)
     harness = LoadHarness(args)
     sampler = Sampler(harness)
     gc_watch = GcWatch(harness)
@@ -480,7 +524,9 @@ async def run_with(args, problems):
     result = {
         "label": args.label, "args": vars(args),
         "host": {"python": platform.python_version(), "cpus": os.cpu_count(), "platform": platform.platform(),
-                 "store_dir": args.workdir or tempfile.gettempdir()},
+                 "store_dir": args.workdir or tempfile.gettempdir(),
+                 "store": "postgres" if args.database_url else "sqlite",
+                 "switch_interval_s": args.switch_interval or sys.getswitchinterval()},
         "settings": {name: getattr(harness.settings, name) for name in dir(Settings)
                      if not name.startswith("_") and not callable(getattr(Settings, name))},
         "rss_mb": {"before_worlds": round(rss_before_worlds, 1), "after_worlds": round(rss_mb(), 1)},
@@ -497,6 +543,7 @@ async def run_with(args, problems):
                                   "accounts_with_synced_chats": total, "backfilled_messages": harness.rails.backfilled})
         say("backfilled", done, "of", total, "in", round(backfill_s, 1))
         result["rss_mb"]["after_onboard"] = round(rss_mb(), 1)
+        harness.store_stats("onboard")
         result["fds_after_onboard"] = fds()
 
         sampler.phase = "steady"
@@ -524,6 +571,7 @@ async def run_with(args, problems):
                                                if count - by_type_at_steady.get(kind, 0)},
         }
         result["rss_mb"]["after_steady"] = round(rss_mb(), 1)
+        harness.store_stats("steady_and_drain")
 
         if args.restart:
             sampler.phase = "restart"
@@ -541,6 +589,8 @@ async def run_with(args, problems):
                 text = io.StringIO()
                 pstats.Stats(profiler, stream=text).sort_stats("tottime").print_stats(25)
                 result["restart"]["profile_tottime_top25"] = text.getvalue()
+            # The new process's store thread: boot, resume and the first message for every account.
+            result["restart"]["store"] = harness.store_stats("restart")
             say("restart done", result["restart"]["boot_s"], result["restart"]["first_message_all_accounts_s"])
 
         result["loop_lag_s"] = {phase: sampler.lag(phase) for phase in ("onboard", "steady", "drain", "restart")}
@@ -549,7 +599,9 @@ async def run_with(args, problems):
         usage = resource.getrusage(resource.RUSAGE_SELF)
         result["cpu_s"] = round(usage.ru_utime + usage.ru_stime, 1)
         result["max_rss_mb"] = round(usage.ru_maxrss / 1024, 1)
-        result["store_bytes"] = os.path.getsize(harness.path)
+        result["store_jobs"] = harness.store_stats_phase
+        result["store_bytes"] = (database_bytes(args.database_url) if args.database_url
+                                 else os.path.getsize(harness.path))
         result["warnings"] = dict(problems.counts)
         result["warnings_measured"] = True
         result["samples"] = sampler.samples
@@ -597,6 +649,10 @@ def parse(argv=None):
     p.add_argument("--drain-timeout", type=float, default=300.0)
     p.add_argument("--restart", type=int, default=1)
     p.add_argument("--workdir", default=None, help="where the SQLite store lives (default: system temp)")
+    p.add_argument("--switch-interval", type=float, default=None,
+                   help="override sys.setswitchinterval (default: CPython's, as the connector)")
+    p.add_argument("--database-url", default=None,
+                   help="run on Postgres instead of SQLite; its connector tables are DROPPED first (scratch only)")
     p.add_argument("--keep", action="store_true")
     p.add_argument("--quiet", action="store_true")
     p.add_argument("--out", default=None, help="results directory (default: load/results)")

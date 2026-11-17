@@ -49,11 +49,19 @@ def _cut(item):
     return item
 
 
+class SnapshotMiss(Exception):
+    """An Ingest built from a snapshot of chat rows met a chat outside it."""
+
+
 class Ingest:
-    def __init__(self, store, ref, self_id, me=None):
+    def __init__(self, store, ref, self_id, me=None, known=None):
         self.store = store
         self.ref = ref
         self.self_id = self_id
+        # known: {chat key: row} read beforehand, so the batch can be filled
+        # off the store thread (a backfill page, one chat); a key outside it
+        # raises SnapshotMiss rather than reading the store from elsewhere.
+        self.known = known
         self.entities = {"self": me} if me is not None else {}
         self.new_chats = {}       # chat key -> (chat.upsert item, synced, kind, participants)
         self.messages = []
@@ -80,7 +88,7 @@ class Ingest:
         whether it is synced. Known chats are listed again only when forced
         (a dialog refresh)."""
         key = convert.entity_key(entity)
-        known = self.store.chat(self.ref, key)
+        known = self._chat(key)
         if participants is None and known is not None:
             participants = known["participants"]
         kind, synced, _reason = convert.chat_scope(entity, self.self_id, participants)
@@ -93,7 +101,7 @@ class Ingest:
     def synced(self, key):
         if key in self.new_chats:
             return self.new_chats[key][1]
-        known = self.store.chat(self.ref, key)
+        known = self._chat(key)
         if known is not None:
             return bool(known["synced"])
         entity = self.entities.get(key)
@@ -106,6 +114,13 @@ class Ingest:
         kind = "direct" if key.startswith("user:") else "group"
         self.new_chats[key] = ({"provider_chat_id": key, "kind": kind, "sync_state": {"synced": True}}, True, kind, None)
         return True
+
+    def _chat(self, key):
+        if self.known is None:
+            return self.store.chat(self.ref, key)
+        if key not in self.known:
+            raise SnapshotMiss(key)
+        return self.known[key]
 
     @property
     def new_synced_chats(self):

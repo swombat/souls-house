@@ -33,6 +33,7 @@ def peak(samples, key, phase=None):
 
 
 ROWS = [
+    ("store", lambda r: g(r, "host", "store") or "sqlite, on the loop thread (S2a)"),
     ("accounts", lambda r: r["args"]["accounts"]),
     ("connected / of", lambda r: f'{g(r, "onboard", "connected")} / {g(r, "onboard", "of")}'),
     ("time to connected p50 / p95 / max (ms)", lambda r: " / ".join(
@@ -56,7 +57,24 @@ for phase in ("onboard", "steady", "restart"):
     ROWS.append((f"loop lag {phase} p50 / p99 / max (ms)", lambda r, p=phase: " / ".join(
         ms(g(r, "loop_lag_s", p, q)) for q in ("p50", "p99", "max"))))
 ROWS += [
-    ("restart: all accounts' first message (s)", lambda r: g(r, "restart", "first_message_all_accounts_s")),
+    ("restart: stop → booted (s)", lambda r: g(r, "restart", "boot_s")),
+    ("restart: booted → every account's first message (s)", lambda r: g(r, "restart", "first_message_all_accounts_s")),
+    ("restart: stop → every account's first message (s)", lambda r: round(
+        g(r, "restart", "boot_s") + g(r, "restart", "first_message_all_accounts_s"), 2)),
+    ("restart: stop → idle account's first message, p50 / max (s)", lambda r: " / ".join(
+        f'{g(r, "restart", "boot_s") + g(r, "restart", "delivery", "idle", q):.2f}' for q in ("p50", "max"))),
+]
+for phase in ("onboard", "steady_and_drain", "restart"):
+    ROWS.append((f"store jobs {phase}: n; queue wait p50 / p99 / max (ms)", lambda r, p=phase: (
+        "not recorded (store on the loop)" if "store_jobs" not in r else
+        f'{g(r, "store_jobs", p, "jobs")}; ' + " / ".join(
+            ms(g(r, "store_jobs", p, "queue_wait_s", q)) for q in ("p50", "p99"))
+        + f' / {ms(g(r, "store_jobs", p, "queue_wait_max_s"))}')))
+    ROWS.append((f"store jobs {phase}: execution p50 / p99 / max (ms)", lambda r, p=phase: (
+        "not recorded" if "store_jobs" not in r else " / ".join(
+            ms(g(r, "store_jobs", p, "execution_s", q)) for q in ("p50", "p99"))
+        + f' / {ms(g(r, "store_jobs", p, "execution_max_s"))}')))
+ROWS += [
     ("harness RSS MB (fake + stub + driver + connector): worlds built → after onboard → after steady (peak)", lambda r: (
         f'{g(r, "rss_mb", "after_worlds")} → {g(r, "rss_mb", "after_onboard")} → '
         f'{g(r, "rss_mb", "after_steady")} ({r.get("max_rss_mb")})')),

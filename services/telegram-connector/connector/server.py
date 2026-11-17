@@ -83,12 +83,18 @@ def make_app(manager, store, keys, client_name=None, clock=time.time):
         try:
             fields = commands.verify(
                 keys=keys, headers=request.headers, connection=ref, operation=operation, body=bytes(raw), now=now,
-                consume=lambda command_id: store.consume_command_id(command_id, now, commands.NONCE_RETENTION))
+                consume=None)
         except commands.Refused as refused:
             log.warning("command refused: op=%s reason=%s", operation, refused.code)
             return reply(refused.status, {"error": refused.code})
         finally:
             raw[:] = b"\0" * len(raw)  # the body may hold a password, a phone number, a login code or a secret
+        # Replay protection, after the signature: the id is recorded on the
+        # store thread (commands.verify takes no store).
+        if not await store.consume_command_id(fields["command_id"], now, commands.NONCE_RETENTION):
+            fields.clear()
+            log.warning("command refused: op=%s reason=%s", operation, "replayed_command")
+            return reply(401, {"error": "replayed_command"})
         status, body = await manager.command(ref, operation, fields)
         fields.clear()
         return reply(status, body)

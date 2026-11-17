@@ -9,7 +9,11 @@ Environment (see ../README.md):
   COMMS_RAILS_URL        e.g. http://souls-house-web:3000 (no path)
   COMMS_TLS_CERT, COMMS_TLS_KEY, COMMS_TLS_CLIENT_CA, COMMS_TLS_CLIENT_NAME
   COMMS_LISTEN           default 0.0.0.0:8443
-  COMMS_DATA_DIR         default /data
+  COMMS_DATA_DIR         default /data (the volume lock; and, with the fake
+                         provider only, the SQLite store)
+  COMMS_DATABASE_URL     postgresql://... the connector's own database
+                         (comms_telegram, its own role); required except with
+                         COMMS_STORE=sqlite, which needs the fake provider
   TELEGRAM_API_ID, TELEGRAM_API_HASH   the application credentials
   TELEGRAM_PROVIDER      telethon (default) or fake (needs COMMS_ALLOW_FAKE=1)
 
@@ -32,7 +36,8 @@ from . import harden, server
 from .account import Settings
 from .lease import Held, Lease
 from .manager import Manager
-from .store import Crypto, Store
+from .store import ADVISORY_LOCK_KEY, Crypto, PostgresBackend, SchemaTooNew, Store, connect_postgres
+from .storethread import serve
 
 
 class JsonFormatter(logging.Formatter):
@@ -119,6 +124,26 @@ async def run(env):
         factory, world = telegram_factory(env)
     except ValueError as error:
         return refuse(str(error))
+    store_kind = env.get("COMMS_STORE", "postgres")
+    database_url = env.get("COMMS_DATABASE_URL", "")
+    if store_kind == "sqlite":
+        # Tests and the e2e only: production keeps the store in Postgres.
+        if world is None:
+            return refuse("sqlite_store_needs_fake")
+    elif store_kind != "postgres":
+        return refuse("store")
+    elif not database_url.startswith(("postgresql://", "postgres://")):
+        return refuse("database_url")
+    else:
+        # The volume after the SQLite→Postgres migration (connector.migrate):
+        # its old store renamed, its old lock file replaced by a directory
+        # (so the pre-migration image refuses to start on it). A volume that
+        # still has either was never migrated, or was rolled back: this
+        # image does not start on it.
+        if os.path.exists(os.path.join(data_dir, "telegram.sqlite3")):
+            return refuse("unmigrated_sqlite_store")
+        if os.path.isfile(os.path.join(data_dir, ".lease")):
+            return refuse("pre_migration_lock_file")
     listen = env.get("COMMS_LISTEN", "0.0.0.0:8443")
     host, _, port = listen.rpartition(":")
     if not port.isdigit():
@@ -131,7 +156,7 @@ async def run(env):
 
     # Single ownership: no store, no client, no server until the lease is
     # ours. While another process holds it, this one waits, unavailable.
-    lease = Lease(data_dir)
+    lease = Lease(data_dir, OWNER_FILE)
     waiting = False
     while True:
         try:
@@ -149,7 +174,14 @@ async def run(env):
         except asyncio.TimeoutError:
             pass
 
-    store = Store(os.path.join(data_dir, "telegram.sqlite3"), Crypto(store_key))
+    if store_kind == "sqlite":
+        store = Store(os.path.join(data_dir, "telegram.sqlite3"), Crypto(store_key))
+    else:
+        store = await open_postgres_store(database_url, store_key, stop)
+        if store is None:
+            lease.release()
+            return 0 if stop.is_set() else refuse("database")
+    astore = serve(store)
     fault = env.get("COMMS_FAULT")
     if fault and world is not None:
         # The fake-provider e2e kills the process at a named point inside
@@ -161,10 +193,10 @@ async def run(env):
 
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as http:
-        manager = Manager(store, factory, rails_poster(rails_url.rstrip("/"), http),
+        manager = Manager(astore, factory, rails_poster(rails_url.rstrip("/"), http),
                           settings=world.settings() if world else Settings(),
                           log_key=store_key.encode())
-        app = server.make_app(manager, store, keys, env.get("COMMS_TLS_CLIENT_NAME") or None)
+        app = server.make_app(manager, astore, keys, env.get("COMMS_TLS_CLIENT_NAME") or None)
         runner = web.AppRunner(app, access_log=None)
         await runner.setup()
         site = web.TCPSite(runner, host or "0.0.0.0", int(port), ssl_context=context)
@@ -174,9 +206,50 @@ async def run(env):
         await stop.wait()
         await runner.cleanup()
         await manager.close()
+    await asyncio.to_thread(astore.close)  # runs what is queued, then closes
     lease.release()
     log.info("stopped")
     return 0
+
+
+OWNER_FILE = ".owner"
+
+
+async def open_postgres_store(url, store_key, stop):
+    """The store's connection, holding the advisory lock. While another
+    process holds that lock this one waits, unavailable, like the volume
+    lock; the lock only ever makes it wait (it does not authorise taking
+    over from a process that may still be alive). Returns None on stop or
+    on a connection or schema failure (the process then exits)."""
+    waiting = False
+    while True:
+        try:
+            conn = await asyncio.to_thread(connect_postgres, url)
+        except Exception as error:
+            log.error("database connection failed: %s", type(error).__name__)
+            return None
+        try:
+            if await asyncio.to_thread(lambda: conn.execute(
+                    "SELECT pg_try_advisory_lock(%s) AS ok", (ADVISORY_LOCK_KEY,)).fetchone()["ok"]):
+                backend = await asyncio.to_thread(PostgresBackend, conn)
+                return await asyncio.to_thread(Store, backend, Crypto(store_key))
+        except SchemaTooNew:
+            conn.close()
+            log.error("database schema is newer than this connector")
+            return None
+        except Exception as error:
+            conn.close()
+            log.error("database setup failed: %s", type(error).__name__)
+            return None
+        conn.close()
+        if not waiting:
+            log.warning("waiting for the database lock (another connector holds it)")
+            waiting = True
+        try:
+            await asyncio.wait_for(stop.wait(), 2)
+            return None
+        except asyncio.TimeoutError:
+            pass
 
 
 def main():

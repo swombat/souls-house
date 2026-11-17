@@ -8,6 +8,7 @@ import unittest
 
 from telethon.tl import types
 
+from connector.storethread import serve
 from connector import commands, rails
 from connector.store import NOOP_EVENT, Crypto, Store
 from connector.sync import Ingest, chunks
@@ -135,7 +136,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         with store.transaction():
             store.enqueue("svc_1", {"type": "message.upsert", "messages": [
                 {"provider_message_id": "1", "chat": "user:1", "sent_at": "2026-10-13T00:00:00Z", "body": "x"}]})
-        outcome, count = await rails.Deliverer(store, "svc_1", fake.post).run_once()
+        outcome, count = await rails.Deliverer(serve(store, heartbeat=0), "svc_1", fake.post).run_once()
         self.assertEqual((rails.Outcome.DONE, 1), (outcome, count))
         self.assertEqual(18, connection["committed"])
         self.assertEqual("x", connection["messages"][("user:1", "1")]["body"], "applied, not acknowledged unapplied")
@@ -145,6 +146,14 @@ class IngestTest(unittest.TestCase):
     def setUp(self):
         self.store = Store(os.path.join(tempfile.mkdtemp(), "s.sqlite3"), Crypto("k" * 40))
         self.store.ensure_connection("svc_1")
+
+    def test_a_snapshot_batch_never_reads_the_store_for_another_chat(self):
+        from connector.sync import SnapshotMiss
+        row = {"chat": "user:2", "synced": 1, "participants": None}
+        ingest = Ingest(None, "svc_1", 1, known={"user:2": row})
+        self.assertTrue(ingest.synced("user:2"))
+        with self.assertRaises(SnapshotMiss):
+            ingest.synced("user:3")
 
     def test_batches_are_bounded_in_items_and_bytes(self):
         items = [{"body": "é" * 4000} for _ in range(400)]

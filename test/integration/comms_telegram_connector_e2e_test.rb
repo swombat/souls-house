@@ -319,6 +319,7 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
       "COMMS_TLS_CLIENT_CA" => @tls[:ca], "COMMS_TLS_CLIENT_NAME" => "rails",
       "COMMS_LISTEN" => "127.0.0.1:#{@connector_port}", "COMMS_DATA_DIR" => @data,
       "TELEGRAM_PROVIDER" => "fake", "COMMS_ALLOW_FAKE" => "1", "TELEGRAM_FAKE_DIR" => @telegram,
+      "COMMS_STORE" => "sqlite",
       "TELEGRAM_FAKE_MARKER" => CANARY, "TELEGRAM_FAKE_PASSWORD" => PASSWORD,
       "TELEGRAM_FAKE_LIVE" => LIVE.to_s, "TELEGRAM_FAKE_LIVE_INTERVAL" => "2"
     }.merge(extra)
