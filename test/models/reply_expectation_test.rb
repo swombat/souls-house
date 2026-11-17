@@ -191,6 +191,14 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_empty ReplyExpectation.summary_for(@user, account: @chat.account, chat: @chat)[:messages]
   end
 
+  test "the viewed chat's flags come oldest message first, whatever order they were flagged in" do
+    later = @chat.messages.create!(role: "assistant", content: "Test User, and the venue?")
+    latest = @chat.messages.create!(role: "assistant", content: "Test User, one more thing.")
+    [ latest, @ask, later ].each { |message| record(message) }
+    assert_equal [ @ask, later, latest ].map(&:to_param),
+      ReplyExpectation.summary_for(@user, account: @chat.account, chat: @chat)[:messages]
+  end
+
   test "summary counts open threads per room, keyed by room public id or main" do
     life = @chat.account.rooms.create!(name: "Life")
     roomed_chat = @chat.account.chats.create!(title: "In Life", room: life)

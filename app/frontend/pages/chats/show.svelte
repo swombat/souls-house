@@ -20,6 +20,7 @@
   import { accountSpeechEngine } from '$lib/speech-source';
   import { resetListen } from '$lib/listen';
   import ChatOverlays from '$lib/components/chat/ChatOverlays.svelte';
+  import MentionJumpButton from '$lib/components/chat/MentionJumpButton.svelte';
   import ConversationCostDrawer from '$lib/components/chat/ConversationCostDrawer.svelte';
   import ConversationCommitmentsDrawer from '$lib/components/chat/ConversationCommitmentsDrawer.svelte';
 
@@ -133,59 +134,62 @@
     isOpen={sidebarOpen}
     onClose={() => (sidebarOpen = false)} />
   <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
-    <!-- Keep header/history scrollable when the keyboard leaves little height. -->
-    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <ChatHeader
-        {chat}
-        {account}
-        {agents}
-        allMessages={history.messages}
-        {contextTokens}
-        {thresholds}
-        availableAgents={available_agents}
-        addableAgents={addable_agents}
-        bind:showAllMessages
-        bind:debugMode
-        bind:showCosts
-        bind:showCommitments
-        bind:showMessageTelemetry
-        onsidebaropen={() => (sidebarOpen = true)}
-        onassignagent={() => (actions.ui.assignAgentOpen = true)}
-        onmanageresidents={() => (actions.ui.manageResidentsOpen = true)}
-        onwhiteboardopen={() => (actions.ui.whiteboardOpen = true)}
-        onerror={actions.notify}
-        onsuccess={(message) => actions.notify(message, 'successMessage')} />
-      <TokenWarningBanner level={tokenWarningLevel} {contextTokens} />
-      <TelegramBanner {telegramDeepLink} {agents} chatId={chat?.id} />
-      {#if debugMode && isSiteAdmin}<div
-          class="border-y border-red-200 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/30"
-          data-admin-only>
-          <ChatDebug />
-        </div>{/if}
-      <ChatMessageList
-        {agents}
-        accountId={account.id}
-        bind:messagesContainer={history.container}
-        loadingMore={history.loading}
-        hasMore={history.hasMore}
-        oldestId={history.oldestId}
-        {visibleMessages}
-        runtimeInteractions={activity.rows}
-        allMessages={history.messages}
-        {chat}
-        {showAllMessages}
-        {showMessageTelemetry}
-        lastMessageIsHiddenThinking={lastMessageIsHiddenThinking(history.messages)}
-        shouldShowSendingPlaceholder={response.placeholder}
-        isTimedOut={response.timedOut}
-        {shikiTheme}
-        showAgentPrompt={response.agentPrompt}
-        handleScroll={history.handleScroll}
-        loadMoreMessages={history.loadMore}
-        startEditingMessage={actions.edit}
-        deleteMessage={actions.deleteMessage}
-        openImageLightbox={actions.openImage}
-        requestVoice={actions.requestVoice} />
+    <div class="relative flex min-h-0 flex-1 flex-col">
+      <!-- Keep header/history scrollable when the keyboard leaves little height. -->
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <ChatHeader
+          {chat}
+          {account}
+          {agents}
+          allMessages={history.messages}
+          {contextTokens}
+          {thresholds}
+          availableAgents={available_agents}
+          addableAgents={addable_agents}
+          bind:showAllMessages
+          bind:debugMode
+          bind:showCosts
+          bind:showCommitments
+          bind:showMessageTelemetry
+          onsidebaropen={() => (sidebarOpen = true)}
+          onassignagent={() => (actions.ui.assignAgentOpen = true)}
+          onmanageresidents={() => (actions.ui.manageResidentsOpen = true)}
+          onwhiteboardopen={() => (actions.ui.whiteboardOpen = true)}
+          onerror={actions.notify}
+          onsuccess={(message) => actions.notify(message, 'successMessage')} />
+        <TokenWarningBanner level={tokenWarningLevel} {contextTokens} />
+        <TelegramBanner {telegramDeepLink} {agents} chatId={chat?.id} />
+        {#if debugMode && isSiteAdmin}<div
+            class="border-y border-red-200 bg-red-50/70 dark:border-red-900/60 dark:bg-red-950/30"
+            data-admin-only>
+            <ChatDebug />
+          </div>{/if}
+        <ChatMessageList
+          {agents}
+          accountId={account.id}
+          bind:messagesContainer={history.container}
+          loadingMore={history.loading}
+          hasMore={history.hasMore}
+          oldestId={history.oldestId}
+          {visibleMessages}
+          runtimeInteractions={activity.rows}
+          allMessages={history.messages}
+          {chat}
+          {showAllMessages}
+          {showMessageTelemetry}
+          lastMessageIsHiddenThinking={lastMessageIsHiddenThinking(history.messages)}
+          shouldShowSendingPlaceholder={response.placeholder}
+          isTimedOut={response.timedOut}
+          {shikiTheme}
+          showAgentPrompt={response.agentPrompt}
+          handleScroll={history.handleScroll}
+          loadMoreMessages={history.loadMore}
+          startEditingMessage={actions.edit}
+          deleteMessage={actions.deleteMessage}
+          openImageLightbox={actions.openImage}
+          requestVoice={actions.requestVoice} />
+      </div>
+      <MentionJumpButton chatId={chat?.id} reveal={history.reveal} />
     </div>
     <ChatInputArea
       {chat}

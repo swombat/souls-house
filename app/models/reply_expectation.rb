@@ -64,7 +64,9 @@ class ReplyExpectation < ApplicationRecord
       by_room[room_id ? Room.encode_id(room_id) : "main"] += 1
     end
     message_ids = if chat && chat.account_id == account&.id
-      visible_to(user).state_open.where(messages: { chat_id: chat.id }).pluck(:message_id).map { |id| Message.encode_id(id) }
+      # Oldest first: the conversation's jump-to-mention button walks them newest to oldest.
+      visible_to(user).state_open.where(messages: { chat_id: chat.id }).order("messages.id")
+        .pluck(:message_id).map { |id| Message.encode_id(id) }
     else
       []
     end

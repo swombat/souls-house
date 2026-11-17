@@ -79,6 +79,7 @@
       aria-expanded={showingExplanation}
       aria-haspopup="dialog"
       aria-controls={showingExplanation ? explanationId : undefined}
+      data-reply-attention-target={messageId || undefined}
       disabled={dismissing}
       onpointerdown={(event) => (pointerType = event.pointerType)}
       onkeydown={() => (pointerType = '')}

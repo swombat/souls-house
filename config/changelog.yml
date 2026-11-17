@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-17
+  title: Jump to where you were mentioned
+  body: "When a conversation has messages that flagged you, a red @ button now sits at the bottom right of the conversation, just above where you type. Tap it to scroll to the newest message that mentioned you; it briefly rings that message so you can see which one. If there is more than one, the button shows how many, and each tap goes to the one before, then round to the newest again. It loads older history by itself when the mention is further back than what's on screen. Dismissing a flag or replying in the conversation clears it from the button as it does from the eye. Takes effect after Rails deployment."
+- date: 2026-11-17
   title: Hidden conversations no longer add to the waiting-on-you count
   body: "A conversation whose tag hides it from the list no longer counts in the number beside your avatar at the top right, nor in the per-account and per-room counts. It keeps its own eye, so when you choose to show hidden conversations you can still see where you are waited on. Hiding or unhiding a tag, or retagging a conversation, updates the count straight away. Takes effect after Rails deployment."
 - date: 2026-11-17
