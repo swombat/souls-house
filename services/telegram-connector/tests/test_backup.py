@@ -228,6 +228,29 @@ class DeadlineTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual({"failed": "deadline"}, json.loads(done.stderr.decode().strip().splitlines()[-1]))
 
+    def test_the_deadline_exits_even_when_stderr_is_full_and_unread(self):
+        # Fill the stderr pipe from another thread (blocked for good once the
+        # pipe is full, since nobody reads it), then let the deadline fire.
+        script = (
+            "import os, sys, threading, time\n"
+            "from connector import backup\n"
+            "threading.Thread(target=lambda: os.write(2, b'x' * (8 << 20)), daemon=True).start()\n"
+            "time.sleep(0.3)\n"
+            "backup.dump = lambda *a, **k: time.sleep(60)\n"
+            "sys.exit(backup.main(['dump', '--deadline', '0.2'], env={'COMMS_STORE_KEY': 'k' * 40,"
+            " 'COMMS_DATABASE_URL': 'postgresql://x@127.0.0.1:1/x'}))\n"
+        )
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        child = subprocess.Popen([sys.executable, "-c", script], cwd=root,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            self.assertEqual(124, child.wait(timeout=10))  # stderr deliberately unread
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            child.stderr.close()
+
 
 if __name__ == "__main__":
     unittest.main()

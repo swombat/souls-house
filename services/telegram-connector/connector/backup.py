@@ -454,12 +454,18 @@ def _arm_deadline(seconds):
     """The dump's own lifetime bound. Rails kills only its `docker exec`
     client, which need not end the process Docker started in the container;
     this ends it from inside. The connection goes with the process, and with it
-    the snapshot. One write to fd 2 (no logging locks), then os._exit."""
+    the snapshot. One non-blocking write to fd 2 (no logging locks, and a full
+    pipe cannot hold it), then os._exit."""
     import threading
 
     def expire():
+        # The exit must not wait on the diagnostic: a full, unread stderr pipe
+        # would block an ordinary write forever. Non-blocking, one attempt.
         try:
+            os.set_blocking(2, False)
             os.write(2, b'{"failed": "deadline"}\n')
+        except OSError:
+            pass
         finally:
             os._exit(124)
 
