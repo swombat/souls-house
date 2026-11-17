@@ -33,19 +33,28 @@ size, seed 1116. Every run: production `Settings()`, start_login at 20/s,
 | loop lag steady p50 / p99 / max (ms) | 1 / 26 / 42 | 1 / 29 / 49 | 1 / 31 / 543 |
 | loop lag restart p50 / p99 / max (ms) | 1054 / 1054 / 1054 | 0 / 2864 / 2864 | 0 / 5488 / 5488 |
 | restart: all accounts' first message (s) | 1.36 | 2.92 | 9.02 |
-| RSS MB: worlds built → after onboard → after steady (peak) | 210.2 → 215.6 → 222.1 (222.3) | 465.5 → 473.6 → 483.7 (484.9) | 1359.6 → 1378.2 → 1400.5 (1403.9) |
+| harness RSS MB (fake + stub + driver + connector): worlds built → after onboard → after steady (peak) | 210.2 → 215.6 → 222.1 (222.3) | 465.5 → 473.6 → 483.7 (484.9) | 1359.6 → 1378.2 → 1400.5 (1403.9) |
 | FDs after onboard (no sockets: fake) | 10 | 10 | 10 |
 | asyncio tasks, peak | 406 | 1206 | 4006 |
-| outbox undelivered, peak (steady) | 1 | 1 | 1 |
+| outbox undelivered, max of 1 s samples (steady) | 1 | 1 | 1 |
 | outbox count query, peak (ms) | 1.25 | 3.31 | 6.51 |
 | CPU s total / of which in the fake | 28.4 / 16.31 | 42.7 / 18.14 | 91.8 / 21.27 |
-| Rails requests (steady phase total) | 3417 | 7391 | 21440 |
+| Rails requests, cumulative from start through drain | 3417 | 7391 | 21440 |
+| Rails requests, steady + drain only | not recorded | not recorded | not recorded |
 | store size (MB) | 10.6 | 30.3 | 99.0 |
 | GC gen2: count, max (ms); pauses >100 ms | not recorded | not recorded | 1, 546; 1 |
-| connector warnings | none | none | none |
+| warnings logged (WARNING and above) | unmeasured (logging was at ERROR) | unmeasured (logging was at ERROR) | unmeasured (logging was at ERROR) |
 
 GC was not recorded for 100 and 300: GC recording was added for the 1,000
 rerun (below), after those two had run. The 1,000 column is the rerun.
+
+Three labels were corrected after review (17 Nov); the raw results are
+unchanged. These runs set root logging to ERROR, so warnings were never
+admitted and that row is unmeasured, not "none" (fixed in the driver since,
+with a negative-control test; not rerun for this field alone). The Rails
+request count is cumulative from process start through drain, onboarding
+included; the 1,000-account run had already sent 15,029 by its first steady
+sample. New runs record the steady + drain delta as well.
 
 ## Readings
 
@@ -54,7 +63,8 @@ the stub Rails at every size, and delivery p99 stayed at 21 ms or under for
 idle, busy and the abusive tenant alike, so the abusive tenant (300 messages and
 120 searches a minute, chats at the 500-message backfill cap) did not move
 the normal tenants' latency at this offered load. Loop-lag p99 was 26–31 ms.
-The outbox never held more than one undelivered row. The steady phase's
+Sampled once a second, the outbox never showed more than one undelivered
+row (a sampled maximum, not a true one). The steady phase's
 offered load is light by design, though (≈3.3 idle + 10 busy + 5 abusive
 messages a second at 1,000), and it does not test saturation; slice 5's
 scenarios (Rails at 2 s, Rails down an hour, all live with heavy traffic)
@@ -92,10 +102,12 @@ objects, and any per-session object count that multiplies by a few hundred
 sessions per worker is a pause the pool will have; slice 5 should record GC
 on the pool the same way.
 
-**Memory and tasks, without sockets.** The connector's own memory beyond the
-fake worlds grew ~12 MB, ~18 MB and ~41 MB from the worlds being built to
-the end of the steady phase, for 100, 300 and 1,000 accounts (the slope is
-≈30–35 KB per account), and it runs four asyncio tasks per account (sync,
+**Memory and tasks, without sockets.** The harness process's RSS grew ~12 MB,
+~18 MB and ~41 MB from the worlds being built to the end of the steady phase,
+for 100, 300 and 1,000 accounts (≈30–35 KB per account). That is incremental
+harness RSS, not isolated connector memory: fake history, stub dictionaries
+and driver bookkeeping grow in the same process, so it bounds the
+connector's growth from above. The connector runs four asyncio tasks per account (sync,
 backfill, delivery, plus resume or login). This excludes Telethon's MTProto
 connection, sender and receive loops per client, which the fake does not
 create: the real per-session socket, FD and memory cost is still unmeasured

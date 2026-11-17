@@ -57,20 +57,27 @@ for phase in ("onboard", "steady", "restart"):
         ms(g(r, "loop_lag_s", p, q)) for q in ("p50", "p99", "max"))))
 ROWS += [
     ("restart: all accounts' first message (s)", lambda r: g(r, "restart", "first_message_all_accounts_s")),
-    ("RSS MB: worlds built → after onboard → after steady (peak)", lambda r: (
+    ("harness RSS MB (fake + stub + driver + connector): worlds built → after onboard → after steady (peak)", lambda r: (
         f'{g(r, "rss_mb", "after_worlds")} → {g(r, "rss_mb", "after_onboard")} → '
         f'{g(r, "rss_mb", "after_steady")} ({r.get("max_rss_mb")})')),
     ("FDs after onboard (no sockets: fake)", lambda r: r.get("fds_after_onboard")),
     ("asyncio tasks, peak", lambda r: peak(r["samples"], "tasks")),
-    ("outbox undelivered, peak (steady)", lambda r: peak(r["samples"], "outbox_pending", "steady")),
+    ("outbox undelivered, max of 1 s samples (steady)", lambda r: peak(r["samples"], "outbox_pending", "steady")),
     ("outbox count query, peak (ms)", lambda r: peak(r["samples"], "outbox_count_ms")),
     ("CPU s total / of which in the fake", lambda r: f'{r.get("cpu_s")} / {g(r, "fake_calls", "seconds")}'),
-    ("Rails requests (steady phase total)", lambda r: g(r, "steady", "rails_requests")),
+    ("Rails requests, cumulative from start through drain", lambda r: next(
+        (v for v in (g(r, "steady", "rails_requests_cumulative_through_drain"), g(r, "steady", "rails_requests"))
+         if v is not None), None)),
+    ("Rails requests, steady + drain only", lambda r: (
+        "not recorded" if g(r, "steady", "rails_requests_steady_and_drain") is None
+        else g(r, "steady", "rails_requests_steady_and_drain"))),
     ("store size (MB)", lambda r: round(r.get("store_bytes", 0) / 1e6, 1)),
     ("GC gen2: count, max (ms); pauses >100 ms", lambda r: (
         "not recorded" if "gc" not in r else
         f'{g(r, "gc", "gen2", "n")}, {ms(g(r, "gc", "gen2", "max"))}; {len(g(r, "gc", "over_100ms") or [])}')),
-    ("connector warnings", lambda r: ", ".join(f"{k}: {v}" for k, v in (r.get("warnings") or {}).items()) or "none"),
+    ("warnings logged (WARNING and above)", lambda r: (
+        "unmeasured (logging was at ERROR)" if not r.get("warnings_measured") else
+        ", ".join(f"{k}: {v}" for k, v in (r.get("warnings") or {}).items()) or "none")),
 ]
 
 

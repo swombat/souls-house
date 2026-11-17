@@ -143,6 +143,8 @@ class StubRails:
 # -- observation ----------------------------------------------------------------------
 
 class Problems(logging.Handler):
+    """Counts WARNING and above, keyed by the message's text before its first colon."""
+
     def __init__(self):
         super().__init__(logging.WARNING)
         self.counts = {}
@@ -150,6 +152,32 @@ class Problems(logging.Handler):
     def emit(self, record):
         key = record.getMessage().split(":")[0]
         self.counts[key] = self.counts.get(key, 0) + 1
+
+
+class capture_problems:
+    """Admit WARNING records to Problems for the run, then put logging back.
+
+    The root logger is lowered to WARNING (a logger at ERROR drops warnings
+    before any handler sees them); the console only prints ERROR and above.
+    """
+
+    def __enter__(self):
+        self.root = logging.getLogger()
+        self.level = self.root.level
+        self.problems = Problems()
+        self.console = logging.StreamHandler()
+        self.console.setLevel(logging.ERROR)
+        self.root.setLevel(logging.WARNING)
+        self.root.addHandler(self.problems)
+        if not QUIET:
+            self.root.addHandler(self.console)
+        return self.problems
+
+    def __exit__(self, *exc):
+        self.root.removeHandler(self.problems)
+        self.root.removeHandler(self.console)
+        self.root.setLevel(self.level)
+        return False
 
 
 def rss_mb():
@@ -439,9 +467,11 @@ def say(*parts):
 async def main(args):
     if args.quiet:
         QUIET.append(True)
-    problems = Problems()
-    logging.basicConfig(level=logging.ERROR)
-    logging.getLogger().addHandler(problems)
+    with capture_problems() as problems:
+        return await run_with(args, problems)
+
+
+async def run_with(args, problems):
     rss_before_worlds = rss_mb()
     harness = LoadHarness(args)
     sampler = Sampler(harness)
@@ -471,17 +501,27 @@ async def main(args):
 
         sampler.phase = "steady"
         steady_started = time.perf_counter()
+        requests_at_steady = harness.rails.requests
+        by_type_at_steady = dict(harness.rails.by_type)
         await harness.steady(args.duration)
         sampler.phase = "drain"
         say("steady done; injected", len(harness.injected), "delivered", len(harness.rails.delivered))
         drain_s = await harness.drain(args.drain_timeout)
         say("drained in", round(drain_s, 1), "delivered", len(harness.rails.delivered))
+        by_type = dict(harness.rails.by_type)
         result["steady"] = {
             "duration_s": round(time.perf_counter() - steady_started - drain_s, 1), "drain_s": round(drain_s, 1),
             "delivery_latency_s": harness.delivery(),
             "search_latency_s": {kind: dict(summary(values), errors_or_timeouts=harness.search_errors[kind])
                                  for kind, values in harness.searches.items()},
-            "rails_requests": harness.rails.requests, "rails_by_type": harness.rails.by_type,
+            # cumulative from process start (onboarding + backfill + steady) through the end of drain
+            "rails_requests_cumulative_through_drain": harness.rails.requests,
+            "rails_by_type_cumulative_through_drain": by_type,
+            # this phase only: steady + drain, onboarding excluded
+            "rails_requests_steady_and_drain": harness.rails.requests - requests_at_steady,
+            "rails_by_type_steady_and_drain": {kind: count - by_type_at_steady.get(kind, 0)
+                                               for kind, count in by_type.items()
+                                               if count - by_type_at_steady.get(kind, 0)},
         }
         result["rss_mb"]["after_steady"] = round(rss_mb(), 1)
 
@@ -510,7 +550,8 @@ async def main(args):
         result["cpu_s"] = round(usage.ru_utime + usage.ru_stime, 1)
         result["max_rss_mb"] = round(usage.ru_maxrss / 1024, 1)
         result["store_bytes"] = os.path.getsize(harness.path)
-        result["warnings"] = problems.counts
+        result["warnings"] = dict(problems.counts)
+        result["warnings_measured"] = True
         result["samples"] = sampler.samples
     finally:
         for task in background:

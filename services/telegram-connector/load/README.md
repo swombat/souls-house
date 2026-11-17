@@ -35,7 +35,8 @@ Per run, in order:
    accounts 6/min, one abusive tenant 300/min plus 120 searches/min; normal
    tenants share 10 searches/min. Each message body carries its injection
    time, and the stub Rails records when it arrives, so delivery latency is
-   end to end (fake Telegram → sync → outbox → delivery → Rails ack).
+   end to end (fake Telegram → sync → outbox → delivery → the stub Rails
+   receiving the request; the clock stops there, before the ACK is returned).
 3. **Drain**: until every injected message has reached Rails (or 300 s).
 4. **Restart**: the process stops (manager closes, clients drop, store closes)
    and a new one boots on the same store, as a deploy does; one message per
@@ -43,7 +44,13 @@ Per run, in order:
 
 Sampled throughout: event-loop lag (100 ms ticker), RSS, open FDs, asyncio
 task count, undelivered outbox rows (and how long counting them takes), CPU,
-Rails requests, warnings logged by the connector.
+Rails requests, all once a second (so a peak is the largest 1 s sample, not
+a true maximum). Counted for the whole run: every log record at WARNING or
+above (root logging is lowered to WARNING for the run and put back after;
+`tests/test_load_harness.py` has the negative control). Rails requests are
+recorded both cumulatively from process start through drain and as the
+steady + drain delta. RSS is the whole harness process (fake worlds, stub
+dictionaries, driver bookkeeping and the connector), not the connector alone.
 
 ## What it cannot establish
 
@@ -54,9 +61,14 @@ Rails requests, warnings logged by the connector.
   connector's event loop. Time inside fake calls is measured (`fake_calls`)
   and reported beside CPU and lag; the fake's `messages()`/`search()` are
   linear scans, so its share grows with history size.
-- **Stub Rails.** It checks sequence and acknowledges like `comms_events.rb`
-  but stores nothing and does not verify signatures (the connector still
-  signs every request). Rails' own ingest cost is not measured.
+- **Stub Rails.** It checks sequence (consecutive, gap, duplicate) and
+  acknowledges like `comms_events.rb`, but stores nothing, does not verify
+  signatures (the connector still signs every request), and does not validate
+  payloads or status values. Rails' own ingest cost is not measured.
+- **Restart is drained.** The restart happens after the outbox has drained,
+  and new messages are injected after boot, so it does not exercise replay of
+  pending events or of an ambiguous ACK (sent by Rails, lost before the
+  connector recorded it). It measures boot and the first new message only.
 - **No Telegram limits.** FloodWait, rate limits and anti-abuse behaviour
   are not modelled; nothing here says what Telegram tolerates from one IP.
 - **One host, one run each.** Numbers are from the machine named in each
