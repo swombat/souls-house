@@ -225,23 +225,8 @@ def sqlite_to_postgres(data_dir, database_url):
         compare(source, read_all(backend.execute))  # what was committed
         source_conn.close()
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        # 1. The old image can no longer start here: the directory is made
-        #    aside, then exchanged with the locked file in one step.
-        lease = os.path.join(data_dir, OLD_LOCK)
-        if not os.path.isdir(lease):
-            replacement = f"{lease}.next-{stamp}"
-            os.mkdir(replacement, 0o700)
-            with open(os.path.join(replacement, "README"), "w") as handle:
-                handle.write(LEASE_NOTE)
-            _probe("replacement_ready")
-            try:
-                exchange(replacement, lease)
-            except OSError:
-                os.remove(os.path.join(replacement, "README"))
-                os.rmdir(replacement)
-                raise Refused("cutover_needs_atomic_exchange")
-            os.rename(replacement, f"{lease}.migrated-{stamp}")  # the old lock file, still held
-            _probe("lease_swapped")
+        # 1. The old image can no longer start here.
+        retire_old_lease(data_dir, stamp)
         # 2. The source is kept, under another name.
         for suffix in ("", "-wal", "-shm"):
             if os.path.exists(source_path + suffix):
@@ -251,6 +236,28 @@ def sqlite_to_postgres(data_dir, database_url):
         return dict(summary(source), copied=copied, source_kept=f"{SQLITE_NAME}.migrated-{stamp}")
     finally:
         owner.close()
+
+
+def retire_old_lease(data_dir, stamp):
+    """Makes `.lease` a directory, so the pre-migration image cannot start on
+    this volume. The directory is made aside, then exchanged with the locked
+    file in one step: the path is never free. Called with Ownership held."""
+    lease = os.path.join(data_dir, OLD_LOCK)
+    if os.path.isdir(lease):
+        return
+    replacement = f"{lease}.next-{stamp}"
+    os.mkdir(replacement, 0o700)
+    with open(os.path.join(replacement, "README"), "w") as handle:
+        handle.write(LEASE_NOTE)
+    _probe("replacement_ready")
+    try:
+        exchange(replacement, lease)
+    except OSError:
+        os.remove(os.path.join(replacement, "README"))
+        os.rmdir(replacement)
+        raise Refused("cutover_needs_atomic_exchange")
+    os.rename(replacement, f"{lease}.migrated-{stamp}")  # the old lock file, still held
+    _probe("lease_swapped")
 
 
 def postgres_to_sqlite(data_dir, database_url):

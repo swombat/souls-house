@@ -24,6 +24,9 @@ class FullBackupJob < ApplicationJob
       backup_agent!(agent, fail_fast)
     end
 
+    # Its own job: a failed connector dump is a failed backup with its own
+    # name, and the house dump below does not wait for it or fail with it.
+    Backup::CommsTelegramDumpJob.perform_later
     DatabaseBackupJob.perform_now
   end
 
