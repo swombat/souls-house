@@ -104,6 +104,28 @@ class SpeechEngineTest < ActiveSupport::TestCase
     end
   end
 
+  test "a guest speaks by the plan of the house it is speaking in, whose setting and key are used" do
+    scope("account_choice")
+    host = accounts(:another_team)
+    assert_not_equal host.id, @account.id
+    host.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "host-key", granted_plan: nil)
+    @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "home-key")
+    in_host = -> { SpeechEngine.for(host.reload, @agent.reload) }
+
+    @account.update!(granted_plan: "partners")
+    assert_equal "companions", host.reload.plan.id
+    assert_predicate in_host.call, :phonon?, "a Partners guest in a Companions house: Phonon"
+    assert_predicate engine, :elevenlabs?, "control: the same resident at home"
+
+    @account.update!(granted_plan: nil)
+    host.update!(granted_plan: "partners")
+    assert_predicate in_host.call, :elevenlabs?, "a Companions guest in a Partners house: the host's ElevenLabs"
+    assert_predicate engine, :phonon?, "control: the same resident at home"
+
+    plan("life", state: "held")
+    assert_predicate in_host.call, :phonon?, "a guest whose own hosting has lapsed: Phonon, even in a Partners house"
+  end
+
   test "a paid Partners plan gives ElevenLabs, and it goes when the plan ends" do
     scope("enabled")
     @account.update!(eleven_labs_api_key: "acct-key", granted_plan: nil)

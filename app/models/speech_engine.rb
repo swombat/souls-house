@@ -2,9 +2,14 @@
 # (jEDyze, Daniel in YgDwre enwVgQ). Phonon, running in the person's browser on
 # WebGPU, is the default. ElevenLabs is an engine an account opts into, only
 # where the site offers it (Setting#speech_engine_for), with the account's own
-# ElevenLabs key, and only for residents of a Partners or Colleagues account
+# ElevenLabs key, and only where that account is on Partners or Colleagues
 # (Billing::AccountPlan; Daniel, eRyZBY 17 Nov: "Only Partners and Colleagues
 # gets ElevenLabs"), whatever the resident's size.
+#
+# The plan checked is the plan of the account whose setting and key are used
+# (the conversation's account), not the resident's home account: for a guest
+# they differ, and the benefit goes with the account paying for the key
+# (Mira, #1027 review). The resident's own hosting must still be in force.
 #
 # There is no fallback in either direction: an account on ElevenLabs without a
 # key gets an error, not Phonon, and not the house's ElevenLabs credential; a
@@ -43,7 +48,7 @@ module SpeechEngine
 
   def self.for(account, agent)
     engine = account_engine(account)
-    engine = PHONON if engine == ELEVENLABS && !elevenlabs_plan?(agent)
+    engine = PHONON if engine == ELEVENLABS && !elevenlabs_plan?(account, agent)
     return Status.new(engine: PHONON, available: true, reason: nil) if engine == PHONON
 
     return Status.new(engine:, available: false, reason: "no_eleven_labs_key") if account&.eleven_labs_api_key.blank?
@@ -52,14 +57,14 @@ module SpeechEngine
     Status.new(engine:, available: true, reason: nil)
   end
 
-  # Whether this resident's account plan lets it speak through ElevenLabs. As
-  # for sub-agents (Agent::Subagents): the account's plan is one of
-  # ELEVENLABS_PLANS and the resident's own hosting is in force (active,
+  # Whether this account's plan lets this resident speak through ElevenLabs
+  # here: the account supplying the setting and key is on one of
+  # ELEVENLABS_PLANS, and the resident's own hosting is in force (active,
   # grace or complimentary), or it has no entitlement and no birth order (on
-  # the house).
-  def self.elevenlabs_plan?(agent)
-    return false if agent.nil?
-    return false unless agent.account&.plan&.id.in?(ELEVENLABS_PLANS)
+  # the house), as for sub-agents (Agent::Subagents).
+  def self.elevenlabs_plan?(account, agent)
+    return false if account.nil? || agent.nil?
+    return false unless account.plan&.id.in?(ELEVENLABS_PLANS)
 
     entitlement = ResidentEntitlement.find_by(agent_id: agent.id)
     return !ResidentBirthOrder.exists?(agent_id: agent.id) if entitlement.nil?
