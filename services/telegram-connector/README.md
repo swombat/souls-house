@@ -355,9 +355,12 @@ Restore, with the accessory stopped and an empty `comms_telegram`:
 ```sh
 bin/kamal accessory stop comms-telegram
 docker run --rm -i --network kamal -v comms_telegram:/data -e COMMS_DATABASE_URL -e COMMS_STORE_KEY \
-  <image>@<digest> python -m connector.backup restore < <dump>.tgbackup
+  --entrypoint python <image>@<digest> -m connector.backup restore < <dump>.tgbackup
 bin/kamal accessory reboot comms-telegram
 ```
+The image's entrypoint is `python -m connector`, so these one-off commands
+need `--entrypoint python`; without it the arguments go to the connector and
+the connector itself starts.
 
 ## Test
 
@@ -450,7 +453,7 @@ then, with the new image's digest in `config/house.env`:
 ```sh
 bin/kamal accessory stop comms-telegram
 docker run --rm --network kamal -v comms_telegram:/data -e COMMS_DATABASE_URL \
-  <image>@<digest> python -m connector.migrate sqlite-to-postgres
+  --entrypoint python <image>@<digest> -m connector.migrate sqlite-to-postgres
 bin/kamal accessory reboot comms-telegram
 ```
 The migration prints counts per table and, per connection, outbox rows,
