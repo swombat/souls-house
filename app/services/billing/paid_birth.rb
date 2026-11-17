@@ -87,6 +87,7 @@ module Billing
         settle_earlier!(account, creator)
         # Decided here, under the lock, after earlier orders are settled: the
         # account's first catalogue resident is its plan's own (Included).
+        Checkout.release_expired!(account, client: @client)
         offer = Included.offer_for(account, offer)
         raise NotConfigured, "That plan has no Stripe price configured" unless offer.purchasable?
         if Reconcile.applies?(account)
@@ -141,6 +142,7 @@ module Billing
       settle_earlier!(account, creator)
       customer = BillingCustomer.for!(account, client: @client)
       order = nil
+      Checkout.release_expired!(account, client: @client)
       offer = Included.offer_for(account, offer)
       plan = offer.included? ? account.plan_to_pay_for : nil
       raise NotConfigured, "The #{plan.name} plan has no Stripe price configured" if plan && !plan.purchasable?

@@ -25,6 +25,7 @@ module Billing
         # The account's first bill: its first catalogue resident is its
         # plan's own, and the plan comes on the bill with it (Included).
         @requested = @offer
+        Checkout.release_expired!(@agent.account, client: @client)
         @offer = Included.offer_for(@agent.account, @offer, except_agent: @agent) if @offer.sold?
         @plan = @offer.included? ? @agent.account.plan_to_pay_for : nil
         entitlement = ResidentEntitlement.for_agent!(@agent)
@@ -54,6 +55,21 @@ module Billing
         session = recover!(attempt)
         publish!(attempt, session, entitlement)
         session.url
+      end
+    end
+
+    # An account's resident Checkouts that Stripe confirms expired are
+    # resolved here, so they stop holding the plan's included resident
+    # (Billing::Included) or a plan code (BillingCode#plan_refusal). Only a
+    # session Stripe says is expired is released: one with no session yet (an
+    # uncertain create), one still open, one completed, or one Stripe can't
+    # be asked about just now, stays as it is.
+    def self.release_expired!(account, client: Billing.client)
+      BillingCheckoutAttempt.unresolved.where(account:, kind: "checkout").where.not(stripe_session_id: nil).find_each do |attempt|
+        session = client.v1.checkout.sessions.retrieve(attempt.stripe_session_id)
+        attempt.update!(resolved_at: Time.current) if session.status == "expired"
+      rescue Stripe::StripeError
+        next
       end
     end
 

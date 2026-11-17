@@ -64,6 +64,30 @@ class Billing::CheckoutTest < ActiveSupport::TestCase
     assert_equal @agent.account, other.account
   end
 
+  test "a Checkout Stripe has expired stops holding the included resident and plan codes; one still open or uncertain keeps them" do
+    checkout
+    account = @agent.account
+    attempt = BillingCheckoutAttempt.unresolved.find_by!(agent: @agent)
+    assert_not Billing::Included.available?(account)
+    assert BillingCode.new.send(:first_bill_with_plan_open?, account)
+
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert_nil attempt.reload.resolved_at, "an open session still holds them"
+
+    @stripe.v1.checkout.sessions.expire(attempt.stripe_session_id)
+    uncertain = BillingCheckoutAttempt.create!(agent: agents(:code_reviewer), account:, tier: "conversation",
+      rate: "included", stripe_price_id: CONVERSATION_INCLUDED_PRICE, idempotency_key: "key-uncertain",
+      create_params: { "metadata" => { "plan" => "companions" } })
+    Billing::Checkout.release_expired!(account, client: @stripe)
+    assert attempt.reload.resolved_at, "Stripe says expired: released"
+    assert_nil uncertain.reload.resolved_at, "no session yet: it may still be payable, so it is kept"
+    assert_not Billing::Included.available?(account), "the uncertain one still holds the included resident"
+
+    uncertain.update!(resolved_at: Time.current)
+    assert Billing::Included.available?(account)
+    assert_not BillingCode.new.send(:first_bill_with_plan_open?, account)
+  end
+
   test "at cost requires a grant and tells a house-model owner where to change models" do
     assert_raises(Billing::NotEligible) { checkout(rate: "at_cost") }
     grant!

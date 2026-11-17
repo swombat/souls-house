@@ -45,7 +45,8 @@ module Billing
     # The op that puts a resident already in the account onto its bill at
     # this size: at the included rate when it is the plan's own resident
     # (Billing::Included).
-    def self.add_ops(account, agent, offer)
+    def self.add_ops(account, agent, offer, client: Billing.client)
+      Checkout.release_expired!(account, client:)
       [ { op: "add", agent_id: agent.id, price: Included.offer_for(account, offer).price_id } ]
     end
 
@@ -183,7 +184,9 @@ module Billing
       parent = @client.v1.subscriptions.retrieve(ids.first)
       raise Refused, "This account's subscription has ended." unless parent.status.in?(BillSync::LIVE)
 
-      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize plan]) }
+      # Only what can grow the bill must be fit to carry it on credit; a plan
+      # line leaving with its resident shrinks it.
+      fit!(parent) if ops.any? { |op| op["op"].in?(%w[add birth resize]) || (op["op"] == "plan" && op["price"].present?) }
       parent
     end
 

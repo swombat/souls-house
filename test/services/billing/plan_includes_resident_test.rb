@@ -73,7 +73,7 @@ class Billing::PlanIncludesResidentTest < ActiveSupport::TestCase
     _, sub = first_bill!("conversation", name: "Aria")
     assert_equal 999, monthly(sub)
     second = @account.agents.where.not(id: agent("Aria").id).first
-    go!(Billing::Reconcile.add_ops(@account, second, Billing::Tier.find!("conversation").offer))
+    go!(Billing::Reconcile.add_ops(@account, second, Billing::Tier.find!("conversation").offer, client: @stripe))
     assert_equal 999 + 999, monthly(sub), "Companions $9.99 + a further Small $9.99"
 
     reconcile.propose_end(agent("Aria")).then { |change| reconcile.confirm(change, digest: change.digest) }
@@ -90,7 +90,7 @@ class Billing::PlanIncludesResidentTest < ActiveSupport::TestCase
     @account.update!(chosen_plan: "partners")
     _, sub = first_bill!("conversation", name: "Aria")
     medium = @account.agents.where.not(id: agent("Aria").id).first
-    go!(Billing::Reconcile.add_ops(@account, medium, Billing::Tier.find!("life").offer))
+    go!(Billing::Reconcile.add_ops(@account, medium, Billing::Tier.find!("life").offer, client: @stripe))
     assert_equal 2999 + 0 + 3999, monthly(sub)
     reconcile.propose_end(agent("Aria")).then { |change| reconcile.confirm(change, digest: change.digest) }
     assert_equal 2999 + 3000, monthly(sub)
@@ -126,7 +126,7 @@ class Billing::PlanIncludesResidentTest < ActiveSupport::TestCase
     @stripe.put_shared_subscription(id: "sub_old", account: @account, customer: "cus_1", status: "active",
       items: rows.map { |agent, price| { agent:, price: } })
     seed_bill!("sub_old")
-    go!(Billing::Reconcile.add_ops(@account, agents(:code_reviewer), Billing::Tier.find!("conversation").offer))
+    go!(Billing::Reconcile.add_ops(@account, agents(:code_reviewer), Billing::Tier.find!("conversation").offer, client: @stripe))
     assert_equal 999 + 999, monthly("sub_old")
     assert_empty AccountSubscription.where(account: @account)
   end

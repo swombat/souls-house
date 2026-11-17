@@ -150,13 +150,13 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: PARTNERS_PRICE } ]) }
     assert_match(/bought with the resident it includes/, error.message)
     assert_equal [ { op: "add", agent_id: @b.id, price: CONVERSATION_PRICE } ],
-      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("conversation").offer)
+      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("conversation").offer, client: @stripe)
   end
 
   test "a resident added to a bill with a plan is at its size; the plan's own is the included one" do
     bill!(@a => CONVERSATION_INCLUDED_PRICE, plan: COMPANIONS_PRICE)
     assert_equal [ { op: "add", agent_id: @b.id, price: LIFE_PRICE } ],
-      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("life").offer)
+      Billing::Reconcile.add_ops(@account, @b, Billing::Tier.find!("life").offer, client: @stripe)
     error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@b, LIFE_INCLUDED_PRICE) ]) }
     assert_match(/already has its plan's included resident/, error.message)
     go!([ add(@b, LIFE_PRICE) ])
@@ -191,6 +191,20 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
     assert_equal({ LIFE_AT_COST_PRICE => 1 }, remote)
     assert_empty AccountSubscription.live.where(account: @account)
     assert paid?(@b)
+  end
+
+  test "a past-due account can still end its included resident when only at cost is left: the plan line leaves too" do
+    grant!("at_cost")
+    bill!(@a => CONVERSATION_INCLUDED_PRICE, @b => LIFE_AT_COST_PRICE, plan: COMPANIONS_PRICE, status: "past_due")
+    change = reconcile.propose_end(@a)
+    assert_equal [ { "op" => "end", "agent_id" => @a.id }, { "op" => "plan" } ], change.ops
+    assert reconcile.confirm(change, digest: change.digest).applied?
+    assert_equal({ LIFE_AT_COST_PRICE => 1 }, remote)
+    assert_empty AccountSubscription.live.where(account: @account)
+
+    # Control: the same past-due bill still can't grow.
+    error = assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@c, LIFE_AT_COST_PRICE) ]) }
+    assert_match(/last payment/, error.message)
   end
 
   test "ending the only resident of a bill with a plan ends the whole bill, plan and all" do
@@ -462,7 +476,7 @@ class Billing::ReconcileTest < ActiveSupport::TestCase
 
     # A resident bought at the catalogue price is at its size, and brings no plan line.
     assert_equal [ { op: "add", agent_id: @c.id, price: CONVERSATION_PRICE } ],
-      Billing::Reconcile.add_ops(@account, @c, Billing::Tier.find!("conversation").offer)
+      Billing::Reconcile.add_ops(@account, @c, Billing::Tier.find!("conversation").offer, client: @stripe)
     assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ { op: "plan", price: COLLEAGUES_PRICE } ]) }
     assert_raises(Billing::Reconcile::Refused) { reconcile.propose([ add(@c, CONVERSATION_INCLUDED_PRICE) ]) }
     assert_equal before, remote, "and nothing was sent"
