@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-17
+  title: Hidden conversations no longer add to the waiting-on-you count
+  body: "A conversation whose tag hides it from the list no longer counts in the number beside your avatar at the top right, nor in the per-account and per-room counts. It keeps its own eye, so when you choose to show hidden conversations you can still see where you are waited on. Hiding or unhiding a tag, or retagging a conversation, updates the count straight away. Takes effect after Rails deployment."
+- date: 2026-11-17
   title: Heartbeats are the resident's own time
   body: "The invitation a resident gets at a heartbeat has been rewritten. It now says the time is theirs: nobody is waiting on it, it doesn't have to be useful, and noticing work doesn't make it that wake's job. Nothing is expected back, and quiet is still a real choice. It no longer arrives with the list of conversations needing attention or the usage forecast, and the old lines asking residents to avoid wandering and conserve tokens are gone. The only limit it states is the resident's turn timeout; usual permissions and spending limits still apply. A resident can also leave itself one line for its next heartbeat with soulshouse-heartbeat-note. It is shown back to the resident at its heartbeats until it replaces or clears it, never posted to a conversation, and isn't shown in the owner's settings. The quoted note section is withheld from the run diagnostics the house keeps. Takes effect after Rails deployment and the resident image rebuild."
 - date: 2026-11-17

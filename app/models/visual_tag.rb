@@ -33,6 +33,8 @@ class VisualTag < ApplicationRecord
   before_validation -> { self.label = label.strip if label.is_a?(String) }
   before_destroy :keep_pin, prepend: true
   before_destroy :clear_chat_selections
+  # Hiding a tag takes its conversations out of the waiting-on-you badges.
+  after_update_commit :refresh_reply_attention, if: :saved_change_to_hides_from_list?
 
   scope :palette_order, -> { order(pinned: :desc, pins_to_top: :desc, id: :asc) }
   scope :pinned, -> { where(pinned: true) }
@@ -123,6 +125,11 @@ class VisualTag < ApplicationRecord
 
   def clear_chat_selections
     chats.find_each { |chat| chat.update!(visual_tag: nil) }
+  end
+
+  def refresh_reply_attention
+    ReplyExpectation.joins(:message).where(messages: { chat_id: chats.select(:id) }).distinct.pluck(:user_id)
+      .each { |uid| ReplyExpectation.refresh_for(uid) }
   end
 
 end
