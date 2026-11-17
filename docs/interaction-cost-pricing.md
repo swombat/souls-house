@@ -144,6 +144,18 @@ discount ends, the row should move to the list price. No cache-write price is
 listed, so cache writes fall back to the input rate. OpenRouter only; Inception
 is a new group in souls.house.
 
+GPT-6.2 Astra and GPT-6.2 Sol (added November 17, 2026, the day OpenAI released
+them; GPT-6.2 System Card deploymentsafety.openai.com/gpt-6-2-astra-sol): Astra
+input 8, cache read 0.4, cache write 10, output 40; Sol input 2, cache read 0.1,
+cache write 2.5, output 10. From the OpenRouter standard OpenAI endpoints for
+`openai/gpt-6.2-astra` and `openai/gpt-6.2-sol` (`-20261117`) on 2026-11-17. The
+same provider lists a "fast" tier at double the price and a long-context tier
+above 272k prompt tokens that these estimates do not model. Direct ids
+`gpt-6.2-astra` and `gpt-6.2-sol`. Reasoning efforts low to max (no "none"),
+default medium, matching OpenRouter's supported efforts (the openai_max
+profile; GPT-6 Astra's "ultra" is not offered). Not in Top Models. Recheck against OpenAI's
+pricing page, which returned HTTP 403 from the house.
+
 GPT-6.1 Terra (added October 26, 2026, the day OpenAI released it; system card
 deploymentsafety.openai.com/gpt-6-1-terra): input 1, cache read 0.05, cache
 write 1.25, output 5, from the OpenRouter standard endpoint for

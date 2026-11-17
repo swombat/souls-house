@@ -39,6 +39,8 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "openai/gpt-6-sol" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-sol-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6.1-terra" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6.2-astra" => [ "OpenAI", %w[low medium high xhigh max] ],
+      "openai/gpt-6.2-sol" => [ "OpenAI", %w[low medium high xhigh max] ],
       "openai/gpt-6-luna" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "openai/gpt-6-luna-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
       "anthropic/claude-opus-5.5" => [ "Anthropic", %w[low medium high xhigh max] ],

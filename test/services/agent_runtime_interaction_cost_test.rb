@@ -417,6 +417,23 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "0.015", cost.dig(:components_usd, :cache_read_input)
   end
 
+  test "GPT-6.2 Astra and Sol are priced from the OpenAI standard endpoint" do
+    { "gpt-6.2-astra" => [ "58.4", "10.0", "0.4" ], "gpt-6.2-sol" => [ "14.6", "2.5", "0.1" ] }.each do |id, (total, write, read)|
+      [ "openai/#{id}", id ].each do |model|
+        cost = build_interaction(
+          model: model,
+          uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+        ).estimated_cost
+        assert_equal "estimated", cost[:status], model
+        assert_equal total, cost[:amount_usd], model
+        assert_equal write, cost.dig(:components_usd, :cache_creation_input), model
+        assert_equal read, cost.dig(:components_usd, :cache_read_input), model
+      end
+      assert_equal id, Chat.provider_model_id("openai/#{id}")
+    end
+  end
+
   test "GPT-6.1 Terra is priced from the OpenAI standard endpoint" do
     [ "openai/gpt-6.1-terra", "gpt-6.1-terra" ].each do |model|
       cost = build_interaction(

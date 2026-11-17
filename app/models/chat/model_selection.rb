@@ -56,6 +56,8 @@ module Chat::ModelSelection
     { model_id: "z-ai/glm-5.3", label: "GLM 5.3", group: "Top Models", thinking: { supported: true } },
 
     # OpenAI
+    { model_id: "openai/gpt-6.2-astra", label: "GPT-6.2 Astra", group: "OpenAI", provider_model_id: "gpt-6.2-astra", thinking: { supported: true } },
+    { model_id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol", group: "OpenAI", provider_model_id: "gpt-6.2-sol", thinking: { supported: true } },
     { model_id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI", provider_model_id: "gpt-6-astra", thinking: { supported: true } },
     # GPT-6 Pro variants are OpenRouter aliases for reasoning.mode=pro, not direct model IDs.
     { model_id: "openai/gpt-6-astra-pro", label: "GPT-6 Astra Pro", group: "OpenAI", thinking: { supported: true } },
@@ -721,7 +723,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:kimi_code_fixed]
       when "openai/gpt-6.1-sol", "openai/gpt-6.1-sol-pro", "openai/gpt-6.1-terra", "openai/gpt-6-sol", "openai/gpt-6-sol-pro", "openai/gpt-6-luna", "openai/gpt-6-luna-pro"
         REASONING_PROFILES[:openai_max].merge(options: %i[none low medium high xhigh max])
-      when "openai/gpt-6-astra-pro"
+      when "openai/gpt-6-astra-pro", "openai/gpt-6.2-astra", "openai/gpt-6.2-sol"
         REASONING_PROFILES[:openai_max]
       when "anthropic/claude-fable-5.2", "anthropic/claude-fable-5.1"
         REASONING_PROFILES[:anthropic]

@@ -46,6 +46,8 @@ class AgentRuntimeInteractionCost
     [ /(?:anthropic\/)?claude-opus-4(?:-\d{8})?\z/, "anthropic/claude-opus-4", 15, 75 ],
     [ /(?:anthropic\/)?claude-sonnet-4(?:-\d{8})?\z/, "anthropic/claude-sonnet-4", 3, 15 ],
 
+    [ /\A(?:openai\/)?gpt-6\.2-astra\z/, "openai/gpt-6.2-astra", 8, 40 ],
+    [ /\A(?:openai\/)?gpt-6\.2-sol\z/, "openai/gpt-6.2-sol", 2, 10 ],
     [ /\A(?:openai\/)?gpt-6-astra\z/, "openai/gpt-6-astra", 10, 50 ],
     [ /\A(?:openai\/)?gpt-6\.1-sol\z/, "openai/gpt-6.1-sol", 2, 10 ],
     [ /\A(?:openai\/)?gpt-6\.1-terra\z/, "openai/gpt-6.1-terra", 1, 5 ],
@@ -122,6 +124,8 @@ class AgentRuntimeInteractionCost
   end.freeze
 
   CACHE_READ_RATES = {
+    "openai/gpt-6.2-astra" => 0.4,
+    "openai/gpt-6.2-sol" => 0.1,
     "openai/gpt-6.1-terra" => 0.05,
     "google/gemini-4-argon" => 0.1,
     "google/gemini-4-carbon" => 0.1,
@@ -167,6 +171,8 @@ class AgentRuntimeInteractionCost
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
 
   CACHE_WRITE_RATES = {
+    "openai/gpt-6.2-astra" => 10,
+    "openai/gpt-6.2-sol" => 2.5,
     "openai/gpt-6.1-terra" => 1.25,
     "openai/gpt-6-astra" => 12.5,
     "openai/gpt-6-sol" => 2.5,
