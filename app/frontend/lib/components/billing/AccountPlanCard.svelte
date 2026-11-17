@@ -6,8 +6,9 @@
   // never bought alone (Billing::AccountPlan): an account that pays changes
   // the plan on its bill; one with no bill yet chooses the plan its first
   // resident's bill will carry, and nothing is charged until then. Stripe's
-  // portal can't cancel (Billing::Portal), and no button here ends a paid
-  // account plan yet: /pricing and the Terms say to write to the house.
+  // portal can't cancel (Billing::Portal). A paid plan moves down here like
+  // any other move (Billing::PlanDownTest); it ends with its last resident,
+  // ended from the residents' End plan, as /pricing and the Terms say.
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
