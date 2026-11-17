@@ -21,10 +21,14 @@ after an interrupted cutover, already equal to the source). The source is
 kept: renamed, never deleted.
 
 Cutover, after a verified copy (sqlite-to-postgres):
-  1. `.lease` becomes a directory. The pre-migration image opens it to lock
+  1. `.lease` becomes a directory, in one atomic exchange
+     (renameat2 RENAME_EXCHANGE with a directory made beforehand), so the
+     path is never free: at every instant it is either the file this command
+     holds locked or the directory. The pre-migration image opens it to lock
      it, fails, and refuses to start (reason=lease) instead of creating an
      empty store. This image does not start on a volume whose `.lease` is
-     still a file (reason=pre_migration_lock_file).
+     still a file (reason=pre_migration_lock_file). A filesystem that cannot
+     exchange refuses the cutover before anything moves.
   2. `telegram.sqlite3` is renamed `telegram.sqlite3.migrated-<time>`. This
      image does not start while a `telegram.sqlite3` is present
      (reason=unmigrated_sqlite_store).
@@ -41,6 +45,7 @@ rows, highest sequence and next_seq. No refs' secrets, no content.
 """
 
 import argparse
+import ctypes
 import fcntl
 import json
 import os
@@ -65,6 +70,20 @@ class Refused(Exception):
 
 
 # -- locks ----------------------------------------------------------------------
+
+_AT_FDCWD = -100
+_RENAME_EXCHANGE = 2
+
+
+def exchange(a, b):
+    """Atomically swaps two paths (renameat2 RENAME_EXCHANGE). A rename then
+    a mkdir would leave the path free in between, and a waiting pre-migration
+    process would create and lock a fresh `.lease` there."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.renameat2(_AT_FDCWD, os.fsencode(a), _AT_FDCWD, os.fsencode(b), _RENAME_EXCHANGE) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), a)
+
 
 def _flock(path, reason):
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
@@ -180,6 +199,7 @@ def sqlite_to_postgres(data_dir, database_url):
         raise Refused("no_sqlite_store")
     owner = Ownership(data_dir, database_url)
     try:
+        _probe("locked")
         source_conn = _sqlite_reader(source_path)
         source = read_all(source_conn.execute)
         backend = PostgresBackend(owner.conn)  # creates the schema if absent
@@ -205,17 +225,28 @@ def sqlite_to_postgres(data_dir, database_url):
         compare(source, read_all(backend.execute))  # what was committed
         source_conn.close()
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        # 1. The old image can no longer start here.
+        # 1. The old image can no longer start here: the directory is made
+        #    aside, then exchanged with the locked file in one step.
         lease = os.path.join(data_dir, OLD_LOCK)
         if not os.path.isdir(lease):
-            os.rename(lease, f"{lease}.migrated-{stamp}")
-            os.mkdir(lease, 0o700)
-            with open(os.path.join(lease, "README"), "w") as handle:
+            replacement = f"{lease}.next-{stamp}"
+            os.mkdir(replacement, 0o700)
+            with open(os.path.join(replacement, "README"), "w") as handle:
                 handle.write(LEASE_NOTE)
+            _probe("replacement_ready")
+            try:
+                exchange(replacement, lease)
+            except OSError:
+                os.remove(os.path.join(replacement, "README"))
+                os.rmdir(replacement)
+                raise Refused("cutover_needs_atomic_exchange")
+            os.rename(replacement, f"{lease}.migrated-{stamp}")  # the old lock file, still held
+            _probe("lease_swapped")
         # 2. The source is kept, under another name.
         for suffix in ("", "-wal", "-shm"):
             if os.path.exists(source_path + suffix):
                 os.rename(source_path + suffix, f"{source_path}.migrated-{stamp}{suffix}")
+        _probe("source_renamed")
         _fsync_dir(data_dir)
         return dict(summary(source), copied=copied, source_kept=f"{SQLITE_NAME}.migrated-{stamp}")
     finally:
@@ -278,6 +309,15 @@ def empty_postgres(data_dir, database_url):
         return {"deleted": before}
     finally:
         owner.close()
+
+
+# Tests set this to look at the volume between cutover steps.
+PROBE = None
+
+
+def _probe(step):
+    if PROBE is not None:
+        PROBE(step)
 
 
 def _fsync_dir(path):

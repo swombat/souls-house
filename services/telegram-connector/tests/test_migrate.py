@@ -90,6 +90,60 @@ class MigrateTest(unittest.TestCase):
         with self.assertRaises(OSError):
             Lease(self.data).try_acquire()  # what the pre-migration image does first
 
+    def test_the_old_image_cannot_take_the_lock_at_any_point_of_the_cutover(self):
+        """Mira's #1011 finding: a rename then a mkdir left `.lease` free in
+        between. An old-image process polls for the lock through the whole
+        cutover (each step widened); the path must never be free and the
+        lock never obtainable."""
+        import threading
+        import time as _time
+        lease = os.path.join(self.data, ".lease")
+        stop, won, seen = threading.Event(), [], []
+
+        def old_image():
+            while not stop.is_set():
+                try:
+                    Lease(self.data).try_acquire()
+                    won.append(True)
+                    return
+                except Exception:
+                    pass
+
+        poller = threading.Thread(target=old_image)
+
+        def probe(step):
+            if step == "locked":
+                poller.start()  # from the moment the migration holds the volume
+            seen.append((step, os.path.lexists(lease), os.path.isdir(lease)))
+            _time.sleep(0.2)
+        migrate.PROBE = probe
+        try:
+            code, result = self.run_command("sqlite-to-postgres")
+        finally:
+            migrate.PROBE = None
+            stop.set()
+            if poller.is_alive():
+                poller.join(5)
+        self.assertEqual(0, code, result)
+        self.assertEqual([], won, "the old image took the lock during the cutover")
+        self.assertEqual(["locked", "replacement_ready", "lease_swapped", "source_renamed"], [s[0] for s in seen])
+        self.assertTrue(all(exists for _step, exists, _dir in seen), "the lock path was free at some step")
+        self.assertEqual([False, False, True, True], [is_dir for _step, _exists, is_dir in seen])
+
+    def test_without_an_atomic_exchange_the_cutover_refuses_before_anything_moves(self):
+        def cannot(_a, _b):
+            raise OSError(22, "Invalid argument")
+        original = migrate.exchange
+        migrate.exchange = cannot
+        try:
+            code, result = self.run_command("sqlite-to-postgres")
+        finally:
+            migrate.exchange = original
+        self.assertEqual((2, {"refused": "cutover_needs_atomic_exchange"}), (code, result))
+        self.assertTrue(os.path.isfile(os.path.join(self.data, ".lease")))
+        self.assertTrue(os.path.exists(self.sqlite))
+        self.assertEqual([], [n for n in os.listdir(self.data) if n.startswith(".lease.next-")])
+
     def test_refuses_while_a_connector_holds_the_volume(self):
         for name, reason in ((".lease", "old_connector_running"), (".owner", "connector_running")):
             fd = os.open(os.path.join(self.data, name), os.O_RDWR | os.O_CREAT)

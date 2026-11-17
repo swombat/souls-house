@@ -37,9 +37,27 @@ EXIT_STORE_LOST = 75
 
 
 
+EXIT_GRACE = 0.5  # seconds a diagnostic line may take before the exit happens anyway
+
+
 def exit_now(reason):
-    log.error("store lost; exiting: reason=%s", reason)
-    logging.shutdown()
+    """Ends the process. The exit does not wait on logging: a timer thread
+    exits after EXIT_GRACE whatever happens, so a stuck handler (a full pipe,
+    a lock held by another thread) cannot keep Telegram clients alive. The
+    diagnostic line is best effort, written straight to stderr's descriptor
+    without the logging machinery or its locks."""
+    killer = threading.Thread(target=_exit_after, args=(EXIT_GRACE,), name="store-exit", daemon=True)
+    killer.start()
+    try:
+        os.write(2, b'{"level": "error", "logger": "telegram.store", "msg": "store lost; exiting: reason='
+                 + reason.encode(errors="replace")[:80] + b'"}\n')
+    except OSError:
+        pass
+    os._exit(EXIT_STORE_LOST)
+
+
+def _exit_after(delay):
+    time.sleep(delay)
     os._exit(EXIT_STORE_LOST)
 
 
@@ -105,6 +123,7 @@ class StoreThread:
         self.stats = Stats(stats_keep)
         self._queue = queue.SimpleQueue()
         self._closed = False
+        self._db_closed = False
         self._dead = None
         self._submit_lock = threading.Lock()
         self.busy_since = None
@@ -188,21 +207,28 @@ class StoreThread:
                 try:
                     pinging = self.submit(self.store.ping, job_kind="heartbeat")
                 except Closed:
-                    return
+                    pass  # draining or dead: keep watching for a stalled job, stop pinging
 
     # -- shutdown ---------------------------------------------------------------
 
     def close(self, timeout=30):
-        """Runs every job already queued, then closes the connection."""
+        """Runs every job already queued, then closes the connection. The
+        watchdog keeps watching while the queue drains. A drain that does
+        not finish within `timeout` is a stalled store: it fails stop rather
+        than return as if shutdown were complete. Safe to call again."""
         with self._submit_lock:
-            if self._closed:
-                return
-            self._closed = True
-            self._queue.put(None)
-        self._stop_watch.set()
+            if not self._closed:
+                self._closed = True
+                self._queue.put(None)
         self._thread.join(timeout)
-        if not self._thread.is_alive():
+        if self._thread.is_alive():
+            self._fail("store_close_timeout")
+            return False
+        self._stop_watch.set()
+        if not self._db_closed:
+            self._db_closed = True
             self.store.db.close()
+        return True
 
 
 def _kind(fn):

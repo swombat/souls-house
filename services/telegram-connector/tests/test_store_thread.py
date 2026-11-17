@@ -149,6 +149,65 @@ class StoreThreadTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["store_error:Lost"], recorder.reasons)
 
 
+class ShutdownTest(unittest.TestCase):
+    def test_a_drain_that_does_not_finish_fails_stop_and_a_later_close_finishes(self):
+        recorder = Recorder()
+        store = sqlite_store()
+        thread = StoreThread(store, on_fatal=recorder, op_deadline=60, heartbeat=0)
+        gate = threading.Event()
+        thread.submit(gate.wait, 10)
+        self.assertFalse(thread.close(timeout=0.2), "did not report a finished shutdown")
+        self.assertEqual(["store_close_timeout"], recorder.reasons)
+        gate.set()
+        self.assertTrue(thread.close(timeout=5))
+        with self.assertRaises(Exception):
+            store.db.execute("SELECT 1")  # closed
+
+    def test_the_watchdog_keeps_watching_while_the_queue_drains(self):
+        recorder = Recorder()
+        thread = StoreThread(sqlite_store(), on_fatal=recorder, op_deadline=0.3, heartbeat=10, tick=0.05)
+        thread.submit(time.sleep, 3)
+        closer = threading.Thread(target=thread.close, kwargs={"timeout": 10}, daemon=True)
+        closer.start()
+        self.assertTrue(recorder.event.wait(2))
+        self.assertEqual("store_stalled", recorder.reasons[0])
+
+
+EXIT_CHILD = r"""
+import logging, os, sys, threading, time
+sys.path.insert(0, %(path)r)
+from connector import storethread
+from connector.store import Crypto, Store
+handler = logging.StreamHandler(sys.stderr)
+logging.getLogger().addHandler(handler)
+handler.acquire()  # another thread holds the logging lock, forever
+mode = sys.argv[1]
+if mode == "direct":
+    storethread.exit_now("store_stalled")
+else:
+    # The real path: the watchdog finds a stalled job and calls the default on_fatal.
+    store = Store(os.path.join(%(tmp)r, "s.sqlite3"), Crypto("k" * 40))
+    thread = storethread.StoreThread(store, op_deadline=0.3, heartbeat=10, tick=0.05)
+    thread.submit(time.sleep, 30)
+time.sleep(30)
+sys.exit(3)
+"""
+
+
+class ExitTest(unittest.TestCase):
+    def test_the_process_exits_even_when_logging_is_blocked(self):
+        import subprocess
+        import sys
+        service = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for mode in ("direct", "watchdog"):
+            with self.subTest(mode=mode):
+                script = EXIT_CHILD % {"path": service, "tmp": tempfile.mkdtemp()}
+                started = time.monotonic()
+                proc = subprocess.run([sys.executable, "-c", script, mode], capture_output=True, timeout=20)
+                self.assertEqual(75, proc.returncode, proc.stderr[-500:])
+                self.assertLess(time.monotonic() - started, 5)
+
+
 class BlackHole:
     """A TCP proxy to the Postgres server that can stop forwarding while
     keeping both connections open: a server that has gone silent, not one

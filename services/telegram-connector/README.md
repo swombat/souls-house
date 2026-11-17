@@ -241,7 +241,9 @@ by connection, would raise it; not built.
 
 A submitted job always runs to its end: cancelling the coroutine waiting for
 it stops the waiting, never the job, and never rolls it back. Shutdown runs
-every job already queued, then closes the connection. Queue wait and
+every job already queued, then closes the connection; the watchdog keeps
+watching while it drains, and a drain that does not finish in 30 s fails
+stop (exit 75) rather than report a clean stop. Queue wait and
 execution time are recorded apart (`StoreThread.stats`, reported per phase by
 the load harness): a loop that no longer stalls can still hide a queue that
 does.
@@ -257,7 +259,9 @@ leases, fencing tokens and a supervisor that confirms death before transfer.
 
 **Fail-stop.** If the store connection fails (any `psycopg.OperationalError`
 or `InterfaceError`, including a server-side timeout) or goes silent, the
-process exits (code 75) and never reconnects in place. `unless-stopped`
+process exits (code 75) and never reconnects in place. The exit does not
+wait on logging: a timer thread exits 0.5 s after detection whatever the
+log handlers are doing (tested with another thread holding the logging lock). `unless-stopped`
 (Kamal's accessory default) restarts it, and the new process takes the volume
 flock and the advisory lock again before it opens any client. Detection
 bounds with the defaults (`StoreThread`: heartbeat 5 s, deadline 10 s, tick
@@ -284,7 +288,9 @@ accessory stopped, it holds `.lease`, `.owner` and the advisory lock
 throughout, copies every table as bytes (nothing decrypted), compares every
 row and column before committing and again after, and keeps the source
 (renamed). It refuses a destination that holds anything else. At cutover
-`.lease` becomes a directory, so the pre-migration image refuses to start
+`.lease` becomes a directory in one atomic exchange (`renameat2`
+`RENAME_EXCHANGE`; the path is never free, tested with an old-image process
+polling through every step), so the pre-migration image refuses to start
 (`reason=lease`) rather than open an empty store, and this image refuses a
 volume that still has `telegram.sqlite3` or a `.lease` file. Rollback is
 `postgres-to-sqlite` (same checks), never a plain restart of the old image;
