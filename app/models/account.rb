@@ -582,8 +582,11 @@ class Account < ApplicationRecord
 
   # What this account can buy now: every purchasable offer at a rate it holds.
   # At cost, the one rate a new resident would be sold at (Tier.sold_rate).
-  def purchasable_offers
-    at_cost = Billing::Tier.at_cost_rate_for
+  # What this account can buy: for a resident yet to be born with no agent,
+  # at the birth machine's at-cost rate; for an existing resident, at the
+  # rate of the machine it runs on, the same one checkout sells (Mira, #1028).
+  def purchasable_offers(agent = nil)
+    at_cost = Billing::Tier.at_cost_rate_for(agent)
     Billing::Tier.all.flat_map(&:offers).select do |offer|
       offer.sold? && (!offer.at_cost? || offer.rate == at_cost) && offer.purchasable? && eligible_for?(offer)
     end

@@ -268,8 +268,11 @@ class Accounts::BillingsController < ApplicationController
       # has_payment_method isn't sent: whether Stripe will charge at the
       # trial's end depends on the customer's default card, which the house
       # doesn't sync; the wizard reads it live (Billing::PaymentMethod).
+      # offers: what this resident's buttons sell, at its own machine's
+      # at-cost rate, so the button and the checkout quote agree.
       { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlement&.as_json,
-        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601 }
+        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601,
+        offers: current_account.purchasable_offers(agent).as_json }
     end
   end
 
