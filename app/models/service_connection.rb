@@ -444,7 +444,7 @@ class ServiceConnection < ApplicationRecord
   # does (retry_unpair!).
   def retained_after_disconnect?
     github_resident_imports.exists? || comms_chats.exists? || comms_sends.exists? ||
-      comms_send_grant_events.exists? || unpair_pending?
+      comms_send_grant_events.exists? || linkedin_posts.exists? || unpair_pending?
   end
 
   # WhatsApp. Disconnecting revokes the connection here at once, but only
