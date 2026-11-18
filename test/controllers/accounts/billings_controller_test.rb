@@ -108,7 +108,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     payer = agents(:without_tools)
     payer.update!(model_id: "openrouter/auto")
     BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
-    @stripe.put_subscription(id: "sub_1", agent: payer, customer: "cus_1", price: LIFE_AT_COST_HETZNER_PRICE, status: "active")
+    @stripe.put_subscription(id: "sub_1", agent: payer, customer: "cus_1", price: WORK_AT_COST_HETZNER_PRICE, status: "active")
     @stripe.put_payment_method("pm_1")
     @stripe.put_customer("cus_1", default_payment_method: "pm_1")
     with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
