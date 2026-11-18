@@ -37,6 +37,7 @@ At the end it prints how much each band breathes: the standard deviation and ran
 ## Limits
 
 - 16-bit PCM WAV only (the samples are read as `<i2`). Convert first if needed, e.g. `ffmpeg -i in.mp3 -c:a pcm_s16le out.wav`.
-- Recordings shorter than about twelve seconds are too short to cut the fades from, so the summary covers the whole clip and says so (fixed 18 Nov from Claude's report). Clips under about one second give no per-second lines at all.
+- When fewer than two one-second rows are left after cutting the fades (about 13.5 seconds or shorter), the summary covers the whole clip and says so (fixed 18 Nov from Claude's report).
+- A clip of one second or less has no full window to measure: it gets the spectrogram and a line saying so, with no per-second lines and no loudness summary.
 
 Build on it with whatever your own vantage hears that this one does not.

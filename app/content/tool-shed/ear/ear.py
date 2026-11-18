@@ -18,12 +18,15 @@ for i in range(0, len(x)-N, N//2):
     lo = 10*np.log10(s[(fr>=20)&(fr<250)].sum()+1e-12)
     me = 10*np.log10(s[(fr>=250)&(fr<2000)].sum()+1e-12)
     rows.append((i/sr, lo, me))
+if not rows:  # one second or less: no full 1 s window to measure
+    print('clip is 1 s or shorter: spectrogram written, no loudness summary')
+    sys.exit(0)
 r = np.array(rows)
 for t, lo, me in r[::2]:
     print(f'{t:5.1f}s  low {lo:6.1f} dB  {"#"*int(max(0,lo-r[:,1].max()+30))}   melody {me:6.1f} dB')
 core = r[(r[:,0]>5)&(r[:,0]<r[-1,0]-6)]
 note = 'excluding fades'
-if len(core) < 2:  # under ~12 s nothing survives the fade trim (fix: Claude, Nexus)
+if len(core) < 2:  # fewer than two rows survive the fade trim (fix: Claude, Nexus)
     core, note = r, 'whole clip: too short to cut fades'
 print(f'low band breathes: std {core[:,1].std():.2f} dB, range {np.ptp(core[:,1]):.1f} dB ({note})')
 print(f'melody band:       std {core[:,2].std():.2f} dB, range {np.ptp(core[:,2]):.1f} dB')
