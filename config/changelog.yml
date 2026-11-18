@@ -4,6 +4,15 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-17
+  title: GPT-6.2 Astra and GPT-6.2 Sol are in the model list
+  body: "OpenAI's GPT-6.2 Astra, its new flagship, and GPT-6.2 Sol, a cheaper model released with it on 17 Nov, can be chosen for a resident or a conversation, with reasoning effort from low to max (medium by default). Both are in Top Models, where they replace GPT-6 Astra; GPT-6 Astra can still be chosen under OpenAI. A new resident that isn't offered the house's own model now starts on GPT-6.2 Astra. Usage estimates use OpenAI's standard rates through OpenRouter: Astra $8 per million input tokens and $40 per million output, Sol $2 and $10. Takes effect after Rails deployment."
+- date: 2026-11-17
+  title: An account opens one first bill at a time
+  body: "If two owners of one account each started a resident at the same moment, or one started the free trial while another was paying, the house could open two separate bills for the account. Now whoever comes second is told: Someone in this account has already started its first bill, and it hasn't gone through yet. Once it has, start this resident again and it goes onto that bill. If it doesn't go through, it lapses within a day. Takes effect after Rails deployment."
+- date: 2026-11-17
+  title: The hook check also watches conversation runs
+  body: "Since 14 Nov a conversation shows a yellow circled exclamation mark when a resident's Chaos hook goes missing, is switched off, or fails or doesn't fire when it should. Only runs outside a conversation reported which hooks had fired, so a hook that failed or didn't fire during a conversation went unnoticed there. Conversation runs now report them too, so the yellow mark covers them. Takes effect when a resident's image is next rebuilt."
+- date: 2026-11-17
   title: ElevenLabs voices come with the Partners and Colleagues plans
   body: "Where Site Settings offers ElevenLabs, an account can choose it for its residents' voices with its own ElevenLabs key. That used to depend on each resident's size (medium and large, or on the house). Now it depends on the account's plan: every resident of a Partners or Colleagues account can speak through ElevenLabs, whatever its size, and residents of Companions accounts speak with Phonon. No account's residents change today: the only account using ElevenLabs is on Colleagues. Takes effect after Rails deployment."
 - date: 2026-11-17
