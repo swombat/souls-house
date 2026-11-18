@@ -445,6 +445,49 @@ class Billing::PaidBirthTest < ActiveSupport::TestCase
       @stripe.created_subscriptions.sole.first[:items]
   end
 
+  test "a code holder is offered at cost at the rate a birth would be sold at, and only that one" do
+    account = agents(:research_assistant).account
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account:, by: users(:user_1))
+    at_cost = ->(acct) { acct.purchasable_offers.select(&:at_cost?).map(&:rate).uniq }
+    assert_equal [ "at_cost" ], at_cost.(account)
+    Setting.instance.update!(new_residents_on_vm: true)
+    assert_equal [ "at_cost_hetzner" ], at_cost.(account)
+    assert_equal [ 8, 11, 20 ].map { |usd| BigDecimal(usd) }, account.purchasable_offers.select(&:at_cost?).map(&:monthly_usd)
+  ensure
+    Setting.instance.update!(new_residents_on_vm: false)
+  end
+
+  test "while births go to Hetzner, an at-cost birth is sold at the Hetzner rate; the other at-cost rate is refused" do
+    grant = BillingCode.redeem!(code: BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    attributes = { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" }
+    Billing::Tier.stub(:at_cost_rate_for, "at_cost_hetzner") do
+      error = assert_raises(Billing::PaidBirth::Refused) do
+        paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost", attributes:)
+      end
+      assert_equal "That rate is set by the house, not bought.", error.message
+      assert_empty @stripe.created_subscriptions
+
+      order, = paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier,
+        rate: Billing::Tier.sold_rate("at_cost"), attributes:)
+      assert_equal [ "at_cost_hetzner", CONVERSATION_AT_COST_HETZNER_PRICE, grant ],
+        [ order.rate, order.stripe_price_id, order.billing_code_redemption ]
+      assert_equal [ { price: CONVERSATION_AT_COST_HETZNER_PRICE } ], @stripe.created_subscriptions.sole.first[:items]
+    end
+  end
+
+  test "control: off Hetzner births, the Hetzner rate is refused and at cost is the Boat rate" do
+    BillingCode.redeem!(code: BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user)).code,
+      account: @account, by: @owner)
+    assert_equal "at_cost", Billing::Tier.sold_rate("at_cost_hetzner")
+    error = assert_raises(Billing::PaidBirth::Refused) do
+      paid_birth.start!(account: @account, creator: @owner, open_beginning: false, tier: @tier, rate: "at_cost_hetzner",
+        attributes: { name: "Aria", system_prompt: "Be curious.", model_id: "openrouter/auto" })
+    end
+    assert_equal "That rate is set by the house, not bought.", error.message
+  end
+
   test "an at-cost order opens the at-cost price and says so to Stripe" do
     grant = BillingCode.redeem!(code: BillingCode.create!(code: "PEPE", effect: "at_cost", created_by: users(:site_admin_user)).code,
       account: @account, by: @owner)

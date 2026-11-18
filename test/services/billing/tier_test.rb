@@ -99,13 +99,13 @@ class Billing::TierTest < ActiveSupport::TestCase
     Billing::Tier.all.each do |tier|
       offer = tier.offer("at_cost_hetzner")
       assert offer.at_cost?
-      assert_not offer.sold?
+      assert offer.sold?, "sold, but only where it is the machine's rate (Tier.sold_rate)"
       assert_equal 0, offer.allowance_usd
       assert_equal "#{tier.id}_at_cost_hetzner", offer.id
       assert_equal "#{tier.name} at cost (Hetzner)", offer.name
       assert offer.as_json[:at_cost]
     end
-    assert_equal %w[standard at_cost], Billing::Tier::SOLD_RATES
+    assert_equal %w[standard at_cost at_cost_hetzner], Billing::Tier::SOLD_RATES
   end
 
   test "a Stripe price resolves to one offer, standard or at cost" do
@@ -240,4 +240,31 @@ class Billing::TierTest < ActiveSupport::TestCase
     assert cost < plan.from_usd
   end
 
+  test "the at-cost rate is the machine's: Hetzner for a resident there or a birth while births go to VMs, else Boat's" do
+    agent = agents(:research_assistant)
+    Setting.instance.update!(new_residents_on_vm: false)
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "on the house server"
+    Setting.instance.update!(new_residents_on_vm: true)
+    assert_equal "at_cost_hetzner", Billing::Tier.at_cost_rate_for
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "an existing resident pays for the machine it has"
+
+    placement = AgentPlacement.create!(agent:, backend: "hetzner_cloud", kind: "migration", state: "staged")
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "a staged migration still runs on the house"
+    placement.update_columns(state: "ready")
+    assert_equal "at_cost_hetzner", Billing::Tier.at_cost_rate_for(agent)
+    placement.update_columns(state: "retired")
+    assert_equal "at_cost", Billing::Tier.at_cost_rate_for(agent), "a retired placement is not its machine"
+
+    assert_equal "standard", Billing::Tier.sold_rate("standard")
+    assert_equal "included", Billing::Tier.sold_rate("included"), "not at cost: left for the caller to refuse"
+    assert_equal "at_cost_hetzner", Billing::Tier.sold_rate("at_cost")
+  ensure
+    Setting.instance.update!(new_residents_on_vm: false)
+  end
+
+  test "Pepe's two Hetzner at-cost lines stay $31 a month" do
+    total = Billing::Tier.find!("life").offer("at_cost_hetzner").monthly_usd + Billing::Tier.find!("work").offer("at_cost_hetzner").monthly_usd
+    assert_equal BigDecimal("31"), total
+  end
 end

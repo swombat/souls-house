@@ -63,11 +63,39 @@ module Billing
     # account's house-model allowance.
     CATALOGUE_RATES = %w[standard included].freeze
 
-    # The rates a buyer chooses between. Which machine a resident lives on is
-    # a hosting fact, not a choice, so the Hetzner rate is put on a
-    # subscription by the operator who placed the resident there, and
-    # recognised everywhere a rate is read.
-    SOLD_RATES = %w[standard at_cost].freeze
+    # The rates a resident can be bought at. The buyer chooses standard or at
+    # cost; which at-cost rate is a hosting fact, not a choice, so the house
+    # sets it from the machine (Tier.at_cost_rate_for) and the client's rate
+    # is only "at cost".
+    SOLD_RATES = %w[standard at_cost at_cost_hetzner].freeze
+
+    # The at-cost rate a resident is sold at: its machine's (Daniel, eRyZBY
+    # jrBROG 17 Nov: Hetzner at cost for code holders, availability
+    # allowing). An existing resident pays for the placement it runs on (a
+    # pending or ready one; a staged or failed migration still runs on the
+    # house): on Hetzner the Hetzner rate, otherwise (the house server, Boat)
+    # "at_cost" as before. A new resident is born on Hetzner while the site puts new
+    # residents on their own VM (Agents::VmBirthPolicy, which also refuses
+    # the birth before any money moves when no server can be had). The rate
+    # is read when the order is taken: flipping that setting while a paid
+    # birth waits would give its bill the other machine's rate. Boat takes
+    # no births yet; when it does, its placement policy must keep a resident
+    # sold at the Hetzner rate on Hetzner, or change its bill first.
+    def self.at_cost_rate_for(agent = nil)
+      backend = if agent
+        AgentPlacement.where(agent_id: agent.id, state: %w[pending ready]).order(:id).last&.backend
+      elsif Agents::VmBirthPolicy.current.enabled?
+        "hetzner_cloud"
+      end
+      backend == "hetzner_cloud" ? "at_cost_hetzner" : "at_cost"
+    end
+
+    # The rate actually sold for what a buyer asked for: standard stays
+    # standard; any at-cost rate becomes the machine's. Anything else is
+    # returned as is, for the caller to refuse.
+    def self.sold_rate(requested, agent = nil)
+      AT_COST_RATES.include?(requested) ? at_cost_rate_for(agent) : requested
+    end
 
     # At cost, per tier, in USD a month (Daniel, jBVrDj 2026-10-28): the
     # machine at its worst month and Stripe's UK fee on an EU card, rounded up

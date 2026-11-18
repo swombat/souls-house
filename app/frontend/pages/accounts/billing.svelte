@@ -39,7 +39,13 @@
       ? offers.filter((offer) => offer.purchasable)
       : tiers.filter((tier) => tier.purchasable).map((tier) => ({ ...tier, tier: tier.id, rate: 'standard' }))
   );
-  let atCostOffers = $derived(buyable.filter((offer) => offer.rate === 'at_cost'));
+  let atCostOffers = $derived(buyable.filter((offer) => offer.rate?.startsWith('at_cost')));
+
+  // An existing resident's buttons sell at its own machine's rate (the
+  // server sends them per resident); older props fall back to the page's.
+  function residentOffers(resident) {
+    return resident.offers ? resident.offers.filter((offer) => offer.purchasable) : buyable;
+  }
   let atCostGrant = $derived(codes?.redemptions?.find((redemption) => redemption.effect.startsWith('at_cost')) || null);
 
   const STATE_LABELS = {
@@ -209,8 +215,7 @@
           {#if pendingAdd.kind === 'plan'}
             Add {pendingAdd.resident_name} to the account's subscription?
           {:else}
-            Add {pendingAdd.resident_name} on {pendingAdd.plan}{pendingAdd.rate === 'at_cost' ? ' at cost' : ''} to the account's
-            subscription?
+            Add {pendingAdd.resident_name} on {pendingAdd.plan} to the account's subscription?
           {/if}
         </p>
         <p>
@@ -343,7 +348,7 @@
 
           {#if billing.can_pay && canSubscribe(entitlement)}
             <div class="flex flex-wrap gap-2 lg:justify-end">
-              {#each buyable as offer (offer.id)}
+              {#each residentOffers(resident) as offer (offer.id)}
                 <Button size="sm" variant="outline" onclick={() => subscribe(resident, offer)} disabled={busy !== null}>
                   {busy === `${resident.id}:${offer.id}`
                     ? 'Opening…'

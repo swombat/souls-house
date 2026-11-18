@@ -83,7 +83,7 @@
   // At cost includes no house model: a draft on a house-funded model can't
   // be paid for at cost (the server refuses it too).
   let atCostNeedsOwnModel = $derived(
-    chosenPlan?.rate === 'at_cost' &&
+    chosenPlan?.rate?.startsWith('at_cost') &&
       (grouped_models['On the house'] || []).some((model) => model.model_id === selectedModel)
   );
 

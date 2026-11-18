@@ -47,7 +47,8 @@ class Accounts::BillingsController < ApplicationController
   def checkout
     agent = billable_agents.find(params[:agent_id])
     tier = Billing::Tier.find(params[:tier]) || raise(ActionController::BadRequest, "Unknown plan")
-    rate = params[:rate].presence || "standard"
+    # "At cost" is the client's choice; which at-cost rate is the machine's.
+    rate = Billing::Tier.sold_rate(params[:rate].presence || "standard", agent)
     raise ActionController::BadRequest, "Unknown rate" unless Billing::Tier::SOLD_RATES.include?(rate)
 
     if ResidentSubscription.live.exists?(agent: agent)
@@ -267,8 +268,11 @@ class Accounts::BillingsController < ApplicationController
       # has_payment_method isn't sent: whether Stripe will charge at the
       # trial's end depends on the customer's default card, which the house
       # doesn't sync; the wizard reads it live (Billing::PaymentMethod).
+      # offers: what this resident's buttons sell, at its own machine's
+      # at-cost rate, so the button and the checkout quote agree.
       { id: agent.to_param, name: agent.name, colour: agent.colour, entitlement: entitlement&.as_json,
-        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601 }
+        trial_ends_at: entitlement&.current_subscription&.trial_ends_at&.iso8601,
+        offers: current_account.purchasable_offers(agent).as_json }
     end
   end
 

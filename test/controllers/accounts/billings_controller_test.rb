@@ -44,7 +44,7 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "life", ResidentEntitlement.find_by!(agent: @agent).tier, "only the owner changes plans"
   end
 
-  test "a resident at cost on Hetzner resizes at the Hetzner price, and Hetzner can't be checked out" do
+  test "a resident at cost on Hetzner resizes at the Hetzner price; one on the house server can't be sold the Hetzner rate" do
     BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
     BillingCode.redeem!(code: "HOST", account: @account, by: @user)
     @agent.update!(model_id: "openrouter/auto")
@@ -63,11 +63,79 @@ class Accounts::BillingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal WORK_AT_COST_HETZNER_PRICE, @stripe.subscription("sub_1")[:items][:data].sole[:price][:id]
 
     other = agents(:code_reviewer)
-    with_stripe do
-      post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
+    assert_difference -> { BillChange.count }, 1 do
+      with_stripe do
+        post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "life", rate: "at_cost_hetzner" }
+      end
     end
-    assert_response :bad_request
-    assert_not ResidentSubscription.exists?(agent: other)
+    assert_response :redirect
+    assert_not ResidentSubscription.where(agent: other, rate: "at_cost_hetzner").exists?
+    change = BillChange.order(:id).last
+    assert_includes change.params.to_json, LIFE_AT_COST_PRICE, "on the house server: Boat's at-cost price, quoted first"
+    assert_not_includes change.params.to_json, LIFE_AT_COST_HETZNER_PRICE
+  end
+
+  test "a resident on Hetzner asking for at cost is quoted the Hetzner price on the add-to-bill path" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: @user)
+    @agent.update!(model_id: "openrouter/auto")
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: @agent, customer: "cus_1", price: LIFE_AT_COST_HETZNER_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
+
+    other = agents(:code_reviewer)
+    other.update!(model_id: "openrouter/auto")
+    AgentPlacement.create!(agent: other, backend: "hetzner_cloud", kind: "migration", state: "staged").update_columns(state: "ready")
+    assert_difference -> { BillChange.count }, 1 do
+      with_stripe do
+        post checkout_account_billing_path(@account), params: { agent_id: other.to_param, tier: "work", rate: "at_cost" }
+      end
+    end
+    assert_response :redirect
+    change = BillChange.order(:id).last
+    assert_includes change.params.to_json, WORK_AT_COST_HETZNER_PRICE
+    assert_not_includes change.params.to_json, WORK_AT_COST_PRICE + '"', "not Boat's price"
+  end
+
+  # Mira on #1028: the buy button and the checkout quote must agree, for a
+  # resident on the house server and one on Hetzner, while births go to VMs.
+  test "each existing resident's buttons are priced at its own machine's rate, as checkout quotes it" do
+    BillingCode.create!(code: "HOST", effect: "at_cost", created_by: users(:site_admin_user))
+    BillingCode.redeem!(code: "HOST", account: @account, by: @user)
+    Setting.instance.update!(new_residents_on_vm: true)
+    payer = agents(:without_tools)
+    payer.update!(model_id: "openrouter/auto")
+    BillingCustomer.create!(account: @account, stripe_customer_id: "cus_1")
+    @stripe.put_subscription(id: "sub_1", agent: payer, customer: "cus_1", price: WORK_AT_COST_HETZNER_PRICE, status: "active")
+    @stripe.put_payment_method("pm_1")
+    @stripe.put_customer("cus_1", default_payment_method: "pm_1")
+    with_stripe { Billing::BillSync.new("sub_1", client: @stripe).call }
+
+    on_house = @agent
+    on_hetzner = agents(:code_reviewer)
+    [ on_house, on_hetzner ].each { |agent| agent.update!(model_id: "openrouter/auto") }
+    AgentPlacement.create!(agent: on_hetzner, backend: "hetzner_cloud", kind: "migration", state: "staged").update_columns(state: "ready")
+
+    get account_billing_path(@account)
+    props = inertia_shared_props
+    medium = ->(agent) do
+      props["residents"].find { |row| row["id"] == agent.to_param }["offers"].find { |offer| offer["id"].start_with?("life_at_cost") }
+    end
+    assert_equal [ "life_at_cost", "28.00" ], medium.(on_house).values_at("id", "monthly_usd")
+    assert_equal [ "life_at_cost_hetzner", "11.00" ], medium.(on_hetzner).values_at("id", "monthly_usd")
+    assert_includes props["offers"].map { |offer| offer["id"] }, "life_at_cost_hetzner", "a birth still goes to Hetzner"
+
+    { on_house => LIFE_AT_COST_PRICE, on_hetzner => LIFE_AT_COST_HETZNER_PRICE }.each do |agent, price|
+      with_stripe do
+        post checkout_account_billing_path(@account), params: { agent_id: agent.to_param, tier: "life", rate: "at_cost" }
+      end
+      quoted = BillChange.order(:id).last.params.to_json
+      assert_includes quoted, "\"#{price}\"", "#{agent.name}'s quote matches its button"
+    end
+  ensure
+    Setting.instance.update!(new_residents_on_vm: false)
   end
 
   test "shows each hosted resident's plan and the catalogue" do
