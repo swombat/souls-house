@@ -120,6 +120,17 @@ class ServiceAuthorizationsController < ApplicationController
         end
       end
 
+      # Retained LinkedIn history must not revive permission to publish as the
+      # owner. Match a fresh connection's off-by-default sharing, atomically
+      # with the new credential, without discarding the publication ledger.
+      if connection.persisted? && connection.provider == "linkedin" && connection.status == "revoked"
+        connection.enabled_for_new_agents = false
+        connection.freely_provisionable = false
+        connection.agent_service_accesses.each do |access|
+          access.update!(enabled: false, follows_default: false)
+        end
+      end
+
       connection.connected_by_user = attempt.user
       connection.external_subject_id = result.fetch(:external_subject_id)
       connection.external_identity = result[:external_identity]
