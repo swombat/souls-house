@@ -131,6 +131,24 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
     assert_equal HouseInference::Request::PREFILL_REASON, run.inference_refusal_reason
   end
 
+  # Invalid JSON sent as application/json fails in Rails' parameter parsing
+  # before this action's own JSON::ParserError rescue, so it isn't tried here.
+  test 'an oversized or non-request body is refused before the gateway is built' do
+    oversized = { model: @agent.model_id, messages: [ { role: 'user', content: 'x' * HouseInference::Request::MAX_BYTES } ] }.to_json
+    refusals = {
+      oversized => :content_too_large,
+      '[]' => :unprocessable_entity,
+      { model: @agent.model_id, stream: 'yes', messages: [] }.to_json => :unprocessable_entity
+    }
+    HouseInference::Gateway.stub(:new, ->(**) { flunk 'the gateway must not be built for a refused body' }) do
+      refusals.each do |body, status|
+        post @path, params: body, headers: @headers.merge('CONTENT_TYPE' => 'application/json')
+        assert_response status, body.first(40)
+      end
+    end
+    assert_equal 0, HouseInferenceCall.count
+  end
+
   test 'unexpected gateway failures are not mistaken for empty successful responses' do
     HouseInference::Gateway.stub(:new, ->(**) { raise RuntimeError, "synthetic failure" }) do
       post @path, params: @input, headers: @headers, as: :json
