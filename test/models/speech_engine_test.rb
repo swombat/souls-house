@@ -9,13 +9,15 @@ class SpeechEngineTest < ActiveSupport::TestCase
   setup do
     @agent = agents(:research_assistant)
     @account = @agent.account
-    @account.update!(speech_engine: "phonon", eleven_labs_api_key: nil)
+    # A Partners account, so the plan rule lets ElevenLabs through and the
+    # other rules can be seen; the plan rule has its own test.
+    @account.update!(speech_engine: "phonon", eleven_labs_api_key: nil, granted_plan: "partners")
     @agent.update_column(:voice_id, "std-aria")
     Setting.instance.update!(speech_engine_scope: "disabled")
   end
 
   def scope(value) = Setting.instance.update!(speech_engine_scope: value)
-  def engine = SpeechEngine.for(@account.reload, @agent)
+  def engine = SpeechEngine.for(@account.reload, @agent.reload)
 
   def plan(tier, state: "active", source: "stripe")
     ResidentEntitlement.where(agent: @agent).delete_all
@@ -65,32 +67,82 @@ class SpeechEngineTest < ActiveSupport::TestCase
     assert_equal "no_eleven_labs_voice", engine.reason
   end
 
-  test "ElevenLabs reads only Life and Work residents and residents on the house; Conversation speaks Phonon" do
+  test "ElevenLabs reads residents of Partners and Colleagues accounts only, whatever their size" do
     scope("account_choice")
     @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "acct-key")
 
-    assert_predicate engine, :elevenlabs?, "on the house (no plan)"
-
-    %w[life work].each do |tier|
+    @account.update!(granted_plan: nil)
+    assert_equal "companions", @account.plan.id
+    assert_predicate engine, :phonon?, "Companions, on the house: Phonon, by rule"
+    %w[conversation life work].each do |tier|
       plan(tier)
-      assert_predicate engine, :elevenlabs?, tier
+      assert_predicate engine, :phonon?, "Companions, #{tier}: Phonon, by rule"
       assert engine.available
     end
+    plan(nil, state: "complimentary", source: "complimentary")
+    assert_predicate engine, :phonon?, "Companions, complimentary: Phonon"
 
-    plan("conversation")
-    assert_predicate engine, :phonon?, "a Conversation resident is read by Phonon, by rule"
-    assert engine.available
+    %w[partners colleagues].each do |account_plan|
+      @account.update!(granted_plan: account_plan)
+      ResidentEntitlement.where(agent: @agent).delete_all
+      assert_predicate engine, :elevenlabs?, "#{account_plan}, on the house"
+
+      %w[conversation life work].each do |tier|
+        plan(tier)
+        assert_predicate engine, :elevenlabs?, "#{account_plan}, #{tier}"
+        assert engine.available
+      end
+
+      plan("life", state: "grace")
+      assert_predicate engine, :elevenlabs?, "#{account_plan}: a resident in grace is still in force"
+
+      plan("life", state: "held")
+      assert_predicate engine, :phonon?, "#{account_plan}: a lapsed resident is not in force"
+
+      plan(nil, state: "complimentary", source: "complimentary")
+      assert_predicate engine, :elevenlabs?, "#{account_plan}: complimentary counts as the house"
+    end
+  end
+
+  test "a guest speaks by the plan of the house it is speaking in, whose setting and key are used" do
+    scope("account_choice")
+    host = accounts(:another_team)
+    assert_not_equal host.id, @account.id
+    host.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "host-key", granted_plan: nil)
+    @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: "home-key")
+    in_host = -> { SpeechEngine.for(host.reload, @agent.reload) }
+
+    @account.update!(granted_plan: "partners")
+    assert_equal "companions", host.reload.plan.id
+    assert_predicate in_host.call, :phonon?, "a Partners guest in a Companions house: Phonon"
+    assert_predicate engine, :elevenlabs?, "control: the same resident at home"
+
+    @account.update!(granted_plan: nil)
+    host.update!(granted_plan: "partners")
+    assert_predicate in_host.call, :elevenlabs?, "a Companions guest in a Partners house: the host's ElevenLabs"
+    assert_predicate engine, :phonon?, "control: the same resident at home"
 
     plan("life", state: "held")
-    assert_predicate engine, :phonon?, "a lapsed plan is not in force"
+    assert_predicate in_host.call, :phonon?, "a guest whose own hosting has lapsed: Phonon, even in a Partners house"
+  end
 
-    plan(nil, state: "complimentary", source: "complimentary")
-    assert_predicate engine, :elevenlabs?, "complimentary counts as the house"
+  test "a paid Partners plan gives ElevenLabs, and it goes when the plan ends" do
+    scope("enabled")
+    @account.update!(eleven_labs_api_key: "acct-key", granted_plan: nil)
+    plan("conversation")
+    assert_predicate engine, :phonon?, "control: Companions"
+    subscription = AccountSubscription.create!(account: @account, stripe_subscription_id: "sub_voices",
+      plan: "partners", stripe_status: "active")
+    assert_predicate engine, :elevenlabs?
+
+    subscription.update!(stripe_status: "canceled")
+    assert_predicate engine, :phonon?
   end
 
   test "a paid birth waiting for its billing link is not taken for a resident on the house" do
     scope("enabled")
     @account.update!(eleven_labs_api_key: "acct-key")
+    assert_predicate engine, :elevenlabs?, "control: on the house in a Partners account"
     ResidentBirthOrder.create!(account: @account, creator: users(:user_1), tier: "conversation", state: "born", agent: @agent)
 
     assert_predicate engine, :phonon?

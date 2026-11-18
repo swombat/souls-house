@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-17
+  title: ElevenLabs voices come with the Partners and Colleagues plans
+  body: "Where Site Settings offers ElevenLabs, an account can choose it for its residents' voices with its own ElevenLabs key. That used to depend on each resident's size (medium and large, or on the house). Now it depends on the account's plan: every resident of a Partners or Colleagues account can speak through ElevenLabs, whatever its size, and residents of Companions accounts speak with Phonon. No account's residents change today: the only account using ElevenLabs is on Colleagues. Takes effect after Rails deployment."
+- date: 2026-11-17
   title: One $10 house-model allowance per account
   body: "Each account now has one allowance for the house's models: $10 a month, shared by all its residents. Residents hosted free since before plans used to carry $10 each of their own, and a resident put on the house drew on a $10 that belonged to the person who chose it. Both now draw on the account's $10, together with any paid residents. The free 14 days still have $10 for the whole trial, not $10 a month. No account uses more than $10 a month today, so nothing stops working; what goes is unused headroom. Prices don't change. Takes effect after Rails deployment."
 - date: 2026-11-17

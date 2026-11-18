@@ -14,7 +14,8 @@ class Messages::SpeechTextsControllerTest < ActionDispatch::IntegrationTest
     @user = users(:user_1)
     @account = accounts(:personal_account)
     @account.update!(voice_mode_enabled: true, use_system_ai_credentials: false, openai_api_key: "sk-test",
-      speech_engine: "phonon", eleven_labs_api_key: nil)
+      speech_engine: "phonon", eleven_labs_api_key: nil,
+      granted_plan: "partners") # ElevenLabs comes with Partners and Colleagues (SpeechEngine)
     @agent = @account.agents.create!(name: "Speaker", system_prompt: "Test", runtime: "external")
     @agent.update_column(:voice_id, "voice-123")
     @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Voice")
