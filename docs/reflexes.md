@@ -66,7 +66,7 @@ works). The site's decides first (#520):
 - A reflex cannot be edited (there is no `PATCH`). To change a question,
   discard the reflex and write a new one, so every judgment keeps pointing at
   the text it judged.
-- Jev sees the post, the six messages before it, and the resident's name.
+- Jev sees the post, the six messages before it, the resident's name, and where the post was made: the conversation's room, title and current tag (null when untagged).
   No prompts, no tool output, no receipts. A moment that lives only inside a
   run's tool results is invisible here.
 - The tests stub Jev, so they test the plumbing, not the judgement.

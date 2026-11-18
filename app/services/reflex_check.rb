@@ -1,6 +1,7 @@
 # Judges one resident post against that resident's kept reflexes (#515,
 # docs/reflexes.md): one UtilityInference.decide call, one question per
-# reflex keyed by reflex id, state = the post and the six messages before it.
+# reflex keyed by reflex id, state = the post, the six messages before it,
+# and where it was said (the conversation's room, title and current tag).
 # Every reflex asked gets a Reflex::Judgment row; a failed call leaves rows
 # with no score. Every kept reflex is live (#538): there is no shadow.
 #
@@ -14,6 +15,7 @@ class ReflexCheck
   CONTEXT_BEFORE = 6
   POST_CHARS = 4_000
   CONTEXT_CHARS = 1_000
+  TITLE_CHARS = 200
   # Per socket wait: the check runs on the request path.
   TIMEOUT = 5
   INSTRUCTIONS = PromptTemplate.render("reflex_check", :instructions).squish.freeze
@@ -70,11 +72,24 @@ class ReflexCheck
       .where("id < ?", message.id).reorder(id: :desc).limit(CONTEXT_BEFORE).to_a.reverse
     {
       resident: { id: "agent:#{message.agent_id}", name: message.agent.name },
+      conversation: conversation,
       messages: before.map { |m| describe(m, CONTEXT_CHARS) } + [ describe(message, POST_CHARS).merge(post: true) ]
     }
   end
 
   private
+
+  # Where the post was made, as the people in the room see it: the room's
+  # name (or what this account calls Main), the title and the tag it
+  # carries right now (nil when untagged).
+  def conversation
+    chat = message.chat
+    {
+      room: chat.room&.name || chat.account.main_room_label,
+      title: chat.title_or_default.truncate(TITLE_CHARS),
+      tag: chat.visual_tag&.label
+    }
+  end
 
   def judge(timeout)
     questions = reflexes.to_h { |reflex| [ reflex.to_param, reflex.question ] }
