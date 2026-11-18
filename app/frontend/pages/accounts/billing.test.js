@@ -69,6 +69,24 @@ describe('existing resident checkout', () => {
     expect(screen.getByRole('button', { name: 'Opening…' })).toBeDisabled();
   });
 
+  it("prices each resident's buttons from its own offers, not the birth offers", () => {
+    const boatMedium = { ...atCost, monthly_usd: '28.00' };
+    const hetznerMedium = { ...atCost, id: 'life_at_cost_hetzner', rate: 'at_cost_hetzner' };
+    render(
+      Billing,
+      props({
+        offers: [standard, hetznerMedium],
+        residents: [
+          { id: 'house', name: 'House', entitlement: null, offers: [standard, boatMedium] },
+          { id: 'vm', name: 'Vm', entitlement: null, offers: [standard, hetznerMedium] },
+        ],
+      })
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Medium at cost · $28 a month' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Medium at cost · $11 a month' })).toHaveLength(1);
+  });
+
   it('does not invent at-cost offers for an ineligible account', () => {
     render(Billing, props({ offers: [standard], codes: { eligible_rates: ['standard'], redemptions: [] } }));
 
