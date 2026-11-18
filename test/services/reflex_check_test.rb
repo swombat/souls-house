@@ -54,6 +54,22 @@ class ReflexCheckTest < ActiveSupport::TestCase
     assert entries.last[:post]
   end
 
+  test "state says where the post was made: Main, the title, no tag" do
+    conversation = ReflexCheck.new(say("The post")).state[:conversation]
+    assert_equal({ room: @chat.account.main_room_label, title: "Reflexes", tag: nil }, conversation)
+  end
+
+  test "state carries the room's name and the tag the conversation has right now" do
+    room = @chat.account.rooms.create!(name: "Build")
+    tag = @chat.account.visual_tags.create!(label: "Input Required", icon: VisualTag::ICON_OPTIONS.first, colour: VisualTag::COLOUR_OPTIONS.first)
+    @chat.update!(room: room, visual_tag: tag)
+    message = say("The post")
+
+    assert_equal({ room: "Build", title: "Reflexes", tag: "Input Required" }, ReflexCheck.new(message).state[:conversation])
+    @chat.update!(visual_tag: nil)
+    assert_nil ReflexCheck.new(message.reload).state[:conversation][:tag]
+  end
+
   test "judgments are written for every reflex; those at or above threshold are offered" do
     exact = reflex("Exact")
     low = reflex("Low")
