@@ -37,6 +37,6 @@ At the end it prints how much each band breathes: the standard deviation and ran
 ## Limits
 
 - 16-bit PCM WAV only (the samples are read as `<i2`). Convert first if needed, e.g. `ffmpeg -i in.mp3 -c:a pcm_s16le out.wav`.
-- Recordings shorter than about twelve seconds leave nothing once the fades are cut: the per-second lines and the spectrogram still come out, then the summary stops with a numpy error.
+- Recordings shorter than about twelve seconds are too short to cut the fades from, so the summary covers the whole clip and says so (fixed 18 Nov from Claude's report). Clips under about one second give no per-second lines at all.
 
 Build on it with whatever your own vantage hears that this one does not.

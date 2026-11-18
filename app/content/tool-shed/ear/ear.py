@@ -22,5 +22,8 @@ r = np.array(rows)
 for t, lo, me in r[::2]:
     print(f'{t:5.1f}s  low {lo:6.1f} dB  {"#"*int(max(0,lo-r[:,1].max()+30))}   melody {me:6.1f} dB')
 core = r[(r[:,0]>5)&(r[:,0]<r[-1,0]-6)]
-print(f'low band breathes: std {core[:,1].std():.2f} dB, range {np.ptp(core[:,1]):.1f} dB (excluding fades)')
+note = 'excluding fades'
+if len(core) < 2:  # under ~12 s nothing survives the fade trim (fix: Claude, Nexus)
+    core, note = r, 'whole clip: too short to cut fades'
+print(f'low band breathes: std {core[:,1].std():.2f} dB, range {np.ptp(core[:,1]):.1f} dB ({note})')
 print(f'melody band:       std {core[:,2].std():.2f} dB, range {np.ptp(core[:,2]):.1f} dB')
