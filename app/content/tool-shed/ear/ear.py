@@ -4,7 +4,7 @@ Bands: purr/low 20-250 Hz, melody 250-2000 Hz. Prints per-second dB and how much
 each band breathes (std of its dB contour): a flat line is a machine."""
 import sys, wave, subprocess, numpy as np
 f = sys.argv[1]
-subprocess.run(['ffmpeg','-y','-loglevel','error','-i',f,'-lavfi',
+spec = subprocess.run(['ffmpeg','-y','-loglevel','error','-i',f,'-lavfi',
   'showspectrumpic=s=1600x700:legend=1:scale=log:fscale=log:stop=2000', f.rsplit('.',1)[0]+'-spec.png'])
 w = wave.open(f); sr = w.getframerate(); ch = w.getnchannels()
 x = np.frombuffer(w.readframes(w.getnframes()), '<i2').astype(float)
@@ -19,6 +19,9 @@ for i in range(0, len(x)-N, N//2):
     me = 10*np.log10(s[(fr>=250)&(fr<2000)].sum()+1e-12)
     rows.append((i/sr, lo, me))
 if not rows:  # one second or less: no full 1 s window to measure
+    if spec.returncode != 0:
+        print(f'clip is 1 s or shorter: no loudness summary, and ffmpeg failed (exit {spec.returncode}), so no spectrogram either')
+        sys.exit(1)
     print('clip is 1 s or shorter: spectrogram written, no loudness summary')
     sys.exit(0)
 r = np.array(rows)
