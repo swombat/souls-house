@@ -30,6 +30,10 @@ module Backup
 
     def skips(agent) = agent.agent_backup_snapshots.where("stderr_tail LIKE ?", "#{BusyRetry::PREFIX}%").order(:id)
 
+    def queued_job_ids
+      enqueued_jobs.select { |job| job["job_class"] == "Backup::AgentResticJob" }.map { |job| job["job_id"] }
+    end
+
     def queued_attempts
       enqueued_jobs.select { |job| job["job_class"] == "Backup::AgentResticJob" }
         .map { |job| job["arguments"].last["busy_attempt"] }
@@ -86,15 +90,51 @@ module Backup
       assert_empty queued_attempts
     end
 
-    test "a restarted nightly run does not start a second chain of retries" do
+    test "a restarted nightly run does not start a second chain while the retry is still queued" do
       queued_at = 30.minutes.ago
       nightly(enqueued_at: queued_at)
+      job_id = queued_job_ids.sole
+      assert_match "[retry job #{job_id}]", skips(@agent).sole.stderr_tail
       clear_enqueued_jobs
-      attempted = nightly(enqueued_at: queued_at)
+      attempted = BusyRetry.stub(:retry_pending?, ->(id) { id == job_id }) { nightly(enqueued_at: queued_at) }
 
       assert_not_includes attempted, @agent.id
       assert_equal 1, skips(@agent).count
       assert_empty queued_attempts
+    end
+
+    test "a skip row whose retry was lost does not stop a restarted run (#1036)" do
+      queued_at = 30.minutes.ago
+      nightly(enqueued_at: queued_at)
+      clear_enqueued_jobs
+      # The retry job is gone (interrupted, deleted, failed): nothing is owed.
+      attempted = BusyRetry.stub(:retry_pending?, false) { nightly(enqueued_at: queued_at) }
+
+      assert_includes attempted, @agent.id
+      assert_equal [ 2 ], queued_attempts
+    end
+
+    test "when the queue refuses the retry, the row says so and a restart tries again (#1036)" do
+      queued_at = 30.minutes.ago
+      AgentResticJob.stub(:set, ->(**) { raise ActiveJob::EnqueueError, "queue down" }) do
+        nightly(enqueued_at: queued_at)
+      end
+      row = skips(@agent).sole
+      assert_match "could not be queued", row.stderr_tail
+      assert_no_match "retry job", row.stderr_tail
+      assert_empty queued_attempts
+
+      attempted = BusyRetry.stub(:retry_pending?, ->(_) { flunk "no job to look for" }) { nightly(enqueued_at: queued_at) }
+      assert_includes attempted, @agent.id
+      assert_equal [ 2 ], queued_attempts
+    end
+
+    test "a restart after the last try does not start the night over" do
+      queued_at = 3.hours.ago
+      AgentBackupSnapshot.create!(agent: @agent, restic_snapshot_id: "unknown", taken_at: 10.minutes.ago, ok: false,
+        stderr_tail: "#{BusyRetry::PREFIX} (x); attempt 6 of 6, #{BusyRetry::LAST}")
+      attempted = nightly(enqueued_at: queued_at)
+      assert_not_includes attempted, @agent.id
     end
 
     test "a run by hand still fails on a busy resident rather than deferring" do

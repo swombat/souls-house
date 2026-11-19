@@ -39,12 +39,16 @@ class FullBackupJob < ApplicationJob
     since.present? && agent.agent_backup_snapshots.where(ok: true).where("taken_at >= ?", since).exists?
   end
 
-  # Found busy earlier in this run: its retries are already queued, and a
-  # restart must not start a second chain of them.
+  # Found busy earlier in this run and a retry is still owed (queued, not yet
+  # run or failed): a restart must not start a second chain. A skip row whose
+  # retry never got queued, or was lost, does not count (#1036).
   def deferred_in_this_run?(agent)
     since = enqueued_at && Time.zone.parse(enqueued_at.to_s)
-    since.present? && agent.agent_backup_snapshots.where(ok: false)
-      .where("taken_at >= ?", since).where("stderr_tail LIKE ?", "#{Backup::BusyRetry::PREFIX}%").exists?
+    return false unless since
+
+    row = agent.agent_backup_snapshots.where(ok: false).where("taken_at >= ?", since)
+      .where("stderr_tail LIKE ?", "#{Backup::BusyRetry::PREFIX}%").order(:taken_at, :id).last
+    row.present? && Backup::BusyRetry.owed?(row)
   end
 
   def backup_agent!(agent, fail_fast)
