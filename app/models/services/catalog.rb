@@ -531,6 +531,42 @@ module Services
     )
 
     Services::Definition.register(
+      key: "runpod",
+      name: "RunPod",
+      management_scopes: %w[personal account_managed],
+      connection_method: "credentials",
+      credential_strategy: "static",
+      api_origins: %w[https://api.runpod.io],
+      documentation: [
+        "https://docs.runpod.io/api-reference-v2/account/get-your-account",
+        "https://docs.runpod.io/get-started/credentials",
+        "https://docs.runpod.io/pods/manage-pods"
+      ],
+      access_profiles: {
+        api_key: []
+      },
+      default_access_profile: "api_key",
+      credential_fields: [
+        {
+          key: "api_key",
+          label: "API key",
+          type: "password",
+          placeholder: "rpa_…",
+          help: "RunPod: Settings → API Keys → Create API Key. It must be able to read the account; starting and terminating pods needs pod write access. Read Only can only look."
+        }
+      ],
+      runtime_notes: [
+        "The key is credentials.api_key; send it as Authorization: Bearer, never in a URL or a log.",
+        "REST v2 is metadata.api_base: /pods, /pods/ID, /serverless, /network-volumes, /catalog/gpus (live prices), /billing/balance. The key's permissions decide what answers; a 403 means this key lacks that access, not that it is invalid.",
+        "The house sets no spend cap, and the RunPod balance is not one either: auto-pay can recharge a saved card. Before creating anything billable, say what it is for, its hourly price and a budget, and wait for the owner's go-ahead on the first one.",
+        "Stopping a pod ends GPU charges but not storage: a stopped pod keeps billing for its volume disk. For disposable work, export the results, then terminate (DELETE /pods/ID), delete any network volume you created, and list /pods and /network-volumes afterwards to confirm nothing you started remains, including when the work failed.",
+        "Disconnecting the integration stops the house handing out the key; it does not stop pods, and a copy of the key already obtained stays valid until it is deleted in RunPod.",
+        "A pod's HTTP ports are served at https://POD_ID-PORT.proxy.runpod.net; a vLLM pod speaks the OpenAI chat-completions API there under /v1."
+      ],
+      adapter_class: "Services::RunpodAdapter"
+    )
+
+    Services::Definition.register(
       key: "porkbun",
       name: "Porkbun",
       management_scopes: %w[personal account_managed],

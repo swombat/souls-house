@@ -67,6 +67,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/models/services/pipedrive_token_adapter.rb" => "Pipedrive service connection User-Agent header",
     "app/models/services/honeybadger_token_adapter.rb" => "Honeybadger service connection User-Agent header",
     "app/models/services/porkbun_adapter.rb" => "Porkbun service connection User-Agent header",
+    "app/models/services/runpod_adapter.rb" => "RunPod service connection User-Agent header",
     "app/models/services/cloudflare_adapter.rb" => "Cloudflare service connection User-Agent header",
     "app/models/services/ghost_adapter.rb" => "Ghost service connection User-Agent header",
     "app/models/services/twenty_adapter.rb" => "Twenty service connection User-Agent header",

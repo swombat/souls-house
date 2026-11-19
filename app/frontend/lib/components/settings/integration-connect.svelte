@@ -166,6 +166,16 @@
           a project's API key.
         </div>
       {/if}
+      {#if focusedService.key === 'runpod'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection act as you on RunPod, with whatever the key allows. The house sets no spend
+          cap, and your RunPod balance isn't one if auto-pay is on. Stopping a pod ends GPU charges but not storage;
+          only terminating it does. Residents are told to name the purpose, hourly price and budget before starting
+          anything, to wait for your go-ahead on the first one, and to terminate what they start and check it's gone.
+          Create the key under Settings → API Keys; it needs to read your account, and starting pods needs pod write
+          access.
+        </div>
+      {/if}
       {#if focusedService.key === 'porkbun'}
         <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
           Residents with this connection can change DNS records, URL forwards and nameservers on your Porkbun domains,

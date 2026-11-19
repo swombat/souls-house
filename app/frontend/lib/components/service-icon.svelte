@@ -15,6 +15,7 @@
     Receipt,
     Ghost,
     LinkedinLogo,
+    Cpu,
   } from 'phosphor-svelte';
 
   // The glyph for one service, in every place a service is shown. The tile
@@ -32,6 +33,7 @@
     telegram: [TelegramLogo, 'fill'],
     whatsapp: [WhatsappLogo, 'fill'],
     porkbun: [GlobeHemisphereWest, 'bold'],
+    runpod: [Cpu, 'bold'],
     cloudflare: [Cloud, 'fill'],
     twitterapi_io: [XLogo, 'bold'],
     xero: [Receipt, 'bold'],
