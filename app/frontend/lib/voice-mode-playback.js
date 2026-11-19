@@ -1,3 +1,5 @@
+import { createStreamPlayer } from '$lib/stream-player';
+
 // Voice mode playback (YMaddY, PR 2): resident messages read aloud one at a
 // time through a single audio element, streamed from Messages::SpeechesController.
 //
@@ -20,8 +22,19 @@
 // the top: a reply can be heard twice, never skipped.
 // A generation counter makes sure a play() already in flight when that
 // happens cannot start afterwards.
+//
+// Under Phonon a reply is spoken while it is still being made, as Listen does
+// (YNwVle, #895): the speech source hands over each chunk (onAudio), and the
+// first chunk starts a stream player (lib/stream-player.js) on the Web Audio
+// context the wave button's tap unlocked, so the first sound comes with the
+// first chunk instead of after the whole reply. An interruption pauses that
+// stream and parks it, and the making carries on into it, so a resume plays
+// on from where it paused. A reply already made (a replay) still plays through
+// the audio element from its kept WAV, and ElevenLabs is streamed by the
+// element from its URL as before.
 
 let shared = null;
+let sharedCtx = null;
 
 export function sharedAudio() {
   if (!shared && typeof Audio !== 'undefined') shared = new Audio();
@@ -51,19 +64,43 @@ export function silentWav(samples = 800) {
   return `data:audio/wav;base64,${btoa(binary)}`;
 }
 
+// The Web Audio context Phonon's streamed replies play on. Made (or woken)
+// inside the tap that opens voice mode, for the same reason as the element.
+export function sharedContext() {
+  const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if ((!sharedCtx || sharedCtx.state === 'closed') && Context) sharedCtx = new Context();
+  return sharedCtx;
+}
+
 // Call from inside the tap that opens voice mode.
-export function unlockAudio(audio = sharedAudio()) {
+export function unlockAudio(audio = sharedAudio(), context = sharedContext) {
+  context?.()
+    ?.resume?.()
+    ?.catch?.(() => {});
   if (!audio) return;
   audio.src = silentWav();
   audio.play()?.catch?.(() => {});
 }
 
-export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror } = {}) {
+// A stream only on a context that can actually play: one that is running,
+// or (trusted) one this player suspended itself to park a reply for barge-in.
+// Never one the browser interrupted or that never started (Read replies aloud
+// switched on with no tap): then the reply goes to the element, whose refused
+// play() is what shows Tap to play (#1040 review).
+export function sharedStream({ trusted = false, context = sharedContext, ...options } = {}) {
+  const ctx = context();
+  if (!ctx) return null;
+  if (ctx.state !== 'running' && !(trusted && ctx.state === 'suspended')) return null;
+  return createStreamPlayer({ context, keepContext: true, ...options });
+}
+
+export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror, stream = sharedStream } = {}) {
   let queue = [];
   let current = null;
   let parked = null;
   let generation = 0;
   let closed = false;
+  let selfSuspended = false; // the context is suspended because we parked a stream
 
   const report = () => onchange?.(current ? current.id : null);
 
@@ -87,9 +124,63 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
     finish(item);
   }
 
+  // Each request for a reply's audio is a job: its making (controller) and,
+  // under Phonon, the stream it plays into. A streamed job outlives the item
+  // that asked for it: interrupting parks the job, and the resumed item takes
+  // it over, so the making's outcome is always routed to whoever holds the job
+  // now (#1040 review).
+  //
+  // A parked job that will not be played on is stopped and its making aborted.
+  function dropParked() {
+    parked?.job?.stream?.stop();
+    parked?.job?.controller?.abort();
+    parked = null;
+  }
+
+  function streamEnded(job) {
+    if (current?.job === job) return finish(current);
+    if (parked?.job === job) parked = null;
+  }
+
+  // The first chunk of a reply being made starts its stream, if the context
+  // can play; otherwise the whole reply goes to the element when it is made.
+  // An item interrupted before any sound came has nothing to park (its making
+  // is aborted).
+  function onAudioFor(item, job) {
+    return (samples, sampleRate) => {
+      if (closed || job.element) return;
+      if (!job.stream) {
+        if (item !== current || item.generation !== generation) return;
+        const s = stream?.({ trusted: selfSuspended, onended: () => streamEnded(job) });
+        if (!s) {
+          job.element = true;
+          return;
+        }
+        selfSuspended = false; // a new stream resumes the context
+        job.stream = s;
+        item.started = true;
+      }
+      job.stream.push(samples, sampleRate);
+    };
+  }
+
+  // A streamed job's making failed: the stream stops, and whoever holds the
+  // job now fails as any reply does (a resumed one is asked for again from the
+  // top, otherwise reported and the queue moves on).
+  function jobFailed(job, error) {
+    job.stream.stop();
+    if (parked?.job === job) parked = null;
+    if (current?.job !== job) return;
+    const holder = current;
+    holder.job = null;
+    holder.started = false;
+    failed(holder, error);
+  }
+
   // The source is set only now, so an item still being made (Phonon) never
   // counts as playing: an interruption before this point parks nothing.
   function start(item, url) {
+    if (item.job?.stream) return item.job.stream.finish(); // heard as it was made
     if (closed || item !== current || item.generation !== generation) return;
     if (!url) return failed(item, new Error('No audio for this reply.'));
     item.started = true;
@@ -106,26 +197,39 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
     if (!item) return report();
     current = item;
     report();
-    if (item.resume && parked?.id === item.id && !audio.error) {
+    if (item.resume && parked?.id === item.id && parked.job?.stream && !parked.job.stream.stopped) {
+      item.resumed = true;
+      item.started = true;
+      item.job = parked.job;
+      parked = null;
+      selfSuspended = false;
+      item.job.stream.play();
+      return;
+    }
+    if (item.resume && parked?.id === item.id && !parked.job && !audio.error) {
       item.resumed = true;
       item.started = true;
       parked = null;
       return play(item, audio.play());
     }
-    parked = null;
+    dropParked();
     // urlFor may answer at once (a URL) or later (a promise of one: Phonon
     // makes the audio first). Interrupting aborts the making.
-    item.controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const job = { controller: typeof AbortController === 'function' ? new AbortController() : null };
+    item.job = job;
     let source;
     try {
-      source = urlFor(item.id, { signal: item.controller?.signal });
+      source = urlFor(item.id, { signal: job.controller?.signal, onAudio: onAudioFor(item, job) });
     } catch (error) {
       return failed(item, error);
     }
     if (typeof source?.then === 'function') {
       source.then(
-        (url) => start(item, url),
-        (error) => item.generation === generation && failed(item, error)
+        (url) => (job.stream ? job.stream.finish() : start(item, url)),
+        (error) => {
+          if (job.stream) return jobFailed(job, error);
+          if (item.generation === generation) failed(item, error);
+        }
       );
     } else {
       start(item, source);
@@ -134,12 +238,12 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
 
   // Only a reply whose audio was set ends: the unlock clip (or the previous
   // reply) finishing while the next one is still being made must not skip it.
-  const onended = () => current?.started && finish(current);
+  const onended = () => current?.started && !current.job?.stream && finish(current);
   // An error while a reply is parked means that source is dead: forget it, so
   // its resume is a fresh request rather than a play() on a broken element.
   const onerrorEvent = () => {
-    if (current?.started) return failed(current);
-    if (!current) parked = null;
+    if (current?.started && !current.job?.stream) return failed(current);
+    if (!current && !parked?.job) parked = null;
   };
   audio.addEventListener('ended', onended);
   audio.addEventListener('error', onerrorEvent);
@@ -147,17 +251,26 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
   function stop() {
     generation += 1;
     const started = Boolean(current?.started);
-    const position = started && Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const now = current?.job?.stream ? current.job.stream.position : audio.currentTime;
+    const position = started && Number.isFinite(now) ? now : 0;
     const dropped = [
       ...(current ? [{ id: current.id, at: position, playing: started }] : []),
       ...queue.map((item) => ({ id: item.id, at: 0, playing: false })),
     ];
     queue = [];
     if (current) {
-      current.controller?.abort();
-      if (started) {
-        parked = { id: current.id };
-        audio.pause();
+      if (current.job?.stream) {
+        // The making carries on into the paused stream, so a resume plays on;
+        // it is aborted only if the job is dropped (dropParked).
+        parked = { id: current.id, job: current.job };
+        current.job.stream.pause();
+        selfSuspended = true;
+      } else {
+        current.job?.controller?.abort();
+        if (started) {
+          parked = { id: current.id };
+          audio.pause();
+        }
       }
       current = null;
       report();
@@ -175,7 +288,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror 
     close() {
       closed = true;
       stop();
-      parked = null;
+      dropParked();
       audio.pause?.();
       audio.removeAttribute('src');
       audio.load?.();

@@ -19,8 +19,11 @@ import { writable } from 'svelte/store';
 
 export const LEAD = 0.08; // seconds between the first chunk arriving and its sound
 
+// keepContext: the context is shared (voice mode's, unlocked by the wave
+// button's tap) and outlives this player, so stopping never closes it.
 export function createStreamPlayer({
   context = () => new (globalThis.AudioContext || globalThis.webkitAudioContext)(),
+  keepContext = false,
   onended,
 } = {}) {
   const ctx = context();
@@ -98,7 +101,7 @@ export function createStreamPlayer({
       }
     }
     sources = new Set();
-    if (ctx.state !== 'closed') ctx.close?.()?.catch?.(() => {});
+    if (!keepContext && ctx.state !== 'closed') ctx.close?.()?.catch?.(() => {});
   }
 
   return {

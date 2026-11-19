@@ -30,7 +30,8 @@ export function createReplyReader({
   const picker = createReplyPicker(messages);
   const player = createPlayer({
     ...(audio ? { audio } : {}),
-    urlFor: (id, { signal } = {}) => source.resolve(id, { signal }).then((answer) => answer.url),
+    urlFor: (id, { signal, onAudio } = {}) =>
+      source.resolve(id, { signal, ...(onAudio ? { onAudio } : {}) }).then((answer) => answer.url),
     onchange,
     onerror,
   });

@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { createPlayer, silentWav, unlockAudio } from './voice-mode-playback';
+import { createPlayer, sharedStream, silentWav, unlockAudio } from './voice-mode-playback';
 
 // A stand-in for the one <audio> element: records what it was asked to play
 // and lets the test end a clip or refuse a play().
@@ -332,4 +332,214 @@ test('an ended event while the next reply is still being made does not skip it',
   expect(audio.log.at(-1)).toEqual(['play', 'blob:A']);
   audio.end();
   expect(player.speaking).toBe(false);
+});
+
+// Phonon in voice mode (#895's stream player, now here too): a stand-in
+// stream records its chunks, pauses and plays, and ends when the test says.
+function fakeStreams() {
+  const made = [];
+  const stream = ({ onended }) => {
+    const s = {
+      chunks: [],
+      log: [],
+      stopped: false,
+      done: false,
+      position: 0,
+      push: (samples) => s.chunks.push(samples),
+      finish: () => ((s.done = true), s.log.push('finish')),
+      pause: () => s.log.push('pause'),
+      play: () => s.log.push('play'),
+      stop: () => ((s.stopped = true), s.log.push('stop')),
+      end: () => onended(),
+    };
+    made.push(s);
+    return s;
+  };
+  return { made, stream };
+}
+
+// urlFor as Phonon answers it: chunks come through onAudio while the reply is
+// made, and the kept WAV's URL resolves once it is all made.
+function phonon() {
+  const making = {};
+  const urlFor = (id, { onAudio, signal } = {}) =>
+    new Promise((resolve, reject) => {
+      making[id] = { onAudio, done: () => resolve(`blob:${id}`), fail: reject, signal };
+      signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    });
+  return { making, urlFor };
+}
+
+test('under Phonon the first chunk starts the sound, before the reply is all made', async () => {
+  const audio = fakeAudio();
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream });
+  player.enqueue('a');
+  player.enqueue('b');
+  expect(made).toHaveLength(0);
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  making.a.onAudio(new Float32Array([0.2]), 24000);
+  expect(made).toHaveLength(1);
+  expect(made[0].chunks).toHaveLength(2);
+  making.a.done();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(made[0].done).toBe(true);
+  expect(audio.log).toEqual([]); // the element never plays a streamed reply
+  expect(player.speaking).toBe(true);
+  audio.end(); // the unlock clip ending must not skip it
+  expect(player.speaking).toBe(true);
+  made[0].end();
+  expect(making.b).toBeDefined(); // the next reply is asked for when the stream ends
+});
+
+test('speaking over a streamed reply parks it; the making carries on and it plays on when resumed', async () => {
+  const audio = fakeAudio();
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream });
+  player.enqueue('a');
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  made[0].position = 6;
+  const dropped = player.interrupt();
+  expect(dropped).toEqual([{ id: 'a', at: 6, playing: true }]);
+  expect(made[0].log).toEqual(['pause']);
+  expect(making.a.signal.aborted).toBe(false);
+  making.a.onAudio(new Float32Array([0.3]), 24000); // still being made while parked
+  making.a.done();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(made[0].chunks).toHaveLength(2);
+  expect(made[0].done).toBe(true);
+  player.enqueue('a', { resume: true });
+  expect(made[0].log.at(-1)).toBe('play');
+  expect(made).toHaveLength(1);
+  made[0].end();
+  expect(player.speaking).toBe(false);
+});
+
+test('a parked stream started again from the top is stopped, and the reply asked for afresh', () => {
+  const audio = fakeAudio();
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream });
+  player.enqueue('a');
+  const first = making.a;
+  first.onAudio(new Float32Array([0.1]), 24000);
+  player.interrupt();
+  player.enqueue('a');
+  expect(made[0].stopped).toBe(true);
+  expect(first.signal.aborted).toBe(true); // the discarded making stops too
+  expect(making.a).not.toBe(first);
+});
+
+test('a reply interrupted before any sound came parks nothing and its making stops', () => {
+  const audio = fakeAudio();
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream });
+  player.enqueue('a');
+  expect(player.interrupt()).toEqual([{ id: 'a', at: 0, playing: false }]);
+  expect(making.a.signal.aborted).toBe(true);
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  expect(made).toHaveLength(0);
+});
+
+test('closing stops a parked stream', () => {
+  const audio = fakeAudio();
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream });
+  player.enqueue('a');
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  player.close();
+  expect(made[0].stopped).toBe(true);
+  expect(making.a.signal.aborted).toBe(true);
+});
+
+test('a streamed reply whose making fails after a resume is asked for again, and the queue does not stall (#1040 review)', async () => {
+  const audio = fakeAudio();
+  const errors = [];
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream, onerror: (id) => errors.push(id) });
+  player.enqueue('a');
+  const first = making.a;
+  first.onAudio(new Float32Array([0.1]), 24000);
+  made[0].position = 7;
+  player.interrupt();
+  player.enqueue('a', { resume: true });
+  player.enqueue('b');
+  first.fail(new Error('synthesis died'));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(made[0].stopped).toBe(true);
+  expect(making.a).not.toBe(first); // from the top, once
+  making.a.fail(new Error('died again'));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(errors).toEqual(['a']);
+  expect(making.b).toBeDefined();
+});
+
+test('a context that is not running leaves the reply to the element, so Tap to play still works (#1040 review)', async () => {
+  const resumes = [];
+  class SuspendedContext {
+    state = 'suspended';
+    currentTime = 0;
+    destination = {};
+    resume() {
+      resumes.push(1);
+      return new Promise(() => {}); // never allowed without a tap
+    }
+    createBuffer() {
+      throw new Error('should not schedule');
+    }
+  }
+  vi.stubGlobal('AudioContext', SuspendedContext);
+  try {
+    const audio = fakeAudio();
+    audio.refuse = true;
+    const errors = [];
+    const { making, urlFor } = phonon();
+    const player = createPlayer({ audio, urlFor, onerror: (id, e) => errors.push([id, e.message]) });
+    player.enqueue('a');
+    making.a.onAudio(new Float32Array([0.1]), 24000);
+    making.a.done();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(audio.log).toEqual([['play', 'blob:a']]);
+    expect(errors).toEqual([['a', 'NotAllowedError']]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('only a context this player suspended to park a reply is trusted for the next stream (#1040 review)', async () => {
+  const audio = fakeAudio();
+  const asked = [];
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream: (o) => (asked.push(o.trusted), stream(o)) });
+  player.enqueue('a');
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  making.a.done();
+  await Promise.resolve();
+  made[0].end(); // A heard to the end
+  player.enqueue('b');
+  making.b.onAudio(new Float32Array([0.1]), 24000);
+  player.interrupt(); // B parked: we suspended the context
+  player.enqueue('c');
+  making.c.onAudio(new Float32Array([0.1]), 24000);
+  expect(asked).toEqual([false, false, true]);
+});
+
+test('a stream is never started on an interrupted or never-started context, trusted or not', () => {
+  const ctx = (state) => () => ({ state, currentTime: 0, resume: () => new Promise(() => {}) });
+  expect(sharedStream({ context: ctx('interrupted'), trusted: true })).toBeNull();
+  expect(sharedStream({ context: ctx('suspended') })).toBeNull();
+  expect(sharedStream({ context: ctx('suspended'), trusted: true })).not.toBeNull();
+  expect(sharedStream({ context: ctx('running') })).not.toBeNull();
 });

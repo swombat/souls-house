@@ -126,3 +126,15 @@ test('a chunk is copied, so a buffer the engine reuses cannot change what is hea
   reused.fill(0.9);
   expect(Array.from(ctx.nodes[0].buffer.data)).toEqual(Array(4).fill(Math.fround(0.3)));
 });
+
+test('a player on a shared context (keepContext) never closes it', () => {
+  const ctx = {
+    currentTime: 0,
+    state: 'running',
+    resume: vi.fn(() => Promise.resolve()),
+    close: vi.fn(() => Promise.resolve()),
+  };
+  const player = createStreamPlayer({ context: () => ctx, keepContext: true });
+  player.stop();
+  expect(ctx.close).not.toHaveBeenCalled();
+});
