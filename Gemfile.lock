@@ -545,7 +545,7 @@ GEM
       probabilistic_machines (>= 0.1)
       state_machines (>= 0.202.0)
       zeitwerk (>= 2.7.3)
-    state_machines (0.202.0)
+    state_machines (0.301.2)
     state_machines-activemodel (0.200.0)
       activemodel (>= 7.2)
       state_machines (>= 0.200.0)
@@ -704,7 +704,7 @@ DEPENDENCIES
   solid_cache
   solid_queue (~> 1.7.2)
   star_gates
-  state_machines (~> 0.202.0)
+  state_machines (~> 0.301.2)
   state_machines-activerecord (~> 0.200.0)
   state_machines-mermaid (~> 0.2)
   stripe (~> 21.0)
