@@ -96,12 +96,23 @@ module Backup
       ensure
         if paused_here
           original_error = $!
-          begin
-            _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
-            raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
+          resumed = begin
+            Open3.capture3("docker", "unpause", agent.container_name).last.success?
           rescue StandardError
+            false
+          end
+          unless resumed
             Rails.logger.error("Resident remains paused after backup")
-            raise unless original_error
+            # Until 19 Nov 2026 a failed unpause was never tried again, and
+            # the resident stayed frozen (Mira, 04:06-05:32Z). Now it is
+            # tried once more and checked;
+            # Docker not answering is never taken for unpaused. Reported
+            # either way (ContainerPause). The backup's own error, if any,
+            # is kept.
+            outcome = ContainerPause.retry_unpause!(agent)
+            if outcome.in?(%i[still_paused unknown]) && !original_error
+              raise ArgumentError, "Resident remains paused after backup"
+            end
           end
         end
       end

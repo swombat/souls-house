@@ -33,8 +33,8 @@ module AgentRuntimeInteraction::FailureReport
   FAILURE_CATEGORIES = %w[
     needs_setup house_allowance_exhausted house_allowance_none house_provider_refused subscription_limit
     fallback_off fallback_cap_reached fallback_payer_key_missing fallback_model_unavailable fallback_provider_refused
-    runtime_unavailable model_unavailable provider_challenge provider_transient authentication_error
-    runtime_error timed_out unknown
+    runtime_unavailable container_paused model_unavailable provider_challenge
+    provider_transient authentication_error runtime_error timed_out unknown
   ].freeze
   # The model provider failing a request it would normally serve, positively
   # identified by the shim (trigger_shim.py classify_provider_edge): a 403
@@ -98,6 +98,10 @@ module AgentRuntimeInteraction::FailureReport
     if error_kind == Agents::InferenceAvailability::NEEDS_SETUP
       return refusal_code.in?(ALLOWANCE_REFUSALS) ? refusal_code : "needs_setup"
     end
+    # The resident's container was paused when the run was refused
+    # (ExternalAgentResponseRequest#notify_unreachable). What paused it is
+    # not claimed.
+    return "container_paused" if error_kind == "container_paused"
     return "runtime_unavailable" if error_class.in?(UNAVAILABLE_ERROR_CLASSES)
     return "runtime_unavailable" if runtime_status.nil? && transport_status.in?(UNAVAILABLE_TRANSPORT_STATUSES)
     # The runtime's own structured classification (trigger_shim.py

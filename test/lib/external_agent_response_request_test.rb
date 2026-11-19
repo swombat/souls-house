@@ -3,6 +3,26 @@ require "webmock/minitest"
 
 class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
+  test "a run refused while the container is paused says paused, cause unconfirmed; otherwise unreachable" do
+    agent = agents(:research_assistant)
+    agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "synthetic", container_name: "resident-paused-dispatch-test",
+      health_state: "unhealthy", consecutive_health_failures: 6)
+    {
+      paused: [ "container_paused", "#{agent.name}'s container is paused, and what paused it isn't confirmed" ],
+      running: [ "unknown", "#{agent.name} is currently unreachable on its external runtime" ],
+      unknown: [ "unknown", "#{agent.name} is currently unreachable on its external runtime" ]
+    }.each do |state, (category, words)|
+      chat = agent.account.chats.create!(title: "Paused #{state}", manual_responses: true, agents: [ agent ])
+      run = AgentRuntimeInteraction.reserve!(agent: agent, chat: chat)
+      Backup::ContainerPause.stub(:state, state) do
+        ExternalAgentResponseRequest.new(agent: agent, chat: chat, interaction: run).send(:notify_unreachable)
+      end
+      assert_equal category, run.reload.failure_category, state.inspect
+      assert_includes chat.messages.order(:id).last.content, words
+    end
+  end
+
   test "asynchronous conversation returns queued and mints callback credentials only on admission" do
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",

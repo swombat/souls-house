@@ -26,6 +26,13 @@ class AgentRuntimeInteraction::FailureReportTest < ActiveSupport::TestCase
     assert_equal :neutral, plain_run(runtime_status: "ok", finished_at: nil).streak_outcome
   end
 
+  test "a run refused because the container was paused says paused, and claims no cause" do
+    run = live_run("failed", response_body: { "error_kind" => "container_paused" })
+    assert_equal "container_paused", run.failure_category
+    assert_equal "its container is paused, and what paused it isn't confirmed", run.failure_reason
+    assert_no_match(/backup/, run.failure_reason)
+  end
+
   test "the category comes from structured fields only, never from log text" do
     assert_equal "timed_out", live_run("timed_out").failure_category
     assert_equal "runtime_unavailable", live_run("failed", error_class: "Errno::ECONNREFUSED", error_message: "x").failure_category

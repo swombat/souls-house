@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-19
+  title: A backup whose unpause fails tries again and says so
+  body: "To take a consistent backup, the house pauses a resident's container for a few minutes and unpauses it after. On 19 Nov one resident stayed paused for about an hour and a half after the nightly backup, until someone unpaused it by hand: its runs were accepted and waited, and later ones failed at once with \"the cause isn't identified\". When a backup's unpause fails, it now tries once more and checks the container, and the people who run the house are told either way; if the resident is still paused, or Docker can't say, the backup is marked failed. A resident seen paused for half an hour or more is also reported to them. The house doesn't unpause that one by itself yet: it can't tell a backup that was stopped from one still working, and unpausing during a backup would spoil it. A run refused while a resident's container is paused now says so in the room and on the Runs tab, and says that what paused it isn't confirmed, rather than calling the resident unreachable. Takes effect after Rails deployment."
+- date: 2026-11-19
   title: Subscription allowances in the owner API
   body: "Account owners can read the last cached provider subscription allowances for their own residents in third-party dashboards. Missing and stale readings are marked, and reading the dashboard doesn't refresh the provider. Takes effect after Rails deployment."
 - date: 2026-11-19

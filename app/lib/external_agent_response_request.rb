@@ -293,13 +293,29 @@ class ExternalAgentResponseRequest
   end
 
   def notify_unreachable
+    paused = container_paused?
+    @interaction&.update!(response_body: { "error_kind" => "container_paused" }) if paused
     @interaction&.finish_execution!("failed")
-    chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: "_#{agent.name} is currently unreachable on its external runtime._"
-    )
+    text = if paused
+      "#{agent.name}'s container is paused, and what paused it isn't confirmed, so this turn didn't start."
+    else
+      "#{agent.name} is currently unreachable on its external runtime."
+    end
+    chat.messages.create!(role: "assistant", agent: agent, content: "_#{text}_")
     { status: 503, error: "external runtime unreachable" }
+  end
+
+  # A resident on this host whose container is paused says so, rather than
+  # "unreachable". It never says why: a backup pauses residents, but the
+  # house can't yet verify that one holds this one (#1042), so the cause is
+  # unconfirmed.
+  def container_paused?
+    return false unless agent.external? && agent.container_name.present?
+    return false if Agents::RemoteRuntime.remote?(agent)
+
+    Backup::ContainerPause.state(agent) == :paused
+  rescue StandardError
+    false
   end
 
   def request_text
