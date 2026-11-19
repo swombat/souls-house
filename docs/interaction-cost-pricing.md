@@ -67,6 +67,22 @@ by this catalogue entry, so this reference estimate can differ from actual
 routed charges. The endpoints advertise reasoning support; the catalogue uses
 the existing thinking-mode toggle, not a new provider-specific effort scale.
 
+Gemini 4 Neon (added November 19, 2026; announced November 18): flat input 3,
+cache read 0.15, output 15 per million tokens, stated in Google's launch post
+("Introducing Gemini 4 Neon", blog.google, read November 19) and matching
+OpenRouter's standard Google global / AI Studio endpoints for
+`google/gemini-4-neon`. No introductory expiry or December doubling is
+mentioned. Flex and priority tiers are not modelled. Routed cache writes use
+OpenRouter's quoted $0.0833333333333333/M, as for Hydrogen; direct creation
+tokens fall back to the input rate. Four thinking levels (low, medium, high
+default, xhigh) per the post, so Neon shares Hydrogen's profile. The
+Google-pinned OpenRouter smoke call returned 200 on November 19 (souls.house
+jXkgVe); Chris's Antigravity login lists `gemini-4-neon-{low,medium,high,xhigh}`.
+The house's system Google key returned GET model 200 for `gemini-4-neon`;
+direct generation returned 402 (depleted prepayment) at default and xhigh, as
+for Hydrogen on November 13, so the direct route is unverified for the same
+account-balance reason.
+
 Gemini 4 Hydrogen (added November 13, 2026; announced November 12): flat input
 1.50, cache read 0.075, output 7.50 per million tokens. Verified November 13
 against OpenRouter's public

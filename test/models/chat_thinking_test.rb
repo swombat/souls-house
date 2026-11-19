@@ -99,6 +99,10 @@ class ChatThinkingTest < ActiveSupport::TestCase
     assert_equal %w[low medium high xhigh], efforts
     refute_includes efforts, "minimal"
     refute_includes efforts, "none"
+    assert_equal efforts, Chat.reasoning_effort_config("google/gemini-4-neon")[:options].pluck(:value)
+    assert_equal "high", Chat.reasoning_effort_config("google/gemini-4-neon")[:default]
+    assert_equal "gemini-4-neon", Chat.provider_model_id("google/gemini-4-neon")
+    assert_equal [ "Google" ], Chat::MODELS.select { |model| model[:model_id] == "google/gemini-4-neon" }.pluck(:group)
     %w[google/gemini-4-carbon google/gemini-4-argon].each do |sibling|
       assert_equal %w[low medium high], Chat.reasoning_effort_config(sibling)[:options].pluck(:value)
     end

@@ -80,7 +80,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["account_id"], name: "index_account_subscriptions_on_account_id"
     t.index ["account_id"], name: "index_account_subscriptions_one_live_per_account", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_account_subscriptions_on_stripe_subscription_id", unique: true
-    t.check_constraint "plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "account_subscriptions_plan_paid"
+    t.check_constraint "plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "account_subscriptions_plan_paid"
   end
 
   create_table "accounts", force: :cascade do |t|
@@ -126,15 +126,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.string "speech_engine", default: "phonon", null: false
     t.text "eleven_labs_api_key"
     t.string "granted_plan"
-    t.string "chosen_plan"
     t.datetime "trial_started_at"
     t.boolean "plan_offer_enabled", default: false, null: false
     t.boolean "show_chat_codes", default: false, null: false
+    t.string "chosen_plan"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
-    t.check_constraint "chosen_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_chosen_plan_known"
+    t.check_constraint "chosen_plan::text = ANY (ARRAY['companions'::character varying, 'partners'::character varying, 'colleagues'::character varying]::text[])", name: "accounts_chosen_plan_known"
     t.check_constraint "granted_plan::text = ANY (ARRAY['companions'::character varying::text, 'partners'::character varying::text, 'colleagues'::character varying::text])", name: "accounts_granted_plan_known"
   end
 
@@ -332,7 +332,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
     t.check_constraint "kind IS NULL OR (kind::text = ANY (ARRAY['birth'::character varying::text, 'archive_import'::character varying::text, 'github_import'::character varying::text, 'migration'::character varying::text]))", name: "agent_placements_kind"
-    t.check_constraint "power_state IS NULL OR (power_state::text = ANY (ARRAY['awake'::character varying, 'stopping'::character varying, 'stopped'::character varying, 'waking'::character varying]::text[]))", name: "agent_placements_power_state"
+    t.check_constraint "power_state IS NULL OR (power_state::text = ANY (ARRAY['awake'::character varying::text, 'stopping'::character varying::text, 'stopped'::character varying::text, 'waking'::character varying::text]))", name: "agent_placements_power_state"
     t.check_constraint "power_state IS NULL OR backend::text = 'boat'::text", name: "agent_placements_power_state_boat_only"
     t.check_constraint "provider_sandbox_id IS NULL OR provider_server_id IS NULL", name: "agent_placements_one_provider_id"
     t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "agent_placements_sandbox_id_shape"
@@ -778,7 +778,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["account_id"], name: "one_unresolved_bill_change_per_account", unique: true, where: "(resolved_at IS NULL)"
     t.index ["idempotency_key"], name: "index_bill_changes_on_idempotency_key", unique: true
     t.index ["requested_by_id"], name: "index_bill_changes_on_requested_by_id"
-    t.check_constraint "state::text = ANY (ARRAY['proposed'::character varying, 'submitted'::character varying, 'applied'::character varying, 'abandoned'::character varying]::text[])", name: "bill_changes_state"
+    t.check_constraint "state::text = ANY (ARRAY['proposed'::character varying::text, 'submitted'::character varying::text, 'applied'::character varying::text, 'abandoned'::character varying::text])", name: "bill_changes_state"
   end
 
   create_table "billing_checkout_attempts", force: :cascade do |t|
@@ -871,14 +871,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.datetime "last_reconciled_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["agent_placement_id"], name: "index_boat_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL ((ARRAY['refused'::character varying, 'deleted'::character varying])::text[]))"
+    t.index ["agent_placement_id"], name: "index_boat_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL (ARRAY[('refused'::character varying)::text, ('deleted'::character varying)::text]))"
     t.index ["provider_name"], name: "index_boat_procurement_operations_on_provider_name", unique: true
     t.index ["provider_sandbox_id"], name: "index_boat_procurement_operations_on_provider_sandbox_id", unique: true, where: "(provider_sandbox_id IS NOT NULL)"
     t.index ["public_id"], name: "index_boat_procurement_operations_on_public_id", unique: true
     t.index ["requested_by_id"], name: "index_boat_procurement_operations_on_requested_by_id"
     t.check_constraint "placement_generation >= 1", name: "boat_procurement_operations_positive_generation"
     t.check_constraint "provider_sandbox_id::text ~ '^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$'::text", name: "boat_procurement_operations_sandbox_id_shape"
-    t.check_constraint "state::text = ANY (ARRAY['planned'::character varying, 'create_in_flight'::character varying, 'reconciling'::character varying, 'provisioned'::character varying, 'unknown'::character varying, 'refused'::character varying, 'needs_review'::character varying, 'deleting'::character varying, 'deleted'::character varying]::text[])", name: "boat_procurement_operations_state"
+    t.check_constraint "state::text = ANY (ARRAY['planned'::character varying::text, 'create_in_flight'::character varying::text, 'reconciling'::character varying::text, 'provisioned'::character varying::text, 'unknown'::character varying::text, 'refused'::character varying::text, 'needs_review'::character varying::text, 'deleting'::character varying::text, 'deleted'::character varying::text])", name: "boat_procurement_operations_state"
   end
 
   create_table "chat_agents", force: :cascade do |t|
@@ -976,14 +976,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["location", "state"], name: "index_cloud_procurement_operations_on_location_and_state"
     t.index ["provider_name"], name: "index_cloud_procurement_operations_on_provider_name", unique: true
     t.index ["provider_server_id"], name: "index_cloud_procurement_operations_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
-    t.index ["purpose", "server_type", "state"], name: "index_cloud_procurement_operations_on_purpose_type_state"
     t.index ["public_id"], name: "index_cloud_procurement_operations_on_public_id", unique: true
+    t.index ["purpose", "server_type", "state"], name: "index_cloud_procurement_operations_on_purpose_type_state"
     t.index ["requested_by_id"], name: "index_cloud_procurement_operations_on_requested_by_id"
+    t.check_constraint "(purpose::text = 'placement'::text) = (agent_placement_id IS NOT NULL)", name: "cloud_procurement_operations_purpose_matches_placement"
     t.check_constraint "image_id > 0", name: "cloud_procurement_operations_positive_image_id"
     t.check_constraint "placement_generation >= 1", name: "cloud_procurement_operations_positive_placement_generation"
     t.check_constraint "provider_server_id > 0", name: "cloud_procurement_operations_positive_server_id"
-    t.check_constraint "(purpose::text = 'placement'::text) = (agent_placement_id IS NOT NULL)", name: "cloud_procurement_operations_purpose_matches_placement"
-    t.check_constraint "purpose::text = ANY (ARRAY['placement'::character varying, 'spare'::character varying, 'move_source'::character varying]::text[])", name: "cloud_procurement_operations_purpose"
+    t.check_constraint "purpose::text = ANY (ARRAY['placement'::character varying::text, 'spare'::character varying::text, 'move_source'::character varying::text])", name: "cloud_procurement_operations_purpose"
     t.check_constraint "state::text = ANY (ARRAY['planned'::character varying::text, 'create_in_flight'::character varying::text, 'reconciling'::character varying::text, 'provisioned'::character varying::text, 'unknown'::character varying::text, 'refused'::character varying::text, 'needs_review'::character varying::text, 'deleting'::character varying::text, 'deleted'::character varying::text])", name: "cloud_procurement_operations_state"
   end
 
@@ -2589,10 +2589,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.bigint "bill_change_id"
     t.string "plan"
     t.string "plan_stripe_price_id"
-    t.index ["bill_change_id"], name: "index_resident_birth_orders_on_bill_change_id"
     t.index ["account_id"], name: "index_resident_birth_orders_on_account_id"
     t.index ["account_id"], name: "index_resident_birth_orders_one_trial_per_account", unique: true, where: "(trial AND ((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('born'::character varying)::text, ('failed'::character varying)::text])))"
     t.index ["agent_id"], name: "index_resident_birth_orders_on_agent_id", unique: true
+    t.index ["bill_change_id"], name: "index_resident_birth_orders_on_bill_change_id"
     t.index ["billing_code_redemption_id"], name: "index_resident_birth_orders_on_billing_code_redemption_id"
     t.index ["creator_id"], name: "index_resident_birth_orders_on_creator_id"
     t.index ["reference"], name: "index_resident_birth_orders_on_reference", unique: true
@@ -2601,7 +2601,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_items_on_stripe_subscription_id", where: "((kind)::text = 'item'::text)"
     t.index ["stripe_subscription_id"], name: "index_resident_birth_orders_on_stripe_subscription_id", unique: true, where: "((kind)::text = 'subscription'::text)"
     t.index ["stripe_subscription_item_id"], name: "index_resident_birth_orders_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_birth_orders_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_birth_orders_rate_known"
     t.check_constraint "state::text = ANY (ARRAY['pending'::character varying::text, 'born'::character varying::text, 'abandoned'::character varying::text, 'failed'::character varying::text])", name: "resident_birth_orders_state_known"
   end
 
@@ -2627,7 +2627,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
     t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
     t.index ["state"], name: "index_resident_entitlements_on_state"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_entitlements_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_entitlements_rate_known"
   end
 
   create_table "resident_fallback_calls", force: :cascade do |t|
@@ -2712,7 +2712,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY (ARRAY[('incomplete'::character varying)::text, ('trialing'::character varying)::text, ('active'::character varying)::text, ('past_due'::character varying)::text]))"
     t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id"
     t.index ["stripe_subscription_item_id"], name: "index_resident_subscriptions_on_stripe_subscription_item_id", unique: true, where: "(stripe_subscription_item_id IS NOT NULL)"
-    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying::text, 'at_cost'::character varying::text, 'at_cost_hetzner'::character varying::text, 'included'::character varying::text])", name: "resident_subscriptions_rate_known"
+    t.check_constraint "rate::text = ANY (ARRAY['standard'::character varying, 'at_cost'::character varying, 'at_cost_hetzner'::character varying, 'included'::character varying]::text[])", name: "resident_subscriptions_rate_known"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -3411,7 +3411,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
     t.bigint "release_requested_by_id"
     t.datetime "released_at"
     t.index ["agent_id", "generation"], name: "index_vm_rollbacks_on_agent_id_and_generation", unique: true
-    t.index ["agent_id"], name: "index_vm_rollbacks_one_open_per_agent", unique: true, where: "((phase)::text = ANY ((ARRAY['stopping'::character varying, 'snapshotting'::character varying, 'restoring'::character varying, 'committed'::character varying])::text[]))"
+    t.index ["agent_id"], name: "index_vm_rollbacks_one_open_per_agent", unique: true, where: "((phase)::text = ANY (ARRAY[('stopping'::character varying)::text, ('snapshotting'::character varying)::text, ('restoring'::character varying)::text, ('committed'::character varying)::text]))"
     t.index ["agent_placement_id"], name: "index_vm_rollbacks_on_agent_placement_id"
     t.index ["release_requested_at"], name: "index_vm_rollbacks_releasing", where: "(released_at IS NULL)"
     t.index ["release_requested_by_id"], name: "index_vm_rollbacks_on_release_requested_by_id"
@@ -3768,9 +3768,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_170000) do
   add_foreign_key "repository_watches", "chats", on_delete: :cascade
   add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
-  add_foreign_key "resident_birth_orders", "bill_changes"
   add_foreign_key "resident_birth_orders", "accounts"
   add_foreign_key "resident_birth_orders", "agents"
+  add_foreign_key "resident_birth_orders", "bill_changes"
   add_foreign_key "resident_birth_orders", "billing_code_redemptions"
   add_foreign_key "resident_birth_orders", "users", column: "creator_id"
   add_foreign_key "resident_entitlements", "accounts"

@@ -368,6 +368,30 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     end
   end
 
+  test "Gemini 4 Neon uses flat standard pricing on routed and direct IDs" do
+    [ [ "openrouter", "google/gemini-4-neon", "0.08333333" ],
+      [ "gemini", "gemini-4-neon", "3.0" ] ].each do |provider, model, write_cost|
+      %w[2026-11-19 2026-12-01 2027-01-01].each do |date|
+        cost = build_interaction(
+          provider: provider, model: model,
+          uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000,
+          started_at: Time.zone.parse("#{date} 12:00")
+        ).estimated_cost
+        assert_equal "estimated", cost[:status], model
+        assert_equal "google/gemini-4-neon", cost[:pricing_model], model
+        assert_equal "2026-11-19", cost[:pricing_as_of], model
+        assert_equal "3.0", cost.dig(:components_usd, :uncached_input), model
+        assert_equal "15.0", cost.dig(:components_usd, :output), model
+        assert_equal "0.15", cost.dig(:components_usd, :cache_read_input), model
+        assert_equal write_cost, cost.dig(:components_usd, :cache_creation_input), model
+      end
+    end
+    %w[google/gemini-4-neon-preview gemini-4-neon-lite other/gemini-4-neon].each do |model|
+      assert_nil build_interaction(provider: "openrouter", model: model).estimated_cost[:amount_usd], model
+    end
+  end
+
   test "Gemini 4 Hydrogen price rule does not swallow other model IDs" do
     %w[
       google/gemini-4-hydrogen-preview google/gemini-4-hydrogen-pro
