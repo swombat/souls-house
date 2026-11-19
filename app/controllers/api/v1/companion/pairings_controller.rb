@@ -16,9 +16,11 @@ module Api
 
         before_action { response.headers["Cache-Control"] = "no-store" }
 
+        # Credentials are read from the request body only, never the query
+        # string, so they can't land in access logs or error reports by URL.
         def create
-          pairing, code, secret = CompanionPairing.open!(name: params[:name],
-            device_request_id: params[:device_request_id], volumes: params[:volumes])
+          pairing, code, secret = CompanionPairing.open!(name: body[:name],
+            device_request_id: body[:device_request_id], volumes: body[:volumes])
           render json: { id: pairing.to_param, code: code, poll_secret: secret,
             expires_at: pairing.expires_at.iso8601(3), poll_interval: 3 }, status: :created
         rescue CompanionPairing::Invalid, ActiveRecord::RecordInvalid => error
@@ -26,13 +28,19 @@ module Api
         end
 
         def claim
-          state, payload = CompanionPairing.claim(params[:id], params[:poll_secret])
+          state, payload = CompanionPairing.claim(params[:id], body[:poll_secret])
           case state
           when :pending then render json: { status: "pending" }, status: :accepted
           when :approved then render json: payload.merge("status" => "approved"), status: :ok
           when :expired then render json: { status: "expired" }, status: :gone
           else render json: { error: "Unknown pairing" }, status: :not_found
           end
+        end
+
+        private
+
+        def body
+          request.request_parameters.with_indifferent_access
         end
 
       end

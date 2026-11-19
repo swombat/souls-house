@@ -18,6 +18,10 @@ class Api::V1::Companion::PairingsControllerTest < ActionDispatch::IntegrationTe
 
     post claim_api_v1_companion_pairing_path(body["id"]), params: { poll_secret: "shcp_#{'B' * 43}" }, as: :json
     assert_response :not_found
+
+    # The secret counts only in the body, never in the query string.
+    post claim_api_v1_companion_pairing_path(body["id"], poll_secret: body["poll_secret"]), as: :json
+    assert_response :not_found
   end
 
   test "bad offers get 422" do

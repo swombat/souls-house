@@ -20,8 +20,14 @@
   let busy = $state(false);
   let chosen = $state({});
   let accesses = $state({});
+  // Each lookup gets a number; a reply that arrives after the code was
+  // edited, the dialog closed or another lookup started is dropped, so what
+  // is approved is always the offer on screen.
+  let seq = 0;
 
   function reset() {
+    seq += 1;
+    busy = false;
     code = '';
     offer = null;
     error = null;
@@ -34,24 +40,27 @@
     if (busy || !code.trim()) return;
     busy = true;
     error = null;
+    const mine = ++seq;
+    const submitted = code;
     try {
       const response = await fetch(`/accounts/${account.id}/computers/pairings/lookup`, {
         method: 'POST',
         headers: { 'X-CSRF-Token': csrfToken(), 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: submitted }),
       });
       const body = await response.json().catch(() => ({}));
+      if (mine !== seq) return;
       if (!response.ok) {
         error = body.error ?? 'That code could not be checked. Try again.';
         return;
       }
-      offer = body;
+      offer = { ...body, code: submitted };
       accesses = Object.fromEntries(body.volumes.map((v) => [v.volume, 'read']));
       chosen = body.residents.length === 1 ? { [body.residents[0].id]: true } : {};
     } catch {
-      error = 'That code could not be checked. Try again.';
+      if (mine === seq) error = 'That code could not be checked. Try again.';
     } finally {
-      busy = false;
+      if (mine === seq) busy = false;
     }
   }
 
@@ -65,7 +74,7 @@
     busy = true;
     router.post(
       `/accounts/${account.id}/computers/pairings`,
-      { code, resident_ids: residentIds, accesses },
+      { code: offer.code, pairing_id: offer.id, resident_ids: residentIds, accesses },
       {
         preserveScroll: true,
         onFinish: () => {
@@ -92,7 +101,8 @@
       <Dialog.Title>{offer ? `Add ${offer.name}` : 'Add a computer'}</Dialog.Title>
       <Dialog.Description>
         {#if offer}
-          Choose who may use it and what they may reach. They can never reach more than the computer offers.
+          It will be added to <strong>{offer.account_name}</strong>. Choose who may use it and what they may reach. They
+          can never reach more than the computer offers.
         {:else}
           On the computer, open the souls.house menu, choose “Pair this Mac…”, and type the code it shows.
         {/if}
@@ -105,6 +115,7 @@
         <Input
           id="pairing-code"
           bind:value={code}
+          disabled={busy}
           placeholder="ABCD-EFGH"
           autocomplete="off"
           autocapitalize="characters"

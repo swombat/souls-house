@@ -195,6 +195,10 @@
         <li>In its menu, choose “Pair this Mac…”, tick the disks souls.house may reach, and get a code.</li>
         <li>Here, click “Add a computer”, type the code, and choose which residents may use it.</li>
       </ol>
+      <p class="mx-auto mt-3 max-w-md text-left text-xs text-muted-foreground">
+        A companion older than 0.4 has no “Pair this Mac…” yet: it enrols with a grant made through the house's API, as
+        described on the <a href="/companion#enrol-heading" class="underline underline-offset-4">companion page</a>.
+      </p>
       <a href="/companion" class="mt-5 inline-block text-sm font-medium underline underline-offset-4">
         About the companion app
       </a>

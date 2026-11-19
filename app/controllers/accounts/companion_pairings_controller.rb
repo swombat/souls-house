@@ -3,11 +3,13 @@
 # approves. See CompanionPairing.
 class Accounts::CompanionPairingsController < ApplicationController
 
-  rate_limit to: 20, within: 10.minutes, only: :lookup,
-    with: -> { render json: { error: "Too many tries. Wait a few minutes and try again." }, status: :too_many_requests }
-
   before_action :set_account
   before_action :require_admin!
+
+  # Looking a code up and approving one both search every pairing by code, so
+  # they share one quota per person, counted after sign-in and the admin check.
+  rate_limit to: 20, within: 10.minutes, only: %i[lookup create], store: RateLimitStore,
+    scope: "companion-pairing-code", by: -> { "user:#{Current.user.id}" }, with: -> { too_many_tries }
 
   # JSON for the page: what the computer with this code is offering.
   def lookup
@@ -18,6 +20,9 @@ class Accounts::CompanionPairingsController < ApplicationController
     end
 
     render json: {
+      id: pairing.to_param,
+      code: params[:code],
+      account_name: @account.name,
       name: pairing.name,
       expires_at: pairing.expires_at,
       volumes: pairing.offered_volumes,
@@ -26,10 +31,12 @@ class Accounts::CompanionPairingsController < ApplicationController
   end
 
   def create
+    # The owner approves the offer they were shown: the code must still lead
+    # to the same pairing the page looked up.
     pairing = CompanionPairing.find_pending_by_code(params[:code])
-    unless pairing
+    unless pairing && params[:pairing_id].is_a?(String) && pairing.to_param == params[:pairing_id]
       return redirect_to account_companion_devices_path(@account),
-        alert: "That code has expired or was already used. Get a new one on the computer."
+        alert: "That code has expired, was already used, or now belongs to another computer. Get a new one on the computer."
     end
 
     ids = Array(params[:resident_ids]).select { |id| id.is_a?(String) }
@@ -46,6 +53,14 @@ class Accounts::CompanionPairingsController < ApplicationController
   end
 
   private
+
+  def too_many_tries
+    message = "Too many tries. Wait a few minutes and try again."
+    respond_to do |format|
+      format.json { render json: { error: message }, status: :too_many_requests }
+      format.any { redirect_to account_companion_devices_path(@account), alert: message }
+    end
+  end
 
   def admin?
     Current.user&.site_admin ||

@@ -95,4 +95,33 @@ class CompanionPairingTest < ActiveSupport::TestCase
     end
   end
 
+  test "the sweep removes abandoned and used rendezvous data and keeps live approvals" do
+    abandoned, = open_pairing
+    used, = open_pairing
+    live, = open_pairing
+    unpolled, = open_pairing
+    used_grant = used.approve!(account: @account, user: @owner, agents: [ @agent ], accesses: { "darwin-volume:main" => "read" })
+    CompanionEnrollmentGrant.enroll!(used.reload.enrollment_token, "pair-abc")
+    live.approve!(account: @account, user: @owner, agents: [ @agent ], accesses: { "darwin-volume:main" => "read" })
+    unpolled_grant = unpolled.approve!(account: @account, user: @owner, agents: [ @agent ],
+      accesses: { "darwin-volume:main" => "read" })
+    CompanionEnrollmentGrant.where(id: unpolled_grant.id).update_all(expires_at: 1.minute.ago)
+    abandoned.update_column(:expires_at, 2.hours.ago)
+
+    CompanionSweepJob.perform_now
+
+    assert_equal [ live.id ], CompanionPairing.where(id: [ abandoned, used, live, unpolled ].map(&:id)).pluck(:id)
+    assert CompanionEnrollmentGrant.exists?(used_grant.id)
+    assert CompanionEnrollmentGrant.exists?(unpolled_grant.id)
+    assert_equal 3, AuditLog.where(action: "companion.pairing.approved").count
+  end
+
+  test "error reporting filters pairing credentials" do
+    keys = YAML.load_file(Rails.root.join("config/honeybadger.yml")).dig("request", "filter_keys")
+    assert_empty %w[code poll_secret enrollment_token] - keys
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    assert_equal({ "code" => "[FILTERED]", "poll_secret" => "[FILTERED]", "enrollment_token" => "[FILTERED]" },
+      filter.filter("code" => "MARKER", "poll_secret" => "MARKER", "enrollment_token" => "MARKER"))
+  end
+
 end

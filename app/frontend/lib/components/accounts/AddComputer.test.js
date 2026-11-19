@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import AddComputer from './AddComputer.svelte';
 
 const offer = {
+  id: 'pairingA',
+  account_name: 'Home',
   name: "Paulina's Mac",
   volumes: [
     { volume: 'darwin-volume:main', label: 'Main disk', access: 'write' },
@@ -47,11 +49,27 @@ test('a code shows the computer, its disks capped at what it offers, and approve
     '/accounts/acct/computers/pairings',
     {
       code: 'abcd-efgh',
+      pairing_id: 'pairingA',
       resident_ids: ['nexus'],
       accesses: { 'darwin-volume:main': 'write', 'darwin-volume:usb': 'read' },
     },
     expect.any(Object)
   );
+});
+
+test('a reply that arrives after the dialog was closed is dropped', async () => {
+  let release;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise((resolve) => (release = () => resolve({ ok: true, status: 200, json: async () => offer }))))
+  );
+  await enterCode('abcd-efgh');
+  await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+  release();
+  await new Promise((r) => setTimeout(r, 0));
+  await fireEvent.click(screen.getByTestId('add-computer'));
+  expect(await screen.findByTestId('pairing-code')).toHaveValue('');
+  expect(screen.queryByTestId('pairing-approve')).toBeNull();
 });
 
 test('an unknown code says so and sends nothing', async () => {

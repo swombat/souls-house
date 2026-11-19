@@ -18,8 +18,8 @@ class Accounts::CompanionPairingsControllerTest < ActionDispatch::IntegrationTes
     assert_equal [ "Main disk" ], response.parsed_body["volumes"].map { |v| v["label"] }
     assert_includes response.parsed_body["residents"].map { |r| r["id"] }, @agent.to_param
 
-    post account_companion_pairings_path(@account),
-      params: { code: @code, resident_ids: [ @agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
+    post account_companion_pairings_path(@account), params: { code: @code, pairing_id: @pairing.to_param,
+      resident_ids: [ @agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
     assert_redirected_to account_companion_devices_path(@account)
     assert_match(/being added/, flash[:notice])
 
@@ -52,6 +52,35 @@ class Accounts::CompanionPairingsControllerTest < ActionDispatch::IntegrationTes
       params: { code: @code, resident_ids: [ agents(:other_account_agent).to_param ], accesses: { "darwin-volume:main" => "read" } }
     assert_redirected_to account_companion_devices_path(@account)
     assert_nil @pairing.reload.approved_at
+  end
+
+  test "approval must name the pairing that was looked up" do
+    sign_in @owner
+    other, = CompanionPairing.open!(name: "Someone else's Mac", device_request_id: "pair-2",
+      volumes: [ { "volume" => "darwin-volume:x", "label" => "Main disk", "access" => "write" } ])
+    post account_companion_pairings_path(@account), params: { code: @code, pairing_id: other.to_param,
+      resident_ids: [ @agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
+    assert_redirected_to account_companion_devices_path(@account)
+    assert_nil @pairing.reload.approved_at
+    assert_nil other.reload.approved_at
+  end
+
+  test "looking up and approving share one quota per person" do
+    RateLimitStore.override = ActiveSupport::Cache::MemoryStore.new
+    sign_in @owner
+    10.times { post lookup_account_companion_pairings_path(@account), params: { code: "ZZZZ-ZZZZ" }, as: :json }
+    10.times do
+      post account_companion_pairings_path(@account), params: { code: "ZZZZ-ZZZZ", pairing_id: "x" }
+    end
+    post lookup_account_companion_pairings_path(@account), params: { code: @code }, as: :json
+    assert_response :too_many_requests
+    post account_companion_pairings_path(@account), params: { code: @code, pairing_id: @pairing.to_param,
+      resident_ids: [ @agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
+    assert_redirected_to account_companion_devices_path(@account)
+    assert_match(/Too many tries/, flash[:alert])
+    assert_nil @pairing.reload.approved_at
+  ensure
+    RateLimitStore.override = nil
   end
 
 end

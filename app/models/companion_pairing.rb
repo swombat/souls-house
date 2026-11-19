@@ -60,12 +60,21 @@ class CompanionPairing < ApplicationRecord
     raise Invalid, "Couldn't make a code"
   end
 
+  # Expired rendezvous data goes. A pending pairing goes an hour after its
+  # code expired; an approved one once its grant can no longer be collected
+  # (expired or used). The grant, the device and the approval audit stay.
+  def self.sweep!(now = Time.current)
+    where(approved_at: nil).where(expires_at: ...(now - 1.hour)).delete_all
+    where.not(approved_at: nil).where(companion_enrollment_grant_id: CompanionEnrollmentGrant
+      .where(expires_at: ...now).or(CompanionEnrollmentGrant.where.not(consumed_at: nil)).select(:id)).delete_all
+  end
+
   def self.normalize_volumes(value)
     invalid = -> { raise Invalid, "Invalid volumes" }
     invalid.call unless value.is_a?(Array) && value.size.between?(1, MAX_VOLUMES)
     keys = []
     value.map do |volume|
-      volume = volume.to_unsafe_h if volume.respond_to?(:to_unsafe_h)
+      volume = volume.to_h if volume.is_a?(ActiveSupport::HashWithIndifferentAccess)
       invalid.call unless volume.is_a?(Hash) && volume.keys.map(&:to_s).sort == %w[access label volume]
       key, label, access = volume.values_at("volume", "label", "access")
       invalid.call unless key.is_a?(String) && key.bytesize.between?(1, 128) && !key.match?(/[[:cntrl:]]/) &&

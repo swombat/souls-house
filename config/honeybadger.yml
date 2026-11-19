@@ -34,6 +34,9 @@ request:
   - HTTP_AUTHORIZATION
   - HTTP_SEC_WEBSOCKET_PROTOCOL
   - ticket
+  - code
+  - poll_secret
+  - enrollment_token
 
 insights:
   enabled: true

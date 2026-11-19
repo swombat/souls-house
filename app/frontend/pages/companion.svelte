@@ -150,6 +150,23 @@
         serves. From there you can pause it, change what each resident may do, or remove it.
       </li>
     </ol>
+    <details class="mt-6 text-sm" data-testid="companion-enrol-older">
+      <summary class="cursor-pointer font-medium">With a companion older than 0.4, or without the menu</summary>
+      <ol class="mt-3 list-decimal space-y-3 pl-5 text-muted-foreground">
+        <li>
+          Set the computer's own ceiling: the disks the companion's file tools may ever reach there. The companion lists
+          the disks so you can name them.
+        </li>
+        <li>
+          An owner or admin makes a one-use grant for that computer through the house's API with their own key, naming
+          the residents and, for each, the disks and whether it may write, use apps or run commands.
+        </li>
+        <li>
+          The resident named in the grant collects a one-use code for it, and you run one enrol command on the computer
+          that reads that code. The code is never typed into a chat.
+        </li>
+      </ol>
+    </details>
   </section>
 
   <section class="mt-16 flex flex-wrap items-center gap-3 rounded-2xl border bg-muted/30 p-6">
