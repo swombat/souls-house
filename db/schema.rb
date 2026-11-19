@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -3324,6 +3324,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_150000) do
     t.text "error_message"
     t.datetime "resolved_at"
     t.bigint "resolved_by_agent_id"
+    t.string "media_kind"
+    t.string "media_filename"
+    t.string "media_id"
+    t.integer "x_app_generation"
     t.index ["agent_id", "idempotency_key"], name: "index_tweet_logs_on_agent_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["agent_id"], name: "index_tweet_logs_on_agent_id"
     t.index ["resolved_by_agent_id"], name: "index_tweet_logs_on_resolved_by_agent_id"
@@ -3523,6 +3527,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_150000) do
     t.string "client_id"
     t.text "client_secret"
     t.integer "app_generation", default: 0, null: false
+    t.string "granted_scopes"
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 

@@ -8,7 +8,16 @@ module XApi
   X_AUTHORIZE_URL = "https://x.com/i/oauth2/authorize"
   X_TOKEN_URL = "https://api.x.com/2/oauth2/token"
   X_API_BASE = "https://api.x.com/2"
-  SCOPES = %w[tweet.write tweet.read users.read offline.access].freeze
+  # media.write lets a post carry an image or a video. A grant made before
+  # the house asked for it does not have it; granted_scopes records what X
+  # actually granted, and media posting asks the owner to reconnect.
+  SCOPES = %w[tweet.write tweet.read users.read offline.access media.write].freeze
+  MEDIA_SCOPE = "media.write"
+  # X's create-post schema: "At most 280 characters unless the account has
+  # X Premium." users/me reports the tier in subscription_type (Basic,
+  # Premium, PremiumPlus, None). Basic is not documented as allowing long
+  # posts, so only these two are trusted.
+  LONG_POST_TIERS = %w[Premium PremiumPlus].freeze
 
   class Error < StandardError; end
   # The account's X app changed (or was removed, or the handle was
@@ -51,8 +60,11 @@ module XApi
       code_verifier: code_verifier
     )
 
-    save_tokens!(response, app_generation:)
-    fetch_username!(app_generation:)
+    # A new grant can be for a different X user or carry different scopes,
+    # so it is a new generation: a post reserved under the old grant is
+    # never sent through this one.
+    save_tokens!(response, app_generation:, new_grant: true)
+    fetch_username!(app_generation: app_generation + 1)
   end
 
   def refresh_tokens!
@@ -74,24 +86,64 @@ module XApi
     access_token.present? && refresh_token.present?
   end
 
+  # What X granted, as recorded from its last token response. Never what the
+  # house requested: X can grant less, and a refresh never adds a scope.
+  def granted_scope?(scope) = granted_scopes.to_s.split.include?(scope)
+
+  def media_scope_granted? = granted_scope?(MEDIA_SCOPE)
+
+  # The connected user's X subscription tier, read from X with this token.
+  # Raises XApi::Error when X cannot be asked or does not say.
+  def self.subscription_type(access_token)
+    uri = URI("#{X_API_BASE}/users/me?user.fields=subscription_type")
+    request = Net::HTTP::Get.new(uri)
+    request["Authorization"] = "Bearer #{access_token}"
+    response = begin
+      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 20) { |http| http.request(request) }
+    rescue Net::OpenTimeout, Net::ReadTimeout, SocketError, SystemCallError, OpenSSL::SSL::SSLError, IOError, EOFError => e
+      raise Error, "X could not be asked for the account's subscription (#{e.class.name.demodulize})"
+    end
+    raise Error, "X answered #{response.code} when asked for the account's subscription" unless response.is_a?(Net::HTTPSuccess)
+
+    data = JSON.parse(response.body) rescue nil
+    tier = data.is_a?(Hash) && data["data"].is_a?(Hash) ? data["data"]["subscription_type"] : nil
+    raise Error, "X did not report the account's subscription" unless tier.is_a?(String) && tier.present?
+
+    tier
+  end
+
   def disconnect!
-    with_lock { update!(access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil, app_generation: self.app_generation + 1) }
+    with_lock { update!(access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil, granted_scopes: nil, app_generation: self.app_generation + 1) }
   end
 
   private
 
-  def save_tokens!(response, app_generation:)
+  def save_tokens!(response, app_generation:, new_grant: false)
     raise Error, "Token exchange failed: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
     data = JSON.parse(response.body)
+    # A new grant may be for another X account: it must bring its own access
+    # and refresh tokens, or nothing of it is kept and the previous
+    # connection stays exactly as it was.
+    if new_grant && (data["access_token"].blank? || data["refresh_token"].blank?)
+      raise Error, "X's answer had no #{data['access_token'].blank? ? 'access' : 'refresh'} token; nothing was changed. Connect again"
+    end
     with_lock do
       raise StaleApp, "The X app changed while its tokens were being fetched; connect again" unless current_app?(app_generation)
 
-      update!(
+      scope = data["scope"].is_a?(String) ? data["scope"].split.join(" ").presence : nil
+      attributes = {
         access_token: data["access_token"],
+        # Only a refresh may keep the current refresh token (new_grant is
+        # refused above without one).
         refresh_token: data["refresh_token"].presence || refresh_token,
-        token_expires_at: data["expires_in"].to_i.seconds.from_now
-      )
+        token_expires_at: data["expires_in"].to_i.seconds.from_now,
+        # A new grant without a scope answer has unknown scopes; a refresh
+        # without one keeps what was recorded (a refresh never adds scopes).
+        granted_scopes: new_grant ? scope : (scope || granted_scopes)
+      }
+      attributes[:app_generation] = self.app_generation + 1 if new_grant
+      update!(**attributes)
     end
   end
 

@@ -6,15 +6,22 @@ class TweetLog < ApplicationRecord
   # rechecks under this row's lock before sending, so after this long with
   # no activity a pending post can be resolved like an unknown one.
   PENDING_RESOLVABLE_AFTER = 10.minutes
+  # A media post waits in the job queue, uploads and waits for X to process
+  # it, touching the row as it goes; it gets longer before it is resolvable.
+  MEDIA_PENDING_RESOLVABLE_AFTER = 20.minutes
+  MEDIA_KINDS = %w[image video].freeze
 
   belongs_to :x_integration
   belongs_to :agent
   belongs_to :resolved_by_agent, class_name: "Agent", optional: true
 
+  has_one_attached :media
+
   validates :tweet_id, uniqueness: true, allow_nil: true
   validates :tweet_id, presence: true, if: -> { status.in?(%w[posted resolved_posted]) }
   validates :text, presence: true
   validates :status, inclusion: { in: STATUSES }
+  validates :media_kind, inclusion: { in: MEDIA_KINDS }, allow_nil: true
 
   scope :recent, -> { order(created_at: :desc) }
   scope :outcome_unknown, -> { where(status: "outcome_unknown") }
@@ -29,7 +36,7 @@ class TweetLog < ApplicationRecord
   def resolve!(resolution:, by:, tweet_id: nil)
     with_lock do
       unless resolvable?
-        raise ArgumentError, "Only a post whose outcome is unknown, or one left pending with no activity for #{PENDING_RESOLVABLE_AFTER.inspect}, can be resolved"
+        raise ArgumentError, "Only a post whose outcome is unknown, or one left pending with no activity for #{pending_resolvable_after.inspect}, can be resolved"
       end
 
       case resolution
@@ -43,14 +50,17 @@ class TweetLog < ApplicationRecord
         raise ArgumentError, "resolution must be posted or not_posted"
       end
     end
+    media.purge_later if media.attached?
   end
 
+  def pending_resolvable_after = media_kind ? MEDIA_PENDING_RESOLVABLE_AFTER : PENDING_RESOLVABLE_AFTER
+
   def resolvable?(now: Time.current)
-    status == "outcome_unknown" || (status == "pending" && updated_at <= now - PENDING_RESOLVABLE_AFTER)
+    status == "outcome_unknown" || (status == "pending" && updated_at <= now - pending_resolvable_after)
   end
 
   def resolvable_at
-    return updated_at + PENDING_RESOLVABLE_AFTER if status == "pending"
+    return updated_at + pending_resolvable_after if status == "pending"
 
     Time.current if status == "outcome_unknown"
   end
@@ -61,6 +71,8 @@ class TweetLog < ApplicationRecord
       status:,
       text:,
       reply_to: reply_to_tweet_id,
+      media_kind:,
+      media_filename:,
       tweet_id:,
       url:,
       failure_reason:,

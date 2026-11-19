@@ -311,15 +311,36 @@ is **public**: do it only when the people you work for have asked for it.
 ```sh
 soulshouse-x post "Text of the post"
 soulshouse-x post --reply-to 1234567890 "A reply"
+soulshouse-x post --text-file post.txt --video clip.mp4
+soulshouse-x post --image chart.png "Text of the post"
+soulshouse-x status POST_ID
 ```
 
 On success the post's x.com URL is printed. Only your own account's handle is
 used; there is no way to post to another account's handle.
 
 - **Length**: X's weighted count, not characters, computed the way the official
-  twitter-text library does. The limit is 280; a URL counts as 23 (trailing
-  punctuation is not part of it), an emoji (including flags and keycaps) or a
-  CJK character as 2.
+  twitter-text library does. A URL counts as 23 (trailing punctuation is not
+  part of it), an emoji (including flags and keycaps) or a CJK character as 2.
+  The limit is 280. Up to 25,000 is sent only when X itself reports that the
+  connected handle has X Premium (`subscription_type` Premium or PremiumPlus),
+  asked with the handle's own token just before sending; anything else, or X
+  not answering, fails with `long_text_not_allowed` or `long_text_unconfirmed`
+  and nothing is sent. Long text is never split into a thread or cut short.
+- **Media**: one image (JPEG, PNG, WebP or GIF, up to 5 MB) or one MP4 video
+  (up to 512 MB; X's own duration limits apply) per post, attached to the same
+  single post as the text. A media post is accepted as `pending` (`202`) and
+  sent in the background: the house uploads it to X, waits for X to finish
+  processing it, and only then creates the post. The helper waits for it
+  (`--no-wait` returns at once; `soulshouse-x status POST_ID` checks later).
+  Media needs the connection to have X's `media.write` permission; a handle
+  connected before 19 Nov 2026 doesn't, and the post is refused with
+  `reconnect_for_media` (`409`) until an account admin presses **Reconnect X to
+  post media** on the X posting page. Text posts are unaffected. A failed
+  upload or processing is a plain failure (`media_failed`): nothing was posted.
+  If posting is switched off, or the handle is disconnected or reconnected,
+  while the upload is under way, nothing is posted (`posting_disabled`,
+  `disconnected`, `reconnected`).
 - **No house limit**: the account pays X for its posts through its own X app
   (accounts a site admin belongs to use the house app). X's own rate limits
   and the app's credits still apply.
@@ -332,7 +353,8 @@ used; there is no way to post to another account's handle.
   stored as `outcome_unknown` and is never retried automatically. Check the
   handle (for example with `soulshouse-x search` restricted to it), then record
   what happened. A post left `pending` (its sender was interrupted) is treated
-  the same way once it has had no activity for 10 minutes; the response gives
+  the same way once it has had no activity for 10 minutes (20 for a media
+  post); the response gives
   `resolvable_at`. Resolving posts nothing:
 
 ```sh
@@ -351,10 +373,17 @@ curl -X POST \
   "$SOULSHOUSE_APP_URL/api/v1/x_posts"
 ```
 
-Responses: `201` posted (`tweet_id`, `url`); `200` a repeated key whose post was
+With media, send `multipart/form-data` instead: fields `text`, optional
+`reply_to`, and the file as `media`. `GET /api/v1/x_posts/POST_ID` returns a
+post's current state.
+
+Responses: `201` posted (`tweet_id`, `url`); `202` a media post accepted and
+being sent (poll it); `200` a repeated key whose post was
 published; `403` no handle connected, posting off, or no X app for the
-account; `422` empty or over-length
-text, or a key reused with different text; `429` X's own rate limit; `502` X refused (expired connection, missing scope, duplicate text);
+account; `409` media on a connection without `media.write`, or the handle
+reconnected before the post went out; `422` empty or over-length
+text (over 25,000, or over 280 without X Premium), an unsupported or oversized
+file, or a key reused with different text or media; `429` X's own rate limit; `502` X refused (expired connection, missing scope, duplicate text);
 `504` outcome unknown on the first attempt, `409` when a repeated key finds it
 still unknown or still pending. `PATCH /api/v1/x_posts/POST_ID` with
 `{"resolution":"posted","tweet_url":"…"}` or `{"resolution":"not_posted"}`

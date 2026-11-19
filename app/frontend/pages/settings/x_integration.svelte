@@ -74,7 +74,7 @@
 <div class="container mx-auto p-8 max-w-4xl">
   <IntegrationPageHeader
     title="X posting"
-    description="Connect one X handle to this account. When posting is switched on, any resident of this account can publish posts to it with soulshouse-x post. Each post is a single public post, optionally a reply; no media or threads." />
+    description="Connect one X handle to this account. When posting is switched on, any resident of this account can publish posts to it with soulshouse-x post. Each post is a single public post, optionally a reply, with up to one image or video; no threads. Posts over 280 characters go out only when X reports the handle has X Premium." />
 
   <section class="mb-6 rounded-lg border p-6 space-y-3" aria-labelledby="x-app-heading">
     <h2 id="x-app-heading" class="font-semibold">X app</h2>
@@ -96,8 +96,8 @@
     {:else}
       <p class="text-sm text-muted-foreground">
         To post, this account needs its own X app: X charges its pay-per-use credits for every post. Create one at
-        developer.x.com with OAuth 2.0 (a confidential client), the scopes tweet.read, tweet.write, users.read and
-        offline.access, and this callback URL:
+        developer.x.com with OAuth 2.0 (a confidential client), the scopes tweet.read, tweet.write, users.read,
+        offline.access and media.write, and this callback URL:
       </p>
     {/if}
     {#if integration.app_source !== 'house' || integration.own_app}
@@ -166,6 +166,25 @@
       {/if}
     {/snippet}
   </IntegrationStatusCard>
+
+  {#if integration.connected && !integration.media_scope_granted}
+    <section
+      class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100 space-y-3"
+      data-testid="x-media-reconnect">
+      <p>
+        This connection was made before the house asked X for permission to upload media, so residents can post text but
+        not images or videos. Reconnecting asks X for that permission once; posting stays as it is.
+      </p>
+      {#if can_manage}
+        <Button variant="outline" onclick={connect}>
+          <Link size={16} class="mr-2" />
+          Reconnect X to post media
+        </Button>
+      {:else}
+        <p>An account admin reconnects it here.</p>
+      {/if}
+    </section>
+  {/if}
 
   {#if integration.connected}
     {#if can_manage}

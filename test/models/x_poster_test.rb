@@ -101,10 +101,33 @@ class XPosterTest < ActiveSupport::TestCase
     assert_requested stub, times: 1
   end
 
-  test "over-length text by X's weighted count is refused before reserving" do
-    error = assert_raises(XPoster::Refused) { post!("字" * 141, key: "k1") }
+  test "text over X Premium's 25,000 weighted characters is refused before reserving" do
+    error = assert_raises(XPoster::Refused) { post!("字" * 12_501, key: "k1") }
     assert_equal "text_too_long", error.code
     assert_equal 0, TweetLog.count
+  end
+
+  test "over 280 weighted characters without X Premium fails and never calls create" do
+    me = stub_request(:get, "https://api.x.com/2/users/me?user.fields=subscription_type")
+      .with(headers: { "Authorization" => "Bearer live-token" })
+      .to_return(status: 200, body: { data: { id: "1", username: "househandle", subscription_type: "None" } }.to_json)
+
+    log = post!("字" * 141, key: "k1").log
+
+    assert_equal "failed", log.status
+    assert_equal "long_text_not_allowed", log.failure_reason
+    assert_includes log.error_message, "X reports @househandle's subscription as None"
+    assert_requested me, times: 1
+    assert_not_requested :post, TWEETS_URL
+  end
+
+  test "at most 280 weighted characters never asks X about the subscription" do
+    stub_x_post(id: "1010")
+
+    post!("字" * 140, key: "k1")
+
+    assert_not_requested :get, "https://api.x.com/2/users/me?user.fields=subscription_type"
+    assert_requested :post, TWEETS_URL, times: 1
   end
 
   test "a missing idempotency key is refused" do
@@ -192,8 +215,8 @@ class XPosterTest < ActiveSupport::TestCase
   test "a post resolved while it waited to send is never sent" do
     stub_x_post(id: "2002")
     poster = XPoster.new(agent: @agent)
-    poster.define_singleton_method(:reserve!) do |text:, idempotency_key:, reply_to:|
-      log = super(text:, idempotency_key:, reply_to:)
+    poster.define_singleton_method(:reserve!) do |**arguments|
+      log = super(**arguments)
       log.first.update_columns(status: "resolved_not_posted")
       log
     end
