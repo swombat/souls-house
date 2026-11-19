@@ -122,12 +122,20 @@ module XApi
     raise Error, "Token exchange failed: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
     data = JSON.parse(response.body)
+    # A new grant may be for another X account: it must bring its own access
+    # and refresh tokens, or nothing of it is kept and the previous
+    # connection stays exactly as it was.
+    if new_grant && (data["access_token"].blank? || data["refresh_token"].blank?)
+      raise Error, "X's answer had no #{data['access_token'].blank? ? 'access' : 'refresh'} token; nothing was changed. Connect again"
+    end
     with_lock do
       raise StaleApp, "The X app changed while its tokens were being fetched; connect again" unless current_app?(app_generation)
 
       scope = data["scope"].is_a?(String) ? data["scope"].split.join(" ").presence : nil
       attributes = {
         access_token: data["access_token"],
+        # Only a refresh may keep the current refresh token (new_grant is
+        # refused above without one).
         refresh_token: data["refresh_token"].presence || refresh_token,
         token_expires_at: data["expires_in"].to_i.seconds.from_now,
         # A new grant without a scope answer has unknown scopes; a refresh

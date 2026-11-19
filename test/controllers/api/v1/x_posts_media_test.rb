@@ -179,6 +179,18 @@ module Api
         assert_not_requested :post, TWEETS_URL
       end
 
+      test "once X says it is processing, a status answer without a state is never taken as ready" do
+        stub_upload(processing: { state: "pending", check_after_secs: 1 })
+        stub_request(:get, STATUS_URL).to_return(status: 200, body: { data: { id: MEDIA_ID } }.to_json)
+
+        id = post_video("With a clip", key: "clip-1")
+        perform_enqueued_jobs(only: XPostJob)
+
+        log = TweetLog.find_by_obfuscated_id(id)
+        assert_equal "media_failed", log.failure_reason
+        assert_not_requested :post, TWEETS_URL
+      end
+
       test "media still processing at the deadline is never posted" do
         stub_upload(processing: { state: "pending", check_after_secs: 1 })
         stub_request(:get, STATUS_URL)
@@ -215,6 +227,21 @@ module Api
           assert_equal reason, log.failure_reason
           assert_not_requested :post, TWEETS_URL
         end
+      end
+
+      test "a post from before a reconnect never refreshes the new connection's token" do
+        stub_upload(processing: nil)
+        refresh = stub_request(:post, "#{X}/oauth2/token").to_return(status: 200, body: { access_token: "n", refresh_token: "r", expires_in: 7200 }.to_json)
+        id = post_video("With a clip", key: "clip-1")
+        @integration.update!(app_generation: @integration.app_generation + 1, token_expires_at: 1.minute.from_now)
+
+        perform_enqueued_jobs(only: XPostJob)
+
+        log = TweetLog.find_by_obfuscated_id(id)
+        assert_equal "failed", log.status
+        assert_not_requested refresh
+        assert_not_requested :post, INIT_URL
+        assert_not_requested :post, TWEETS_URL
       end
 
       test "an ambiguous create stays unknown, and the same submission again makes no second create" do

@@ -298,6 +298,26 @@ class XIntegrationTest < ActiveSupport::TestCase
     assert_equal generation, integration.app_generation
   end
 
+  test "a new grant without a refresh token never keeps the previous grant's" do
+    integration = XIntegration.create!(account: @account, client_id: "app-a", client_secret: "secret-a",
+                                       access_token: "old-token", refresh_token: "old-account-refresh", token_expires_at: 1.hour.from_now)
+    stub_request(:post, "https://api.x.com/2/oauth2/token")
+      .to_return(status: 200, body: { access_token: "new-token", expires_in: 7200, scope: "tweet.write media.write" }.to_json)
+    stub_request(:get, "https://api.x.com/2/users/me").to_return(status: 200, body: { data: { username: "other" } }.to_json)
+
+    generation = integration.app_generation
+
+    assert_raises(XApi::Error) do
+      integration.exchange_code!(code: "c", redirect_uri: "https://example.test/cb", code_verifier: "v", app_generation: generation)
+    end
+
+    integration.reload
+    assert_equal "old-token", integration.access_token
+    assert_equal "old-account-refresh", integration.refresh_token
+    assert_equal generation, integration.app_generation
+    assert_not_requested :get, "https://api.x.com/2/users/me"
+  end
+
   test "disconnecting forgets the granted scopes" do
     integration = XIntegration.create!(account: @account, client_id: "a", client_secret: "s", access_token: "t", refresh_token: "r",
                                        granted_scopes: "tweet.write media.write")

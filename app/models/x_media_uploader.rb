@@ -96,10 +96,17 @@ class XMediaUploader
   # "failed" or no answer by the deadline means nothing is posted.
   def wait_until_ready(media_id, data)
     deadline = clock.call + PROCESSING_LIMIT
+    polled = false
     loop do
       payload = data["data"].is_a?(Hash) ? data["data"] : {}
       info = payload["processing_info"]
-      return media_id unless info.is_a?(Hash)
+      unless info.is_a?(Hash)
+        # Before polling, no processing_info means X needs no processing. Once
+        # X has said it is processing, only an explicit "succeeded" is ready.
+        return media_id unless polled
+
+        raise NotSent.new("media_failed", "X's processing status answer had no processing state; nothing was posted")
+      end
 
       case info["state"]
       when "succeeded"
@@ -119,6 +126,7 @@ class XMediaUploader
       on_progress.call
       sleeper.call(info["check_after_secs"].to_i.clamp(MIN_WAIT, MAX_WAIT))
       data = call(:get, "/media/upload?command=STATUS&media_id=#{media_id}", nil, label: "media status check")
+      polled = true
     end
   end
 

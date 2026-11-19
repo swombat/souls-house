@@ -260,6 +260,11 @@ class XPoster
       unless integration.token_fresh?
         integration.lock!
         raise XApi::Error, "The X connection or its app changed before sending" unless integration.connected? && integration.app_available?
+        # A post reserved under an earlier grant never refreshes (rotates)
+        # the tokens of the connection that replaced it.
+        if log.x_app_generation && integration.app_generation != log.x_app_generation
+          raise XApi::Error, "The X handle was reconnected after this post was asked for"
+        end
 
         integration.refresh_tokens!
       end
