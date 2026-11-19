@@ -24,11 +24,23 @@ class Chats::BulkActionsControllerTest < ActionDispatch::IntegrationTest
     count
   end
 
+  def cutoffs(chats)
+    chats.to_h { |chat| [ chat.to_param, @asks[@chats.index(chat)].to_param ] }
+  end
+
+  def mark_read(pairs)
+    post bulk_mark_read_account_chats_path(@account), params: { through_message_ids: pairs }, as: :json
+  end
+
+  def tag_list(visual_tag_id, room: "main", **filter)
+    patch bulk_visual_tag_account_chats_path(@account), params: { visual_tag_id: visual_tag_id, room: room, **filter }, as: :json
+  end
+
   test "mark read clears every eye of mine in the chosen conversations and only those" do
     other = users(:existing_user)
     others_flag = ReplyExpectation.create!(message: @asks[0], user: other, score: 0.9, classifier_version: "test")
 
-    post bulk_mark_read_account_chats_path(@account), params: { conversation_ids: @chats.first(2).map(&:to_param) }, as: :json
+    mark_read(cutoffs(@chats.first(2)))
     assert_response :ok
     assert_equal @chats.first(2).map(&:to_param).sort, response.parsed_body["conversation_ids"].sort
 
@@ -40,87 +52,127 @@ class Chats::BulkActionsControllerTest < ActionDispatch::IntegrationTest
     assert AuditLog.exists?(action: "bulk_dismiss_reply_expectations", user: @user)
   end
 
-  test "a late classification of an old message stays dismissed, a new one still flags" do
-    post bulk_mark_read_account_chats_path(@account), params: { conversation_ids: [ @chats[0].to_param ] }, as: :json
+  test "a message newer than the eye the list showed keeps its eye, flagged before or after the click" do
+    before = @chats[0].messages.create!(role: "assistant", content: "Test User, and also this")
+    @chats[0].with_lock { ReplyExpectation.record!(message: before, user: @user, score: 0.95) }
+    after = @chats[0].messages.create!(role: "assistant", content: "Test User, one more")
+
+    mark_read(cutoffs([ @chats[0] ]))
     assert_response :ok
+    assert ReplyExpectation.find_by!(message: @asks[0], user: @user).state_dismissed?
+    assert ReplyExpectation.find_by!(message: before, user: @user).state_open?
+
+    @chats[0].with_lock { ReplyExpectation.record!(message: after, user: @user, score: 0.95) }
+    assert ReplyExpectation.find_by!(message: after, user: @user).state_open?
+    # ...while an old message classified late stays behind the cutoff.
     @chats[0].with_lock { ReplyExpectation.record!(message: @asks[0], user: @user, score: 0.99) }
     assert ReplyExpectation.find_by!(message: @asks[0], user: @user).state_dismissed?
-
-    newer = @chats[0].messages.create!(role: "assistant", content: "One more thing")
-    @chats[0].with_lock { ReplyExpectation.record!(message: newer, user: @user, score: 0.95) }
-    assert ReplyExpectation.find_by!(message: newer, user: @user).state_open?
   end
 
   test "mark read never moves an existing cutoff backwards" do
     later = @chats[0].messages.create!(role: "assistant", content: "Later")
-    ReplyDismissal.create!(chat: @chats[0], user: @user, through_message_id: later.id + 1000)
-    post bulk_mark_read_account_chats_path(@account), params: { conversation_ids: [ @chats[0].to_param ] }, as: :json
+    ReplyDismissal.create!(chat: @chats[0], user: @user, through_message_id: later.id)
+    mark_read(cutoffs([ @chats[0] ]))
     assert_response :ok
-    assert_equal later.id + 1000, ReplyDismissal.find_by!(chat: @chats[0], user: @user).through_message_id
+    assert_equal later.id, ReplyDismissal.find_by!(chat: @chats[0], user: @user).through_message_id
   end
 
-  test "the work is a fixed number of queries however many conversations are chosen" do
+  test "marking read is a fixed number of queries however many conversations" do
     more = 6.times.map do |i|
       chat = @account.chats.create!(title: "More #{i}")
       ask = chat.messages.create!(role: "assistant", content: "Test User?")
       chat.with_lock { ReplyExpectation.record!(message: ask, user: @user, score: 0.95) }
-      chat
-    end
-    few = sql_count { ConversationBulk.mark_read!(chats: @account.chats.where(id: @chats.first(2).map(&:id)), user: @user) }
-    many = sql_count { ConversationBulk.mark_read!(chats: @account.chats.where(id: more.map(&:id)), user: @user) }
+      [ chat.id, ask.id ]
+    end.to_h
+    few_cutoffs = @chats.first(2).each_with_index.to_h { |chat, i| [ chat.id, @asks[i].id ] }
+    few = sql_count { ConversationBulk.mark_read!(chats: @account.chats.kept, user: @user, cutoffs: few_cutoffs) }
+    many = sql_count { ConversationBulk.mark_read!(chats: @account.chats.kept, user: @user, cutoffs: more) }
     assert_equal few, many
-    assert_operator many, :<=, 5
-
-    few = sql_count { ConversationBulk.set_tag!(chats: @account.chats.where(id: []), tag: @tag, by: @user) }
-    assert_operator few, :<=, 1
+    assert_operator many, :<=, 4
   end
 
-  test "foreign, deleted and unknown conversations are skipped, malformed IDs refused" do
+  test "tagging's transcript lines cost the same per changed conversation, on top of a fixed part" do
+    batch = ->(n) { n.times.map { |i| @account.chats.create!(title: "Batch #{n}-#{i}") } }
+    two = batch.call(2)
+    four = batch.call(4)
+    q2 = sql_count { ConversationBulk.set_tag!(chats: @account.chats.where(id: two.map(&:id)), tag: @tag, by: @user) }
+    q4 = sql_count { ConversationBulk.set_tag!(chats: @account.chats.where(id: four.map(&:id)), tag: @tag, by: @user) }
+    # Not fixed: two more changed rooms cost about two more rooms' lines.
+    assert_operator q4, :>, q2
+    assert_operator q4 - q2, :<=, 2 * 12
+    assert_operator q2, :<=, 40
+    (two + four).each { |chat| assert_equal @tag, chat.reload.visual_tag }
+  end
+
+  test "the cutoffs must be real messages of their own conversations, and conversations of this account" do
     foreign = accounts(:existing_user_account).chats.create!(title: "Foreign")
-    deleted = @account.chats.create!(title: "Deleted").tap(&:discard!)
-    post bulk_mark_read_account_chats_path(@account),
-      params: { conversation_ids: [ @chats[0].to_param, foreign.to_param, deleted.to_param ] }, as: :json
+    foreign_ask = foreign.messages.create!(role: "assistant", content: "Elsewhere")
+    deleted = @account.chats.create!(title: "Deleted")
+    deleted_ask = deleted.messages.create!(role: "assistant", content: "Gone")
+    deleted.discard!
+
+    mark_read(cutoffs([ @chats[0] ]).merge(foreign.to_param => foreign_ask.to_param, deleted.to_param => deleted_ask.to_param))
     assert_response :ok
     assert_equal [ @chats[0].to_param ], response.parsed_body["conversation_ids"]
 
-    [ [], [ "12" ], [ 12 ], "abc", nil ].each do |bad|
-      post bulk_mark_read_account_chats_path(@account), params: { conversation_ids: bad }, as: :json
+    mark_read(@chats[0].to_param => @asks[1].to_param)
+    assert_response :unprocessable_entity
+    assert ReplyExpectation.find_by!(message: @asks[1], user: @user).state_open?
+
+    [ {}, nil, "abc", { @chats[0].to_param => "12" }, { "12" => @asks[0].to_param } ].each do |bad|
+      mark_read(bad)
       assert_response :unprocessable_entity, "accepted #{bad.inspect}"
     end
-    post bulk_mark_read_account_chats_path(@account),
-      params: { conversation_ids: Array.new(ConversationBulk::MAX_CONVERSATIONS + 1) { |i| Chat.encode_id(i + 1) } }, as: :json
+    mark_read(Array.new(Chats::BulkActionsController::MAX_CUTOFFS + 1) { |i| [ Chat.encode_id(i + 1), Message.encode_id(i + 1) ] }.to_h)
     assert_response :unprocessable_entity
   end
 
-  test "tagging sets the tag on all of them in one go and records it in each room" do
+  test "tagging acts on the list for that room and filter, and records it in each room" do
     @chats[2].update!(visual_tag: @tag)
     archived = @account.chats.create!(title: "Old")
     archived.archive!
-    ids = (@chats + [ archived ]).map(&:to_param)
+    room = @account.rooms.create!(name: "Elsewhere")
+    elsewhere = @account.chats.create!(title: "Other room", room: room)
 
     assert_difference -> { Message.where(role: "system").count }, 2 do
-      patch bulk_visual_tag_account_chats_path(@account), params: { conversation_ids: ids, visual_tag_id: @tag.to_param }, as: :json
+      tag_list(@tag.to_param, show_archived: "true")
     end
     assert_response :ok
     assert_equal @chats.first(2).map(&:to_param).sort, response.parsed_body["conversation_ids"].sort
     assert_equal @tag.to_param, response.parsed_body.dig("visual_tag", "id")
     @chats.each { |chat| assert_equal @tag, chat.reload.visual_tag }
     assert_nil archived.reload.visual_tag
+    assert_nil elsewhere.reload.visual_tag
     assert_match "tagged this conversation Done", @chats[0].messages.where(role: "system").last.content
     assert AuditLog.exists?(action: "bulk_set_visual_tag", user: @user)
 
-    patch bulk_visual_tag_account_chats_path(@account), params: { conversation_ids: ids, visual_tag_id: nil }, as: :json
+    tag_list(nil, room: "all", tag: @tag.to_param)
     assert_response :ok
     assert_equal 3, response.parsed_body["conversation_ids"].size
     @chats.each { |chat| assert_nil chat.reload.visual_tag }
+    assert_nil elsewhere.reload.visual_tag
     assert_match "removed the tag Done", @chats[0].messages.where(role: "system").last.content
+
+    tag_list(@tag.to_param, room: room.to_param)
+    assert_equal [ elsewhere.to_param ], response.parsed_body["conversation_ids"]
   end
 
-  test "tagging needs a tag of this account and an explicit value" do
+  test "a list longer than any ID cap is tagged in one request" do
+    now = Time.current
+    Chat.insert_all(Array.new(ConversationBulk::MAX_CONVERSATIONS + 1) { |i| { account_id: @account.id, title: "Long #{i}", created_at: now, updated_at: now } })
+    tag_list(@tag.to_param)
+    assert_response :ok
+    assert_equal ConversationBulk::MAX_CONVERSATIONS + 4, response.parsed_body["conversation_ids"].size
+    assert_equal 0, @account.chats.kept.active.where(visual_tag_id: nil).count
+  end
+
+  test "tagging needs a tag of this account, an explicit value and a list" do
     foreign_tag = accounts(:existing_user_account).visual_tags.create!(label: "Theirs", icon: "Heart", colour: "rose")
-    patch bulk_visual_tag_account_chats_path(@account), params: { conversation_ids: [ @chats[0].to_param ], visual_tag_id: foreign_tag.to_param }, as: :json
+    tag_list(foreign_tag.to_param)
     assert_response :not_found
-    patch bulk_visual_tag_account_chats_path(@account), params: { conversation_ids: [ @chats[0].to_param ] }, as: :json
+    patch bulk_visual_tag_account_chats_path(@account), params: { room: "main" }, as: :json
+    assert_response :unprocessable_entity
+    patch bulk_visual_tag_account_chats_path(@account), params: { visual_tag_id: @tag.to_param }, as: :json
     assert_response :unprocessable_entity
     assert_nil @chats[0].reload.visual_tag
   end

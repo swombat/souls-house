@@ -14,11 +14,26 @@ module Api
         render json: { error: error.message }, status: :unprocessable_entity
       end
 
-      # POST /api/v1/conversations/bulk/mark_read { conversation_ids: [...] }
+      # POST /api/v1/conversations/bulk/mark_read
+      #   { through_message_ids: { conversation_id => message_id } }: each
+      #     through the message given, as the web's eye does; or
+      #   { conversation_ids: [...] }: each through its latest message at
+      #     the moment the request runs, newer arrivals included.
       def mark_read
         account = human_account!(current_api_account)
-        ids = ConversationBulk.decode_ids(conversation_ids_param)
-        acted = ConversationBulk.mark_read!(chats: account.chats.kept.where(id: ids), user: current_api_user)
+        raw = params[:through_message_ids]
+        if raw.present? == params[:conversation_ids].present?
+          render json: { error: "Provide exactly one of through_message_ids or conversation_ids" }, status: :unprocessable_entity
+          return
+        end
+
+        acted = if raw
+          cutoffs = ConversationBulk.decode_cutoffs(raw.is_a?(ActionController::Parameters) ? raw.to_unsafe_h : nil)
+          ConversationBulk.mark_read!(chats: account.chats.kept, user: current_api_user, cutoffs: cutoffs)
+        else
+          ids = ConversationBulk.decode_ids(conversation_ids_param)
+          ConversationBulk.mark_read!(chats: account.chats.kept.where(id: ids), user: current_api_user)
+        end
         audit_human_action("bulk_dismiss_reply_expectations", nil, account: account, conversation_ids: acted)
         render json: { conversation_ids: acted }
       end

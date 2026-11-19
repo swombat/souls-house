@@ -33,12 +33,24 @@
   const hiddenAttentionCount = $derived(
     ($page.props.hidden_chat_ids || []).filter((id) => $page.props.reply_attention?.chats?.[id] > 0).length
   );
-  // The Actions menu works on exactly what the list shows. Archived rows hold
-  // no tag, so tagging leaves them out; marking read takes the ones with an eye.
-  const bulkChatIds = $derived(chats.filter((chat) => !chat.archived).map((chat) => chat.id));
-  const bulkUnreadChatIds = $derived(
-    chats.filter((chat) => $page.props.reply_attention?.chats?.[chat.id] > 0).map((chat) => chat.id)
+  // The Actions menu works on exactly what the list shows. Marking read sends
+  // the message each eye is showing, so a newer arrival keeps its eye; tagging
+  // sends the room and filter, and the server finds the same list itself.
+  const bulkTagCount = $derived(chats.filter((chat) => !chat.archived).length);
+  const bulkReadCutoffs = $derived(
+    Object.fromEntries(
+      chats
+        .filter((chat) => $page.props.reply_attention?.chats?.[chat.id] > 0)
+        .map((chat) => [chat.id, $page.props.reply_attention?.through_messages?.[chat.id]])
+        .filter(([, through]) => Boolean(through))
+    )
   );
+  const bulkListScope = $derived({
+    room: $page.props.current_room || 'main',
+    show_archived: showArchived ? 'true' : undefined,
+    show_hidden: showHidden ? 'true' : undefined,
+    tag: selectedTagId || undefined,
+  });
   // Carried on each conversation link so opening one keeps the filter.
   const filterParams = $derived({
     show_archived: showArchived ? true : undefined,
@@ -115,8 +127,9 @@
     {showHidden}
     {hiddenAttentionCount}
     {selectedTagId}
-    {bulkChatIds}
-    {bulkUnreadChatIds}
+    {bulkTagCount}
+    {bulkReadCutoffs}
+    {bulkListScope}
     visualTags={$page.props.visual_tags || []}
     onToggleHidden={toggleShowHidden}
     onSelectTag={selectTag}

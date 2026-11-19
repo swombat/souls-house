@@ -19,8 +19,9 @@
     hiddenAttentionCount = 0,
     visualTags = [],
     selectedTagId = null,
-    bulkChatIds = [],
-    bulkUnreadChatIds = [],
+    bulkTagCount = 0,
+    bulkReadCutoffs = {},
+    bulkListScope = {},
     onCreate,
     onClose,
     onToggleArchived,
@@ -143,7 +144,12 @@
         {/if}
       </Popover.Content>
     </Popover.Root>
-    <ChatBulkActions {accountId} chatIds={bulkChatIds} unreadChatIds={bulkUnreadChatIds} {visualTags} />
+    <ChatBulkActions
+      {accountId}
+      tagCount={bulkTagCount}
+      readCutoffs={bulkReadCutoffs}
+      listScope={bulkListScope}
+      {visualTags} />
     {#if selectedTag}
       <button
         type="button"

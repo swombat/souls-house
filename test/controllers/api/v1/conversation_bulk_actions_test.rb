@@ -27,6 +27,24 @@ class Api::V1::ConversationBulkActionsTest < ActionDispatch::IntegrationTest
     assert_equal 0, response.parsed_body["total"]
   end
 
+  test "with through_message_ids, a newer message keeps its eye; exactly one form is accepted" do
+    newer = @chats[0].messages.create!(role: "assistant", content: "Test User, also")
+    @chats[0].with_lock { ReplyExpectation.record!(message: newer, user: @user, score: 0.95) }
+    post "/api/v1/conversations/bulk/mark_read", params: { through_message_ids: { @chats[0].to_param => @asks[0].to_param } },
+      headers: @headers, as: :json
+    assert_response :ok
+    assert ReplyExpectation.find_by!(message: @asks[0], user: @user).state_dismissed?
+    assert ReplyExpectation.find_by!(message: newer, user: @user).state_open?
+
+    post "/api/v1/conversations/bulk/mark_read",
+      params: { through_message_ids: { @chats[1].to_param => @asks[1].to_param }, conversation_ids: [ @chats[1].to_param ] },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    post "/api/v1/conversations/bulk/mark_read", params: {}, headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert ReplyExpectation.find_by!(message: @asks[1], user: @user).state_open?
+  end
+
   test "tags many conversations in one request, and validates the tag" do
     patch "/api/v1/conversations/bulk/visual_tag", params: { conversation_ids: @chats.map(&:to_param), visual_tag_id: @tag.to_param },
       headers: @headers, as: :json

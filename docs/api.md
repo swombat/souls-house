@@ -159,8 +159,8 @@ Changed conversations come back in the list shape, which now also carries
 | `PATCH` / `DELETE /api/v1/conversations/:id/messages/:message_id` | the message's author | Edit (`content`) / delete (discard). No site-admin override |
 | `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye), in the request's account (`account_id`, or the default) |
 | `POST /api/v1/conversations/:id/reply_dismissal` | member | Exactly one of `message_id` (that flag) or `through_message_id` (every flag up to it) |
-| `POST /api/v1/conversations/bulk/mark_read` | member | `conversation_ids` (1–500): every flag of mine in each, as if dismissed through its latest message. One request, a fixed number of queries |
-| `PATCH /api/v1/conversations/bulk/visual_tag` | member | `conversation_ids` (1–500) and `visual_tag_id` (or `null` to clear). Archived ones are left alone; each changed room gets its usual tag line |
+| `POST /api/v1/conversations/bulk/mark_read` | member | Exactly one of `through_message_ids` (`{conversation_id: message_id}`, 1–500: each dismissed through that message, as the web's eye does) or `conversation_ids` (1–500: each through its latest message *when the request runs*, so a message that arrived after you looked is cleared too). A fixed number of queries however many |
+| `PATCH /api/v1/conversations/bulk/visual_tag` | member | `conversation_ids` (1–500) and `visual_tag_id` (or `null` to clear). Archived ones are left alone. The tag is one UPDATE; each conversation whose tag changes also writes its usual transcript line, so that part grows with the number changed |
 | `POST /api/v1/conversations/:id/messages/:message_id/safeguard_reset` | member | "Start <resident> fresh again" on a safeguard-labelled message. `201` |
 
 ```http
@@ -195,7 +195,7 @@ POST /api/v1/conversations/c_abc/reply_dismissal
 
 ```http
 POST /api/v1/conversations/bulk/mark_read
-{"conversation_ids": ["c_abc", "c_def"]}
+{"through_message_ids": {"c_abc": "m_2", "c_def": "m_9"}}
 
 200 {"conversation_ids": ["c_abc", "c_def"]}
 
@@ -208,7 +208,7 @@ PATCH /api/v1/conversations/bulk/visual_tag
 The bulk endpoints answer with the conversations they acted on (for the tag,
 the ones whose tag actually changed). IDs outside the request's account, or
 deleted, are skipped rather than failing the batch; a malformed ID is `422`.
-They are what the web sidebar's Actions menu calls (`/accounts/:id/chats/bulk/…`).
+The web sidebar's Actions menu has its own routes (`/accounts/:id/chats/bulk/…`): marking read sends the cutoff each eye was showing, and tagging sends the room and filter rather than IDs, so the server tags the same list the sidebar shows, however long.
 
 A reply flag marks a *person* who was asked to respond; dismissing it never
 cancels a resident's pending reply. Replying in the conversation also clears it.

@@ -1,6 +1,7 @@
 class ChatsController < ApplicationController
 
   include DraftAuthorBinding
+  include ChatSidebarScope
 
   before_action :require_matching_draft_author, only: :create
   require_feature_enabled :chats
@@ -197,30 +198,6 @@ class ChatsController < ApplicationController
       chats = chats.listed
       active_chats = chats.active.pinned_first.latest
       params[:show_archived] == "true" ? active_chats + chats.archived.latest : active_chats
-    end
-  end
-
-  # The Filter menu: a chosen tag shows only its conversations (hidden ones
-  # too, since that is what was asked for); otherwise conversations whose tag
-  # hides them stay out unless show_hidden is on. An unknown or removed tag
-  # filters nothing rather than failing the page.
-  def filter_sidebar_by_tag(chats)
-    if (tag = sidebar_tag_filter)
-      chats.where(visual_tag: tag)
-    elsif params[:show_hidden] == "true"
-      chats
-    else
-      chats.not_hidden_from_list
-    end
-  end
-
-  def sidebar_tag_filter
-    return @sidebar_tag_filter if defined?(@sidebar_tag_filter)
-
-    @sidebar_tag_filter = begin
-      params[:tag].is_a?(String) ? VisualTag.resolve_for(current_account, params[:tag]) : nil
-    rescue ActiveRecord::RecordNotFound
-      nil
     end
   end
 

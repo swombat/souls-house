@@ -1,21 +1,24 @@
 <script>
   // The Actions menu beside Filter: whatever the list shows right now (this
-  // room, this filter), marked read or tagged in one request each. The server
-  // does the work in a fixed number of queries (ConversationBulk); the list
-  // then refreshes like any single change.
+  // room, this filter), marked read or tagged in one request each
+  // (ConversationBulk); the list then refreshes like any single change.
+  // Marking read sends each eye's own cutoff, so a message that arrives after
+  // the person looked keeps its eye. Tagging sends the room and filter, not
+  // the IDs, so no list is too long for it.
   import * as Popover from '$lib/components/shadcn/popover/index.js';
   import { Checks, Lightning, Tag, X } from 'phosphor-svelte';
   import VisualTagIcon from './VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { reloadProps } from '$lib/cable';
 
-  let { accountId, chatIds = [], unreadChatIds = [], visualTags = [] } = $props();
+  let { accountId, tagCount = 0, readCutoffs = {}, listScope = {}, visualTags = [] } = $props();
 
   let open = $state(false);
   let busy = $state(false);
   let error = $state('');
 
-  const count = $derived(chatIds.length);
+  const count = $derived(tagCount);
+  const unreadCount = $derived(Object.keys(readCutoffs).length);
   const plural = (n) => `${n} ${n === 1 ? 'conversation' : 'conversations'}`;
 
   async function send(method, path, body) {
@@ -49,15 +52,15 @@
   }
 
   function markAllRead() {
-    if (unreadChatIds.length === 0) return;
-    send('POST', 'mark_read', { conversation_ids: unreadChatIds });
+    if (unreadCount === 0) return;
+    send('POST', 'mark_read', { through_message_ids: readCutoffs });
   }
 
   function tagAll(tag) {
     if (count === 0) return;
     const what = tag ? `Tag ${plural(count)} as ${tag.label}?` : `Remove the tag from ${plural(count)}?`;
     if (!window.confirm(`${what} Each one records the change in its transcript.`)) return;
-    send('PATCH', 'visual_tag', { conversation_ids: chatIds, visual_tag_id: tag ? tag.id : null });
+    send('PATCH', 'visual_tag', { ...listScope, visual_tag_id: tag ? tag.id : null });
   }
 </script>
 
@@ -65,7 +68,7 @@
   <Popover.Trigger
     aria-label="Actions on the conversations in this list"
     data-testid="chat-bulk-actions-trigger"
-    disabled={count === 0}
+    disabled={count === 0 && unreadCount === 0}
     class="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted focus-visible:outline focus-visible:outline-2 disabled:opacity-50">
     <Lightning size={12} />
     <span>Actions</span>
@@ -75,13 +78,13 @@
     <button
       type="button"
       data-testid="chat-bulk-mark-read"
-      disabled={busy || unreadChatIds.length === 0}
+      disabled={busy || unreadCount === 0}
       onclick={markAllRead}
       class="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-muted disabled:opacity-50 disabled:hover:bg-transparent">
       <Checks size={16} class="shrink-0 text-muted-foreground" />
       <span class="min-w-0 flex-1">Mark all as read</span>
-      {#if unreadChatIds.length > 0}
-        <span class="text-xs text-muted-foreground">{unreadChatIds.length}</span>
+      {#if unreadCount > 0}
+        <span class="text-xs text-muted-foreground">{unreadCount}</span>
       {/if}
     </button>
     {#if visualTags.length > 0}
