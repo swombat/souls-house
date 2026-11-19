@@ -31,7 +31,7 @@ class CompanionChannel < ApplicationCable::Channel
     return unless @epoch
 
     current_companion_device.record_ceiling_report!(epoch: @epoch, claimed_epoch: data["connection_epoch"],
-      ceiling: data["ceiling"])
+      ceiling: data["ceiling"], execute_lifecycle_accepted: data["execute_lifecycle_accepted"])
   end
 
   def unsubscribed

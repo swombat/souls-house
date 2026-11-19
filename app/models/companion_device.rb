@@ -27,7 +27,8 @@ class CompanionDevice < ApplicationRecord
 
   # What the Computers page shows. A change to any of these tells an open
   # page to reload, so "Offline" doesn't outlive the gap after a change.
-  STATUS_COLUMNS = %w[connection_epoch paused revoked_at policy grant_revision ceiling_reported_at].freeze
+  STATUS_COLUMNS = %w[connection_epoch paused revoked_at policy grant_revision ceiling_reported_at
+    execute_lifecycle_accepted].freeze
   after_commit :refresh_computer_status, if: -> { (saved_changes.keys & STATUS_COLUMNS).any? }
 
   def self.generate_credential
@@ -166,16 +167,31 @@ class CompanionDevice < ApplicationRecord
   # connection that is no longer current, or one that doesn't validate, is
   # dropped. Only residents enrolled on this device are kept, and only volume
   # keys and access. Returns true when stored. Grants are never changed here.
-  def record_ceiling_report!(epoch:, claimed_epoch:, ceiling:)
+  #
+  # A Mac also says whether its person has turned on "Let residents run
+  # commands on this Mac". Only a literal true or false is kept; anything else,
+  # including a report without it (Linux, an older companion), stores nil, so
+  # a value from an earlier connection is never carried over. Display only.
+  def record_ceiling_report!(epoch:, claimed_epoch:, ceiling:, execute_lifecycle_accepted: nil)
     with_lock do
       return false unless revoked_at.nil? && epoch.present? && connection_epoch == epoch && claimed_epoch == epoch
 
       report = normalize_ceiling_report(ceiling)
       return false unless report
 
-      update!(reported_ceiling: report, ceiling_reported_at: Time.current, ceiling_epoch: epoch)
+      accepted = execute_lifecycle_accepted if [ true, false ].include?(execute_lifecycle_accepted)
+      update!(reported_ceiling: report, ceiling_reported_at: Time.current, ceiling_epoch: epoch,
+        execute_lifecycle_accepted: accepted)
       true
     end
+  end
+
+  # True only when the computer's current connection reported, explicitly,
+  # that its run-commands opt-in is off. Not knowing (no report from this
+  # connection, offline, Linux, an older companion) is false here, so the
+  # page says nothing rather than something stale.
+  def commands_off_locally?
+    connection_epoch.present? && ceiling_epoch == connection_epoch && execute_lifecycle_accepted == false
   end
 
   # The access the last report allows, or nil when there is no report or it

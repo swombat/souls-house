@@ -397,18 +397,27 @@
                   <p class="min-w-0 flex-1 truncate font-medium">{resident.name}</p>
                 </div>
                 <div class="divide-y">
-                  <div class="flex items-center justify-between gap-4 px-4 py-3">
-                    <Label
-                      for="execute-{device.id}-{resident.id}"
-                      class="flex min-w-0 items-center gap-2.5 font-normal">
-                      <Terminal size={18} class="shrink-0 text-muted-foreground" />
-                      <span>Run commands</span>
-                    </Label>
-                    <Switch
-                      id="execute-{device.id}-{resident.id}"
-                      checked={resident.execute}
-                      disabled={!can_manage || busy}
-                      onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
+                  <div class="px-4 py-3">
+                    <div class="flex items-center justify-between gap-4">
+                      <Label
+                        for="execute-{device.id}-{resident.id}"
+                        class="flex min-w-0 items-center gap-2.5 font-normal">
+                        <Terminal size={18} class="shrink-0 text-muted-foreground" />
+                        <span>Run commands</span>
+                      </Label>
+                      <Switch
+                        id="execute-{device.id}-{resident.id}"
+                        checked={resident.execute}
+                        disabled={!can_manage || busy}
+                        onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
+                    </div>
+                    {#if resident.execute && device.commands_off_locally}
+                      <p class="mt-2 flex gap-1.5 text-xs text-muted-foreground" data-testid="commands-off-locally">
+                        <WarningCircle size={14} class="mt-px shrink-0" />
+                        This Mac hasn't allowed commands yet. Turn on “Let residents run commands on this Mac” in its menu
+                        bar.
+                      </p>
+                    {/if}
                   </div>
                   <div class="px-4 py-3">
                     <div class="flex items-center justify-between gap-4">

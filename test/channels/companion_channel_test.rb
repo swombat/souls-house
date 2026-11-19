@@ -74,4 +74,14 @@ class CompanionChannelTest < ActionCable::Channel::TestCase
     assert_equal 1, @device.grant_revision
   end
 
+  test "a ceiling report carries the Mac's run-commands opt-in when it sends one" do
+    subscribe
+    epoch = @device.reload.connection_epoch
+    empty = { "residents" => [] }
+    perform :report_ceiling, connection_epoch: epoch, ceiling: empty, execute_lifecycle_accepted: false
+    assert_equal false, @device.reload.execute_lifecycle_accepted
+    perform :report_ceiling, connection_epoch: epoch, ceiling: empty
+    assert_nil @device.reload.execute_lifecycle_accepted
+  end
+
 end
