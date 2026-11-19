@@ -3,6 +3,7 @@ require "tmpdir"
 require "open3"
 
 class Agents::MemoryArchiveTest < ActiveSupport::TestCase
+
   setup do
     @root = Pathname.new(Dir.mktmpdir).realpath
     %w[daily weekly monthly yearly].each { |layer| @root.join("#{layer}-journals").mkpath }
@@ -72,13 +73,22 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     assert_equal 65_536, body["body"].bytesize
   end
 
-  test "refuses symlink ancestors and client path traversal" do
+  test "refuses symlink ancestors, and paths outside the journal layers" do
     FileUtils.remove_entry(@root.join("weekly-journals"))
     File.symlink(@root.join("daily-journals"), @root.join("weekly-journals"))
     _out, _err, status = execute(mode: "catalog")
     refute status.success?
-    _out, _err, status = execute(mode: "bodies", items: [ { path: "daily-journals/../../secret" } ])
-    refute status.success?
+    # Complete, correctly fingerprinted selections, so only the path check can refuse them.
+    @root.join("people").mkpath
+    write("people/anna.md", "private, not a journal")
+    write("daily-journals/notes.txt", "private, not a day file")
+    %w[people/anna.md daily-journals/notes.txt].each do |path|
+      data = @root.join(path).binread
+      item = { id: "x", path: path, fingerprint: Digest::SHA256.hexdigest(data), start: 0, end: data.bytesize }
+      out, _err, status = execute(mode: "bodies", items: [ item ])
+      refute status.success?, path
+      refute_includes out, "private"
+    end
   end
 
   test "unavailable residents never masquerade as empty archives" do
@@ -103,4 +113,5 @@ class Agents::MemoryArchiveTest < ActiveSupport::TestCase
     assert status.success?, err
     JSON.parse(out)
   end
+
 end

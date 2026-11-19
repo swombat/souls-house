@@ -42,7 +42,10 @@ module Agents
 
     test "a previously cached absence does not authorize local access" do
       assert_nil @agent.placement
-      AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+      # Created elsewhere, by id: passing agent: @agent would refresh the cached
+      # absence this test is about, and it would pass with the uncached lookup gone.
+      AgentPlacement.create!(agent_id: @agent.id, backend: "hetzner_cloud", state: "pending")
+      assert_nil @agent.placement, "the cached absence is still stale"
       assert_raises(RuntimeLocation::Unavailable) { RuntimeLocation.require_local!(@agent) }
     end
 
