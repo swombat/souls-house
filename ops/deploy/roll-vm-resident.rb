@@ -43,6 +43,10 @@ result =
     target = ENV.fetch("DEPLOY_RESIDENT_IMAGE")
     target_id = ENV.fetch("DEPLOY_RESIDENT_IMAGE_ID")
     raise "Target must be an image ID" unless image_id_pattern.match?(target_id)
+    # The starting image the deploy's preflight passed (#1036): when given,
+    # the VM must still be on exactly it, checked under the locks below.
+    expected = ENV["DEPLOY_RESIDENT_EXPECTED_IMAGE_ID"].presence
+    raise "Expected image must be an image ID" if expected && !image_id_pattern.match?(expected)
 
     if !Agents::RemoteRuntime.running?(a)
       { result: "unavailable", id: a.id }
@@ -57,6 +61,17 @@ result =
           # turn admission and begin_refresh!, so neither can deadlock this.
           Agent.connection.execute("SELECT pg_advisory_xact_lock(#{Agents::RemoteRuntime::TURN_GATE})")
           a.lock!
+          if expected
+            placement.lock!
+            in_flight = Agents::RemoteRuntime.enrollment_for(a)&.commands
+              &.where(kind: %w[start_resident stop_resident], finished_at: nil)&.exists?
+            if in_flight || running_image.call != expected
+              # Not the image the preflight approved, or about to change:
+              # nothing is retagged or queued; the deploy leaves it owed.
+              outcome = { result: "changed", id: a.id }
+              raise ActiveRecord::Rollback
+            end
+          end
           a.update!(container_image: target)
           command = Agents::RemoteRuntime.begin_refresh!(a)
           if command == :busy

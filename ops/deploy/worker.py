@@ -946,7 +946,10 @@ class Sweeper(Worker):
                 try:
                     result = self.rails(script, {
                         "DEPLOY_VM_MODE": "start", "DEPLOY_RESIDENT_ID": str(resident_id),
-                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_RESIDENT_IMAGE_ID": target_id})
+                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_RESIDENT_IMAGE_ID": target_id,
+                        # Compared again under the start's own locks: the VM
+                        # may change between that inspect and this start.
+                        "DEPLOY_RESIDENT_EXPECTED_IMAGE_ID": approved})
                 except Exception as error:
                     # Outcome unknown: a restart may have been queued. Held.
                     self.note(f"\nvm resident {resident_id}: {type(error).__name__}\n")
@@ -959,6 +962,9 @@ class Sweeper(Worker):
                 elif answer == "started":
                     rolling[str(resident_id)] = {"command_id": result["command_id"],
                                                  "started_at": int(time.time())}
+                elif answer == "changed":
+                    self.note(f"vm resident {resident_id}: image changed before the start; "
+                              "left owed for the next explicit run\n")
                 elif answer not in ("busy", "unavailable"):
                     owed.remove(resident_id)
                     state["held"].append(resident_id)

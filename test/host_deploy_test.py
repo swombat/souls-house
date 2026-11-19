@@ -1417,6 +1417,9 @@ class WorkerTest(unittest.TestCase):
                 modes.append(env["DEPLOY_VM_MODE"])
                 if env["DEPLOY_VM_MODE"] == "inspect":
                     return {"result": "inspected", "running": confirmed is not None, "image": confirmed}
+                if env["DEPLOY_VM_MODE"] == "start":
+                    # The approved image goes to the start, compared under its locks.
+                    self.assertEqual(confirmed, env.get("DEPLOY_RESIDENT_EXPECTED_IMAGE_ID"))
                 self.assertEqual(self.BUILT, env["DEPLOY_RESIDENT_IMAGE_ID"])
                 return answers.pop(0)
             return {"result": host}
@@ -1600,6 +1603,13 @@ class WorkerTest(unittest.TestCase):
         self.owe([1], vm_approved_images={"1": "sha256:" + "3" * 64})
         self.assertEqual(["inspect"], self.vm_sweep())
         self.assertEqual(([], [1]), (self.queue()["held"], self.queue()["external_skipped"]))
+
+    def test_an_image_change_between_inspect_and_start_leaves_the_vm_owed(self):
+        # The start's locked check answers changed: nothing queued, not held.
+        self.owe([1])
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "changed"}]))
+        self.assertEqual(([], [1], {}), (self.queue()["held"], self.queue()["external_skipped"],
+                                         self.queue().get("vm_rolling", {})))
 
     def test_sweep_leaves_a_vm_it_cannot_read_owed_and_untouched(self):
         self.owe([1])
