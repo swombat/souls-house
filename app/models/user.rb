@@ -135,9 +135,13 @@ class User < ApplicationRecord
     )
   end
 
+  # The account someone lands in when a request names none: their chosen
+  # default while it is still usable, otherwise their oldest confirmed
+  # membership of an enabled account (the same list as the account switcher).
+  # A disabled account is never the landing account.
   def default_account
     chosen = confirmed_accounts.find_by(id: default_account_id) if default_account_id
-    chosen || memberships.confirmed.includes(:account).first&.account
+    chosen || confirmed_memberships.joins(:account).merge(Account.enabled).includes(:account).order(:created_at, :id).first&.account
   end
 
   # Obfuscated id of the chosen default account, for the user's own settings

@@ -847,6 +847,31 @@ class UserTest < ActiveSupport::TestCase
     assert_equal user.personal_account, user.reload.default_account
   end
 
+  test "default_account never falls back to a disabled account" do
+    user = users(:user_1)
+    team = accounts(:team_account)
+    user.update!(default_account_key: nil)
+    user.personal_account.update!(disabled_at: Time.current)
+
+    assert_equal team, user.reload.default_account
+  end
+
+  test "a chosen default account that is disabled is passed over" do
+    user = users(:user_1)
+    team = accounts(:team_account)
+    user.update!(default_account_key: user.personal_account.to_param)
+    user.personal_account.update!(disabled_at: Time.current)
+
+    assert_equal team, user.reload.default_account
+  end
+
+  test "default_account is nil when every account is disabled" do
+    user = users(:user_1)
+    user.confirmed_memberships.each { |membership| membership.account.update!(disabled_at: Time.current) }
+
+    assert_nil user.reload.default_account
+  end
+
   test "default_account cannot be an account the user does not belong to" do
     user = users(:user_1)
     user.default_account_key = accounts(:unconfirmed_user_account).to_param
