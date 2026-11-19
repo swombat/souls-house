@@ -26,7 +26,7 @@
   import { diskName } from '$lib/companion-volumes.js';
   import { createDynamicSync } from '$lib/use-sync';
 
-  let { account, devices = [], can_manage = false, warnings = {} } = $props();
+  let { account, devices = [], can_manage = false, can_add = false, warnings = {} } = $props();
 
   // The Mac app's "Open the house" button lands here with ?pair=1.
   const pairRequested = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('pair');
@@ -168,7 +168,7 @@
   description="Computers enrolled with the companion app, which residents each one serves, and what they may do there.">
   {#if devices.length > 0}
     <div class="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="companion-header">
-      {#if can_manage}<AddComputer {account} {warnings} size="sm" startOpen={pairRequested} />{/if}
+      {#if can_add}<AddComputer {account} {warnings} size="sm" startOpen={pairRequested} />{/if}
       <CompanionDownload size="sm" early={false} />
       <a href="/companion" class="underline underline-offset-4">About the companion app</a>
     </div>
@@ -187,7 +187,7 @@
       </p>
       <div class="mt-5 flex flex-wrap justify-center gap-3">
         <CompanionDownload size="default" />
-        {#if can_manage}<AddComputer {account} {warnings} startOpen={pairRequested} />{/if}
+        {#if can_add}<AddComputer {account} {warnings} startOpen={pairRequested} />{/if}
       </div>
       <ol
         class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"

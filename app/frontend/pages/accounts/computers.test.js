@@ -18,6 +18,7 @@ const device = {
 const props = {
   account: { id: 'acct', name: 'Home' },
   can_manage: true,
+  can_add: true,
   devices: [device],
   warnings: { execute: 'Execute warning words.', desktop: 'Desktop warning words.' },
 };
@@ -59,6 +60,8 @@ test('turning a power off needs no confirmation', async () => {
 
 test('a member without admin rights sees the computer but cannot change it', () => {
   render(Computers, { ...props, can_manage: false });
+  // Adding a computer is open to every member (YMamQY JDbRxw); changing one is not.
+  expect(screen.getByTestId('add-computer')).toBeInTheDocument();
   expect(screen.getByText("Daniel's Mac")).toBeInTheDocument();
   expect(screen.getByText('Data')).toBeInTheDocument();
   expect(screen.getByLabelText('Run commands')).toBeDisabled();
@@ -226,4 +229,9 @@ test('says when the Mac has not allowed commands, only for a resident with Run c
     expect(screen.queryByTestId('commands-off-locally')).not.toBeInTheDocument();
     u();
   }
+});
+
+test('Add a computer follows can_add, not can_manage', () => {
+  render(Computers, { ...props, can_manage: false, can_add: false });
+  expect(screen.queryByTestId('add-computer')).not.toBeInTheDocument();
 });

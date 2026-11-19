@@ -31,18 +31,17 @@ class Accounts::CompanionPairingsControllerTest < ActionDispatch::IntegrationTes
     assert_equal [ "Paulina's Mac" ], CompanionDevice.where(account: @account).pluck(:name)
   end
 
-  test "an unknown code says so, and a member who isn't an admin can't look up or approve" do
+  test "an unknown code says so, and someone outside the account can't look up or approve" do
     sign_in @owner
     post lookup_account_companion_pairings_path(@account), params: { code: "ZZZZ-ZZZZ" }, as: :json
     assert_response :not_found
 
-    team = agents(:other_account_agent).account
     sign_in users(:existing_user)
-    post lookup_account_companion_pairings_path(team), params: { code: @code }, as: :json
-    assert_response :forbidden
-    post account_companion_pairings_path(team),
-      params: { code: @code, resident_ids: [ agents(:other_account_agent).to_param ], accesses: { "darwin-volume:main" => "read" } }
-    assert_redirected_to account_companion_devices_path(team)
+    post lookup_account_companion_pairings_path(@account), params: { code: @code }, as: :json
+    assert_response :not_found
+    post account_companion_pairings_path(@account),
+      params: { code: @code, pairing_id: @pairing.to_param, resident_ids: [ @agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
+    assert_response :not_found
     assert_nil @pairing.reload.approved_at
   end
 
@@ -81,6 +80,20 @@ class Accounts::CompanionPairingsControllerTest < ActionDispatch::IntegrationTes
     assert_nil @pairing.reload.approved_at
   ensure
     RateLimitStore.override = nil
+  end
+
+  test "a member who isn't an admin can add a computer (YMamQY JDbRxw)" do
+    team_agent = agents(:other_account_agent)
+    team = team_agent.account
+    member = users(:existing_user)
+    refute member.confirmed_memberships.find_by(account: team).admin?
+    sign_in member
+    post lookup_account_companion_pairings_path(team), params: { code: @code }, as: :json
+    assert_response :success
+    post account_companion_pairings_path(team), params: { code: @code, pairing_id: @pairing.to_param,
+      resident_ids: [ team_agent.to_param ], accesses: { "darwin-volume:main" => "read" } }
+    assert_match(/being added/, flash[:notice])
+    assert_equal member, @pairing.reload.approved_by_user
   end
 
 end

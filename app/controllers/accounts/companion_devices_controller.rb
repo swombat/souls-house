@@ -14,6 +14,7 @@ class Accounts::CompanionDevicesController < ApplicationController
     render inertia: "accounts/computers", props: {
       account: @account.as_json,
       can_manage: admin?,
+      can_add: member?,
       devices: devices.map { |device| device_json(device, agents, activity) },
       warnings: {
         execute: CompanionEnrollmentGrant::EXECUTE_WARNING,
@@ -163,6 +164,10 @@ class Accounts::CompanionDevicesController < ApplicationController
 
     @admin = Current.user&.site_admin ||
       Current.user&.confirmed_memberships&.find_by(account: @account)&.admin? || false
+  end
+
+  def member?
+    Current.user&.site_admin || Current.user&.confirmed_memberships&.exists?(account: @account) || false
   end
 
   def require_admin!

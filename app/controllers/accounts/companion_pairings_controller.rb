@@ -1,13 +1,14 @@
-# "Add a computer" on the Computers page: an owner or admin types the code a
+# "Add a computer" on the Computers page: any confirmed member of the account
+# (Daniel, YMamQY JDbRxw: not only the owner) types the code a
 # computer is showing, sees what it offers, picks residents and access, and
 # approves. See CompanionPairing.
 class Accounts::CompanionPairingsController < ApplicationController
 
   before_action :set_account
-  before_action :require_admin!
+  before_action :require_member!
 
   # Looking a code up and approving one both search every pairing by code, so
-  # they share one quota per person, counted after sign-in and the admin check.
+  # they share one quota per person, counted after sign-in and the membership check.
   rate_limit to: 20, within: 10.minutes, only: %i[lookup create], store: RateLimitStore,
     scope: "companion-pairing-code", by: -> { "user:#{Current.user.id}" }, with: -> { too_many_tries }
 
@@ -62,17 +63,20 @@ class Accounts::CompanionPairingsController < ApplicationController
     end
   end
 
-  def admin?
+  # Adding a computer offers that computer to the account's residents; the
+  # person at it already chose what it offers. Any confirmed member may do it.
+  # Changing or removing computers afterwards stays with owners and admins.
+  def member?
     Current.user&.site_admin ||
-      Current.user&.confirmed_memberships&.find_by(account: @account)&.admin? || false
+      Current.user&.confirmed_memberships&.exists?(account: @account) || false
   end
 
-  def require_admin!
-    return if admin?
+  def require_member!
+    return if member?
 
     respond_to do |format|
-      format.json { render json: { error: "Only an owner or admin of this account can add computers" }, status: :forbidden }
-      format.any { redirect_to account_companion_devices_path(@account), alert: "Only an owner or admin of this account can add computers" }
+      format.json { render json: { error: "Only a member of this account can add computers" }, status: :forbidden }
+      format.any { redirect_to account_companion_devices_path(@account), alert: "Only a member of this account can add computers" }
     end
   end
 

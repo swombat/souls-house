@@ -141,7 +141,7 @@
         short code. On Linux, <code>souls-house-companion pair</code> does the same in a terminal.
       </li>
       <li>
-        <span class="font-medium">Type the code on {$siteName}</span>: an owner or admin opens Settings → Computers →
+        <span class="font-medium">Type the code on {$siteName}</span>: any member of the account opens Settings → Computers →
         Add a computer, types the code, and chooses which residents may use the computer and what each may reach, never
         more than the computer offered. The computer finishes pairing on its own within seconds.
       </li>
