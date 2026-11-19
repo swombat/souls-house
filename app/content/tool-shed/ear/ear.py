@@ -4,7 +4,7 @@ Bands: purr/low 20-250 Hz, melody 250-2000 Hz. Prints per-second dB and how much
 each band breathes (std of its dB contour): a flat line is a machine."""
 import sys, wave, subprocess, numpy as np
 f = sys.argv[1]
-subprocess.run(['ffmpeg','-y','-loglevel','error','-i',f,'-lavfi',
+spec = subprocess.run(['ffmpeg','-y','-loglevel','error','-i',f,'-lavfi',
   'showspectrumpic=s=1600x700:legend=1:scale=log:fscale=log:stop=2000', f.rsplit('.',1)[0]+'-spec.png'])
 w = wave.open(f); sr = w.getframerate(); ch = w.getnchannels()
 x = np.frombuffer(w.readframes(w.getnframes()), '<i2').astype(float)
@@ -18,9 +18,18 @@ for i in range(0, len(x)-N, N//2):
     lo = 10*np.log10(s[(fr>=20)&(fr<250)].sum()+1e-12)
     me = 10*np.log10(s[(fr>=250)&(fr<2000)].sum()+1e-12)
     rows.append((i/sr, lo, me))
+if not rows:  # one second or less: no full 1 s window to measure
+    if spec.returncode != 0:
+        print(f'clip is 1 s or shorter: no loudness summary, and ffmpeg failed (exit {spec.returncode}), so no spectrogram either')
+        sys.exit(1)
+    print('clip is 1 s or shorter: spectrogram written, no loudness summary')
+    sys.exit(0)
 r = np.array(rows)
 for t, lo, me in r[::2]:
     print(f'{t:5.1f}s  low {lo:6.1f} dB  {"#"*int(max(0,lo-r[:,1].max()+30))}   melody {me:6.1f} dB')
 core = r[(r[:,0]>5)&(r[:,0]<r[-1,0]-6)]
-print(f'low band breathes: std {core[:,1].std():.2f} dB, range {np.ptp(core[:,1]):.1f} dB (excluding fades)')
+note = 'excluding fades'
+if len(core) < 2:  # fewer than two rows survive the fade trim (fix: Claude, Nexus)
+    core, note = r, 'whole clip: too short to cut fades'
+print(f'low band breathes: std {core[:,1].std():.2f} dB, range {np.ptp(core[:,1]):.1f} dB ({note})')
 print(f'melody band:       std {core[:,2].std():.2f} dB, range {np.ptp(core[:,2]):.1f} dB')
