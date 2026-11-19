@@ -11,8 +11,17 @@ class Agents::SubscriptionUsageSnapshot
   FRESH_FOR = 60.seconds
   STALE_LIMIT = 30.minutes
   REFRESH_LOCK_FOR = 2.minutes
+  UNAVAILABLE_ALLOWANCE = { status: "unavailable", stale: nil, checked_at: nil, windows: [].freeze }.freeze
 
   def self.fetch(agent, refresh: false) = new(agent).fetch(refresh:)
+
+  # For owner dashboards: neither a cold nor a stale cache can start work.
+  def self.cached_allowance(agent)
+    provider = Agents::Sandbox.subscription_provider_for(agent)
+    return UNAVAILABLE_ALLOWANCE unless provider && agent.provider_auth_mode(provider) == "oauth_account"
+
+    new(agent).cached_allowance
+  end
 
   def initialize(agent)
     @agent = agent
@@ -29,6 +38,25 @@ class Agents::SubscriptionUsageSnapshot
 
     enqueue_refresh
     present(kept, stale: true)
+  end
+
+  def cached_allowance
+    kept = read_cached_snapshot
+    return UNAVAILABLE_ALLOWANCE unless kept && kept["fetched_at"].is_a?(Numeric)
+
+    now = Time.current
+    age = now.to_f - kept["fetched_at"].to_f
+    return UNAVAILABLE_ALLOWANCE unless age >= 0 && age < STALE_LIMIT
+
+    windows = Array(kept["snapshot"]["windows"]).filter_map { |window| allowance_window(window) }
+    return UNAVAILABLE_ALLOWANCE unless windows.any? { |window| !window[:remaining_percent].nil? }
+
+    {
+      status: "available",
+      stale: age >= FRESH_FOR || windows.any? { |window| window[:resets_at] && Time.iso8601(window[:resets_at]) <= now },
+      checked_at: Time.at(kept["fetched_at"]).utc.iso8601,
+      windows:
+    }
   end
 
   # Raises AgentProviderAuthClient::Error, as the live read always did.
@@ -58,13 +86,37 @@ class Agents::SubscriptionUsageSnapshot
   end
 
   def read
-    kept = Rails.cache.read(cache_key)
-    return nil unless kept.is_a?(Hash) && kept["snapshot"].is_a?(Hash)
+    kept = read_cached_snapshot
+    return nil unless kept
     return nil if Time.current.to_f - kept["fetched_at"].to_f >= STALE_LIMIT
     # A limit whose reset has passed is not a limit any more; read again.
     return nil if limit_lifted?(kept["snapshot"])
 
     kept
+  end
+
+  def read_cached_snapshot
+    kept = Rails.cache.read(cache_key)
+    kept if kept.is_a?(Hash) && kept["snapshot"].is_a?(Hash)
+  end
+
+  # Explicit allowlist, not the provider response (which can have metadata).
+  def allowance_window(window)
+    return unless window.is_a?(Hash) && window["id"].is_a?(String) && window["id"].present?
+
+    remaining = window["remaining_percent"]
+    remaining = nil unless remaining.is_a?(Numeric) && remaining.between?(0, 100)
+    {
+      id: window["id"],
+      remaining_percent: remaining,
+      resets_at: allowance_reset(window["resets_at"])
+    }
+  end
+
+  def allowance_reset(value)
+    Time.iso8601(value).utc.iso8601 if value.is_a?(String)
+  rescue ArgumentError
+    nil
   end
 
   def store(snapshot)
