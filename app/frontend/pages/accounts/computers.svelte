@@ -1,4 +1,5 @@
 <script>
+  import { siteName } from '$lib/branding';
   import { router } from '@inertiajs/svelte';
   import {
     AppleLogo,
@@ -27,7 +28,7 @@
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
 
-  // The Mac app's "Open souls.house" lands here with ?pair=1.
+  // The Mac app's "Open the house" button lands here with ?pair=1.
   const pairRequested = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('pair');
 
   // A computer that connects, drops or changes tells this page to reload its
@@ -192,7 +193,7 @@
         class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"
         data-testid="companion-enrol-steps">
         <li>Download the companion and install it on the computer.</li>
-        <li>In its menu, choose “Pair this Mac…”, tick the disks souls.house may reach, and get a code.</li>
+        <li>In its menu, choose “Pair this Mac…”, tick the disks {$siteName} may reach, and get a code.</li>
         <li>Here, click “Add a computer”, type the code, and choose which residents may use it.</li>
       </ol>
       <p class="mx-auto mt-3 max-w-md text-left text-xs text-muted-foreground">

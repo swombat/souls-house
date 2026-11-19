@@ -1,4 +1,5 @@
 <script>
+  import { siteName } from '$lib/branding';
   // "Add a computer": type the code the companion is showing, see what that
   // computer offers, choose residents and access, approve. The computer then
   // finishes pairing on its own. Owners and admins only (the server checks).
@@ -104,7 +105,7 @@
           It will be added to <strong>{offer.account_name}</strong>. Choose who may use it and what they may reach. They
           can never reach more than the computer offers.
         {:else}
-          On the computer, open the souls.house menu, choose “Pair this Mac…”, and type the code it shows.
+          On the computer, open the {$siteName} menu, choose “Pair this Mac…”, and type the code it shows.
         {/if}
       </Dialog.Description>
     </Dialog.Header>
