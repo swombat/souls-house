@@ -59,10 +59,13 @@ class CiImageTest(unittest.TestCase):
     def test_ruby_pins_match_local_development(self):
         version = (ROOT / ".ruby-version").read_text().strip()
         self.assertRegex((ROOT / "mise.toml").read_text(), rf'(?m)^ruby = "{re.escape(version)}"$')
-        for path in ("Dockerfile", ".github/ci/Dockerfile"):
-            self.assertIn(f"ARG RUBY_VERSION={version}\n", (ROOT / path).read_text())
+        self.assertIn(f"ARG RUBY_VERSION={version}\n", (ROOT / ".github/ci/Dockerfile").read_text())
         for path in ("agent-runtime/Dockerfile.mira-dev", "ops/deploy/Dockerfile"):
             self.assertIn(f"FROM ruby:{version}-slim-trixie", (ROOT / path).read_text())
+
+    def test_rails_ruby_security_pin(self):
+        # Temporary until the 4.0.10 CI tooling image is published and pinned.
+        self.assertIn("ARG RUBY_VERSION=4.0.10\n", (ROOT / "Dockerfile").read_text())
 
     def test_image_matches_application_pins(self):
         dockerfile = (ROOT / ".github/ci/Dockerfile").read_text()
