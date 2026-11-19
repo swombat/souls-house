@@ -177,4 +177,34 @@ class Chats::BulkActionsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @chats[0].reload.visual_tag
   end
 
+  test "a room or filter tag that no longer resolves refuses the tagging and writes nothing" do
+    # The bystanders are @chats in Main: the old fallbacks would have tagged them.
+    gone_room_key = @account.rooms.create!(name: "Gone soon").tap(&:destroy!).to_param
+    gone_tag_key = @account.visual_tags.create!(label: "Building", icon: "Hammer", colour: "rose").tap(&:destroy!).to_param
+    foreign_room_key = accounts(:existing_user_account).rooms.create!(name: "Theirs").to_param
+
+    stale = [
+      { room: gone_room_key },
+      { room: foreign_room_key },
+      { room: "main", tag: gone_tag_key },
+      { room: "all", tag: gone_tag_key },
+      { room: "" },
+      { room: "main", tag: "x" }
+    ]
+    assert_no_difference -> { Message.where(role: "system").count } do
+      stale.each do |scope|
+        tag_list(@tag.to_param, **scope)
+        assert_response :conflict, scope.inspect
+        assert_match "Refresh the page", response.parsed_body["error"]
+      end
+    end
+    @chats.each { |chat| assert_nil chat.reload.visual_tag }
+    assert_not AuditLog.exists?(action: "bulk_set_visual_tag", user: @user)
+
+    # No filter at all is a real list, and so is an empty one from the form.
+    tag_list(@tag.to_param, room: "main", tag: "")
+    assert_response :ok
+    assert_equal 3, response.parsed_body["conversation_ids"].size
+  end
+
 end

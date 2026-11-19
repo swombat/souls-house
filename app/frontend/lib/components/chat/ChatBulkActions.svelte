@@ -58,8 +58,13 @@
 
   function tagAll(tag) {
     if (count === 0) return;
-    const what = tag ? `Tag ${plural(count)} as ${tag.label}?` : `Remove the tag from ${plural(count)}?`;
-    if (!window.confirm(`${what} Each one records the change in its transcript.`)) return;
+    // The server tags the list as it stands when the request runs, so the
+    // count is what the list shows now, not a promise.
+    const what = tag
+      ? `Tag every conversation in this list as ${tag.label}?`
+      : `Remove the tag from every conversation in this list?`;
+    const note = `It shows ${plural(count)} now. Each one that changes records it in its transcript.`;
+    if (!window.confirm(`${what} ${note}`)) return;
     send('PATCH', 'visual_tag', { ...listScope, visual_tag_id: tag ? tag.id : null });
   }
 </script>
