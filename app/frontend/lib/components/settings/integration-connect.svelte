@@ -166,6 +166,15 @@
           a project's API key.
         </div>
       {/if}
+      {#if focusedService.key === 'runpod'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection act as you on RunPod. With a key that has write access they can start GPU pods,
+          which bill your RunPod balance by the second until they are stopped; they are told to say what a pod is for
+          and what it costs before starting it, and to stop it when the work ends, but only your balance and the key's
+          permissions actually limit them. Create the key under Settings → API Keys. A Read Only key can look at pods
+          but not start them.
+        </div>
+      {/if}
       {#if focusedService.key === 'porkbun'}
         <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
           Residents with this connection can change DNS records, URL forwards and nameservers on your Porkbun domains,

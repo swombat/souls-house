@@ -61,17 +61,19 @@
             ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, reset your personal auth token in Honeybadger.`
             : connection.provider === 'porkbun'
               ? `Disconnect ${connection.label}? This removes the keys from residents. To revoke them, delete the key under Account → API Access in Porkbun.`
-              : connection.provider === 'twitterapi_io'
-                ? `Disconnect ${connection.label}? The tweet stream then carries on paid by another TwitterAPI.io integration on this account if there is one, or by the house key if the house has lent it to this account; otherwise collection stops. To revoke the key, regenerate it on twitterapi.io.`
-                : connection.provider === 'ghost'
-                  ? `Disconnect ${connection.label}? This removes the key from residents; posts they wrote stay on the site. To revoke the key, regenerate it or delete the integration under Settings → Integrations in Ghost.`
-                  : connection.provider === 'cloudflare'
-                    ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, roll or delete the token under My Profile → API Tokens in Cloudflare.`
-                    : connection.provider === 'tailscale'
-                      ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
-                      : connection.provider === 'withings'
-                        ? `Disconnect ${connection.label}? This removes the house's Withings tokens, but a token a resident already holds can still read your health data until it expires (up to three hours). To revoke access at Withings now, remove the app from your Withings account.`
-                        : `Disconnect ${target}?`;
+              : connection.provider === 'runpod'
+                ? `Disconnect ${connection.label}? This removes the key from residents. Pods they started keep running and billing until stopped in RunPod. To revoke the key, delete it under Settings → API Keys.`
+                : connection.provider === 'twitterapi_io'
+                  ? `Disconnect ${connection.label}? The tweet stream then carries on paid by another TwitterAPI.io integration on this account if there is one, or by the house key if the house has lent it to this account; otherwise collection stops. To revoke the key, regenerate it on twitterapi.io.`
+                  : connection.provider === 'ghost'
+                    ? `Disconnect ${connection.label}? This removes the key from residents; posts they wrote stay on the site. To revoke the key, regenerate it or delete the integration under Settings → Integrations in Ghost.`
+                    : connection.provider === 'cloudflare'
+                      ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, roll or delete the token under My Profile → API Tokens in Cloudflare.`
+                      : connection.provider === 'tailscale'
+                        ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
+                        : connection.provider === 'withings'
+                          ? `Disconnect ${connection.label}? This removes the house's Withings tokens, but a token a resident already holds can still read your health data until it expires (up to three hours). To revoke access at Withings now, remove the app from your Withings account.`
+                          : `Disconnect ${target}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }

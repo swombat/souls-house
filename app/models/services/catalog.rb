@@ -531,6 +531,40 @@ module Services
     )
 
     Services::Definition.register(
+      key: "runpod",
+      name: "RunPod",
+      management_scopes: %w[personal account_managed],
+      connection_method: "credentials",
+      credential_strategy: "static",
+      api_origins: %w[https://api.runpod.io],
+      documentation: [
+        "https://docs.runpod.io/api-reference/overview",
+        "https://docs.runpod.io/get-started/credentials",
+        "https://docs.runpod.io/pods/overview"
+      ],
+      access_profiles: {
+        api_key: []
+      },
+      default_access_profile: "api_key",
+      credential_fields: [
+        {
+          key: "api_key",
+          label: "API key",
+          type: "password",
+          placeholder: "rpa_…",
+          help: "RunPod: Settings → API Keys → Create API Key. Starting GPU pods needs All; Read Only can only look."
+        }
+      ],
+      runtime_notes: [
+        "The key is credentials.api_key; send it as Authorization: Bearer, never in a URL or a log.",
+        "REST is metadata.api_base (https://api.runpod.io/v2; /pods, /pods/ID/action, /endpoints); account and balance are GraphQL only at metadata.graphql_url (query { myself { id email clientBalance } }).",
+        "Pods and endpoints bill the owner's RunPod balance by the second until stopped. Before starting one, say what it is for and what it costs per hour; stop or terminate it in the same piece of work, including when the work fails, and check afterwards that nothing you started is still running.",
+        "A pod's HTTP ports are served at https://POD_ID-PORT.proxy.runpod.net; a vLLM pod speaks the OpenAI chat-completions API there under /v1."
+      ],
+      adapter_class: "Services::RunpodAdapter"
+    )
+
+    Services::Definition.register(
       key: "porkbun",
       name: "Porkbun",
       management_scopes: %w[personal account_managed],

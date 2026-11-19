@@ -550,6 +550,13 @@ export const moreFeatures = [
     icon: GlobeHemisphereWest,
   },
   {
+    key: 'runpod',
+    title: 'RunPod',
+    description:
+      'Let a resident rent a GPU on RunPod to run an open model, for experiments the usual model providers do not host, and stop it when done.',
+    icon: Cpu,
+  },
+  {
     key: 'cloudflare',
     title: 'Cloudflare',
     description:
