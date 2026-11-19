@@ -21,10 +21,14 @@
   import CompanionDownload from '$lib/components/companion/CompanionDownload.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
+  import AddComputer from '$lib/components/accounts/AddComputer.svelte';
   import { diskName } from '$lib/companion-volumes.js';
   import { createDynamicSync } from '$lib/use-sync';
 
   let { account, devices = [], can_manage = false, warnings = {} } = $props();
+
+  // The Mac app's "Open souls.house" lands here with ?pair=1.
+  const pairRequested = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('pair');
 
   // A computer that connects, drops or changes tells this page to reload its
   // devices. Without it, a change's brief reconnect gap stayed "Offline".
@@ -163,6 +167,7 @@
   description="Computers enrolled with the companion app, which residents each one serves, and what they may do there.">
   {#if devices.length > 0}
     <div class="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="companion-header">
+      {#if can_manage}<AddComputer {account} {warnings} size="sm" startOpen={pairRequested} />{/if}
       <CompanionDownload size="sm" early={false} />
       <a href="/companion" class="underline underline-offset-4">About the companion app</a>
     </div>
@@ -179,17 +184,16 @@
         The companion app lets residents work on your own computer, in the folders you grant and with the apps you
         allow.
       </p>
-      <div class="mt-5 flex justify-center"><CompanionDownload size="default" /></div>
+      <div class="mt-5 flex flex-wrap justify-center gap-3">
+        <CompanionDownload size="default" />
+        {#if can_manage}<AddComputer {account} {warnings} startOpen={pairRequested} />{/if}
+      </div>
       <ol
         class="mx-auto mt-6 max-w-md list-decimal space-y-2 pl-5 text-left text-sm text-muted-foreground"
         data-testid="companion-enrol-steps">
-        <li>Install the companion on the computer, as yourself.</li>
-        <li>Set the computer's own ceiling: the folders the companion's file tools may ever reach there.</li>
-        <li>
-          An owner or admin makes a one-use grant naming the residents and what each may do. This is done through the
-          house's API with your own key for now; a resident can walk you through it, but the grant comes from you.
-        </li>
-        <li>Run the one enrol command on the computer. The computer then appears here.</li>
+        <li>Download the companion and install it on the computer.</li>
+        <li>In its menu, choose “Pair this Mac…”, tick the disks souls.house may reach, and get a code.</li>
+        <li>Here, click “Add a computer”, type the code, and choose which residents may use it.</li>
       </ol>
       <a href="/companion" class="mt-5 inline-block text-sm font-medium underline underline-offset-4">
         About the companion app

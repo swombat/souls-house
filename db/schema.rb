@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1179,6 +1179,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_180000) do
     t.index ["created_by_user_id"], name: "index_companion_enrollment_grants_on_created_by_user_id"
     t.index ["minting_agent_id"], name: "index_companion_enrollment_grants_on_minting_agent_id"
     t.index ["token_digest"], name: "index_companion_enrollment_grants_on_token_digest", unique: true
+  end
+
+  create_table "companion_pairings", force: :cascade do |t|
+    t.bigint "account_id"
+    t.datetime "approved_at"
+    t.bigint "approved_by_user_id"
+    t.string "code_digest", limit: 64, null: false
+    t.bigint "companion_enrollment_grant_id"
+    t.datetime "created_at", null: false
+    t.string "device_request_id", limit: 128, null: false
+    t.text "enrollment_token"
+    t.datetime "expires_at", null: false
+    t.string "name", limit: 100, null: false
+    t.jsonb "offered_volumes", null: false
+    t.string "poll_secret_digest", limit: 64, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_companion_pairings_on_account_id"
+    t.index ["approved_by_user_id"], name: "index_companion_pairings_on_approved_by_user_id"
+    t.index ["code_digest"], name: "index_companion_pairings_on_code_digest", unique: true
+    t.index ["companion_enrollment_grant_id"], name: "index_companion_pairings_on_companion_enrollment_grant_id"
+    t.index ["expires_at"], name: "index_companion_pairings_on_expires_at"
   end
 
   create_table "companion_operation_bodies", force: :cascade do |t|
@@ -3636,6 +3657,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_180000) do
   add_foreign_key "companion_operation_inputs", "companion_operations"
   add_foreign_key "companion_operations", "agents"
   add_foreign_key "companion_operations", "companion_devices"
+  add_foreign_key "companion_pairings", "accounts"
+  add_foreign_key "companion_pairings", "companion_enrollment_grants"
+  add_foreign_key "companion_pairings", "users", column: "approved_by_user_id"
   add_foreign_key "conversation_compactions", "chats"
   add_foreign_key "conversation_drafts", "chats"
   add_foreign_key "conversation_drafts", "users"

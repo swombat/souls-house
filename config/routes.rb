@@ -188,6 +188,10 @@ Rails.application.routes.draw do
     resource :interface, only: %i[show update], module: :accounts
     # Computers enrolled through the companion app, and the owner's switches.
     resources :companion_devices, path: "computers", only: %i[index update], module: :accounts
+    # Adding a computer by the code it shows (CompanionPairing).
+    resources :companion_pairings, path: "computers/pairings", only: :create, module: :accounts do
+      post :lookup, on: :collection
+    end
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :rooms, only: [ :index, :create, :update, :destroy ], module: :accounts
     resource :resident_room, only: :update, module: :accounts
@@ -465,6 +469,9 @@ Rails.application.routes.draw do
       end
       namespace :companion do
         post :enroll, to: "enrollments#create"
+        resources :pairings, only: :create do
+          post :claim, on: :member
+        end
         post :session, to: "sessions#create"
         post :revoke, to: "revocations#create"
       end
@@ -776,6 +783,7 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   get "features" => "pages#features", as: :features
   get "companion" => "pages#companion", as: :companion
+  get "computers" => "computers_redirects#show", as: :computers
   get "changelog" => "pages#changelog", as: :changelog
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host
