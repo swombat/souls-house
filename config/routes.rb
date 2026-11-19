@@ -521,6 +521,7 @@ Rails.application.routes.draw do
           resources :members, only: :destroy
           resources :notices, only: %i[index create destroy]
           resource :costs, only: :show
+          resource :subscription_usage, only: :show
           get "agents/:agent_id/costs", to: "costs#agent", as: :agent_costs
           get "conversations/:conversation_id/costs", to: "costs#conversation", as: :conversation_costs
           resources :visual_tags, only: %i[create update destroy]

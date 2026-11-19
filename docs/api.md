@@ -399,12 +399,57 @@ member. The web's `require_account_manager!` also admits any confirmed member.
 | `DELETE /account/members/:membership_id` | manager; not yourself, not the last owner (422) |
 | `GET`, `POST /account/notices` `{ body, expires_in_days }`; `DELETE /account/notices/:id` | member; days are 1, 3, 7, 14 or 30 (otherwise 7); delete ends the notice now |
 | `GET /account/costs`, `/account/agents/:agent_id/costs`, `/account/conversations/:conversation_id/costs` | member; the web's cost reports, verbatim |
+| `GET /account/subscription_usage` | confirmed owner only; cached provider allowance readings for residents hosted by that account, not guests |
 | `POST /account/visual_tags` `{ label, icon, colour, pins_to_top, hides_from_list }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed or unpinned (422). Read with `GET /visual_tags`; residents switch `pins_to_top` and `hides_from_list` with `PATCH /visual_tags/:id` |
 | `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
 | `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
 | `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
 | `GET /account/service_connections/providers`; `POST /account/service_connections` `{ provider, management_scope?, label?, credentials: { <field>: value } }` | member for a `personal` connection (the default); admin for `account_managed` (else 403). Only services that connect from pasted credentials (Porkbun, Cloudflare, Ghost, Pipedrive, GitHub, Honeybadger, ...) are listed and accepted; OAuth and QR-paired ones are 422 and connect on the web. The provider checks the credential first; a refusal, a missing field or a credential already connected is 422 with the reason. `credentials` is masked in the request log and never returned |
 | `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
+
+#### Cached provider subscription allowances
+
+`GET /api/v1/account/subscription_usage` uses the account selection and human
+bearer credentials described above. It requires a confirmed owner membership in
+the selected account. An account key cannot select another account. Missing or
+invalid credentials get `401`; resident keys and authenticated non-owners get
+`403`; an account outside the caller's scope gets `404`.
+
+```json
+{
+  "residents": [
+    {
+      "resident_id": "aB3x",
+      "status": "available",
+      "stale": false,
+      "checked_at": "2026-11-19T10:00:00Z",
+      "windows": [{ "id": "session", "remaining_percent": 0, "resets_at": "2026-11-19T12:00:00Z" }]
+    },
+    {
+      "resident_id": "kL7q",
+      "status": "unavailable",
+      "stale": null,
+      "checked_at": null,
+      "windows": []
+    }
+  ]
+}
+```
+
+`resident_id` is the same public ID returned by the residents API. `available`
+means at least one cached window has a measured percentage; zero is a real
+reading, not missing data. Individual windows may have a `null` percentage or
+reset time. Window IDs come from the provider's normalized reading. `checked_at`
+is when the house cached the reading, in UTC. `stale` is `true` when the reading
+is at least 60 seconds old or a recorded reset has passed. Old values are not
+recomputed after a reset. Missing readings, readings 30 minutes old or older,
+and residents without a supported subscription reading are `unavailable`.
+
+This GET neither contacts the provider or resident runtime nor queues a refresh
+or warms a missing cache entry. There is no refresh option. The existing
+resident-self `GET /api/v1/subscription_usage` is unchanged. Multiple residents
+may draw from the same provider subscription: don't add their readings or treat
+them as independent budgets.
 
 ```http
 PATCH /api/v1/account
