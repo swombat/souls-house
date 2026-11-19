@@ -8,7 +8,7 @@ class HostDeployVmRestartTest < ActiveJob::TestCase
   RUNNING = "sha256:#{'1' * 64}".freeze
   BUILT = "sha256:#{'2' * 64}".freeze
   KEYS = %w[DEPLOY_RESIDENT_ID DEPLOY_VM_MODE DEPLOY_RESIDENT_IMAGE DEPLOY_RESIDENT_IMAGE_ID
-            DEPLOY_VM_COMMAND_ID SOULSHOUSE_DOMAIN].freeze
+            DEPLOY_VM_COMMAND_ID DEPLOY_RESIDENT_EXPECTED_IMAGE_ID SOULSHOUSE_DOMAIN].freeze
 
   setup do
     @previous_env = ENV.to_h.slice(*KEYS)
@@ -101,6 +101,34 @@ class HostDeployVmRestartTest < ActiveJob::TestCase
     end
     assert_equal "stock:old", @agent.reload.container_image
     assert_nil @placement.reload.refresh_command_id
+  end
+
+  # #1036: the sweep's admission check, under the start's own locks.
+  OTHER = "sha256:#{'3' * 64}".freeze
+
+  test "a VM no longer on the preflight-approved image is not started" do
+    # Mira's swap: inspect saw A, but the runner has since confirmed B.
+    answer(RunnerCommand.enqueue!(enrollment: @enrollment, kind: "start_resident", payload: { "image" => OTHER }),
+      "done", OTHER)
+    assert_no_difference -> { RunnerCommand.count } do
+      assert_equal "changed", run_script("start", DEPLOY_RESIDENT_EXPECTED_IMAGE_ID: RUNNING).fetch("result")
+    end
+    assert_equal "stock:old", @agent.reload.container_image
+    assert_nil @placement.reload.refresh_command_id
+  end
+
+  test "a VM with a start already in flight is not started against the approved image" do
+    RunnerCommand.enqueue!(enrollment: @enrollment, kind: "start_resident", payload: { "image" => OTHER })
+    assert_no_difference -> { RunnerCommand.count } do
+      assert_equal "changed", run_script("start", DEPLOY_RESIDENT_EXPECTED_IMAGE_ID: RUNNING).fetch("result")
+    end
+    assert_equal "stock:old", @agent.reload.container_image
+  end
+
+  test "a VM still on the approved image starts" do
+    result = run_script("start", DEPLOY_RESIDENT_EXPECTED_IMAGE_ID: RUNNING)
+    assert_equal "started", result.fetch("result")
+    assert_equal BUILT, JSON.parse(restart_command(result).payload_json)["image"]
   end
 
   test "healthy only once the runner confirms the new image, and turns open again" do

@@ -516,6 +516,12 @@ class Worker:
                  # Not ours to roll, but unresolved: the receipt never claims
                  # completion while any of these remain (VM skips, unreachable).
                  "external_skipped": list(unreachable),
+                 # The starting image of each VM that passed this run's
+                 # preflight (source label, ancestry, migrations, the pinned
+                 # version match). The sweep only starts a VM still on exactly
+                 # this image; one unreachable here never passed and is left
+                 # owed for the next explicit run (#1036).
+                 "vm_approved_images": {str(r["id"]): r["running_image"] for r in vm_running},
                  # Set only once the alias tag has actually succeeded.
                  "births_image_moved": False, "births_allowed": True}
         atomic(pending_rolls(), queue)
@@ -589,13 +595,26 @@ class Worker:
             self.report("resident roll failed; held for operator review", held=held)
             raise RuntimeError("Unexpected restart result")
         if vm_running:
+            # VMs a start was sent to, and the command each restart got: a
+            # failure below must say which ones are uncertain (#1036).
+            touched, started = [], {}
             try:
-                self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+                self.roll_vm_residents(vm_running, stock, version, skipped, proven,
+                                       touched=touched, started=started)
             except Exception:
                 # A VM that failed casts doubt on the image: births stay put.
                 queue["births_allowed"] = False
+                unsettled = [r["id"] for r in vm_running if r["id"] not in proven and r["id"] not in skipped]
+                # A VM whose restart failed or never settled is held, with its
+                # command, never retried by the sweep; and while anything is
+                # held no other owed VM starts. If the failure came before any
+                # start (a version read, the image ID), every unsettled VM is
+                # held: nothing about this image is proven on a VM.
+                failed = [i for i in unsettled if i in touched] or unsettled
+                held.extend(failed)
+                queue["vm_failed_commands"] = {str(i): started[i] for i in failed if i in started}
                 queue["external_skipped"] = [i for i in skipped if i not in host_waiting] + \
-                    [r["id"] for r in vm_running if r["id"] not in proven and r["id"] not in skipped]
+                    [i for i in unsettled if i not in failed]
                 atomic(pending_rolls(), queue)
                 raise
         queue["external_skipped"] = [i for i in skipped if i not in host_waiting]
@@ -608,7 +627,11 @@ class Worker:
             for alias in self.settings["stock_aliases"]:
                 self.run(["docker", "tag", stock, alias])
             queue["births_image_moved"] = True
-        if pending:
+        # A VM resident skipped here (busy or unreachable) is still owed the
+        # image: the queue stays, and the minute sweep retries it. Until #1029
+        # (19 Nov 2026) a run with no host resident left waiting deleted the
+        # file and with it the skip (Alanis, 17 Nov, run d948d4dc).
+        if pending or queue["external_skipped"]:
             atomic(pending_rolls(), queue)
         else:
             pending_rolls().unlink(missing_ok=True)
@@ -632,11 +655,15 @@ class Worker:
         return self.run(["docker", "run", "--rm", "--network", "none", "--entrypoint",
                          "chaos", image, "--version"], capture=True)
 
-    def roll_vm_residents(self, vm_running, stock, version, skipped, proven):
+    def roll_vm_residents(self, vm_running, stock, version, skipped, proven, touched=None, started=None):
         """Each VM gets the stock image this run built and checked, by image ID,
         through the same restart its runner does for new credentials. Turns
         are held from the moment the start is queued until the runner confirms
-        that exact image. A failed restart keeps the hold and stops the run."""
+        that exact image. A failed restart keeps the hold and stops the run.
+        touched collects the VMs a start was sent to, started the command ID
+        of each restart that was queued."""
+        touched = [] if touched is None else touched
+        started = {} if started is None else started
         target_id = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", stock],
                              capture=True)
         if not IMAGE_ID.fullmatch(target_id):
@@ -651,6 +678,8 @@ class Worker:
             resident_id = resident["id"]
             self.report("waiting for idle resident", resident_id=resident_id)
             deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
+            with self.lock:
+                touched.append(resident_id)
             while True:
                 result = self.rails(script, {
                     "DEPLOY_VM_MODE": "start", "DEPLOY_RESIDENT_ID": str(resident_id),
@@ -673,6 +702,8 @@ class Worker:
                     skipped.append(resident_id)
                     self.report("busy resident left unchanged", skipped=list(skipped))
                 return
+            with self.lock:
+                started[resident_id] = result["command_id"]
             self.report("waiting for resident's server", resident_id=resident_id)
             # The VM fetches the image from the house before it can restart.
             deadline = time.monotonic() + self.settings.get("vm_restart_wait_seconds", 3600)
@@ -828,12 +859,136 @@ class Sweeper(Worker):
                 self.log.write("queue acknowledged during the pass; not written back\n")
                 return False
             self.receipt(state)
-            if state["residents"] or state["held"] or state.get("births_alias_failed"):
+            # external_skipped: VM residents still owed the image (#1029). The
+            # last host resident clearing must not drop them.
+            if (state["residents"] or state["held"] or state.get("births_alias_failed")
+                    or state.get("external_skipped")):
                 atomic(path, state)
             else:
                 atomic(ROOT / "last-sweep.json", state)
                 path.unlink()
             return True
+
+    def move_births(self, state, image):
+        """The first stock resident proven on the run's image moves the births
+        alias, if the run couldn't. A failed tag is held, never retried."""
+        if (not state.get("births_allowed", True) or state["held"] or state["births_image_moved"]
+                or state.get("births_alias_failed")):
+            return
+        try:
+            for alias in self.settings.get("stock_aliases", []):
+                self.run(["docker", "tag", image, alias])
+            state["births_image_moved"] = True
+        except Exception as error:
+            self.note(f"births alias tag failed: {type(error).__name__}\n")
+            state["births_alias_failed"] = True
+
+    def sweep_vms(self, state, proven):
+        """VM residents the run skipped (busy or unreachable) get the run's
+        stock image here, without waiting: a tick queues the restart, later
+        ticks read whether the runner confirmed that exact image. Until one
+        resident has proven the image, at most one VM is in flight. A failed or
+        unsettled restart is held, like a failed host roll (turns stay held on
+        the Rails side until an operator has looked)."""
+        owed = state.get("external_skipped") or []
+        if not owed or not state.get("stock_image") or state["held"]:
+            return
+        image = state["stock_image"]
+        target_id = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", image], capture=True)
+        if not isinstance(target_id, str) or not IMAGE_ID.fullmatch(target_id):
+            self.note("stock image has no image ID; VM residents left owed\n")
+            return
+        script = (CODE / "roll-vm-resident.rb").read_text()
+        rolling = state.setdefault("vm_rolling", {})
+        wait = self.settings.get("vm_restart_wait_seconds", 3600)
+
+        def settled(resident_id, outcome):
+            self.note(f"vm resident {resident_id}: {outcome}\n")
+            owed.remove(resident_id)
+            rolling.pop(str(resident_id), None)
+
+        for resident_id in list(owed):
+            if state["held"]:
+                return
+            flight = rolling.get(str(resident_id))
+            if flight is None and rolling and not proven:
+                # Unproven image: one VM at a time.
+                continue
+            if flight is None:
+                # Only a VM whose confirmed image is the one that passed this
+                # run's preflight is started, re-read now at admission (#1036).
+                # A VM unreachable at the run, or one whose image has changed
+                # since, never passed those gates: it stays owed, visibly, for
+                # the next explicit run. Unreadable: left owed, not started.
+                # Newer than this image: a downgrade, refused and held.
+                approved = (state.get("vm_approved_images") or {}).get(str(resident_id))
+                try:
+                    seen = self.rails(script, {"DEPLOY_VM_MODE": "inspect",
+                                               "DEPLOY_RESIDENT_ID": str(resident_id)})
+                    running = seen.get("image") if seen.get("running") else None
+                    if not isinstance(running, str) or not IMAGE_ID.fullmatch(running):
+                        self.note(f"vm resident {resident_id}: no confirmed image; left owed\n")
+                        continue
+                    if running != approved:
+                        self.note(f"vm resident {resident_id}: not the image this run's preflight "
+                                  "passed; left owed for the next explicit run\n")
+                        continue
+                    newer = version_tuple(state["chaos_version"]) < version_tuple(self.image_version(running))
+                except Exception as error:
+                    self.note(f"\nvm resident {resident_id} version: {type(error).__name__}; left owed\n")
+                    continue
+                if newer:
+                    self.note(f"vm resident {resident_id}: refusing runtime version downgrade\n")
+                    owed.remove(resident_id)
+                    state["held"].append(resident_id)
+                    state["births_allowed"] = False
+                    continue
+                try:
+                    result = self.rails(script, {
+                        "DEPLOY_VM_MODE": "start", "DEPLOY_RESIDENT_ID": str(resident_id),
+                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_RESIDENT_IMAGE_ID": target_id,
+                        # Compared again under the start's own locks: the VM
+                        # may change between that inspect and this start.
+                        "DEPLOY_RESIDENT_EXPECTED_IMAGE_ID": approved})
+                except Exception as error:
+                    # Outcome unknown: a restart may have been queued. Held.
+                    self.note(f"\nvm resident {resident_id}: {type(error).__name__}\n")
+                    result = {"result": "unknown"}
+                answer = result.get("result")
+                if answer == "current":
+                    settled(resident_id, "current")
+                    proven = state["canary_proven"] = True
+                    self.move_births(state, image)
+                elif answer == "started":
+                    rolling[str(resident_id)] = {"command_id": result["command_id"],
+                                                 "started_at": int(time.time())}
+                elif answer == "changed":
+                    self.note(f"vm resident {resident_id}: image changed before the start; "
+                              "left owed for the next explicit run\n")
+                elif answer not in ("busy", "unavailable"):
+                    owed.remove(resident_id)
+                    state["held"].append(resident_id)
+                    state["births_allowed"] = False
+                continue
+            try:
+                status = self.rails(script, {
+                    "DEPLOY_VM_MODE": "status", "DEPLOY_RESIDENT_ID": str(resident_id),
+                    "DEPLOY_RESIDENT_IMAGE_ID": target_id,
+                    "DEPLOY_VM_COMMAND_ID": str(flight["command_id"])})
+            except Exception as error:
+                # Reading again next tick is safe; the deadline still applies.
+                self.note(f"\nvm resident {resident_id} status: {type(error).__name__}\n")
+                status = {"result": "pending"}
+            answer = status.get("result")
+            if answer == "healthy":
+                settled(resident_id, "healthy")
+                proven = state["canary_proven"] = True
+                self.move_births(state, image)
+            elif answer != "pending" or time.time() - flight["started_at"] >= wait:
+                rolling.pop(str(resident_id), None)
+                owed.remove(resident_id)
+                state["held"].append(resident_id)
+                state["births_allowed"] = False
 
     def sweep(self):
         try:
@@ -898,6 +1053,7 @@ class Sweeper(Worker):
                 waiting.extend(untouched)
                 waiting.sort(key=lambda r: [e["id"] for e in state["residents"]].index(r["id"]))
                 state["residents"] = waiting
+                self.sweep_vms(state, bool(proven or canary_proven or state["births_image_moved"]))
                 state["checked_at"] = int(time.time())
                 if not self.commit(state):
                     return "acknowledged during pass"

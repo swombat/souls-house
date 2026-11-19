@@ -1401,6 +1401,225 @@ class WorkerTest(unittest.TestCase):
         receipt = json.loads((self.w.directory / "status.json").read_text())
         self.assertEqual(("partial", [1]), (receipt["state"], receipt["skipped"]))
 
+    # #1029: a VM resident skipped by a run stays owed until it has the image.
+
+    def vm_sweep(self, host=None, vm=(), confirmed=RUNNING, running_version="chaos 47.11.0.1"):
+        """One minute-sweep tick. host: the answer every host resident gives;
+        vm: the VM script's start/status answers, consumed in order. An
+        inspect answers with confirmed (the image the VM's runner last
+        confirmed; None when unreachable), whose Chaos is running_version (an
+        exception when unreadable). Returns the VM modes called."""
+        answers = list(vm)
+        modes = []
+
+        def rails(code, env=None):
+            if "DEPLOY_VM_MODE" in env:
+                modes.append(env["DEPLOY_VM_MODE"])
+                if env["DEPLOY_VM_MODE"] == "inspect":
+                    return {"result": "inspected", "running": confirmed is not None, "image": confirmed}
+                if env["DEPLOY_VM_MODE"] == "start":
+                    # The approved image goes to the start, compared under its locks.
+                    self.assertEqual(confirmed, env.get("DEPLOY_RESIDENT_EXPECTED_IMAGE_ID"))
+                self.assertEqual(self.BUILT, env["DEPLOY_RESIDENT_IMAGE_ID"])
+                return answers.pop(0)
+            return {"result": host}
+
+        def run(args, **kw):
+            if args[:3] == ["docker", "image", "inspect"]:
+                return self.BUILT
+            if "--version" in args:
+                self.assertIn(confirmed, args, "the version read is of the image the VM runs")
+                if isinstance(running_version, Exception):
+                    raise running_version
+                return running_version
+            return None
+        s = worker.Sweeper()
+        s.settings.update(stock_aliases=["stock:latest"])
+        with patch.object(s, "rails", side_effect=rails), patch.object(s, "run", side_effect=run):
+            s.sweep()
+        self.assertEqual([], answers, "every scripted VM answer was used")
+        return modes
+
+    def queue(self):
+        path = self.root / "pending-rolls.json"
+        return json.loads(path.read_text()) if path.exists() else None
+
+    def receipt(self):
+        return json.loads((self.w.directory / "status.json").read_text())
+
+    def test_vm_only_skip_stays_owed_and_the_sweep_rolls_it(self):
+        # The host resident rolls; only the VM is busy. The run used to delete
+        # the queue here, because no host resident was waiting.
+        self.vm_fixture(start=[{"result": "busy"}])
+        self.w.rebuild_residents()
+        self.assertEqual(("partial", [1], []), (self.w.data["state"], self.w.data["skipped"],
+                                                self.w.data["waiting"]))
+        self.assertEqual([1], self.queue()["external_skipped"])
+        self.assertEqual([], self.queue()["residents"])
+
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "busy"}]))
+        self.assertEqual([1], self.queue()["external_skipped"])
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "started", "command_id": 77}]))
+        self.assertEqual({"command_id": 77}, {k: v for k, v in self.queue()["vm_rolling"]["1"].items()
+                                              if k == "command_id"})
+        self.assertEqual(("partial", [1]), (self.receipt()["state"], self.receipt()["skipped"]))
+        self.assertEqual(["status"], self.vm_sweep(vm=[{"result": "pending"}]))
+        self.assertEqual(["status"], self.vm_sweep(vm=[{"result": "healthy"}]))
+        self.assertIsNone(self.queue())
+        self.assertEqual(("success", []), (self.receipt()["state"], self.receipt()["skipped"]))
+
+    def test_mixed_roll_where_the_host_finishes_first_keeps_the_vm_owed(self):
+        self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                            vm={1: dict(image=self.RUNNING, start=[{"result": "busy"}], status=[])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "0"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        self.w.rebuild_residents()
+        self.assertEqual(([0], [1]), ([r["id"] for r in self.queue()["residents"]],
+                                      self.queue()["external_skipped"]))
+        # The host resident clears first; the VM is still busy. The sweep used
+        # to delete the queue as soon as the last host resident cleared.
+        self.vm_sweep(host="healthy", vm=[{"result": "busy"}])
+        self.assertEqual(([], [1]), (self.queue()["residents"], self.queue()["external_skipped"]))
+        self.assertEqual(("partial", [1], []), (self.receipt()["state"], self.receipt()["skipped"],
+                                                self.receipt()["waiting"]))
+        self.vm_sweep(vm=[{"result": "started", "command_id": 78}])
+        self.vm_sweep(vm=[{"result": "healthy"}])
+        self.assertIsNone(self.queue())
+        self.assertEqual("success", self.receipt()["state"])
+
+    def test_a_vm_whose_sweep_restart_fails_is_held_and_blocks_rebuilds(self):
+        self.vm_fixture(start=[{"result": "busy"}])
+        self.w.rebuild_residents()
+        self.vm_sweep(vm=[{"result": "started", "command_id": 79}])
+        self.vm_sweep(vm=[{"result": "failed"}])
+        self.assertEqual(([], [1]), (self.queue()["external_skipped"], self.queue()["held"]))
+        with patch.object(gate, "ROOT", self.root):
+            self.assertIsNotNone(gate.held_queue())
+        # Held is never retried.
+        self.assertEqual([], self.vm_sweep())
+
+    def test_a_vm_restart_that_never_settles_is_held(self):
+        self.vm_fixture(start=[{"result": "busy"}])
+        self.w.rebuild_residents()
+        self.vm_sweep(vm=[{"result": "started", "command_id": 80}])
+        queue = self.queue()
+        queue["vm_rolling"]["1"]["started_at"] -= 3601
+        gate.atomic(self.root / "pending-rolls.json", queue)
+        self.vm_sweep(vm=[{"result": "pending"}])
+        self.assertEqual([1], self.queue()["held"])
+
+    def test_owed_vms_on_an_unproven_image_go_one_at_a_time_then_together(self):
+        # Every resident was busy, so nothing has run the image yet.
+        self.pinned_fixture(["c" * 40])
+        gate.atomic(self.root / "pending-rolls.json", {
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "residents": [], "held": [],
+            "stock_image": "stock:deploy-x", "external_skipped": [1, 2, 3],
+            "vm_approved_images": {str(i): self.RUNNING for i in (1, 2, 3)},
+            "canary_proven": False, "births_image_moved": False, "births_allowed": True})
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "started", "command_id": 81}]))
+        self.assertEqual(["status"], self.vm_sweep(vm=[{"result": "pending"}]))
+        # Proven: births move to the image, and the others start at once.
+        self.assertEqual(["status", "inspect", "start", "inspect", "start"], self.vm_sweep(vm=[
+            {"result": "healthy"}, {"result": "started", "command_id": 82},
+            {"result": "started", "command_id": 83}]))
+        self.assertTrue(self.queue()["births_image_moved"])
+        self.assertEqual([2, 3], self.queue()["external_skipped"])
+
+    def owe(self, ids, **extra):
+        self.pinned_fixture(["c" * 40])
+        gate.atomic(self.root / "pending-rolls.json", dict({
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "residents": [], "held": [],
+            "stock_image": "stock:deploy-x", "external_skipped": list(ids),
+            "vm_approved_images": {str(i): self.RUNNING for i in ids},
+            "canary_proven": True, "births_image_moved": True, "births_allowed": True}, **extra))
+
+    def test_initial_vm_canary_failure_is_held_and_no_other_owed_vm_starts(self):
+        # Mira's reproduction (#1036): host resident busy, so VM 1 is the
+        # canary; its restart fails. VM 2 was never touched.
+        self.pinned_fixture(["c" * 40] * 3, missing=(1, 2), on_vm=(1, 2), vm={
+            1: dict(image=self.RUNNING, start=[{"result": "started", "command_id": 77}],
+                    status=[{"result": "failed"}]),
+            2: dict(image=self.RUNNING, start=[], status=[])})
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            {"result": "busy"} if env and env.get("DEPLOY_RESIDENT_ID") == "0"
+            and "DEPLOY_VM_MODE" not in env else rails(code, env))
+        with self.assertRaisesRegex(RuntimeError, "turns stay held"):
+            self.w.rebuild_residents()
+        queue = self.queue()
+        self.assertEqual(([1], [2], {"1": 77}, False),
+                         (queue["held"], queue["external_skipped"], queue["vm_failed_commands"],
+                          queue["births_allowed"]))
+        with patch.object(gate, "ROOT", self.root):
+            self.assertIsNotNone(gate.held_queue())
+        # Until an operator acknowledges it: no start, no status, no alias.
+        self.assertEqual([], self.vm_sweep(host="healthy"))
+        self.assertFalse(self.queue()["births_image_moved"])
+        self.assertEqual([2], self.queue()["external_skipped"])
+
+    def test_a_failure_before_any_vm_start_holds_every_unsettled_vm(self):
+        # The VM phase stops before touching anyone (here: no image ID).
+        self.pinned_fixture(["c" * 40] * 3, missing=(1, 2), on_vm=(1, 2), vm={
+            1: dict(image=self.RUNNING, start=[], status=[]), 2: dict(image=self.RUNNING, start=[], status=[])})
+        run = self.w.run.side_effect
+        self.w.run.side_effect = lambda args, **kw: (
+            "not-an-id" if args[:3] == ["docker", "image", "inspect"] else run(args, **kw))
+        with self.assertRaisesRegex(RuntimeError, "no image ID"):
+            self.w.rebuild_residents()
+        self.assertEqual(([1, 2], []), (self.queue()["held"], self.queue()["external_skipped"]))
+        self.assertEqual([], self.vm_sweep())
+
+    def test_a_held_vm_stops_the_other_owed_vms_even_on_a_proven_image(self):
+        self.owe([2], held=[1], vm_failed_commands={"1": 77})
+        self.assertEqual([], self.vm_sweep())
+        self.assertEqual(([1], [2]), (self.queue()["held"], self.queue()["external_skipped"]))
+
+    def test_sweep_still_refuses_a_downgrade_on_an_approved_image(self):
+        self.owe([1])
+        self.assertEqual(["inspect"], self.vm_sweep(running_version="chaos 48.0.0.1"))
+        self.assertEqual(([1], []), (self.queue()["held"], self.queue()["external_skipped"]))
+        with patch.object(gate, "ROOT", self.root):
+            self.assertIsNotNone(gate.held_queue())
+
+    def test_pinned_rebuild_never_starts_a_vm_that_missed_preflight(self):
+        # Mira's reproduction (#1036 round 2): VM 1 is unreachable for the
+        # pinned Rebuild, then comes back on older Chaos. The Rebuild's own
+        # pinned check would refuse it, so the sweep must not start it.
+        self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                            vm={1: dict(image=None)})
+        self.w.rebuild_residents()
+        self.assertEqual(([1], {}), (self.queue()["external_skipped"],
+                                     self.queue()["vm_approved_images"]))
+        for _ in range(2):
+            self.assertEqual(["inspect"], self.vm_sweep(running_version="chaos 47.10.0.1"))
+        # Still visibly owed, not held, nothing in flight.
+        self.assertEqual(([1], [], {}), (self.queue()["external_skipped"], self.queue()["held"],
+                                         self.queue().get("vm_rolling", {})))
+        self.assertEqual(("partial", [1]), (self.receipt()["state"], self.receipt()["skipped"]))
+
+    def test_sweep_leaves_a_vm_whose_image_changed_since_preflight_owed(self):
+        self.owe([1], vm_approved_images={"1": "sha256:" + "3" * 64})
+        self.assertEqual(["inspect"], self.vm_sweep())
+        self.assertEqual(([], [1]), (self.queue()["held"], self.queue()["external_skipped"]))
+
+    def test_an_image_change_between_inspect_and_start_leaves_the_vm_owed(self):
+        # The start's locked check answers changed: nothing queued, not held.
+        self.owe([1])
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "changed"}]))
+        self.assertEqual(([], [1], {}), (self.queue()["held"], self.queue()["external_skipped"],
+                                         self.queue().get("vm_rolling", {})))
+
+    def test_sweep_leaves_a_vm_it_cannot_read_owed_and_untouched(self):
+        self.owe([1])
+        self.assertEqual(["inspect"], self.vm_sweep(confirmed=None))
+        self.assertEqual(["inspect"], self.vm_sweep(running_version=RuntimeError("image not on host")))
+        self.assertEqual(["inspect"], self.vm_sweep(running_version="chaos garbled"))
+        self.assertEqual(([], [1]), (self.queue()["held"], self.queue()["external_skipped"]))
+        # Readable and not newer: it starts.
+        self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "busy"}]))
+
     def test_failing_vm_blocks_births_and_records_no_phantom_tag(self):
         commands = self.pinned_fixture(
             ["c" * 40, "c" * 40, "c" * 40], missing=(2,), on_vm=(2,),

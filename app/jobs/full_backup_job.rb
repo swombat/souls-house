@@ -19,7 +19,7 @@ class FullBackupJob < ApplicationJob
   # (16 Nov 2026: four deploys in the hour after 4am).
   def perform(fail_fast: false)
     Agent.externally_hosted.where.not(uuid: nil).find_each do |agent|
-      next if !fail_fast && backed_up_in_this_run?(agent)
+      next if !fail_fast && (backed_up_in_this_run?(agent) || deferred_in_this_run?(agent))
 
       backup_agent!(agent, fail_fast)
     end
@@ -39,8 +39,27 @@ class FullBackupJob < ApplicationJob
     since.present? && agent.agent_backup_snapshots.where(ok: true).where("taken_at >= ?", since).exists?
   end
 
+  # Found busy earlier in this run and a retry is still owed (queued, not yet
+  # run or failed): a restart must not start a second chain. A skip row whose
+  # retry never got queued, or was lost, does not count (#1036).
+  def deferred_in_this_run?(agent)
+    since = enqueued_at && Time.zone.parse(enqueued_at.to_s)
+    return false unless since
+
+    row = agent.agent_backup_snapshots.where(ok: false).where("taken_at >= ?", since)
+      .where("stderr_tail LIKE ?", "#{Backup::BusyRetry::PREFIX}%").order(:taken_at, :id).last
+    row.present? && Backup::BusyRetry.owed?(row)
+  end
+
   def backup_agent!(agent, fail_fast)
     Backup::AgentResticJob.perform_now(agent.id, force: fail_fast)
+  rescue Backup::AgentRestic::ResidentBusy => e
+    raise if fail_fast
+
+    # Not a failure and not forgotten: a row says the resident was busy, and
+    # a later try is queued (#1029).
+    Rails.logger.info "Agent backup deferred for #{agent.name}: #{e.message}"
+    Backup::BusyRetry.record!(agent, e, attempt: 1)
   rescue StandardError => e
     raise if fail_fast
 
