@@ -137,6 +137,7 @@ class XIntegrationController < ApplicationController
       id: integration.id,
       enabled: integration.enabled?,
       connected: integration.connected?,
+      media_scope_granted: integration.media_scope_granted?,
       x_username: integration.x_username,
       app_source: integration.app_source,
       house_app_allowed: integration.house_app_allowed?,

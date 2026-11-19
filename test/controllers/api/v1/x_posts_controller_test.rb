@@ -61,9 +61,20 @@ module Api
         post_x(text: "  ", key: "k1")
         assert_response :unprocessable_entity
 
-        post_x(text: "字" * 141, key: "k2")
+        post_x(text: "字" * 12_501, key: "k2")
         assert_response :unprocessable_entity
         assert_equal "text_too_long", JSON.parse(response.body)["code"]
+      end
+
+      test "over 280 without X Premium is 422 and never reaches create" do
+        stub_request(:get, "https://api.x.com/2/users/me?user.fields=subscription_type")
+          .to_return(status: 200, body: { data: { subscription_type: "None" } }.to_json)
+
+        post_x(text: "字" * 141, key: "k1")
+
+        assert_response :unprocessable_entity
+        assert_equal "long_text_not_allowed", JSON.parse(response.body)["failure_reason"]
+        assert_not_requested :post, TWEETS_URL
       end
 
       test "an account_id parameter cannot point the post at another account" do

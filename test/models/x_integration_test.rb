@@ -250,6 +250,63 @@ class XIntegrationTest < ActiveSupport::TestCase
     assert_equal "handle_a", integration.x_username
   end
 
+  test "a new grant records the scopes X granted and is a new generation" do
+    integration = XIntegration.create!(account: @account, client_id: "app-a", client_secret: "secret-a")
+    stub_request(:post, "https://api.x.com/2/oauth2/token").to_return(status: 200, body: {
+      access_token: "a-token", refresh_token: "a-refresh", expires_in: 7200,
+      scope: "tweet.write tweet.read users.read offline.access media.write"
+    }.to_json)
+    stub_request(:get, "https://api.x.com/2/users/me").to_return(status: 200, body: { data: { username: "handle_a" } }.to_json)
+    before = integration.app_generation
+
+    integration.exchange_code!(code: "c", redirect_uri: "https://example.test/cb", code_verifier: "v", app_generation: before)
+
+    integration.reload
+    assert integration.media_scope_granted?
+    assert_equal before + 1, integration.app_generation
+    assert_equal "handle_a", integration.x_username
+  end
+
+  test "the scopes recorded are what X granted, not what the house asked for" do
+    integration = XIntegration.create!(account: @account, client_id: "app-a", client_secret: "secret-a")
+    stub_request(:post, "https://api.x.com/2/oauth2/token").to_return(status: 200, body: {
+      access_token: "a-token", refresh_token: "a-refresh", expires_in: 7200, scope: "tweet.write users.read tweet.read offline.access"
+    }.to_json)
+    stub_request(:get, "https://api.x.com/2/users/me").to_return(status: 200, body: { data: { username: "h" } }.to_json)
+
+    integration.exchange_code!(code: "c", redirect_uri: "https://example.test/cb", code_verifier: "v", app_generation: integration.app_generation)
+
+    assert_includes XApi::SCOPES, "media.write"
+    assert_not integration.reload.media_scope_granted?
+  end
+
+  test "a refresh records X's scope answer, keeps the old one when X gives none, and never moves the generation" do
+    integration = XIntegration.create!(account: @account, client_id: "own-cid", client_secret: "own-secret",
+      access_token: "old", refresh_token: "rt", token_expires_at: 1.minute.ago, granted_scopes: "tweet.write media.write")
+    stub_request(:post, "https://api.x.com/2/oauth2/token").to_return(
+      { status: 200, body: { access_token: "n1", refresh_token: "rt2", expires_in: 7200 }.to_json },
+      { status: 200, body: { access_token: "n2", refresh_token: "rt3", expires_in: 7200, scope: "tweet.write" }.to_json }
+    )
+    generation = integration.app_generation
+
+    integration.refresh_tokens!
+    assert integration.reload.media_scope_granted?
+    integration.update!(token_expires_at: 1.minute.ago)
+    integration.refresh_tokens!
+
+    assert_not integration.reload.media_scope_granted?
+    assert_equal generation, integration.app_generation
+  end
+
+  test "disconnecting forgets the granted scopes" do
+    integration = XIntegration.create!(account: @account, client_id: "a", client_secret: "s", access_token: "t", refresh_token: "r",
+                                       granted_scopes: "tweet.write media.write")
+
+    integration.disconnect!
+
+    assert_nil integration.reload.granted_scopes
+  end
+
   test "every change of app or connection moves the generation on" do
     integration = XIntegration.create!(account: @account, client_id: "a", client_secret: "s", access_token: "t", refresh_token: "r")
 

@@ -91,6 +91,37 @@ describe('X posting page', () => {
     expect(screen.getByLabelText('Client secret')).toBeInTheDocument();
   });
 
+  it('asks an admin to reconnect when the grant has no media permission, and only then', () => {
+    const connected = { ...base, connected: true, x_username: 'swombat', app_source: 'house', house_app_allowed: true };
+    render(XIntegration, {
+      account_id: 'acct',
+      integration: { ...connected, media_scope_granted: false },
+      can_manage: true,
+    });
+
+    expect(screen.getByTestId('x-media-reconnect')).toHaveTextContent(
+      /residents can post text but\s+not images or videos/
+    );
+    expect(screen.getByRole('button', { name: /Reconnect X to post media/ })).toBeInTheDocument();
+    cleanup();
+
+    render(XIntegration, {
+      account_id: 'acct',
+      integration: { ...connected, media_scope_granted: false },
+      can_manage: false,
+    });
+    expect(screen.queryByRole('button', { name: /Reconnect X to post media/ })).not.toBeInTheDocument();
+    expect(screen.getByText('An account admin reconnects it here.')).toBeInTheDocument();
+    cleanup();
+
+    render(XIntegration, {
+      account_id: 'acct',
+      integration: { ...connected, media_scope_granted: true },
+      can_manage: true,
+    });
+    expect(screen.queryByTestId('x-media-reconnect')).not.toBeInTheDocument();
+  });
+
   it('shows ordinary members no X app form', () => {
     render(XIntegration, { account_id: 'acct', integration: base, can_manage: false });
 

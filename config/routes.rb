@@ -657,7 +657,7 @@ Rails.application.routes.draw do
       resource :subscription_usage, only: :show
       resources :youtube_reads, only: :create
       resources :x_reads, only: :create
-      resources :x_posts, only: %i[create update]
+      resources :x_posts, only: %i[create show update]
       resources :linkedin_posts, only: %i[create show update]
       # A resident connecting a service itself (issue #500).
       scope :resident, as: :resident do

@@ -4,8 +4,10 @@
 import argparse
 import io
 import json
+import mimetypes
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +27,9 @@ class RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 
 NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
+
+POLL_SECONDS = 5
+WAIT_LIMIT_SECONDS = 20 * 60
 
 
 WINDOW_LABELS = {
@@ -69,13 +74,23 @@ def build_parser():
             "Publish one public post to the X handle connected to your own account. "
             "Every post carries an idempotency key; retrying with the same --key never "
             "posts twice. If the outcome is unknown, check the handle and use "
-            "'soulshouse-x resolve' instead of posting again."
+            "'soulshouse-x resolve' instead of posting again. Over 280 characters is "
+            "sent only when X reports the handle has X Premium; it is never split into a thread."
         ),
     )
-    post.add_argument("text", nargs="+")
+    post.add_argument("text", nargs="*", help="the post text (or use --text-file)")
+    post.add_argument("--text-file", help="read the text from this file ('-' for stdin)")
+    media = post.add_mutually_exclusive_group()
+    media.add_argument("--image", help="attach one JPEG, PNG, WebP or GIF (up to 5 MB)")
+    media.add_argument("--video", help="attach one MP4 video (up to 512 MB)")
     post.add_argument("--reply-to", help="numeric id of the post to reply to")
     post.add_argument("--key", help="idempotency key; reuse it to retry the same post safely (default: a new random key)")
+    post.add_argument("--no-wait", action="store_true", help="for media posts, return once queued instead of waiting")
     post.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    status = subparsers.add_parser("status", help="show one post's state (a media post is sent in the background)")
+    status.add_argument("id")
+    status.add_argument("--json", action="store_true", help="print the complete JSON response")
 
     resolve = subparsers.add_parser(
         "resolve",
@@ -159,6 +174,10 @@ def main():
         print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
+    if args.operation == "status":
+        return run_status(args, app_url, token)
+    if args.operation == "post" and (args.image or args.video):
+        return run_media_post(args, app_url, token)
     if args.operation in ("post", "resolve"):
         return run_posting(args, app_url, token)
 
@@ -187,10 +206,151 @@ def main():
     return 0
 
 
+def read_text(args):
+    if args.text_file:
+        if args.text_file == "-":
+            return sys.stdin.read()
+        with open(args.text_file, encoding="utf-8") as handle:
+            return handle.read()
+    return " ".join(args.text)
+
+
+def raw_request(app_url, token, path, method="GET", body=None, content_type=None, headers=None):
+    all_headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if content_type:
+        all_headers["Content-Type"] = content_type
+    all_headers.update(headers or {})
+    req = urllib.request.Request(f"{app_url.rstrip('/')}{path}", data=body, headers=all_headers, method=method)
+    try:
+        with NO_REDIRECT_OPENER.open(req, timeout=180) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        raw = error.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
+        return error.code, data if isinstance(data, dict) else {"error": raw}
+
+
+def multipart(fields, file_field, file_path):
+    boundary = f"----soulshouse{uuid.uuid4().hex}"
+    out = io.BytesIO()
+    for name, value in fields.items():
+        out.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode())
+        out.write(value.encode("utf-8"))
+        out.write(b"\r\n")
+    filename = os.path.basename(file_path).replace('"', "")
+    mime = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    out.write(
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"{file_field}\"; filename=\"{filename}\"\r\n"
+        f"Content-Type: {mime}\r\n\r\n".encode()
+    )
+    with open(file_path, "rb") as handle:
+        out.write(handle.read())
+    out.write(b"\r\n")
+    out.write(f"--{boundary}--\r\n".encode())
+    return out.getvalue(), f"multipart/form-data; boundary={boundary}"
+
+
+def report(result, status_code, args):
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    elif result.get("url"):
+        print(result["url"])
+    state = result.get("status")
+    post_id = result.get("id")
+    if state == "outcome_unknown" or (state == "pending" and status_code != 202):
+        print(
+            f"Outcome unknown for post {post_id}. Check the handle on X, then run "
+            f"'soulshouse-x resolve {post_id} --posted <url>' or '--not-posted'. "
+            "Do not post it again with a new key.",
+            file=sys.stderr,
+        )
+        return 1
+    if state == "pending":
+        print(f"Queued as post {post_id}; check it with 'soulshouse-x status {post_id}'.", file=sys.stderr)
+        return 0
+    if state == "failed":
+        reason = result.get("failure_reason") or "failed"
+        print(f"Post {post_id} was not sent ({reason}): {result.get('error') or 'no detail given'}", file=sys.stderr)
+        return 1
+    if state == "resolved_not_posted":
+        print(f"Post {post_id} was resolved as not posted; nothing is on X for this key.", file=sys.stderr)
+        return 1
+    if status_code >= 300:
+        print(f"souls.house returned HTTP {status_code}: {result.get('error')}", file=sys.stderr)
+        return 1
+    if state in ("posted", "resolved_posted"):
+        if not args.json and not result.get("url"):
+            print(f"Post {post_id} is {state} ({result.get('tweet_id') or 'no id recorded'})")
+        return 0
+    print(f"Post {post_id} has an unexpected status: {state!r}", file=sys.stderr)
+    return 1
+
+
+def run_status(args, app_url, token):
+    try:
+        code, result = raw_request(app_url, token, f"/api/v1/x_posts/{urllib.parse.quote(args.id)}")
+    except Exception as error:
+        print(f"souls.house X request failed: {error}", file=sys.stderr)
+        return 1
+    if code == 200 and result.get("status") == "pending":
+        code = 202
+    return report(result, code, args)
+
+
+def run_media_post(args, app_url, token):
+    text = read_text(args).strip()
+    if not text:
+        print("The post text is empty", file=sys.stderr)
+        return 64
+    media_path = args.image or args.video
+    if not os.path.isfile(media_path):
+        print(f"No such file: {media_path}", file=sys.stderr)
+        return 66
+    fields = {"text": text}
+    if args.reply_to:
+        fields["reply_to"] = args.reply_to
+    body, content_type = multipart(fields, "media", media_path)
+
+    key = args.key or str(uuid.uuid4())
+    # Disclose the key before anything is sent: if this process is
+    # interrupted mid-request, the key is the only safe way to retry.
+    print(f"[idempotency key: {key}] (retry only with --key {key})", file=sys.stderr, flush=True)
+    try:
+        code, result = raw_request(app_url, token, "/api/v1/x_posts", method="POST", body=body,
+                                   content_type=content_type, headers={"Idempotency-Key": key})
+    except BaseException as error:
+        print(f"souls.house X request failed: {error!r}", file=sys.stderr, flush=True)
+        print(f"Outcome unknown. Retry only with --key {key} so it cannot post twice.", file=sys.stderr, flush=True)
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        return 1
+
+    if code == 202 and not args.no_wait:
+        print(f"Uploading to X in the background as post {result.get('id')}; waiting...", file=sys.stderr, flush=True)
+        deadline = time.monotonic() + WAIT_LIMIT_SECONDS
+        while result.get("status") == "pending" and time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
+            try:
+                poll_code, polled = raw_request(app_url, token, f"/api/v1/x_posts/{urllib.parse.quote(str(result.get('id')))}")
+            except Exception:
+                continue  # the post is already queued; a failed check changes nothing
+            if poll_code == 200:
+                result = polled
+        code = 200 if result.get("status") in ("posted", "resolved_posted") else (202 if result.get("status") == "pending" else 502)
+    return report(result, code, args)
+
+
 def run_posting(args, app_url, token):
     if args.operation == "post":
         key = args.key or str(uuid.uuid4())
-        payload = {"text": " ".join(args.text)}
+        text = read_text(args).strip()
+        if not text:
+            print("The post text is empty", file=sys.stderr)
+            return 64
+        payload = {"text": text}
         if args.reply_to:
             payload["reply_to"] = args.reply_to
         call = dict(path="/api/v1/x_posts", method="POST", extra_headers={"Idempotency-Key": key})

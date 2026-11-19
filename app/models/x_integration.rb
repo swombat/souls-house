@@ -92,7 +92,7 @@ class XIntegration < ApplicationRecord
   private
 
   def disconnected_attributes
-    { access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil, enabled: false, app_generation: app_generation + 1 }
+    { access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil, granted_scopes: nil, enabled: false, app_generation: app_generation + 1 }
   end
 
   def x_credentials(key)
