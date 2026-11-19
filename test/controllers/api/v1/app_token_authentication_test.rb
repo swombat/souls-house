@@ -106,8 +106,8 @@ class Api::V1::AppTokenAuthenticationTest < ActionDispatch::IntegrationTest
 
 
   test "a disabled default account does not block the person's other accounts" do
-    # User#default_account falls back to the first confirmed membership without
-    # checking that its account is enabled. Build a person whose first account is disabled.
+    # Build a person whose oldest account is disabled. User#default_account
+    # skips disabled accounts, so the fallback lands on the enabled team.
     person = User.create!(email_address: "two-accounts@example.com", password: "password123")
     disabled = Account.create!(name: "Closed team", account_type: :team)
     Membership.create!(account: disabled, user: person, role: "owner", confirmed_at: 2.days.ago, created_at: 2.days.ago)
@@ -117,7 +117,7 @@ class Api::V1::AppTokenAuthenticationTest < ActionDispatch::IntegrationTest
     @user = person
     tokens = sign_in_device
     disabled.update_columns(disabled_at: Time.current)
-    assert_equal disabled, person.reload.default_account, "precondition: the fallback lands on the disabled account"
+    assert_equal @team, person.reload.default_account, "the fallback skips the disabled account"
 
     get api_v1_conversations_url, headers: bearer(tokens)
     assert_response :success
