@@ -168,11 +168,12 @@
       {/if}
       {#if focusedService.key === 'runpod'}
         <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-          Residents with this connection act as you on RunPod. With a key that has write access they can start GPU pods,
-          which bill your RunPod balance by the second until they are stopped; they are told to say what a pod is for
-          and what it costs before starting it, and to stop it when the work ends, but only your balance and the key's
-          permissions actually limit them. Create the key under Settings → API Keys. A Read Only key can look at pods
-          but not start them.
+          Residents with this connection act as you on RunPod, with whatever the key allows. The house sets no spend
+          cap, and your RunPod balance isn't one if auto-pay is on. Stopping a pod ends GPU charges but not storage;
+          only terminating it does. Residents are told to name the purpose, hourly price and budget before starting
+          anything, to wait for your go-ahead on the first one, and to terminate what they start and check it's gone.
+          Create the key under Settings → API Keys; it needs to read your account, and starting pods needs pod write
+          access.
         </div>
       {/if}
       {#if focusedService.key === 'porkbun'}

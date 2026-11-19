@@ -7,16 +7,20 @@ class Services::RunpodAdapterTest < ActiveSupport::TestCase
     @adapter = Services::RunpodAdapter.new(Services::Definition.fetch("runpod"))
   end
 
-  def stub_graphql(status: 200, body:)
-    stub_request(:post, "https://api.runpod.io/graphql")
-      .with(headers: { "Authorization" => "Bearer rp_secret" }, body: { query: "query { myself { id email } }" }.to_json)
-      .to_return(status: status, body: body.to_json, headers: { "Content-Type" => "application/json" })
+  def stub_account(status: 200, body:, content_type: "application/json")
+    stub_request(:get, "https://api.runpod.io/v2/account")
+      .with(headers: { "Authorization" => "Bearer rp_secret" })
+      .to_return(status: status, body: body.is_a?(String) ? body : body.to_json, headers: { "Content-Type" => content_type })
+  end
+
+  def connect(key = "rp_secret")
+    @adapter.connection_attributes(credentials: { "api_key" => key }, user: users(:user_1))
   end
 
   test "builds a static credential connection from the key's account" do
-    stub_graphql(body: { "data" => { "myself" => { "id" => "user_2abc", "email" => "daniel@example.com" } } })
+    stub_account(body: { "id" => "user_2abc", "email" => "daniel@example.com" })
 
-    result = @adapter.connection_attributes(credentials: { "api_key" => " rp_secret " }, user: users(:user_1))
+    result = connect(" rp_secret ")
 
     assert_equal "user_2abc", result[:external_subject_id]
     assert_equal "daniel@example.com", result[:external_identity]
@@ -29,44 +33,47 @@ class Services::RunpodAdapterTest < ActiveSupport::TestCase
     assert_not_includes result[:credential_fingerprint], "rp_secret"
   end
 
-  test "falls back to the account id when RunPod gives no email" do
-    stub_graphql(body: { "data" => { "myself" => { "id" => "user_2abc", "email" => nil } } })
+  test "uses the account id when RunPod has no email on file" do
+    stub_account(body: { "id" => "user_2abc", "email" => nil })
 
-    result = @adapter.connection_attributes(credentials: { "api_key" => "rp_secret" }, user: users(:user_1))
-
-    assert_equal "user_2abc", result[:external_identity]
+    assert_equal "user_2abc", connect[:external_identity]
   end
 
   test "refuses a key RunPod rejects" do
-    stub_graphql(status: 401, body: { "error" => {} })
+    stub_account(status: 401, body: { "detail" => "Subject token is invalid or expired", "status" => 401, "title" => "Unauthorized" },
+                 content_type: "application/problem+json")
 
-    error = assert_raises(Services::RunpodAdapter::Error) do
-      @adapter.connection_attributes(credentials: { "api_key" => "rp_secret" }, user: users(:user_1))
-    end
+    error = assert_raises(Services::RunpodAdapter::Error) { connect }
     assert_equal "RunPod rejected this API key", error.message
   end
 
-  test "refuses a GraphQL error even on a 200" do
-    stub_graphql(body: { "errors" => [ { "message" => "Unauthorized" } ], "data" => nil })
+  test "says a valid key lacks account access, without echoing RunPod's error" do
+    stub_account(status: 403, body: { "detail" => "raw provider detail", "status" => 403, "title" => "Forbidden" },
+                 content_type: "application/problem+json")
 
-    error = assert_raises(Services::RunpodAdapter::Error) do
-      @adapter.connection_attributes(credentials: { "api_key" => "rp_secret" }, user: users(:user_1))
-    end
-    assert_match "Unauthorized", error.message
+    error = assert_raises(Services::RunpodAdapter::Error) { connect }
+    assert_match "can't read the account", error.message
+    assert_no_match "raw provider detail", error.message
   end
 
-  test "refuses an answer with no account" do
-    stub_graphql(body: { "data" => { "myself" => nil } })
+  test "refuses an answer with no account id" do
+    stub_account(body: { "email" => "daniel@example.com" })
+    assert_raises(Services::RunpodAdapter::Error) { connect }
+  end
 
-    assert_raises(Services::RunpodAdapter::Error) do
-      @adapter.connection_attributes(credentials: { "api_key" => "rp_secret" }, user: users(:user_1))
-    end
+  test "refuses an answer that is not an object" do
+    stub_account(body: [ { "id" => "user_2abc" } ])
+    assert_raises(Services::RunpodAdapter::Error) { connect }
+  end
+
+  test "refuses invalid JSON" do
+    stub_account(body: "<html>oops</html>", content_type: "text/html")
+    error = assert_raises(Services::RunpodAdapter::Error) { connect }
+    assert_equal "RunPod returned invalid JSON", error.message
   end
 
   test "requires a key" do
-    error = assert_raises(Services::RunpodAdapter::Error) do
-      @adapter.connection_attributes(credentials: { "api_key" => "  " }, user: users(:user_1))
-    end
+    error = assert_raises(Services::RunpodAdapter::Error) { connect("  ") }
     assert_equal "RunPod API key is required", error.message
   end
 

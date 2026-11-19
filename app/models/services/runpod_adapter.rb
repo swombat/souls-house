@@ -5,10 +5,9 @@ require "openssl"
 module Services
   class RunpodAdapter
 
-    # RunPod's GraphQL API answers `myself` for any valid key, read-only or
-    # not; it is also where account balance lives (REST v2 has no user route).
-    GRAPHQL_URL = "https://api.runpod.io/graphql".freeze
-    REST_BASE = "https://api.runpod.io/v2".freeze
+    # REST v2. GET /v2/account needs the account:read scope and returns the
+    # key's account { id, email|null }. GraphQL retires in early 2027.
+    API_BASE = "https://api.runpod.io/v2".freeze
 
     class Error < Services::AdapterError; end
 
@@ -22,10 +21,11 @@ module Services
       key = credentials["api_key"].to_s.strip
       raise Error, "RunPod API key is required" if key.blank?
 
-      me = myself(key)
-      id = me["id"].to_s
-      raise Error, "RunPod returned no account for this key" if id.blank?
-      identity = me["email"].presence || id
+      account = get_json("/account", key)
+      id = account.is_a?(Hash) ? account["id"] : nil
+      raise Error, "RunPod returned no account for this key" unless id.is_a?(String) && id.present?
+      email = account["email"]
+      identity = (email.is_a?(String) && email.present?) ? email : id
 
       {
         external_subject_id: id,
@@ -38,38 +38,27 @@ module Services
         },
         credential_metadata: {
           "credential_strategy" => definition.credential_strategy,
-          "api_base" => REST_BASE,
-          "graphql_url" => GRAPHQL_URL,
+          "api_base" => API_BASE,
           "authority_summary" => "Acts as #{identity} on RunPod with whatever permissions the key was given. " \
-                                 "A key with write access can start GPU pods and serverless endpoints that bill the account until stopped."
+                                 "A key that can write pods can start GPUs that bill the account until terminated; souls.house sets no spend cap."
         }
       }
     end
 
     def revoke(_connection)
       # RunPod keys are deleted by their owner under Settings → API Keys;
-      # souls.house removes its copy.
+      # souls.house removes its copy. Resources already started keep running.
       true
     end
 
     private
 
-    def myself(key)
-      body = post_graphql(key, "query { myself { id email } }")
-      if body["errors"].present?
-        raise Error, "RunPod refused the account query: #{Array(body['errors']).map { |e| e['message'] }.compact.join('; ').presence || 'unknown error'}"
-      end
-      body.dig("data", "myself") || raise(Error, "RunPod returned no account for this key")
-    end
-
-    def post_graphql(key, query)
-      uri = URI(GRAPHQL_URL)
-      request = Net::HTTP::Post.new(uri)
+    def get_json(path, key)
+      uri = URI("#{API_BASE}#{path}")
+      request = Net::HTTP::Get.new(uri)
       request["Authorization"] = "Bearer #{key}"
-      request["Content-Type"] = "application/json"
       request["Accept"] = "application/json"
       request["User-Agent"] = "souls.house service connection"
-      request.body = { query: query }.to_json
       response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 15) do |http|
         http.request(request)
       end
@@ -77,8 +66,10 @@ module Services
       case response
       when Net::HTTPSuccess
         JSON.parse(response.body)
-      when Net::HTTPUnauthorized, Net::HTTPForbidden
+      when Net::HTTPUnauthorized
         raise Error, "RunPod rejected this API key"
+      when Net::HTTPForbidden
+        raise Error, "RunPod accepted this key but it can't read the account. Give it account read access (or use an All key) and try again"
       else
         raise Error, "RunPod validation failed (#{response.code})"
       end

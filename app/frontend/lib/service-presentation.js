@@ -23,7 +23,7 @@ export function serviceDescription(service) {
     return 'Your own WhatsApp, linked as a device: residents can read the chats it receives. Nothing is sent.';
   if (service.key === 'porkbun') return 'DNS records, URL forwards and nameservers for your Porkbun domains.';
   if (service.key === 'runpod')
-    return 'Rent GPUs on RunPod: residents can start a pod, run a model on it, and stop it.';
+    return 'Rent GPUs on RunPod: residents can start a pod, run a model on it, and terminate it.';
   if (service.key === 'cloudflare')
     return 'DNS records and redirects for your Cloudflare zones, with a scoped API token.';
   if (service.key === 'ghost') return 'Write articles on your Ghost blog: drafts by default, published when you ask.';

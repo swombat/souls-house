@@ -62,7 +62,7 @@
             : connection.provider === 'porkbun'
               ? `Disconnect ${connection.label}? This removes the keys from residents. To revoke them, delete the key under Account → API Access in Porkbun.`
               : connection.provider === 'runpod'
-                ? `Disconnect ${connection.label}? This removes the key from residents. Pods they started keep running and billing until stopped in RunPod. To revoke the key, delete it under Settings → API Keys.`
+                ? `Disconnect ${connection.label}? The house stops handing the key to residents. It does not stop pods or delete volumes, and a copy a resident already has stays valid until you delete the key under Settings → API Keys in RunPod.`
                 : connection.provider === 'twitterapi_io'
                   ? `Disconnect ${connection.label}? The tweet stream then carries on paid by another TwitterAPI.io integration on this account if there is one, or by the house key if the house has lent it to this account; otherwise collection stops. To revoke the key, regenerate it on twitterapi.io.`
                   : connection.provider === 'ghost'
