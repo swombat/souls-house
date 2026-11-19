@@ -10,6 +10,7 @@ module Api
         "rejected" => :unprocessable_entity,
         "disconnected" => :forbidden,
         "posting_disabled" => :forbidden,
+        "not_granted" => :forbidden,
         "no_x_app" => :forbidden,
         "reconnected" => :conflict,
         "media_scope_missing" => :conflict,

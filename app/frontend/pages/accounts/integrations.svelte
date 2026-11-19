@@ -2,6 +2,7 @@
   import ServiceIcon from '$lib/components/service-icon.svelte';
   import IntegrationConnect from '$lib/components/settings/integration-connect.svelte';
   import IntegrationConnection from '$lib/components/settings/integration-connection.svelte';
+  import XPostingConnection from '$lib/components/settings/x-posting-connection.svelte';
   import { serviceDescription, serviceIconClass } from '$lib/service-presentation';
   import { startsOpen } from '$lib/connection-summary';
   import { untrack } from 'svelte';
@@ -17,7 +18,13 @@
     connections = [],
     focused_service: focusedService = null,
     can_manage_account: canManageAccount = false,
+    // X posting is its own record, not a connection; null until the account starts on X.
+    x_posting: xPosting = null,
   } = $props();
+
+  // The X row opens when something needs doing, like the others.
+  let xOpen = $state(null);
+  let xRowOpen = $derived(xOpen ?? Boolean(xPosting && (!xPosting.connected || !xPosting.media_scope_granted)));
 
   const updateSync = createDynamicSync();
   $effect(() => {
@@ -137,7 +144,7 @@
           </button>
         {/if}
       </div>
-      {#if connections.length === 0}
+      {#if connections.length === 0 && !xPosting}
         <div class="rounded-xl border bg-card p-8 text-center">
           <p class="font-medium">Nothing connected yet</p>
           <p class="mt-1 text-sm text-muted-foreground">
@@ -146,7 +153,7 @@
         </div>
       {/if}
       {#each groups as group (group.key)}
-        {#if group.connections.length > 0}
+        {#if group.connections.length > 0 || (group.key === 'account' && xPosting)}
           <div class="space-y-2" aria-labelledby={`group-${group.key}`}>
             <div>
               <h3 id={`group-${group.key}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -154,6 +161,9 @@
               </h3>
               <p class="text-sm text-muted-foreground">{group.hint}</p>
             </div>
+            {#if group.key === 'account' && xPosting}
+              <XPostingConnection x={xPosting} open={xRowOpen} onToggle={() => (xOpen = !xRowOpen)} />
+            {/if}
             {#each group.connections as connection (connection.id)}
               <IntegrationConnection
                 {connection}

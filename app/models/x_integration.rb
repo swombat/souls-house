@@ -16,6 +16,8 @@ class XIntegration < ApplicationRecord
 
   belongs_to :account
   has_many :tweet_logs, dependent: :destroy
+  # Which residents may post (the per-resident switch on Integrations).
+  has_many :x_posting_grants, dependent: :delete_all
 
   encrypts :client_secret
 
@@ -24,6 +26,8 @@ class XIntegration < ApplicationRecord
   validates :client_secret, length: { maximum: 500 }
 
   scope :enabled, -> { where(enabled: true) }
+
+  def granted_to?(agent) = agent.present? && x_posting_grants.exists?(agent_id: agent.id)
 
   def self.house_app_configured?
     Rails.application.credentials.dig(:x, :client_id).present? &&

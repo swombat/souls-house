@@ -3552,6 +3552,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_210000) do
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 
+  create_table "x_posting_grants", force: :cascade do |t|
+    t.bigint "x_integration_id", null: false
+    t.bigint "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "x_integration_id"], name: "index_x_posting_grants_on_agent_id_and_x_integration_id", unique: true
+    t.index ["x_integration_id"], name: "index_x_posting_grants_on_x_integration_id"
+  end
+
   add_foreign_key "account_exports", "accounts"
   add_foreign_key "account_exports", "users"
   add_foreign_key "account_imports", "accounts"
@@ -3904,4 +3913,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_210000) do
   add_foreign_key "watched_repositories", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"
+  add_foreign_key "x_posting_grants", "agents", on_delete: :cascade
+  add_foreign_key "x_posting_grants", "x_integrations", on_delete: :cascade
 end

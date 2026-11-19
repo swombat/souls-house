@@ -23,7 +23,35 @@ class Accounts::IntegrationsController < ApplicationController
       services: service_definitions.map(&:as_json),
       focused_service: service_definitions.find { |definition| definition.key == params[:connect] }&.as_json,
       can_manage_account: can_manage_account,
-      connections: integration_connections_json(connections, agents: agents, guests: guests)
+      connections: integration_connections_json(connections, agents: agents, guests: guests),
+      x_posting: x_posting_json(agents, can_manage_account)
+    }
+  end
+
+  private
+
+  # X posting is its own record (XIntegration), not a service connection,
+  # so its row is drawn from this. Shown once the account has started on X;
+  # connecting and the app live on the X page, the resident switches here.
+  def x_posting_json(agents, can_manage)
+    integration = current_account.x_integration
+    return nil unless integration
+
+    granted = integration.x_posting_grants.pluck(:agent_id).to_set
+    {
+      connected: integration.connected?,
+      enabled: integration.enabled?,
+      x_username: integration.x_username,
+      media_scope_granted: integration.media_scope_granted?,
+      can_manage: can_manage,
+      page_url: x_integration_path(account_id: current_account.to_param),
+      grant_url: grant_x_integration_path(account_id: current_account.to_param),
+      residents: agents.filter_map do |agent|
+        enabled = granted.include?(agent.id)
+        next unless agent.offered_for_sharing?(granted: enabled)
+
+        { id: agent.to_param, name: agent.name, active: agent.active?, enabled: enabled }
+      end
     }
   end
 

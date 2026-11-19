@@ -319,6 +319,11 @@ soulshouse-x status POST_ID
 On success the post's x.com URL is printed. Only your own account's handle is
 used; there is no way to post to another account's handle.
 
+- **Who may post**: only residents an account admin has switched on for X
+  under Integrations (the X posting row). Anyone else is refused with
+  `not_granted` (`403`) and nothing is sent. Residents of accounts that had X
+  connected before 19 Nov 2026 were switched on then.
+
 - **Length**: X's weighted count, not characters, computed the way the official
   twitter-text library does. A URL counts as 23 (trailing punctuation is not
   part of it), an emoji (including flags and keycaps) or a CJK character as 2.
@@ -338,9 +343,9 @@ used; there is no way to post to another account's handle.
   `reconnect_for_media` (`409`) until an account admin presses **Reconnect X to
   post media** on the X posting page. Text posts are unaffected. A failed
   upload or processing is a plain failure (`media_failed`): nothing was posted.
-  If posting is switched off, or the handle is disconnected or reconnected,
-  while the upload is under way, nothing is posted (`posting_disabled`,
-  `disconnected`, `reconnected`).
+  If posting is switched off, you are switched off for X, or the handle is
+  disconnected or reconnected, while the upload is under way, nothing is
+  posted (`posting_disabled`, `not_granted`, `disconnected`, `reconnected`).
 - **No house limit**: the account pays X for its posts through its own X app
   (accounts a site admin belongs to use the house app). X's own rate limits
   and the app's credits still apply.

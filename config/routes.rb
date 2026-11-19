@@ -770,6 +770,7 @@ Rails.application.routes.draw do
   resource :x_integration, only: %i[show create update destroy], controller: "x_integration" do
     get :callback
     match :app, via: %i[put delete]
+    patch :grant
   end
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.

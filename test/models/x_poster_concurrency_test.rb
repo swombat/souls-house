@@ -14,6 +14,8 @@ class XPosterConcurrencyTest < ActiveSupport::TestCase
       account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
       access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now
     )
+    # Residents post only once switched on for X (x_posting_grants).
+    @integration.x_posting_grants.create!(agent: @agent)
     @ids = (1..100).to_a
     @id_lock = Mutex.new
     @stub = stub_request(:post, "https://api.x.com/2/tweets").to_return do
