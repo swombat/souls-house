@@ -33,6 +33,12 @@
   const hiddenAttentionCount = $derived(
     ($page.props.hidden_chat_ids || []).filter((id) => $page.props.reply_attention?.chats?.[id] > 0).length
   );
+  // The Actions menu works on exactly what the list shows. Archived rows hold
+  // no tag, so tagging leaves them out; marking read takes the ones with an eye.
+  const bulkChatIds = $derived(chats.filter((chat) => !chat.archived).map((chat) => chat.id));
+  const bulkUnreadChatIds = $derived(
+    chats.filter((chat) => $page.props.reply_attention?.chats?.[chat.id] > 0).map((chat) => chat.id)
+  );
   // Carried on each conversation link so opening one keeps the filter.
   const filterParams = $derived({
     show_archived: showArchived ? true : undefined,
@@ -109,6 +115,8 @@
     {showHidden}
     {hiddenAttentionCount}
     {selectedTagId}
+    {bulkChatIds}
+    {bulkUnreadChatIds}
     visualTags={$page.props.visual_tags || []}
     onToggleHidden={toggleShowHidden}
     onSelectTag={selectTag}

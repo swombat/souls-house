@@ -4,6 +4,7 @@
   import { Archive, Check, EyeSlash, FunnelSimple, Plus, Trash, X } from 'phosphor-svelte';
   import RoomSwitcher from './RoomSwitcher.svelte';
   import VisualTagIcon from './VisualTagIcon.svelte';
+  import ChatBulkActions from './ChatBulkActions.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { ADMIN_ONLY_TEXT } from '$lib/admin-only.js';
 
@@ -18,6 +19,8 @@
     hiddenAttentionCount = 0,
     visualTags = [],
     selectedTagId = null,
+    bulkChatIds = [],
+    bulkUnreadChatIds = [],
     onCreate,
     onClose,
     onToggleArchived,
@@ -140,6 +143,7 @@
         {/if}
       </Popover.Content>
     </Popover.Root>
+    <ChatBulkActions {accountId} chatIds={bulkChatIds} unreadChatIds={bulkUnreadChatIds} {visualTags} />
     {#if selectedTag}
       <button
         type="button"

@@ -230,6 +230,9 @@ Rails.application.routes.draw do
         get :search
         post :transcription, to: "chats/transcriptions#create"
         delete :transcription, to: "chats/transcriptions#destroy"
+        # The sidebar's Actions menu: many conversations in one request.
+        post "bulk/mark_read", to: "chats/bulk_actions#mark_read", as: :bulk_mark_read
+        patch "bulk/visual_tag", to: "chats/bulk_actions#visual_tag", as: :bulk_visual_tag
       end
       scope module: :chats do
         resource :visual_tag, only: :update
@@ -583,6 +586,10 @@ Rails.application.routes.draw do
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create, :update ] do
+        collection do
+          post "bulk/mark_read", to: "conversation_bulk_actions#mark_read"
+          patch "bulk/visual_tag", to: "conversation_bulk_actions#visual_tag"
+        end
         resources :stones, only: [ :index, :show, :create, :destroy ] do
           resource :write_link, only: [ :create, :destroy ], controller: "stone_write_links"
           resources :revisions, only: [ :index, :show, :create ], controller: "stone_revisions"

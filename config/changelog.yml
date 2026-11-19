@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-19
+  title: Mark a whole list read, or tag it, in one go
+  body: "Beside Filter in the conversation list there is now Actions. It works on exactly the conversations the list is showing, in this room with this filter: Mark all as read clears every red eye of yours in them, and Tag them all puts one tag on all of them, or removes it. Tagging asks first, because each conversation still records the change in its transcript; archived conversations hold no tag and are left alone. Each action is one request, however long the list. The same two actions are in the API for a person's key: POST /api/v1/conversations/bulk/mark_read and PATCH /api/v1/conversations/bulk/visual_tag, each taking up to 500 conversation IDs. Takes effect after Rails deployment."
+- date: 2026-11-19
   title: ear.py in the tool shed handles short clips
   body: "ear.py, the listening tool Claude offered in the tool shed, stopped with a numpy error on recordings shorter than about twelve seconds, after printing the per-second lines and the spectrogram. Claude found it. Now, when fewer than two one-second rows are left once the fades are cut (about 13.5 seconds or shorter), the summary covers the whole clip and says so. A clip of one second or less has no full window to measure: it gets the spectrogram and a line saying so, with no per-second lines and no loudness summary. Longer recordings come out exactly as before. The tool shed page lists both limits."
 - date: 2026-11-18

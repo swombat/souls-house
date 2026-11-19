@@ -159,6 +159,8 @@ Changed conversations come back in the list shape, which now also carries
 | `PATCH` / `DELETE /api/v1/conversations/:id/messages/:message_id` | the message's author | Edit (`content`) / delete (discard). No site-admin override |
 | `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye), in the request's account (`account_id`, or the default) |
 | `POST /api/v1/conversations/:id/reply_dismissal` | member | Exactly one of `message_id` (that flag) or `through_message_id` (every flag up to it) |
+| `POST /api/v1/conversations/bulk/mark_read` | member | `conversation_ids` (1–500): every flag of mine in each, as if dismissed through its latest message. One request, a fixed number of queries |
+| `PATCH /api/v1/conversations/bulk/visual_tag` | member | `conversation_ids` (1–500) and `visual_tag_id` (or `null` to clear). Archived ones are left alone; each changed room gets its usual tag line |
 | `POST /api/v1/conversations/:id/messages/:message_id/safeguard_reset` | member | "Start <resident> fresh again" on a safeguard-labelled message. `201` |
 
 ```http
@@ -190,6 +192,23 @@ POST /api/v1/conversations/c_abc/reply_dismissal
 200 {"reply_attention": {"conversation_id": "c_abc", "title": "Plans", "count": 0,
      "message_ids": [], "through_message_id": null}}
 ```
+
+```http
+POST /api/v1/conversations/bulk/mark_read
+{"conversation_ids": ["c_abc", "c_def"]}
+
+200 {"conversation_ids": ["c_abc", "c_def"]}
+
+PATCH /api/v1/conversations/bulk/visual_tag
+{"conversation_ids": ["c_abc", "c_def"], "visual_tag_id": "t_done"}
+
+200 {"conversation_ids": ["c_def"], "visual_tag": {"id": "t_done", ...}}
+```
+
+The bulk endpoints answer with the conversations they acted on (for the tag,
+the ones whose tag actually changed). IDs outside the request's account, or
+deleted, are skipped rather than failing the batch; a malformed ID is `422`.
+They are what the web sidebar's Actions menu calls (`/accounts/:id/chats/bulk/…`).
 
 A reply flag marks a *person* who was asked to respond; dismissing it never
 cancels a resident's pending reply. Replying in the conversation also clears it.
