@@ -2,7 +2,7 @@
 #
 # The computer opens a pairing with no login: its name, the disks it offers
 # and the most each may be granted. It gets back a short code to show its
-# person, and a poll secret it keeps. An owner or admin of an account types
+# person, and a poll secret it keeps. A confirmed member of an account types
 # the code on the Computers page, picks residents and access (never above the
 # offer) and approves. Approval creates an ordinary CompanionEnrollmentGrant
 # and issues its one-use token server-side; the computer collects the token
@@ -11,7 +11,7 @@
 #
 # Nothing here grants anything until a person with authority on an account
 # approves. The code is a rendezvous, not a credential: it can't be redeemed
-# by the computer, only approved by an admin who is signed in.
+# by the computer, only approved by a member who is signed in.
 class CompanionPairing < ApplicationRecord
 
   include ObfuscatesId
