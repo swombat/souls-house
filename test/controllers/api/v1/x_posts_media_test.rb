@@ -204,6 +204,20 @@ module Api
         assert_not_requested :post, TWEETS_URL
       end
 
+      [ "pending", nil, [ "pending" ] ].each do |malformed|
+        test "a FINALIZE whose processing_info is present but #{malformed.inspect} is never taken as ready" do
+          stub_upload(processing: nil)
+          stub_request(:post, FINALIZE_URL)
+            .to_return(status: 200, body: { data: { id: MEDIA_ID, processing_info: malformed } }.to_json)
+
+          id = post_video("With a clip", key: "clip-1")
+          perform_enqueued_jobs(only: XPostJob)
+
+          assert_equal "media_failed", TweetLog.find_by_obfuscated_id(id).failure_reason
+          assert_not_requested :post, TWEETS_URL
+        end
+      end
+
       test "a valid FINALIZE with no processing needed still posts" do
         stub_upload(processing: nil)
 

@@ -104,14 +104,13 @@ class XMediaUploader
     polled = false
     loop do
       payload = data["data"].is_a?(Hash) ? data["data"] : {}
-      info = payload["processing_info"]
-      unless info.is_a?(Hash)
-        # Before polling, no processing_info means X needs no processing. Once
-        # X has said it is processing, only an explicit "succeeded" is ready.
-        return media_id unless polled
+      # Before polling, processing_info left out entirely means X needs no
+      # processing. Present but not an object, or missing once X has said it
+      # is processing, is unreadable: only an explicit "succeeded" is ready.
+      return media_id if !polled && !payload.key?("processing_info")
 
-        raise NotSent.new("media_failed", "X's processing status answer had no processing state; nothing was posted")
-      end
+      info = payload["processing_info"]
+      raise NotSent.new("media_failed", "X's processing status answer had no readable processing state; nothing was posted") unless info.is_a?(Hash)
 
       case info["state"]
       when "succeeded"
