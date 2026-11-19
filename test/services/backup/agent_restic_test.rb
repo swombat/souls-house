@@ -142,6 +142,67 @@ module Backup
       end
     end
 
+    # The incident's likeliest branch (19 Nov): paused, a run arrives, the
+    # backup gives up as busy, and its unpause fails. It is tried again.
+    test "a failed unpause is tried again and checked, and the backup's own error is kept" do
+      @agent.save!
+      retry_calls = docker_state("true true", after_unpause: "true false")
+      assert_error_reported(ContainerPause::UnpauseRetried) do
+        with_docker(own_unpause_ok: false, retry_calls:) do
+          assert_raises(AgentRestic::ResidentBusy) do
+            AgentRestic.with_quiesced(@agent) { raise AgentRestic::ResidentBusy, "Resident became active before checkpoint" }
+          end
+        end
+      end
+      assert_equal %w[inspect unpause inspect], retry_calls.seen
+    end
+
+    test "a failed unpause whose second try works lets the backup stand" do
+      @agent.save!
+      with_docker(own_unpause_ok: false, retry_calls: docker_state("true true", after_unpause: "true false")) do
+        assert_equal :done, AgentRestic.with_quiesced(@agent) { :done }
+      end
+    end
+
+    test "an unpause that reported failure but had worked is left at that" do
+      @agent.save!
+      retry_calls = docker_state("true false")
+      with_docker(own_unpause_ok: false, retry_calls:) do
+        assert_equal :done, AgentRestic.with_quiesced(@agent) { :done }
+      end
+      assert_equal %w[inspect], retry_calls.seen
+    end
+
+    test "a resident still paused after both tries fails the backup and is reported" do
+      @agent.save!
+      assert_error_reported(ContainerPause::StillPaused) do
+        with_docker(own_unpause_ok: false, retry_calls: docker_state("true true", unpause_ok: false)) do
+          error = assert_raises(ArgumentError) { AgentRestic.with_quiesced(@agent) { :done } }
+          assert_equal "Resident remains paused after backup", error.message
+        end
+      end
+    end
+
+    # Mira's case (#1042): the unpause fails and the look after it times out.
+    test "a failed unpause followed by a look that times out fails the backup and is reported" do
+      @agent.save!
+      assert_error_reported(ContainerPause::StillPaused) do
+        with_docker(own_unpause_ok: false, retry_calls: docker_state(nil)) do
+          error = assert_raises(ArgumentError) { AgentRestic.with_quiesced(@agent) { :done } }
+          assert_equal "Resident remains paused after backup", error.message
+        end
+      end
+    end
+
+    test "a container this backup did not pause is not touched" do
+      @agent.save!
+      events = []
+      with_docker(own: "true true", events:, retry_calls: ->(*) { flunk "not this backup's pause" }) do
+        AgentRestic.with_quiesced(@agent) { :done }
+      end
+      assert_equal %w[inspect], events
+    end
+
     private
 
     # verify_existing! passes; volumes are the agent's real derived names.
@@ -155,6 +216,44 @@ module Backup
 
     def ok = Struct.new(:success?).new(true)
     def failed = Struct.new(:success?).new(false)
+
+    # The backup's own Docker calls (Open3) answer `own` for inspect; the
+    # second try (ContainerPause.capture) is `retry_calls`.
+    def with_docker(own: "true false", own_unpause_ok: true, events: [], retry_calls: ->(*) { flunk "no second try" }, &block)
+      docker = lambda do |*command|
+        events << command[1]
+        case command[1]
+        when "inspect" then [ own, "", ok ]
+        when "pause" then [ "", "", ok ]
+        when "unpause" then [ "", "", own_unpause_ok ? ok : failed ]
+        else flunk "unexpected docker #{command[1]}"
+        end
+      end
+      Agents::Resources.stub(:new, verified_resources) do
+        Open3.stub(:capture3, docker) do
+          ContainerPause.stub(:capture, retry_calls, &block)
+        end
+      end
+    end
+
+    # A fake Docker: `inspect` answers `state` (nil: times out) until an
+    # unpause, then `after_unpause`. #seen lists the subcommands in order.
+    def docker_state(state, after_unpause: state, unpause_ok: true)
+      seen = []
+      current = state
+      fake = lambda do |*args|
+        seen << args[1]
+        case args[1]
+        when "inspect" then current.nil? ? [ "", "timed out", failed ] : [ current, "", ok ]
+        when "unpause"
+          current = after_unpause
+          [ "", "", unpause_ok ? ok : failed ]
+        else flunk "unexpected docker #{args[1]}"
+        end
+      end
+      fake.define_singleton_method(:seen) { seen }
+      fake
+    end
 
   end
 end

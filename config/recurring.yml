@@ -168,6 +168,13 @@ production:
     class: FullBackupJob
     schedule: every day at 4am
 
+  # A backup that dies while it has a resident paused leaves the resident
+  # frozen; this reports one seen paused for half an hour (it doesn't unpause).
+  paused_resident_watch:
+    class: Backup::PausedResidentWatchJob
+    queue: default
+    schedule: every 10 minutes
+
   # An interrupted VM backup thinning pauses that resident's backups until
   # it is recovered; this is what recovers it.
   vm_thinning_recovery:
