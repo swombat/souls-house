@@ -1513,6 +1513,7 @@ class WorkerTest(unittest.TestCase):
         gate.atomic(self.root / "pending-rolls.json", {
             "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "residents": [], "held": [],
             "stock_image": "stock:deploy-x", "external_skipped": [1, 2, 3],
+            "vm_approved_images": {str(i): self.RUNNING for i in (1, 2, 3)},
             "canary_proven": False, "births_image_moved": False, "births_allowed": True})
         self.assertEqual(["inspect", "start"], self.vm_sweep(vm=[{"result": "started", "command_id": 81}]))
         self.assertEqual(["status"], self.vm_sweep(vm=[{"result": "pending"}]))
@@ -1528,6 +1529,7 @@ class WorkerTest(unittest.TestCase):
         gate.atomic(self.root / "pending-rolls.json", dict({
             "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "residents": [], "held": [],
             "stock_image": "stock:deploy-x", "external_skipped": list(ids),
+            "vm_approved_images": {str(i): self.RUNNING for i in ids},
             "canary_proven": True, "births_image_moved": True, "births_allowed": True}, **extra))
 
     def test_initial_vm_canary_failure_is_held_and_no_other_owed_vm_starts(self):
@@ -1571,12 +1573,33 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual([], self.vm_sweep())
         self.assertEqual(([1], [2]), (self.queue()["held"], self.queue()["external_skipped"]))
 
-    def test_sweep_refuses_to_downgrade_a_vm_that_was_unreachable_at_the_run(self):
+    def test_sweep_still_refuses_a_downgrade_on_an_approved_image(self):
         self.owe([1])
         self.assertEqual(["inspect"], self.vm_sweep(running_version="chaos 48.0.0.1"))
         self.assertEqual(([1], []), (self.queue()["held"], self.queue()["external_skipped"]))
         with patch.object(gate, "ROOT", self.root):
             self.assertIsNotNone(gate.held_queue())
+
+    def test_pinned_rebuild_never_starts_a_vm_that_missed_preflight(self):
+        # Mira's reproduction (#1036 round 2): VM 1 is unreachable for the
+        # pinned Rebuild, then comes back on older Chaos. The Rebuild's own
+        # pinned check would refuse it, so the sweep must not start it.
+        self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                            vm={1: dict(image=None)})
+        self.w.rebuild_residents()
+        self.assertEqual(([1], {}), (self.queue()["external_skipped"],
+                                     self.queue()["vm_approved_images"]))
+        for _ in range(2):
+            self.assertEqual(["inspect"], self.vm_sweep(running_version="chaos 47.10.0.1"))
+        # Still visibly owed, not held, nothing in flight.
+        self.assertEqual(([1], [], {}), (self.queue()["external_skipped"], self.queue()["held"],
+                                         self.queue().get("vm_rolling", {})))
+        self.assertEqual(("partial", [1]), (self.receipt()["state"], self.receipt()["skipped"]))
+
+    def test_sweep_leaves_a_vm_whose_image_changed_since_preflight_owed(self):
+        self.owe([1], vm_approved_images={"1": "sha256:" + "3" * 64})
+        self.assertEqual(["inspect"], self.vm_sweep())
+        self.assertEqual(([], [1]), (self.queue()["held"], self.queue()["external_skipped"]))
 
     def test_sweep_leaves_a_vm_it_cannot_read_owed_and_untouched(self):
         self.owe([1])

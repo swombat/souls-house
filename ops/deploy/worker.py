@@ -516,6 +516,12 @@ class Worker:
                  # Not ours to roll, but unresolved: the receipt never claims
                  # completion while any of these remain (VM skips, unreachable).
                  "external_skipped": list(unreachable),
+                 # The starting image of each VM that passed this run's
+                 # preflight (source label, ancestry, migrations, the pinned
+                 # version match). The sweep only starts a VM still on exactly
+                 # this image; one unreachable here never passed and is left
+                 # owed for the next explicit run (#1036).
+                 "vm_approved_images": {str(r["id"]): r["running_image"] for r in vm_running},
                  # Set only once the alias tag has actually succeeded.
                  "births_image_moved": False, "births_allowed": True}
         atomic(pending_rolls(), queue)
@@ -909,16 +915,23 @@ class Sweeper(Worker):
                 # Unproven image: one VM at a time.
                 continue
             if flight is None:
-                # The gates the run applied before its first start, read
-                # again now (#1036): a VM unreachable at the run never passed
-                # them. Unreadable: left owed, not started. Newer than this
-                # image: a downgrade, refused and held.
+                # Only a VM whose confirmed image is the one that passed this
+                # run's preflight is started, re-read now at admission (#1036).
+                # A VM unreachable at the run, or one whose image has changed
+                # since, never passed those gates: it stays owed, visibly, for
+                # the next explicit run. Unreadable: left owed, not started.
+                # Newer than this image: a downgrade, refused and held.
+                approved = (state.get("vm_approved_images") or {}).get(str(resident_id))
                 try:
                     seen = self.rails(script, {"DEPLOY_VM_MODE": "inspect",
                                                "DEPLOY_RESIDENT_ID": str(resident_id)})
                     running = seen.get("image") if seen.get("running") else None
                     if not isinstance(running, str) or not IMAGE_ID.fullmatch(running):
                         self.note(f"vm resident {resident_id}: no confirmed image; left owed\n")
+                        continue
+                    if running != approved:
+                        self.note(f"vm resident {resident_id}: not the image this run's preflight "
+                                  "passed; left owed for the next explicit run\n")
                         continue
                     newer = version_tuple(state["chaos_version"]) < version_tuple(self.image_version(running))
                 except Exception as error:
