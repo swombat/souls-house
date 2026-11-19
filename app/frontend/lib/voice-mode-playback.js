@@ -82,15 +82,16 @@ export function unlockAudio(audio = sharedAudio(), context = sharedContext) {
   audio.play()?.catch?.(() => {});
 }
 
-// A stream only on a context that can actually play: one that is running, or
-// (trusted) one this player has streamed on before and suspended itself to
-// park a reply. A context that never started (Read replies aloud switched on
-// with no tap, #895 review) leaves the reply to the element, whose refused
-// play() is what shows Tap to play.
-function sharedStream({ trusted = false, ...options } = {}) {
-  const ctx = sharedContext();
-  if (!ctx || (ctx.state !== 'running' && !trusted)) return null;
-  return createStreamPlayer({ context: sharedContext, keepContext: true, ...options });
+// A stream only on a context that can actually play: one that is running,
+// or (trusted) one this player suspended itself to park a reply for barge-in.
+// Never one the browser interrupted or that never started (Read replies aloud
+// switched on with no tap): then the reply goes to the element, whose refused
+// play() is what shows Tap to play (#1040 review).
+export function sharedStream({ trusted = false, context = sharedContext, ...options } = {}) {
+  const ctx = context();
+  if (!ctx) return null;
+  if (ctx.state !== 'running' && !(trusted && ctx.state === 'suspended')) return null;
+  return createStreamPlayer({ context, keepContext: true, ...options });
 }
 
 export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror, stream = sharedStream } = {}) {
@@ -99,7 +100,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
   let parked = null;
   let generation = 0;
   let closed = false;
-  let streamed = false; // a stream has played on this context
+  let selfSuspended = false; // the context is suspended because we parked a stream
 
   const report = () => onchange?.(current ? current.id : null);
 
@@ -150,12 +151,12 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
       if (closed || job.element) return;
       if (!job.stream) {
         if (item !== current || item.generation !== generation) return;
-        const s = stream?.({ trusted: streamed, onended: () => streamEnded(job) });
+        const s = stream?.({ trusted: selfSuspended, onended: () => streamEnded(job) });
         if (!s) {
           job.element = true;
           return;
         }
-        streamed = true;
+        selfSuspended = false; // a new stream resumes the context
         job.stream = s;
         item.started = true;
       }
@@ -201,6 +202,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
       item.started = true;
       item.job = parked.job;
       parked = null;
+      selfSuspended = false;
       item.job.stream.play();
       return;
     }
@@ -262,6 +264,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
         // it is aborted only if the job is dropped (dropParked).
         parked = { id: current.id, job: current.job };
         current.job.stream.pause();
+        selfSuspended = true;
       } else {
         current.job?.controller?.abort();
         if (started) {

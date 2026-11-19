@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { createPlayer, silentWav, unlockAudio } from './voice-mode-playback';
+import { createPlayer, sharedStream, silentWav, unlockAudio } from './voice-mode-playback';
 
 // A stand-in for the one <audio> element: records what it was asked to play
 // and lets the test end a clip or refuse a play().
@@ -515,4 +515,31 @@ test('a context that is not running leaves the reply to the element, so Tap to p
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+test('only a context this player suspended to park a reply is trusted for the next stream (#1040 review)', async () => {
+  const audio = fakeAudio();
+  const asked = [];
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream: (o) => (asked.push(o.trusted), stream(o)) });
+  player.enqueue('a');
+  making.a.onAudio(new Float32Array([0.1]), 24000);
+  making.a.done();
+  await Promise.resolve();
+  made[0].end(); // A heard to the end
+  player.enqueue('b');
+  making.b.onAudio(new Float32Array([0.1]), 24000);
+  player.interrupt(); // B parked: we suspended the context
+  player.enqueue('c');
+  making.c.onAudio(new Float32Array([0.1]), 24000);
+  expect(asked).toEqual([false, false, true]);
+});
+
+test('a stream is never started on an interrupted or never-started context, trusted or not', () => {
+  const ctx = (state) => () => ({ state, currentTime: 0, resume: () => new Promise(() => {}) });
+  expect(sharedStream({ context: ctx('interrupted'), trusted: true })).toBeNull();
+  expect(sharedStream({ context: ctx('suspended') })).toBeNull();
+  expect(sharedStream({ context: ctx('suspended'), trusted: true })).not.toBeNull();
+  expect(sharedStream({ context: ctx('running') })).not.toBeNull();
 });
