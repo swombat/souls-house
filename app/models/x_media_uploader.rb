@@ -77,6 +77,11 @@ class XMediaUploader
     raise NotSent.new("media_failed", "The video file was #{sent} bytes, not the #{size} expected; nothing was posted") unless sent == size
 
     finalized = call(:post, "/media/upload/#{media_id}/finalize", nil, label: "video upload finish")
+    # Only a finalize answer for this media counts: an answer without it (an
+    # errors-only 200, say) is not "ready with no processing needed".
+    unless media_id_from(finalized, "video upload finish") == media_id
+      raise NotSent.new("media_failed", "X's video upload finish answer was for different media; nothing was posted")
+    end
     wait_until_ready(media_id, finalized)
   end
 

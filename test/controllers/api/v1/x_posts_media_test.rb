@@ -191,6 +191,30 @@ module Api
         assert_not_requested :post, TWEETS_URL
       end
 
+      test "a FINALIZE answer that is not a finalize result is never taken as ready" do
+        stub_upload(processing: nil)
+        stub_request(:post, FINALIZE_URL)
+          .to_return(status: 200, body: { errors: [ { title: "Invalid Request", detail: "Segments do not add up" } ] }.to_json)
+
+        id = post_video("With a clip", key: "clip-1")
+        perform_enqueued_jobs(only: XPostJob)
+
+        log = TweetLog.find_by_obfuscated_id(id)
+        assert_equal "media_failed", log.failure_reason
+        assert_not_requested :post, TWEETS_URL
+      end
+
+      test "a valid FINALIZE with no processing needed still posts" do
+        stub_upload(processing: nil)
+
+        id = post_video("With a clip", key: "clip-1")
+        perform_enqueued_jobs(only: XPostJob)
+
+        assert_equal "posted", TweetLog.find_by_obfuscated_id(id).status
+        assert_not_requested :get, STATUS_URL
+        assert_requested(:post, TWEETS_URL, times: 1) { |request| JSON.parse(request.body)["media"] == { "media_ids" => [ MEDIA_ID ] } }
+      end
+
       test "media still processing at the deadline is never posted" do
         stub_upload(processing: { state: "pending", check_after_secs: 1 })
         stub_request(:get, STATUS_URL)
