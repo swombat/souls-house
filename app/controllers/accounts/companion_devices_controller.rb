@@ -114,6 +114,7 @@ class Accounts::CompanionDevicesController < ApplicationController
       name: device.name,
       paused: device.paused,
       connected: device.connection_epoch.present?,
+      commands_off_locally: device.commands_off_locally?,
       enrolled_at: device.created_at,
       activity: activity.fetch(device.id, { days: [], failed: 0, last_job_at: nil }),
       ceiling: (ceiling_json(device) if admin?),

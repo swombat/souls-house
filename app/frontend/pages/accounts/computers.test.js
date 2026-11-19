@@ -206,3 +206,24 @@ test('the page listens for its computers connecting or dropping and reloads only
   render(Computers, props);
   expect(syncUpdate).toHaveBeenLastCalledWith({ 'ComputerStatus:acct': ['devices'] });
 });
+
+test('says when the Mac has not allowed commands, only for a resident with Run commands on', () => {
+  const off = { ...device, commands_off_locally: true };
+  const { unmount } = render(Computers, { ...props, devices: [off] });
+  expect(screen.getByTestId('commands-off-locally')).toHaveTextContent(
+    "This Mac hasn't allowed commands yet. Turn on “Let residents run commands on this Mac” in its menu bar."
+  );
+  unmount();
+
+  const resident = { ...device.residents[0], execute: false };
+  const { unmount: unmount2 } = render(Computers, { ...props, devices: [{ ...off, residents: [resident] }] });
+  expect(screen.queryByTestId('commands-off-locally')).not.toBeInTheDocument();
+  unmount2();
+
+  // Allowed, or not known: nothing new is said.
+  for (const value of [false, undefined]) {
+    const { unmount: u } = render(Computers, { ...props, devices: [{ ...device, commands_off_locally: value }] });
+    expect(screen.queryByTestId('commands-off-locally')).not.toBeInTheDocument();
+    u();
+  }
+});

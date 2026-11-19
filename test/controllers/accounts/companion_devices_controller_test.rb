@@ -162,6 +162,22 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal false, inertia_shared_props.fetch("devices").sole.dig("ceiling", "current")
   end
 
+  test "the page is told the Mac's commands are off only from the current connection's explicit false" do
+    sign_in @owner
+    get account_companion_devices_path(@account), headers: inertia
+    assert_equal false, inertia_shared_props.fetch("devices").sole.fetch("commands_off_locally")
+
+    empty = { "residents" => [] }
+    assert @device.record_ceiling_report!(epoch: "epoch", claimed_epoch: "epoch", ceiling: empty,
+      execute_lifecycle_accepted: false)
+    get account_companion_devices_path(@account), headers: inertia
+    assert_equal true, inertia_shared_props.fetch("devices").sole.fetch("commands_off_locally")
+
+    @device.update!(connection_epoch: nil)
+    get account_companion_devices_path(@account), headers: inertia
+    assert_equal false, inertia_shared_props.fetch("devices").sole.fetch("commands_off_locally")
+  end
+
   test "an owner changes one folder within the report; above it is refused with a reason" do
     @device.record_ceiling_report!(epoch: "epoch", claimed_epoch: "epoch", ceiling: { "residents" => [
       { "id" => @agent.obfuscated_id, "volumes" => [ { "volume" => "Data", "access" => "write" }, { "volume" => "Photos", "access" => "read" } ] } ] })

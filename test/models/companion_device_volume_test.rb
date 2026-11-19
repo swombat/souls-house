@@ -20,8 +20,9 @@ class CompanionDeviceVolumeTest < ActiveSupport::TestCase
     { "residents" => [ { "id" => id, "volumes" => volumes.map { |v, a| { "volume" => v, "access" => a } } } ] }
   end
 
-  def report(value, epoch: "epoch-1", claimed: epoch)
-    @device.record_ceiling_report!(epoch: epoch, claimed_epoch: claimed, ceiling: value)
+  def report(value, epoch: "epoch-1", claimed: epoch, accepted: nil)
+    @device.record_ceiling_report!(epoch: epoch, claimed_epoch: claimed, ceiling: value,
+      execute_lifecycle_accepted: accepted)
   end
 
   def change(volume, access)
@@ -127,6 +128,47 @@ class CompanionDeviceVolumeTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { change("", "read") }
     assert_raises(ArgumentError) { @device.change_resident_volume!(resident_id: "nobody", volume: "Data", access: "off", actor: @owner) }
     assert_equal 1, @device.reload.grant_revision
+  end
+
+  test "the Mac's run-commands opt-in is kept as a literal boolean, cleared by a report without it" do
+    assert report(ceiling, accepted: false)
+    assert_equal false, @device.reload.execute_lifecycle_accepted
+    assert @device.commands_off_locally?
+
+    assert report(ceiling, accepted: true)
+    assert_equal true, @device.reload.execute_lifecycle_accepted
+    assert_not @device.commands_off_locally?
+
+    # An older companion (or Linux) leaves it out: unknown, not the last value.
+    assert report(ceiling, accepted: false)
+    assert report(ceiling)
+    assert_nil @device.reload.execute_lifecycle_accepted
+    assert_not @device.commands_off_locally?
+
+    [ "false", 0, "no", nil, {} ].each do |odd|
+      assert report(ceiling, accepted: odd)
+      assert_nil @device.reload.execute_lifecycle_accepted, "kept #{odd.inspect}"
+    end
+  end
+
+  test "a known-off opt-in is only said while that same connection is current" do
+    assert report(ceiling, accepted: false)
+    assert @device.reload.commands_off_locally?
+    # A new connection hasn't reported yet: the old value is not current.
+    @device.update!(connection_epoch: "epoch-2")
+    assert_not @device.commands_off_locally?
+    # A late report from the superseded connection changes nothing.
+    assert_not report(ceiling, epoch: "epoch-1", accepted: false)
+    assert_not @device.reload.commands_off_locally?
+    # Offline: nothing is said.
+    @device.update!(connection_epoch: nil)
+    assert_not @device.commands_off_locally?
+  end
+
+  test "the opt-in grants nothing" do
+    assert report(ceiling([ "Data", "read" ]), accepted: true)
+    assert_equal 1, @device.reload.grant_revision
+    assert_equal [ true, true ], @device.policy.dig("residents", 0).values_at("execute", "desktop")
   end
 
 end
