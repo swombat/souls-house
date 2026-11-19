@@ -364,7 +364,7 @@ function phonon() {
   const making = {};
   const urlFor = (id, { onAudio, signal } = {}) =>
     new Promise((resolve, reject) => {
-      making[id] = { onAudio, done: () => resolve(`blob:${id}`), signal };
+      making[id] = { onAudio, done: () => resolve(`blob:${id}`), fail: reject, signal };
       signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     });
   return { making, urlFor };
@@ -430,6 +430,7 @@ test('a parked stream started again from the top is stopped, and the reply asked
   player.interrupt();
   player.enqueue('a');
   expect(made[0].stopped).toBe(true);
+  expect(first.signal.aborted).toBe(true); // the discarded making stops too
   expect(making.a).not.toBe(first);
 });
 
@@ -454,4 +455,64 @@ test('closing stops a parked stream', () => {
   making.a.onAudio(new Float32Array([0.1]), 24000);
   player.close();
   expect(made[0].stopped).toBe(true);
+  expect(making.a.signal.aborted).toBe(true);
+});
+
+test('a streamed reply whose making fails after a resume is asked for again, and the queue does not stall (#1040 review)', async () => {
+  const audio = fakeAudio();
+  const errors = [];
+  const { made, stream } = fakeStreams();
+  const { making, urlFor } = phonon();
+  const player = createPlayer({ audio, urlFor, stream, onerror: (id) => errors.push(id) });
+  player.enqueue('a');
+  const first = making.a;
+  first.onAudio(new Float32Array([0.1]), 24000);
+  made[0].position = 7;
+  player.interrupt();
+  player.enqueue('a', { resume: true });
+  player.enqueue('b');
+  first.fail(new Error('synthesis died'));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(made[0].stopped).toBe(true);
+  expect(making.a).not.toBe(first); // from the top, once
+  making.a.fail(new Error('died again'));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(errors).toEqual(['a']);
+  expect(making.b).toBeDefined();
+});
+
+test('a context that is not running leaves the reply to the element, so Tap to play still works (#1040 review)', async () => {
+  const resumes = [];
+  class SuspendedContext {
+    state = 'suspended';
+    currentTime = 0;
+    destination = {};
+    resume() {
+      resumes.push(1);
+      return new Promise(() => {}); // never allowed without a tap
+    }
+    createBuffer() {
+      throw new Error('should not schedule');
+    }
+  }
+  vi.stubGlobal('AudioContext', SuspendedContext);
+  try {
+    const audio = fakeAudio();
+    audio.refuse = true;
+    const errors = [];
+    const { making, urlFor } = phonon();
+    const player = createPlayer({ audio, urlFor, onerror: (id, e) => errors.push([id, e.message]) });
+    player.enqueue('a');
+    making.a.onAudio(new Float32Array([0.1]), 24000);
+    making.a.done();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(audio.log).toEqual([['play', 'blob:a']]);
+    expect(errors).toEqual([['a', 'NotAllowedError']]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
