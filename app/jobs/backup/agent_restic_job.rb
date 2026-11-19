@@ -3,7 +3,10 @@ module Backup
 
     queue_as :default
 
-    def perform(agent_id, force: false)
+    # busy_attempt: set on a retry queued by Backup::BusyRetry after a busy
+    # attempt. A retry that finds the resident busy again records that and
+    # queues the next one, instead of raising.
+    def perform(agent_id, force: false, busy_attempt: nil)
       return unless force || Agents::Config.backups_enabled?
 
       agent = Agent.find(agent_id)
@@ -19,6 +22,8 @@ module Backup
       # is retired while it is still switched on is not skipped: that is a
       # fault, and its failed row says so.
       return if retired?(agent)
+      # Backed up since the busy attempt that queued this retry: nothing owed.
+      return if busy_attempt && Backup::BusyRetry.caught_up?(agent)
       if Agents::RemoteRuntime.remote?(agent)
         return VmResident.issue!(placement: Agents::RemoteRuntime.placement_for(agent))
       end
@@ -64,8 +69,11 @@ module Backup
       raise "restic backup failed for #{agent.name}: #{stderr_tail.presence || 'unknown error'}" if force && !ok
 
       snapshot
-    rescue Backup::AgentRestic::ResidentBusy
-      raise
+    rescue Backup::AgentRestic::ResidentBusy => error
+      raise unless busy_attempt && agent
+
+      Backup::BusyRetry.record!(agent, error, attempt: busy_attempt)
+      nil
     rescue StandardError => error
       if agent && !snapshot
         # A refused transcript path or journal dump says what and why, with no
