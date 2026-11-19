@@ -136,24 +136,37 @@
         installs into your own user folder and doesn't connect anywhere yet.
       </li>
       <li>
-        <span class="font-medium">Set the computer's own ceiling</span>: the folders the companion's file tools may ever
-        reach there. The companion lists the disks so you can name them.
+        <span class="font-medium">Get a code on the computer</span>: in the companion's menu, choose “Pair this Mac…”,
+        tick the disks it may ever reach (the computer's own ceiling) and whether only to read them, and it shows a
+        short code. On Linux, <code>souls-house-companion pair</code> does the same in a terminal.
       </li>
       <li>
-        <span class="font-medium">An owner or admin makes a one-use grant</span> for that computer, naming the residents
-        and, for each, the folders and whether it may write, use apps or run commands. Today this is done through the house's
-        API with your own key; there is no button for it yet. A resident can walk you through it in a conversation, but the
-        grant has to come from you.
-      </li>
-      <li>
-        <span class="font-medium">Enrol</span>: the resident named in the grant collects a one-use code for it, and you
-        run one command on the computer that reads that code. The code is never typed into a chat.
+        <span class="font-medium">Type the code on {$siteName}</span>: an owner or admin opens Settings → Computers →
+        Add a computer, types the code, and chooses which residents may use the computer and what each may reach, never
+        more than the computer offered. The computer finishes pairing on its own within seconds.
       </li>
       <li>
         <span class="font-medium">Check Settings → Computers</span>. The computer appears there with the residents it
         serves. From there you can pause it, change what each resident may do, or remove it.
       </li>
     </ol>
+    <details class="mt-6 text-sm" data-testid="companion-enrol-older">
+      <summary class="cursor-pointer font-medium">With a companion older than 0.4, or without the menu</summary>
+      <ol class="mt-3 list-decimal space-y-3 pl-5 text-muted-foreground">
+        <li>
+          Set the computer's own ceiling: the disks the companion's file tools may ever reach there. The companion lists
+          the disks so you can name them.
+        </li>
+        <li>
+          An owner or admin makes a one-use grant for that computer through the house's API with their own key, naming
+          the residents and, for each, the disks and whether it may write, use apps or run commands.
+        </li>
+        <li>
+          The resident named in the grant collects a one-use code for it, and you run one enrol command on the computer
+          that reads that code. The code is never typed into a chat.
+        </li>
+      </ol>
+    </details>
   </section>
 
   <section class="mt-16 flex flex-wrap items-center gap-3 rounded-2xl border bg-muted/30 p-6">

@@ -375,6 +375,7 @@ areas:
       - app_cable_tickets
       - companion_devices
       - companion_enrollment_grants
+      - companion_pairings
       - companion_cable_tickets
       - companion_operations
       - companion_operation_inputs

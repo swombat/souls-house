@@ -12,6 +12,7 @@ class CompanionSweepJob < ApplicationJob
       .update_all(enrollment_response: nil)
     CompanionOperationBody.where(expires_at: ..now).delete_all
     CompanionOperationInput.where(expires_at: ..now).delete_all
+    CompanionPairing.sweep!(now)
   end
 
 end
