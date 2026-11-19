@@ -73,16 +73,9 @@ class XIntegrationController < ApplicationController
     return redirect_to(back, alert: "Connect X first") unless @integration
 
     agent = current_account.agents.find(params.require(:agent_id))
-    if ActiveModel::Type::Boolean.new.cast(params[:enabled])
-      @integration.x_posting_grants.find_or_create_by!(agent:)
-      notice = "#{agent.name} can post to X"
-    else
-      @integration.x_posting_grants.where(agent:).delete_all
-      notice = "#{agent.name} can no longer post to X"
-    end
-    redirect_back fallback_location: back, notice:
-  rescue ActiveRecord::RecordNotUnique
-    redirect_back fallback_location: back, notice: "#{agent.name} can post to X"
+    enabled = ActiveModel::Type::Boolean.new.cast(params[:enabled])
+    @integration.set_posting_grant!(agent, enabled:)
+    redirect_back fallback_location: back, notice: enabled ? "#{agent.name} can post to X" : "#{agent.name} can no longer post to X"
   end
 
   def update

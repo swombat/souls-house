@@ -29,6 +29,22 @@ class XIntegration < ApplicationRecord
 
   def granted_to?(agent) = agent.present? && x_posting_grants.exists?(agent_id: agent.id)
 
+  # Switches one resident's X posting on or off. Takes the integration's row
+  # lock exclusively, as switching posting off does: a send in progress holds
+  # it in share mode from its final check through X's answer, so a revoke
+  # waits for that send to settle and a send that starts after it sees no
+  # grant and sends nothing.
+  def set_posting_grant!(agent, enabled:)
+    transaction do
+      lock!
+      if enabled
+        x_posting_grants.find_or_create_by!(agent:)
+      else
+        x_posting_grants.where(agent:).delete_all
+      end
+    end
+  end
+
   def self.house_app_configured?
     Rails.application.credentials.dig(:x, :client_id).present? &&
       Rails.application.credentials.dig(:x, :client_secret).present?
