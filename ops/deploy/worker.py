@@ -608,7 +608,11 @@ class Worker:
             for alias in self.settings["stock_aliases"]:
                 self.run(["docker", "tag", stock, alias])
             queue["births_image_moved"] = True
-        if pending:
+        # A VM resident skipped here (busy or unreachable) is still owed the
+        # image: the queue stays, and the minute sweep retries it. Until #1029
+        # (19 Nov 2026) a run with no host resident left waiting deleted the
+        # file and with it the skip (Alanis, 17 Nov, run d948d4dc).
+        if pending or queue["external_skipped"]:
             atomic(pending_rolls(), queue)
         else:
             pending_rolls().unlink(missing_ok=True)
@@ -828,12 +832,102 @@ class Sweeper(Worker):
                 self.log.write("queue acknowledged during the pass; not written back\n")
                 return False
             self.receipt(state)
-            if state["residents"] or state["held"] or state.get("births_alias_failed"):
+            # external_skipped: VM residents still owed the image (#1029). The
+            # last host resident clearing must not drop them.
+            if (state["residents"] or state["held"] or state.get("births_alias_failed")
+                    or state.get("external_skipped")):
                 atomic(path, state)
             else:
                 atomic(ROOT / "last-sweep.json", state)
                 path.unlink()
             return True
+
+    def move_births(self, state, image):
+        """The first stock resident proven on the run's image moves the births
+        alias, if the run couldn't. A failed tag is held, never retried."""
+        if (not state.get("births_allowed", True) or state["held"] or state["births_image_moved"]
+                or state.get("births_alias_failed")):
+            return
+        try:
+            for alias in self.settings.get("stock_aliases", []):
+                self.run(["docker", "tag", image, alias])
+            state["births_image_moved"] = True
+        except Exception as error:
+            self.note(f"births alias tag failed: {type(error).__name__}\n")
+            state["births_alias_failed"] = True
+
+    def sweep_vms(self, state, proven):
+        """VM residents the run skipped (busy or unreachable) get the run's
+        stock image here, without waiting: a tick queues the restart, later
+        ticks read whether the runner confirmed that exact image. Until one
+        resident has proven the image, at most one VM is in flight. A failed or
+        unsettled restart is held, like a failed host roll (turns stay held on
+        the Rails side until an operator has looked)."""
+        owed = state.get("external_skipped") or []
+        if not owed or not state.get("stock_image") or state["held"]:
+            return
+        image = state["stock_image"]
+        target_id = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", image], capture=True)
+        if not isinstance(target_id, str) or not IMAGE_ID.fullmatch(target_id):
+            self.note("stock image has no image ID; VM residents left owed\n")
+            return
+        script = (CODE / "roll-vm-resident.rb").read_text()
+        rolling = state.setdefault("vm_rolling", {})
+        wait = self.settings.get("vm_restart_wait_seconds", 3600)
+
+        def settled(resident_id, outcome):
+            self.note(f"vm resident {resident_id}: {outcome}\n")
+            owed.remove(resident_id)
+            rolling.pop(str(resident_id), None)
+
+        for resident_id in list(owed):
+            if state["held"]:
+                return
+            flight = rolling.get(str(resident_id))
+            if flight is None and rolling and not proven:
+                # Unproven image: one VM at a time.
+                continue
+            if flight is None:
+                try:
+                    result = self.rails(script, {
+                        "DEPLOY_VM_MODE": "start", "DEPLOY_RESIDENT_ID": str(resident_id),
+                        "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_RESIDENT_IMAGE_ID": target_id})
+                except Exception as error:
+                    # Outcome unknown: a restart may have been queued. Held.
+                    self.note(f"\nvm resident {resident_id}: {type(error).__name__}\n")
+                    result = {"result": "unknown"}
+                answer = result.get("result")
+                if answer == "current":
+                    settled(resident_id, "current")
+                    proven = state["canary_proven"] = True
+                    self.move_births(state, image)
+                elif answer == "started":
+                    rolling[str(resident_id)] = {"command_id": result["command_id"],
+                                                 "started_at": int(time.time())}
+                elif answer not in ("busy", "unavailable"):
+                    owed.remove(resident_id)
+                    state["held"].append(resident_id)
+                    state["births_allowed"] = False
+                continue
+            try:
+                status = self.rails(script, {
+                    "DEPLOY_VM_MODE": "status", "DEPLOY_RESIDENT_ID": str(resident_id),
+                    "DEPLOY_RESIDENT_IMAGE_ID": target_id,
+                    "DEPLOY_VM_COMMAND_ID": str(flight["command_id"])})
+            except Exception as error:
+                # Reading again next tick is safe; the deadline still applies.
+                self.note(f"\nvm resident {resident_id} status: {type(error).__name__}\n")
+                status = {"result": "pending"}
+            answer = status.get("result")
+            if answer == "healthy":
+                settled(resident_id, "healthy")
+                proven = state["canary_proven"] = True
+                self.move_births(state, image)
+            elif answer != "pending" or time.time() - flight["started_at"] >= wait:
+                rolling.pop(str(resident_id), None)
+                owed.remove(resident_id)
+                state["held"].append(resident_id)
+                state["births_allowed"] = False
 
     def sweep(self):
         try:
@@ -898,6 +992,7 @@ class Sweeper(Worker):
                 waiting.extend(untouched)
                 waiting.sort(key=lambda r: [e["id"] for e in state["residents"]].index(r["id"]))
                 state["residents"] = waiting
+                self.sweep_vms(state, bool(proven or canary_proven or state["births_image_moved"]))
                 state["checked_at"] = int(time.time())
                 if not self.commit(state):
                     return "acknowledged during pass"
