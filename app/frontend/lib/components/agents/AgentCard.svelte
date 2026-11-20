@@ -137,6 +137,12 @@
               class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
               data-testid="resident-migration-link">Move to its own server…</a>
           {/if}
+          {#if admin && !agent.deprecated}
+            <a
+              href={`/admin/agents/${agent.id}/journal_source`}
+              class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              data-testid="resident-journal-source-link">Which journal it counts…</a>
+          {/if}
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
@@ -199,8 +205,8 @@
         <span
           class="inline-flex items-center gap-1"
           title={agent.journal_entry_stats?.measured_at
-            ? `Entry headings in dated daily journals. Last counted ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}. Refreshes in the background.`
-            : 'Entry headings in dated daily journals. Counted in the background without waking the resident.'}>
+            ? `Entry headings in the resident's journal. Last counted ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}. Refreshes in the background.`
+            : "Entry headings in the resident's journal. Counted in the background without waking the resident."}>
           <Notebook class="size-4" aria-label="Journal entries" />
           {agent.journal_entry_stats?.count?.toLocaleString() ?? '—'}
           {#if agent.journal_entry_stats?.status === 'unavailable'}
