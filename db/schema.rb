@@ -1161,6 +1161,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_200000) do
     t.jsonb "offered_capabilities", default: [], null: false
     t.boolean "mic_enabled", default: false, null: false
     t.boolean "camera_enabled", default: false, null: false
+    t.integer "consent_revision", default: 0, null: false
     t.bigint "pocket_open_message_id"
     t.datetime "pocket_opened_at"
     t.index ["account_id"], name: "index_companion_devices_on_account_id"

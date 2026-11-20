@@ -18,6 +18,9 @@ class AddPocketDevices < ActiveRecord::Migration[8.0]
     add_column :companion_devices, :offered_capabilities, :jsonb, null: false, default: []
     add_column :companion_devices, :mic_enabled, :boolean, null: false, default: false
     add_column :companion_devices, :camera_enabled, :boolean, null: false, default: false
+    # Bumped on every capture change; "ready" and each "consent" carry it, and
+    # only the current one reaches the socket (Mira, jLQOLG).
+    add_column :companion_devices, :consent_revision, :integer, null: false, default: 0
     # The one submission waiting for its reply, and when it was made.
     add_column :companion_devices, :pocket_open_message_id, :bigint
     add_column :companion_devices, :pocket_opened_at, :datetime

@@ -21,7 +21,7 @@ class CompanionChannel < ApplicationCable::Channel
       stream_for(device, coder: ActiveSupport::JSON) { |message| relay(message) }
       ready = { type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
         grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? }
-      ready.merge!(kind: "pocket", mic: device.mic_enabled, camera: device.camera_enabled) if device.pocket?
+      ready.merge!(kind: "pocket", **device.consent_state) if device.pocket?
       transmit(ready)
     end
   end
@@ -60,6 +60,9 @@ class CompanionChannel < ApplicationCable::Channel
     if message.is_a?(Hash) && CompanionDevice::Pocket::GUARDED_TYPES.include?(message["type"])
       device = CompanionDevice.find_by(id: current_companion_device.id)
       return unless @epoch && message["epoch"] == @epoch && device&.active? && device.connection_epoch == @epoch
+      # A consent that a later change has overtaken never goes down, so a
+      # late "on" can't follow an "off" (Mira, jLQOLG).
+      return if message["type"] == "consent" && message["consent_revision"] != device.consent_revision
     end
     transmit(message)
   end

@@ -87,10 +87,13 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
   test "only the owner turns capture on; a manager can turn it off; changes are audited and pushed" do
     admin = users(:admin)
     assert_raises(CompanionDevice::Pocket::NotOwner) { @device.change_capture!(capability: "mic", enabled: true, actor: admin) }
+    @device.update!(connection_epoch: "epoch-1")
     assert_broadcasts(CompanionChannel.broadcasting_for(@device), 1) { enable_mic }
     assert @device.reload.mic_enabled
     assert @device.change_capture!(capability: "mic", enabled: false, actor: admin)
     assert_not @device.reload.mic_enabled
+    assert_equal [ { "type" => "consent", "mic" => true, "camera" => false, "consent_revision" => 1, "epoch" => "epoch-1" },
+      { "type" => "consent", "mic" => false, "camera" => false, "consent_revision" => 2, "epoch" => "epoch-1" } ], payloads
     assert_equal 2, AuditLog.where(action: "companion.device.capture_changed", auditable: @device).count
   end
 

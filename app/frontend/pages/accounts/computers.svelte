@@ -3,17 +3,11 @@
   import { router } from '@inertiajs/svelte';
   import {
     AppleLogo,
-    Camera,
     CaretDown,
     Desktop,
-    DeviceMobile,
     FolderSimple,
     LinuxLogo,
-    Microphone,
-    Pause,
-    Play,
     Terminal,
-    Trash,
     UsersThree,
     WarningCircle,
   } from 'phosphor-svelte';
@@ -26,6 +20,8 @@
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import ResidentFolders from '$lib/components/accounts/ResidentFolders.svelte';
   import AddComputer from '$lib/components/accounts/AddComputer.svelte';
+  import PocketCard from '$lib/components/accounts/PocketCard.svelte';
+  import DeviceControls from '$lib/components/accounts/DeviceControls.svelte';
   import { diskName } from '$lib/companion-volumes.js';
   import { createDynamicSync } from '$lib/use-sync';
 
@@ -108,17 +104,6 @@
   const status = (device) => (device.paused ? 'paused' : device.connected ? 'online' : 'offline');
   const statusLabel = { online: 'Online', paused: 'Paused', offline: 'Offline' };
 
-  const captureLabel = { mic: 'Microphone', camera: 'Camera' };
-
-  // Turning a capture on is the owner's alone; turning it off is for whoever
-  // manages the device. The server enforces both; this only mirrors it.
-  const captureLocked = (device, capability) =>
-    device.pocket[capability] ? !manages(device) : !device.pocket.owned_by_you;
-
-  function capture(device, capability, value) {
-    send(device, { control: 'capture', capability, value: String(value) });
-  }
-
   function platform(device) {
     const kinds = device.residents.flatMap((r) => r.volumes.map((v) => String(v.volume).split(':')[0]));
     if (kinds.includes('darwin-volume')) return 'mac';
@@ -137,8 +122,6 @@
     const days = Math.floor(hours / 24);
     return days === 1 ? 'yesterday' : `${days} days ago`;
   }
-  const enrolled = (iso) =>
-    iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null;
 
   const weekJobs = (device) => (device.activity?.days ?? []).reduce((sum, day) => sum + day.jobs, 0);
   const peak = (device) => Math.max(1, ...(device.activity?.days ?? []).map((day) => day.jobs));
@@ -260,118 +243,14 @@
       {#if device.kind === 'pocket'}
         {@const pocket = device.pocket}
         {@const resident = device.residents[0]}
-        <article class="overflow-hidden rounded-2xl border bg-card shadow-sm" data-testid="pocket" data-status={state}>
-          <div class="p-4 sm:px-5">
-            <div class="flex items-start gap-3 sm:gap-4">
-              <div
-                class="relative flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-inner">
-                <DeviceMobile size={24} />
-                <span
-                  class="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-card">
-                  <span
-                    class={`size-2.5 rounded-full ${
-                      state === 'online' ? 'bg-emerald-500' : state === 'paused' ? 'bg-amber-500' : 'bg-zinc-400'
-                    }`}></span>
-                </span>
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h3 class="truncate font-semibold leading-snug">{device.name}</h3>
-                  <span
-                    data-testid="computer-status"
-                    class={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      state === 'online'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-                        : state === 'paused'
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
-                          : 'bg-muted text-muted-foreground'
-                    }`}>
-                    {statusLabel[state]}
-                  </span>
-                </div>
-                <p class="mt-1 text-sm text-muted-foreground" data-testid="pocket-owner">Owner: {pocket.owner_name}</p>
-                <p class="mt-1 text-sm" data-testid="pocket-talks-to">
-                  Talks to {resident?.name ?? 'no one'} in
-                  <a
-                    href="/accounts/{account.id}/chats/{pocket.chat_id}"
-                    class="font-medium underline underline-offset-4">«{pocket.chat_title}»</a>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="space-y-4 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-5">
-            {#if manages(device)}
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="text-sm text-muted-foreground">
-                  {#if state === 'paused'}
-                    Nothing runs here until you resume it.
-                  {:else if state === 'offline'}
-                    The device isn't connected right now.
-                  {:else}
-                    Connected.
-                  {/if}
-                  {#if device.enrolled_at}
-                    <span class="block text-xs">Enrolled {enrolled(device.enrolled_at)}</span>
-                  {/if}
-                </p>
-                <div class="flex gap-2">
-                  {#if device.paused}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy}
-                      onclick={() => send(device, { control: 'resume' })}>
-                      <Play class="mr-1" size={16} /> Resume
-                    </Button>
-                  {:else}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy}
-                      onclick={() => send(device, { control: 'pause' })}>
-                      <Pause class="mr-1" size={16} /> Pause
-                    </Button>
-                  {/if}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="text-destructive hover:text-destructive"
-                    disabled={busy}
-                    onclick={() => remove(device)}
-                    aria-label="Remove {device.name}">
-                    <Trash size={16} />
-                  </Button>
-                </div>
-              </div>
-            {/if}
-
-            <section class="divide-y rounded-xl border bg-card">
-              {#each pocket.capabilities as capability (capability)}
-                <div class="px-4 py-3" data-testid="pocket-capture">
-                  <div class="flex items-center justify-between gap-4">
-                    <Label for="capture-{device.id}-{capability}" class="flex min-w-0 items-center gap-2.5 font-normal">
-                      {#if capability === 'mic'}
-                        <Microphone size={18} class="shrink-0 text-muted-foreground" />
-                      {:else}
-                        <Camera size={18} class="shrink-0 text-muted-foreground" />
-                      {/if}
-                      <span>{captureLabel[capability] ?? capability}</span>
-                    </Label>
-                    <Switch
-                      id="capture-{device.id}-{capability}"
-                      checked={!!pocket[capability]}
-                      disabled={busy || captureLocked(device, capability)}
-                      onCheckedChange={(value) => capture(device, capability, value)} />
-                  </div>
-                  {#if !pocket.owned_by_you && !pocket[capability]}
-                    <p class="mt-2 text-xs text-muted-foreground">Only {pocket.owner_name} can turn this on</p>
-                  {/if}
-                </div>
-              {/each}
-            </section>
-          </div>
-        </article>
+        <PocketCard
+          {account}
+          {device}
+          {state}
+          manages={manages(device)}
+          {busy}
+          onsend={(data) => send(device, data)}
+          onremove={() => remove(device)} />
       {:else}
         <article
           class="overflow-hidden rounded-2xl border bg-card shadow-sm"
@@ -498,48 +377,14 @@
           {#if open}
             <div id="computer-panel-{device.id}" class="space-y-4 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-5">
               {#if manages(device)}
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm text-muted-foreground">
-                    {#if state === 'paused'}
-                      Nothing runs here until you resume it.
-                    {:else if state === 'offline'}
-                      The companion app isn't connected right now.
-                    {:else}
-                      Connected and taking jobs.
-                    {/if}
-                    {#if device.enrolled_at}
-                      <span class="block text-xs">Enrolled {enrolled(device.enrolled_at)}</span>
-                    {/if}
-                  </p>
-                  <div class="flex gap-2">
-                    {#if device.paused}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        onclick={() => send(device, { control: 'resume' })}>
-                        <Play class="mr-1" size={16} /> Resume
-                      </Button>
-                    {:else}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        onclick={() => send(device, { control: 'pause' })}>
-                        <Pause class="mr-1" size={16} /> Pause
-                      </Button>
-                    {/if}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="text-destructive hover:text-destructive"
-                      disabled={busy}
-                      onclick={() => remove(device)}
-                      aria-label="Remove {device.name}">
-                      <Trash size={16} />
-                    </Button>
-                  </div>
-                </div>
+                <DeviceControls
+                  {device}
+                  {state}
+                  {busy}
+                  offline="The companion app isn't connected right now."
+                  online="Connected and taking jobs."
+                  onsend={(data) => send(device, data)}
+                  onremove={() => remove(device)} />
               {/if}
 
               {#each device.residents as resident (resident.id)}

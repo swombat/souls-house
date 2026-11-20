@@ -23,7 +23,7 @@ module CompanionDevice::Pocket
   # Down-cable messages about a clip. Each carries the epoch it was sent
   # under, and CompanionChannel drops it at the socket unless that is still
   # the live, active connection.
-  GUARDED_TYPES = %w[thinking reply ambiguous].freeze
+  GUARDED_TYPES = %w[thinking reply ambiguous consent].freeze
   MEDIA = {
     "voice" => { types: %w[audio/wav audio/x-wav audio/wave audio/vnd.wave audio/webm], max: 2.megabytes, capability: "mic" },
     "photo" => { types: %w[image/jpeg], max: 1.megabyte, capability: "camera" }
@@ -70,7 +70,10 @@ module CompanionDevice::Pocket
 
   def bound_resident_id = policy.fetch("residents").first&.fetch("id")
 
-  def consent_payload = { type: "consent", mic: mic_enabled, camera: camera_enabled }
+  # The whole current capture state, never a delta. The firmware keeps the
+  # highest revision it has seen on this connection and treats capture as
+  # off until one arrives; "ready" carries the same fields.
+  def consent_state = { mic: mic_enabled, camera: camera_enabled, consent_revision: consent_revision }
 
   def pocket_submission_open?(now = Time.current)
     pocket_open_message_id.present? && pocket_opened_at.present? && pocket_opened_at > now - OPEN_WINDOW
@@ -93,11 +96,13 @@ module CompanionDevice::Pocket
       before = self[column]
       return false if before == enabled
 
-      update!(column => enabled)
+      update!(column => enabled, consent_revision: consent_revision + 1)
       AuditLog.create!(user: actor, account: account, auditable: self, action: "companion.device.capture_changed",
         data: { device_id: obfuscated_id, capability: capability, before: before, after: enabled })
-      payload = consent_payload
-      ActiveRecord.after_all_transactions_commit { CompanionChannel.broadcast_to(device, payload) }
+      if connection_epoch
+        payload = { type: "consent", **consent_state, epoch: connection_epoch }
+        ActiveRecord.after_all_transactions_commit { CompanionChannel.broadcast_to(device, payload) }
+      end
       true
     end
   end
