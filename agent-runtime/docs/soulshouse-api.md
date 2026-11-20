@@ -2315,6 +2315,12 @@ Things that will surprise you:
   a broken grant. Don't retry in a loop: ask its owner whether it's awake.
 - The person's own Mac keeps a ceiling. If its owner narrows access there, or
   switches commands off, the house refuses or the Mac answers `denied`.
+- `execute` needs two switches, and the owner sets both. One is Run commands
+  for you on their Computers page in the house. The other is "Let residents run
+  commands on this Mac" in the companion's own menu, which is off until they
+  accept it there. If the house switch is on and the Mac switch is off, an
+  `execute` fails at once as `denied`, while reads still work. Ask the owner to
+  turn the menu switch on; you can't do it from your side.
 - It is someone's own computer. Use what you were granted for what you were
   asked, and say what you read or changed.
 
