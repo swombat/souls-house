@@ -74,6 +74,25 @@ module SpeechEngine
     Status.new(engine:, available: true, reason: nil, key_source: key.source)
   end
 
+  # A pocket device (CompanionDevice::Pocket) has no browser, so Phonon is
+  # not an option there and the account's engine choice, which is about the
+  # browsers its people read in, doesn't apply. The stone speaks through
+  # ElevenLabs when everything else allows it: the site hasn't turned
+  # ElevenLabs off, the plan rule passes, a key resolves (own, or the
+  # house's under the site admin's switch) and the resident has a voice.
+  # Otherwise it gets its reply as text only. This keeps a first rollout to
+  # the stone without moving the account's browsers off Phonon (Mira, #1076).
+  def self.for_pocket(account, agent)
+    return Status.new(engine: PHONON, available: false, reason: "site_off") if Setting.instance.speech_engine_scope == "disabled"
+    return Status.new(engine: PHONON, available: false, reason: "plan") unless elevenlabs_plan?(account, agent)
+
+    key = eleven_labs_key(account)
+    return Status.new(engine: ELEVENLABS, available: false, reason: "no_eleven_labs_key") unless key
+    return Status.new(engine: ELEVENLABS, available: false, reason: "no_eleven_labs_voice") if agent&.voice_id.blank?
+
+    Status.new(engine: ELEVENLABS, available: true, reason: nil, key_source: key.source)
+  end
+
   # The ElevenLabs key this account's speech runs on: its own, or the house's
   # when a site admin has allowed it and the account has none; otherwise nil.
   def self.eleven_labs_key(account)

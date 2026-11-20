@@ -148,10 +148,11 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
       "text" => "hello back", "epoch" => "epoch-1" }, payload)
   end
 
-  # The resident speaks through ElevenLabs on the house key here (SpeechEngine).
+  # The stone may speak through ElevenLabs on the house key here
+  # (SpeechEngine.for_pocket), while the account's browsers stay on Phonon.
   def speak_with_eleven_labs
     Setting.instance.update!(speech_engine_scope: "account_choice")
-    @account.update!(speech_engine: "elevenlabs", eleven_labs_api_key: nil, house_eleven_labs_key: true, granted_plan: "partners")
+    @account.update!(speech_engine: "phonon", eleven_labs_api_key: nil, house_eleven_labs_key: true, granted_plan: "partners")
     @agent.update_column(:voice_id, "std-aria")
   end
 
@@ -166,7 +167,8 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     message = submit.message
     reply = nil
     SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
-      assert_enqueued_with(job: GenerateVoiceJob) { reply = reply_to(message) }
+      reply = reply_to(message)
+      assert_enqueued_with(job: GenerateVoiceJob, args: [ reply, { surface: "pocket" } ])
     end
     assert_equal %w[thinking reply], payloads.map { |p| p["type"] }, "the text never waits for the voice"
     assert_equal [ reply.id, message.id ], [ @device.reload.pocket_reply_message_id, @device.pocket_reply_submission_id ]
@@ -179,10 +181,24 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_equal "http://example.com/api/v1/companion/pocket/replies/#{reply.to_param}/audio", audio["url"]
   end
 
-  test "under Phonon no voice is rendered for the stone" do
+  test "with ElevenLabs off on the site no voice is rendered for the stone" do
     enable_mic
     message = submit.message
     assert_no_enqueued_jobs(only: GenerateVoiceJob) { reply_to(message) }
+  end
+
+  test "the text goes down before the voice is scheduled, and a scheduling failure costs only the voice" do
+    speak_with_eleven_labs
+    enable_mic
+    message = submit.message
+    seen_at_enqueue = nil
+    failing = ->(*) { seen_at_enqueue = payloads.map { |p| p["type"] }; raise "queue down" }
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      GenerateVoiceJob.stub(:perform_later, failing) { reply_to(message) }
+    end
+    assert_equal %w[thinking reply], seen_at_enqueue, "the reply was already on the cable"
+    assert_equal %w[thinking reply], payloads.map { |p| p["type"] }
+    assert_nil @device.reload.pocket_open_message_id
   end
 
   test "a pause ends the last reply's voice too: nothing is announced after it" do

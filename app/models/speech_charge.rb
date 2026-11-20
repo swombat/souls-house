@@ -1,10 +1,13 @@
-# One ElevenLabs render: which account it was for, which key paid for it
+# One ElevenLabs render the provider produced audio for (attempts it refused
+# are not usage): which account it was for, which key paid for it
 # ("account": the account's own; "house": the house's, under
 # Account#house_eleven_labs_key), on which surface, and how many characters
-# were sent. The text itself and the key are never stored.
+# were sent. "pocket" is the automatic render of a stone's reply; "listen"
+# and "voice_mode" are asked for by a person. The text and the key are never
+# stored.
 class SpeechCharge < ApplicationRecord
 
-  SURFACES = %w[listen voice_mode].freeze
+  SURFACES = %w[listen voice_mode pocket].freeze
 
   belongs_to :account
   belongs_to :agent, optional: true

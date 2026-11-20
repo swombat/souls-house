@@ -220,4 +220,22 @@ class SpeechEngineTest < ActiveSupport::TestCase
     assert manifest.none? { |file| file["repo"].include?("40m") }, "the 40M models are CC BY-NC: never served"
   end
 
+
+  test "the stone speaks on ElevenLabs while the account's browsers stay on Phonon, unless the site has ElevenLabs off" do
+    scope("account_choice")
+    @account.update!(speech_engine: "phonon", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      assert_predicate engine, :phonon?, "the browsers are unchanged"
+      pocket = SpeechEngine.for_pocket(@account.reload, @agent.reload)
+      assert [ pocket.available, pocket.key_source ] == [ true, "house" ]
+
+      @account.update!(house_eleven_labs_key: false)
+      assert_equal "no_eleven_labs_key", SpeechEngine.for_pocket(@account.reload, @agent).reason
+      @account.update!(house_eleven_labs_key: true)
+      scope("disabled")
+      assert_not SpeechEngine.for_pocket(@account.reload, @agent).available
+    end
+  end
+
 end

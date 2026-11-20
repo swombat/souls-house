@@ -17,7 +17,9 @@ class GenerateVoiceJob < ApplicationJob
   # The voice and delivery are read once, here, and the audio is marked with
   # that snapshot's digest, so a change made while ElevenLabs works never
   # labels the older sound as current.
-  def perform(message)
+  # surface "pocket": the automatic render for a stone's reply, under
+  # SpeechEngine.for_pocket rather than the account's browser engine.
+  def perform(message, surface: "listen")
     return unless message.voice_available
 
     agent = message.agent
@@ -27,7 +29,7 @@ class GenerateVoiceJob < ApplicationJob
     return CompanionDevice.announce_pocket_audio(message) if message.voice_audio_made_with?(digest)
 
     account = message.chat.account
-    engine = SpeechEngine.for(account, message.agent)
+    engine = surface == "pocket" ? SpeechEngine.for_pocket(account, agent) : SpeechEngine.for(account, agent)
     return unless engine.elevenlabs? && engine.available
 
     key = SpeechEngine.eleven_labs_key(account) or return
@@ -35,8 +37,10 @@ class GenerateVoiceJob < ApplicationJob
     text = message.content_for_speech
     return if text.blank?
 
-    SpeechCharge.record!(key:, account:, agent:, message:, surface: "listen", text:)
     audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: key.value, delivery:)
+    # Counted once the provider has made the audio, before anything local
+    # that could still fail after it has billed (Carl, #1076).
+    SpeechCharge.record!(key:, account:, agent:, message:, surface:, text:)
     audio_data = AudioGain.apply(audio_data, delivery.gain_db, tempo: delivery.tempo)
 
     message.voice_audio.attach(

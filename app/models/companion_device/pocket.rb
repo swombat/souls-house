@@ -232,15 +232,17 @@ module CompanionDevice::Pocket
       update!(pocket_reply_message_id: reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: Time.current)
       payload = { type: "reply", submission_id: submission.to_param, message_id: reply.to_param,
         text: reply.content.to_s.truncate(REPLY_TEXT_LIMIT), epoch: connection_epoch }
-      render_pocket_voice(reply)
-      return :offline unless connection_epoch
-
-      ActiveRecord.after_all_transactions_commit do
-        # Re-read after commit: a pause or revoke that committed first wins.
-        # The channel checks the epoch and the device again at the socket.
-        CompanionChannel.broadcast_to(device, payload) if device.reload.active?
+      if connection_epoch
+        # Registered before the voice, so the text always goes down first
+        # and never waits on, or fails with, the audio (Mira, #1076).
+        ActiveRecord.after_all_transactions_commit do
+          # Re-read after commit: a pause or revoke that committed first wins.
+          # The channel checks the epoch and the device again at the socket.
+          CompanionChannel.broadcast_to(device, payload) if device.reload.active?
+        end
       end
-      :delivered
+      render_pocket_voice(reply)
+      connection_epoch ? :delivered : :offline
     end
   end
 
@@ -256,15 +258,18 @@ module CompanionDevice::Pocket
   private
 
   # Asks for the reply's voice once the reply has committed, only where the
-  # resident speaks through ElevenLabs here; GenerateVoiceJob resolves the
-  # key again when it runs and announces the audio when it is made.
+  # stone can be given one (SpeechEngine.for_pocket); GenerateVoiceJob
+  # resolves the key again when it runs and announces the audio when it is
+  # made. A failure to schedule it costs the voice, never the text.
   def render_pocket_voice(reply)
     return unless reply.voice_available
+    return unless SpeechEngine.for_pocket(chat.account, reply.agent).available
 
-    engine = SpeechEngine.for(chat.account, reply.agent)
-    return unless engine.elevenlabs? && engine.available
-
-    ActiveRecord.after_all_transactions_commit { GenerateVoiceJob.perform_later(reply) }
+    ActiveRecord.after_all_transactions_commit do
+      GenerateVoiceJob.perform_later(reply, surface: "pocket")
+    rescue StandardError => e
+      Rails.logger.warn("[CompanionDevice] pocket voice for message #{reply.id} not scheduled: #{e.class}: #{e.message}")
+    end
   end
 
   def close_pocket_submission!(reason, submission)

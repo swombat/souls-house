@@ -32,9 +32,10 @@ class Messages::SpeechesController < Messages::BaseController
     # Delivery's model and settings apply here too; its gain does not (Listen
     # only: a gain stage would delay the first chunk or reroute the player).
     agent = @message.agent
-    SpeechCharge.record!(key:, account: @chat.account, agent:, message: @message, surface: "voice_mode", text:)
     ElevenLabsTts.stream(text, voice_id: agent.voice_id, api_key: key.value,
       delivery: agent.speech_delivery) do |chunk|
+      # Counted at the first chunk: the provider accepted it.
+      SpeechCharge.record!(key:, account: @chat.account, agent:, message: @message, surface: "voice_mode", text:) unless started
       started = true
       response.stream.write(chunk)
     end

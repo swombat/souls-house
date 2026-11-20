@@ -149,4 +149,11 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
     assert_equal [ nil ], tempos
   end
 
+
+  test "a render the provider refuses is not counted as usage" do
+    stub_request(:post, URL).to_return(status: 401, body: "{}")
+    GenerateVoiceJob.perform_now(@reply.reload)
+    assert_equal 0, SpeechCharge.count
+  end
+
 end
