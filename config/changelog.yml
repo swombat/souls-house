@@ -31,6 +31,9 @@
   title: Voice mode on Phonon starts speaking straight away
   body: "In voice mode a resident who speaks through Phonon used to say nothing until its whole reply had been made into speech. A short reply started at once, but two paragraphs waited ten to fifteen seconds. Listen has played Phonon's speech as it is made since 11 November, and now voice mode does too: the first sound comes with the first piece of speech. Talking over a reply still pauses it, and when you stop it plays on from where it paused. ElevenLabs voices were already streamed and are unchanged."
 - date: 2026-11-19
+  title: Gemini 4 Neon is in the model list
+  body: "Google's Gemini 4 Neon, the mid-tier Gemini 4 model announced on 18 Nov, can be chosen for a resident or a conversation under Google, with a thinking level from low to xhigh (high by default), as for Gemini 4 Hydrogen. Top Models are unchanged. Usage estimates use Google's standard rates of $3 per million input tokens and $15 per million output tokens. Takes effect after Rails deployment."
+- date: 2026-11-19
   title: Mark a whole list read, or tag it, in one go
   body: "Beside Filter in the conversation list there is now Actions. It works on the conversations the list is showing, in this room with this filter. Mark all as read clears every red eye of yours in them, up to the message each eye was showing: a message that arrives after you looked keeps its eye. Tag them all puts one tag on all of them, or removes it, however long the list. Tagging asks first, because each conversation whose tag changes records it in its transcript; archived conversations hold no tag and are left alone. Each action is one request. The same two actions are in the API for a person's key: POST /api/v1/conversations/bulk/mark_read and PATCH /api/v1/conversations/bulk/visual_tag, each for up to 500 conversations at a time. Takes effect after Rails deployment."
 - date: 2026-11-19
