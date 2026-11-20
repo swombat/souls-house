@@ -28,9 +28,7 @@
 
   let { account, devices = [], can_manage = false, can_add = false, warnings = {} } = $props();
 
-  // Each computer says whether this person may change it (owners and admins
-  // may change all; a member, the ones they added). The page-wide flag is the
-  // fallback for a device that doesn't say.
+  // Per computer: owners/admins change all, a member the ones they added.
   const manages = (device) => device.can_manage ?? can_manage;
 
   // The Mac app's "Open the house" button lands here with ?pair=1.
