@@ -160,6 +160,26 @@ class Backup::TranscriptRestoreCheckTest < ActiveSupport::TestCase
     assert_equal "failed", report.verdict
   end
 
+  test "a linked state root, or a linked parent of it, is refused before anything is listed or hashed" do
+    real = @root
+    put(MARKER)
+    links = Dir.mktmpdir("links")
+    File.symlink(real, File.join(links, "state"))
+    FileUtils.mkdir_p(File.join(links, "parent-real/state"))
+    FileUtils.cp_r(File.join(real, "claude"), File.join(links, "parent-real/state"))
+    File.symlink(File.join(links, "parent-real"), File.join(links, "parent-link"))
+
+    [ File.join(links, "state"), File.join(links, "parent-link/state") ].each do |linked|
+      @root = linked
+      assert_equal [ "LINKEDROOT", "END" ], inventory(MARKER), linked
+      error = assert_raises(Backup::TranscriptRestoreCheck::Failed) { check }
+      assert_match(/state root or one of its parents is a link/, error.message)
+    end
+  ensure
+    @root = real
+    FileUtils.remove_entry(links) if links
+  end
+
   test "a tool container still there after removal is named and never green; an absent one is fine" do
     put(MARKER)
     report, calls = check

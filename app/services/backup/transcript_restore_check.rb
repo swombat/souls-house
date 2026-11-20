@@ -51,11 +51,18 @@ module Backup
     # state (paths, never contents), then "H <verdict> <path>" for each
     # expected path: a SHA-256, or absent / link / notfile. Expected paths are
     # walked one literal component at a time (no word splitting, no globbing).
+    # The state root and each of its parents are checked for links first; a
+    # linked one prints "LINKEDROOT" and nothing is listed or hashed.
     # Any failure exits non-zero, and a complete listing ends with "END";
     # anything else is an error, never an empty result.
     INVENTORY = <<~'SH'.freeze
       set -euf
       root="${ROOT:-/r/data/state}"
+      up="$root"
+      while [ -n "$up" ] && [ "$up" != "/" ]; do
+        if [ -L "$up" ]; then echo "LINKEDROOT"; echo "END"; exit 0; fi
+        up="${up%/*}"
+      done
       if [ -d "$root" ]; then
         cd "$root"
         find . -type f -exec stat -c 'F %s %n' {} +
@@ -223,6 +230,7 @@ module Backup
     def parse_inventory(listing)
       lines = listing.to_s.lines.map(&:chomp)
       raise Failed, "inventory incomplete (no END)" unless lines.last == "END"
+      raise Failed, "restored state root or one of its parents is a link; nothing was listed or hashed" if lines.include?("LINKEDROOT")
 
       files = {}
       dirs = []
