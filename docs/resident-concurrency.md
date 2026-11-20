@@ -139,7 +139,11 @@ refuses the command, which surfaces as "Runtime did not acknowledge
 containment" with the house reservation intact. Before relying on it, check
 that the runner reports one of this release's bundles:
 `RunnerBundle.find(RunnerBundle.reported(enrollment)).present?`. If it doesn't,
-wait for its update (at most an hour between attempts) and call again.
+wait until it does (a failed update attempt is retried after an hour's
+cooldown, so this is not a deadline) and call again.
+
+If the VM committed the cancellation but its answer was lost, the house turn
+stays unknown; the normal poll reconciles it. A second console call does not.
 
 ## Rollout and rollback
 

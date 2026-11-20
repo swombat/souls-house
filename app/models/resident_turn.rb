@@ -181,8 +181,8 @@ class ResidentTurn < ApplicationRecord
   # Not atomic: the resident's own ledger first, then the house's (#1056). A
   # VM resident's turn is resolved through its runner; any failure there
   # raises before the house side is touched. If the VM committed but its
-  # answer was lost, the house turn stays unknown and a later poll or a
-  # second call reconciles it. Never use finish! for containment: it closes
+  # answer was lost, the house turn stays unknown and the normal poll
+  # (ResidentTurnPollJob) reconciles it. Never use finish! for containment: it closes
   # only the house's side and leaves the VM's session reserved.
   def resolve_after_containment!(operator:, reason:, client: nil)
     raise ArgumentError, "site administrator and containment reason required" unless operator&.is_site_admin? && reason.to_s.strip.length >= 10
