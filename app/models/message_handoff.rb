@@ -315,7 +315,7 @@ class MessageHandoff < ApplicationRecord
   end
 
   def requester_label
-    requester_agent&.name || (message.user ? ResidentFacingName.for(message.user) : message.author_name)
+    requester_agent&.name || message.wake_requester_name
   end
 
   # Why this request should not wake its recipient now, or nil. The author's

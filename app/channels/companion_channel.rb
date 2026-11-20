@@ -18,7 +18,7 @@ class CompanionChannel < ApplicationCable::Channel
       CompanionOperation.where(companion_device: device, state: CompanionOperation::ACTIVE_STATES).update_all(state: "lost", outcome: "changed")
       @epoch = SecureRandom.uuid
       device.update!(connection_epoch: @epoch)
-      stream_for device
+      stream_for(device, coder: ActiveSupport::JSON) { |message| relay(message) }
       ready = { type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
         grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? }
       ready.merge!(kind: "pocket", mic: device.mic_enabled, camera: device.camera_enabled) if device.pocket?
@@ -47,6 +47,21 @@ class CompanionChannel < ApplicationCable::Channel
       end
     end
     stop_all_streams
+  end
+
+  private
+
+  # A pocket's replies are checked once more at the socket (Mira, JnwomB):
+  # stamped with the epoch they were delivered under, and sent only while
+  # that is still this subscription's epoch and the device is still active.
+  # A reply queued for a socket that a pause, revoke or reconnect has since
+  # replaced is dropped here.
+  def relay(message)
+    if message.is_a?(Hash) && CompanionDevice::Pocket::GUARDED_TYPES.include?(message["type"])
+      device = CompanionDevice.find_by(id: current_companion_device.id)
+      return unless @epoch && message["epoch"] == @epoch && device&.active? && device.connection_epoch == @epoch
+    end
+    transmit(message)
   end
 
 end

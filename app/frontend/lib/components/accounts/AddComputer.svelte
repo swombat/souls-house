@@ -172,7 +172,8 @@
         </div>
         {#if pocketResidentName}
           <div class="space-y-2 text-sm text-muted-foreground" data-testid="pairing-pocket-summary">
-            <p>This creates a new private conversation, «{offer.name}», with {pocketResidentName}.</p>
+            <p>This creates a new conversation, «{offer.name}», with {pocketResidentName}.</p>
+            <p>Like every conversation here, everyone in this account can read it.</p>
             <p>You'll own this device. Its microphone and camera start off, and only you can turn them on.</p>
           </div>
         {/if}

@@ -19,6 +19,11 @@ module CompanionDevice::Pocket
   KINDS = %w[computer pocket].freeze
   OPEN_WINDOW = 10.minutes
   REPLY_TEXT_LIMIT = 4_000
+  MAX_CLIP_SECONDS = 60
+  # Down-cable messages about a clip. Each carries the epoch it was sent
+  # under, and CompanionChannel drops it at the socket unless that is still
+  # the live, active connection.
+  GUARDED_TYPES = %w[thinking reply ambiguous].freeze
   MEDIA = {
     "voice" => { types: %w[audio/wav audio/x-wav audio/wave audio/vnd.wave audio/webm], max: 2.megabytes, capability: "mic" },
     "photo" => { types: %w[image/jpeg], max: 1.megabyte, capability: "camera" }
@@ -129,8 +134,9 @@ module CompanionDevice::Pocket
       if result.created?
         message = result.message
         update!(pocket_open_message_id: message.id, pocket_opened_at: Time.current)
+        payload = { type: "thinking", submission_id: message.to_param, epoch: connection_epoch }
         ActiveRecord.after_all_transactions_commit do
-          CompanionChannel.broadcast_to(device, { type: "thinking", submission_id: message.to_param })
+          CompanionChannel.broadcast_to(device, payload)
         end
       end
       result
@@ -158,21 +164,32 @@ module CompanionDevice::Pocket
 
       update!(pocket_open_message_id: nil, pocket_opened_at: nil)
       payload = { type: "reply", submission_id: submission.to_param, message_id: reply.to_param,
-        text: reply.content.to_s.truncate(REPLY_TEXT_LIMIT) }
+        text: reply.content.to_s.truncate(REPLY_TEXT_LIMIT), epoch: connection_epoch }
+      return :offline unless connection_epoch
+
       ActiveRecord.after_all_transactions_commit do
         # Re-read after commit: a pause or revoke that committed first wins.
+        # The channel checks the epoch and the device again at the socket.
         CompanionChannel.broadcast_to(device, payload) if device.reload.active?
       end
       :delivered
     end
   end
 
+  # A pause or revoke ends the clip in flight: nothing for it goes down later,
+  # even after a resume.
+  def end_pocket_submission!
+    update!(pocket_open_message_id: nil, pocket_opened_at: nil) if pocket? && pocket_open_message_id
+  end
+
   private
 
   def close_pocket_submission!(reason, submission)
     update!(pocket_open_message_id: nil, pocket_opened_at: nil)
+    return reason unless connection_epoch
+
     device = self
-    payload = { type: reason.to_s, submission_id: submission&.to_param }
+    payload = { type: reason.to_s, submission_id: submission&.to_param, epoch: connection_epoch }
     ActiveRecord.after_all_transactions_commit { CompanionChannel.broadcast_to(device, payload) if device.reload.active? }
     reason
   end

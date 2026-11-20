@@ -125,7 +125,7 @@ class Message < ApplicationRecord
     return unless Agents::InferenceAvailability.dispatchable?(resident)
     # Busy with an earlier message: hold this one as a PendingWake rather
     # than dropping it, so the resident is woken once when that run ends.
-    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{user ? ResidentFacingName.for(user) : author_name}", message: self) if chat.agent_response_active?(resident)
+    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{wake_requester_name}", message: self) if chat.agent_response_active?(resident)
 
     @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
   end
@@ -325,6 +325,14 @@ class Message < ApplicationRecord
 
   def user_avatar_url
     user&.avatar_url
+  end
+
+  # Who a held wake says sent this: a pocket device speaks as itself, never
+  # as the member who owns it (Mira, JnwomB).
+  def wake_requester_name
+    return author_name if companion_device.present? || user.nil?
+
+    ResidentFacingName.for(user)
   end
 
   def author_name

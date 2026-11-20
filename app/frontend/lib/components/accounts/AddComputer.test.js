@@ -101,7 +101,8 @@ test('a pocket asks for one resident, says what it creates, and approves without
   expect(screen.getByTestId('pairing-capabilities')).toHaveTextContent('microphone and camera');
   await fireEvent.click(screen.getByLabelText('Mira'));
   expect(approve).not.toBeDisabled();
-  expect(screen.getByText('This creates a new private conversation, «The stone», with Mira.')).toBeInTheDocument();
+  expect(screen.getByText('This creates a new conversation, «The stone», with Mira.')).toBeInTheDocument();
+  expect(screen.getByText('Like every conversation here, everyone in this account can read it.')).toBeInTheDocument();
   expect(
     screen.getByText("You'll own this device. Its microphone and camera start off, and only you can turn them on.")
   ).toBeInTheDocument();

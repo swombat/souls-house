@@ -82,16 +82,70 @@ class Api::V1::Companion::PocketSubmissionsControllerTest < ActionDispatch::Inte
     assert_equal "awaiting_reply", response.parsed_body["code"]
   end
 
-  test "a photo needs the camera switch and a JPEG" do
+  test "a photo needs the camera switch and JPEG bytes, whatever the label says" do
     @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
-    post_clip(kind: "photo", file: fixture_file_upload("test_image.png", "image/jpeg"))
+    post_clip(kind: "photo", file: fixture_file_upload("test_photo.jpg", "image/jpeg"))
     assert_equal "consent_off", response.parsed_body["code"]
     @device.change_capture!(capability: "camera", enabled: true, actor: @owner)
-    post_clip(kind: "photo", file: fixture_file_upload("test_image.png", "image/png"))
-    assert_response :unsupported_media_type
     post_clip(kind: "photo", file: fixture_file_upload("test_image.png", "image/jpeg"))
+    assert_response :unsupported_media_type
+    post_clip(kind: "photo", file: fixture_file_upload("test_photo.jpg", "application/octet-stream"))
     assert_response :created
     assert @device.chat.messages.order(:id).last.attachments.attached?
+  end
+
+  # A 61-second 8 kHz mono WAV, about 490 kB: under the size limit, over the time limit.
+  def long_wav
+    rate = 8_000
+    data = "\x80".b * (rate * 61)
+    header = [ "RIFF", 36 + data.bytesize, "WAVE", "fmt ", 16, 1, 1, rate, rate, 1, 8, "data", data.bytesize ].pack("a4Va4a4VvvVVvva4V")
+    file = Tempfile.new([ "long", ".wav" ])
+    file.binmode
+    file.write(header + data)
+    file.flush
+    Rack::Test::UploadedFile.new(file.path, "audio/wav", true)
+  end
+
+  test "a clip over 60 seconds is refused before it is stored or transcribed" do
+    @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    assert_no_difference -> { ActiveStorage::Blob.count } do
+      post_clip(file: long_wav)
+    end
+    assert_response :content_too_large
+    assert_equal "too_long", response.parsed_body["code"]
+  end
+
+  test "capture switched off between transcription and commit leaves no message, no wake and no stored clip" do
+    @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    switch_off = lambda do |*, **|
+      CompanionDevice.find(@device.id).change_capture!(capability: "mic", enabled: false, actor: @owner)
+      "said while the switch went off"
+    end
+    assert_no_difference [ -> { Message.count }, -> { MessageDispatch.count }, -> { ActiveStorage::Blob.count } ] do
+      ElevenLabsStt.stub(:transcribe, switch_off) do
+        TranscriptionCharge.stub(:admit!, true) do
+          post "/api/v1/companion/pocket/submissions",
+            params: { request_id: "r1", kind: "voice", file: fixture_file_upload("test_audio.webm", "audio/webm") },
+            headers: { "Authorization" => "Bearer #{@credential}" }
+        end
+      end
+    end
+    assert_response :forbidden
+    assert_equal "consent_off", response.parsed_body["code"]
+  end
+
+  test "a transcription failure leaves no stored clip" do
+    @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    assert_no_difference [ -> { Message.count }, -> { ActiveStorage::Blob.count } ] do
+      ElevenLabsStt.stub(:transcribe, ->(*, **) { raise ElevenLabsStt::Error, "down" }) do
+        TranscriptionCharge.stub(:admit!, true) do
+          post "/api/v1/companion/pocket/submissions",
+            params: { request_id: "r1", kind: "voice", file: fixture_file_upload("test_audio.webm", "audio/webm") },
+            headers: { "Authorization" => "Bearer #{@credential}" }
+        end
+      end
+    end
+    assert_response :service_unavailable
   end
 
   test "a paused stone is refused" do

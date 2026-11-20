@@ -41,8 +41,14 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     @device.chat.messages.create!(role: "assistant", agent: @agent, content: text, runtime_interaction: interaction)
   end
 
+  # A live cable: what goes down is stamped with its epoch.
   def enable_mic
     assert @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    @device.update!(connection_epoch: "epoch-1")
+  end
+
+  def payloads
+    broadcasts(CompanionChannel.broadcasting_for(@device)).map { |b| JSON.parse(b) }
   end
 
   test "pairing binds kind, one resident and a new conversation with only that resident" do
@@ -135,7 +141,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_nil @device.reload.pocket_open_message_id
     payload = broadcasts(CompanionChannel.broadcasting_for(@device)).map { |b| JSON.parse(b) }.last
     assert_equal({ "type" => "reply", "submission_id" => message.to_param, "message_id" => reply.to_param,
-      "text" => "hello back" }, payload)
+      "text" => "hello back", "epoch" => "epoch-1" }, payload)
   end
 
   test "the same resident replying from an unrelated run is not delivered" do
@@ -167,17 +173,38 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert @device.reload.pocket_open_message_id, "the slot stays open"
   end
 
-  test "pause or revoke drops a reply that arrives after it" do
+  test "pause or revoke drops a reply that arrives after it, and ends the clip and the epoch" do
     enable_mic
     message = submit.message
     @device.apply_control!("pause")
+    assert_nil @device.reload.connection_epoch, "a pause ends the live epoch"
+    assert_nil @device.pocket_open_message_id, "a pause ends the clip in flight"
     reply_to(message)
-    payloads = broadcasts(CompanionChannel.broadcasting_for(@device)).map { |b| JSON.parse(b) }
     assert_not payloads.any? { |p| p["type"] == "reply" }
+
+    @device.apply_control!("resume")
+    @device.update!(connection_epoch: "epoch-2")
+    reply_to(message, "late")
+    assert_not payloads.any? { |p| p["type"] == "reply" }, "resuming doesn't revive the old clip"
 
     @device.apply_control!("resume")
     @device.revoke!
     assert_raises(CompanionDevice::Pocket::Refused) { submit("after revoke") }
+  end
+
+  test "a reply while no cable is connected is not queued for later" do
+    enable_mic
+    message = submit.message
+    @device.update!(connection_epoch: nil)
+    reply_to(message)
+    assert_not payloads.any? { |p| p["type"] == "reply" }
+    assert_nil @device.reload.pocket_open_message_id
+  end
+
+  test "a held wake names the device, not its owner" do
+    enable_mic
+    message = submit.message
+    assert_equal "The stone", message.wake_requester_name
   end
 
   test "a pocket can't run operations" do
