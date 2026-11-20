@@ -1134,14 +1134,23 @@ def _run_chaos_once(
         finally:
             os.close(stdin_read)
         stop_feeding = threading.Event()
-        feeder = threading.Thread(
-            target=_feed_stdin, args=(stdin_write, prompt_text.encode("utf-8"), stop_feeding),
-            name="chaos-stdin", daemon=True,
-        )
-        feeder.start()
+        feeder = None
         with process:
-            expires = time.monotonic() + timeout_secs
             try:
+                # Cleanup is armed before the writer exists: if it cannot be
+                # built or started, the write end is still ours to close and
+                # the finally below kills and reaps the child.
+                try:
+                    started = threading.Thread(
+                        target=_feed_stdin, args=(stdin_write, prompt_text.encode("utf-8"), stop_feeding),
+                        name="chaos-stdin", daemon=True,
+                    )
+                    started.start()
+                except BaseException:
+                    os.close(stdin_write)
+                    raise
+                feeder = started
+                expires = time.monotonic() + timeout_secs
                 while True:
                     if cancel.is_set() or time.monotonic() >= expires:
                         break
@@ -1169,7 +1178,8 @@ def _run_chaos_once(
                 # for a reader and the join is bounded.
                 _kill_process_group(process)
                 stop_feeding.set()
-                feeder.join(timeout=2)
+                if feeder is not None:
+                    feeder.join(timeout=2)
                 process.wait(timeout=5)
     return subprocess.run(
         args,

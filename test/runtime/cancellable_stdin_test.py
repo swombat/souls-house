@@ -102,6 +102,37 @@ class CancellableStdinTest(unittest.TestCase):
         self.assertIn("stdout-marker-before-cancel", raised.exception.output or "")
         self.assertIn("stderr-marker-before-cancel", raised.exception.stderr or "")
 
+    def test_failed_writer_start_closes_the_write_end_and_reaps_the_child(self):
+        pipes, children = [], []
+        real_pipe, real_popen = os.pipe, subprocess.Popen
+
+        def recording_pipe():
+            fds = real_pipe()
+            pipes.append(fds)
+            return fds
+
+        def recording_popen(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append((child, kwargs.get("stdin")))
+            return child
+
+        with patch.object(self.shim.os, "pipe", side_effect=recording_pipe), \
+                patch.object(self.shim.subprocess, "Popen", side_effect=recording_popen), \
+                patch.object(threading.Thread, "start", side_effect=RuntimeError("can't start new thread")):
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, "can't start new thread"):
+                self.run_child("never_reads", prompt_of(200 * 1024), 30)
+        self.assertLess(time.monotonic() - started, 10, "cleanup waited on the turn deadline")
+        # Popen makes pipes of its own; ours is the one whose read end is stdin.
+        self.assertEqual(len(children), 1)
+        child, stdin_fd = children[0]
+        prompt_pipe = [fds for fds in pipes if fds[0] == stdin_fd]
+        self.assertEqual(len(prompt_pipe), 1)
+        self.assertIsNotNone(child.returncode, "the child was left running")
+        for fd in prompt_pipe[0]:
+            with self.assertRaises(OSError, msg=f"fd {fd} was left open"):
+                os.fstat(fd)
+
 
 if __name__ == "__main__":
     unittest.main()
