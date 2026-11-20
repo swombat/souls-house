@@ -15,6 +15,10 @@
 require "open3"
 require "json"
 
+# Backup::AgentRestic::QUIESCE_LOCK; HostDeployRestartTest holds it from
+# there, so a mismatch fails that test.
+QUIESCE_LOCK = 1_936_155_243 unless defined?(QUIESCE_LOCK)
+
 a = Agent.find(Integer(ENV.fetch("DEPLOY_RESIDENT_ID")))
 target = ENV.fetch("DEPLOY_RESIDENT_IMAGE")
 expected_version = ENV.fetch("DEPLOY_CHAOS_VERSION")
@@ -28,8 +32,12 @@ idle = -> {
   next false if ResidentTurn.pending.where(agent: a).exists?
   next false if AgentRuntimeInteraction.where(agent: a, finished_at: nil)
     .where.not(execution_state: [nil, "queued"]).exists?
-  _out, _err, status = Open3.capture3("docker", "exec", a.container_name, "pgrep", "-x", "chaos")
-  status.exitstatus == 1
+  # Idle only on pgrep's own answer from inside the container (#765). Its
+  # exit is shifted by 10, so 11 means it ran and found no chaos. A Docker
+  # failure (a paused or missing container) exits 1 or 125-127 and counts as
+  # busy; bare `pgrep` used to read a paused container's 1 as idle.
+  _out, _err, status = Open3.capture3("docker", "exec", a.container_name, "sh", "-c", 'pgrep -x chaos >/dev/null; exit $(($? + 10))')
+  status.exitstatus == 11
 }
 
 held = false
@@ -68,10 +76,10 @@ begin
       # to insert (its foreign key takes KEY SHARE) while holding the gate.
       a.lock!(Agents::Sandbox::ROW_LOCK)
       # The backup's lock (#765): a resident its backup holds paused is not
-      # recreated, and no backup pauses it until this transaction ends. Step
-      # 1's idle check can't tell: `docker exec` on a paused container exits
-      # 1, which is also pgrep's "no chaos running".
-      unless Agent.connection.select_value(Backup::AgentRestic.quiesce_lock_sql("pg_try_advisory_xact_lock", a))
+      # recreated, and no backup pauses it until this transaction ends. The
+      # key is written here, not read from Backup::AgentRestic, so this script
+      # also runs against a web container from before the lock existed.
+      unless Agent.connection.select_value("SELECT pg_try_advisory_xact_lock(#{QUIESCE_LOCK}, #{Integer(a.id)})")
         raise backup_holds
       end
       before = inspect_mounts.call

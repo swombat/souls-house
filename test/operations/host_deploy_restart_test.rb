@@ -11,7 +11,8 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     ENV["DEPLOY_RESIDENT_IMAGE"] = "fixture:new"
     ENV["DEPLOY_CHAOS_VERSION"] = "chaos 47.10.0"
     @success = Struct.new(:success?, :exitstatus).new(true, 0)
-    @idle = Struct.new(:success?, :exitstatus).new(false, 1)
+    @idle = Struct.new(:success?, :exitstatus).new(false, 11)
+    @docker_failed = Struct.new(:success?, :exitstatus).new(false, 1)
     @mounts = [{ "Type" => "volume", "Name" => "fixture", "Source" => "/fixture", "Destination" => "/home/agent" }].to_json
   end
 
@@ -21,6 +22,8 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     end
   end
 
+  IDLE_CHECK = ["docker", "exec", "fixture", "sh", "-c", 'pgrep -x chaos >/dev/null; exit $(($? + 10))'].freeze
+
   def run_script
     output, = capture_io { load Rails.root.join("ops/deploy/roll-resident.rb") }
     JSON.parse(output.lines.last)
@@ -29,7 +32,7 @@ class HostDeployRestartTest < ActiveSupport::TestCase
   def docker_idle_and_mounts(&block)
     capture = ->(*args) {
       case args
-      when ["docker", "exec", "fixture", "pgrep", "-x", "chaos"] then ["", "", @idle]
+      when IDLE_CHECK then ["", "", @idle]
       when ["docker", "inspect", "--format", "{{json .Mounts}}", "fixture"] then [@mounts, "", @success]
       when ["docker", "inspect", "--format", "{{.Config.Image}}", "fixture"] then ["fixture:new\n", "", @success]
       when ["docker", "exec", "fixture", "chaos", "--version"] then ["chaos 47.10.0\n", "", @success]
@@ -51,9 +54,23 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     assert @agent.active?
   end
 
-  # #765: `docker exec` on a container the backup has paused exits 1, the
-  # same as pgrep's "no chaos running", so step 1 reads it as idle. Step 2
-  # takes the backup's lock and answers busy instead of recreating it.
+  # #765: Docker's own failure (a paused container exits 1) is not pgrep
+  # saying "no chaos", so it never licenses a recreate, even with the
+  # backup's lock free (a backup that ended between the two steps, or an
+  # old backup worker that doesn't take the lock).
+  test "a failed docker exec is busy, not idle, even when no backup holds the lock" do
+    @idle = @docker_failed
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, ->(*) { flunk "a Docker failure must not license a recreate" }) do
+        assert_equal "busy", run_script.fetch("result")
+      end
+    end
+    assert_nil @agent.reload.runtime_roll_started_at
+    assert_equal "fixture:old", @agent.container_image
+  end
+
+  # #765: a resident its backup holds is not recreated, even if step 1 read
+  # it as idle; step 2 takes the backup's lock and answers busy.
   test "a resident its backup holds is not recreated: busy, and the hold is cleared" do
     observer = PG.connect(dbname: ActiveRecord::Base.connection_db_config.database)
     observer.exec(Backup::AgentRestic.quiesce_lock_sql("pg_advisory_lock", @agent))

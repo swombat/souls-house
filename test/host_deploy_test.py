@@ -1241,72 +1241,89 @@ class WorkerTest(unittest.TestCase):
 
     def backup_paused(self, refs, paused, failing_execs=None):
         """Residents in `paused` are paused by their backup (#765): `docker
-        exec` into them fails, `failing_execs` times each (None: every time),
-        and while an exec has just failed Docker says they are paused."""
+        exec` into them fails the way Docker reports a paused container,
+        `failing_execs` times each (None: every time)."""
         commands = self.pinned_fixture(refs)
         run = self.w.run.side_effect
         left = {name: failing_execs for name in paused}
-        state = {name: False for name in paused}
 
         def fake(args, **kwargs):
             if args[:2] == ["docker", "exec"] and args[2] in left:
                 n = left[args[2]]
                 if n is None or n > 0:
                     left[args[2]] = None if n is None else n - 1
-                    state[args[2]] = True
                     commands.append(args)
-                    raise RuntimeError("Subprocess failed; private diagnostics retained")
-                state[args[2]] = False
-            if args[:4] == ["docker", "inspect", "--format", "{{.State.Paused}}"] and args[4] in state:
-                commands.append(args)
-                return "true" if state[args[4]] else "false"
+                    raise worker.ContainerPaused("Container is paused; private diagnostics retained")
             return run(args, **kwargs)
         self.w.run.side_effect = fake
         return commands
 
+    def test_the_pause_is_read_from_dockers_own_failure(self):
+        # Not from a later inspect, which a backup ending in between would
+        # answer "not paused" and so latch the run (Mira, #1068).
+        self.assertTrue(worker.PAUSED_EXEC.search(
+            "Error response from daemon: Container hk-agent-019f858c is paused, unpause the container before exec"))
+        self.assertFalse(worker.PAUSED_EXEC.search("Error response from daemon: No such container: hk-agent-1"))
+
+    def test_run_names_a_paused_exec_from_its_own_failure(self):
+        paused = subprocess.CompletedProcess([], 1, "", "Error response from daemon: Container hk-agent-1 "
+                                             "is paused, unpause the container before exec\n")
+        other = subprocess.CompletedProcess([], 1, "", "Error response from daemon: No such container: hk-agent-1\n")
+        with patch.object(worker.subprocess, "run", return_value=paused):
+            with self.assertRaises(worker.ContainerPaused):
+                self.w.run(["docker", "exec", "hk-agent-1", "chaos", "--version"], capture=True)
+        with patch.object(worker.subprocess, "run", return_value=other):
+            with self.assertRaises(RuntimeError) as raised:
+                self.w.run(["docker", "exec", "hk-agent-1", "chaos", "--version"], capture=True)
+            self.assertNotIsInstance(raised.exception, worker.ContainerPaused)
+
     def test_a_resident_paused_by_its_backup_is_waited_for_not_latched(self):
-        commands = self.backup_paused(["c" * 40, "c" * 40], ["r1"], failing_execs=2)
+        # Paused for one exec, then free: the backup ended mid-probe.
+        commands = self.backup_paused(["c" * 40, "c" * 40], ["r1"], failing_execs=1)
         self.w.rebuild_residents()
         self.assertEqual("all residents healthy", self.w.data["step"])
-        self.assertIn(["docker", "inspect", "--format", "{{.State.Paused}}", "r1"], commands)
+        self.assertFalse(any(c[:2] == ["docker", "inspect"] and "r1" in c for c in commands))
         rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
         self.assertEqual(["0", "1"], sorted(rolled))
         worker.time.sleep.assert_called_with(15)
 
-    def test_a_resident_still_paused_after_the_wait_is_busy_and_left_for_the_sweep(self):
+    def test_a_resident_still_paused_after_the_wait_owes_its_preflight_to_the_sweep(self):
         self.backup_paused(["c" * 40, "c" * 40], ["r1"])
         self.w.settings["backup_wait_seconds"] = 0
         self.w.rebuild_residents()
         self.assertEqual("partial", self.w.data["state"])
         self.assertEqual([1], self.w.data["skipped"])
-        self.assertEqual([1], self.w.data["still_paused"])
+        self.assertEqual([1], self.w.data["deferred"])
         pending = json.loads((self.root / "pending-rolls.json").read_text())
-        self.assertEqual([1], [r["id"] for r in pending["residents"]])
+        self.assertEqual([{"id": 1, "stock": True, "image": "stock:deploy-" + "a" * 32,
+                           "preflight": {"container_name": "r1", "pinned": True}}], pending["residents"])
         self.assertEqual([], pending["held"])
         rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
         self.assertEqual(["0"], rolled)
 
-    def test_an_exec_that_fails_on_a_running_container_still_fails_the_run(self):
-        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+    def test_an_exec_failure_that_is_not_a_pause_still_fails_the_run(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
         run = self.w.run.side_effect
-        asked = []
 
-        def not_paused(args, **kw):
-            if args[:4] == ["docker", "inspect", "--format", "{{.State.Paused}}"]:
-                asked.append(args[4])
-                return "false"
+        def broken(args, **kw):
+            if args[:3] == ["docker", "exec", "r1"]:
+                raise RuntimeError("Subprocess failed; private diagnostics retained")
             return run(args, **kw)
-        self.w.run.side_effect = not_paused
+        self.w.run.side_effect = broken
         with self.assertRaises(RuntimeError):
             self.w.rebuild_residents()
-        self.assertEqual(["r1"], asked)
         worker.time.sleep.assert_not_called()
 
-    def test_when_every_resident_stays_paused_nothing_proves_the_rebuild(self):
+    def test_when_every_resident_stays_paused_the_run_is_partial_not_latched(self):
         self.backup_paused(["c" * 40], ["r0"])
         self.w.settings["backup_wait_seconds"] = 0
-        with self.assertRaisesRegex(RuntimeError, "No running resident could be compared"):
-            self.w.rebuild_residents()
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([0], self.w.data["deferred"])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual([], rolled)
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual({"container_name": "r0", "pinned": True}, pending["residents"][0]["preflight"])
 
     def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
         commands = self.pinned_fixture(["c" * 40])
@@ -1818,6 +1835,64 @@ class SweepTest(unittest.TestCase):
         self.assertEqual([3], state["held"])
         # Held is never retried automatically.
         self.assertEqual([2], self.sweep({2: "busy"})[1])
+
+    def owed(self, pinned=True, ids=(1,)):
+        gate.atomic(self.root / "pending-rolls.json", {
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "failed": [], "held": [],
+            "canary_proven": True,
+            "residents": [{"id": i, "image": "stock:deploy-x",
+                           "preflight": {"container_name": f"r{i}", "pinned": pinned}} for i in ids]})
+
+    def sweep_probing(self, results, versions):
+        """`versions` maps a container to what `chaos --version` answers in
+        it, or to an exception (worker.ContainerPaused while still paused)."""
+        s = worker.Sweeper()
+        calls = []
+
+        def rails(code, env=None):
+            calls.append(int(env["DEPLOY_RESIDENT_ID"]))
+            return {"result": results[int(env["DEPLOY_RESIDENT_ID"])]}
+
+        def run(args, **kwargs):
+            answer = versions[args[2]]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        with patch.object(s, "rails", side_effect=rails), patch.object(s, "run", side_effect=run):
+            return s.sweep(), calls
+
+    def state(self):
+        return json.loads((self.root / "pending-rolls.json").read_text())
+
+    def test_an_owed_preflight_on_a_still_paused_resident_waits_and_rolls_nothing(self):
+        self.owed()
+        message, calls = self.sweep_probing({}, {"r1": worker.ContainerPaused("paused")})
+        self.assertEqual([], calls)
+        self.assertEqual("1 waiting, 0 held", message)
+        self.assertIn("preflight", self.state()["residents"][0])
+
+    def test_an_owed_preflight_that_passes_lets_the_resident_roll(self):
+        self.owed()
+        message, calls = self.sweep_probing({1: "healthy"}, {"r1": "chaos 47.11.0.1"})
+        self.assertEqual([1], calls)
+        self.assertEqual("0 waiting, 0 held", message)
+
+    def test_an_owed_pinned_preflight_that_finds_another_binary_holds_without_recreating(self):
+        self.owed(pinned=True)
+        message, calls = self.sweep_probing({}, {"r1": "chaos 47.10.0.9"})
+        self.assertEqual([], calls)
+        self.assertEqual([1], self.state()["held"])
+
+    def test_an_owed_preflight_that_finds_a_newer_binary_holds_without_recreating(self):
+        self.owed(pinned=False)
+        message, calls = self.sweep_probing({}, {"r1": "chaos 47.12.0.0"})
+        self.assertEqual([], calls)
+        self.assertEqual([1], self.state()["held"])
+
+    def test_an_owed_preflight_on_an_older_binary_rolls_when_not_pinned(self):
+        self.owed(pinned=False)
+        message, calls = self.sweep_probing({1: "healthy"}, {"r1": "chaos 47.10.0.9"})
+        self.assertEqual([1], calls)
 
     def test_held_queue_without_a_proven_canary_rolls_nobody(self):
         self.pending([2, 3])
