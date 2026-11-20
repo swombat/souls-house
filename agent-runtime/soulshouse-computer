@@ -148,8 +148,10 @@ def main():
             print(json.dumps(operation))
             return 0 if operation["state"] == "completed" else 1
         result, content_type = house.call("GET", f"{root}/{op_id}/body")
+        if len(result) > MAX_BYTES:
+            raise ValueError("Result exceeds 8 MiB")
         if staging:
-            staging.write(result[:MAX_BYTES])
+            staging.write(result)
             staging.flush()
             os.fsync(staging.fileno())
             staging.close()

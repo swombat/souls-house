@@ -12,6 +12,7 @@ HELPER = Path(__file__).resolve().parents[2] / "agent-runtime" / "soulshouse-com
 
 class FakeHouse(BaseHTTPRequestHandler):
     requests = []
+    body = b"result bytes"
 
     def log_message(self, *args):
         pass
@@ -32,7 +33,7 @@ class FakeHouse(BaseHTTPRequestHandler):
     def do_GET(self):
         FakeHouse.requests.append(("GET", self.path))
         if self.path.endswith("/body"):
-            self.reply(200, b"result bytes", "application/octet-stream")
+            self.reply(200, FakeHouse.body, "application/octet-stream")
         else:
             self.reply(200, json.dumps({"id": "op1", "state": "completed", "body_available": True}).encode())
 
@@ -40,6 +41,7 @@ class FakeHouse(BaseHTTPRequestHandler):
 class SoulshouseComputerTest(unittest.TestCase):
     def setUp(self):
         FakeHouse.requests = []
+        FakeHouse.body = b"result bytes"
         self.server = HTTPServer(("127.0.0.1", 0), FakeHouse)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
@@ -68,6 +70,16 @@ class SoulshouseComputerTest(unittest.TestCase):
         self.assertEqual(os.listdir(self.tmp.name), ["result.bin"])
         self.assertEqual([r[0] for r in FakeHouse.requests], ["POST", "GET"])
         self.assertTrue(FakeHouse.requests[1][1].endswith("/op1/body"))
+
+    def test_oversized_result_leaves_the_existing_file_alone(self):
+        FakeHouse.body = b"x" * (8 * 1024 * 1024 + 1)
+        out = os.path.join(self.tmp.name, "result.bin")
+        Path(out).write_bytes(b"old")
+        result = self.run_helper("run", "WemMeN", "read", "--arg", "volume=v", "--arg", "path=p", "--out", out)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("op1", result.stderr)
+        self.assertEqual(Path(out).read_bytes(), b"old")
+        self.assertEqual(os.listdir(self.tmp.name), ["result.bin"])
 
 
 if __name__ == "__main__":
