@@ -2,9 +2,11 @@
 # resident of an account with X posting switched on could post; X was not
 # part of the per-resident integration switches. A row here is the switch.
 #
-# Backfill: every resident of an account that already has an X integration
-# gets a row, so nothing that worked before this stops working. Residents
-# created from now on start without one.
+# Backfill: only accounts that could actually post before this (a connected
+# handle, with posting switched on) keep their current residents switched
+# on, so nothing that worked stops working. Accounts with posting off, or
+# with only an app set up, get no rows. Residents created from now on start
+# without one.
 class CreateXPostingGrants < ActiveRecord::Migration[8.1]
 
   def up
@@ -20,6 +22,9 @@ class CreateXPostingGrants < ActiveRecord::Migration[8.1]
       SELECT x_integrations.id, agents.id, NOW(), NOW()
       FROM x_integrations
       JOIN agents ON agents.account_id = x_integrations.account_id
+      WHERE x_integrations.enabled
+        AND COALESCE(x_integrations.access_token, '') <> ''
+        AND COALESCE(x_integrations.refresh_token, '') <> ''
     SQL
   end
 
