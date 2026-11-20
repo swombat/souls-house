@@ -19,7 +19,7 @@ class Admin::JournalSourcesController < ApplicationController
     before = @agent.journal_source
     if @agent.update(journal_source: params.require(:agent).fetch(:journal_source, nil))
       audit(:admin_update_journal_source, @agent, agent_id: @agent.id, from: before, to: @agent.journal_source)
-      AgentJournalStatsJob.request_refresh(@agent) if before != @agent.journal_source
+      AgentJournalStatsJob.request_refresh(@agent, force: true) if before != @agent.journal_source
       redirect_to admin_agent_journal_source_path(@agent), notice: "Saved. The card counts again in the background."
     else
       redirect_to admin_agent_journal_source_path(@agent), alert: @agent.errors.full_messages.to_sentence

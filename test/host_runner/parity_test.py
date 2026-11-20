@@ -194,6 +194,25 @@ class ParityTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertNotEqual(0, run(source).returncode)
 
+    def test_the_home_stats_script_refuses_a_linked_identity_volume_or_directory_at_open(self):
+        base = tempfile.mkdtemp()
+        real = os.path.join(base, "real-identity")
+        os.makedirs(os.path.join(real, "memory", "daily-journals"))
+        os.makedirs(os.path.join(real, "memory", "sub"))
+        with open(os.path.join(real, "memory", "sub", "g.md"), "w") as handle:
+            handle.write("## one\n")
+        os.symlink(os.path.join(real, "memory", "sub"), os.path.join(real, "memory", "via"))
+        os.symlink(real, os.path.join(base, "identity"))
+
+        def run(identity, source):
+            script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals",
+                                                      os.path.join(identity, "memory", "daily-journals"))
+            return runner.subprocess.run([sys.executable, "-c", script, source], capture_output=True, text=True)
+
+        self.assertEqual(1, runner.json.loads(run(real, "memory/sub/g.md").stdout)["count"])
+        self.assertNotEqual(0, run(real, "memory/via/g.md").returncode)
+        self.assertNotEqual(0, run(os.path.join(base, "identity"), "memory/sub/g.md").returncode)
+
     def test_the_runner_and_the_house_share_the_journal_source_rule(self):
         self.assertTrue(runner.valid_journal_source("memory/growth-journal.md"))
         self.assertTrue(runner.valid_journal_source("memory/a/b.md"))

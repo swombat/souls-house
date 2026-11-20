@@ -184,8 +184,10 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
       identity.join("memory/real-dir/x.md").write("## one\n")
       File.symlink(identity.join("memory/real-dir"), identity.join("memory/linked-dir"))
       identity.join("other.md").write("## one\n")
+      File.mkfifo(identity.join("memory/pipe.md"))
       [ "memory/missing.md", "memory/linked.md", "memory/linked-dir/x.md", "memory/../other.md", "other.md",
-        "memory/real-dir", "memory/a b.md", "memory//real.md", "/memory/real.md", "memory/.md/..", "memory/....md/" ].each do |source|
+        "memory/real-dir", "memory/a b.md", "memory//real.md", "/memory/real.md", "memory/.md/..", "memory/....md/",
+        "memory/pipe.md" ].each do |source|
         assert_equal :failed, read(script, source), source
       end
       assert_equal 1, read(script, "memory/real.md")

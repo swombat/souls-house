@@ -5,12 +5,18 @@ class AgentJournalStatsJob < ApplicationJob
 
   # A short lease prevents refreshes (including Action Cable reloads) from
   # endlessly enqueueing measurements. An abandoned job can be retried later.
-  def self.request_refresh(agent)
+  # force: a measurement is owed now (the chosen journal changed), so a lease
+  # another request already holds doesn't swallow it. The concurrency key
+  # runs it after any measurement in flight, which then finds the source
+  # changed and drops its count.
+  def self.request_refresh(agent, force: false)
     return unless agent.hosted?
 
-    claimed = Agent.where(id: agent.id)
-      .where("journal_stats_requested_at IS NULL OR journal_stats_requested_at < ?", 2.minutes.ago)
-      .update_all(journal_stats_requested_at: Time.current)
+    scope = Agent.where(id: agent.id)
+    unless force
+      scope = scope.where("journal_stats_requested_at IS NULL OR journal_stats_requested_at < ?", 2.minutes.ago)
+    end
+    claimed = scope.update_all(journal_stats_requested_at: Time.current)
     perform_later(agent.id) if claimed.positive?
   end
 

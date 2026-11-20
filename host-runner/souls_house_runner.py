@@ -535,15 +535,15 @@ def valid_journal_source(source):
             and all(JOURNAL_SOURCE_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments))
 
 
-HOME_STATS_SCRIPT = r"""import json, pathlib, re, subprocess, sys
+HOME_STATS_SCRIPT = r"""import json, os, pathlib, re, stat, subprocess, sys
 root = pathlib.Path("/home/agent/identity/memory/daily-journals")
 # One Markdown file under memory/ when the resident chose one (argv), else
 # the dated daily journals. The rule is Agent.valid_journal_source?.
 source = sys.argv[1] if len(sys.argv) > 1 else None
-def count_entries(path):
+def count_entries(journal):
     count = 0
     fence = None
-    with path.open(encoding="utf-8") as journal:
+    with journal:
         for line in journal:
             marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
             if marker:
@@ -567,19 +567,27 @@ if source is None:
     for path in paths:
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
             continue
-        count += count_entries(path)
+        count += count_entries(path.open(encoding="utf-8"))
 else:
     segments = source.split("/")
     if (len(source) > 200 or not source.endswith(".md") or len(segments) < 2 or segments[0] != "memory"
             or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", segment) or not segment.strip(".") for segment in segments)):
         raise RuntimeError("invalid journal source")
-    path = root.parent.parent.joinpath(*segments)
-    # The file, each directory under the identity volume, and the volume.
-    if any(step.is_symlink() for step in [path, *path.parents][:len(segments) + 1]):
-        raise RuntimeError("invalid journal source")
-    if not path.is_file():
-        raise RuntimeError("journal source missing")
-    count = count_entries(path)
+    # Opened step by step without following links, so a link swapped in
+    # after any check is refused at open, not followed.
+    directory = os.open(str(root.parent.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for segment in segments[:-1]:
+            inner = os.open(segment, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = inner
+        handle = os.open(segments[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    finally:
+        os.close(directory)
+    if not stat.S_ISREG(os.fstat(handle).st_mode):
+        os.close(handle)
+        raise RuntimeError("journal source is not a file")
+    count = count_entries(os.fdopen(handle, encoding="utf-8"))
 # Allocated bytes, including hidden files; du does not follow symlinks.
 # Explicit volume roots exclude the image layer and temporary filesystems.
 storage_bytes = None
