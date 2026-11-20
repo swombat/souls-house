@@ -129,6 +129,7 @@ test('two open glossaries follow terms and built-in names while preserving draft
       'is_account_admin',
       'reply_attention',
       'room_activity',
+      'room_chat_counts',
       'rooms',
       'current_room',
       'main_room_name',

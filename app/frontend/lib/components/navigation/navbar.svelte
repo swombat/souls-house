@@ -47,8 +47,7 @@
       for (const account of $page.props?.accounts || []) {
         subs[`Account:${account.id}`] = ['accounts', 'expired_subscriptions'];
         if (account.id === $page.props?.account?.id) {
-          // Chats created, moved, archived or re-tagged notify Account, so the
-          // room menus' totals follow them on every page, not only the chat list.
+          // Chat changes notify Account; room totals follow them on every page.
           subs[`Account:${account.id}`].push('account', 'is_account_admin', 'room_chat_counts');
         }
       }
