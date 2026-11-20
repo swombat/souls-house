@@ -1,6 +1,7 @@
 class CompanionDevice < ApplicationRecord
 
   include ObfuscatesId
+  include CompanionDevice::Pocket
 
   CREDENTIAL_PREFIX = "shcd_".freeze
   RECOVERY_WINDOW = 60.seconds

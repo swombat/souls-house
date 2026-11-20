@@ -19,8 +19,10 @@ class CompanionChannel < ApplicationCable::Channel
       @epoch = SecureRandom.uuid
       device.update!(connection_epoch: @epoch)
       stream_for device
-      transmit({ type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
-        grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? })
+      ready = { type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
+        grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? }
+      ready.merge!(kind: "pocket", mic: device.mic_enabled, camera: device.camera_enabled) if device.pocket?
+      transmit(ready)
     end
   end
 
@@ -28,7 +30,7 @@ class CompanionChannel < ApplicationCable::Channel
   # Stored only while this subscription's epoch is still the device's
   # current one; anything else is dropped without a reply.
   def report_ceiling(data)
-    return unless @epoch
+    return unless @epoch && current_companion_device.computer?
 
     current_companion_device.record_ceiling_report!(epoch: @epoch, claimed_epoch: data["connection_epoch"],
       ceiling: data["ceiling"], execute_lifecycle_accepted: data["execute_lifecycle_accepted"])

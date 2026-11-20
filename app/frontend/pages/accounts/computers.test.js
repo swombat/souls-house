@@ -252,3 +252,51 @@ test('Add a computer follows can_add, not can_manage', () => {
   render(Computers, { ...props, can_manage: false, can_add: false });
   expect(screen.queryByTestId('add-computer')).not.toBeInTheDocument();
 });
+
+const stone = {
+  id: 'pk1',
+  name: 'The stone',
+  kind: 'pocket',
+  paused: false,
+  connected: true,
+  can_manage: true,
+  residents: [{ id: 'mira', name: 'Mira', execute: false, desktop: false, volumes: [] }],
+  pocket: {
+    owner_name: 'Paulina',
+    owned_by_you: false,
+    capabilities: ['mic', 'camera'],
+    mic: true,
+    camera: false,
+    chat_id: 'chat9',
+    chat_title: 'Stone talk',
+  },
+};
+
+test('a pocket shows its owner, its chat and capture switches, and none of the disk controls', async () => {
+  render(Computers, { ...props, devices: [stone] });
+  expect(screen.getByTestId('pocket-owner')).toHaveTextContent('Owner: Paulina');
+  expect(screen.getByTestId('pocket-talks-to')).toHaveTextContent('Talks to Mira in «Stone talk»');
+  expect(screen.getByRole('link', { name: '«Stone talk»' })).toHaveAttribute('href', '/accounts/acct/chats/chat9');
+  expect(screen.queryByLabelText('Run commands')).not.toBeInTheDocument();
+  expect(screen.queryByText('Folders')).not.toBeInTheDocument();
+  // Not the owner: an off switch cannot be turned on, an on switch can be turned off.
+  expect(screen.getByLabelText('Camera')).toBeDisabled();
+  expect(screen.getByText('Only Paulina can turn this on')).toBeInTheDocument();
+  await fireEvent.click(screen.getByLabelText('Microphone'));
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/acct/computers/pk1',
+    { control: 'capture', capability: 'mic', value: 'false' },
+    expect.any(Object)
+  );
+});
+
+test('the owner can turn a capture on', async () => {
+  const mine = { ...stone, pocket: { ...stone.pocket, owned_by_you: true } };
+  render(Computers, { ...props, devices: [mine] });
+  await fireEvent.click(screen.getByLabelText('Camera'));
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/acct/computers/pk1',
+    { control: 'capture', capability: 'camera', value: 'true' },
+    expect.any(Object)
+  );
+});

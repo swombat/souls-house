@@ -78,3 +78,37 @@ test('an unknown code says so and sends nothing', async () => {
   expect(await screen.findByTestId('pairing-error')).toHaveTextContent('No computer is waiting with that code.');
   expect(router.post).not.toHaveBeenCalled();
 });
+
+const pocketOffer = {
+  id: 'pairingP',
+  account_name: 'Home',
+  name: 'The stone',
+  kind: 'pocket',
+  volumes: [],
+  capabilities: ['mic', 'camera'],
+  residents: [
+    { id: 'nexus', name: 'Claude' },
+    { id: 'mira', name: 'Mira' },
+  ],
+};
+
+test('a pocket asks for one resident, says what it creates, and approves without disks', async () => {
+  respond(200, pocketOffer);
+  await enterCode('pock-etxx');
+  const approve = await screen.findByTestId('pairing-approve');
+  expect(approve).toBeDisabled();
+  expect(screen.queryByTestId('pairing-access')).toBeNull();
+  expect(screen.getByTestId('pairing-capabilities')).toHaveTextContent('microphone and camera');
+  await fireEvent.click(screen.getByLabelText('Mira'));
+  expect(approve).not.toBeDisabled();
+  expect(screen.getByText('This creates a new private conversation, «The stone», with Mira.')).toBeInTheDocument();
+  expect(
+    screen.getByText("You'll own this device. Its microphone and camera start off, and only you can turn them on.")
+  ).toBeInTheDocument();
+  await fireEvent.click(approve);
+  expect(router.post).toHaveBeenCalledWith(
+    '/accounts/acct/computers/pairings',
+    { code: 'pock-etxx', pairing_id: 'pairingP', resident_ids: ['mira'] },
+    expect.any(Object)
+  );
+});
