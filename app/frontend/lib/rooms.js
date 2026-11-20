@@ -30,6 +30,14 @@ export function waitingIn(key, attention) {
   return attention?.rooms?.[key] || 0;
 }
 
+// Conversations in a room, when the account shows room totals
+// (RoomChatCounts); null when it doesn't, so nothing renders.
+export function chatsIn(key, counts) {
+  if (!counts) return null;
+  if (key === ALL) return counts.all || 0;
+  return counts.rooms?.[key] || 0;
+}
+
 // Residents working in a room, newest start first (RoomActivity). The first
 // one's colour is the spinner's.
 export function workingIn(key, activity) {

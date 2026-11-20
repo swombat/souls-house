@@ -3,7 +3,8 @@
   import { Check } from 'phosphor-svelte';
   import * as Select from '$lib/components/shadcn/select/index.js';
   import RoomWorkingSpinner from './RoomWorkingSpinner.svelte';
-  import { views, roomName, roomsPath, visitRoom, waitingIn, workingIn, ALL } from '$lib/rooms';
+  import RoomChatCount from './RoomChatCount.svelte';
+  import { views, roomName, roomsPath, visitRoom, waitingIn, workingIn, chatsIn, ALL } from '$lib/rooms';
 
   // The sidebar's room switcher. It shows the same selection as the navbar's
   // Chats menu: one navigation state, stored on the server per account.
@@ -17,6 +18,7 @@
   const current = $derived($page.props.current_room || 'main');
   const attention = $derived($page.props.reply_attention);
   const activity = $derived($page.props.room_activity);
+  const counts = $derived($page.props.room_chat_counts);
 
   const CLOSE_DELAY_MS = 200;
   let hoverOpen = $state(false);
@@ -93,7 +95,10 @@
       {#each views(rooms, mainName) as option (option.id)}
         <Select.Item value={option.id} label={option.name}>
           <span class="flex w-full items-center justify-between gap-3">
-            <span class="truncate">{option.name}</span>
+            <span class="flex min-w-0 items-center gap-2">
+              <RoomChatCount count={chatsIn(option.id, counts)} />
+              <span class="truncate">{option.name}</span>
+            </span>
             {@render badges(option.id)}
           </span>
         </Select.Item>
@@ -114,6 +119,7 @@
               ? 'font-semibold'
               : ''}">
             <Check class="size-4 shrink-0 {selected ? 'opacity-100' : 'opacity-0'}" />
+            <RoomChatCount count={chatsIn(option.id, counts)} />
             <span class="min-w-0 truncate">{option.name}</span>
             <span class="ml-auto">{@render badges(option.id)}</span>
           </a>

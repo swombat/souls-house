@@ -5,7 +5,8 @@
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
   import RoomWorkingSpinner from '$lib/components/chat/RoomWorkingSpinner.svelte';
-  import { views, visitRoom, waitingIn, workingIn, ALL } from '$lib/rooms';
+  import RoomChatCount from '$lib/components/chat/RoomChatCount.svelte';
+  import { views, visitRoom, waitingIn, workingIn, chatsIn, ALL } from '$lib/rooms';
 
   // The navbar's Chats entry once an account has rooms. Activity elsewhere is
   // shown inside the menu only, never on the closed trigger.
@@ -16,6 +17,7 @@
   const current = $derived($page.props.current_room || 'main');
   const attention = $derived($page.props.reply_attention);
   const activity = $derived($page.props.room_activity);
+  const counts = $derived($page.props.room_chat_counts);
 </script>
 
 <DropdownMenu.Root>
@@ -33,7 +35,10 @@
         <DropdownMenu.Separator />
       {/if}
       <DropdownMenu.Item onclick={() => visitRoom(accountId, option.id)} class="justify-between gap-3">
-        <span class="truncate {option.id === current ? 'font-semibold' : ''}">{option.name}</span>
+        <span class="flex min-w-0 items-center gap-2">
+          <RoomChatCount count={chatsIn(option.id, counts)} />
+          <span class="truncate {option.id === current ? 'font-semibold' : ''}">{option.name}</span>
+        </span>
         <span class="flex shrink-0 items-center gap-1.5">
           <RoomWorkingSpinner agents={working} />
           {#if waiting > 0}

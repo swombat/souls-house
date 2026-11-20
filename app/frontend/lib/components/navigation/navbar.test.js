@@ -102,7 +102,9 @@ test('room navigation watches only the active account, even empty, without resub
   const component = render(Navbar);
   await tick();
   const roomCalls = () => subscribe.mock.calls.filter(([model]) => model === 'RoomNavigation');
-  expect(roomCalls()).toEqual([['RoomNavigation', 'one', ['rooms', 'current_room', 'main_room_name']]]);
+  expect(roomCalls()).toEqual([
+    ['RoomNavigation', 'one', ['rooms', 'current_room', 'main_room_name', 'room_chat_counts']],
+  ]);
   const firstIndex = subscribe.mock.calls.findIndex(([model]) => model === 'RoomNavigation');
   const firstCleanup = subscribe.mock.results[firstIndex].value;
 
@@ -115,8 +117,8 @@ test('room navigation watches only the active account, even empty, without resub
   await tick();
   expect(firstCleanup).toHaveBeenCalledOnce();
   expect(roomCalls()).toEqual([
-    ['RoomNavigation', 'one', ['rooms', 'current_room', 'main_room_name']],
-    ['RoomNavigation', 'two', ['rooms', 'current_room', 'main_room_name']],
+    ['RoomNavigation', 'one', ['rooms', 'current_room', 'main_room_name', 'room_chat_counts']],
+    ['RoomNavigation', 'two', ['rooms', 'current_room', 'main_room_name', 'room_chat_counts']],
   ]);
   const secondIndex = subscribe.mock.calls.findLastIndex(([model]) => model === 'RoomNavigation');
   const secondCleanup = subscribe.mock.results[secondIndex].value;

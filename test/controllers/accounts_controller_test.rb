@@ -141,6 +141,21 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, @team_account.as_json["show_chat_codes"]
   end
 
+  test "conversations per room is off by default, a manager switches it on, and only then the menus get totals" do
+    assert_not @team_account.show_room_chat_counts?
+    get account_path(@team_account)
+    assert_equal false, inertia_props.dig("props", "show_room_chat_counts")
+    assert_nil inertia_props.dig("props", "room_chat_counts")
+
+    patch account_path(@team_account), params: { account: { show_room_chat_counts: true } }
+    assert_redirected_to @team_account
+    assert @team_account.reload.show_room_chat_counts?
+
+    get account_path(@team_account)
+    totals = inertia_props.dig("props", "room_chat_counts")
+    assert_equal @team_account.chats.kept.listed.active.not_hidden_from_list.count, totals["all"]
+  end
+
   test "the voice mode switch saves under any site scope and the page carries the scope and the key check" do
     @team_account.update!(use_system_ai_credentials: false, openai_api_key: nil)
     %w[disabled enabled account_choice].each do |scope|

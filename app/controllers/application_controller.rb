@@ -24,6 +24,7 @@ class ApplicationController < ActionController::Base
         accounts: -> { Current.user.confirmed_accounts.map(&:as_json) },
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
         room_activity: -> { RoomActivity.summary_for(current_account) },
+        room_chat_counts: -> { RoomChatCounts.summary_for(current_account) },
         expired_subscriptions: -> { ExpiredProviderSubscriptions.summary_for(Current.user) },
         pending_invitations: -> { PendingInvitations.summary_for(Current.user) },
         theme_preference: Current.user&.theme || cookies[:theme],

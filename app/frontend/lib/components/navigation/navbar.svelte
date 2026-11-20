@@ -60,7 +60,7 @@
     const subs = {};
     // Watch even an empty account: its first room turns Chats into a menu.
     if ($page.props?.user?.id && accountId) {
-      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name'];
+      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name', 'room_chat_counts'];
     }
     updateRoomNavigationSync(subs);
   });

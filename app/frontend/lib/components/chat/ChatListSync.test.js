@@ -13,6 +13,7 @@ test('the sidebar subscribes without an open chat and cleans up when switching a
     'visual_tags',
     'rooms',
     'current_room',
+    'room_chat_counts',
   ]);
   const stopFirst = subscribe.mock.results[0].value;
   await rerender({ accountId: 'second', chats: [] });
@@ -23,6 +24,7 @@ test('the sidebar subscribes without an open chat and cleans up when switching a
     'visual_tags',
     'rooms',
     'current_room',
+    'room_chat_counts',
   ]);
   const stopSecond = subscribe.mock.results.at(-1).value;
   unmount();
