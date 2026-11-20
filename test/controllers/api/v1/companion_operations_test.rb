@@ -59,6 +59,14 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_equal [], response.parsed_body.fetch("computers")
   end
 
+  test "a resident named with nothing granted still sees the computer, with no volumes" do
+    @device.update!(policy: { "residents" => [ { "id" => @agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    mine = response.parsed_body.fetch("computers").sole
+    assert_equal [], mine["volumes"]
+    assert_equal false, mine["execute"]
+  end
+
   test "listing computers needs a resident token" do
     get "/api/v1/companion_devices", headers: bearer(ApiKey.generate_for(users(:user_1), name: "Human").raw_token)
     assert_response :forbidden

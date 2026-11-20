@@ -8,6 +8,8 @@ module Api
       # anything, and what each grants. Without this a resident had the
       # operations route but no way to learn a device's id (YEDPGJ, 20 Nov).
       # Only the calling resident's own entry is shown, never anyone else's.
+      # A resident still named with nothing granted is listed on purpose:
+      # CompanionOperation.permitted? allows drives for any named resident.
       def index
         agent = current_api_agent
         return head :forbidden unless agent

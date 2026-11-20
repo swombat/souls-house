@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -96,12 +97,19 @@ def main():
     if not base or not token:
         sys.exit("The resident API URL and token are required")
     house = House(base, token)
-    try:
-        if args.command == "list":
+    if args.command == "list":
+        try:
             body, _ = house.call("GET", "/api/v1/companion_devices")
             print(json.dumps(json.loads(body), indent=2))
             return 0
+        except urllib.error.HTTPError as error:
+            print(f"Computer request failed ({error.code}): {error.read(16384).decode(errors='replace')}", file=sys.stderr)
+            return 1
+        except (OSError, ValueError, urllib.error.URLError) as error:
+            print(f"Computer request failed: {error}", file=sys.stderr)
+            return 1
 
+    try:
         computer = checked(args.computer, "computer id")
         root = f"/api/v1/companion_devices/{computer}/operations"
         values = arguments(args)
@@ -112,6 +120,15 @@ def main():
             if len(data) > MAX_BYTES:
                 raise ValueError("Input exceeds 8 MiB")
             values["input_size"] = len(data)
+        # A result can be fetched once, and the operation may already have
+        # changed the computer, so reserve the destination before anything is
+        # sent: a path that can't be written fails here, with nothing started.
+        staging = reserve(args.out) if args.out else None
+    except (OSError, ValueError) as error:
+        print(f"Computer request not sent: {error}", file=sys.stderr)
+        return 1
+    op_id = None
+    try:
         body, _ = house.call("POST", root, {"operation": args.operation, "arguments": values})
         operation = json.loads(body)
         op_id = checked(operation["id"], "operation id")
@@ -130,25 +147,52 @@ def main():
         if not operation.get("body_available"):
             print(json.dumps(operation))
             return 0 if operation["state"] == "completed" else 1
-        data, content_type = house.call("GET", f"{root}/{op_id}/body")
-        if len(data) > MAX_BYTES:
-            raise ValueError("Result exceeds 8 MiB")
-        if args.out:
-            with open(args.out, "wb") as handle:
-                handle.write(data)
-            print(json.dumps({"id": op_id, "state": operation["state"], "bytes": len(data), "out": args.out}))
-        elif "json" in content_type:
-            print(json.dumps(json.loads(data), indent=2))
-        else:
-            sys.stdout.buffer.write(data)
+        result, content_type = house.call("GET", f"{root}/{op_id}/body")
+        if staging:
+            staging.write(result[:MAX_BYTES])
+            staging.flush()
+            os.fsync(staging.fileno())
+            staging.close()
+            os.replace(staging.name, args.out)
+            staging = None
+            print(json.dumps({"id": op_id, "state": operation["state"], "bytes": len(result), "out": args.out}))
+            return 0
+        try:
+            if "json" in content_type:
+                print(json.dumps(json.loads(result), indent=2))
+                return 0
+        except ValueError:
+            pass
+        sys.stdout.buffer.write(result)
         return 0
     except urllib.error.HTTPError as error:
         # Bounded server diagnostics; never print request headers.
         print(f"Computer request failed ({error.code}): {error.read(16384).decode(errors='replace')}", file=sys.stderr)
-        return 1
+        return 1 if op_id is None else after_dispatch(op_id)
     except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
         print(f"Computer request failed: {error}", file=sys.stderr)
-        return 1
+        return 1 if op_id is None else after_dispatch(op_id)
+    finally:
+        if staging:
+            staging.close()
+            try:
+                os.unlink(staging.name)
+            except OSError:
+                pass
+
+
+def reserve(path):
+    """A writable staging file beside the destination; the destination itself is untouched until the result is saved."""
+    directory = os.path.dirname(os.path.abspath(path))
+    if os.path.isdir(path):
+        raise ValueError(f"--out {path} is a directory")
+    return tempfile.NamedTemporaryFile(dir=directory, prefix=".soulshouse-computer-", delete=False)
+
+
+def after_dispatch(op_id):
+    print(f"Operation {op_id} was already sent to the computer and may have run. Its result was not saved. "
+          "Check before running it again.", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

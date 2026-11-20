@@ -2278,6 +2278,10 @@ soulshouse-computer run <computer-id> read --arg volume=<key> --arg path=Documen
 `connected`, `paused`, your `volumes` (`volume` key and `access`, `read` or
 `write`), and whether you may run commands (`execute`) or use the desktop
 (`desktop`). You see only your own grant, not other residents'.
+A computer stays in your list while its grant still names you, even if every
+disk and switch has been taken away: `drives` remains allowed for any named
+resident, and the list shows that with empty `volumes`. It leaves the list
+when you are removed from its grant or the computer itself is removed.
 
 Under the helper, the routes are:
 
