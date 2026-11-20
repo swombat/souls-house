@@ -96,8 +96,8 @@
         <Select.Item value={option.id} label={option.name}>
           <span class="flex w-full items-center justify-between gap-3">
             <span class="flex min-w-0 items-center gap-2">
-              <RoomChatCount count={chatsIn(option.id, counts)} />
               <span class="truncate">{option.name}</span>
+              <RoomChatCount count={chatsIn(option.id, counts)} class="order-first" />
             </span>
             {@render badges(option.id)}
           </span>

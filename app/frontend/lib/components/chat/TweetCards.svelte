@@ -24,7 +24,12 @@
           <div class="mt-2 grid grid-cols-2 gap-1">
             {#each tweet.media as item (item.url)}
               <a href={tweet.url} target="_blank" rel="noopener noreferrer">
-                <img src={item.url} alt={item.alt || ''} loading="lazy" referrerpolicy="no-referrer" class="max-h-64 w-full rounded object-cover" />
+                <img
+                  src={item.url}
+                  alt={item.alt || ''}
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  class="max-h-64 w-full rounded object-cover" />
               </a>
             {/each}
           </div>
@@ -35,7 +40,11 @@
             <p class="whitespace-pre-wrap [overflow-wrap:anywhere]">{tweet.quoted.text}</p>
           </blockquote>
         {/if}
-        <a href={tweet.url} target="_blank" rel="noopener noreferrer" class="mt-2 inline-block text-xs text-primary hover:underline">View on X</a>
+        <a
+          href={tweet.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-2 inline-block text-xs text-primary hover:underline">View on X</a>
       </article>
     {/each}
   </div>

@@ -24,8 +24,8 @@
         {#each views(rooms, mainName) as option (option.id)}
           <Select.Item value={option.id} label={option.name}>
             <span class="flex min-w-0 items-center gap-2">
-              <RoomChatCount count={chatsIn(option.id, counts)} />
               <span class="truncate">{option.name}</span>
+              <RoomChatCount count={chatsIn(option.id, counts)} class="order-first" />
             </span>
           </Select.Item>
         {/each}

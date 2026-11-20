@@ -13,7 +13,9 @@
   const size = $derived(INNER + 2 * STEP * Math.max(rings.length - 1, 0));
   const colour = $derived(agents[0]?.colour);
   const label = $derived(
-    agents.length ? `${new Intl.ListFormat('en', { type: 'conjunction' }).format(agents.map((a) => a.name))} working` : ''
+    agents.length
+      ? `${new Intl.ListFormat('en', { type: 'conjunction' }).format(agents.map((a) => a.name))} working`
+      : ''
   );
 
   function ringClass(agent) {

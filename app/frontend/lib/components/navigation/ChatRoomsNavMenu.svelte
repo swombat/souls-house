@@ -36,8 +36,8 @@
       {/if}
       <DropdownMenu.Item onclick={() => visitRoom(accountId, option.id)} class="justify-between gap-3">
         <span class="flex min-w-0 items-center gap-2">
-          <RoomChatCount count={chatsIn(option.id, counts)} />
           <span class="truncate {option.id === current ? 'font-semibold' : ''}">{option.name}</span>
+          <RoomChatCount count={chatsIn(option.id, counts)} class="order-first" />
         </span>
         <span class="flex shrink-0 items-center gap-1.5">
           <RoomWorkingSpinner agents={working} />

@@ -28,7 +28,7 @@ test('navbar watches all confirmed accounts, keeps stable subscriptions and remo
   const accountCalls = () => subscribe.mock.calls.filter(([model]) => model === 'Account');
   expect(accountCalls()).toEqual([
     ['Account', 'two', ['accounts', 'expired_subscriptions']],
-    ['Account', 'one', ['accounts', 'expired_subscriptions', 'account', 'is_account_admin']],
+    ['Account', 'one', ['accounts', 'expired_subscriptions', 'account', 'is_account_admin', 'room_chat_counts']],
   ]);
   expect(subscribe).toHaveBeenCalledWith('ReplyAttention', 'me', [
     'reply_attention',
@@ -50,7 +50,7 @@ test('navbar watches all confirmed accounts, keeps stable subscriptions and remo
   await tick();
   for (const unsubscribe of initialAccountUnsubscribers) expect(unsubscribe).toHaveBeenCalledOnce();
   expect(accountCalls().slice(-2)).toEqual([
-    ['Account', 'two', ['accounts', 'expired_subscriptions', 'account', 'is_account_admin']],
+    ['Account', 'two', ['accounts', 'expired_subscriptions', 'account', 'is_account_admin', 'room_chat_counts']],
     ['Account', 'one', ['accounts', 'expired_subscriptions']],
   ]);
 
@@ -60,7 +60,7 @@ test('navbar watches all confirmed accounts, keeps stable subscriptions and remo
   expect(accountCalls().at(-1)).toEqual([
     'Account',
     'one',
-    ['accounts', 'expired_subscriptions', 'account', 'is_account_admin'],
+    ['accounts', 'expired_subscriptions', 'account', 'is_account_admin', 'room_chat_counts'],
   ]);
   const lastAccountIndex = subscribe.mock.calls.findLastIndex(([model]) => model === 'Account');
   const last = subscribe.mock.results[lastAccountIndex].value;
