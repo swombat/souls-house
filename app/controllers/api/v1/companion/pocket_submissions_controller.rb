@@ -11,7 +11,6 @@ module Api
       class PocketSubmissionsController < ActionController::API
 
         REQUEST_ID = /\A[A-Za-z0-9_.:-]{1,64}\z/
-        NO_SPEECH = "(The stone heard no speech.)".freeze
 
         before_action { response.headers["Cache-Control"] = "no-store" }
 
@@ -92,7 +91,13 @@ module Api
           TranscriptionCharge.admit!(account: device.account, source: "voice_note", key: blob.id, path: file.tempfile.path)
           file.tempfile.rewind
           text = ElevenLabsStt.transcribe(file, keyterms: TranscriptionGlossary.keyterms_for(device.account))
-          device.post_pocket_submission!(media_kind: "voice", content: text.presence || NO_SPEECH,
+          # A clip with no speech in it is refused, not posted: posting it
+          # would open the one submission slot for a message nobody answers,
+          # and every clip for the next ten minutes would get awaiting_reply
+          # (three times on 20 Nov). The ensure discards the stored audio.
+          raise CompanionDevice::Pocket::Refused.new("no_speech", :unprocessable_entity) if text.blank?
+
+          device.post_pocket_submission!(media_kind: "voice", content: text,
             client_message_id: client_message_id, audio_signed_id: blob.signed_id)
         ensure
           VoiceNote.discard!(blob) if blob
