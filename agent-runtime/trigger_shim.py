@@ -78,6 +78,7 @@ import os
 import re
 import shlex
 import shutil
+import select
 import signal
 import subprocess
 import sys
@@ -1117,20 +1118,38 @@ def _run_chaos_once(
     if cancel is not None:
         # Non-conversation wakes have no activity reporter, but require the same
         # process-group containment and cancellation acknowledgement.
-        with subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, text=True, env=env,
-                              start_new_session=True) as process:
+        # The prompt goes through its own pipe and writer thread, not through
+        # communicate(input=...): communicate polls in half-second slices here
+        # and refuses input on a retry, so a prompt larger than the pipe
+        # buffer used to stall after the first slice and Chaos waited on
+        # stdin until the deadline (Alanis's Telegram timeouts, Nov 2026).
+        stdin_read, stdin_write = os.pipe()
+        try:
+            process = subprocess.Popen(args, stdin=stdin_read, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True, env=env,
+                                       start_new_session=True)
+        except BaseException:
+            os.close(stdin_write)
+            raise
+        finally:
+            os.close(stdin_read)
+        stop_feeding = threading.Event()
+        feeder = threading.Thread(
+            target=_feed_stdin, args=(stdin_write, prompt_text.encode("utf-8"), stop_feeding),
+            name="chaos-stdin", daemon=True,
+        )
+        feeder.start()
+        with process:
             expires = time.monotonic() + timeout_secs
-            first = True
             try:
                 while True:
                     if cancel.is_set() or time.monotonic() >= expires:
                         break
                     try:
-                        stdout, stderr = process.communicate(input=prompt_text if first else None, timeout=.5)
+                        stdout, stderr = process.communicate(timeout=.5)
                         return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
                     except subprocess.TimeoutExpired:
-                        first = False
+                        pass
                 # Out of time or cancelled. Kill the group, then collect what
                 # Chaos had already written: process.started carries the
                 # session id and turn events carry usage, so a timed-out run
@@ -1145,7 +1164,12 @@ def _run_chaos_once(
                     stderr = _timeout_stream(drained, "stderr")
                 raise subprocess.TimeoutExpired(args, timeout_secs, output=stdout, stderr=stderr)
             finally:
+                # Kill first, then stop the writer: an escaped descendant can
+                # hold the read end open, so the writer is never left to wait
+                # for a reader and the join is bounded.
                 _kill_process_group(process)
+                stop_feeding.set()
+                feeder.join(timeout=2)
                 process.wait(timeout=5)
     return subprocess.run(
         args,
@@ -1162,6 +1186,37 @@ def _kill_process_group(process):
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+
+
+def _feed_stdin(fd, data, stop):
+    """Write `data` to `fd`, then close it; give up when `stop` is set.
+
+    Owns `fd` and closes it on every path, so Chaos sees EOF as soon as the
+    whole prompt is written. Non-blocking with a short poll, so a reader that
+    never drains (or a killed one) cannot pin this thread.
+    """
+    try:
+        os.set_blocking(fd, False)
+        poller = select.poll()
+        poller.register(fd, select.POLLOUT)
+        view = memoryview(data)
+        offset = 0
+        while offset < len(view) and not stop.is_set():
+            events = poller.poll(200)
+            if any(mask & (select.POLLERR | select.POLLHUP) for _, mask in events):
+                return
+            if not events:
+                continue
+            try:
+                offset += os.write(fd, view[offset:offset + 65536])
+            except BlockingIOError:
+                continue
+            except BrokenPipeError:
+                return
+    except Exception as error:
+        log.warning(f"chaos stdin writer stopped: {type(error).__name__}")
+    finally:
+        os.close(fd)
 
 
 def parse_events(stdout):
