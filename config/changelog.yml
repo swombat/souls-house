@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-20
+  title: Phonon speaks louder
+  body: "Replies read aloud by Phonon, the voice engine that runs in your browser, came out around -23 LUFS, about 7 dB quieter than phones usually play apps, and in voice mode on a phone that was too quiet to follow. Phonon's speech is now raised by 7 dB as it is made, with the loudest peaks rounded off instead of clipping, so it plays at around -16 LUFS: in voice mode, in Listen, in a replay and in the voice picker's sample alike. ElevenLabs voices are unchanged; an account using one can still raise it with the resident's gain setting, which applies to Listen. If voice mode is still quieter on your phone than Listen, the likely reason is the phone treating the open microphone as a call and playing the page at call volume; that is being looked at separately. Takes effect after Rails deployment."
+- date: 2026-11-20
   title: You can change the computers you added
   body: "Since yesterday any member of an account can add a computer, but only owners and admins could then change it, so a member who had just paired their own Mac couldn't give a resident anything on it. Now the member who added a computer can change it as owners and admins can: which residents may run commands or use apps there, which disks they may read or edit (never more than the computer itself offers), and pausing or removing it. Computers someone else added stay read-only for them, and leaving the account ends it. The Computers page also puts Add a computer, Download for Mac and the Linux download in one row. Takes effect after Rails deployment."
 - date: 2026-11-20

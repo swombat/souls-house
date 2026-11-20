@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { encodeWav } from '$lib/voice-mode';
+import { louden } from '$lib/speech-loudness';
 import phononVoices from '$lib/phonon-voices.json';
 
 // Phonon, the default voice engine (SpeechEngine, jEDyze): Gradium's 31M
@@ -128,7 +129,8 @@ export function loadPhonon({
 // the signal stops the synthesis itself. Rejects with a PhononError.
 // onAudio(samples, sampleRate), when given, hears each chunk as soon as it is
 // made (YNwVle: Listen plays while the rest is still being made); the WAV is
-// those same chunks joined.
+// those same chunks joined. Both are made louder first (lib/speech-loudness.js,
+// YGBxrJ), one sample at a time, so the stream and the WAV stay identical.
 export async function synthesize(text, { voice, signal, onAudio, load = loadPhonon } = {}) {
   const tts = await load();
   signal?.throwIfAborted?.();
@@ -136,9 +138,9 @@ export async function synthesize(text, { voice, signal, onAudio, load = loadPhon
     const { audio, sampleRate } = await tts.speak(text, {
       voice: voiceFor(voice).id,
       signal,
-      ...(onAudio ? { onAudio: (samples) => onAudio(samples, PHONON_SAMPLE_RATE) } : {}),
+      ...(onAudio ? { onAudio: (samples) => onAudio(louden(samples), PHONON_SAMPLE_RATE) } : {}),
     });
-    return { blob: encodeWav(audio, sampleRate), duration: audio.length / sampleRate };
+    return { blob: encodeWav(louden(audio), sampleRate), duration: audio.length / sampleRate };
   } catch (error) {
     if (error instanceof PhononError) throw error;
     const { kind, message } = describeFailure(error);
