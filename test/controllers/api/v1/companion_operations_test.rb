@@ -33,6 +33,45 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_response :gone
   end
 
+  test "a resident lists the computers that grant it something, with only its own grant" do
+    other = agents(:code_reviewer)
+    other_key = ApiKey.generate_for(users(:user_1), name: "Other", agent: other)
+    @device.update!(policy: @device.policy.merge("residents" => @device.policy["residents"] +
+      [ { "id" => "someone-else", "volumes" => [ { "volume" => "secret-volume", "access" => "write" } ], "execute" => true } ]))
+
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    assert_response :success
+    computers = response.parsed_body.fetch("computers")
+    assert_equal [ @device.to_param ], computers.map { |c| c["id"] }
+    mine = computers.first
+    assert_equal "Fixture", mine["name"]
+    assert mine["connected"]
+    assert_equal [ { "volume" => "fixture-volume", "access" => "read" } ], mine["volumes"]
+    assert_equal false, mine["execute"]
+    assert_not_includes response.body, "secret-volume"
+
+    get "/api/v1/companion_devices", headers: bearer(other_key.raw_token)
+    assert_response :success
+    assert_equal [], response.parsed_body.fetch("computers")
+
+    @device.update!(revoked_at: Time.current)
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    assert_equal [], response.parsed_body.fetch("computers")
+  end
+
+  test "a resident named with nothing granted still sees the computer, with no volumes" do
+    @device.update!(policy: { "residents" => [ { "id" => @agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    mine = response.parsed_body.fetch("computers").sole
+    assert_equal [], mine["volumes"]
+    assert_equal false, mine["execute"]
+  end
+
+  test "listing computers needs a resident token" do
+    get "/api/v1/companion_devices", headers: bearer(ApiKey.generate_for(users(:user_1), name: "Human").raw_token)
+    assert_response :forbidden
+  end
+
   test "device can only revoke itself including paused and repeat removal" do
     post "/api/v1/companion/revoke", headers: bearer(@key.raw_token)
     assert_response :unauthorized

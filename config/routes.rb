@@ -476,7 +476,7 @@ Rails.application.routes.draw do
         post :session, to: "sessions#create"
         post :revoke, to: "revocations#create"
       end
-      resources :companion_devices, only: :update do
+      resources :companion_devices, only: %i[index update] do
         resources :operations, only: [ :create, :show ], controller: "companion_operations" do
           get :body, on: :member
           put :input, on: :member
