@@ -128,6 +128,28 @@ class CompanionChannelTest < ActionCable::Channel::TestCase
     assert_equal count, transmissions.size
   end
 
+  test "audio is guarded like a reply, and a voice that finished while away follows ready" do
+    stone = pocket_device
+    chat = stone.chat
+    agent = agents(:research_assistant)
+    agent.update_column(:voice_id, "std-aria")
+    submission = chat.messages.create!(role: "user", user: users(:user_1), content: "hi", suppress_automatic_dispatch: true)
+    reply = chat.messages.create!(role: "assistant", agent: agent, content: "hello", suppress_automatic_dispatch: true)
+    reply.voice_audio.attach(io: StringIO.new("ID3"), filename: "v.mp3", content_type: "audio/mpeg",
+      metadata: { "voice_digest" => reply.current_voice_digest })
+    stone.update!(pocket_reply_message_id: reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: Time.current)
+
+    stub_connection current_user: nil, current_app_session: nil, current_companion_device: stone
+    subscribe
+    epoch = stone.reload.connection_epoch
+    assert_equal %w[ready audio], transmissions.map { |t| t["type"] }
+    assert_equal [ submission.to_param, reply.to_param, epoch ], transmissions.last.values_at("submission_id", "message_id", "epoch")
+
+    count = transmissions.size
+    subscription.send(:relay, transmissions.last.merge("epoch" => "an-older-socket"))
+    assert_equal count, transmissions.size, "audio queued for a replaced socket is dropped"
+  end
+
   def pocket_device
     agent = agents(:research_assistant)
     pairing, _code, secret = CompanionPairing.open!(name: "The stone", device_request_id: "stone-#{SecureRandom.hex(4)}",

@@ -8,6 +8,7 @@
   import Avatar from '$lib/components/Avatar.svelte';
   import AdminAccountUsage from './AdminAccountUsage.svelte';
   import AdminXPostingCard from './AdminXPostingCard.svelte';
+  import AdminElevenLabsCard from './AdminElevenLabsCard.svelte';
   import AdminAccountSwitch from './AdminAccountSwitch.svelte';
 
   let { account, formatDate } = $props();
@@ -236,6 +237,8 @@
       </AdminAccountSwitch>
     </CardContent>
   </Card>
+
+  <AdminElevenLabsCard {account} />
 
   <AdminXPostingCard {account} />
 

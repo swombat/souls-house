@@ -41,6 +41,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'voice_mode_enabled',
     'speech_engine',
     'eleven_labs_key_present',
+    'eleven_labs_house_key',
   ]);
   const cleanup = subscribe.mock.results[0].value;
   await view.rerender({

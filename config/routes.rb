@@ -419,6 +419,7 @@ Rails.application.routes.draw do
         patch :billing_required
         patch :field_swarm
         patch :field_tweets_house_key
+        patch :house_eleven_labs_key
         patch :x_posting_house_app
         post :refresh_storage
       end
@@ -477,6 +478,8 @@ Rails.application.routes.draw do
         post :revoke, to: "revocations#create"
         # A pocket device's voice clip or photo (CompanionDevice::Pocket).
         post "pocket/submissions", to: "pocket_submissions#create"
+        # The voice of the last reply the pocket device was sent.
+        get "pocket/replies/:message_id/audio", to: "pocket_audios#show", as: :pocket_audio
       end
       resources :companion_devices, only: %i[index update] do
         resources :operations, only: [ :create, :show ], controller: "companion_operations" do
