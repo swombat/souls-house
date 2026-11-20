@@ -22,9 +22,16 @@ module Backup
   #   back with its digest, nothing is out of scope and nothing refused is
   #   there.
   #
-  # The throwaway volume and the named tool containers are always removed;
-  # if removal fails, the report says so with the volume's name and is not
-  # green, and a primary failure is never hidden by a cleanup one.
+  # EXPECT paths are synthetic, so their grammar is narrow: every component is
+  # made of letters, digits, ".", "_" and "-" (no spaces, no glob characters),
+  # refused before Docker otherwise. The inventory walks them literally anyway.
+  # REFUSE covers regular files, directories and symlinks (what the listing
+  # records), not other special files.
+  #
+  # The throwaway volume and the named tool containers are always removed,
+  # and their absence is checked afterwards; if one is left, the report names
+  # it and is not green, and a primary failure is never hidden by a cleanup
+  # one.
   #   bin/rails "backup:transcript_restore_check[AGENT_ID]"
   class TranscriptRestoreCheck
 
@@ -34,29 +41,34 @@ module Backup
     INSPECT_IMAGE = AgentRestic::INSPECT_IMAGE
     STATE = "/data/state".freeze
     DIGEST = /\A\h{64}\z/
+    COMPONENT = /\A[A-Za-z0-9._-]+\z/
     TIMEOUT = 600
     LIST_LIMIT = 64.megabytes
 
     # Run inside the inspect container with the restored volume at /r (ROOT
-    # overrides it in tests). Prints "F <bytes> <path>" per regular file and
-    # "L <path>" per link under the restored state (paths, never contents),
-    # then "H <verdict> <path>" for each expected path: a SHA-256, or
-    # absent / link / notfile. Any failure exits non-zero, and a complete
-    # listing ends with "END"; anything else is an error, never an empty
-    # result.
+    # overrides it in tests). Prints "F <bytes> <path>" per regular file,
+    # "D <path>" per directory and "L <path>" per link under the restored
+    # state (paths, never contents), then "H <verdict> <path>" for each
+    # expected path: a SHA-256, or absent / link / notfile. Expected paths are
+    # walked one literal component at a time (no word splitting, no globbing).
+    # Any failure exits non-zero, and a complete listing ends with "END";
+    # anything else is an error, never an empty result.
     INVENTORY = <<~'SH'.freeze
-      set -eu
+      set -euf
       root="${ROOT:-/r/data/state}"
       if [ -d "$root" ]; then
         cd "$root"
         find . -type f -exec stat -c 'F %s %n' {} +
+        find . -mindepth 1 -type d -exec sh -c 'for p; do echo "D $p"; done' sh {} +
         find . -type l -exec sh -c 'for p; do echo "L $p"; done' sh {} +
       else
         echo "NOSTATE"
       fi
       for p in "$@"; do
-        cur="$root"; verdict=ok
-        for part in $(echo "$p" | tr / ' '); do
+        cur="$root"; verdict=ok; rest="$p"
+        while [ -n "$rest" ]; do
+          part="${rest%%/*}"
+          case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
           cur="$cur/$part"
           if [ -L "$cur" ]; then verdict=link; break; fi
           if [ ! -e "$cur" ]; then verdict=absent; break; fi
@@ -94,6 +106,7 @@ module Backup
       @snapshot = snapshot
       @run = run
       @timeout = timeout
+      @leftover_containers = []
       validate!
     end
 
@@ -111,7 +124,10 @@ module Backup
       @expect.each do |path, digest|
         raise ArgumentError, "EXPECT #{path}: a 64-hex SHA-256 is required" unless digest.is_a?(String) && digest.match?(DIGEST)
         raise ArgumentError, "EXPECT #{path}: not under a transcript path" unless transcript?(path)
-        raise ArgumentError, "EXPECT #{path}: not a plain relative path" if path.split("/").intersect?([ "", ".", ".." ])
+        parts = path.split("/", -1)
+        unless parts.all? { it.match?(COMPONENT) } && !parts.intersect?([ ".", ".." ])
+          raise ArgumentError, "EXPECT #{path}: only simple synthetic names (letters, digits, . _ -) are allowed"
+        end
       end
       @refuse.each do |path|
         raise ArgumentError, "REFUSE path is empty" if path.blank?
@@ -125,6 +141,7 @@ module Backup
       out = run_tool(name, "run", "--rm", "--name", name, *restic_env, IMAGE, "--no-lock", "--no-cache",
         "ls", "--json", "--recursive", snapshot.restic_snapshot_id, STATE)
       files = {}
+      dirs = []
       links = []
       seen_snapshot = false
       out.each_line do |line|
@@ -142,6 +159,7 @@ module Backup
         relative = path.delete_prefix("#{STATE}/")
         case node["type"]
         when "file" then files[relative] = node["size"].to_i
+        when "dir" then dirs << relative
         when "symlink" then links << relative
         end
       rescue JSON::ParserError
@@ -149,8 +167,8 @@ module Backup
       end
       raise Failed, "restic ls did not describe the snapshot" unless seen_snapshot
 
-      summary(snapshot, mode: "baseline", files:, links:, expected: {}, refused: refused_from(files, links),
-        cleanup: { ok: true }) do |transcript_files, refused|
+      summary(snapshot, mode: "baseline", files:, links:, expected: {}, refused: refused_from(files, dirs, links),
+        cleanup: container_cleanup({ ok: true })) do |transcript_files, refused|
         if refused.values.any? || outside(files).any? || links.any? then "failed"
         elsif transcript_files.zero? then "no_transcript_data"
         else "present"
@@ -179,17 +197,21 @@ module Backup
         cleanup = { ok: false, volume:, error: "docker volume rm failed; remove #{volume} by hand" } unless removed
       end
       if primary
-        raise primary if cleanup[:ok]
+        left = []
+        left << "the throwaway volume #{volume}" unless cleanup[:ok]
+        left << "containers #{@leftover_containers.join(', ')}" if @leftover_containers.any?
+        raise primary if left.empty?
 
-        raise Failed, "#{primary.message} (and the throwaway volume #{volume} was not removed)"
+        raise Failed, "#{primary.message} (and #{left.join(' and ')} was not removed)"
       end
 
-      files, links, hashes = parse_inventory(listing)
+      cleanup = container_cleanup(cleanup)
+      files, dirs, links, hashes = parse_inventory(listing)
       expected = @expect.to_h do |path, digest|
         verdict = hashes.fetch(path) { raise Failed, "inventory has no verdict for #{path}" }
         [ path, { state: verdict.match?(DIGEST) ? (verdict == digest ? "match" : "different") : verdict, ok: verdict == digest } ]
       end
-      summary(snapshot, mode: "restore", files:, links:, expected:, refused: refused_from(files, links), cleanup:) do |_count, refused|
+      summary(snapshot, mode: "restore", files:, links:, expected:, refused: refused_from(files, dirs, links), cleanup:) do |_count, refused|
         if expected.values.all? { it[:ok] } && refused.values.none? && outside(files).empty? && links.empty?
           "recovered"
         else
@@ -203,6 +225,7 @@ module Backup
       raise Failed, "inventory incomplete (no END)" unless lines.last == "END"
 
       files = {}
+      dirs = []
       links = []
       hashes = {}
       lines[0...-1].each do |line|
@@ -212,6 +235,7 @@ module Backup
           size, path = rest.to_s.split(" ", 2)
           raise Failed, "inventory line unreadable" unless size.to_s.match?(/\A\d+\z/) && path.present?
           files[clean(path)] = size.to_i
+        when "D" then dirs << clean(rest)
         when "L" then links << clean(rest)
         when "H"
           verdict, path = rest.to_s.split(" ", 2)
@@ -221,7 +245,7 @@ module Backup
         else raise Failed, "inventory line unreadable"
         end
       end
-      [ files, links, hashes ]
+      [ files, dirs, links, hashes ]
     end
 
     def summary(snapshot, mode:, files:, links:, expected:, refused:, cleanup:)
@@ -237,9 +261,9 @@ module Backup
     end
 
     # From the listing alone: a refused path is there if it, or anything under
-    # it, is listed.
-    def refused_from(files, links)
-      listed = files.keys + links
+    # it, is listed as a file, directory or link.
+    def refused_from(files, dirs, links)
+      listed = files.keys + dirs + links
       @refuse.index_with { |path| listed.any? { under?(it, path) } }
     end
 
@@ -263,7 +287,8 @@ module Backup
       ]
     end
 
-    # A named tool container, removed afterwards whatever happened.
+    # A named tool container, removed afterwards whatever happened; one still
+    # there after removal is recorded (an already-absent one is fine).
     def run_tool(name, *args)
       out, ok = docker(*args)
       raise Failed, "docker #{args.include?('restore') ? 'restore' : args.include?('ls') ? 'ls' : 'inventory'} failed" unless ok
@@ -271,6 +296,15 @@ module Backup
       out
     ensure
       docker("rm", "-f", name) rescue nil
+      left, listed = (docker("ps", "-aq", "--filter", "name=^#{name}$") rescue [ nil, false ])
+      @leftover_containers << name unless listed && left.to_s.strip.empty?
+    end
+
+    def container_cleanup(cleanup)
+      return cleanup if @leftover_containers.empty?
+
+      cleanup.merge(ok: false, containers: @leftover_containers.dup,
+        error: [ cleanup[:error], "containers not removed: #{@leftover_containers.join(', ')}" ].compact.join("; "))
     end
 
     def docker(*args)
@@ -295,7 +329,11 @@ module Backup
         rescue EOFError
           nil
         end
-        drain = Thread.new { stderr.read rescue nil }
+        drain = Thread.new do
+          loop { stderr.readpartial(64.kilobytes) }
+        rescue EOFError, IOError
+          nil
+        end
         begin
           Timeout.timeout(@timeout) do
             reader.value

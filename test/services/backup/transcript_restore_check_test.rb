@@ -29,7 +29,7 @@ class Backup::TranscriptRestoreCheckTest < ActiveSupport::TestCase
 
   # Docker stand-in: the restore and removals succeed (unless told not to),
   # and the inventory is the real shell script run over @root.
-  def runner(calls, rm_ok: true, restore_ok: true, inventory: nil)
+  def runner(calls, rm_ok: true, restore_ok: true, inventory: nil, ps_out: "")
     lambda do |argv|
       calls << argv
       if argv.include?("inventory")
@@ -41,9 +41,17 @@ class Backup::TranscriptRestoreCheckTest < ActiveSupport::TestCase
         [ out, status.success? ]
       elsif argv.include?("restore") then [ "", restore_ok ]
       elsif argv[1, 2] == %w[volume rm] then [ "", rm_ok ]
+      elsif argv[1] == "ps" then [ ps_out, true ]
       else [ "", true ]
       end
     end
+  end
+
+  def inventory(*paths)
+    out, _err, status = Open3.capture3({ "ROOT" => @root }, "sh", "-c", Backup::TranscriptRestoreCheck::INVENTORY,
+      "inventory", *paths)
+    assert status.success?
+    out.lines.map(&:chomp)
   end
 
   def check(expect: { MARKER => DIGEST }, refuse: [], **options)
@@ -116,12 +124,53 @@ class Backup::TranscriptRestoreCheckTest < ActiveSupport::TestCase
   test "digests and paths are validated before docker is touched" do
     calls = []
     [ { MARKER => nil }, { MARKER => "" }, { MARKER => "abc" }, { "decoy/x" => DIGEST },
-      { "claude/projects/../x" => DIGEST } ].each do |expect|
+      { "claude/projects/../x" => DIGEST }, { "claude/projects/project notes/session.jsonl" => DIGEST },
+      { "claude/projects/*/session.jsonl" => DIGEST }, { "claude/projects/x//y" => DIGEST } ].each do |expect|
       assert_raises(ArgumentError, expect.inspect) do
         Backup::TranscriptRestoreCheck.new(@agent, expect:, run: runner(calls))
       end
     end
     assert_empty calls
+  end
+
+  test "the inventory hashes the literal path, never a file reached by splitting or globbing it" do
+    put("claude/projects/project/notes/session.jsonl")
+    put("claude/projects/other/session.jsonl")
+    lines = inventory("claude/projects/project notes/session.jsonl", "claude/projects/*/session.jsonl")
+    assert_includes lines, "H absent claude/projects/project notes/session.jsonl"
+    assert_includes lines, "H absent claude/projects/*/session.jsonl"
+    assert_not(lines.any? { it.start_with?("H #{DIGEST}") }, "no digest is credited to a path that is not there")
+
+    put("claude/projects/project notes/session.jsonl")
+    assert_includes inventory("claude/projects/project notes/session.jsonl"),
+      "H #{DIGEST} claude/projects/project notes/session.jsonl"
+  end
+
+  test "a refused empty directory is seen, in the restore listing and in the baseline" do
+    put(MARKER)
+    FileUtils.mkdir_p(File.join(@root, "decoy-dir"))
+    report, = check(refuse: [ "decoy-dir" ])
+    assert_equal({ "decoy-dir" => true }, report.refused)
+    assert_equal "failed", report.verdict
+
+    calls = []
+    run = ->(argv) { calls << argv; argv.include?("ls") ? [ ls([ MARKER, "file", 1 ], [ "decoy-dir", "dir", 0 ]), true ] : [ "", true ] }
+    report = Backup::TranscriptRestoreCheck.new(@agent, refuse: [ "decoy-dir" ], run:).call
+    assert_equal({ "decoy-dir" => true }, report.refused)
+    assert_equal "failed", report.verdict
+  end
+
+  test "a tool container still there after removal is named and never green; an absent one is fine" do
+    put(MARKER)
+    report, calls = check
+    assert report.ok?
+    assert_equal 2, calls.count { it[1] == "ps" }
+
+    report, = check(ps_out: "deadbeef\n")
+    assert_equal "recovered", report.verdict
+    assert_not report.ok?
+    assert_equal 2, report.cleanup[:containers].size
+    assert_match(/containers not removed: transcript-restore-check-\h{16}/, report.cleanup[:error])
   end
 
   test "a failed volume removal is visible and never green" do
