@@ -54,9 +54,13 @@ export function createReplyReader({
     replay(id) {
       player.enqueue(id);
     },
+    // Returns what it cut off ({ id, at, playing }, the playing reply first),
+    // for the panel's trace.
     speechStarted() {
       picker.hold();
-      interrupted = [...interrupted, ...player.interrupt()];
+      const cut = player.interrupt();
+      interrupted = [...interrupted, ...cut];
+      return cut;
     },
     discarded(current) {
       resume(current);
