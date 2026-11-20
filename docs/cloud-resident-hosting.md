@@ -160,8 +160,8 @@ runner enrollment (`Agents::RemoteRuntime.dispatchable?`). Then:
   never calls that; the synchronous trigger path refuses it outright.
 - `ResidentTurn` admits the turn as it would a local one, and
   `ResidentTurnPollJob` reconciles it unchanged through `RemoteTriggerClient`,
-  which turns `turn_status`, `submit_turn` and `cancel_turn` into
-  RunnerCommands. An unanswered command is reused, not duplicated. Anything but
+  which turns `turn_status`, `submit_turn`, `cancel_turn` and console
+  containment's `resolve_turn` (#1056) into RunnerCommands. An unanswered command is reused, not duplicated. Anything but
   the resident's own answer (runner failed, refused, unknown, or silent) comes
   back as a 5xx and is retried; only the resident's trigger server can produce
   the 404 that licenses a submission. A turn recorded against a replaced or
@@ -192,7 +192,9 @@ present under that exact ID, and skips the fetch when it already has it. No
 registry, no registry credential, nothing in cloud-init.
 
 Not in this slice: moving an existing resident's data (backup, restore,
-single-writer cutover), real residents, and console containment on a VM.
+single-writer cutover) and real residents. Console containment on a VM came
+later (#1056): `resolve_turn` closes the VM's ledger first, and a runner that
+refuses it leaves the house's reservation in place.
 
 ## Deploys reach VM residents (ops/deploy)
 

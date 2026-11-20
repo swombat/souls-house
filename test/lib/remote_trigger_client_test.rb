@@ -78,8 +78,15 @@ class RemoteTriggerClientTest < ActiveSupport::TestCase
     assert_equal 2, RunnerCommand.where(kind: "submit_turn").count
   end
 
-  test "containment is not offered remotely" do
-    assert_equal 501, client.resolve_turn(@turn.dispatch_id)[:status]
+  test "containment is relayed with the execution_stopped proof (#1056)" do
+    answer = lambda do |command|
+      assert_equal "resolve_turn", command.kind
+      assert_equal({ "execution_stopped" => true }, command.envelope.fetch("payload").fetch("body"))
+      { "outcome" => "done", "result" => { "status" => 200, "body" => { "state" => "cancelled" } } }
+    end
+    assert_equal({ status: 200, body: { "state" => "cancelled" } }, client(answer:).resolve_turn(@turn.dispatch_id))
+    refused = client(answer: ->(_c) { { "outcome" => "refused", "error" => "command not allowed on this runner: 'resolve_turn'" } })
+    assert_equal 502, refused.resolve_turn(@turn.dispatch_id)[:status]
   end
 
 end

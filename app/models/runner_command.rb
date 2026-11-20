@@ -10,7 +10,7 @@
 # state is reconciled by its dispatch id, never resubmitted.
 class RunnerCommand < ApplicationRecord
 
-  KINDS = %w[start_resident stop_resident submit_turn turn_status cancel_turn seed_home backup_resident provider_auth
+  KINDS = %w[start_resident stop_resident submit_turn turn_status cancel_turn resolve_turn seed_home backup_resident provider_auth
              check_runtime_trust tailnet home_stats
              update_runner reboot_host restore_carry rollback_snapshot].freeze
   STATES = %w[queued delivered done failed refused unknown].freeze
