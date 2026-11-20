@@ -2,7 +2,34 @@ module Api
   module V1
     class CompanionDevicesController < BaseController
 
-      before_action :require_human_actor!
+      before_action :require_human_actor!, except: :index
+
+      # A resident's own view: the computers in its account that grant it
+      # anything, and what each grants. Without this a resident had the
+      # operations route but no way to learn a device's id (YEDPGJ, 20 Nov).
+      # Only the calling resident's own entry is shown, never anyone else's.
+      # A resident still named with nothing granted is listed on purpose:
+      # CompanionOperation.permitted? allows drives for any named resident.
+      def index
+        agent = current_api_agent
+        return head :forbidden unless agent
+
+        computers = CompanionDevice.where(account_id: agent.account_id, revoked_at: nil).order(:id).filter_map do |device|
+          mine = device.policy.fetch("residents", []).find { |r| r["id"] == agent.obfuscated_id }
+          next unless mine
+
+          {
+            id: device.to_param,
+            name: device.name,
+            connected: device.connection_epoch.present?,
+            paused: device.paused?,
+            volumes: mine.fetch("volumes", []).map { |v| v.slice("volume", "access") },
+            execute: mine["execute"] == true && !device.commands_off_locally?,
+            desktop: mine["desktop"] == true
+          }
+        end
+        render json: { computers: computers }
+      end
 
       def update
         account = human_account!

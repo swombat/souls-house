@@ -28,7 +28,8 @@ export function captureSupported(win = globalThis) {
 
 // Starts listening. Resolves to a handle once the microphone is open.
 //   onlevel(rms, threshold)       a few times a second, for the meter
-//   onspeechstart(samples)        an utterance began; samples are its pre-roll
+//   onspeechstart(samples, info)  an utterance began; samples are its pre-roll,
+//                                 info { level, threshold } what proved it
 //   onaudio(samples)              a frame of the open utterance
 //   onturn(durationMs)            the utterance ended
 //   ondiscard(durationMs)         the burst was too short to be speech
@@ -91,8 +92,9 @@ export async function startCapture({
 
   function emit(events) {
     for (const event of events) {
-      if (event.type === 'start') onspeechstart?.(out(event.samples));
-      else if (event.type === 'audio') onaudio?.(out(event.samples));
+      if (event.type === 'start') {
+        onspeechstart?.(out(event.samples), { level: event.level, threshold: event.threshold });
+      } else if (event.type === 'audio') onaudio?.(out(event.samples));
       else if (event.type === 'discard') ondiscard?.(event.durationMs);
       else if (event.type === 'end') onturn?.(event.durationMs);
     }
