@@ -178,9 +178,12 @@ class ResidentTurn < ApplicationRecord
 
   # Console-only recovery until the operator has proved the previous process
   # group/container stopped. Never call from timeout or heartbeat automation.
-  # Both ledgers close together or neither does (#1056): a VM resident's turn
-  # is resolved through its runner, and any failure there raises before the
-  # house side is touched.
+  # Not atomic: the resident's own ledger first, then the house's (#1056). A
+  # VM resident's turn is resolved through its runner; any failure there
+  # raises before the house side is touched. If the VM committed but its
+  # answer was lost, the house turn stays unknown and a later poll or a
+  # second call reconciles it. Never use finish! for containment: it closes
+  # only the house's side and leaves the VM's session reserved.
   def resolve_after_containment!(operator:, reason:, client: nil)
     raise ArgumentError, "site administrator and containment reason required" unless operator&.is_site_admin? && reason.to_s.strip.length >= 10
     raise ArgumentError, "only uncertain turns can be resolved" unless state == "unknown"

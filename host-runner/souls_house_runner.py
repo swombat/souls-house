@@ -1175,7 +1175,10 @@ class ResidentHost:
         an operator has proved the run stopped. The trigger server refuses
         without the execution_stopped proof; so does the runner, and it sends
         nothing else."""
-        _require(payload.get("body") == {"execution_stopped": True}, "resolve needs the execution_stopped proof")
+        body = payload.get("body")
+        # `is True`, not ==: Python counts 1 and 1.0 as equal to True.
+        _require(isinstance(body, dict) and set(body) == {"execution_stopped"} and body["execution_stopped"] is True,
+                 "resolve needs the execution_stopped proof")
         _require(payload.get("ledger_id") is None, "resolve takes no ledger_id")
         return self._turn("POST", payload, suffix="/resolve")
 

@@ -124,6 +124,23 @@ This records the administrator and reason. The runtime must be reachable and
 confirm an unknown entry (or a replaced ledger with no entry). A running or
 unreachable runtime is rejected. Do not use this as a timeout escape hatch.
 
+It is not atomic: the resident's own ledger is resolved first, then the house's
+turn is closed. If the first step fails, nothing on the house side changes.
+
+**Never call `turn.finish!` for containment.** It closes only the house's
+record; the resident's ledger keeps the session reserved and every later turn
+is refused with "session already reserved" (Janis, 18–19 Nov 2026).
+
+**Residents on their own server (VM):** the call goes through the VM's runner
+as a `resolve_turn` command (#1056). That command exists only in runners from
+#1056 on. A Rails deploy is not evidence that the target VM's runner has it:
+runners update themselves when their bundle differs, and an older runner
+refuses the command, which surfaces as "Runtime did not acknowledge
+containment" with the house reservation intact. Before relying on it, check
+that the runner reports one of this release's bundles:
+`RunnerBundle.find(RunnerBundle.reported(enrollment)).present?`. If it doesn't,
+wait for its update (at most an hour between attempts) and call again.
+
 ## Rollout and rollback
 
 1. Migrate Rails; persist `SOULSHOUSE_ASYNC_TURNS=0`. Deploy compatible runtimes
