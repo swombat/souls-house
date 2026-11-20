@@ -34,6 +34,17 @@ module Backup
     class ResidentBusy < ArgumentError; end
     class TranscriptRefused < ArgumentError; end
 
+    # Held by a house resident's backup for as long as its container may be
+    # paused, and by a runtime roll while it recreates that container (#765,
+    # ops/deploy/roll-resident.rb), so neither acts on a container the other
+    # is in the middle of. Advisory and keyed per resident: it holds no row,
+    # so turns, heartbeats and other residents never wait on it.
+    QUIESCE_LOCK = 1_936_155_243
+
+    def self.quiesce_lock_sql(function, agent)
+      "SELECT #{function}(#{QUIESCE_LOCK}, #{Integer(agent.id)})"
+    end
+
     module_function
 
     def docker_environment(agent)
@@ -75,7 +86,21 @@ module Backup
       end
     end
 
-    def paused(agent)
+    # Session-level, not per transaction: a backup outlasts any transaction
+    # it should hold open (a resident with a vault is already inside one).
+    def paused(agent, &block)
+      connection = ActiveRecord::Base.connection
+      unless connection.select_value(quiesce_lock_sql("pg_try_advisory_lock", agent))
+        raise ResidentBusy, "The resident's runtime is being rolled"
+      end
+      begin
+        paused_holding_lock(agent, &block)
+      ensure
+        connection.select_value(quiesce_lock_sql("pg_advisory_unlock", agent))
+      end
+    end
+
+    def paused_holding_lock(agent)
       raise ResidentBusy, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
       output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
       paused_here = false

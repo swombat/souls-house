@@ -1239,6 +1239,75 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("stock:deploy-" + "a" * 32, pending["residents"][0]["image"])
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
+    def backup_paused(self, refs, paused, failing_execs=None):
+        """Residents in `paused` are paused by their backup (#765): `docker
+        exec` into them fails, `failing_execs` times each (None: every time),
+        and while an exec has just failed Docker says they are paused."""
+        commands = self.pinned_fixture(refs)
+        run = self.w.run.side_effect
+        left = {name: failing_execs for name in paused}
+        state = {name: False for name in paused}
+
+        def fake(args, **kwargs):
+            if args[:2] == ["docker", "exec"] and args[2] in left:
+                n = left[args[2]]
+                if n is None or n > 0:
+                    left[args[2]] = None if n is None else n - 1
+                    state[args[2]] = True
+                    commands.append(args)
+                    raise RuntimeError("Subprocess failed; private diagnostics retained")
+                state[args[2]] = False
+            if args[:4] == ["docker", "inspect", "--format", "{{.State.Paused}}"] and args[4] in state:
+                commands.append(args)
+                return "true" if state[args[4]] else "false"
+            return run(args, **kwargs)
+        self.w.run.side_effect = fake
+        return commands
+
+    def test_a_resident_paused_by_its_backup_is_waited_for_not_latched(self):
+        commands = self.backup_paused(["c" * 40, "c" * 40], ["r1"], failing_execs=2)
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertIn(["docker", "inspect", "--format", "{{.State.Paused}}", "r1"], commands)
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual(["0", "1"], sorted(rolled))
+        worker.time.sleep.assert_called_with(15)
+
+    def test_a_resident_still_paused_after_the_wait_is_busy_and_left_for_the_sweep(self):
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([1], self.w.data["skipped"])
+        self.assertEqual([1], self.w.data["still_paused"])
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], [r["id"] for r in pending["residents"]])
+        self.assertEqual([], pending["held"])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual(["0"], rolled)
+
+    def test_an_exec_that_fails_on_a_running_container_still_fails_the_run(self):
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        run = self.w.run.side_effect
+        asked = []
+
+        def not_paused(args, **kw):
+            if args[:4] == ["docker", "inspect", "--format", "{{.State.Paused}}"]:
+                asked.append(args[4])
+                return "false"
+            return run(args, **kw)
+        self.w.run.side_effect = not_paused
+        with self.assertRaises(RuntimeError):
+            self.w.rebuild_residents()
+        self.assertEqual(["r1"], asked)
+        worker.time.sleep.assert_not_called()
+
+    def test_when_every_resident_stays_paused_nothing_proves_the_rebuild(self):
+        self.backup_paused(["c" * 40], ["r0"])
+        self.w.settings["backup_wait_seconds"] = 0
+        with self.assertRaisesRegex(RuntimeError, "No running resident could be compared"):
+            self.w.rebuild_residents()
+
     def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
         commands = self.pinned_fixture(["c" * 40])
         rails = self.w.rails.side_effect

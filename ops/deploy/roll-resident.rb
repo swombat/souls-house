@@ -34,6 +34,7 @@ idle = -> {
 
 held = false
 changed = false
+backup_holds = Class.new(StandardError)
 result = nil
 begin
   gate_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -66,6 +67,13 @@ begin
       # Not FOR UPDATE: a turn queued for this resident meanwhile must be able
       # to insert (its foreign key takes KEY SHARE) while holding the gate.
       a.lock!(Agents::Sandbox::ROW_LOCK)
+      # The backup's lock (#765): a resident its backup holds paused is not
+      # recreated, and no backup pauses it until this transaction ends. Step
+      # 1's idle check can't tell: `docker exec` on a paused container exits
+      # 1, which is also pgrep's "no chaos running".
+      unless Agent.connection.select_value(Backup::AgentRestic.quiesce_lock_sql("pg_try_advisory_xact_lock", a))
+        raise backup_holds
+      end
       before = inspect_mounts.call
       old = a.attributes.slice("active", "paused", "container_image")
       # The host retains this before starting; no private files or memory read.
@@ -86,7 +94,7 @@ begin
   end
   result[:gate_seconds] ||= (Process.clock_gettime(Process::CLOCK_MONOTONIC) - gate_started).round(3)
   puts result.to_json
-rescue ActiveRecord::LockWaitTimeout
+rescue ActiveRecord::LockWaitTimeout, backup_holds
   raise if changed
   a.reload.update!(runtime_roll_started_at: nil) if held
   puts({result: "busy", id: a.id}.to_json)

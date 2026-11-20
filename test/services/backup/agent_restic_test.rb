@@ -132,6 +132,51 @@ module Backup
       end
     end
 
+    # #765: the backup and a runtime roll share one lock per resident, so a
+    # roll never recreates a container the backup holds paused, and a backup
+    # never pauses one a roll is recreating. A separate libpq session: advisory
+    # locks are reentrant on the test's own.
+    def lock_observer
+      observer = PG.connect(dbname: ActiveRecord::Base.connection_db_config.database)
+      yield observer
+    ensure
+      observer&.exec("SELECT pg_advisory_unlock_all()")
+      observer&.close
+    end
+
+    test "a backup does not pause a resident whose runtime roll holds it" do
+      lock_observer do |observer|
+        observer.exec(AgentRestic.quiesce_lock_sql("pg_advisory_lock", @agent))
+        Agents::Resources.stub(:new, verified_resources) do
+          Open3.stub(:capture3, ->(*) { flunk "a resident being rolled must not be inspected or paused" }) do
+            error = assert_raises(AgentRestic::ResidentBusy) { AgentRestic.with_quiesced(@agent) { flunk "must not run" } }
+            assert_equal "The resident's runtime is being rolled", error.message
+          end
+        end
+      end
+    end
+
+    test "the backup holds the resident's lock while it is paused, and releases it after" do
+      lock_observer do |observer|
+        try = -> { observer.exec(AgentRestic.quiesce_lock_sql("pg_try_advisory_lock", @agent)).getvalue(0, 0) == "t" }
+        during = nil
+        docker = lambda do |*command|
+          case command[1]
+          when "inspect" then [ "true false", "", ok ]
+          when "pause", "unpause" then [ "", "", ok ]
+          else flunk "unexpected docker #{command[1]}"
+          end
+        end
+        Agents::Resources.stub(:new, verified_resources) do
+          Open3.stub(:capture3, docker) do
+            AgentRestic.with_quiesced(@agent) { during = try.call }
+          end
+        end
+        assert_equal false, during, "a roll must not get the lock while the backup holds the resident"
+        assert try.call, "the lock is released once the backup is done"
+      end
+    end
+
     test "a busy resident without a memory vault is not backed up" do
       @agent.save!
       @agent.agent_runtime_interactions.create!(trigger_kind: "synthetic", started_at: Time.current)

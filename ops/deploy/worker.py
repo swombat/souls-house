@@ -167,6 +167,8 @@ class Worker:
             raise RuntimeError("No matching request")
         self.log = (self.directory / "private.log").open("a")
         self.repo = self.directory / "repo"
+        # Residents a backup kept paused past the wait in this run (#765).
+        self.still_paused = set()
 
     def report(self, step, **values):
         with self.lock:
@@ -197,6 +199,43 @@ class Worker:
         args += [self.web(), "bin/rails", "runner", "-"]
         output = self.run(args, input=code, capture=True, timeout=300)
         return json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
+
+    def resident_version(self, resident):
+        """`chaos --version` from a resident container on this host, or None
+        when it stayed paused (#765).
+
+        The nightly backup pauses a resident while it copies its home, and
+        `docker exec` into a paused container fails. That failure used to end
+        the run and latch the runtime, so every later deploy was refused. Now
+        the exec is tried first, and only when it fails is the container asked
+        whether it is paused (so no check can go stale before the act). Paused
+        means wait and try again, up to backup_wait_seconds; still paused after
+        that is None, which the callers treat as a busy resident: not compared
+        here, rolled later by the sweep under the backup's own lock
+        (roll-resident.rb). Any other failure raises, as before. A resident
+        that stayed paused once in this run is not waited for again."""
+        name = resident["container_name"]
+        if resident["id"] in self.still_paused:
+            return None
+        deadline = time.monotonic() + self.settings.get("backup_wait_seconds", 2400)
+        while True:
+            try:
+                return self.run(["docker", "exec", name, "chaos", "--version"], capture=True)
+            except RuntimeError:
+                if not self.container_paused(name):
+                    raise
+            if time.monotonic() >= deadline:
+                self.still_paused.add(resident["id"])
+                self.report("resident still paused; it will roll when free", still_paused=sorted(self.still_paused))
+                return None
+            self.report("waiting for a paused resident", waiting_for_paused=resident["id"])
+            time.sleep(15)
+
+    def container_paused(self, name):
+        try:
+            return self.run(["docker", "inspect", "--format", "{{.State.Paused}}", name], capture=True) == "true"
+        except RuntimeError:
+            return False
 
     def checkout(self):
         self.report("resolving master", state="running")
@@ -483,14 +522,21 @@ class Worker:
         if pinned:
             # Same source must give the same binary. Check every resident before
             # touching any, so a mismatch never leaves the fleet half-rolled.
+            compared = 0
             for resident in residents:
-                running = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
+                running = self.resident_version(resident)
+                if running is None:
+                    continue
                 if running != version:
                     raise RuntimeError("Rebuilt Chaos differs from the running one")
+                compared += 1
             for resident in vm_running:
                 if self.image_version(resident["running_image"]) != version:
                     raise RuntimeError("Rebuilt Chaos differs from the running one")
+                compared += 1
+            if not compared:
+                # Every resident stayed paused: nothing proves the rebuild.
+                raise RuntimeError("No running resident could be compared; operator review required")
         development = None
         if any(str(r["id"]) in self.settings["custom_residents"] for r in residents):
             development = self.settings["development_repository"] + ":" + tag
@@ -531,12 +577,11 @@ class Worker:
         old_versions = {}
         for resident in residents:
             try:
-                raw = self.run(
-                    ["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+                raw = self.resident_version(resident)
                 # Parsed inside the guard: an answer we can't read is an
                 # unknown resident (held, never rolled), not an aborted run
                 # that leaves the whole queue for the sweep with no hold.
-                old = version_tuple(raw)
+                old = version_tuple(raw) if raw is not None else None
             except Exception:
                 raw, old = None, None
             old_versions[resident["id"]] = raw
@@ -547,6 +592,9 @@ class Worker:
         def roll_one(entry):
             resident_id = entry["id"]
             self.report("rolling resident if idle", resident_id=resident_id)
+            if resident_id in self.still_paused:
+                # Paused by its backup past the wait: busy, left for the sweep.
+                return {"result": "busy"}
             if old_versions.get(resident_id) is None:
                 return {"result": "unknown"}
             try:

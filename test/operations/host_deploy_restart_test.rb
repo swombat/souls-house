@@ -51,6 +51,25 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     assert @agent.active?
   end
 
+  # #765: `docker exec` on a container the backup has paused exits 1, the
+  # same as pgrep's "no chaos running", so step 1 reads it as idle. Step 2
+  # takes the backup's lock and answers busy instead of recreating it.
+  test "a resident its backup holds is not recreated: busy, and the hold is cleared" do
+    observer = PG.connect(dbname: ActiveRecord::Base.connection_db_config.database)
+    observer.exec(Backup::AgentRestic.quiesce_lock_sql("pg_advisory_lock", @agent))
+    docker_idle_and_mounts do
+      Agents::Sandbox.stub(:new, ->(*) { flunk "a resident paused for backup must not be recreated" }) do
+        assert_equal "busy", run_script.fetch("result")
+      end
+    end
+    assert_nil @agent.reload.runtime_roll_started_at
+    assert_equal "fixture:old", @agent.container_image
+    assert @agent.active?
+  ensure
+    observer&.exec("SELECT pg_advisory_unlock_all()")
+    observer&.close
+  end
+
   test "healthy recreation preserves originally inactive availability" do
     @agent.update!(active: false, paused: true)
     sandbox = Minitest::Mock.new
