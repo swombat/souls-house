@@ -230,8 +230,12 @@ class SpeechEngineTest < ActiveSupport::TestCase
       pocket = SpeechEngine.for_pocket(@account.reload, @agent.reload)
       assert [ pocket.available, pocket.key_source ] == [ true, "house" ]
 
-      @account.update!(house_eleven_labs_key: false)
-      assert_equal "no_eleven_labs_key", SpeechEngine.for_pocket(@account.reload, @agent).reason
+      @account.update!(house_eleven_labs_key: false, eleven_labs_api_key: "acct-key")
+      assert_equal "not_opted_in", SpeechEngine.for_pocket(@account.reload, @agent).reason,
+        "a stored key alone is not consent to automatic renders"
+      @account.update!(speech_engine: "elevenlabs")
+      assert SpeechEngine.for_pocket(@account.reload, @agent).available, "an account already on ElevenLabs has opted in"
+      @account.update!(speech_engine: "phonon", eleven_labs_api_key: nil)
       @account.update!(house_eleven_labs_key: true)
       scope("disabled")
       assert_not SpeechEngine.for_pocket(@account.reload, @agent).available

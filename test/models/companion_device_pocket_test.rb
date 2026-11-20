@@ -201,6 +201,25 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_nil @device.reload.pocket_open_message_id
   end
 
+  test "a Phonon account with its own key and no switch gets text only from the stone" do
+    speak_with_eleven_labs
+    @account.update!(house_eleven_labs_key: false, eleven_labs_api_key: "acct-key")
+    enable_mic
+    message = submit.message
+    assert_no_enqueued_jobs(only: GenerateVoiceJob) { reply_to(message) }
+    assert_equal %w[thinking reply], payloads.map { |p| p["type"] }
+  end
+
+  test "an error deciding the voice never touches the text" do
+    speak_with_eleven_labs
+    enable_mic
+    message = submit.message
+    SpeechEngine.stub(:for_pocket, ->(*) { raise "policy lookup failed" }) { reply_to(message) }
+    assert_equal %w[thinking reply], payloads.map { |p| p["type"] }
+    assert_nil @device.reload.pocket_open_message_id
+    assert_no_enqueued_jobs(only: GenerateVoiceJob)
+  end
+
   test "a pause ends the last reply's voice too: nothing is announced after it" do
     speak_with_eleven_labs
     enable_mic

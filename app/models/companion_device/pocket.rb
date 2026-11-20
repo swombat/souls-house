@@ -262,11 +262,13 @@ module CompanionDevice::Pocket
   # resolves the key again when it runs and announces the audio when it is
   # made. A failure to schedule it costs the voice, never the text.
   def render_pocket_voice(reply)
-    return unless reply.voice_available
-    return unless SpeechEngine.for_pocket(chat.account, reply.agent).available
-
+    account = chat.account
+    # The whole decision runs after commit, isolated, so nothing about the
+    # voice can roll back or hold up the text (Mira, #1076).
     ActiveRecord.after_all_transactions_commit do
-      GenerateVoiceJob.perform_later(reply, surface: "pocket")
+      if reply.voice_available && SpeechEngine.for_pocket(account, reply.agent).available
+        GenerateVoiceJob.perform_later(reply, surface: "pocket")
+      end
     rescue StandardError => e
       Rails.logger.warn("[CompanionDevice] pocket voice for message #{reply.id} not scheduled: #{e.class}: #{e.message}")
     end

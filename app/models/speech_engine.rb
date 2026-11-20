@@ -77,13 +77,16 @@ module SpeechEngine
   # A pocket device (CompanionDevice::Pocket) has no browser, so Phonon is
   # not an option there and the account's engine choice, which is about the
   # browsers its people read in, doesn't apply. The stone speaks through
-  # ElevenLabs when everything else allows it: the site hasn't turned
-  # ElevenLabs off, the plan rule passes, a key resolves (own, or the
-  # house's under the site admin's switch) and the resident has a voice.
-  # Otherwise it gets its reply as text only. This keeps a first rollout to
-  # the stone without moving the account's browsers off Phonon (Mira, #1076).
+  # ElevenLabs only where the account has opted into sending its replies
+  # there: the site admin's house-key switch, or the account's own engine
+  # already on ElevenLabs. A stored key alone is not that consent (Mira,
+  # #1076). Then the site mustn't have ElevenLabs off, the plan rule must
+  # pass, a key must resolve and the resident must have a voice. Otherwise
+  # the stone gets its reply as text only. This keeps a first rollout to the
+  # stone without moving the account's browsers off Phonon.
   def self.for_pocket(account, agent)
     return Status.new(engine: PHONON, available: false, reason: "site_off") if Setting.instance.speech_engine_scope == "disabled"
+    return Status.new(engine: PHONON, available: false, reason: "not_opted_in") unless pocket_opted_in?(account)
     return Status.new(engine: PHONON, available: false, reason: "plan") unless elevenlabs_plan?(account, agent)
 
     key = eleven_labs_key(account)
@@ -91,6 +94,12 @@ module SpeechEngine
     return Status.new(engine: ELEVENLABS, available: false, reason: "no_eleven_labs_voice") if agent&.voice_id.blank?
 
     Status.new(engine: ELEVENLABS, available: true, reason: nil, key_source: key.source)
+  end
+
+  def self.pocket_opted_in?(account)
+    return false if account.nil?
+
+    account.house_eleven_labs_key? || account_engine(account) == ELEVENLABS
   end
 
   # The ElevenLabs key this account's speech runs on: its own, or the house's
