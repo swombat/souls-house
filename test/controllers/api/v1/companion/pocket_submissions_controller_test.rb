@@ -134,6 +134,25 @@ class Api::V1::Companion::PocketSubmissionsControllerTest < ActionDispatch::Inte
     assert_equal "consent_off", response.parsed_body["code"]
   end
 
+  test "a clip with no speech is refused without a message, so the next clip goes straight through" do
+    @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    assert_no_difference [ -> { Message.count }, -> { ActiveStorage::Blob.count } ] do
+      ElevenLabsStt.stub(:transcribe, "  ") do
+        TranscriptionCharge.stub(:admit!, true) do
+          post "/api/v1/companion/pocket/submissions",
+            params: { request_id: "silent", kind: "voice", file: fixture_file_upload("test_audio.webm", "audio/webm") },
+            headers: { "Authorization" => "Bearer #{@credential}" }
+        end
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_equal "no_speech", response.parsed_body["code"]
+    assert_nil @device.reload.pocket_open_message_id
+
+    post_clip(request_id: "spoken")
+    assert_response :created
+  end
+
   test "a transcription failure leaves no stored clip" do
     @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
     assert_no_difference [ -> { Message.count }, -> { ActiveStorage::Blob.count } ] do
