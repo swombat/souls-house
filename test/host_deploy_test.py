@@ -1301,6 +1301,36 @@ class WorkerTest(unittest.TestCase):
         rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
         self.assertEqual(["0"], rolled)
 
+    def test_a_run_interrupted_after_its_first_queue_write_leaves_every_check_owed(self):
+        # Mira on 7e3e6a2d: interrupted there, a paused resident was already
+        # sweepable without its version check. Now every entry starts owing it.
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        real = worker.atomic
+
+        class Interrupted(BaseException):
+            pass
+
+        def interrupt_after_first_queue_write(path, data):
+            real(path, data)
+            if path == worker.pending_rolls():
+                raise Interrupted
+        with patch.object(worker, "atomic", side_effect=interrupt_after_first_queue_write):
+            with self.assertRaises(Interrupted):
+                self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([{"container_name": "r0", "pinned": True}, {"container_name": "r1", "pinned": True}],
+                         [r["preflight"] for r in pending["residents"]])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual([], rolled)
+
+    def test_only_residents_this_run_checked_are_cleared_of_their_preflight(self):
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], [r["id"] for r in pending["residents"] if "preflight" in r])
+
     def test_an_exec_failure_that_is_not_a_pause_still_fails_the_run(self):
         self.pinned_fixture(["c" * 40, "c" * 40])
         run = self.w.run.side_effect

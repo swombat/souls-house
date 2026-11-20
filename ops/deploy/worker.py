@@ -552,8 +552,14 @@ class Worker:
         # The intended work is written BEFORE any attempt and checkpointed after
         # each one, so no error later in this run (timeout, probe, VM) can lose
         # a resident the sweep still has to roll.
+        # Every entry starts owing its preflight (the pinned equality and the
+        # downgrade check, #765); it is cleared below only for a resident
+        # whose version this run has read and checked. So a run interrupted
+        # anywhere before then leaves the sweep to run the checks itself,
+        # never to recreate without them.
         pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
-                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock,
+                    "preflight": {"container_name": r["container_name"], "pinned": pinned}}
                    for r in residents]
         queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
                  "held": held, "stock_image": stock,
@@ -593,15 +599,14 @@ class Worker:
             if old is not None and version_tuple(version) < old:
                 pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
+        # Checked here: their preflight is done. A resident still paused by
+        # its backup keeps it owed (busy, not held: nothing failed), and so
+        # does one whose version couldn't be read (held below anyway).
+        for entry in pending:
+            if entry["id"] not in deferred and old_versions.get(entry["id"]) is not None:
+                entry.pop("preflight")
+        atomic(pending_rolls(), queue)
         if deferred:
-            # Their preflight (the pinned equality and the downgrade check)
-            # is owed: written into their queue entries, so the sweep runs it
-            # before any recreate. Busy, not held: nothing failed.
-            names = {r["id"]: r["container_name"] for r in residents}
-            for entry in pending:
-                if entry["id"] in deferred:
-                    entry["preflight"] = {"container_name": names[entry["id"]], "pinned": pinned}
-            atomic(pending_rolls(), queue)
             self.report("residents paused by their backup will roll when free", deferred=sorted(deferred))
 
         def roll_one(entry):
