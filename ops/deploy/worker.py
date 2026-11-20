@@ -153,6 +153,16 @@ def verify_migrations(before, after, accepted=()):
         raise MigrationsChanged(refused)
 
 
+# Docker's own answer when `docker exec` meets a paused container (#765):
+# "Container <name> is paused, unpause the container before exec".
+PAUSED_EXEC = re.compile(r"\bis paused, unpause the container before exec\b")
+
+
+class ContainerPaused(RuntimeError):
+    """The exec failed because the container was paused, by Docker's own
+    account of that failure, not by a later look at the container."""
+
+
 class Worker:
     # Rolls run in threads: status.json, the private log and the sweep queue
     # are written under this one lock.
@@ -180,6 +190,8 @@ class Worker:
             self.log.write(result.stdout + result.stderr)
             self.log.flush()
         if result.returncode:
+            if args[:2] == ["docker", "exec"] and PAUSED_EXEC.search(result.stderr or ""):
+                raise ContainerPaused("Container is paused; private diagnostics retained")
             raise RuntimeError("Subprocess failed; private diagnostics retained")
         return result.stdout.strip() if capture else None
 
@@ -197,6 +209,31 @@ class Worker:
         args += [self.web(), "bin/rails", "runner", "-"]
         output = self.run(args, input=code, capture=True, timeout=300)
         return json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
+
+    def resident_version(self, resident, wait=None):
+        """`chaos --version` from a resident container on this host, or None
+        when it stayed paused (#765).
+
+        The nightly backup pauses a resident while it copies its home, and
+        `docker exec` into a paused container fails. That failure used to end
+        the run and latch the runtime, so every later deploy was refused. Now
+        a failure Docker itself reports as "is paused" (ContainerPaused, read
+        from the failed exec, never from a later look that a backup ending in
+        between could falsify) is waited out: try again every 15 s, up to
+        `wait` (backup_wait_seconds by default), then None. Any other failure
+        raises, as before."""
+        if wait is None:
+            wait = self.settings.get("backup_wait_seconds", 2400)
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                return self.run(["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+            except ContainerPaused:
+                pass
+            if time.monotonic() >= deadline:
+                return None
+            self.report("waiting for a resident its backup has paused", waiting_for_paused=resident["id"])
+            time.sleep(15)
 
     def checkout(self):
         self.report("resolving master", state="running")
@@ -480,12 +517,19 @@ class Worker:
         if SHA.fullmatch(self.data.get("rails_revision") or ""):
             atomic(ROOT / "runtime-source.json",
                    {"rails_revision": self.data["rails_revision"], "run": self.data["id"]})
+        # Residents a backup kept paused past the wait in this run (#765).
+        deferred = set()
         if pinned:
             # Same source must give the same binary. Check every resident before
             # touching any, so a mismatch never leaves the fleet half-rolled.
             for resident in residents:
-                running = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
+                running = self.resident_version(resident)
+                if running is None:
+                    # Still paused by its backup: its check is owed, not
+                    # skipped. It waits in the queue and the sweep runs the
+                    # check before it may be recreated (owed_preflight).
+                    deferred.add(resident["id"])
+                    continue
                 if running != version:
                     raise RuntimeError("Rebuilt Chaos differs from the running one")
             for resident in vm_running:
@@ -508,8 +552,14 @@ class Worker:
         # The intended work is written BEFORE any attempt and checkpointed after
         # each one, so no error later in this run (timeout, probe, VM) can lose
         # a resident the sweep still has to roll.
+        # Every entry starts owing its preflight (the pinned equality and the
+        # downgrade check, #765); it is cleared below only for a resident
+        # whose version this run has read and checked. So a run interrupted
+        # anywhere before then leaves the sweep to run the checks itself,
+        # never to recreate without them.
         pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
-                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock,
+                    "preflight": {"container_name": r["container_name"], "pinned": pinned}}
                    for r in residents]
         queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
                  "held": held, "stock_image": stock,
@@ -530,9 +580,15 @@ class Worker:
         # downgrade stops the run with the fleet unchanged.
         old_versions = {}
         for resident in residents:
+            if resident["id"] in deferred:
+                old_versions[resident["id"]] = None
+                continue
             try:
-                raw = self.run(
-                    ["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+                raw = self.resident_version(resident)
+                if raw is None:
+                    deferred.add(resident["id"])
+                    old_versions[resident["id"]] = None
+                    continue
                 # Parsed inside the guard: an answer we can't read is an
                 # unknown resident (held, never rolled), not an aborted run
                 # that leaves the whole queue for the sweep with no hold.
@@ -543,10 +599,23 @@ class Worker:
             if old is not None and version_tuple(version) < old:
                 pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
+        # Checked here: their preflight is done. A resident still paused by
+        # its backup keeps it owed (busy, not held: nothing failed), and so
+        # does one whose version couldn't be read (held below anyway).
+        for entry in pending:
+            if entry["id"] not in deferred and old_versions.get(entry["id"]) is not None:
+                entry.pop("preflight")
+        atomic(pending_rolls(), queue)
+        if deferred:
+            self.report("residents paused by their backup will roll when free", deferred=sorted(deferred))
 
         def roll_one(entry):
             resident_id = entry["id"]
             self.report("rolling resident if idle", resident_id=resident_id)
+            if resident_id in deferred:
+                # Paused by its backup past the wait: busy, its preflight
+                # owed in the queue for the sweep.
+                return {"result": "busy"}
             if old_versions.get(resident_id) is None:
                 return {"result": "unknown"}
             try:
@@ -819,6 +888,31 @@ class Sweeper(Worker):
             self.log.write(line)
             self.log.flush()
 
+    def owed_preflight(self, resident, state):
+        """The checks a rebuild could not run because the resident was paused
+        by its backup (#765), run here before it may be recreated. None: they
+        passed and the entry no longer owes them. "busy": still paused, try
+        next tick (the sweep never waits). "preflight refused": the running
+        binary differs from the rebuilt one on a pinned rebuild, is newer, or
+        can't be read; held for the operator like any failed roll."""
+        owed = resident["preflight"]
+        try:
+            raw = self.resident_version({"id": resident["id"], "container_name": owed["container_name"]}, wait=0)
+        except Exception as error:
+            self.note(f"resident {resident['id']}: preflight {type(error).__name__}\n")
+            return "preflight refused"
+        if raw is None:
+            return "busy"
+        try:
+            running, built = version_tuple(raw), version_tuple(state["chaos_version"])
+        except Exception:
+            return "preflight refused"
+        if (owed.get("pinned") and raw != state["chaos_version"]) or built < running:
+            self.note(f"resident {resident['id']}: preflight refused\n")
+            return "preflight refused"
+        resident.pop("preflight")
+        return None
+
     def receipt(self, state):
         path = ROOT / "runs" / state["run"] / "status.json"
         if not path.exists():
@@ -1013,6 +1107,10 @@ class Sweeper(Worker):
                 waiting = []
 
                 def roll_one(resident):
+                    if resident.get("preflight"):
+                        verdict = self.owed_preflight(resident, state)
+                        if verdict is not None:
+                            return {"result": verdict}
                     try:
                         return self.rails(script, {
                             "DEPLOY_RESIDENT_ID": str(resident["id"]),
