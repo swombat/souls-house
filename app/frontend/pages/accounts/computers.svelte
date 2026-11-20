@@ -28,6 +28,9 @@
 
   let { account, devices = [], can_manage = false, can_add = false, warnings = {} } = $props();
 
+  // Per computer: owners/admins change all, a member the ones they added.
+  const manages = (device) => device.can_manage ?? can_manage;
+
   // The Mac app's "Open the house" button lands here with ?pair=1.
   const pairRequested = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('pair');
 
@@ -224,8 +227,14 @@
     </div>
   {/if}
 
-  {#if devices.length > 0 && !can_manage}
-    <p class="mb-4 text-sm text-muted-foreground">Only an owner or admin of this account can change these.</p>
+  {#if devices.some((device) => !manages(device))}
+    <p class="mb-4 text-sm text-muted-foreground">
+      {#if devices.some(manages)}
+        You can change the computers you added. Only an owner or admin of this account can change the others.
+      {:else}
+        Only an owner or admin of this account, or whoever added a computer, can change it.
+      {/if}
+    </p>
   {/if}
 
   <div class="space-y-3">
@@ -351,7 +360,7 @@
 
         {#if open}
           <div id="computer-panel-{device.id}" class="space-y-4 border-t bg-muted/20 px-4 pb-5 pt-4 sm:px-5">
-            {#if can_manage}
+            {#if manages(device)}
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="text-sm text-muted-foreground">
                   {#if state === 'paused'}
@@ -417,7 +426,7 @@
                       <Switch
                         id="execute-{device.id}-{resident.id}"
                         checked={resident.execute}
-                        disabled={!can_manage || busy}
+                        disabled={!manages(device) || busy}
                         onCheckedChange={(value) => authority(device, resident, 'execute', value)} />
                     </div>
                     {#if resident.execute && device.commands_off_locally}
@@ -439,7 +448,7 @@
                       <Switch
                         id="desktop-{device.id}-{resident.id}"
                         checked={resident.desktop}
-                        disabled={!can_manage || busy}
+                        disabled={!manages(device) || busy}
                         onCheckedChange={(value) => authority(device, resident, 'desktop', value)} />
                     </div>
                     {#if resident.desktop}
@@ -457,7 +466,7 @@
                     <ResidentFolders
                       {device}
                       {resident}
-                      {can_manage}
+                      can_manage={manages(device)}
                       {busy}
                       {redraw}
                       onchoose={(row, access) => folder(device, resident, row, access)} />

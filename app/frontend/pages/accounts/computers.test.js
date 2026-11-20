@@ -68,6 +68,23 @@ test('a member without admin rights sees the computer but cannot change it', () 
   expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument();
 });
 
+test('a member can change the computer they added, and only that one', async () => {
+  const theirs = { ...device, can_manage: true };
+  const other = { ...device, id: 'dev2', name: 'Studio', can_manage: false };
+  render(Computers, { ...props, can_manage: false, devices: [theirs, other] });
+  expect(
+    screen.getByText(
+      'You can change the computers you added. Only an owner or admin of this account can change the others.'
+    )
+  ).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: "Show settings for Daniel's Mac" }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Show settings for Studio' }));
+  const [mine, notMine] = screen.getAllByLabelText('Run commands');
+  expect(mine).not.toBeDisabled();
+  expect(notMine).toBeDisabled();
+  expect(screen.getAllByRole('button', { name: /Pause/ })).toHaveLength(1);
+});
+
 const week = (counts) => counts.map((jobs, i) => ({ date: `2026-11-0${i + 1}`, jobs }));
 
 test('a fleet starts as summary cards; the chevron opens one computer’s settings', async () => {

@@ -39,6 +39,20 @@ class CompanionDevice < ApplicationRecord
     Digest::SHA256.hexdigest(value)
   end
 
+  # Who may change this computer: an owner or admin of the account, or the
+  # member who added it (the person who asked for its pairing code). It is
+  # their machine, and the Mac's own ceiling still bounds what they can widen.
+  # Account roles only: the website adds its own site-admin exception, the API
+  # does not (Mira, #1065).
+  def manageable_by?(user)
+    return false unless user
+
+    membership = user.confirmed_memberships.find_by(account_id: account_id)
+    return false unless membership
+
+    membership.admin? || companion_enrollment_grant.created_by_user_id == user.id
+  end
+
   def self.credential?(value)
     value.is_a?(String) && value.match?(/\Ashcd_[A-Za-z0-9_-]{43}\z/)
   end
