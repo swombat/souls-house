@@ -385,7 +385,7 @@ accessories:
   postgres:
     # max_connections is 300, set with ALTER SYSTEM on 2026-11-20 (it lives in the data
     # volume's postgresql.auto.conf, not here). The default 100 ran out: web + jobs hold
-    # ~75 mostly idle at rest and more while a rolling deploy overlaps old and new, and
+    # ~75 mostly idle at rest, a rolling deploy's old/new overlap can add more, and
     # residents' Chaos stores share this server (356 refusals, 15:30-15:52 UTC).
     # PostgreSQL 16.16 / Debian 12, with pgvector 0.8.7. Keep the OS/collation
     # provider unchanged; activate vector per database, not in shared templates.
