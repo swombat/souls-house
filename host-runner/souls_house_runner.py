@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
+submit_turn, turn_status, cancel_turn, resolve_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -68,7 +68,8 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
-COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
+COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "resolve_turn",
+                           "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
                            "update_runner", "reboot_host", "restore_carry", "rollback_snapshot"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
@@ -1168,6 +1169,15 @@ class ResidentHost:
 
     def cancel_turn(self, payload):
         return self._turn("DELETE", payload)
+
+    def resolve_turn(self, payload):
+        """Close an `unknown` turn on the resident's own ledger (#1056), after
+        an operator has proved the run stopped. The trigger server refuses
+        without the execution_stopped proof; so does the runner, and it sends
+        nothing else."""
+        _require(payload.get("body") == {"execution_stopped": True}, "resolve needs the execution_stopped proof")
+        _require(payload.get("ledger_id") is None, "resolve takes no ledger_id")
+        return self._turn("POST", payload, suffix="/resolve")
 
     def provider_auth(self, payload):
         """One provider-login call, relayed to the resident's trigger server.

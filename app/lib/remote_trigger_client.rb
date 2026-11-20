@@ -34,10 +34,13 @@ class RemoteTriggerClient
     relay("cancel_turn", id, body: payload, ledger_id:)
   end
 
-  # Console containment (ResidentTurn#resolve_after_containment!) is not
-  # available on a VM in this slice.
-  def resolve_turn(_id)
-    { status: 501, body: { "status" => "error", "error" => "containment is not available for VM residents" } }
+  # Console containment (ResidentTurn#resolve_after_containment!) on a VM
+  # (#1056): the runner relays the same execution_stopped proof the local
+  # path sends to the resident's own ledger. A runner from before this kind
+  # refuses it, which comes back as a 502 like any other runner trouble, so
+  # the house keeps its reservation rather than closing one side only.
+  def resolve_turn(id)
+    relay("resolve_turn", id, body: { "execution_stopped" => true })
   end
 
   private

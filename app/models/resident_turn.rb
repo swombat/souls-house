@@ -178,10 +178,13 @@ class ResidentTurn < ApplicationRecord
 
   # Console-only recovery until the operator has proved the previous process
   # group/container stopped. Never call from timeout or heartbeat automation.
-  def resolve_after_containment!(operator:, reason:)
+  # Both ledgers close together or neither does (#1056): a VM resident's turn
+  # is resolved through its runner, and any failure there raises before the
+  # house side is touched.
+  def resolve_after_containment!(operator:, reason:, client: nil)
     raise ArgumentError, "site administrator and containment reason required" unless operator&.is_site_admin? && reason.to_s.strip.length >= 10
     raise ArgumentError, "only uncertain turns can be resolved" unless state == "unknown"
-    client = ChaosTriggerClient.new(agent_runtime_interaction.endpoint_url, agent.trigger_bearer_token)
+    client ||= trigger_client
     response = client.turn_status(dispatch_id)
     remote = response[:body]
     if response[:status] == 200 && remote["state"] == "unknown"
@@ -192,6 +195,17 @@ class ResidentTurn < ApplicationRecord
     end
     update!(completion_context: completion_context.merge("containment_operator_id" => operator.id, "containment_reason" => reason))
     finish!({ "status" => 409, "body" => { "status" => "cancelled" } }, cancelled: true)
+  end
+
+  # The client that reaches this turn's own ledger: the runner relay for a
+  # resident on a VM, the trigger server for one on the house host.
+  def trigger_client
+    endpoint = agent_runtime_interaction.endpoint_url
+    if Agents::RemoteRuntime.remote_endpoint?(endpoint)
+      Agents::RemoteRuntime.client_for(self)
+    else
+      ChaosTriggerClient.new(endpoint, agent.trigger_bearer_token)
+    end
   end
 
   def finish!(result, cancelled: false)
