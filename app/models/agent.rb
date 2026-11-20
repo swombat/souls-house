@@ -147,8 +147,11 @@ class Agent < ApplicationRecord
 
   normalizes :journal_source, with: ->(value) { value.to_s.strip.presence }
   validate :journal_source_is_one_markdown_file_under_memory
-  # A count measured from another journal is not this one's stale count.
-  before_save -> { self.journal_entry_stats = {} }, if: :will_save_change_to_journal_source?
+  # A count measured from another journal is not this one's stale count. The
+  # reset is forced into the same UPDATE: on a stale instance that already
+  # holds {}, plain assignment isn't a change and a count written meanwhile
+  # would survive the source switch.
+  before_save :reset_journal_entry_stats, if: :will_save_change_to_journal_source?
 
   def self.valid_journal_source?(source)
     return false unless source.is_a?(String) && source.length <= JOURNAL_SOURCE_MAX && source.end_with?(".md")
@@ -580,6 +583,11 @@ class Agent < ApplicationRecord
   end
 
   private
+
+  def reset_journal_entry_stats
+    self.journal_entry_stats = {}
+    journal_entry_stats_will_change!
+  end
 
   def journal_source_is_one_markdown_file_under_memory
     return if journal_source.nil? || self.class.valid_journal_source?(journal_source)

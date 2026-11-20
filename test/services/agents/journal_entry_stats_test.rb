@@ -256,4 +256,13 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
     assert_equal({}, @agent.reload.journal_entry_stats)
   end
 
+  test "a count the old job wrote after the admin loaded the resident is still cleared by the source change" do
+    @agent.update_columns(journal_entry_stats: {})
+    stale = Agent.find(@agent.id)
+    Agent.find(@agent.id).update!(journal_entry_stats: { "count" => 0, "status" => "measured" })
+    stale.update!(journal_source: "memory/growth-journal.md")
+    assert_equal({}, @agent.reload.journal_entry_stats)
+    assert_equal "memory/growth-journal.md", @agent.journal_source
+  end
+
 end
