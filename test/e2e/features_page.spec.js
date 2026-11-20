@@ -23,7 +23,7 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(allowanceBrake).toBeVisible();
   await expect(allowanceBrake).toContainText('Off by default');
   await expect(allowanceBrake).toContainText('unavailable usage cannot guarantee a spending cap');
-  await expect(house.getByTestId('feature-showcase')).toHaveCount(22);
+  await expect(house.getByTestId('feature-showcase')).toHaveCount(23);
   await expect(house.getByRole('heading', { name: 'Know when a tool dependency goes missing' })).toBeVisible();
   await expect(house.getByRole('heading', { name: 'Data you can explore in the conversation' })).toBeVisible();
   const speakerRecovery = house.getByTestId('feature-showcase').filter({ hasText: 'Recover a retired speaker naming' });
