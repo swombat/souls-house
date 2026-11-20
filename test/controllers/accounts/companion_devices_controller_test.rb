@@ -106,6 +106,42 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, device.grant_revision
   end
 
+  test "a member who added a computer can change that computer, and not one someone else added" do
+    agent = agents(:other_account_agent)
+    team = agent.account
+    member = users(:existing_user) # team_member: confirmed, role member
+    enroll = ->(by, name) {
+      grant = CompanionEnrollmentGrant.create!(account: team, minting_agent: agent, created_by_user: by,
+        name: name, device_request_id: name.parameterize, expires_at: 1.hour.from_now,
+        policy: { "residents" => [ { "id" => agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+      device, = CompanionEnrollmentGrant.enroll!(grant.issue_token!(agent), name.parameterize)
+      device.update!(connection_epoch: "#{name}-epoch")
+      device
+    }
+    theirs = enroll.call(member, "Their Mac")
+    other = enroll.call(@owner, "Team Mac")
+
+    sign_in member
+    get account_companion_devices_path(team), headers: inertia
+    assert_equal false, inertia_shared_props.fetch("can_manage")
+    flags = inertia_shared_props.fetch("devices").to_h { |d| [ d.fetch("name"), d.fetch("can_manage") ] }
+    assert_equal({ "Their Mac" => true, "Team Mac" => false }, flags)
+
+    patch account_companion_device_path(team, theirs),
+      params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
+    assert_equal true, theirs.reload.policy.dig("residents", 0, "execute")
+    assert_equal member, AuditLog.where(action: "companion.device.authority_changed").last.user
+
+    patch account_companion_device_path(team, other),
+      params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
+    assert_equal false, other.reload.policy.dig("residents", 0, "execute")
+    patch account_companion_device_path(team, other), params: { control: "revoke" }
+    assert_nil other.reload.revoked_at
+
+    patch account_companion_device_path(team, theirs), params: { control: "pause" }
+    assert theirs.reload.paused
+  end
+
   test "someone outside the account cannot see or change its computers" do
     sign_in users(:existing_user)
     get account_companion_devices_path(@account), headers: inertia

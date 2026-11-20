@@ -1,14 +1,16 @@
 # The Computers page: each computer enrolled through the companion app,
-# which residents it serves, and the owner's switches for them. Any confirmed
-# member can see it; changing anything needs an account owner or admin, the
-# same rule as PATCH /api/v1/companion_devices/:id.
+# which residents it serves, and the switches for them. Any confirmed member
+# can see it; changing a computer needs an account owner or admin, or the
+# member who added that computer (CompanionDevice#manageable_by?), the same
+# rule as PATCH /api/v1/companion_devices/:id.
 class Accounts::CompanionDevicesController < ApplicationController
 
   before_action :set_account
-  before_action :require_admin!, only: :update
+  before_action :set_device, :require_device_manager!, only: :update
 
   def index
-    devices = CompanionDevice.where(account: @account).where(revoked_at: nil).order(:created_at).to_a
+    devices = CompanionDevice.where(account: @account).where(revoked_at: nil).includes(:companion_enrollment_grant)
+      .order(:created_at).to_a
     agents = @account.agents.where(id: devices.flat_map { |d| resident_ids(d) }.uniq).index_by(&:to_param)
     activity = activity_for(devices)
     render inertia: "accounts/computers", props: {
@@ -25,7 +27,7 @@ class Accounts::CompanionDevicesController < ApplicationController
   end
 
   def update
-    device = CompanionDevice.where(account: @account).where(revoked_at: nil).find(params[:id])
+    device = @device
     if params[:control] == "authority"
       change_authority(device)
     elsif params[:control] == "volume"
@@ -118,7 +120,8 @@ class Accounts::CompanionDevicesController < ApplicationController
       commands_off_locally: device.commands_off_locally?,
       enrolled_at: device.created_at,
       activity: activity.fetch(device.id, { days: [], failed: 0, last_job_at: nil }),
-      ceiling: (ceiling_json(device) if admin?),
+      can_manage: manages?(device),
+      ceiling: (ceiling_json(device) if manages?(device)),
       residents: device.policy.fetch("residents").map do |resident|
         agent = agents[resident["id"]]
         {
@@ -138,8 +141,8 @@ class Accounts::CompanionDevicesController < ApplicationController
     []
   end
 
-  # What the computer last said its own ceiling allows, for owners and admins
-  # only. nil means it has never reported (an older companion): the page then
+  # What the computer last said its own ceiling allows, only for those who
+  # may change the computer. nil means it has never reported (an older companion): the page then
   # leaves folders read-only. `current` is false once that connection is gone.
   def ceiling_json(device)
     return unless device.reported_ceiling
@@ -170,10 +173,19 @@ class Accounts::CompanionDevicesController < ApplicationController
     Current.user&.site_admin || Current.user&.confirmed_memberships&.exists?(account: @account) || false
   end
 
-  def require_admin!
-    return if admin?
+  def manages?(device)
+    admin? || device.manageable_by?(Current.user)
+  end
 
-    redirect_to account_companion_devices_path(@account), alert: "Only an owner or admin of this account can change computers"
+  def set_device
+    @device = CompanionDevice.where(account: @account).where(revoked_at: nil).find(params[:id])
+  end
+
+  def require_device_manager!
+    return if manages?(@device)
+
+    redirect_to account_companion_devices_path(@account),
+      alert: "Only an owner or admin of this account, or whoever added this computer, can change it"
   end
 
   def set_account

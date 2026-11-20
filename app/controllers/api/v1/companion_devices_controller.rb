@@ -6,9 +6,10 @@ module Api
 
       def update
         account = human_account!
-        return head :forbidden unless human_membership!(account).admin?
-
+        human_membership!(account)
         device = CompanionDevice.where(account: account).find(params[:id])
+        # Owners and admins, or the member who added this computer.
+        return head :forbidden unless device.manageable_by?(current_api_user)
         return change_authority(device, account) if params[:control] == "authority"
         return head :unprocessable_entity unless CompanionDevice::CONTROLS.include?(params[:control])
 
