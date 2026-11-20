@@ -137,11 +137,13 @@ describe('streaming frames for the realtime transcriber', () => {
     expect(rest.at(-1).type).toBe('end');
   });
 
-  test('without streamFrames the events are as before', () => {
+  test('without streamFrames the start carries no samples, only what proved it', () => {
     const detector = createTurnDetector({ sampleRate: RATE, silenceMs: 200 });
     const events = feedAll(detector, [frames(10, 0.002), frames(20, 0.2), frames(10, 0.002)]);
     expect(events.map((e) => e.type)).toEqual(['start', 'end']);
-    expect(events[0]).toEqual({ type: 'start' });
+    expect(events[0].samples).toBeUndefined();
+    expect(events[0].level).toBeCloseTo(0.2, 3);
+    expect(events[0].level).toBeGreaterThan(events[0].threshold);
   });
 });
 
@@ -177,5 +179,50 @@ describe('voiceModeStatus', () => {
     );
     expect(voiceModeStatus({ ...base, phase: 'starting', paused: 'hidden' })).toBe('Opening the microphone…');
     expect(voiceModeStatus({ ...base, phase: 'failed', note: 'No mic', paused: 'hidden' })).toBe('No mic');
+  });
+});
+
+// Synthetic levels, one per 20 ms frame, shaped on what a phone test showed
+// (JOyaQe, 20 Nov): a slower speaker's pauses of about 1.9 s in a quiet room.
+describe('the wait at the end of a turn (JOyaQe)', () => {
+  const room = (count, level = 0.0005) => Array(count).fill(level);
+  const words = (count, level = 0.04) => Array(count).fill(level);
+  const BEFORE = { silenceMs: 1800, releaseFloor: 0.012, releaseRatio: 3 };
+
+  function play(levels, options = {}) {
+    const detector = createTurnDetector({ sampleRate: RATE, ...options });
+    const events = [];
+    levels.forEach((level, i) => {
+      for (const event of detector.feed(frames(1, level))) events.push({ ...event, at: i });
+    });
+    return events;
+  }
+  const types = (events) => events.map((e) => e.type);
+
+  test('a sentence with a 1.9 s pause in it was two turns and is now one', () => {
+    const levels = [...room(100), ...words(120, 0.03), ...room(95), ...words(80, 0.03), ...room(200)];
+    expect(types(play(levels, BEFORE))).toEqual(['start', 'end', 'start', 'end']);
+    expect(types(play(levels))).toEqual(['start', 'end']);
+  });
+
+  test('a brisk speaker waits 2.8 s after the last word, no more', () => {
+    const levels = [...room(100), ...words(60, 0.07), ...room(300)];
+    const end = play(levels).find((e) => e.type === 'end');
+    expect((end.at - 159) * 20).toBe(2800);
+  });
+
+  test('soft speech between louder words is not silence', () => {
+    const levels = [...room(100), ...words(20, 0.05), ...words(100, 0.008), ...words(20, 0.05), ...room(200)];
+    expect(types(play(levels, { ...BEFORE, silenceMs: 1800 }))).toEqual(['start', 'end', 'start', 'end']);
+    expect(types(play(levels, { silenceMs: 1800 }))).toEqual(['start', 'end']);
+  });
+
+  test('steady room noise cannot hold a turn open, in a quiet room or a loud one', () => {
+    for (const noise of [0.004, 0.01]) {
+      const levels = [...room(200, noise), ...words(40, 0.2), ...room(400, noise)];
+      const events = play(levels);
+      expect(types(events)).toEqual(['start', 'end']);
+      expect(events[1].at - 239).toBe(140);
+    }
   });
 });

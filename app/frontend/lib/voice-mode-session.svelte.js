@@ -94,6 +94,18 @@ export function createVoiceModeSession(props) {
   // can be recording while the first is still transcribing (#808 review).
   let utteranceOpen = false;
 
+  // A turn's start in the trace, numbers only: what the mic heard and the bar
+  // it was over, and, when it cut off a reply, how many seconds of that reply
+  // had played (cut:0.041/0.012/3.2s). The turn's end follows as turn: or
+  // discard:, so the next phone test can tell a person from the reply's own
+  // echo cutting it off (JOyaQe).
+  function startNote({ level = 0, threshold = 0 }, cut) {
+    const numbers = `${level.toFixed(3)}/${threshold.toFixed(3)}`;
+    if (!cut.length) return `start:${numbers}`;
+    const playing = cut.find((item) => item.playing);
+    return `cut:${numbers}/${(playing?.at ?? 0).toFixed(1)}s`;
+  }
+
   // The handlers the microphone feeds; kept so a reopened mic gets the same.
   const captureHandlers = {
     outputRate: TURN_RATE,
@@ -103,9 +115,10 @@ export function createVoiceModeSession(props) {
       lastSampleAt = performance.now();
       stale = false;
     },
-    onspeechstart: (samples) => {
+    onspeechstart: (samples, info = {}) => {
       utteranceOpen = true;
-      reader.speechStarted();
+      const cut = reader.speechStarted() || [];
+      trace.note(startNote(info, cut));
       caption = '';
       recorder.begin(samples);
       transcriber?.begin(samples);
@@ -115,7 +128,8 @@ export function createVoiceModeSession(props) {
       recorder.append(samples);
       transcriber?.append(samples);
     },
-    ondiscard: () => {
+    ondiscard: (durationMs = 0) => {
+      trace.note(`discard:${(durationMs / 1000).toFixed(1)}s`);
       reader.discarded(props.messages || []);
       recorder.discard();
       transcriber?.discard();

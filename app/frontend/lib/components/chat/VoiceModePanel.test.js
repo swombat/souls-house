@@ -909,10 +909,32 @@ test('the next transcription session carries a trace of what the phone did to th
   });
   await transcriber.options.fetchSession();
   const trace = decodeURIComponent(urls[0].split('?trace=')[1] || '');
-  expect(trace).toMatch(/^hidden@0\.0,int:muted@[\d.]+,pause:muted@[\d.]+,turn:4\.4s@[\d.]+$/);
+  expect(trace).toMatch(
+    /^hidden@0\.0,start:0\.000\/0\.000@[\d.]+,int:muted@[\d.]+,pause:muted@[\d.]+,turn:4\.4s@[\d.]+$/
+  );
   // Taken once: the next request carries nothing new.
   await transcriber.options.fetchSession();
   expect(urls[1]).toBe('/accounts/acc/chats/chat/voice_mode_session');
+});
+
+test('a start that cuts off a reply is traced with its numbers, how much had played, and how it ended (JOyaQe)', async () => {
+  const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
+  await waitFor(() => expect(callbacks).toBeTruthy());
+  await rerender({ ...props, messages: [reply('first')] });
+  player.options.onchange('first');
+  player.interrupts = [[{ id: 'first', at: 3.24, playing: true }]];
+  callbacks.onspeechstart(new Float32Array(10), { level: 0.0413, threshold: 0.0182 });
+  callbacks.ondiscard(120);
+  callbacks.onspeechstart(new Float32Array(10), { level: 0.05, threshold: 0.012 });
+
+  const urls = [];
+  globalThis.fetch = vi.fn(async (url) => {
+    urls.push(url);
+    return { ok: true, status: 200, json: async () => ({ token: 't' }) };
+  });
+  await transcriber.options.fetchSession();
+  const trace = decodeURIComponent(urls[0].split('?trace=')[1] || '');
+  expect(trace).toMatch(/^cut:0\.041\/0\.018\/3\.2s@0\.0,discard:0\.1s@[\d.]+,start:0\.050\/0\.012@[\d.]+$/);
 });
 
 test('a device change while an earlier turn is still transcribing does not cut the next utterance (#808 review)', async () => {
