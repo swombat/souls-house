@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # CI tooling only. No application source, credentials or production image.
-ARG RUBY_VERSION=4.0.9
+ARG RUBY_VERSION=4.0.10
 ARG BUN_VERSION=1.4.4
 ARG NODE_VERSION=22.23.3
 FROM oven/bun:${BUN_VERSION}@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS bun
