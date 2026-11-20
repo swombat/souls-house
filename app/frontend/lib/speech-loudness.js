@@ -4,7 +4,11 @@
 // voice mode as "much lower than it should be" on his phone (YnwyBe, eGBNow).
 //
 // Every sample is raised by a fixed gain, and anything the gain would push
-// past the knee is bent smoothly towards the ceiling instead of clipping. The
+// past the knee is bent smoothly towards the ceiling instead of clipping.
+// Measured on Zoey, Delia and Hugh (-23.2, -22.4, -20.8 LUFS before): after,
+// -16.2, -15.4, -14.0 LUFS with true peaks of -1.1, -0.8, -0.7 dBTP. The
+// ceiling bounds samples, not true peak: a saturated tone near 12 kHz can
+// still overshoot between samples. Speech has not come near that. The
 // shaping looks at one sample at a time and keeps no state, so a chunk shaped
 // as it is made and the same samples shaped again once joined are identical:
 // the streamed reply and its kept WAV (the replay) sound the same.
@@ -15,7 +19,7 @@
 
 export const SPEECH_GAIN_DB = 7;
 export const KNEE = 0.7; // about -3 dBFS: below this, samples are only scaled
-export const CEILING = 0.98; // the bend approaches it; only absurd overloads reach it
+export const CEILING = 0.92; // the bend approaches it; only absurd overloads reach it
 
 const ROOM = CEILING - KNEE;
 
