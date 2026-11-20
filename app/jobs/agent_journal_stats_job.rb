@@ -18,7 +18,13 @@ class AgentJournalStatsJob < ApplicationJob
     agent = Agent.find_by(id: agent_id)
     return unless agent&.hosted?
 
-    agent.update!(journal_entry_stats: Agents::JournalEntryStats.new(agent).call)
+    measured_from = agent.journal_source
+    stats = Agents::JournalEntryStats.new(agent).call
+    # A measurement taken while the chosen journal changed belongs to the
+    # old one: drop it rather than put that count on the new journal's card.
+    agent.with_lock do
+      agent.update!(journal_entry_stats: stats) if agent.journal_source == measured_from
+    end
   end
 
 end

@@ -160,6 +160,46 @@ class ParityTest(unittest.TestCase):
         out = runner.subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout
         self.assertEqual(2, runner.json.loads(out)["count"])
 
+    def test_home_stats_passes_a_chosen_journal_as_one_argv_value(self):
+        self.host.start_resident(spec())
+        self.docker.calls.clear()
+        self.host.docker = lambda argv, timeout=120: (self.docker.calls.append(argv), (True, '{"count": 283, "storage_bytes": 1}'))[1]
+        self.assertEqual({"count": 283, "storage_bytes": 1},
+                         self.host.home_stats({"container_name": "agent-pilot-1", "journal_source": "memory/growth-journal.md"}))
+        self.assertEqual([["docker", "exec", "agent-pilot-1", "timeout", "30", "python3", "-c", runner.HOME_STATS_SCRIPT,
+                           "memory/growth-journal.md"]], self.docker.calls)
+
+    def test_home_stats_refuses_a_chosen_journal_outside_memory_before_any_exec(self):
+        self.host.start_resident(spec())
+        self.host.docker = lambda argv, timeout=120: self.fail("must not exec")
+        for source in ("memory/../x.md", "x.md", "/memory/x.md", "memory//x.md", "memory/x.txt", "memory/a b.md",
+                       "memory/./x.md", "memory/x.md; id", ["memory/x.md"], 3, "", "memory/" + "a" * 200 + ".md"):
+            with self.subTest(source=source), self.assertRaises(runner.BadCommand):
+                self.host.home_stats({"container_name": "agent-pilot-1", "journal_source": source})
+
+    def test_the_home_stats_script_counts_a_chosen_journal_and_refuses_a_missing_or_linked_one(self):
+        identity = os.path.join(tempfile.mkdtemp(), "identity")
+        journals = os.path.join(identity, "memory", "daily-journals")
+        os.makedirs(journals)
+        with open(os.path.join(identity, "memory", "growth-journal.md"), "w") as handle:
+            handle.write("## one\n~~~\n## fenced\n~~~\n## two\n")
+        os.symlink(os.path.join(identity, "memory", "growth-journal.md"), os.path.join(identity, "memory", "linked.md"))
+        script = runner.HOME_STATS_SCRIPT.replace("/home/agent/identity/memory/daily-journals", journals)
+
+        def run(*argv):
+            return runner.subprocess.run([sys.executable, "-c", script, *argv], capture_output=True, text=True)
+
+        self.assertEqual(2, runner.json.loads(run("memory/growth-journal.md").stdout)["count"])
+        for source in ("memory/missing.md", "memory/linked.md", "memory/../x.md"):
+            with self.subTest(source=source):
+                self.assertNotEqual(0, run(source).returncode)
+
+    def test_the_runner_and_the_house_share_the_journal_source_rule(self):
+        self.assertTrue(runner.valid_journal_source("memory/growth-journal.md"))
+        self.assertTrue(runner.valid_journal_source("memory/a/b.md"))
+        self.assertFalse(runner.valid_journal_source("memory/.."))
+        self.assertFalse(runner.valid_journal_source("memory/../a.md"))
+
 
 if __name__ == "__main__":
     unittest.main()

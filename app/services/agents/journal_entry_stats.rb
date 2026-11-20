@@ -9,18 +9,13 @@ module Agents
     # Count conventional second-level entry headings, ignoring fenced examples.
     # Only the aggregate leaves the resident's filesystem. No symlink traversal.
     SCRIPT = <<~'PYTHON'
-      import json, pathlib, re, subprocess
+      import json, pathlib, re, subprocess, sys
       root = pathlib.Path("/home/agent/identity/memory/daily-journals")
-      if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
-          raise RuntimeError("invalid journal directory")
-      count = 0
-      try:
-          paths = list(root.iterdir())
-      except FileNotFoundError:
-          paths = []
-      for path in paths:
-          if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
-              continue
+      # One Markdown file under memory/ when the resident chose one (argv), else
+      # the dated daily journals. The rule is Agent.valid_journal_source?.
+      source = sys.argv[1] if len(sys.argv) > 1 else None
+      def count_entries(path):
+          count = 0
           fence = None
           with path.open(encoding="utf-8") as journal:
               for line in journal:
@@ -34,6 +29,31 @@ module Agents
                       continue
                   if fence is None and re.match(r"^##[ \t]+\S", line):
                       count += 1
+          return count
+      count = 0
+      if source is None:
+          if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
+              raise RuntimeError("invalid journal directory")
+          try:
+              paths = list(root.iterdir())
+          except FileNotFoundError:
+              paths = []
+          for path in paths:
+              if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
+                  continue
+              count += count_entries(path)
+      else:
+          segments = source.split("/")
+          if (len(source) > 200 or not source.endswith(".md") or len(segments) < 2 or segments[0] != "memory"
+                  or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", segment) or not segment.strip(".") for segment in segments)):
+              raise RuntimeError("invalid journal source")
+          path = root.parent.parent.joinpath(*segments)
+          # The file, each directory under the identity volume, and the volume.
+          if any(step.is_symlink() for step in [path, *path.parents][:len(segments) + 1]):
+              raise RuntimeError("invalid journal source")
+          if not path.is_file():
+              raise RuntimeError("journal source missing")
+          count = count_entries(path)
       # Allocated bytes, including hidden files; du does not follow symlinks.
       # Explicit volume roots exclude the image layer and temporary filesystems.
       storage_bytes = None
@@ -94,8 +114,9 @@ module Agents
     end
 
     def capture
+      # The chosen journal goes in as one argv value, never into the code.
       Open3.popen3("docker", "exec", @agent.container_name,
-        "timeout", "30", "python3", "-c", SCRIPT, pgroup: true) do |stdin, stdout, stderr, process|
+        "timeout", "30", "python3", "-c", SCRIPT, *@agent.journal_source, pgroup: true) do |stdin, stdout, stderr, process|
         stdin.close
         output = Thread.new { stdout.read }
         errors = Thread.new { stderr.read }
