@@ -246,6 +246,7 @@ COPY docs/memory-quick-reference.md /usr/local/share/helixkit-agent/memory-quick
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY --chmod=0755 soulshouse-share /usr/local/bin/soulshouse-share
 COPY --chmod=0755 soulshouse-stone /usr/local/bin/soulshouse-stone
+COPY --chmod=0755 soulshouse-computer /usr/local/bin/soulshouse-computer
 COPY --chmod=0755 soulshouse-table /usr/local/bin/soulshouse-table
 COPY --chmod=0755 soulshouse-model /usr/local/bin/soulshouse-model
 COPY --chmod=0755 soulshouse-avatar /usr/local/bin/soulshouse-avatar
