@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding billing_required field_swarm field_tweets_house_key x_posting_house_app refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding billing_required field_swarm field_tweets_house_key house_eleven_labs_key x_posting_house_app refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -107,6 +107,17 @@ class Admin::AccountsController < ApplicationController
       notice: enabled ? "This account's tweet streams may use the house TwitterAPI.io key" : "This account's tweet streams no longer use the house key"
   end
 
+  # The house's ElevenLabs key, for an account without its own
+  # (SpeechEngine.eleven_labs_key). Off for every account until turned on
+  # here; the plan rule still applies, and the account's own key pays first.
+  def house_eleven_labs_key
+    enabled = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:house_eleven_labs_key))
+    @account.update!(house_eleven_labs_key: enabled)
+    audit(:admin_update_house_eleven_labs_key, @account, account_id: @account.id, house_eleven_labs_key: enabled)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: enabled ? "This account may speak on the house ElevenLabs key" : "This account no longer speaks on the house ElevenLabs key"
+  end
+
   # The house X app, for an account without a site admin among its members
   # (accounts with one use it without this). Withdrawing it disconnects an
   # X handle connected through the house app; an account's own app is
@@ -138,6 +149,9 @@ class Admin::AccountsController < ApplicationController
       "field_swarm_enabled" => account.field_swarm_enabled?,
       "field_tweets_house_key" => account.field_tweets_house_key?,
       "field_tweets_own_integration" => FieldTweets.integration_for(account).present?,
+      "house_eleven_labs_key" => account.house_eleven_labs_key?,
+      "eleven_labs_own_key" => account.eleven_labs_api_key.present?,
+      "house_eleven_labs_characters_30_days" => SpeechCharge.on_house_key.where(account:, created_at: 30.days.ago..).sum(:characters),
       "x_posting_house_app" => account.x_posting_house_app?,
       "x_posting_site_admin_member" => account.includes_site_admin?,
       "x_posting_own_app" => account.x_integration&.own_app? || false,

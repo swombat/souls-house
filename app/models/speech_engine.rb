@@ -12,8 +12,14 @@
 # (Mira, #1027 review). The resident's own hosting must still be in force.
 #
 # There is no fallback in either direction: an account on ElevenLabs without a
-# key gets an error, not Phonon, and not the house's ElevenLabs credential; a
-# browser that can't run Phonon shows an error, not ElevenLabs. A resident of a
+# key gets an error, not Phonon; a browser that can't run Phonon shows an
+# error, not ElevenLabs. The house's ElevenLabs credential is never a
+# fallback either. It is used only for an account a site admin has switched
+# onto it (Account#house_eleven_labs_key; Daniel, YEDPGJ JBVDmo), and only
+# while that account has no key of its own: the account's own key always
+# comes first. The key is resolved when the audio is made, not when it is
+# asked for, so switching the flag off stops queued work from starting new
+# calls on the house key (Mira, JkRXoj). A resident of a
 # Companions account set to ElevenLabs speaks with Phonon: that is the plan
 # rule, decided before anything is tried, not a substitute after a failure.
 #
@@ -25,8 +31,18 @@ module SpeechEngine
   ELEVENLABS = "elevenlabs"
   # Account plans whose residents may speak through ElevenLabs.
   ELEVENLABS_PLANS = %w[partners colleagues].freeze
+  ACCOUNT_KEY = "account"
+  HOUSE_KEY = "house"
+  KEY_SOURCES = [ ACCOUNT_KEY, HOUSE_KEY ].freeze
 
-  Status = Struct.new(:engine, :available, :reason, keyword_init: true) do
+  # value is never logged or sent anywhere but ElevenLabs.
+  Key = Data.define(:value, :source) do
+    def house? = source == HOUSE_KEY
+    def inspect = "#<SpeechEngine::Key source=#{source}>"
+    alias_method :to_s, :inspect
+  end
+
+  Status = Struct.new(:engine, :available, :reason, :key_source, keyword_init: true) do
     def phonon? = engine == PHONON
     def elevenlabs? = engine == ELEVENLABS
     def as_json(*) = { "engine" => engine, "available" => available, "reason" => reason, "message" => message }
@@ -51,10 +67,28 @@ module SpeechEngine
     engine = PHONON if engine == ELEVENLABS && !elevenlabs_plan?(account, agent)
     return Status.new(engine: PHONON, available: true, reason: nil) if engine == PHONON
 
-    return Status.new(engine:, available: false, reason: "no_eleven_labs_key") if account&.eleven_labs_api_key.blank?
+    key = eleven_labs_key(account)
+    return Status.new(engine:, available: false, reason: "no_eleven_labs_key") unless key
     return Status.new(engine:, available: false, reason: "no_eleven_labs_voice") if agent&.voice_id.blank?
 
-    Status.new(engine:, available: true, reason: nil)
+    Status.new(engine:, available: true, reason: nil, key_source: key.source)
+  end
+
+  # The ElevenLabs key this account's speech runs on: its own, or the house's
+  # when a site admin has allowed it and the account has none; otherwise nil.
+  def self.eleven_labs_key(account)
+    return nil if account.nil?
+
+    own = account.eleven_labs_api_key
+    return Key.new(value: own, source: ACCOUNT_KEY) if own.present?
+    return nil unless account.house_eleven_labs_key?
+
+    house = house_eleven_labs_key
+    house.present? ? Key.new(value: house, source: HOUSE_KEY) : nil
+  end
+
+  def self.house_eleven_labs_key
+    Rails.application.credentials.dig(:ai, :eleven_labs, :api_token).presence
   end
 
   # Whether this account's plan lets this resident speak through ElevenLabs

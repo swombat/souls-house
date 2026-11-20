@@ -49,12 +49,51 @@ class SpeechEngineTest < ActiveSupport::TestCase
     scope("account_choice")
     @account.update!(speech_engine: "elevenlabs")
 
-    ElevenLabsTts.stub(:api_key, "house-key") do
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
       status = engine
       assert_predicate status, :elevenlabs?
       assert_not status.available
       assert_equal "no_eleven_labs_key", status.reason
       assert_match(/no ElevenLabs key of its own/, status.message)
+      assert_nil SpeechEngine.eleven_labs_key(@account)
+    end
+  end
+
+  test "with the site admin's house-key switch on and no key of its own, the account speaks on the house key" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      status = engine
+      assert status.available
+      assert_equal "house", status.key_source
+      key = SpeechEngine.eleven_labs_key(@account)
+      assert_equal [ "house-key", "house" ], [ key.value, key.source ]
+      assert_not_includes key.inspect, "house-key", "the key never shows in logs"
+    end
+  end
+
+  test "the account's own key comes before the house key" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true, eleven_labs_api_key: "acct-key")
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      key = SpeechEngine.eleven_labs_key(@account)
+      assert_equal [ "acct-key", "account" ], [ key.value, key.source ]
+      assert_equal "account", engine.key_source
+    end
+  end
+
+  test "the house-key switch changes neither the plan rule nor a missing house credential" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, nil) do
+      assert_equal "no_eleven_labs_key", engine.reason, "no house credential: the same refusal"
+    end
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      @account.update!(granted_plan: "companions")
+      assert_predicate engine, :phonon?, "Companions still speaks with Phonon"
     end
   end
 

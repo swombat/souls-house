@@ -1,6 +1,9 @@
-# Listen's stored audio, made by ElevenLabs with the account's own key, only
+# Listen's stored audio, made by ElevenLabs on the key SpeechEngine resolves
+# now (the account's own, or the house's where a site admin allows it), only
 # while SpeechEngine still says this resident speaks through ElevenLabs (the
-# account may have switched to Phonon since the request).
+# account may have switched to Phonon, or lost the house key, since the
+# request). A pocket device waiting on this reply hears that it is ready
+# (CompanionDevice::Pocket#announce_pocket_audio).
 class GenerateVoiceJob < ApplicationJob
 
   queue_as :default
@@ -21,16 +24,19 @@ class GenerateVoiceJob < ApplicationJob
     voice_id = agent.voice_id
     delivery = agent.speech_delivery
     digest = delivery.digest(voice_id)
-    return if message.voice_audio_made_with?(digest)
+    return CompanionDevice.announce_pocket_audio(message) if message.voice_audio_made_with?(digest)
 
     account = message.chat.account
     engine = SpeechEngine.for(account, message.agent)
     return unless engine.elevenlabs? && engine.available
 
+    key = SpeechEngine.eleven_labs_key(account) or return
+
     text = message.content_for_speech
     return if text.blank?
 
-    audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: account.eleven_labs_api_key, delivery:)
+    SpeechCharge.record!(key:, account:, agent:, message:, surface: "listen", text:)
+    audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: key.value, delivery:)
     audio_data = AudioGain.apply(audio_data, delivery.gain_db, tempo: delivery.tempo)
 
     message.voice_audio.attach(
@@ -39,6 +45,7 @@ class GenerateVoiceJob < ApplicationJob
       content_type: "audio/mpeg",
       metadata: { "voice_digest" => digest }
     )
+    CompanionDevice.announce_pocket_audio(message)
   end
 
 end

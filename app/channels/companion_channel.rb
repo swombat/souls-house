@@ -23,6 +23,11 @@ class CompanionChannel < ApplicationCable::Channel
         grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? }
       ready.merge!(kind: "pocket", **device.consent_state) if device.pocket?
       transmit(ready)
+      # A reply's voice that finished while the device was away follows
+      # "ready" (CompanionDevice::Pocket); the firmware plays each clip once.
+      if device.pocket? && (audio = device.pocket_audio_payload(@epoch))
+        transmit(audio)
+      end
     end
   end
 

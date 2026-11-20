@@ -444,6 +444,19 @@ class Admin::AccountsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "only a site admin turns on the house ElevenLabs key, and it is audited" do
+    account = accounts(:personal_account)
+    post login_path, params: { email_address: @normal_user.email_address, password: "password123" }
+    patch house_eleven_labs_key_admin_account_path(account), params: { account: { house_eleven_labs_key: true } }
+    assert_not account.reload.house_eleven_labs_key?
+
+    delete logout_path
+    post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
+    patch house_eleven_labs_key_admin_account_path(account), params: { account: { house_eleven_labs_key: true } }
+    assert account.reload.house_eleven_labs_key?
+    assert AuditLog.where(action: "admin_update_house_eleven_labs_key", auditable: account).exists?
+  end
+
 end
 
 class Admin::AccountManagementActionsTest < ActionDispatch::IntegrationTest

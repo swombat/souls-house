@@ -10,8 +10,16 @@
   // is the site's choice: 'disabled' keeps every account on Phonon, 'enabled'
   // puts every account on ElevenLabs, and only 'account_choice' lets this
   // card decide. keyPresent says whether the account has its own ElevenLabs
-  // key; the key itself never comes back to the page.
-  let { accountId, engine = 'phonon', canManage = false, siteScope = 'disabled', keyPresent = false } = $props();
+  // key; the key itself never comes back to the page. houseKey says a site
+  // admin lets this account speak on the house's key while it has none.
+  let {
+    accountId,
+    engine = 'phonon',
+    canManage = false,
+    siteScope = 'disabled',
+    keyPresent = false,
+    houseKey = false,
+  } = $props();
 
   let saving = $state(false);
   let keyDraft = $state('');
@@ -86,7 +94,10 @@
             checked={engine === 'elevenlabs'}
             disabled={saving}
             onchange={() => choose('elevenlabs')} />
-          <span><span class="font-medium">ElevenLabs</span>: needs this account's own ElevenLabs key.</span>
+          <span
+            ><span class="font-medium">ElevenLabs</span>: {houseKey && !keyPresent
+              ? "on the house's ElevenLabs key."
+              : "needs this account's own ElevenLabs key."}</span>
         </label>
       </div>
     {:else}
@@ -114,7 +125,9 @@
       <div class="space-y-2" data-testid="eleven-labs-key">
         <p class="text-sm">
           {keyPresent ? 'This account has its own ElevenLabs key.' : 'This account has no ElevenLabs key of its own.'}
-          {#if effective === 'elevenlabs' && !keyPresent}
+          {#if !keyPresent && houseKey}
+            <span data-testid="eleven-labs-house-key">It speaks on the house's key, by the site's arrangement.</span>
+          {:else if effective === 'elevenlabs' && !keyPresent}
             <span class="text-destructive">Until one is added, residents can't be read aloud.</span>
           {/if}
         </p>
