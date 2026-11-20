@@ -1,18 +1,30 @@
 require "open3"
+require "timeout"
 
 module Backup
-  # Restores a resident's session transcripts from its latest verified
-  # snapshot into a throwaway volume and says what came back (#969). Works for
-  # residents on the shared host and on VMs alike: it reads the house's own
-  # repository with restic, never through the resident or its server, and
-  # writes nothing but the throwaway volume, which is removed afterwards.
+  # What a resident's latest verified backup holds of its session transcripts
+  # (#969), for residents on the shared host and on VMs alike: both write to
+  # the same per-resident repository, which this reads with restic, never
+  # through the resident or its server.
   #
-  # It never reads a transcript. It lists paths and sizes under the state
-  # volume in the snapshot, and computes a SHA-256 only for paths it is
-  # explicitly told to expect (synthetic test files). Anything under state
-  # outside AgentRestic::TRANSCRIPT_PATHS is reported by path, because the
-  # rest of the state volume holds credentials and must never be in a
-  # snapshot. Run it on the house:
+  # Two modes, and neither ever reads a transcript.
+  #
+  # * Baseline (no EXPECT): metadata only. `restic ls` of /data/state in the
+  #   snapshot, aggregated into file counts and bytes per transcript path.
+  #   Nothing is restored, and no resident path is printed: paths outside
+  #   AgentRestic::TRANSCRIPT_PATHS and links are counted, not listed. A
+  #   snapshot with no transcript files is "no_transcript_data", never a pass.
+  # * Restore (EXPECT given): for synthetic test files only. /data/state is
+  #   restored into a throwaway volume; scope and REFUSE are checked from the
+  #   listing (path metadata); only the EXPECT paths are hashed, and only after
+  #   each one is checked to sit under a transcript path with no link on any
+  #   component. Passes only as "recovered", when every expected file came
+  #   back with its digest, nothing is out of scope and nothing refused is
+  #   there.
+  #
+  # The throwaway volume and the named tool containers are always removed;
+  # if removal fails, the report says so with the volume's name and is not
+  # green, and a primary failure is never hidden by a cleanup one.
   #   bin/rails "backup:transcript_restore_check[AGENT_ID]"
   class TranscriptRestoreCheck
 
@@ -21,100 +33,225 @@ module Backup
     IMAGE = VmRestoreCheck::IMAGE
     INSPECT_IMAGE = AgentRestic::INSPECT_IMAGE
     STATE = "/data/state".freeze
+    DIGEST = /\A\h{64}\z/
+    TIMEOUT = 600
+    LIST_LIMIT = 64.megabytes
 
-    # Prints "F <bytes> <path>" for every regular file and "L <path>" for every
-    # link under the restored state, then "H <sha256> <path>" for each
-    # expected path ("H - <path>" when it is not there).
+    # Run inside the inspect container with the restored volume at /r (ROOT
+    # overrides it in tests). Prints "F <bytes> <path>" per regular file and
+    # "L <path>" per link under the restored state (paths, never contents),
+    # then "H <verdict> <path>" for each expected path: a SHA-256, or
+    # absent / link / notfile. Any failure exits non-zero, and a complete
+    # listing ends with "END"; anything else is an error, never an empty
+    # result.
     INVENTORY = <<~'SH'.freeze
-      root=/r/data/state
+      set -eu
+      root="${ROOT:-/r/data/state}"
       if [ -d "$root" ]; then
         cd "$root"
         find . -type f -exec stat -c 'F %s %n' {} +
         find . -type l -exec sh -c 'for p; do echo "L $p"; done' sh {} +
+      else
+        echo "NOSTATE"
       fi
       for p in "$@"; do
-        if [ -f "$root/$p" ] && [ ! -L "$root/$p" ]; then
-          echo "H $(sha256sum "$root/$p" | cut -d' ' -f1) $p"
+        cur="$root"; verdict=ok
+        for part in $(echo "$p" | tr / ' '); do
+          cur="$cur/$part"
+          if [ -L "$cur" ]; then verdict=link; break; fi
+          if [ ! -e "$cur" ]; then verdict=absent; break; fi
+        done
+        if [ "$verdict" = ok ] && [ ! -f "$cur" ]; then verdict=notfile; fi
+        if [ "$verdict" = ok ]; then
+          digest=$(sha256sum "$cur" | cut -d' ' -f1)
+          [ -n "$digest" ]
+          echo "H $digest $p"
         else
-          echo "H - $p"
+          echo "H $verdict $p"
         fi
       done
+      echo "END"
     SH
 
-    Report = Data.define(:agent_id, :snapshot_id, :taken_at, :by_path, :files, :bytes, :outside, :links,
-      :expected, :refused) do
-      def ok? = outside.empty? && links.empty? && expected.values.all? { it[:ok] } && refused.values.none?
+    Report = Data.define(:agent_id, :snapshot_id, :taken_at, :mode, :verdict, :by_path, :files, :bytes,
+      :outside_count, :link_count, :expected, :refused, :cleanup) do
+      def ok? = %w[recovered present].include?(verdict) && cleanup[:ok]
 
       def to_h
         super.merge(ok: ok?)
       end
     end
 
-    # expect: { "claude/projects/x/y.jsonl" => sha256 } must come back with that digest.
-    # refuse: [ "secrets/x" ] paths (relative to the state volume) that must not come back.
+    # expect: { "claude/projects/x/y.jsonl" => sha256 } synthetic files that
+    #   must come back with that digest (paths relative to the state volume).
+    # refuse: paths that must not be in the snapshot at all; checked from
+    #   the listing only, never opened.
     # run: replaces docker in tests; called with an argv, returns [stdout, success].
-    def initialize(agent, expect: {}, refuse: [], snapshot: nil, run: nil)
+    def initialize(agent, expect: {}, refuse: [], snapshot: nil, run: nil, timeout: TIMEOUT)
       @agent = agent
-      @expect = expect.to_h.transform_keys { clean(it) }
+      @expect = expect.to_h.to_h { |path, digest| [ clean(path), digest ] }
       @refuse = refuse.map { clean(it) }
       @snapshot = snapshot
       @run = run
+      @timeout = timeout
+      validate!
     end
 
     def call
       snapshot = @snapshot || AgentBackupSnapshot.where(agent:, ok: true).where.not(restic_snapshot_id: [ nil, "unknown" ])
         .order(:taken_at, :id).last || raise(Failed, "Resident has no verified backup")
-      volume = "transcript-restore-check-#{SecureRandom.hex(6)}"
-      docker!("volume", "create", "--label", "souls_house.purpose=transcript-restore-check", volume)
-      begin
-        docker!("run", "--rm", "-v", "#{volume}:/r", *restic_env, IMAGE, "--no-lock", "--no-cache",
-          "restore", snapshot.restic_snapshot_id, "--target", "/r", "--include", STATE)
-        listing = docker!("run", "--rm", "--network", "none", "-v", "#{volume}:/r:ro", INSPECT_IMAGE,
-          "sh", "-c", INVENTORY, "inventory", *(@expect.keys + @refuse).uniq)
-      ensure
-        docker("volume", "rm", "-f", volume)
-      end
-      report(snapshot, listing)
+      @expect.empty? ? baseline(snapshot) : restore(snapshot)
     end
 
     private
 
     attr_reader :agent
 
-    def report(snapshot, listing)
+    def validate!
+      @expect.each do |path, digest|
+        raise ArgumentError, "EXPECT #{path}: a 64-hex SHA-256 is required" unless digest.is_a?(String) && digest.match?(DIGEST)
+        raise ArgumentError, "EXPECT #{path}: not under a transcript path" unless transcript?(path)
+        raise ArgumentError, "EXPECT #{path}: not a plain relative path" if path.split("/").intersect?([ "", ".", ".." ])
+      end
+      @refuse.each do |path|
+        raise ArgumentError, "REFUSE path is empty" if path.blank?
+        raise ArgumentError, "REFUSE #{path}: also expected" if @expect.key?(path)
+      end
+    end
+
+    # Metadata only: nothing restored, nothing hashed, no path printed.
+    def baseline(snapshot)
+      name = container_name
+      out = run_tool(name, "run", "--rm", "--name", name, *restic_env, IMAGE, "--no-lock", "--no-cache",
+        "ls", "--json", "--recursive", snapshot.restic_snapshot_id, STATE)
+      files = {}
+      links = []
+      seen_snapshot = false
+      out.each_line do |line|
+        node = JSON.parse(line)
+        kind = node["struct_type"] || node["message_type"]
+        if kind == "snapshot"
+          seen_snapshot = true
+          next
+        end
+        next unless kind == "node"
+
+        path = node["path"].to_s
+        next unless path.start_with?("#{STATE}/")
+
+        relative = path.delete_prefix("#{STATE}/")
+        case node["type"]
+        when "file" then files[relative] = node["size"].to_i
+        when "symlink" then links << relative
+        end
+      rescue JSON::ParserError
+        raise Failed, "restic ls returned an unreadable line"
+      end
+      raise Failed, "restic ls did not describe the snapshot" unless seen_snapshot
+
+      summary(snapshot, mode: "baseline", files:, links:, expected: {}, refused: refused_from(files, links),
+        cleanup: { ok: true }) do |transcript_files, refused|
+        if refused.values.any? || outside(files).any? || links.any? then "failed"
+        elsif transcript_files.zero? then "no_transcript_data"
+        else "present"
+        end
+      end
+    end
+
+    def restore(snapshot)
+      volume = "transcript-restore-check-#{SecureRandom.hex(6)}"
+      cleanup = { ok: true, volume: }
+      primary = nil
+      begin
+        _, created = docker("volume", "create", "--label", "souls_house.purpose=transcript-restore-check", volume)
+        raise Failed, "docker volume create failed" unless created
+
+        name = container_name
+        run_tool(name, "run", "--rm", "--name", name, "-v", "#{volume}:/r", *restic_env, IMAGE, "--no-lock", "--no-cache",
+          "restore", snapshot.restic_snapshot_id, "--target", "/r", "--include", STATE)
+        name = container_name
+        listing = run_tool(name, "run", "--rm", "--name", name, "--network", "none", "-v", "#{volume}:/r:ro", INSPECT_IMAGE,
+          "sh", "-c", INVENTORY, "inventory", *@expect.keys)
+      rescue StandardError => error
+        primary = error
+      ensure
+        _, removed = (docker("volume", "rm", "-f", volume) rescue [ nil, false ])
+        cleanup = { ok: false, volume:, error: "docker volume rm failed; remove #{volume} by hand" } unless removed
+      end
+      if primary
+        raise primary if cleanup[:ok]
+
+        raise Failed, "#{primary.message} (and the throwaway volume #{volume} was not removed)"
+      end
+
+      files, links, hashes = parse_inventory(listing)
+      expected = @expect.to_h do |path, digest|
+        verdict = hashes.fetch(path) { raise Failed, "inventory has no verdict for #{path}" }
+        [ path, { state: verdict.match?(DIGEST) ? (verdict == digest ? "match" : "different") : verdict, ok: verdict == digest } ]
+      end
+      summary(snapshot, mode: "restore", files:, links:, expected:, refused: refused_from(files, links), cleanup:) do |_count, refused|
+        if expected.values.all? { it[:ok] } && refused.values.none? && outside(files).empty? && links.empty?
+          "recovered"
+        else
+          "failed"
+        end
+      end
+    end
+
+    def parse_inventory(listing)
+      lines = listing.to_s.lines.map(&:chomp)
+      raise Failed, "inventory incomplete (no END)" unless lines.last == "END"
+
       files = {}
       links = []
       hashes = {}
-      listing.each_line do |line|
-        kind, rest = line.chomp.split(" ", 2)
+      lines[0...-1].each do |line|
+        kind, rest = line.split(" ", 2)
         case kind
         when "F"
-          size, path = rest.split(" ", 2)
+          size, path = rest.to_s.split(" ", 2)
+          raise Failed, "inventory line unreadable" unless size.to_s.match?(/\A\d+\z/) && path.present?
           files[clean(path)] = size.to_i
         when "L" then links << clean(rest)
         when "H"
-          digest, path = rest.split(" ", 2)
-          hashes[clean(path)] = digest == "-" ? nil : digest
+          verdict, path = rest.to_s.split(" ", 2)
+          raise Failed, "inventory line unreadable" unless path.present? && (verdict.match?(DIGEST) || %w[absent link notfile].include?(verdict))
+          hashes[clean(path)] = verdict
+        when "NOSTATE" then nil
+        else raise Failed, "inventory line unreadable"
         end
       end
+      [ files, links, hashes ]
+    end
 
+    def summary(snapshot, mode:, files:, links:, expected:, refused:, cleanup:)
       by_path = AgentRestic::TRANSCRIPT_PATHS.index_with do |prefix|
         mine = files.select { |path, _| under?(path, prefix) }
         { files: mine.size, bytes: mine.values.sum }
       end
-      outside = files.keys.reject { |path| AgentRestic::TRANSCRIPT_PATHS.any? { under?(path, it) } }.sort
-      expected = @expect.to_h do |path, digest|
-        [ path, { present: !hashes[path].nil?, ok: hashes[path] == digest } ]
-      end
-      refused = @refuse.to_h { |path| [ path, files.key?(path) || hashes[path].present? ] }
-
-      Report.new(agent_id: agent.id, snapshot_id: snapshot.restic_snapshot_id, taken_at: snapshot.taken_at,
-        by_path:, files: files.size, bytes: files.values.sum, outside:, links: links.sort, expected:, refused:)
+      transcript_files = by_path.values.sum { it[:files] }
+      verdict = yield(transcript_files, refused)
+      Report.new(agent_id: agent.id, snapshot_id: snapshot.restic_snapshot_id, taken_at: snapshot.taken_at, mode:, verdict:,
+        by_path:, files: files.size, bytes: files.values.sum, outside_count: outside(files).size, link_count: links.size,
+        expected:, refused:, cleanup:)
     end
+
+    # From the listing alone: a refused path is there if it, or anything under
+    # it, is listed.
+    def refused_from(files, links)
+      listed = files.keys + links
+      @refuse.index_with { |path| listed.any? { under?(it, path) } }
+    end
+
+    def outside(files) = files.keys.reject { transcript?(it) }
+
+    def transcript?(path) = AgentRestic::TRANSCRIPT_PATHS.any? { under?(path, it) }
 
     def under?(path, prefix) = path == prefix || path.start_with?("#{prefix}/")
 
     def clean(path) = path.to_s.delete_prefix("./").delete_prefix("/")
+
+    def container_name = "transcript-restore-check-#{SecureRandom.hex(8)}"
 
     def restic_env
       [
@@ -126,18 +263,54 @@ module Backup
       ]
     end
 
-    def docker!(*args)
+    # A named tool container, removed afterwards whatever happened.
+    def run_tool(name, *args)
       out, ok = docker(*args)
-      raise Failed, "docker #{args.first} #{args[1] if args.first == 'volume'} failed".squish unless ok
+      raise Failed, "docker #{args.include?('restore') ? 'restore' : args.include?('ls') ? 'ls' : 'inventory'} failed" unless ok
+
       out
+    ensure
+      docker("rm", "-f", name) rescue nil
     end
 
     def docker(*args)
       return @run.call([ "docker", *args ]) if @run
       raise Failed, "Live restore checks are disabled in tests" if Rails.env.test?
 
-      out, _err, status = Open3.capture3("docker", *args)
-      [ out, status.success? ]
+      bounded([ "docker", *args ])
+    end
+
+    # The child runs in its own process group with a deadline; on timeout the
+    # whole group is killed (VmRestoreCheck's pattern).
+    def bounded(argv)
+      out = +""
+      ok = false
+      Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, thread|
+        stdin.close
+        reader = Thread.new do
+          loop do
+            out << stdout.readpartial(64.kilobytes)
+            raise Failed, "docker output exceeds #{LIST_LIMIT} bytes" if out.bytesize > LIST_LIMIT
+          end
+        rescue EOFError
+          nil
+        end
+        drain = Thread.new { stderr.read rescue nil }
+        begin
+          Timeout.timeout(@timeout) do
+            reader.value
+            drain.join
+            ok = thread.value.success?
+          end
+        rescue Timeout::Error
+          raise Failed, "docker #{argv[1]} timed out"
+        ensure
+          Process.kill("KILL", -thread.pid) if thread.alive? rescue nil
+          reader.join(5)
+          drain.join(5)
+        end
+      end
+      [ out, ok ]
     end
 
   end
