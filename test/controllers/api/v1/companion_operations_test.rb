@@ -161,6 +161,47 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_nil CompanionDevice.authenticate(@credential)
   end
 
+  test "a member manages a computer they added through the API, not one someone else added, and not after leaving" do
+    agent = agents(:other_account_agent)
+    team = agent.account
+    member = users(:existing_user) # team_member: confirmed, role member
+    enroll = ->(by, request_id) {
+      grant = CompanionEnrollmentGrant.create!(account: team, minting_agent: agent, created_by_user: by,
+        name: request_id, device_request_id: request_id, expires_at: 1.hour.from_now,
+        policy: { "residents" => [ { "id" => agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+      device, = CompanionEnrollmentGrant.enroll!(grant.issue_token!(agent), request_id)
+      device
+    }
+    theirs = enroll.call(member, "their-mac")
+    other = enroll.call(users(:user_1), "team-mac")
+    key = ApiKey.generate_for(member, name: "Member", account: team)
+    pause = ->(device) {
+      patch "/api/v1/companion_devices/#{device.to_param}", params: { account_id: team.to_param, control: "pause" },
+        headers: bearer(key.raw_token), as: :json
+    }
+
+    pause.call(theirs)
+    assert_response :no_content
+    assert theirs.reload.paused?
+
+    pause.call(other)
+    assert_response :forbidden
+    assert_not other.reload.paused?
+
+    # Being a site admin adds nothing on the API; only account roles count.
+    member.update!(is_site_admin: true)
+    assert member.site_admin
+    pause.call(other)
+    assert_response :forbidden
+    assert_not other.reload.paused?
+
+    theirs.update!(paused: false)
+    memberships(:team_member).update!(confirmed_at: nil)
+    pause.call(theirs)
+    assert_not_equal 204, response.status
+    assert_not theirs.reload.paused?
+  end
+
   test "write upload is actor scoped and only the device consumes its dispatched input once" do
     enroll_mutation_fixture
     post "/api/v1/companion_devices/#{@device.to_param}/operations",

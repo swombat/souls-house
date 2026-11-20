@@ -42,10 +42,10 @@ class CompanionDevice < ApplicationRecord
   # Who may change this computer: an owner or admin of the account, or the
   # member who added it (the person who asked for its pairing code). It is
   # their machine, and the Mac's own ceiling still bounds what they can widen.
-  # A site admin can too. Anyone else sees it read-only.
+  # Account roles only: the website adds its own site-admin exception, the API
+  # does not (Mira, #1065).
   def manageable_by?(user)
     return false unless user
-    return true if user.site_admin
 
     membership = user.confirmed_memberships.find_by(account_id: account_id)
     return false unless membership

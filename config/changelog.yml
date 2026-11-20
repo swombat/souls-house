@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-20
+  title: You can change the computers you added
+  body: "Since yesterday any member of an account can add a computer, but only owners and admins could then change it, so a member who had just paired their own Mac couldn't give a resident anything on it. Now the member who added a computer can change it as owners and admins can: which residents may run commands or use apps there, which disks they may read or edit (never more than the computer itself offers), and pausing or removing it. Computers someone else added stay read-only for them, and leaving the account ends it. The Computers page also puts Add a computer, Download for Mac and the Linux download in one row. Takes effect after Rails deployment."
+- date: 2026-11-20
   title: How many conversations each room holds, if you want it
   body: "An account can now show, in the room menus, how many conversations each room holds: a faint number to the left of each room's name, in the sidebar's room switcher, the navbar's Chats menu and the room picker on phones, with the count of conversations waiting on you unchanged beside it. It counts what the room's list shows, so archived conversations, deleted ones and ones hidden by their tag are left out. It's off by default because it adds a little noise; owners and admins switch it on under Settings → General → Conversations per room. Takes effect after Rails deployment."
 - date: 2026-11-19
