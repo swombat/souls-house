@@ -31,8 +31,11 @@ export function shapeSample(value, gain) {
   return Math.sign(raised) * (KNEE + ROOM * Math.tanh((size - KNEE) / ROOM));
 }
 
-// A new array: the samples Phonon hands over are left as they were.
+// A new array: the samples Phonon hands over are left as they were. At 0 dB
+// (or less) nothing is shaped at all, so 0 is a true bypass for comparing
+// gains on the phone (Mira, YGBxrJ YqRDoo).
 export function louden(samples, gainDb = SPEECH_GAIN_DB) {
+  if (!(gainDb > 0)) return Float32Array.from(samples);
   const gain = 10 ** (gainDb / 20);
   const out = new Float32Array(samples.length);
   for (let i = 0; i < samples.length; i += 1) out[i] = shapeSample(samples[i], gain);

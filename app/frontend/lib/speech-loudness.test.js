@@ -38,3 +38,10 @@ test("the samples handed over are left as they were", () => {
   louden(samples);
   expect([...samples]).toEqual([0.25, 0.5]);
 });
+
+test('0 dB is a true bypass: even loud peaks come out unbent', () => {
+  const samples = new Float32Array([0.1, 0.8, -0.95, 1]);
+  const out = louden(samples, 0);
+  expect([...out]).toEqual([...samples]);
+  expect(out).not.toBe(samples);
+});
