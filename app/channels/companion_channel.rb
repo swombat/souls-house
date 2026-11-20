@@ -18,9 +18,11 @@ class CompanionChannel < ApplicationCable::Channel
       CompanionOperation.where(companion_device: device, state: CompanionOperation::ACTIVE_STATES).update_all(state: "lost", outcome: "changed")
       @epoch = SecureRandom.uuid
       device.update!(connection_epoch: @epoch)
-      stream_for device
-      transmit({ type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
-        grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? })
+      stream_for(device, coder: ActiveSupport::JSON) { |message| relay(message) }
+      ready = { type: "ready", device_id: device.obfuscated_id, connection_epoch: @epoch,
+        grant_revision: device.grant_revision, policy: device.policy, paused: device.paused? }
+      ready.merge!(kind: "pocket", **device.consent_state) if device.pocket?
+      transmit(ready)
     end
   end
 
@@ -28,7 +30,7 @@ class CompanionChannel < ApplicationCable::Channel
   # Stored only while this subscription's epoch is still the device's
   # current one; anything else is dropped without a reply.
   def report_ceiling(data)
-    return unless @epoch
+    return unless @epoch && current_companion_device.computer?
 
     current_companion_device.record_ceiling_report!(epoch: @epoch, claimed_epoch: data["connection_epoch"],
       ceiling: data["ceiling"], execute_lifecycle_accepted: data["execute_lifecycle_accepted"])
@@ -45,6 +47,24 @@ class CompanionChannel < ApplicationCable::Channel
       end
     end
     stop_all_streams
+  end
+
+  private
+
+  # A pocket's replies are checked once more at the socket (Mira, JnwomB):
+  # stamped with the epoch they were delivered under, and sent only while
+  # that is still this subscription's epoch and the device is still active.
+  # A reply queued for a socket that a pause, revoke or reconnect has since
+  # replaced is dropped here.
+  def relay(message)
+    if message.is_a?(Hash) && CompanionDevice::Pocket::GUARDED_TYPES.include?(message["type"])
+      device = CompanionDevice.find_by(id: current_companion_device.id)
+      return unless @epoch && message["epoch"] == @epoch && device&.active? && device.connection_epoch == @epoch
+      # A consent that a later change has overtaken never goes down, so a
+      # late "on" can't follow an "off" (Mira, jLQOLG).
+      return if message["type"] == "consent" && message["consent_revision"] != device.consent_revision
+    end
+    transmit(message)
   end
 
 end

@@ -475,6 +475,8 @@ Rails.application.routes.draw do
         end
         post :session, to: "sessions#create"
         post :revoke, to: "revocations#create"
+        # A pocket device's voice clip or photo (CompanionDevice::Pocket).
+        post "pocket/submissions", to: "pocket_submissions#create"
       end
       resources :companion_devices, only: %i[index update] do
         resources :operations, only: [ :create, :show ], controller: "companion_operations" do

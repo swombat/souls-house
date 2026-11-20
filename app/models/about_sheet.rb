@@ -11,7 +11,7 @@
 # session start into the container (agent-runtime/about_sheet.py).
 class AboutSheet
 
-  MAX_BYTES = 16_384
+  MAX_BYTES = 20_480
   CHANGELOG_DAYS = 14
   CHANGELOG_LIMIT = 12
   SENTENCE_LIMIT = 240

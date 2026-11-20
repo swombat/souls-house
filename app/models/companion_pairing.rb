@@ -25,6 +25,10 @@ class CompanionPairing < ApplicationRecord
   SECRET = /\Ashcp_[A-Za-z0-9_-]{43}\z/
   MAX_VOLUMES = 16
   ACCESS = %w[read write].freeze
+  KINDS = %w[computer pocket].freeze
+  # What a pocket device can offer. Each starts switched off on the device's
+  # card; offering it only means the hardware has it.
+  CAPABILITIES = %w[mic camera].freeze
 
   class Invalid < StandardError; end
 
@@ -36,21 +40,36 @@ class CompanionPairing < ApplicationRecord
 
   validates :name, presence: true, length: { maximum: 100 }
   validates :device_request_id, format: { with: CompanionEnrollmentGrant::REQUEST_ID }
+  validates :kind, inclusion: { in: KINDS }
 
   scope :pending, -> { where(approved_at: nil).where("expires_at > ?", Time.current) }
 
+  def pocket? = kind == "pocket"
+
   # Returns [pairing, code, poll_secret]. Raises Invalid on any malformed field.
-  def self.open!(name:, device_request_id:, volumes:)
+  # A computer offers volumes; a pocket offers capabilities and no volumes.
+  def self.open!(name:, device_request_id:, volumes:, kind: nil, capabilities: nil)
     raise Invalid, "Invalid name" unless name.is_a?(String) && name.strip.bytesize.between?(1, 100) &&
       !name.match?(/[[:cntrl:]]/)
     raise Invalid, "Invalid device_request_id" unless device_request_id.is_a?(String) &&
       CompanionEnrollmentGrant::REQUEST_ID.match?(device_request_id)
+    kind = kind.nil? ? "computer" : kind
+    raise Invalid, "Invalid kind" unless KINDS.include?(kind)
 
-    offered = normalize_volumes(volumes)
+    if kind == "pocket"
+      raise Invalid, "A pocket device offers no volumes" unless volumes.nil?
+      offered = nil
+      offered_capabilities = normalize_capabilities(capabilities)
+    else
+      raise Invalid, "A computer offers no capabilities" unless capabilities.nil?
+      offered = normalize_volumes(volumes)
+      offered_capabilities = nil
+    end
     secret = "#{SECRET_PREFIX}#{SecureRandom.urlsafe_base64(32)}"
     5.times do
       code = Array.new(CODE_LENGTH) { CODE_ALPHABET[SecureRandom.random_number(CODE_ALPHABET.size)] }.join
       pairing = create!(name: name.strip, device_request_id: device_request_id, offered_volumes: offered,
+        kind: kind, offered_capabilities: offered_capabilities,
         code_digest: digest(code), poll_secret_digest: Digest::SHA256.hexdigest(secret),
         expires_at: LIFETIME.from_now)
       return [ pairing, display_code(code), secret ]
@@ -58,6 +77,15 @@ class CompanionPairing < ApplicationRecord
       next
     end
     raise Invalid, "Couldn't make a code"
+  end
+
+  def self.normalize_capabilities(value)
+    unless value.is_a?(Array) && value.size.between?(1, CAPABILITIES.size) &&
+        value.all? { |c| CAPABILITIES.include?(c) } && value.uniq.size == value.size
+      raise Invalid, "Invalid capabilities"
+    end
+
+    CAPABILITIES & value
   end
 
   # Expired rendezvous data goes. A pending pairing goes an hour after its
@@ -111,6 +139,8 @@ class CompanionPairing < ApplicationRecord
   # access, never above what the computer offered. `accesses` maps volume key
   # => "read" | "write" | "off". Returns the grant.
   def approve!(account:, user:, agents:, accesses:)
+    return approve_pocket!(account: account, user: user, agents: agents) if pocket?
+
     with_lock do
       raise Invalid, "This code has expired or was already used" unless approved_at.nil? && expires_at > Time.current
       raise Invalid, "Choose at least one resident" if agents.empty?
@@ -140,6 +170,37 @@ class CompanionPairing < ApplicationRecord
       AuditLog.create!(account: account, user: user, auditable: grant, action: "companion.pairing.approved",
         data: { pairing_id: obfuscated_id, device_request_id: device_request_id,
           resident_ids: agents.map(&:to_param), volumes: volumes })
+      grant
+    end
+  end
+
+  # A pocket serves exactly one resident in a conversation made for it here,
+  # which the approval page names before the person approves (Mira, JpznZZ).
+  # The person approving owns it: only they can turn its microphone or camera
+  # on, and both start off. The grant fixes kind and conversation, and
+  # enrollment copies them; nothing the device sends can change either.
+  def approve_pocket!(account:, user:, agents:)
+    with_lock do
+      raise Invalid, "This code has expired or was already used" unless approved_at.nil? && expires_at > Time.current
+      raise Invalid, "Choose one resident" unless agents.size == 1
+      agent = agents.first
+      raise Invalid, "That resident isn't in this account" unless agent.account_id == account.id
+      raise Invalid, "This account is disabled" if account.disabled?
+
+      chat = account.chats.create_with_message!({ title: name, manual_responses: true, model_id: agent.model_id },
+        user: user, agent_ids: [ agent.id ])
+      policy = { "residents" => [ { "id" => agent.to_param, "volumes" => [], "execute" => false } ] }
+      grant = CompanionEnrollmentGrant.create!(account: account, minting_agent: agent, created_by_user: user,
+        name: name, device_request_id: device_request_id, policy: policy, expires_at: APPROVAL_WINDOW.from_now,
+        kind: "pocket", chat: chat, offered_capabilities: offered_capabilities)
+      token = grant.issue_token!(agent)
+      raise Invalid, "Couldn't approve" unless token
+
+      update!(account: account, approved_by_user: user, companion_enrollment_grant: grant,
+        enrollment_token: token, approved_at: Time.current)
+      AuditLog.create!(account: account, user: user, auditable: grant, action: "companion.pairing.approved",
+        data: { pairing_id: obfuscated_id, device_request_id: device_request_id, kind: "pocket",
+          resident_ids: [ agent.to_param ], chat_id: chat.to_param, capabilities: offered_capabilities })
       grant
     end
   end

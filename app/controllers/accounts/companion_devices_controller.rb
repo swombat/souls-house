@@ -28,7 +28,9 @@ class Accounts::CompanionDevicesController < ApplicationController
 
   def update
     device = @device
-    if params[:control] == "authority"
+    if params[:control] == "capture"
+      change_capture(device)
+    elsif params[:control] == "authority"
       change_authority(device)
     elsif params[:control] == "volume"
       change_volume(device)
@@ -59,6 +61,27 @@ class Accounts::CompanionDevicesController < ApplicationController
     notice = changed ? "Saved. Work already running on #{device.name} was stopped." : "Nothing changed"
     redirect_to account_companion_devices_path(@account), notice: notice
   rescue ArgumentError, CompanionEnrollmentGrant::InvalidPolicy
+    redirect_to account_companion_devices_path(@account), alert: "That change wasn't possible"
+  end
+
+  # A pocket device's microphone or camera. Only its owner turns one on; the
+  # owner or a manager turns one off (CompanionDevice::Pocket).
+  def change_capture(device)
+    capability = params[:capability].to_s
+    value = params[:value].to_s
+    unless CompanionPairing::CAPABILITIES.include?(capability) && %w[true false].include?(value)
+      return redirect_to account_companion_devices_path(@account), alert: "That change wasn't understood"
+    end
+
+    changed = device.change_capture!(capability: capability, enabled: value == "true", actor: Current.user)
+    notice = if !changed then "Nothing changed"
+    elsif value == "true" then "#{device.name} can use its #{capability == "mic" ? "microphone" : "camera"} when you press to capture."
+    else "#{device.name}'s #{capability == "mic" ? "microphone" : "camera"} is off."
+    end
+    redirect_to account_companion_devices_path(@account), notice: notice
+  rescue CompanionDevice::Pocket::NotOwner
+    redirect_to account_companion_devices_path(@account), alert: "Only the person who owns #{device.name} can turn that on"
+  rescue ArgumentError
     redirect_to account_companion_devices_path(@account), alert: "That change wasn't possible"
   end
 
@@ -115,6 +138,8 @@ class Accounts::CompanionDevicesController < ApplicationController
     {
       id: device.to_param,
       name: device.name,
+      kind: device.kind,
+      pocket: (pocket_json(device) if device.pocket?),
       paused: device.paused,
       connected: device.connection_epoch.present?,
       commands_off_locally: device.commands_off_locally?,
@@ -132,6 +157,19 @@ class Accounts::CompanionDevicesController < ApplicationController
           volumes: resident.fetch("volumes")
         }
       end
+    }
+  end
+
+  def pocket_json(device)
+    owner = device.companion_enrollment_grant.created_by_user
+    {
+      owner_name: owner && ResidentFacingName.for(owner),
+      owned_by_you: device.owned_by?(Current.user),
+      capabilities: device.offered_capabilities,
+      mic: device.mic_enabled,
+      camera: device.camera_enabled,
+      chat_id: device.chat&.to_param,
+      chat_title: device.chat&.title_or_default
     }
   end
 

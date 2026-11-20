@@ -23,16 +23,22 @@ class CompanionEnrollmentGrant < ApplicationRecord
   belongs_to :account
   belongs_to :minting_agent, class_name: "Agent"
   belongs_to :created_by_user, class_name: "User"
+  belongs_to :chat, optional: true
   has_one :companion_device
 
   encrypts :enrollment_response
 
-  attr_readonly :account_id, :minting_agent_id, :created_by_user_id, :device_request_id, :name, :policy, :expires_at
+  attr_readonly :account_id, :minting_agent_id, :created_by_user_id, :device_request_id, :name, :policy, :expires_at,
+    :kind, :chat_id, :offered_capabilities
 
   validates :name, presence: true, length: { maximum: 100 }
   validates :device_request_id, format: { with: REQUEST_ID }
   validates :expires_at, presence: true
+  validates :kind, inclusion: { in: CompanionPairing::KINDS }
   validate :valid_authority_and_policy, on: :create
+  validate :valid_pocket_binding, on: :create
+
+  def pocket? = kind == "pocket"
 
   # Validate the whole shape rather than silently dropping unknown permissions.
   # IDs are canonical public agent IDs, resolved only through the home account.
@@ -131,10 +137,12 @@ class CompanionEnrollmentGrant < ApplicationRecord
       credential = CompanionDevice.generate_credential
       device = CompanionDevice.create!(
         account: grant.account, companion_enrollment_grant: grant, name: grant.name,
-        policy: policy, credential_digest: CompanionDevice.digest(credential), grant_revision: 1
+        policy: policy, credential_digest: CompanionDevice.digest(credential), grant_revision: 1,
+        kind: grant.kind, chat_id: grant.chat_id, offered_capabilities: grant.offered_capabilities || []
       )
       response = { "device_id" => device.obfuscated_id, "device_credential" => credential,
         "policy" => device.policy, "revision" => device.grant_revision }
+      response["kind"] = "pocket" if device.pocket?
       grant.update!(consumed_at: Time.current, enrollment_retry_until: ENROLLMENT_RECOVERY_WINDOW.from_now,
         enrollment_response: JSON.generate(response))
       AuditLog.create!(account: grant.account, auditable: device, action: "companion.device.enrolled",
@@ -146,6 +154,29 @@ class CompanionEnrollmentGrant < ApplicationRecord
   end
 
   private
+
+  # A pocket's binding: one resident, no volumes, no commands, and a
+  # conversation in this account whose only resident is that one.
+  def valid_pocket_binding
+    unless pocket?
+      errors.add(:chat, "only a pocket device is bound to a conversation") if chat_id
+      return
+    end
+
+    residents = policy.is_a?(Hash) ? Array(policy["residents"]) : []
+    resident = residents.first
+    unless residents.size == 1 && resident["volumes"] == [] && resident["execute"] == false &&
+        !resident.key?("desktop") && resident["id"] == minting_agent&.to_param
+      errors.add(:policy, "a pocket device serves one resident with no volumes or commands")
+    end
+    unless chat && chat.account_id == account_id && chat.agent_ids == [ minting_agent_id ]
+      errors.add(:chat, "must be this account's conversation with only that resident")
+    end
+    caps = offered_capabilities
+    unless caps.is_a?(Array) && caps.any? && (caps - CompanionPairing::CAPABILITIES).empty?
+      errors.add(:offered_capabilities, "is invalid")
+    end
+  end
 
   def valid_authority_and_policy
     errors.add(:minting_agent, "must belong to this account") unless minting_agent&.account_id == account_id

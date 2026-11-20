@@ -84,4 +84,58 @@ class CompanionChannelTest < ActionCable::Channel::TestCase
     assert_nil @device.reload.execute_lifecycle_accepted
   end
 
+  test "a clip's reply reaches the socket only under its own live epoch on an active device" do
+    subscribe
+    epoch = @device.reload.connection_epoch
+    reply = { "type" => "reply", "submission_id" => "s", "message_id" => "m", "text" => "hi", "epoch" => epoch }
+
+    subscription.send(:relay, reply)
+    assert_equal "reply", transmissions.last["type"]
+
+    count = transmissions.size
+    subscription.send(:relay, reply.merge("epoch" => "an-older-socket"))
+    assert_equal count, transmissions.size, "a reply queued for a replaced socket is dropped"
+
+    # Queued before a pause, arriving after it: the pause ended the epoch.
+    @device.apply_control!("pause")
+    subscription.send(:relay, reply)
+    subscription.send(:relay, reply.merge("type" => "thinking"))
+    assert_equal count, transmissions.size
+    subscription.send(:relay, { "type" => "pause" })
+    assert_equal "pause", transmissions.last["type"], "control messages still go down"
+  end
+
+  test "a pocket's ready carries its consent, and a late consent never follows a newer one" do
+    stone = pocket_device
+    stub_connection current_user: nil, current_app_session: nil, current_companion_device: stone
+    subscribe
+    assert_equal({ "kind" => "pocket", "mic" => false, "camera" => false, "consent_revision" => 0 },
+      transmissions.last.slice("kind", "mic", "camera", "consent_revision"))
+    epoch = stone.reload.connection_epoch
+    owner = users(:user_1)
+
+    stone.change_capture!(capability: "mic", enabled: true, actor: owner)
+    turned_on = { "type" => "consent", "mic" => true, "camera" => false, "consent_revision" => 1, "epoch" => epoch }
+    stone.change_capture!(capability: "mic", enabled: false, actor: owner)
+    turned_off = { "type" => "consent", "mic" => false, "camera" => false, "consent_revision" => 2, "epoch" => epoch }
+
+    subscription.send(:relay, turned_off)
+    assert_equal turned_off, transmissions.last
+    count = transmissions.size
+    subscription.send(:relay, turned_on)
+    assert_equal count, transmissions.size, "the delayed on is dropped"
+    subscription.send(:relay, turned_off.merge("epoch" => "an-older-socket"))
+    assert_equal count, transmissions.size
+  end
+
+  def pocket_device
+    agent = agents(:research_assistant)
+    pairing, _code, secret = CompanionPairing.open!(name: "The stone", device_request_id: "stone-#{SecureRandom.hex(4)}",
+      volumes: nil, kind: "pocket", capabilities: %w[mic camera])
+    pairing.approve!(account: agent.account, user: users(:user_1), agents: [ agent ], accesses: {})
+    _state, payload = CompanionPairing.claim(pairing.to_param, secret)
+    device, = CompanionEnrollmentGrant.enroll!(payload["enrollment_token"], payload["device_request_id"])
+    device
+  end
+
 end

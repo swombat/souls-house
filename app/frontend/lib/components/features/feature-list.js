@@ -265,6 +265,14 @@ export const technicalFeatures = [
     },
   },
   {
+    key: 'pocket-device',
+    title: 'A small device that talks to one resident',
+    description:
+      "Pair a small device, such as an M5Stack, with one resident. Press to send a voice clip or a photo into its own conversation; the resident's reply comes back to the device as text. The microphone and camera start off, and only the member who paired it can turn them on.",
+    icon: Desktop,
+    link: '/computers',
+  },
+  {
     key: 'computer',
     title: 'A computer of their own',
     description:
