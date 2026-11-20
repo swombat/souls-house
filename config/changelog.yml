@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-20
+  title: How many conversations each room holds, if you want it
+  body: "An account can now show, in the room menus, how many conversations each room holds: a faint number to the left of each room's name, in the sidebar's room switcher, the navbar's Chats menu and the room picker on phones, with the count of conversations waiting on you unchanged beside it. It counts what the room's list shows, so archived conversations, deleted ones and ones hidden by their tag are left out. It's off by default because it adds a little noise; owners and admins switch it on under Settings → General → Conversations per room. Takes effect after Rails deployment."
 - date: 2026-11-19
   title: Add a computer by typing the code it shows
   body: "Pairing a computer used to mean a Terminal command to list its disks, a grant made through the house's API with your own key, a one-use code collected by a resident and pasted into another Terminal command. Now the companion's menu has Pair this Mac…: you tick the disks souls.house may ever reach there and whether only to read them, and it shows a short code. On souls.house, any member of the account opens Settings → Computers → Add a computer, types the code, sees that computer's name and the disks it offered, and chooses which residents may use it and what they may reach, never more than the computer offered. The computer finishes pairing on its own within seconds. A code works once and for 15 minutes, and typing it grants nothing until a member of the account approves. Changing or removing a computer afterwards stays with owners and admins. Commands and apps stay off for a computer added this way; they're turned on per resident on the Computers page as before. Takes effect after Rails deployment and companion update."

@@ -11,7 +11,16 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${accountId}`]: ['chats', 'hidden_chat_ids', 'visual_tags', 'rooms', 'current_room'] });
+    updateSync({
+      [`Account:${accountId}`]: [
+        'chats',
+        'hidden_chat_ids',
+        'visual_tags',
+        'rooms',
+        'current_room',
+        'room_chat_counts',
+      ],
+    });
   });
 
   const scrollKey = $derived(`${accountId}:${$page.props.current_room || ''}`);

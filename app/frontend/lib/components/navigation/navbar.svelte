@@ -47,7 +47,8 @@
       for (const account of $page.props?.accounts || []) {
         subs[`Account:${account.id}`] = ['accounts', 'expired_subscriptions'];
         if (account.id === $page.props?.account?.id) {
-          subs[`Account:${account.id}`].push('account', 'is_account_admin');
+          // Chat changes notify Account; room totals follow them on every page.
+          subs[`Account:${account.id}`].push('account', 'is_account_admin', 'room_chat_counts');
         }
       }
     }
@@ -60,7 +61,7 @@
     const subs = {};
     // Watch even an empty account: its first room turns Chats into a menu.
     if ($page.props?.user?.id && accountId) {
-      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name'];
+      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name', 'room_chat_counts'];
     }
     updateRoomNavigationSync(subs);
   });

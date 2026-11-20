@@ -88,6 +88,7 @@ test('persisted provider updates preserve credential and active ceremony drafts'
         'expired_subscriptions',
         'account',
         'is_account_admin',
+        'room_chat_counts',
       ].sort()
     );
     await page.waitForLoadState('networkidle');

@@ -292,6 +292,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
         'accounts',
         'expired_subscriptions',
         'is_account_admin',
+        'room_chat_counts',
       ].sort()
     );
 

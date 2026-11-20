@@ -21,7 +21,16 @@
   // exclamation mark: below the red error mark, above the stuck hand and the clock.
   // faintEmpty: in the sidebar an untagged row shows a barely-there tag outline; the
   // conversation header passes false so the button is findable there.
-  let { chat, accountId, tags = [], commitmentLabel = '', stuckLabel = '', errorLabel = '', hookLabel = '', faintEmpty = true } = $props();
+  let {
+    chat,
+    accountId,
+    tags = [],
+    commitmentLabel = '',
+    stuckLabel = '',
+    errorLabel = '',
+    hookLabel = '',
+    faintEmpty = true,
+  } = $props();
   let error = $state('');
   // The choice shows at once and the save runs in the background; nothing waits
   // for the conversation list to reload. Three layers, highest first:
@@ -106,80 +115,87 @@
 </script>
 
 <span class="group/tag relative inline-block align-top">
-{#if markLabel}
-  <!-- The trigger is h-8 w-8 with a 16px icon centred, so the icon box starts at 8px.
+  {#if markLabel}
+    <!-- The trigger is h-8 w-8 with a 16px icon centred, so the icon box starts at 8px.
        Behind a tag: 10px to the left with the right 6px clipped, so 10 of 16px show
        and the clipped edge meets the tag. With no tag: in the tag's place, giving way
        to the tag outline on hover so the picker still reads as a picker. The stuck
        hand (yellow) and the error mark (red) sit in the same place, coloured rather than faint. -->
-  <span
-    data-testid={{ error: 'run-error-mark', hook: 'hook-warning-mark', stuck: 'handoff-stuck-mark', commitment: 'commitment-mark' }[markKind]}
-    data-placement={current ? 'behind-tag' : 'in-place'}
-    role="img"
-    aria-label={markLabel}
-    title={markLabel}
-    class="pointer-events-none absolute top-2 inline-flex {markKind === 'error'
-      ? 'text-red-600 dark:text-red-500'
-      : markKind === 'hook' || markKind === 'stuck'
-        ? 'text-yellow-500 dark:text-yellow-400'
-        : 'text-muted-foreground/40'} {current
-      ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
-      : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
-    {#if markKind === 'error' || markKind === 'hook'}
-      <WarningCircle size={16} weight="bold" />
-    {:else if markKind === 'stuck'}
-      <HandPalm size={16} weight="bold" />
-    {:else}
-      <Alarm size={16} weight="bold" />
-    {/if}
-  </span>
-{/if}
-<DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
-  <DropdownMenu.Trigger
-    onpointerenter={menu.enter}
-    onpointermove={menu.move}
-    onpointerleave={menu.leave}
-    onpointerdown={menu.pointerdown}
-    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2 {current
-      ? visualTagColour(current.colour)
-      : faintEmpty
-        ? 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'
-        : 'text-muted-foreground hover:text-foreground'}"
-    aria-label={`Change visual tag: ${label}`}
-    {title}
-    disabled={chat.discarded}>
-    {#if current}
-      <VisualTagIcon icon={current.icon} size={16} />
-    {:else if markLabel}
-      <Tag size={16} class="opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-within/tag:opacity-100" />
-    {:else}
-      <Tag size={16} />
-    {/if}
-  </DropdownMenu.Trigger>
-  <DropdownMenu.Content
-    align="start"
-    class="w-56 max-h-80 overflow-y-auto"
-    onpointerenter={menu.enter}
-    onpointerleave={menu.leave}
-    onOpenAutoFocus={menu.openAutoFocus}
-    onCloseAutoFocus={menu.closeAutoFocus}
-    preventScroll={menu.lockScroll}>
-    <DropdownMenu.Label>Visual tag</DropdownMenu.Label>
-    <DropdownMenu.Item onclick={() => selectTag(null)}>
-      <Tag size={16} class="mr-2 text-muted-foreground" />
-      No tag
-      {#if !current}<Check size={14} class="ml-auto" />{/if}
-    </DropdownMenu.Item>
-    <DropdownMenu.Separator />
-    {#each tags as tag (tag.id)}
-      <DropdownMenu.Item onclick={() => selectTag(tag.id)}>
-        <VisualTagIcon icon={tag.icon} size={16} class={`mr-2 shrink-0 ${visualTagColour(tag.colour)}`} />
-        <span class="truncate">{tag.label}</span>
-        {#if current?.id === tag.id}<Check size={14} class="ml-auto shrink-0" />{/if}
+    <span
+      data-testid={{
+        error: 'run-error-mark',
+        hook: 'hook-warning-mark',
+        stuck: 'handoff-stuck-mark',
+        commitment: 'commitment-mark',
+      }[markKind]}
+      data-placement={current ? 'behind-tag' : 'in-place'}
+      role="img"
+      aria-label={markLabel}
+      title={markLabel}
+      class="pointer-events-none absolute top-2 inline-flex {markKind === 'error'
+        ? 'text-red-600 dark:text-red-500'
+        : markKind === 'hook' || markKind === 'stuck'
+          ? 'text-yellow-500 dark:text-yellow-400'
+          : 'text-muted-foreground/40'} {current
+        ? 'left-[-2px] [clip-path:inset(0_6px_0_0)]'
+        : 'left-2 transition-opacity group-hover/tag:opacity-0 group-focus-within/tag:opacity-0'}">
+      {#if markKind === 'error' || markKind === 'hook'}
+        <WarningCircle size={16} weight="bold" />
+      {:else if markKind === 'stuck'}
+        <HandPalm size={16} weight="bold" />
+      {:else}
+        <Alarm size={16} weight="bold" />
+      {/if}
+    </span>
+  {/if}
+  <DropdownMenu.Root bind:open={menu.open} onOpenChange={menu.openChange}>
+    <DropdownMenu.Trigger
+      onpointerenter={menu.enter}
+      onpointermove={menu.move}
+      onpointerleave={menu.leave}
+      onpointerdown={menu.pointerdown}
+      class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2 {current
+        ? visualTagColour(current.colour)
+        : faintEmpty
+          ? 'text-muted-foreground/20 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70'
+          : 'text-muted-foreground hover:text-foreground'}"
+      aria-label={`Change visual tag: ${label}`}
+      {title}
+      disabled={chat.discarded}>
+      {#if current}
+        <VisualTagIcon icon={current.icon} size={16} />
+      {:else if markLabel}
+        <Tag
+          size={16}
+          class="opacity-0 transition-opacity group-hover/tag:opacity-100 group-focus-within/tag:opacity-100" />
+      {:else}
+        <Tag size={16} />
+      {/if}
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Content
+      align="start"
+      class="w-56 max-h-80 overflow-y-auto"
+      onpointerenter={menu.enter}
+      onpointerleave={menu.leave}
+      onOpenAutoFocus={menu.openAutoFocus}
+      onCloseAutoFocus={menu.closeAutoFocus}
+      preventScroll={menu.lockScroll}>
+      <DropdownMenu.Label>Visual tag</DropdownMenu.Label>
+      <DropdownMenu.Item onclick={() => selectTag(null)}>
+        <Tag size={16} class="mr-2 text-muted-foreground" />
+        No tag
+        {#if !current}<Check size={14} class="ml-auto" />{/if}
       </DropdownMenu.Item>
-    {/each}
-  </DropdownMenu.Content>
-</DropdownMenu.Root>
+      <DropdownMenu.Separator />
+      {#each tags as tag (tag.id)}
+        <DropdownMenu.Item onclick={() => selectTag(tag.id)}>
+          <VisualTagIcon icon={tag.icon} size={16} class={`mr-2 shrink-0 ${visualTagColour(tag.colour)}`} />
+          <span class="truncate">{tag.label}</span>
+          {#if current?.id === tag.id}<Check size={14} class="ml-auto shrink-0" />{/if}
+        </DropdownMenu.Item>
+      {/each}
+    </DropdownMenu.Content>
+  </DropdownMenu.Root>
 </span>
 {#if error}
   <span role="alert" class="absolute left-2 top-full z-50 rounded border bg-background p-2 text-xs text-destructive">

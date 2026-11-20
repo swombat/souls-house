@@ -35,6 +35,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'telegram_bot_wake_limit',
     'reflexes_enabled',
     'show_chat_codes',
+    'show_room_chat_counts',
     'plan_offer_enabled',
     'plan_offer_available',
     'voice_mode_enabled',

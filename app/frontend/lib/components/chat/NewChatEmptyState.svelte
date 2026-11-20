@@ -77,7 +77,9 @@
             <li class="relative">
               <Link
                 href={accountChatPath(accountId, chat.id)}
-                class="block rounded-md border border-border pl-11 {working.length ? 'pr-20' : 'pr-10'} py-3 text-foreground hover:bg-accent break-words">
+                class="block rounded-md border border-border pl-11 {working.length
+                  ? 'pr-20'
+                  : 'pr-10'} py-3 text-foreground hover:bg-accent break-words">
                 {chat.title_or_default || chat.title || 'New Conversation'}
               </Link>
               <div class="absolute left-2 top-2">

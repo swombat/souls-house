@@ -99,7 +99,8 @@
         <span class="text-xs text-muted-foreground" data-testid="quiet-reason-hint"> · gave a reason</span>
       {/if}
       {#if !isActive && interaction.hook_warning}
-        <span class="text-xs text-yellow-700 dark:text-yellow-400" data-testid="hook-warning-hint"> · hook missing</span>
+        <span class="text-xs text-yellow-700 dark:text-yellow-400" data-testid="hook-warning-hint">
+          · hook missing</span>
       {/if}
       {#if healthStale && !silenceLabel}
         <span class="text-xs text-amber-700 dark:text-amber-400"> · Live updates interrupted</span>
@@ -120,11 +121,15 @@
     <div class="border-t px-4 py-3 space-y-3 text-sm">
       <p class="text-xs text-muted-foreground">Runtime activity, not a chat reply. Click the summary to minimise.</p>
       {#if !isActive && interaction.hook_warning}
-        <p class="text-xs text-yellow-700 dark:text-yellow-400" data-testid="hook-warning">{interaction.hook_warning}</p>
+        <p class="text-xs text-yellow-700 dark:text-yellow-400" data-testid="hook-warning">
+          {interaction.hook_warning}
+        </p>
       {/if}
       {#if !isActive && interaction.quiet_reason?.text}
         <div data-testid="quiet-reason">
-          <p class="text-xs text-muted-foreground">Stated reason for not replying ({interaction.agent_name}'s own account, not verified)</p>
+          <p class="text-xs text-muted-foreground">
+            Stated reason for not replying ({interaction.agent_name}'s own account, not verified)
+          </p>
           <p class="whitespace-pre-wrap">{interaction.quiet_reason.text}</p>
         </div>
       {/if}

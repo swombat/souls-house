@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_20_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -129,6 +129,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_210000) do
     t.datetime "trial_started_at"
     t.boolean "plan_offer_enabled", default: false, null: false
     t.boolean "show_chat_codes", default: false, null: false
+    t.boolean "show_room_chat_counts", default: false, null: false
     t.string "chosen_plan"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
