@@ -95,15 +95,15 @@ export function createVoiceModeSession(props) {
   let utteranceOpen = false;
 
   // A turn's start in the trace, numbers only: what the mic heard and the bar
-  // it was over, and, when it cut off a reply, how many seconds of that reply
-  // had played (cut:0.041/0.012/3.2s). The turn's end follows as turn: or
-  // discard:, so the next phone test can tell a person from the reply's own
-  // echo cutting it off (JOyaQe).
+  // it was over. When it cut off a reply: cut:…/3.2s if that reply was being
+  // heard (seconds played), cut:…/pending if it was still being made or
+  // queued. The turn's end follows as turn: or discard:. Context for the next
+  // phone test, not proof of who spoke (JOyaQe).
   function startNote({ level = 0, threshold = 0 }, cut) {
     const numbers = `${level.toFixed(3)}/${threshold.toFixed(3)}`;
     if (!cut.length) return `start:${numbers}`;
     const playing = cut.find((item) => item.playing);
-    return `cut:${numbers}/${(playing?.at ?? 0).toFixed(1)}s`;
+    return `cut:${numbers}/${playing ? `${playing.at.toFixed(1)}s` : 'pending'}`;
   }
 
   // The handlers the microphone feeds; kept so a reopened mic gets the same.

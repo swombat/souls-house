@@ -16,21 +16,17 @@
 // With `streamFrames`, for a transcriber that listens while the person speaks:
 //   'start' also carries `samples`, the pre-roll and attack frames, and every
 //   later frame of the turn arrives at once as { type: 'audio', samples }.
-//
-// Two bars. Starting a turn needs frames over the larger of `floor` and
-// `noiseRatio` times the running noise level, which is learnt from the quiet
-// frames, so a noisy street raises it and a quiet room lowers it. Once a turn
-// is open it goes on while frames are over a lower release bar, the larger of
-// `releaseFloor` and `releaseRatio` times the noise: a soft syllable is not
-// silence, and steady room noise stays under it, so it cannot hold a turn open.
-//
-// Silence is `silenceMs` of frames under the release bar: 2.8 s (JOyaQe). In a
-// phone test on 20 Nov a slower speaker was cut mid-sentence twice by pauses of
-// about 1.9 s in a quiet room, with 1.8 s here. A resident's reply takes ten
-// seconds or more, so a brisk speaker loses about a second and a slow one keeps
-// the end of the sentence. It was 1.8 s for walking outdoors (#756), where
-// Daniel found 2–3 s before the transcript acceptable. Fixed, not learnt per
-// speaker: one phone is often two people.
+// Silence is `silenceMs` of frames below the threshold. The threshold is the
+// larger of an absolute floor and a multiple of the running noise level, which
+// is learnt from the quiet frames, so a noisy street raises it and a quiet room
+// lowers it. A pause mid-thought longer than `silenceMs` ends the turn, and the
+// person can finish in the next one. 2.8 s (JOyaQe): in a phone test on 20 Nov
+// a slower speaker was cut mid-sentence twice by pauses of about 1.9 s in a
+// quiet room, with 1.8 s here. A resident's reply takes ten seconds or more,
+// so a brisk speaker loses about a second and a slow one keeps the end of the
+// sentence. It was 1.8 s for walking outdoors (#756), where Daniel found 2–3 s
+// before the transcript acceptable. Fixed, not learnt per speaker: one phone
+// is often two people.
 export function createTurnDetector({
   sampleRate,
   frameMs = 20,
@@ -40,8 +36,6 @@ export function createTurnDetector({
   preRollMs = 300,
   floor = 0.012,
   noiseRatio = 3,
-  releaseFloor = 0.006,
-  releaseRatio = 2,
   maxTurnMs = 90_000,
   streamFrames = false,
 } = {}) {
@@ -63,7 +57,6 @@ export function createTurnDetector({
   let level = 0;
 
   const startBar = () => Math.max(floor, noise * noiseRatio);
-  const releaseBar = () => Math.max(releaseFloor, noise * releaseRatio);
 
   function rms(frame) {
     let sum = 0;
@@ -97,9 +90,10 @@ export function createTurnDetector({
     const energy = rms(frame);
     level = energy;
 
+    const threshold = startBar();
+    const loud = energy > threshold;
+
     if (!speaking) {
-      const threshold = startBar();
-      const loud = energy > threshold;
       // Learn the room from quiet frames only, slowly down and faster up.
       if (!loud) noise = energy < noise ? noise * 0.95 + energy * 0.05 : noise * 0.8 + energy * 0.2;
       preRoll.push(frame);
@@ -123,7 +117,7 @@ export function createTurnDetector({
 
     turn.push(frame);
     if (streamFrames) events.push({ type: 'audio', samples: frame.slice() });
-    if (energy > releaseBar()) {
+    if (loud) {
       turnFrames += 1;
       quietRun = 0;
     } else {
@@ -160,9 +154,6 @@ export function createTurnDetector({
     },
     get threshold() {
       return startBar();
-    },
-    get releaseThreshold() {
-      return releaseBar();
     },
   };
 }

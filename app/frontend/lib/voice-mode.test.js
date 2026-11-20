@@ -187,7 +187,7 @@ describe('voiceModeStatus', () => {
 describe('the wait at the end of a turn (JOyaQe)', () => {
   const room = (count, level = 0.0005) => Array(count).fill(level);
   const words = (count, level = 0.04) => Array(count).fill(level);
-  const BEFORE = { silenceMs: 1800, releaseFloor: 0.012, releaseRatio: 3 };
+  const BEFORE = { silenceMs: 1800 };
 
   function play(levels, options = {}) {
     const detector = createTurnDetector({ sampleRate: RATE, ...options });
@@ -211,10 +211,10 @@ describe('the wait at the end of a turn (JOyaQe)', () => {
     expect((end.at - 159) * 20).toBe(2800);
   });
 
-  test('soft speech between louder words is not silence', () => {
-    const levels = [...room(100), ...words(20, 0.05), ...words(100, 0.008), ...words(20, 0.05), ...room(200)];
-    expect(types(play(levels, { ...BEFORE, silenceMs: 1800 }))).toEqual(['start', 'end', 'start', 'end']);
-    expect(types(play(levels, { silenceMs: 1800 }))).toEqual(['start', 'end']);
+  test('a fan starting after the words, under the bar, does not hold the turn open', () => {
+    const levels = [...room(100), ...words(60, 0.07), ...room(400, 0.009)];
+    const end = play(levels).find((e) => e.type === 'end');
+    expect((end.at - 159) * 20).toBe(2800);
   });
 
   test('steady room noise cannot hold a turn open, in a quiet room or a loud one', () => {

@@ -917,7 +917,7 @@ test('the next transcription session carries a trace of what the phone did to th
   expect(urls[1]).toBe('/accounts/acc/chats/chat/voice_mode_session');
 });
 
-test('a start that cuts off a reply is traced with its numbers, how much had played, and how it ended (JOyaQe)', async () => {
+test('a start that cuts off a reply is traced with its numbers, how much had played or that it was pending, and how it ended (JOyaQe)', async () => {
   const { rerender } = render(VoiceModePanel, { ...props, messages: [] });
   await waitFor(() => expect(callbacks).toBeTruthy());
   await rerender({ ...props, messages: [reply('first')] });
@@ -925,6 +925,7 @@ test('a start that cuts off a reply is traced with its numbers, how much had pla
   player.interrupts = [[{ id: 'first', at: 3.24, playing: true }]];
   callbacks.onspeechstart(new Float32Array(10), { level: 0.0413, threshold: 0.0182 });
   callbacks.ondiscard(120);
+  player.interrupts = [[{ id: 'first', at: 0, playing: false }]];
   callbacks.onspeechstart(new Float32Array(10), { level: 0.05, threshold: 0.012 });
 
   const urls = [];
@@ -934,7 +935,7 @@ test('a start that cuts off a reply is traced with its numbers, how much had pla
   });
   await transcriber.options.fetchSession();
   const trace = decodeURIComponent(urls[0].split('?trace=')[1] || '');
-  expect(trace).toMatch(/^cut:0\.041\/0\.018\/3\.2s@0\.0,discard:0\.1s@[\d.]+,start:0\.050\/0\.012@[\d.]+$/);
+  expect(trace).toMatch(/^cut:0\.041\/0\.018\/3\.2s@0\.0,discard:0\.1s@[\d.]+,cut:0\.050\/0\.012\/pending@[\d.]+$/);
 });
 
 test('a device change while an earlier turn is still transcribing does not cut the next utterance (#808 review)', async () => {

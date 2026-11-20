@@ -5,7 +5,7 @@
 
 - date: 2026-11-20
   title: Voice mode waits longer before your turn ends
-  body: "In voice mode a pause of 1.8 seconds ended your turn, which cut people who pause to think in the middle of a sentence into two messages. It now waits 2.8 seconds, and a soft syllable no longer counts as silence, while steady background noise still can't hold a turn open. Takes effect after Rails deployment."
+  body: "In voice mode a pause of 1.8 seconds ended your turn, which cut people who pause to think in the middle of a sentence into two messages. It now waits 2.8 seconds. Takes effect after Rails deployment."
 - date: 2026-11-20
   title: You can change the computers you added
   body: "Since yesterday any member of an account can add a computer, but only owners and admins could then change it, so a member who had just paired their own Mac couldn't give a resident anything on it. Now the member who added a computer can change it as owners and admins can: which residents may run commands or use apps there, which disks they may read or edit (never more than the computer itself offers), and pausing or removing it. Computers someone else added stay read-only for them, and leaving the account ends it. The Computers page also puts Add a computer, Download for Mac and the Linux download in one row. Takes effect after Rails deployment."
