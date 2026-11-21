@@ -138,6 +138,30 @@ class Agent < ApplicationRecord
   validates :portable_home_id, presence: true, if: :imported_home?
   validates :portable_home_id, uniqueness: true, allow_nil: true
 
+  # The journal the card counts (JqRaEY). nil is the dated daily journals.
+  # Otherwise one Markdown file under memory/, relative to the identity
+  # volume: plain segments only, so no traversal, no dot-only names, and the
+  # readers refuse links along the path. The same rule is in the readers
+  # (Agents::JournalEntryStats::SCRIPT and the runner's copy).
+  JOURNAL_SOURCE_SEGMENT = /\A[A-Za-z0-9_.-]+\z/
+  JOURNAL_SOURCE_MAX = 200
+
+  normalizes :journal_source, with: ->(value) { value.to_s.strip.presence }
+  validate :journal_source_is_one_markdown_file_under_memory
+  # A count measured from another journal is not this one's stale count. The
+  # reset is forced into the same UPDATE: on a stale instance that already
+  # holds {}, plain assignment isn't a change and a count written meanwhile
+  # would survive the source switch.
+  before_save :reset_journal_entry_stats, if: :will_save_change_to_journal_source?
+
+  def self.valid_journal_source?(source)
+    return false unless source.is_a?(String) && source.length <= JOURNAL_SOURCE_MAX && source.end_with?(".md")
+
+    segments = source.split("/", -1)
+    segments.length >= 2 && segments.first == "memory" &&
+      segments.all? { |segment| segment.match?(JOURNAL_SOURCE_SEGMENT) && segment.delete(".").present? }
+  end
+
   def imported_home? = IMPORTED_HOME_ROOT_ENV.key?(home_profile)
 
   def imported_home_root_env = IMPORTED_HOME_ROOT_ENV.fetch(home_profile)
@@ -560,6 +584,17 @@ class Agent < ApplicationRecord
   end
 
   private
+
+  def reset_journal_entry_stats
+    self.journal_entry_stats = {}
+    journal_entry_stats_will_change!
+  end
+
+  def journal_source_is_one_markdown_file_under_memory
+    return if journal_source.nil? || self.class.valid_journal_source?(journal_source)
+
+    errors.add(:journal_source, "must be one .md file under memory/, like memory/growth-journal.md")
+  end
 
   def kimi_code_reasoning_effort_is_supported
     return unless model_id.to_s.start_with?("kimi-code/")

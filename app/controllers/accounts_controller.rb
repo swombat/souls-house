@@ -56,6 +56,7 @@ class AccountsController < ApplicationController
       telegram_bot_wake_limit: @account.telegram_bot_wake_limit,
       reflexes_enabled: @account.reflexes_enabled,
       show_chat_codes: @account.show_chat_codes,
+      show_room_chat_counts: @account.show_room_chat_counts,
       plan_offer_enabled: @account.plan_offer_enabled,
       plan_offer_available: @account.plan_offer_available?,
       reflexes_site_scope: Setting.instance.reflexes_scope,
@@ -64,7 +65,8 @@ class AccountsController < ApplicationController
       voice_mode_transcription_key: VoiceMode.transcription_key?(@account),
       speech_engine: @account.speech_engine,
       speech_engine_site_scope: Setting.instance.speech_engine_scope,
-      eleven_labs_key_present: @account.eleven_labs_api_key.present?
+      eleven_labs_key_present: @account.eleven_labs_api_key.present?,
+      eleven_labs_house_key: @account.house_eleven_labs_key?
     }
   end
 
@@ -140,11 +142,12 @@ class AccountsController < ApplicationController
   # The resident handoff cap (MessageHandoff), the Telegram bot answer limit
   # (TelegramSubscription#bot_wake_limit), the reflexes switch
   # (ReflexCheck) and the voice mode switch (VoiceMode) are changed only by
-  # someone who can manage the account, as is showing conversation codes.
+  # someone who can manage the account, as are showing conversation codes
+  # and the conversation totals in the room menus.
   def account_params
     permitted = [ :name ]
     if @account.manageable_by?(Current.user)
-      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key, :plan_offer_enabled, :show_chat_codes)
+      permitted.push(:resident_handoff_cap, :telegram_bot_wake_limit, :reflexes_enabled, :voice_mode_enabled, :speech_engine, :eleven_labs_api_key, :plan_offer_enabled, :show_chat_codes, :show_room_chat_counts)
     end
     params.require(:account).permit(permitted)
   end

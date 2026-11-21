@@ -128,6 +128,11 @@ class ScheduledAllowanceBrakeTest < ActiveSupport::TestCase
     end
     @agent.update!(scheduled_wakes_essential: true)
     assert_equal "essential", Agents::AllowanceBrake.check(@agent, essential: @agent.scheduled_wakes_essential?).status
+    # The wake itself must pass the brake: offline is the next gate, so a 503
+    # (not the brake's 412) shows the essential flag reached the wake's check.
+    @agent.stub(:offline?, true) do
+      assert_equal({ status: 503, error: "external runtime unreachable" }, request.send(:perform))
+    end
   end
 
   test "seat override reads its actual model evidence, not default evidence" do

@@ -121,6 +121,7 @@ test('connector chat counts follow real events and reconnect without replacing d
           'main_room_name',
           'reply_attention',
           'room_activity',
+          'room_chat_counts',
           'rooms'
         );
       expect(readers[0].reloads.at(-1).partial.split(',').sort()).toEqual(accountProps.sort());

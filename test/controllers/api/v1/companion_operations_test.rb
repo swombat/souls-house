@@ -33,6 +33,45 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     assert_response :gone
   end
 
+  test "a resident lists the computers that grant it something, with only its own grant" do
+    other = agents(:code_reviewer)
+    other_key = ApiKey.generate_for(users(:user_1), name: "Other", agent: other)
+    @device.update!(policy: @device.policy.merge("residents" => @device.policy["residents"] +
+      [ { "id" => "someone-else", "volumes" => [ { "volume" => "secret-volume", "access" => "write" } ], "execute" => true } ]))
+
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    assert_response :success
+    computers = response.parsed_body.fetch("computers")
+    assert_equal [ @device.to_param ], computers.map { |c| c["id"] }
+    mine = computers.first
+    assert_equal "Fixture", mine["name"]
+    assert mine["connected"]
+    assert_equal [ { "volume" => "fixture-volume", "access" => "read" } ], mine["volumes"]
+    assert_equal false, mine["execute"]
+    assert_not_includes response.body, "secret-volume"
+
+    get "/api/v1/companion_devices", headers: bearer(other_key.raw_token)
+    assert_response :success
+    assert_equal [], response.parsed_body.fetch("computers")
+
+    @device.update!(revoked_at: Time.current)
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    assert_equal [], response.parsed_body.fetch("computers")
+  end
+
+  test "a resident named with nothing granted still sees the computer, with no volumes" do
+    @device.update!(policy: { "residents" => [ { "id" => @agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+    get "/api/v1/companion_devices", headers: bearer(@key.raw_token)
+    mine = response.parsed_body.fetch("computers").sole
+    assert_equal [], mine["volumes"]
+    assert_equal false, mine["execute"]
+  end
+
+  test "listing computers needs a resident token" do
+    get "/api/v1/companion_devices", headers: bearer(ApiKey.generate_for(users(:user_1), name: "Human").raw_token)
+    assert_response :forbidden
+  end
+
   test "device can only revoke itself including paused and repeat removal" do
     post "/api/v1/companion/revoke", headers: bearer(@key.raw_token)
     assert_response :unauthorized
@@ -159,6 +198,47 @@ class Api::V1::CompanionOperationsTest < ActionDispatch::IntegrationTest
     end
     assert @device.revoked_at
     assert_nil CompanionDevice.authenticate(@credential)
+  end
+
+  test "a member manages a computer they added through the API, not one someone else added, and not after leaving" do
+    agent = agents(:other_account_agent)
+    team = agent.account
+    member = users(:existing_user) # team_member: confirmed, role member
+    enroll = ->(by, request_id) {
+      grant = CompanionEnrollmentGrant.create!(account: team, minting_agent: agent, created_by_user: by,
+        name: request_id, device_request_id: request_id, expires_at: 1.hour.from_now,
+        policy: { "residents" => [ { "id" => agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+      device, = CompanionEnrollmentGrant.enroll!(grant.issue_token!(agent), request_id)
+      device
+    }
+    theirs = enroll.call(member, "their-mac")
+    other = enroll.call(users(:user_1), "team-mac")
+    key = ApiKey.generate_for(member, name: "Member", account: team)
+    pause = ->(device) {
+      patch "/api/v1/companion_devices/#{device.to_param}", params: { account_id: team.to_param, control: "pause" },
+        headers: bearer(key.raw_token), as: :json
+    }
+
+    pause.call(theirs)
+    assert_response :no_content
+    assert theirs.reload.paused?
+
+    pause.call(other)
+    assert_response :forbidden
+    assert_not other.reload.paused?
+
+    # Being a site admin adds nothing on the API; only account roles count.
+    member.update!(is_site_admin: true)
+    assert member.site_admin
+    pause.call(other)
+    assert_response :forbidden
+    assert_not other.reload.paused?
+
+    theirs.update!(paused: false)
+    memberships(:team_member).update!(confirmed_at: nil)
+    pause.call(theirs)
+    assert_not_equal 204, response.status
+    assert_not theirs.reload.paused?
   end
 
   test "write upload is actor scoped and only the device consumes its dispatched input once" do

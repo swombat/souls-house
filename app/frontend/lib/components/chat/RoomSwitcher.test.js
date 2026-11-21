@@ -87,3 +87,33 @@ test('Escape closes it', async () => {
   await fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByTestId('room-hover-switcher-panel')).toBeNull();
 });
+
+test('with the account switch off, no room shows a total', async () => {
+  const wrapper = setup();
+  await pointer(wrapper, 'pointerenter', 'mouse');
+  expect(screen.queryAllByTestId('room-chat-count')).toEqual([]);
+});
+
+test('with the account switch on, each room shows its total, faint, to the left of its name', async () => {
+  page.update((p) => ({ ...p, props: { ...p.props, room_chat_counts: { rooms: { main: 4, r1: 12 }, all: 16 } } }));
+  const wrapper = setup();
+  await pointer(wrapper, 'pointerenter', 'mouse');
+  const links = screen.getByTestId('room-hover-switcher-panel').querySelectorAll('a');
+  const totals = [...links].map((a) => a.querySelector('[data-testid="room-chat-count"]').textContent);
+  expect(totals).toEqual(['4', '12', '16']);
+  const studio = links[1];
+  const count = studio.querySelector('[data-testid="room-chat-count"]');
+  const name = [...studio.querySelectorAll('span')].find((span) => span.textContent === 'Studio');
+  expect(count.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(count.className).toContain('text-muted-foreground');
+  // The waiting badge is unchanged beside it.
+  expect(studio.querySelector('[title="2 waiting on you"]')).not.toBeNull();
+});
+
+test('a room with nothing in it shows 0 rather than nothing', async () => {
+  page.update((p) => ({ ...p, props: { ...p.props, room_chat_counts: { rooms: { main: 3 }, all: 3 } } }));
+  const wrapper = setup();
+  await pointer(wrapper, 'pointerenter', 'mouse');
+  const links = screen.getByTestId('room-hover-switcher-panel').querySelectorAll('a');
+  expect(links[1].querySelector('[data-testid="room-chat-count"]').textContent).toBe('0');
+});

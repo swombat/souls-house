@@ -39,6 +39,9 @@ class Message < ApplicationRecord
   belongs_to :chat, touch: true
   belongs_to :user, optional: true
   belongs_to :agent, optional: true
+  # Set when a pocket device posted this (CompanionDevice::Pocket). The user is
+  # the device's owner, kept for authority and audit; the device is the author.
+  belongs_to :companion_device, optional: true
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   # #690: the live paid-fallback run a resident's unlinked post was made during.
   belongs_to :paid_fallback_interaction, class_name: "AgentRuntimeInteraction", optional: true
@@ -86,6 +89,9 @@ class Message < ApplicationRecord
   after_create :accept_single_resident_dispatch, if: :human_message_in_group_chat?
   after_create_commit :trigger_single_resident_response, if: :human_message_in_group_chat?
   after_create_commit :advance_runtime_response_chain
+  # A pocket device's open clip hears back only the reply it woke.
+  after_commit :deliver_pocket_replies, on: %i[create update],
+    if: -> { agent_id.present? && (previously_new_record? || saved_change_to_streaming? || saved_change_to_progress_message?) }
   after_create :accept_resident_handoffs, if: -> { !handoff_recipient_ids.nil? && role == "assistant" && agent_id }
   after_create_commit :enqueue_resident_handoffs, if: -> { @accepted_handoffs.present? }
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
@@ -119,7 +125,7 @@ class Message < ApplicationRecord
     return unless Agents::InferenceAvailability.dispatchable?(resident)
     # Busy with an earlier message: hold this one as a PendingWake rather
     # than dropping it, so the resident is woken once when that run ends.
-    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{user ? ResidentFacingName.for(user) : author_name}", message: self) if chat.agent_response_active?(resident)
+    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{wake_requester_name}", message: self) if chat.agent_response_active?(resident)
 
     @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
   end
@@ -321,11 +327,21 @@ class Message < ApplicationRecord
     user&.avatar_url
   end
 
+  # Who a held wake says sent this: a pocket device speaks as itself, never
+  # as the member who owns it (Mira, JnwomB).
+  def wake_requester_name
+    return author_name if companion_device.present? || user.nil?
+
+    ResidentFacingName.for(user)
+  end
+
   def author_name
     if safeguard_labelled?
       SafeguardNoticeRenderer::HOUSE_AUTHOR_NAME
     elsif agent.present?
       agent.name
+    elsif companion_device.present?
+      companion_device.name
     elsif user.present?
       user.full_name.presence || user.email_address.split("@").first
     elsif role == "system"
@@ -525,5 +541,12 @@ class Message < ApplicationRecord
     )
     renderer.render(content || "").html_safe
   end
+
+  def deliver_pocket_replies
+    CompanionDevice.deliver_pocket_replies(self)
+  rescue StandardError => e
+    Rails.logger.warn "[Message] #{id} pocket delivery failed: #{e.class}: #{e.message}"
+  end
+  private :deliver_pocket_replies
 
 end

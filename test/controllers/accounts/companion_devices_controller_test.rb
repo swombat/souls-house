@@ -106,6 +106,42 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, device.grant_revision
   end
 
+  test "a member who added a computer can change that computer, and not one someone else added" do
+    agent = agents(:other_account_agent)
+    team = agent.account
+    member = users(:existing_user) # team_member: confirmed, role member
+    enroll = ->(by, name) {
+      grant = CompanionEnrollmentGrant.create!(account: team, minting_agent: agent, created_by_user: by,
+        name: name, device_request_id: name.parameterize, expires_at: 1.hour.from_now,
+        policy: { "residents" => [ { "id" => agent.obfuscated_id, "volumes" => [], "execute" => false } ] })
+      device, = CompanionEnrollmentGrant.enroll!(grant.issue_token!(agent), name.parameterize)
+      device.update!(connection_epoch: "#{name}-epoch")
+      device
+    }
+    theirs = enroll.call(member, "Their Mac")
+    other = enroll.call(@owner, "Team Mac")
+
+    sign_in member
+    get account_companion_devices_path(team), headers: inertia
+    assert_equal false, inertia_shared_props.fetch("can_manage")
+    flags = inertia_shared_props.fetch("devices").to_h { |d| [ d.fetch("name"), d.fetch("can_manage") ] }
+    assert_equal({ "Their Mac" => true, "Team Mac" => false }, flags)
+
+    patch account_companion_device_path(team, theirs),
+      params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
+    assert_equal true, theirs.reload.policy.dig("residents", 0, "execute")
+    assert_equal member, AuditLog.where(action: "companion.device.authority_changed").last.user
+
+    patch account_companion_device_path(team, other),
+      params: { control: "authority", resident_id: agent.obfuscated_id, permission: "execute", value: "true" }
+    assert_equal false, other.reload.policy.dig("residents", 0, "execute")
+    patch account_companion_device_path(team, other), params: { control: "revoke" }
+    assert_nil other.reload.revoked_at
+
+    patch account_companion_device_path(team, theirs), params: { control: "pause" }
+    assert theirs.reload.paused
+  end
+
   test "someone outside the account cannot see or change its computers" do
     sign_in users(:existing_user)
     get account_companion_devices_path(@account), headers: inertia
@@ -224,6 +260,29 @@ class Accounts::CompanionDevicesControllerTest < ActionDispatch::IntegrationTest
     assert_not resident.key?("desktop"), "desktop came back without its confirmation"
     last = AuditLog.where(action: "companion.device.authority_changed").last
     assert_equal({ "execute" => false, "desktop" => false }, last.data["after"])
+  end
+
+
+  test "a pocket device shows its owner, conversation and capture switches, and only its owner turns one on" do
+    pairing, _code, secret = CompanionPairing.open!(name: "The stone", device_request_id: "stone-1", volumes: nil,
+      kind: "pocket", capabilities: %w[mic])
+    pairing.approve!(account: @account, user: @owner, agents: [ @agent ], accesses: {})
+    _state, payload = CompanionPairing.claim(pairing.to_param, secret)
+    stone, = CompanionEnrollmentGrant.enroll!(payload["enrollment_token"], "stone-1")
+
+    sign_in @owner
+    get account_companion_devices_path(@account), headers: inertia
+    card = inertia_shared_props.fetch("devices").find { |d| d["id"] == stone.to_param }
+    assert_equal "pocket", card["kind"]
+    assert_equal({ "capabilities" => %w[mic], "mic" => false, "camera" => false, "owned_by_you" => true,
+      "chat_id" => stone.chat.to_param, "chat_title" => "The stone" }, card["pocket"].except("owner_name"))
+
+    patch account_companion_device_path(@account, stone), params: { control: "capture", capability: "mic", value: "true" }
+    assert stone.reload.mic_enabled
+    patch account_companion_device_path(@account, stone), params: { control: "capture", capability: "camera", value: "true" }
+    assert_not stone.reload.camera_enabled, "not offered"
+    patch account_companion_device_path(@account, stone), params: { control: "capture", capability: "mic", value: "false" }
+    assert_not stone.reload.mic_enabled
   end
 
 end

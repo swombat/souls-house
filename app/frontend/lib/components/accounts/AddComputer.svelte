@@ -21,6 +21,8 @@
   let busy = $state(false);
   let chosen = $state({});
   let accesses = $state({});
+  // A pocket serves exactly one resident: a single choice, not a set.
+  let pocketResident = $state(null);
   // Each lookup gets a number; a reply that arrives after the code was
   // edited, the dialog closed or another lookup started is dropped, so what
   // is approved is always the offer on screen.
@@ -34,6 +36,7 @@
     error = null;
     chosen = {};
     accesses = {};
+    pocketResident = null;
   }
 
   async function lookup(event) {
@@ -56,8 +59,9 @@
         return;
       }
       offer = { ...body, code: submitted };
-      accesses = Object.fromEntries(body.volumes.map((v) => [v.volume, 'read']));
+      accesses = Object.fromEntries((body.volumes ?? []).map((v) => [v.volume, 'read']));
       chosen = body.residents.length === 1 ? { [body.residents[0].id]: true } : {};
+      pocketResident = body.kind === 'pocket' && body.residents.length === 1 ? body.residents[0].id : null;
     } catch {
       if (mine === seq) error = 'That code could not be checked. Try again.';
     } finally {
@@ -69,22 +73,28 @@
   let residentIds = $derived(Object.keys(chosen).filter((id) => chosen[id]));
   let anyDisk = $derived(Object.values(accesses).some((a) => a !== 'off'));
   let anyWrite = $derived(Object.values(accesses).includes('write'));
+  let isPocket = $derived(offer?.kind === 'pocket');
+  let pocketResidentName = $derived(offer?.residents.find((r) => r.id === pocketResident)?.name);
+  const capabilityLabel = { mic: 'microphone', camera: 'camera' };
 
   function approve() {
-    if (busy || !residentIds.length || !anyDisk) return;
+    if (isPocket) {
+      if (busy || !pocketResident) return;
+    } else if (busy || !residentIds.length || !anyDisk) {
+      return;
+    }
     busy = true;
-    router.post(
-      `/accounts/${account.id}/computers/pairings`,
-      { code: offer.code, pairing_id: offer.id, resident_ids: residentIds, accesses },
-      {
-        preserveScroll: true,
-        onFinish: () => {
-          busy = false;
-          open = false;
-          reset();
-        },
-      }
-    );
+    const data = isPocket
+      ? { code: offer.code, pairing_id: offer.id, resident_ids: [pocketResident] }
+      : { code: offer.code, pairing_id: offer.id, resident_ids: residentIds, accesses };
+    router.post(`/accounts/${account.id}/computers/pairings`, data, {
+      preserveScroll: true,
+      onFinish: () => {
+        busy = false;
+        open = false;
+        reset();
+      },
+    });
   }
 </script>
 
@@ -102,8 +112,12 @@
       <Dialog.Title>{offer ? `Add ${offer.name}` : 'Add a computer'}</Dialog.Title>
       <Dialog.Description>
         {#if offer}
-          It will be added to <strong>{offer.account_name}</strong>. Choose who may use it and what they may reach. They
-          can never reach more than the computer offers.
+          {#if isPocket}
+            It will be added to <strong>{offer.account_name}</strong>. Choose the resident it talks to.
+          {:else}
+            It will be added to <strong>{offer.account_name}</strong>. Choose who may use it and what they may reach.
+            They can never reach more than the computer offers.
+          {/if}
         {:else}
           On the computer, open the {$siteName} menu, choose “Pair this Mac…”, and type the code it shows.
         {/if}
@@ -130,6 +144,46 @@
           <Button type="submit" disabled={busy || !code.trim()}>Continue</Button>
         </Dialog.Footer>
       </form>
+    {:else if isPocket}
+      <div class="space-y-5">
+        <div role="radiogroup" aria-label="Resident">
+          <p class="mb-2 text-sm font-medium">Resident</p>
+          {#each offer.residents as resident (resident.id)}
+            <label class="flex items-center gap-2 py-1 text-sm">
+              <input
+                type="radio"
+                name="pocket-resident"
+                value={resident.id}
+                bind:group={pocketResident}
+                data-testid="pairing-pocket-resident" />
+              {resident.name}
+            </label>
+          {/each}
+        </div>
+        <div>
+          <p class="mb-2 text-sm font-medium">It offers</p>
+          <p class="text-sm" data-testid="pairing-capabilities">
+            {#if offer.capabilities?.length}
+              {offer.capabilities.map((c) => capabilityLabel[c] ?? c).join(' and ')}
+            {:else}
+              nothing to capture
+            {/if}
+          </p>
+        </div>
+        {#if pocketResidentName}
+          <div class="space-y-2 text-sm text-muted-foreground" data-testid="pairing-pocket-summary">
+            <p>This creates a new conversation, «{offer.name}», with {pocketResidentName}.</p>
+            <p>Like every conversation here, everyone in this account can read it.</p>
+            <p>You'll own this device. Its microphone and camera start off, and only you can turn them on.</p>
+          </div>
+        {/if}
+        <Dialog.Footer>
+          <Button variant="outline" onclick={reset} disabled={busy}>Back</Button>
+          <Button onclick={approve} disabled={busy || !pocketResident} data-testid="pairing-approve">
+            Add {offer.name}
+          </Button>
+        </Dialog.Footer>
+      </div>
     {:else}
       <div class="space-y-5">
         <div>

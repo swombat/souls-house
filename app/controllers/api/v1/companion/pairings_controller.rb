@@ -20,7 +20,8 @@ module Api
         # string, so they can't land in access logs or error reports by URL.
         def create
           pairing, code, secret = CompanionPairing.open!(name: body[:name],
-            device_request_id: body[:device_request_id], volumes: body[:volumes])
+            device_request_id: body[:device_request_id], volumes: body[:volumes],
+            kind: body[:kind], capabilities: body[:capabilities])
           render json: { id: pairing.to_param, code: code, poll_secret: secret,
             expires_at: pairing.expires_at.iso8601(3), poll_interval: 3 }, status: :created
         rescue CompanionPairing::Invalid, ActiveRecord::RecordInvalid => error

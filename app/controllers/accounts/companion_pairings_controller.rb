@@ -26,7 +26,9 @@ class Accounts::CompanionPairingsController < ApplicationController
       account_name: @account.name,
       name: pairing.name,
       expires_at: pairing.expires_at,
-      volumes: pairing.offered_volumes,
+      kind: pairing.kind,
+      volumes: pairing.offered_volumes || [],
+      capabilities: pairing.offered_capabilities || [],
       residents: @account.agents.order(:name).map { |agent| { id: agent.to_param, name: agent.name } }
     }
   end

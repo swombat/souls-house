@@ -1,6 +1,7 @@
 class CompanionDevice < ApplicationRecord
 
   include ObfuscatesId
+  include CompanionDevice::Pocket
 
   CREDENTIAL_PREFIX = "shcd_".freeze
   RECOVERY_WINDOW = 60.seconds
@@ -28,7 +29,7 @@ class CompanionDevice < ApplicationRecord
   # What the Computers page shows. A change to any of these tells an open
   # page to reload, so "Offline" doesn't outlive the gap after a change.
   STATUS_COLUMNS = %w[connection_epoch paused revoked_at policy grant_revision ceiling_reported_at
-    execute_lifecycle_accepted].freeze
+    execute_lifecycle_accepted mic_enabled camera_enabled].freeze
   after_commit :refresh_computer_status, if: -> { (saved_changes.keys & STATUS_COLUMNS).any? }
 
   def self.generate_credential
@@ -37,6 +38,20 @@ class CompanionDevice < ApplicationRecord
 
   def self.digest(value)
     Digest::SHA256.hexdigest(value)
+  end
+
+  # Who may change this computer: an owner or admin of the account, or the
+  # member who added it (the person who asked for its pairing code). It is
+  # their machine, and the Mac's own ceiling still bounds what they can widen.
+  # Account roles only: the website adds its own site-admin exception, the API
+  # does not (Mira, #1065).
+  def manageable_by?(user)
+    return false unless user
+
+    membership = user.confirmed_memberships.find_by(account_id: account_id)
+    return false unless membership
+
+    membership.admin? || companion_enrollment_grant.created_by_user_id == user.id
   end
 
   def self.credential?(value)
@@ -67,8 +82,11 @@ class CompanionDevice < ApplicationRecord
       if control == "revoke"
         revoke!
       else
-        update!(paused: control == "pause")
+        # A pause also ends the live connection's epoch, so nothing already
+        # queued for that socket is sent after it (CompanionChannel#relay).
+        control == "pause" ? update!(paused: true, connection_epoch: nil) : update!(paused: false)
       end
+      end_pocket_submission! unless control == "resume"
       unless control == "resume"
         CompanionOperation.where(companion_device: self, state: CompanionOperation::ACTIVE_STATES)
           .update_all(state: "cancelled", outcome: "changed")

@@ -376,6 +376,29 @@ class ResidentHostTest(unittest.TestCase):
         self.host.cancel_turn({"container_name": "agent-pilot-1", "dispatch_id": DISPATCH, "ledger_id": "led_1"})
         self.assertEqual(self.http.calls[-1]["method"], "DELETE")
 
+    def test_resolve_carries_only_the_execution_stopped_proof(self):
+        # #1056: the house closes an unknown turn on the VM's own ledger.
+        self.host.start_resident(spec())
+        self.host.resolve_turn({"container_name": "agent-pilot-1", "dispatch_id": DISPATCH,
+                                "body": {"execution_stopped": True}})
+        call = self.http.calls[-1]
+        self.assertEqual(call["method"], "POST")
+        self.assertEqual(call["url"], f"http://172.18.0.2:4000/turns/{DISPATCH}/resolve")
+        self.assertEqual(call["token"], "trig")
+        self.assertIs(call["body"]["execution_stopped"], True)
+        self.assertEqual(call["body"], {"execution_stopped": True})
+        self.assertIsNone(call["ledger_id"])
+        sent = len(self.http.calls)
+        for bad in ({}, {"execution_stopped": False}, {"execution_stopped": True, "extra": 1},
+                    {"execution_stopped": 1}, {"execution_stopped": 1.0}, {"execution_stopped": "true"}, None):
+            with self.assertRaises(runner.BadCommand):
+                self.host.resolve_turn({"container_name": "agent-pilot-1", "dispatch_id": DISPATCH, "body": bad})
+        with self.assertRaises(runner.BadCommand):
+            self.host.resolve_turn({"container_name": "agent-pilot-1", "dispatch_id": DISPATCH,
+                                    "ledger_id": "led_1", "body": {"execution_stopped": True}})
+        self.assertEqual(len(self.http.calls), sent)  # nothing refused was sent
+        self.assertIn("resolve_turn", runner.COMMAND_KINDS)
+
     def test_turns_for_unknown_residents_or_bad_ids_are_refused(self):
         with self.assertRaises(runner.CommandFailed):
             self.host.submit_turn({"container_name": "agent-other", "dispatch_id": DISPATCH})

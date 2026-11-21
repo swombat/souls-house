@@ -17,6 +17,8 @@ sys.path.insert(0, str(OPS))
 import gate
 import worker
 
+REAL_MOUNTED_SOURCES = worker.mounted_sources
+
 
 class WorkflowAuthorityTest(unittest.TestCase):
     def test_owner_only_on_original_dispatch_and_rerun(self):
@@ -575,7 +577,11 @@ class WorkerTest(unittest.TestCase):
         initial = dict(id="a" * 32, operation="both", state="starting", step="accepted")
         gate.atomic(self.root / "current.json", initial)
         gate.atomic(self.root / "runs" / ("a" * 32) / "status.json", initial)
-        self.patches = [patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config)]
+        self.patches = [patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config),
+                        # No Docker or systemd here: no container mounts
+                        # anything, and every latched unit has exited.
+                        patch.object(worker, "mounted_sources", return_value=set()),
+                        patch.object(worker, "unit_exited", return_value=True)]
         for p in self.patches:
             p.start()
             self.addCleanup(p.stop)
@@ -598,6 +604,152 @@ class WorkerTest(unittest.TestCase):
                           side_effect=lambda: self.w.report("busy", state="partial", skipped=[7])):
             self.w.execute()
         self.assertEqual("partial", self.w.data["state"])
+
+    def make_run(self, run, state, repo=True):
+        directory = self.root / "runs" / run
+        directory.mkdir(exist_ok=True)
+        gate.atomic(directory / "status.json", dict(id=run, operation="rails", state=state, step="x"))
+        (directory / "private.log").write_text("log")
+        if repo:
+            (directory / "repo" / "app").mkdir(parents=True)
+            (directory / "repo" / "app" / "file.rb").write_text("source")
+        return directory
+
+    def clone(self):
+        (self.w.repo / ".git").mkdir(parents=True)
+
+    def test_a_finished_run_loses_its_checkout_and_keeps_its_receipt_and_log(self):
+        # Success and failure both: the cleanup is in the finally path (#1057).
+        for failure in (None, RuntimeError("SECRET")):
+            with self.subTest(failure=failure):
+                self.w.data.update(state="running")
+                with patch.object(self.w, "checkout", side_effect=self.clone), \
+                     patch.object(self.w, "deploy_rails", side_effect=failure), \
+                     patch.object(self.w, "update_chaos"):
+                    self.w.execute()
+                self.assertEqual("failed" if failure else "success", self.w.data["state"])
+                self.assertFalse(self.w.repo.exists())
+                self.assertTrue((self.w.directory / "status.json").exists())
+                self.assertTrue((self.w.directory / "private.log").exists())
+                self.w.log = (self.w.directory / "private.log").open("a")
+
+    def test_a_superseded_run_loses_its_checkout(self):
+        def superseded():
+            self.clone()
+            self.w.report("master moved on; nothing deployed", state="superseded")
+        with patch.object(self.w, "checkout", side_effect=superseded):
+            self.w.execute()
+        self.assertFalse(self.w.repo.exists())
+
+    def test_a_run_clears_finished_runs_and_leaves_a_running_one(self):
+        old = [self.make_run(c * 32, state) for c, state in
+               (("b", "success"), ("c", "failed"), ("d", "partial"), ("e", "interrupted"), ("f", "superseded"))]
+        running = self.make_run("9" * 32, "running")
+        starting = self.make_run("8" * 32, "starting")
+        with patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        for directory in old:
+            self.assertFalse((directory / "repo").exists(), directory.name)
+            self.assertEqual("log", (directory / "private.log").read_text())
+            self.assertTrue((directory / "status.json").exists())
+        self.assertTrue((running / "repo" / "app" / "file.rb").exists())
+        self.assertTrue((starting / "repo" / "app" / "file.rb").exists())
+
+    def test_prune_is_idempotent_and_skips_unreadable_receipts(self):
+        self.make_run("b" * 32, "success")
+        broken = self.make_run("c" * 32, "success")
+        (broken / "status.json").write_text("{not json")
+        self.make_run("d" * 32, "failed", repo=False)
+        self.assertEqual(["b" * 32], worker.prune_checkouts(set()))
+        self.assertEqual([], worker.prune_checkouts(set()))
+        self.assertTrue((broken / "repo").exists())
+
+    def test_a_checkout_a_container_still_mounts_is_kept(self):
+        # Kamal's client timed out and its container couldn't be removed:
+        # the run fails, and its clone stays while the container holds it.
+        held = self.make_run("b" * 32, "failed")
+        with patch.object(worker, "mounted_sources",
+                          return_value={str(self.w.repo), str(held / "repo" / "app")}), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails", side_effect=RuntimeError("timeout")):
+            self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((held / "repo").exists())
+        self.assertIn("checkout kept", (self.w.directory / "private.log").read_text())
+        # Once the container has gone, the next cleanup takes both.
+        self.assertEqual(sorted(["a" * 32, "b" * 32]), sorted(worker.prune_checkouts(set())))
+
+    def test_cleanup_is_skipped_while_another_holder_has_the_deployment_lock(self):
+        # Mira's reproduction: snapshot and deletion only under the lock. A
+        # sweep (or the prune CLI) holds it here for the whole run.
+        import fcntl
+        old = self.make_run("b" * 32, "success")
+        self.w.repo.mkdir()
+        self.w.settings["sweep_lock_wait_seconds"] = 0
+        with (self.root / "deployment.lock").open("a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(worker, "mounted_sources",
+                              side_effect=AssertionError("snapshot without the lock")):
+                self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((old / "repo").exists())
+        self.assertIn("deployment lock was held", (self.w.directory / "private.log").read_text())
+
+    def test_nothing_is_removed_when_docker_cannot_list_mounts(self):
+        old = self.make_run("b" * 32, "success")
+        with patch.object(worker, "mounted_sources", return_value=None), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+            self.assertEqual([], worker.prune_checkouts())
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((old / "repo").exists())
+        self.assertIn("checkouts kept", (self.w.directory / "private.log").read_text())
+
+    def test_mounted_sources_reads_every_container_and_fails_closed(self):
+        listed = subprocess.CompletedProcess([], 0, "c1\nc2\n", "")
+        inspected = subprocess.CompletedProcess([], 0, "/var/lib/x/repo\n\n/etc/y\n", "")
+        failed = subprocess.CompletedProcess([], 1, "", "boom")
+        with patch.object(worker.subprocess, "run", side_effect=[listed, inspected]) as run:
+            self.assertEqual({"/var/lib/x/repo", "/etc/y"}, REAL_MOUNTED_SOURCES())
+        self.assertIn("-aq", run.call_args_list[0].args[0])
+        self.assertEqual(["c1", "c2"], run.call_args_list[1].args[0][-2:])
+        for answers in ([failed], [listed, failed], [subprocess.TimeoutExpired("docker", 60)],
+                        [FileNotFoundError()]):
+            with patch.object(worker.subprocess, "run", side_effect=answers):
+                self.assertIsNone(REAL_MOUNTED_SOURCES())
+        with patch.object(worker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+            self.assertEqual(set(), REAL_MOUNTED_SOURCES())
+
+    def test_in_use_matches_the_clone_and_below_but_not_a_sibling(self):
+        repo = Path("/r/runs/a/repo")
+        self.assertTrue(worker.in_use(repo, {"/r/runs/a/repo"}))
+        self.assertTrue(worker.in_use(repo, {"/r/runs/a/repo/agent-runtime"}))
+        self.assertFalse(worker.in_use(repo, {"/r/runs/a/repo2", "/r/runs/a"}))
+
+    def test_a_latched_run_whose_unit_has_not_exited_keeps_its_checkout(self):
+        # The gate writes interrupted for a deactivating worker too.
+        run = "b" * 32
+        directory = self.make_run(run, "interrupted")
+        gate.atomic(self.root / "runtime-latch.json", dict(id=run, operation="runtime", state="interrupted"))
+        with patch.object(worker, "unit_exited", return_value=False) as unit:
+            self.assertEqual([], worker.prune_checkouts(set()))
+        unit.assert_called_with("runtime")
+        self.assertTrue((directory / "repo").exists())
+        self.assertEqual([run], worker.prune_checkouts(set()))
+
+    def test_a_symlinked_checkout_is_unlinked_not_followed(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("x")
+        directory = self.make_run("b" * 32, "success", repo=False)
+        (directory / "repo").symlink_to(outside)
+        self.assertEqual(["b" * 32], worker.prune_checkouts(set()))
+        self.assertFalse((directory / "repo").is_symlink())
+        self.assertTrue((outside / "keep").exists())
 
     def test_worker_lock_rejects_overlap(self):
         import fcntl
@@ -1239,6 +1391,122 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("stock:deploy-" + "a" * 32, pending["residents"][0]["image"])
         self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
+    def backup_paused(self, refs, paused, failing_execs=None):
+        """Residents in `paused` are paused by their backup (#765): `docker
+        exec` into them fails the way Docker reports a paused container,
+        `failing_execs` times each (None: every time)."""
+        commands = self.pinned_fixture(refs)
+        run = self.w.run.side_effect
+        left = {name: failing_execs for name in paused}
+
+        def fake(args, **kwargs):
+            if args[:2] == ["docker", "exec"] and args[2] in left:
+                n = left[args[2]]
+                if n is None or n > 0:
+                    left[args[2]] = None if n is None else n - 1
+                    commands.append(args)
+                    raise worker.ContainerPaused("Container is paused; private diagnostics retained")
+            return run(args, **kwargs)
+        self.w.run.side_effect = fake
+        return commands
+
+    def test_the_pause_is_read_from_dockers_own_failure(self):
+        # Not from a later inspect, which a backup ending in between would
+        # answer "not paused" and so latch the run (Mira, #1068).
+        self.assertTrue(worker.PAUSED_EXEC.search(
+            "Error response from daemon: Container hk-agent-019f858c is paused, unpause the container before exec"))
+        self.assertFalse(worker.PAUSED_EXEC.search("Error response from daemon: No such container: hk-agent-1"))
+
+    def test_run_names_a_paused_exec_from_its_own_failure(self):
+        paused = subprocess.CompletedProcess([], 1, "", "Error response from daemon: Container hk-agent-1 "
+                                             "is paused, unpause the container before exec\n")
+        other = subprocess.CompletedProcess([], 1, "", "Error response from daemon: No such container: hk-agent-1\n")
+        with patch.object(worker.subprocess, "run", return_value=paused):
+            with self.assertRaises(worker.ContainerPaused):
+                self.w.run(["docker", "exec", "hk-agent-1", "chaos", "--version"], capture=True)
+        with patch.object(worker.subprocess, "run", return_value=other):
+            with self.assertRaises(RuntimeError) as raised:
+                self.w.run(["docker", "exec", "hk-agent-1", "chaos", "--version"], capture=True)
+            self.assertNotIsInstance(raised.exception, worker.ContainerPaused)
+
+    def test_a_resident_paused_by_its_backup_is_waited_for_not_latched(self):
+        # Paused for one exec, then free: the backup ended mid-probe.
+        commands = self.backup_paused(["c" * 40, "c" * 40], ["r1"], failing_execs=1)
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertFalse(any(c[:2] == ["docker", "inspect"] and "r1" in c for c in commands))
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual(["0", "1"], sorted(rolled))
+        worker.time.sleep.assert_called_with(15)
+
+    def test_a_resident_still_paused_after_the_wait_owes_its_preflight_to_the_sweep(self):
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([1], self.w.data["skipped"])
+        self.assertEqual([1], self.w.data["deferred"])
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([{"id": 1, "stock": True, "image": "stock:deploy-" + "a" * 32,
+                           "preflight": {"container_name": "r1", "pinned": True}}], pending["residents"])
+        self.assertEqual([], pending["held"])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual(["0"], rolled)
+
+    def test_a_run_interrupted_after_its_first_queue_write_leaves_every_check_owed(self):
+        # Mira on 7e3e6a2d: interrupted there, a paused resident was already
+        # sweepable without its version check. Now every entry starts owing it.
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        real = worker.atomic
+
+        class Interrupted(BaseException):
+            pass
+
+        def interrupt_after_first_queue_write(path, data):
+            real(path, data)
+            if path == worker.pending_rolls():
+                raise Interrupted
+        with patch.object(worker, "atomic", side_effect=interrupt_after_first_queue_write):
+            with self.assertRaises(Interrupted):
+                self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([{"container_name": "r0", "pinned": True}, {"container_name": "r1", "pinned": True}],
+                         [r["preflight"] for r in pending["residents"]])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual([], rolled)
+
+    def test_only_residents_this_run_checked_are_cleared_of_their_preflight(self):
+        self.backup_paused(["c" * 40, "c" * 40], ["r1"])
+        self.w.settings["backup_wait_seconds"] = 0
+        self.w.rebuild_residents()
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual([1], [r["id"] for r in pending["residents"] if "preflight" in r])
+
+    def test_an_exec_failure_that_is_not_a_pause_still_fails_the_run(self):
+        self.pinned_fixture(["c" * 40, "c" * 40])
+        run = self.w.run.side_effect
+
+        def broken(args, **kw):
+            if args[:3] == ["docker", "exec", "r1"]:
+                raise RuntimeError("Subprocess failed; private diagnostics retained")
+            return run(args, **kw)
+        self.w.run.side_effect = broken
+        with self.assertRaises(RuntimeError):
+            self.w.rebuild_residents()
+        worker.time.sleep.assert_not_called()
+
+    def test_when_every_resident_stays_paused_the_run_is_partial_not_latched(self):
+        self.backup_paused(["c" * 40], ["r0"])
+        self.w.settings["backup_wait_seconds"] = 0
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([0], self.w.data["deferred"])
+        rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
+        self.assertEqual([], rolled)
+        pending = json.loads((self.root / "pending-rolls.json").read_text())
+        self.assertEqual({"container_name": "r0", "pinned": True}, pending["residents"][0]["preflight"])
+
     def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
         commands = self.pinned_fixture(["c" * 40])
         rails = self.w.rails.side_effect
@@ -1749,6 +2017,64 @@ class SweepTest(unittest.TestCase):
         self.assertEqual([3], state["held"])
         # Held is never retried automatically.
         self.assertEqual([2], self.sweep({2: "busy"})[1])
+
+    def owed(self, pinned=True, ids=(1,)):
+        gate.atomic(self.root / "pending-rolls.json", {
+            "run": "a" * 32, "chaos_version": "chaos 47.11.0.1", "failed": [], "held": [],
+            "canary_proven": True,
+            "residents": [{"id": i, "image": "stock:deploy-x",
+                           "preflight": {"container_name": f"r{i}", "pinned": pinned}} for i in ids]})
+
+    def sweep_probing(self, results, versions):
+        """`versions` maps a container to what `chaos --version` answers in
+        it, or to an exception (worker.ContainerPaused while still paused)."""
+        s = worker.Sweeper()
+        calls = []
+
+        def rails(code, env=None):
+            calls.append(int(env["DEPLOY_RESIDENT_ID"]))
+            return {"result": results[int(env["DEPLOY_RESIDENT_ID"])]}
+
+        def run(args, **kwargs):
+            answer = versions[args[2]]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        with patch.object(s, "rails", side_effect=rails), patch.object(s, "run", side_effect=run):
+            return s.sweep(), calls
+
+    def state(self):
+        return json.loads((self.root / "pending-rolls.json").read_text())
+
+    def test_an_owed_preflight_on_a_still_paused_resident_waits_and_rolls_nothing(self):
+        self.owed()
+        message, calls = self.sweep_probing({}, {"r1": worker.ContainerPaused("paused")})
+        self.assertEqual([], calls)
+        self.assertEqual("1 waiting, 0 held", message)
+        self.assertIn("preflight", self.state()["residents"][0])
+
+    def test_an_owed_preflight_that_passes_lets_the_resident_roll(self):
+        self.owed()
+        message, calls = self.sweep_probing({1: "healthy"}, {"r1": "chaos 47.11.0.1"})
+        self.assertEqual([1], calls)
+        self.assertEqual("0 waiting, 0 held", message)
+
+    def test_an_owed_pinned_preflight_that_finds_another_binary_holds_without_recreating(self):
+        self.owed(pinned=True)
+        message, calls = self.sweep_probing({}, {"r1": "chaos 47.10.0.9"})
+        self.assertEqual([], calls)
+        self.assertEqual([1], self.state()["held"])
+
+    def test_an_owed_preflight_that_finds_a_newer_binary_holds_without_recreating(self):
+        self.owed(pinned=False)
+        message, calls = self.sweep_probing({}, {"r1": "chaos 47.12.0.0"})
+        self.assertEqual([], calls)
+        self.assertEqual([1], self.state()["held"])
+
+    def test_an_owed_preflight_on_an_older_binary_rolls_when_not_pinned(self):
+        self.owed(pinned=False)
+        message, calls = self.sweep_probing({1: "healthy"}, {"r1": "chaos 47.10.0.9"})
+        self.assertEqual([1], calls)
 
     def test_held_queue_without_a_proven_canary_rolls_nobody(self):
         self.pending([2, 3])

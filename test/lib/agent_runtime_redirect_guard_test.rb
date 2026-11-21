@@ -59,6 +59,7 @@ class AgentRuntimeRedirectGuardTest < ActiveSupport::TestCase
     "soulshouse-reflex" => { args: %w[list] },
     "soulshouse-commitment" => { args: %w[list] },
     "soulshouse-table" => { args: %w[list] },
+    "soulshouse-computer" => { args: %w[list] },
     "soulshouse-plan" => { args: %w[offer] },
     "soulshouse-gws" => { args: %w[drive files list], manifest: :google_workspace },
     "soulshouse-comms" => { args: %w[chats], manifest: :whatsapp },

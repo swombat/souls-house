@@ -13,6 +13,7 @@
   import TelegramBotWakeLimitCard from '$lib/components/accounts/TelegramBotWakeLimitCard.svelte';
   import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
   import ChatCodesCard from '$lib/components/accounts/ChatCodesCard.svelte';
+  import RoomChatCountsCard from '$lib/components/accounts/RoomChatCountsCard.svelte';
   import PlanOfferCard from '$lib/components/accounts/PlanOfferCard.svelte';
   import VoiceModeCard from '$lib/components/accounts/VoiceModeCard.svelte';
   import SpeechEngineCard from '$lib/components/accounts/SpeechEngineCard.svelte';
@@ -32,6 +33,7 @@
     reflexes_enabled = false,
     reflexes_site_scope = 'account_choice',
     show_chat_codes = false,
+    show_room_chat_counts = false,
     plan_offer_enabled = false,
     plan_offer_available = false,
     voice_mode_enabled = false,
@@ -40,6 +42,7 @@
     speech_engine = 'phonon',
     speech_engine_site_scope = 'disabled',
     eleven_labs_key_present = false,
+    eleven_labs_house_key = false,
   } = $props();
 
   const updateSync = createDynamicSync();
@@ -55,11 +58,13 @@
         'telegram_bot_wake_limit',
         'reflexes_enabled',
         'show_chat_codes',
+        'show_room_chat_counts',
         'plan_offer_enabled',
         'plan_offer_available',
         'voice_mode_enabled',
         'speech_engine',
         'eleven_labs_key_present',
+        'eleven_labs_house_key',
       ],
     });
   });
@@ -167,6 +172,8 @@
 
   <ChatCodesCard accountId={account.id} enabled={show_chat_codes} canManage={can_manage} />
 
+  <RoomChatCountsCard accountId={account.id} enabled={show_room_chat_counts} canManage={can_manage} />
+
   {#if plan_offer_available || plan_offer_enabled}
     <PlanOfferCard
       accountId={account.id}
@@ -187,7 +194,8 @@
     engine={speech_engine}
     canManage={can_manage}
     siteScope={speech_engine_site_scope}
-    keyPresent={eleven_labs_key_present} />
+    keyPresent={eleven_labs_key_present}
+    houseKey={eleven_labs_house_key} />
 
   <AccountTypeCard
     {account}

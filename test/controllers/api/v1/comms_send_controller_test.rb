@@ -30,18 +30,16 @@ module Api
         assert_empty calls
       end
 
-      test "with sending not switched on for the provider the endpoint is 404, even for a granted resident" do
+      test "with sending unavailable for the provider the endpoint is 404, even for a granted resident" do
         grant_send!
-        [ nil, "", "telegram" ].each do |value|
-          with_send_providers(value) do
-            calls = with_fake_connector do
-              assert_no_difference -> { CommsSend.count } do
-                send_text
-              end
+        without_sending do
+          calls = with_fake_connector do
+            assert_no_difference -> { CommsSend.count } do
+              send_text
             end
-            assert_response :not_found
-            assert_empty calls
           end
+          assert_response :not_found
+          assert_empty calls
         end
       end
 

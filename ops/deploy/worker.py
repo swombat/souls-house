@@ -6,13 +6,14 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
 
-from gate import ROOT, OPERATIONS, atomic
+from gate import ROOT, OPERATIONS, TERMINAL, atomic, exited
 
 CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
@@ -65,6 +66,107 @@ def runtime_source():
             if newest is None or mtime > newest[0]:
                 newest = (mtime, revision)
     return newest[1] if newest else None
+
+
+def mounted_sources():
+    """Every host path bind-mounted into a container on this host, running or
+    stopped, or None when Docker doesn't give a clean answer. A container
+    whose client timed out (Kamal, the runtime check) can outlive the run
+    that started it, still holding its clone (Mira, #1080)."""
+    try:
+        ids = subprocess.run(["docker", "ps", "-aq", "--no-trunc"], capture_output=True,
+                             text=True, timeout=60)
+        if ids.returncode:
+            return None
+        names = ids.stdout.split()
+        if not names:
+            return set()
+        mounts = subprocess.run(["docker", "inspect", "--format",
+                                 "{{range .Mounts}}{{println .Source}}{{end}}", *names],
+                                capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if mounts.returncode:
+        # Also when a container went between the two calls: ask next time.
+        return None
+    return {line.strip() for line in mounts.stdout.splitlines() if line.strip()}
+
+
+def in_use(repo, mounted):
+    path = str(repo)
+    return any(source == path or source.startswith(path + "/") for source in mounted)
+
+
+def remove_checkout(directory, mounted):
+    """Delete one run's clone of master (runs/<id>/repo), keeping status.json,
+    private.log and every other small file the run wrote. True if it removed
+    something. Kept while any container mounts it. A symlink in repo's place
+    is unlinked, never followed."""
+    repo = directory / "repo"
+    if repo.is_symlink():
+        repo.unlink()
+        return True
+    if not repo.exists() or in_use(repo, mounted):
+        return False
+    shutil.rmtree(repo)
+    return True
+
+
+def latched_runs():
+    """The runs current.json and runtime-latch.json name, by id: operation."""
+    runs = {}
+    for name in ("current.json", "runtime-latch.json"):
+        try:
+            data = json.loads((ROOT / name).read_text())
+            runs[data["id"]] = data["operation"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return runs
+
+
+def unit_exited(operation):
+    try:
+        return exited(operation)
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def prune_checkouts(mounted=None):
+    """Remove the clone from every finished run (#1057).
+
+    Each run clones master into runs/<id>/repo for Kamal and the image builds,
+    and nothing reads it once the run has ended: the gate, the sweep and
+    runtime_source() read status.json alone. Until 21 Nov 2026 nothing removed
+    them (898 runs since 4 Oct, 168 GB). A clone is kept when its run is not
+    in a terminal state, when the run is the one current.json or
+    runtime-latch.json names and its service hasn't positively exited (the
+    gate writes interrupted for a deactivating one too), or when a container
+    still mounts it. When Docker can't say, everything is kept. Idempotent; a
+    clone that can't be removed is tried again next time. Returns the ids
+    whose clone went."""
+    mounted = mounted_sources() if mounted is None else mounted
+    if mounted is None:
+        return []
+    latched = latched_runs()
+    removed = []
+    for status in sorted((ROOT / "runs").glob("*/status.json")):
+        directory = status.parent
+        if not (directory / "repo").exists() and not (directory / "repo").is_symlink():
+            continue
+        try:
+            state = json.loads(status.read_text()).get("state")
+        except (OSError, ValueError):
+            continue
+        if state not in TERMINAL:
+            continue
+        if directory.name in latched and not unit_exited(latched[directory.name]):
+            continue
+        try:
+            if remove_checkout(directory, mounted):
+                removed.append(directory.name)
+        except OSError:
+            continue
+    return removed
 
 
 def github(path):
@@ -153,6 +255,16 @@ def verify_migrations(before, after, accepted=()):
         raise MigrationsChanged(refused)
 
 
+# Docker's own answer when `docker exec` meets a paused container (#765):
+# "Container <name> is paused, unpause the container before exec".
+PAUSED_EXEC = re.compile(r"\bis paused, unpause the container before exec\b")
+
+
+class ContainerPaused(RuntimeError):
+    """The exec failed because the container was paused, by Docker's own
+    account of that failure, not by a later look at the container."""
+
+
 class Worker:
     # Rolls run in threads: status.json, the private log and the sweep queue
     # are written under this one lock.
@@ -180,6 +292,8 @@ class Worker:
             self.log.write(result.stdout + result.stderr)
             self.log.flush()
         if result.returncode:
+            if args[:2] == ["docker", "exec"] and PAUSED_EXEC.search(result.stderr or ""):
+                raise ContainerPaused("Container is paused; private diagnostics retained")
             raise RuntimeError("Subprocess failed; private diagnostics retained")
         return result.stdout.strip() if capture else None
 
@@ -197,6 +311,31 @@ class Worker:
         args += [self.web(), "bin/rails", "runner", "-"]
         output = self.run(args, input=code, capture=True, timeout=300)
         return json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
+
+    def resident_version(self, resident, wait=None):
+        """`chaos --version` from a resident container on this host, or None
+        when it stayed paused (#765).
+
+        The nightly backup pauses a resident while it copies its home, and
+        `docker exec` into a paused container fails. That failure used to end
+        the run and latch the runtime, so every later deploy was refused. Now
+        a failure Docker itself reports as "is paused" (ContainerPaused, read
+        from the failed exec, never from a later look that a backup ending in
+        between could falsify) is waited out: try again every 15 s, up to
+        `wait` (backup_wait_seconds by default), then None. Any other failure
+        raises, as before."""
+        if wait is None:
+            wait = self.settings.get("backup_wait_seconds", 2400)
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                return self.run(["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+            except ContainerPaused:
+                pass
+            if time.monotonic() >= deadline:
+                return None
+            self.report("waiting for a resident its backup has paused", waiting_for_paused=resident["id"])
+            time.sleep(15)
 
     def checkout(self):
         self.report("resolving master", state="running")
@@ -480,12 +619,19 @@ class Worker:
         if SHA.fullmatch(self.data.get("rails_revision") or ""):
             atomic(ROOT / "runtime-source.json",
                    {"rails_revision": self.data["rails_revision"], "run": self.data["id"]})
+        # Residents a backup kept paused past the wait in this run (#765).
+        deferred = set()
         if pinned:
             # Same source must give the same binary. Check every resident before
             # touching any, so a mismatch never leaves the fleet half-rolled.
             for resident in residents:
-                running = self.run(["docker", "exec", resident["container_name"], "chaos",
-                                    "--version"], capture=True)
+                running = self.resident_version(resident)
+                if running is None:
+                    # Still paused by its backup: its check is owed, not
+                    # skipped. It waits in the queue and the sweep runs the
+                    # check before it may be recreated (owed_preflight).
+                    deferred.add(resident["id"])
+                    continue
                 if running != version:
                     raise RuntimeError("Rebuilt Chaos differs from the running one")
             for resident in vm_running:
@@ -508,8 +654,14 @@ class Worker:
         # The intended work is written BEFORE any attempt and checkpointed after
         # each one, so no error later in this run (timeout, probe, VM) can lose
         # a resident the sweep still has to roll.
+        # Every entry starts owing its preflight (the pinned equality and the
+        # downgrade check, #765); it is cleared below only for a resident
+        # whose version this run has read and checked. So a run interrupted
+        # anywhere before then leaves the sweep to run the checks itself,
+        # never to recreate without them.
         pending = [{"id": r["id"], "stock": str(r["id"]) not in self.settings["custom_residents"],
-                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock}
+                    "image": development if str(r["id"]) in self.settings["custom_residents"] else stock,
+                    "preflight": {"container_name": r["container_name"], "pinned": pinned}}
                    for r in residents]
         queue = {"run": self.data["id"], "chaos_version": version, "residents": pending,
                  "held": held, "stock_image": stock,
@@ -530,9 +682,15 @@ class Worker:
         # downgrade stops the run with the fleet unchanged.
         old_versions = {}
         for resident in residents:
+            if resident["id"] in deferred:
+                old_versions[resident["id"]] = None
+                continue
             try:
-                raw = self.run(
-                    ["docker", "exec", resident["container_name"], "chaos", "--version"], capture=True)
+                raw = self.resident_version(resident)
+                if raw is None:
+                    deferred.add(resident["id"])
+                    old_versions[resident["id"]] = None
+                    continue
                 # Parsed inside the guard: an answer we can't read is an
                 # unknown resident (held, never rolled), not an aborted run
                 # that leaves the whole queue for the sweep with no hold.
@@ -543,10 +701,23 @@ class Worker:
             if old is not None and version_tuple(version) < old:
                 pending_rolls().unlink(missing_ok=True)
                 raise RuntimeError("Refusing runtime version downgrade")
+        # Checked here: their preflight is done. A resident still paused by
+        # its backup keeps it owed (busy, not held: nothing failed), and so
+        # does one whose version couldn't be read (held below anyway).
+        for entry in pending:
+            if entry["id"] not in deferred and old_versions.get(entry["id"]) is not None:
+                entry.pop("preflight")
+        atomic(pending_rolls(), queue)
+        if deferred:
+            self.report("residents paused by their backup will roll when free", deferred=sorted(deferred))
 
         def roll_one(entry):
             resident_id = entry["id"]
             self.report("rolling resident if idle", resident_id=resident_id)
+            if resident_id in deferred:
+                # Paused by its backup past the wait: busy, its preflight
+                # owed in the queue for the sweep.
+                return {"result": "busy"}
             if old_versions.get(resident_id) is None:
                 return {"result": "unknown"}
             try:
@@ -766,6 +937,19 @@ class Worker:
                 self.report("waiting for resident sweep to finish")
                 time.sleep(5)
 
+    def clean_checkouts(self):
+        """Under the deployment lock: this run's clone, then other finished
+        runs'. Returns nothing; what was kept is in the private log."""
+        mounted = mounted_sources()
+        if mounted is None:
+            self.log.write("\ncheckouts kept: Docker could not list mounts\n")
+            return
+        if not remove_checkout(self.directory, mounted) and self.repo.exists():
+            self.log.write("\ncheckout kept: a container still mounts it\n")
+        pruned = prune_checkouts(mounted)
+        if pruned:
+            self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
+
     def execute(self):
         try:
             # Same lock for manual runtime operations, as documented.
@@ -794,6 +978,21 @@ class Worker:
             self.log.flush()
             self.report("failed; host operator inspection required", state="failed")
         finally:
+            # This run is over whatever its state (#1057): its clone goes,
+            # then any other finished run's that is still on disk, unless a
+            # container still mounts it. Snapshot and deletion happen under the deployment lock, like the
+            # prune CLI; if a sweep or the CLI has it, this cleanup is skipped
+            # and the next one takes it (Mira, #1080).
+            try:
+                with (ROOT / "deployment.lock").open("a") as lock:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        self.log.write("\ncheckouts kept: the deployment lock was held\n")
+                    else:
+                        self.clean_checkouts()
+            except OSError as error:
+                self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()
 
 
@@ -818,6 +1017,31 @@ class Sweeper(Worker):
         with self.lock:
             self.log.write(line)
             self.log.flush()
+
+    def owed_preflight(self, resident, state):
+        """The checks a rebuild could not run because the resident was paused
+        by its backup (#765), run here before it may be recreated. None: they
+        passed and the entry no longer owes them. "busy": still paused, try
+        next tick (the sweep never waits). "preflight refused": the running
+        binary differs from the rebuilt one on a pinned rebuild, is newer, or
+        can't be read; held for the operator like any failed roll."""
+        owed = resident["preflight"]
+        try:
+            raw = self.resident_version({"id": resident["id"], "container_name": owed["container_name"]}, wait=0)
+        except Exception as error:
+            self.note(f"resident {resident['id']}: preflight {type(error).__name__}\n")
+            return "preflight refused"
+        if raw is None:
+            return "busy"
+        try:
+            running, built = version_tuple(raw), version_tuple(state["chaos_version"])
+        except Exception:
+            return "preflight refused"
+        if (owed.get("pinned") and raw != state["chaos_version"]) or built < running:
+            self.note(f"resident {resident['id']}: preflight refused\n")
+            return "preflight refused"
+        resident.pop("preflight")
+        return None
 
     def receipt(self, state):
         path = ROOT / "runs" / state["run"] / "status.json"
@@ -1013,6 +1237,10 @@ class Sweeper(Worker):
                 waiting = []
 
                 def roll_one(resident):
+                    if resident.get("preflight"):
+                        verdict = self.owed_preflight(resident, state)
+                        if verdict is not None:
+                            return {"result": verdict}
                     try:
                         return self.rails(script, {
                             "DEPLOY_RESIDENT_ID": str(resident["id"]),
@@ -1066,6 +1294,16 @@ if __name__ == "__main__":
     os.umask(0o077)
     if sys.argv[1:] == ["sweep"]:
         print(Sweeper().sweep())
+        sys.exit(0)
+    if sys.argv[1:] == ["prune"]:
+        # Host root, by hand: the one-time sweep of the clones left before
+        # #1057. Never alongside a deploy or a sweep pass.
+        with (ROOT / "deployment.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                sys.exit("A deploy or sweep holds the deployment lock; try again")
+            print(json.dumps({"removed": len(prune_checkouts())}))
         sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)

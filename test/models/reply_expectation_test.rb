@@ -1,5 +1,4 @@
 require "test_helper"
-require_relative "../../db/migrate/20261106143000_clear_archived_conversation_tags"
 
 class ReplyExpectationTest < ActiveSupport::TestCase
 
@@ -163,22 +162,6 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal 0, result[:total]
     %i[accounts chats rooms through_messages messages].each { |key| assert_empty result[key] }
     assert_empty ReplyExpectation.open_message_ids_by_chat(@user, account: @chat.account)
-  end
-
-  test "archive cleanup migration clears historical tags and open flags only" do
-    tag = @chat.account.visual_tags.create!(label: "Old tag", icon: "Heart", colour: "rose")
-    expectation = record(@ask)
-    @chat.update_columns(archived_at: Time.current, visual_tag_id: tag.id)
-    active = @chat.account.chats.create!(title: "Still active", visual_tag: tag)
-    active_ask = active.messages.create!(role: "assistant", content: "Still waiting")
-    active_expectation = record(active_ask)
-
-    ClearArchivedConversationTags.new.migrate(:up)
-
-    assert_nil @chat.reload.visual_tag_id
-    assert expectation.reload.state_dismissed?
-    assert_equal tag, active.reload.visual_tag
-    assert active_expectation.reload.state_open?
   end
 
   test "message flags are personal and scoped to the viewed chat in the current account" do

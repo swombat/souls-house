@@ -158,41 +158,37 @@ class Agents::GuestAccessApprovalsControllerTest < ActionDispatch::IntegrationTe
   # so its endpoint must find the guest, keep sending owner-only, and say
   # the truth while the widened request waits for the home.
   test "the owner lets a guest send: the home is asked again and the notice says so" do
-    with_send_providers("whatsapp") do
-      whatsapp = build_whatsapp_connection(@sharing, @anna)
-      access = @lume.set_service_access!(whatsapp, enabled: true, actor: @anna)
-      access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
-      assert access.reload.effective?
+    whatsapp = build_whatsapp_connection(@sharing, @anna)
+    access = @lume.set_service_access!(whatsapp, enabled: true, actor: @anna)
+    access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    assert access.reload.effective?
 
-      sign_in @anna
-      patch account_agent_service_access_send_grant_path(@sharing, @lume, whatsapp.public_id),
-            params: { can_send: true }, headers: { "HTTP_REFERER" => account_integrations_path(@sharing) }
-      assert_redirected_to account_integrations_path(@sharing)
-      assert_match(/waiting for approval from #{@lume.name}'s home/, flash[:notice])
-      access.reload
-      assert access.can_send?
-      assert_equal "pending", access.home_approval
-      assert_not access.effective?
+    sign_in @anna
+    patch account_agent_service_access_send_grant_path(@sharing, @lume, whatsapp.public_id),
+          params: { can_send: true }, headers: { "HTTP_REFERER" => account_integrations_path(@sharing) }
+    assert_redirected_to account_integrations_path(@sharing)
+    assert_match(/waiting for approval from #{@lume.name}'s home/, flash[:notice])
+    access.reload
+    assert access.can_send?
+    assert_equal "pending", access.home_approval
+    assert_not access.effective?
 
-      sign_in @daniel
-      patch account_agent_guest_access_approval_path(@home, @lume, whatsapp.public_id),
-            params: { decision: "approve", generation: access.home_approval_generation }
-      assert access.reload.effective?
-      assert access.can_send?
-    end
+    sign_in @daniel
+    patch account_agent_guest_access_approval_path(@home, @lume, whatsapp.public_id),
+          params: { decision: "approve", generation: access.home_approval_generation }
+    assert access.reload.effective?
+    assert access.can_send?
   end
 
   test "a guest's send switch stays owner-only" do
-    with_send_providers("whatsapp") do
-      whatsapp = build_whatsapp_connection(@sharing, @anna)
-      @lume.set_service_access!(whatsapp, enabled: true, actor: @anna)
+    whatsapp = build_whatsapp_connection(@sharing, @anna)
+    @lume.set_service_access!(whatsapp, enabled: true, actor: @anna)
 
-      sign_in @daniel # owns the team account, does not own this connection
-      patch account_agent_service_access_send_grant_path(@sharing, @lume, whatsapp.public_id, format: :json),
-            params: { can_send: true }
-      assert_response :forbidden
-      assert_not @lume.agent_service_accesses.find_by!(service_connection: whatsapp).can_send?
-    end
+    sign_in @daniel # owns the team account, does not own this connection
+    patch account_agent_service_access_send_grant_path(@sharing, @lume, whatsapp.public_id, format: :json),
+          params: { can_send: true }
+    assert_response :forbidden
+    assert_not @lume.agent_service_accesses.find_by!(service_connection: whatsapp).can_send?
   end
 
 

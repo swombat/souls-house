@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""Reach the computers your account's people have paired with the companion app.
+
+  soulshouse-computer list
+  soulshouse-computer run <computer-id> drives
+  soulshouse-computer run <computer-id> list --arg volume=<key> --arg path=Documents
+  soulshouse-computer run <computer-id> read --arg volume=<key> --arg path=notes.txt --out notes.txt
+
+`list` shows only the computers that grant you something, and only your grant.
+`run` starts one operation, waits for it (operations have a 30-second deadline)
+and prints the result. The house keeps a result for at most ten minutes and
+hands it over once.
+"""
+import argparse
+import io
+import json
+import os
+import re
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+MAX_BYTES = 8 * 1024 * 1024
+ACTIVE = ("pending", "dispatched")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+def parser():
+    root = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = root.add_subparsers(dest="command", required=True)
+    commands.add_parser("list", help="computers that grant you something")
+    run = commands.add_parser("run", help="run one operation and print its result")
+    run.add_argument("computer")
+    run.add_argument("operation", help="drives, list, stat, search, read (and write/execute/desktop when granted)")
+    run.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE", help="an operation argument (repeatable)")
+    run.add_argument("--json", help="all arguments as one JSON object instead of --arg")
+    run.add_argument("--input", help="file whose bytes a write or execute operation takes (its size is sent as input_size)")
+    run.add_argument("--out", help="write the result to this file instead of stdout")
+    run.add_argument("--wait", type=float, default=40.0, help="seconds to wait for the result (default 40)")
+    return root
+
+
+def arguments(args):
+    if args.json:
+        value = json.loads(args.json)
+        if not isinstance(value, dict):
+            raise ValueError("--json must be an object")
+        return value
+    result = {}
+    for pair in args.arg:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise ValueError(f"--arg needs KEY=VALUE, got {pair!r}")
+        result[key] = int(value) if key in ("offset", "limit", "input_size", "timeout_seconds") and value.isdigit() else value
+    return result
+
+
+class House:
+    def __init__(self, base, token):
+        self.base = base.rstrip("/")
+        self.token = token
+        self.opener = urllib.request.build_opener(NoRedirect)
+
+    def call(self, method, path, payload=None, raw=None):
+        content_type = "application/octet-stream" if raw is not None else "application/json"
+        data = raw if raw is not None else (json.dumps(payload).encode() if payload is not None else None)
+        request = urllib.request.Request(
+            self.base + path,
+            data=data,
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type, "Accept": "application/json"},
+            method=method,
+        )
+        with self.opener.open(request, timeout=60) as response:
+            return response.read(MAX_BYTES + 1), response.headers.get("Content-Type", "")
+
+
+def checked(value, what):
+    if not re.fullmatch(r"[A-Za-z0-9]+", value):
+        raise ValueError(f"Invalid {what}")
+    return value
+
+
+def main():
+    args = parser().parse_args()
+    base = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not base or not token:
+        sys.exit("The resident API URL and token are required")
+    house = House(base, token)
+    if args.command == "list":
+        try:
+            body, _ = house.call("GET", "/api/v1/companion_devices")
+            print(json.dumps(json.loads(body), indent=2))
+            return 0
+        except urllib.error.HTTPError as error:
+            print(f"Computer request failed ({error.code}): {error.read(16384).decode(errors='replace')}", file=sys.stderr)
+            return 1
+        except (OSError, ValueError, urllib.error.URLError) as error:
+            print(f"Computer request failed: {error}", file=sys.stderr)
+            return 1
+
+    try:
+        computer = checked(args.computer, "computer id")
+        root = f"/api/v1/companion_devices/{computer}/operations"
+        values = arguments(args)
+        data = None
+        if args.input:
+            with open(args.input, "rb") as handle:
+                data = handle.read(MAX_BYTES + 1)
+            if len(data) > MAX_BYTES:
+                raise ValueError("Input exceeds 8 MiB")
+            values["input_size"] = len(data)
+        # A result can be fetched once, and the operation may already have
+        # changed the computer, so reserve the destination before anything is
+        # sent: a path that can't be written fails here, with nothing started.
+        staging = reserve(args.out) if args.out else None
+    except (OSError, ValueError) as error:
+        print(f"Computer request not sent: {error}", file=sys.stderr)
+        return 1
+    op_id = None
+    try:
+        body, _ = house.call("POST", root, {"operation": args.operation, "arguments": values})
+        operation = json.loads(body)
+        op_id = checked(operation["id"], "operation id")
+        if data is not None:
+            house.call("PUT", f"{root}/{op_id}/input", raw=data)
+            operation["state"] = "dispatched"
+        deadline = time.monotonic() + args.wait
+        while operation["state"] in ACTIVE and time.monotonic() < deadline:
+            time.sleep(0.5)
+            body, _ = house.call("GET", f"{root}/{op_id}")
+            operation = json.loads(body)
+        if operation["state"] in ACTIVE:
+            print(json.dumps(operation), file=sys.stderr)
+            print("Still running when the wait ended; the house times it out at its deadline.", file=sys.stderr)
+            return 1
+        if not operation.get("body_available"):
+            print(json.dumps(operation))
+            return 0 if operation["state"] == "completed" else 1
+        result, content_type = house.call("GET", f"{root}/{op_id}/body")
+        if len(result) > MAX_BYTES:
+            raise ValueError("Result exceeds 8 MiB")
+        if staging:
+            staging.write(result)
+            staging.flush()
+            os.fsync(staging.fileno())
+            staging.close()
+            os.replace(staging.name, args.out)
+            staging = None
+            print(json.dumps({"id": op_id, "state": operation["state"], "bytes": len(result), "out": args.out}))
+            return 0
+        try:
+            if "json" in content_type:
+                print(json.dumps(json.loads(result), indent=2))
+                return 0
+        except ValueError:
+            pass
+        sys.stdout.buffer.write(result)
+        return 0
+    except urllib.error.HTTPError as error:
+        # Bounded server diagnostics; never print request headers.
+        print(f"Computer request failed ({error.code}): {error.read(16384).decode(errors='replace')}", file=sys.stderr)
+        return 1 if op_id is None else after_dispatch(op_id)
+    except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
+        print(f"Computer request failed: {error}", file=sys.stderr)
+        return 1 if op_id is None else after_dispatch(op_id)
+    finally:
+        if staging:
+            staging.close()
+            try:
+                os.unlink(staging.name)
+            except OSError:
+                pass
+
+
+def reserve(path):
+    """A writable staging file beside the destination; the destination itself is untouched until the result is saved."""
+    directory = os.path.dirname(os.path.abspath(path))
+    if os.path.isdir(path):
+        raise ValueError(f"--out {path} is a directory")
+    return tempfile.NamedTemporaryFile(dir=directory, prefix=".soulshouse-computer-", delete=False)
+
+
+def after_dispatch(op_id):
+    print(f"Operation {op_id} was already sent to the computer and may have run. Its result was not saved. "
+          "Check before running it again.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

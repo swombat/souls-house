@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
+submit_turn, turn_status, cancel_turn, resolve_turn, seed_home, backup_resident, provider_auth, check_runtime_trust, tailnet, home_stats, update_runner) and anything
 else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -68,7 +68,8 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
-COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
+COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "resolve_turn",
+                           "seed_home",
                            "backup_resident", "provider_auth", "check_runtime_trust", "tailnet", "home_stats",
                            "update_runner", "reboot_host", "restore_carry", "rollback_snapshot"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
@@ -515,25 +516,35 @@ TAILNET_OUTPUT_MAX = 16384
 # home_stats: the journal entry count and persistent disk use on a resident's
 # card, measured inside the resident exactly as the house measures a local
 # one (Agents::JournalEntryStats). Only the two numbers leave the resident.
-# The script is fixed in the runner; Rails sends a container name, never
-# code. It is a byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and
-# a house test keeps the two equal.
-HOME_STATS_VERSION = 1
+# The script is fixed in the runner; Rails sends a container name and, when
+# the resident chose a journal other than the dated daily ones, its path
+# (version 2), never code. The path is checked here by the same rule as
+# Agent.valid_journal_source? and passed as one argv value. The script is a
+# byte-for-byte copy of Agents::JournalEntryStats::SCRIPT, and a house test
+# keeps the two equal.
+HOME_STATS_VERSION = 2
 HOME_STATS_SECONDS = 30
-HOME_STATS_SCRIPT = r"""import json, pathlib, re, subprocess
+JOURNAL_SOURCE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
+JOURNAL_SOURCE_MAX = 200
+
+
+def valid_journal_source(source):
+    if not isinstance(source, str) or len(source) > JOURNAL_SOURCE_MAX or not source.endswith(".md"):
+        return False
+    segments = source.split("/")
+    return (len(segments) >= 2 and segments[0] == "memory"
+            and all(JOURNAL_SOURCE_SEGMENT.fullmatch(segment) and segment.strip(".") for segment in segments))
+
+
+HOME_STATS_SCRIPT = r"""import json, os, pathlib, re, stat, subprocess, sys
 root = pathlib.Path("/home/agent/identity/memory/daily-journals")
-if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
-    raise RuntimeError("invalid journal directory")
-count = 0
-try:
-    paths = list(root.iterdir())
-except FileNotFoundError:
-    paths = []
-for path in paths:
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
-        continue
+# One Markdown file under memory/ when the resident chose one (argv), else
+# the dated daily journals. The rule is Agent.valid_journal_source?.
+source = sys.argv[1] if len(sys.argv) > 1 else None
+def count_entries(journal):
+    count = 0
     fence = None
-    with path.open(encoding="utf-8") as journal:
+    with journal:
         for line in journal:
             marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
             if marker:
@@ -545,6 +556,39 @@ for path in paths:
                 continue
             if fence is None and re.match(r"^##[ \t]+\S", line):
                 count += 1
+    return count
+count = 0
+if source is None:
+    if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
+        raise RuntimeError("invalid journal directory")
+    try:
+        paths = list(root.iterdir())
+    except FileNotFoundError:
+        paths = []
+    for path in paths:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.md", path.name) or path.is_symlink() or not path.is_file():
+            continue
+        count += count_entries(path.open(encoding="utf-8"))
+else:
+    segments = source.split("/")
+    if (len(source) > 200 or not source.endswith(".md") or len(segments) < 2 or segments[0] != "memory"
+            or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", segment) or not segment.strip(".") for segment in segments)):
+        raise RuntimeError("invalid journal source")
+    # Opened step by step without following links, so a link swapped in
+    # after any check is refused at open, not followed.
+    directory = os.open(str(root.parent.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for segment in segments[:-1]:
+            inner = os.open(segment, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = inner
+        handle = os.open(segments[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    finally:
+        os.close(directory)
+    if not stat.S_ISREG(os.fstat(handle).st_mode):
+        os.close(handle)
+        raise RuntimeError("journal source is not a file")
+    count = count_entries(os.fdopen(handle, encoding="utf-8"))
 # Allocated bytes, including hidden files; du does not follow symlinks.
 # Explicit volume roots exclude the image layer and temporary filesystems.
 storage_bytes = None
@@ -1126,6 +1170,18 @@ class ResidentHost:
     def cancel_turn(self, payload):
         return self._turn("DELETE", payload)
 
+    def resolve_turn(self, payload):
+        """Close an `unknown` turn on the resident's own ledger (#1056), after
+        an operator has proved the run stopped. The trigger server refuses
+        without the execution_stopped proof; so does the runner, and it sends
+        nothing else."""
+        body = payload.get("body")
+        # `is True`, not ==: Python counts 1 and 1.0 as equal to True.
+        _require(isinstance(body, dict) and set(body) == {"execution_stopped"} and body["execution_stopped"] is True,
+                 "resolve needs the execution_stopped proof")
+        _require(payload.get("ledger_id") is None, "resolve takes no ledger_id")
+        return self._turn("POST", payload, suffix="/resolve")
+
     def provider_auth(self, payload):
         """One provider-login call, relayed to the resident's trigger server.
         Only the fixed calls in PROVIDER_AUTH_CALLS, with fixed parameter
@@ -1167,15 +1223,19 @@ class ResidentHost:
         return {"ok": bool(ok), "output": (output or "")[-TAILNET_OUTPUT_MAX:]}
 
     def home_stats(self, payload):
-        """The numbers on the resident's card: dated journal entry headings
-        and persistent disk use, counted inside the resident by the fixed
+        """The numbers on the resident's card: journal entry headings (the
+        dated daily journals, or the one file the resident chose) and
+        persistent disk use, counted inside the resident by the fixed
         HOME_STATS_SCRIPT. Returns {"count", "storage_bytes"}; storage_bytes
         may be None. Anything malformed fails the command, so the house shows
         the card as unavailable rather than wrong."""
         name = payload.get("container_name")
         self._known_resident(name)
+        source = payload.get("journal_source")
+        _require(source is None or valid_journal_source(source), f"journal source not allowed: {source!r}")
         ok, output = self.docker(["docker", "exec", name, "timeout", str(HOME_STATS_SECONDS),
-                                  "python3", "-c", HOME_STATS_SCRIPT], timeout=HOME_STATS_SECONDS + 15)
+                                  "python3", "-c", HOME_STATS_SCRIPT, *([source] if source else [])],
+                                 timeout=HOME_STATS_SECONDS + 15)
         if not ok:
             raise CommandFailed("could not measure the resident's home")
         try:

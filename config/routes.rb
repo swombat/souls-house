@@ -403,6 +403,7 @@ Rails.application.routes.draw do
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
       resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
+      resource :journal_source, only: %i[show update]
       resource :migration, only: %i[show create], controller: "resident_migrations" do
         post :measure
         get :measure, action: :show
@@ -418,6 +419,7 @@ Rails.application.routes.draw do
         patch :billing_required
         patch :field_swarm
         patch :field_tweets_house_key
+        patch :house_eleven_labs_key
         patch :x_posting_house_app
         post :refresh_storage
       end
@@ -474,8 +476,12 @@ Rails.application.routes.draw do
         end
         post :session, to: "sessions#create"
         post :revoke, to: "revocations#create"
+        # A pocket device's voice clip or photo (CompanionDevice::Pocket).
+        post "pocket/submissions", to: "pocket_submissions#create"
+        # The voice of the last reply the pocket device was sent.
+        get "pocket/replies/:message_id/audio", to: "pocket_audios#show", as: :pocket_audio
       end
-      resources :companion_devices, only: :update do
+      resources :companion_devices, only: %i[index update] do
         resources :operations, only: [ :create, :show ], controller: "companion_operations" do
           get :body, on: :member
           put :input, on: :member

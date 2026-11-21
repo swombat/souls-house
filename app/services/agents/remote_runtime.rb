@@ -20,7 +20,10 @@ module Agents
     # trust check (host-runner RUNTIME_TRUST_CHECK_VERSION).
     RUNTIME_TRUST_CHECK_VERSION = 1
     # The runner fact that says it can measure a resident's card numbers.
-    HOME_STATS_VERSION = 1
+    # 2 also counts a journal the resident chose (Agent#journal_source); a
+    # runner on 1 still measures the dated daily journals.
+    HOME_STATS_VERSION = 2
+    HOME_STATS_CHOSEN_JOURNAL_VERSION = 2
 
     class Unavailable < StandardError; end
     # The VM's runner predates the command asked of it (runners ship at birth).
@@ -602,16 +605,23 @@ module Agents
     # The journal entry count and disk use on a VM resident's card, measured
     # inside it by the runner's fixed copy of Agents::JournalEntryStats::SCRIPT.
     # Returns the runner's { "count", "storage_bytes" }. A runner that has not
-    # yet updated itself to one that measures is not asked (RunnerTooOld).
+    # yet updated itself to one that measures is not asked (RunnerTooOld), and
+    # neither is one that would count the daily journals when the resident
+    # chose another: the card stays unavailable rather than confidently wrong.
     HOME_STATS_WAIT = 60.seconds
 
     def home_stats!(agent, wait: HOME_STATS_WAIT, poll: 1)
       enrollment = live_enrollment!(agent)
-      unless enrollment.reload.last_facts.to_h["home_stats"] == HOME_STATS_VERSION
+      source = agent.journal_source
+      needed = source ? HOME_STATS_CHOSEN_JOURNAL_VERSION : 1
+      version = enrollment.reload.last_facts.to_h["home_stats"]
+      unless version.is_a?(Integer) && version.between?(needed, HOME_STATS_VERSION)
         raise RunnerTooOld, "its server's runner can't measure its home yet; it updates itself"
       end
 
-      relay!(agent, "home_stats", { "container_name" => agent.container_name }, wait:, poll:)
+      payload = { "container_name" => agent.container_name }
+      payload["journal_source"] = source if source
+      relay!(agent, "home_stats", payload, wait:, poll:)
     end
 
     def relay!(agent, kind, payload, wait:, poll:)

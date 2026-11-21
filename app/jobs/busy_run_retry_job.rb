@@ -73,7 +73,7 @@ class BusyRunRetryJob < ApplicationJob
         end
       end
     elsif (message = busy.message_dispatch&.message)
-      [ { requested_by: "a message from #{message.user ? ResidentFacingName.for(message.user) : message.author_name}",
+      [ { requested_by: "a message from #{message.wake_requester_name}",
           message: message, wake_source_kinds: busy.wake_source_kinds.presence } ]
     elsif (user = busy.requested_by_user)
       [ { requested_by: ResidentFacingName.for(user), user: user, wake_source_kinds: busy.wake_source_kinds.presence } ]

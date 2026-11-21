@@ -31,7 +31,9 @@
   );
 </script>
 
-<div class="flex flex-col items-start gap-3">
+<!-- Compact: no box of its own, so the Mac button and the Linux link sit in
+     the caller's row, centred with its other buttons (Daniel, YMamQY). -->
+<div class={early ? 'flex flex-col items-start gap-3' : 'contents'} data-testid="companion-download-group">
   {#if url}
     <a href={url} class={buttonVariants({ variant: 'default', size })} data-testid="companion-download">
       <AppleLogo size={18} weight="fill" /> Download for Mac
