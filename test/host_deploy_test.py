@@ -599,6 +599,76 @@ class WorkerTest(unittest.TestCase):
             self.w.execute()
         self.assertEqual("partial", self.w.data["state"])
 
+    def make_run(self, run, state, repo=True):
+        directory = self.root / "runs" / run
+        directory.mkdir(exist_ok=True)
+        gate.atomic(directory / "status.json", dict(id=run, operation="rails", state=state, step="x"))
+        (directory / "private.log").write_text("log")
+        if repo:
+            (directory / "repo" / "app").mkdir(parents=True)
+            (directory / "repo" / "app" / "file.rb").write_text("source")
+        return directory
+
+    def clone(self):
+        (self.w.repo / ".git").mkdir(parents=True)
+
+    def test_a_finished_run_loses_its_checkout_and_keeps_its_receipt_and_log(self):
+        # Success and failure both: the cleanup is in the finally path (#1057).
+        for failure in (None, RuntimeError("SECRET")):
+            with self.subTest(failure=failure):
+                self.w.data.update(state="running")
+                with patch.object(self.w, "checkout", side_effect=self.clone), \
+                     patch.object(self.w, "deploy_rails", side_effect=failure), \
+                     patch.object(self.w, "update_chaos"):
+                    self.w.execute()
+                self.assertEqual("failed" if failure else "success", self.w.data["state"])
+                self.assertFalse(self.w.repo.exists())
+                self.assertTrue((self.w.directory / "status.json").exists())
+                self.assertTrue((self.w.directory / "private.log").exists())
+                self.w.log = (self.w.directory / "private.log").open("a")
+
+    def test_a_superseded_run_loses_its_checkout(self):
+        def superseded():
+            self.clone()
+            self.w.report("master moved on; nothing deployed", state="superseded")
+        with patch.object(self.w, "checkout", side_effect=superseded):
+            self.w.execute()
+        self.assertFalse(self.w.repo.exists())
+
+    def test_a_run_clears_finished_runs_and_leaves_a_running_one(self):
+        old = [self.make_run(c * 32, state) for c, state in
+               (("b", "success"), ("c", "failed"), ("d", "partial"), ("e", "interrupted"), ("f", "superseded"))]
+        running = self.make_run("9" * 32, "running")
+        starting = self.make_run("8" * 32, "starting")
+        with patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        for directory in old:
+            self.assertFalse((directory / "repo").exists(), directory.name)
+            self.assertEqual("log", (directory / "private.log").read_text())
+            self.assertTrue((directory / "status.json").exists())
+        self.assertTrue((running / "repo" / "app" / "file.rb").exists())
+        self.assertTrue((starting / "repo" / "app" / "file.rb").exists())
+
+    def test_prune_is_idempotent_and_skips_unreadable_receipts(self):
+        self.make_run("b" * 32, "success")
+        broken = self.make_run("c" * 32, "success")
+        (broken / "status.json").write_text("{not json")
+        self.make_run("d" * 32, "failed", repo=False)
+        self.assertEqual(["b" * 32], worker.prune_checkouts())
+        self.assertEqual([], worker.prune_checkouts())
+        self.assertTrue((broken / "repo").exists())
+
+    def test_a_symlinked_checkout_is_unlinked_not_followed(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("x")
+        directory = self.make_run("b" * 32, "success", repo=False)
+        (directory / "repo").symlink_to(outside)
+        self.assertEqual(["b" * 32], worker.prune_checkouts())
+        self.assertFalse((directory / "repo").is_symlink())
+        self.assertTrue((outside / "keep").exists())
+
     def test_worker_lock_rejects_overlap(self):
         import fcntl
         self.w.settings["sweep_lock_wait_seconds"] = 0

@@ -6,13 +6,14 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
 
-from gate import ROOT, OPERATIONS, atomic
+from gate import ROOT, OPERATIONS, TERMINAL, atomic
 
 CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
@@ -65,6 +66,50 @@ def runtime_source():
             if newest is None or mtime > newest[0]:
                 newest = (mtime, revision)
     return newest[1] if newest else None
+
+
+def remove_checkout(directory):
+    """Delete one run's clone of master (runs/<id>/repo), keeping status.json,
+    private.log and every other small file the run wrote. True if it removed
+    something. A symlink in repo's place is unlinked, never followed."""
+    repo = directory / "repo"
+    if repo.is_symlink():
+        repo.unlink()
+        return True
+    if not repo.exists():
+        return False
+    shutil.rmtree(repo)
+    return True
+
+
+def prune_checkouts():
+    """Remove the clone from every finished run (#1057).
+
+    Each run clones master into runs/<id>/repo for Kamal and the image builds,
+    and nothing reads it once the run has ended: the gate, the sweep and
+    runtime_source() read status.json alone. Until 21 Nov 2026 nothing removed
+    them (898 runs since 4 Oct, 168 GB). A run whose status.json is not in a
+    terminal state keeps its clone, whatever its age: it may still be running,
+    and the gate marks a dead one interrupted only when asked. Idempotent; a
+    clone that can't be removed is skipped and tried again next time. Returns
+    the ids whose clone went."""
+    removed = []
+    for status in sorted((ROOT / "runs").glob("*/status.json")):
+        directory = status.parent
+        if not (directory / "repo").exists() and not (directory / "repo").is_symlink():
+            continue
+        try:
+            state = json.loads(status.read_text()).get("state")
+        except (OSError, ValueError):
+            continue
+        if state not in TERMINAL:
+            continue
+        try:
+            if remove_checkout(directory):
+                removed.append(directory.name)
+        except OSError:
+            continue
+    return removed
 
 
 def github(path):
@@ -863,6 +908,15 @@ class Worker:
             self.log.flush()
             self.report("failed; host operator inspection required", state="failed")
         finally:
+            # This run is over whatever its state (#1057): its clone goes,
+            # then any other finished run's that is still on disk.
+            try:
+                remove_checkout(self.directory)
+                pruned = prune_checkouts()
+                if pruned:
+                    self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
+            except OSError as error:
+                self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()
 
 
@@ -1164,6 +1218,10 @@ if __name__ == "__main__":
     os.umask(0o077)
     if sys.argv[1:] == ["sweep"]:
         print(Sweeper().sweep())
+        sys.exit(0)
+    if sys.argv[1:] == ["prune"]:
+        # Host root, by hand: the one-time sweep of the clones left before #1057.
+        print(json.dumps({"removed": len(prune_checkouts())}))
         sys.exit(0)
     if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
         sys.exit(2)
