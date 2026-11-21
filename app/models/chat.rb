@@ -154,6 +154,13 @@ class Chat < ApplicationRecord
     end
   }
 
+  # For counts with no particular viewer: private conversations never count.
+  scope :visible_to_or_unprivate, ->(viewer) { viewer ? visible_to(viewer) : where(private: false) }
+
+  # True while the conversation's first residents are being seated (creation
+  # and forks); a private chat refuses any seat after that (ChatAgent).
+  attr_accessor :opening_seats
+
   def visible_to?(actor)
     return true unless private?
 
@@ -207,8 +214,10 @@ class Chat < ApplicationRecord
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil, automatic_response: true)
     transaction do
       chat = new(attributes)
+      chat.opening_seats = true
       chat.agent_ids = agent_ids if agent_ids.present?
       chat.save!(context: :conversation_creation)
+      chat.opening_seats = false
       ChatParticipant.record!(chat: chat, user: user, source: "creator")
 
       if message_content.present? || (files.present? && files.any?)

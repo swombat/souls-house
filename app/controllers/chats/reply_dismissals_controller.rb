@@ -3,7 +3,7 @@ class Chats::ReplyDismissalsController < ApplicationController
   def create
     # Unlike site-admin browsing, reply attention requires actual membership.
     account = Current.user.confirmed_accounts.find(params[:account_id])
-    chat = account.chats.kept.find(params[:chat_id])
+    chat = account.chats.visible_to(Current.user).kept.find(params[:chat_id])
     if params[:message_id].present?
       return head :bad_request if params[:through_message_id].present?
       message = chat.messages.kept.find(params[:message_id])

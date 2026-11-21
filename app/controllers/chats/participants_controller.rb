@@ -2,11 +2,18 @@ class Chats::ParticipantsController < ApplicationController
 
   include ChatScoped
 
+  PRIVATE_SEATS_CLOSED = "Residents can't be added to a private conversation after it starts"
+
   # POST /accounts/:account_id/chats/:chat_id/participant
   def create
     unless @chat.group_chat?
       redirect_back_or_to chat_view_path(@chat),
         alert: "Can only add residents to group chats"
+      return
+    end
+
+    if @chat.private?
+      redirect_back_or_to chat_view_path(@chat), alert: PRIVATE_SEATS_CLOSED
       return
     end
 
@@ -39,7 +46,8 @@ class Chats::ParticipantsController < ApplicationController
     eligible = current_account.conversation_agents.eligible_for_conversation
     refused = []
 
-    (wanted - seated_ids).each do |agent_param|
+    refused << PRIVATE_SEATS_CLOSED if @chat.private? && (wanted - seated_ids).any?
+    (@chat.private? ? [] : wanted - seated_ids).each do |agent_param|
       add_participant(eligible.find(agent_param))
     rescue ActiveRecord::RecordNotFound
       refused << "One resident is no longer available to add"

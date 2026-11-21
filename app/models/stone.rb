@@ -87,6 +87,9 @@ class Stone < ApplicationRecord
   # publication. The unique index is a second guard against duplicate numbers.
   def revise!(title:, html:, author:, public:, base_revision_id:, interactive: false, field_table_ids: [], publish_tables: false)
     raise InvalidInput, "Explicit public: true acknowledgement is required" unless public == true
+    # Every stone is public, so a private conversation can't mint one: that
+    # would give its words a second audience (eKmnrJ).
+    raise InvalidInput, "Stones can't be published from a private conversation" if chat.private?
     raise InvalidInput, "title must be nonblank text of at most 255 characters" unless title.is_a?(String) && title.strip.present? && title.length <= 255
     raise InvalidInput, "Author must be a user or resident" unless author.is_a?(User) || author.is_a?(Agent)
     raise InvalidInput, "interactive must be true or false" unless [ true, false ].include?(interactive)

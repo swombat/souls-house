@@ -14,11 +14,18 @@ module Chat::Forkable
         model_id: model_id,
         web_access: web_access,
         manual_responses: manual_responses,
-        room: room
+        room: room,
+        private: private?
       )
 
+      forked.opening_seats = true
       forked.agent_ids = agent_ids if manual_responses?
       forked.save!(context: :conversation_creation)
+      forked.opening_seats = false
+      # A fork of a private conversation keeps its audience exactly (eKmnrJ).
+      chat_participants.each do |participant|
+        forked.chat_participants.create!(user_id: participant.user_id, source: participant.source)
+      end
 
       copied_messages = {}
       copied_tool_calls = {}

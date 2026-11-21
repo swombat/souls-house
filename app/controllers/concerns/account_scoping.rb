@@ -21,7 +21,7 @@ module AccountScoping
   # they are in them (Chat.visible_to). Every human-facing chat lookup goes
   # through here, so a chat outside it is simply not found (404).
   def visible_chats
-    visible_chats.visible_to(Current.user)
+    current_account.chats.visible_to(Current.user)
   end
 
   def current_membership

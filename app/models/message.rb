@@ -71,6 +71,12 @@ class Message < ApplicationRecord
   validate :submission_identity_unchanged, on: :update
   validate :author_is_in_private_chat, on: :create
 
+  # Live per-message streams (SyncChannel) answer the chat's rule, so a
+  # private chat's messages stream to nobody outside it, site admins included.
+  def accessible_by?(user)
+    chat.present? && chat.accessible_by?(user)
+  end
+
   scope :sorted, -> { order(created_at: :asc) }
 
   # viewer: whose search this is. Private conversations they aren't in are

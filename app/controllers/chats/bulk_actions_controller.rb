@@ -36,7 +36,7 @@ class Chats::BulkActionsController < ApplicationController
     account = Current.user.confirmed_accounts.find(params[:account_id])
     raw = params[:through_message_ids]
     cutoffs = ConversationBulk.decode_cutoffs(raw.is_a?(ActionController::Parameters) ? raw.to_unsafe_h : nil, max: MAX_CUTOFFS)
-    acted = ConversationBulk.mark_read!(chats: account.chats.kept, user: Current.user, cutoffs: cutoffs)
+    acted = ConversationBulk.mark_read!(chats: account.chats.visible_to(Current.user).kept, user: Current.user, cutoffs: cutoffs)
     audit("bulk_dismiss_reply_expectations", nil, conversation_ids: acted)
     render json: { conversation_ids: acted }
   end
