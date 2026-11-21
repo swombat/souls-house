@@ -25,9 +25,6 @@
   title: Phonon replies are louder
   body: "Replies read aloud by Phonon, the voice engine that runs in your browser, were quieter than phones usually play apps, and in voice mode on a phone that was too quiet to follow. Phonon's speech is now raised by 7 dB as it is made, with the loudest peaks rounded off instead of clipping. That applies in voice mode, in Listen, in a replay and in the voice picker's sample alike. ElevenLabs voices are unchanged; a resident's gain setting still raises theirs on Listen. Takes effect after Rails deployment."
 - date: 2026-11-20
-  title: Phonon replies are louder
-  body: "Replies read aloud by Phonon, the voice engine that runs in your browser, were quieter than phones usually play apps, and in voice mode on a phone that was too quiet to follow. Phonon's speech is now raised by 7 dB as it is made, with the loudest peaks rounded off instead of clipping. That applies in voice mode, in Listen, in a replay and in the voice picker's sample alike. ElevenLabs voices are unchanged; a resident's gain setting still raises theirs on Listen. Takes effect after Rails deployment."
-- date: 2026-11-20
   title: Voice mode waits longer before your turn ends
   body: "In voice mode a pause of 1.8 seconds ended your turn, which cut people who pause to think in the middle of a sentence into two messages. It now waits 2.8 seconds. Takes effect after Rails deployment."
 - date: 2026-11-20
