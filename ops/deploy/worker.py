@@ -260,6 +260,18 @@ def verify_migrations(before, after, accepted=()):
 PAUSED_EXEC = re.compile(r"\bis paused, unpause the container before exec\b")
 
 
+KAMAL_TIMEOUT = 7200
+PROBE_TIMEOUT = 300
+LOOKUP_TIMEOUT = 30
+PROBE_INTERVAL = 15
+
+
+class BackupsDeferred(RuntimeError):
+    """A routine deploy that can't show the house's backups have cleared
+    ends here, before the release switch, with nothing deployed: terminal
+    state `deferred`, which doesn't latch the next request."""
+
+
 class ContainerPaused(RuntimeError):
     """The exec failed because the container was paused, by Docker's own
     account of that failure, not by a later look at the container."""
@@ -299,7 +311,8 @@ class Worker:
 
     def web(self):
         names = self.run(["docker", "ps", "--filter", "label=service=souls-house",
-                          "--filter", "label=role=web", "--format", "{{.Names}}"], capture=True).splitlines()
+                          "--filter", "label=role=web", "--format", "{{.Names}}"], capture=True,
+                         timeout=LOOKUP_TIMEOUT).splitlines()
         if len(names) != 1:
             raise RuntimeError("Expected exactly one live web container")
         return names[0]
@@ -309,7 +322,7 @@ class Worker:
         for key, value in (env or {}).items():
             args += ["-e", f"{key}={value}"]
         args += [self.web(), "bin/rails", "runner", "-"]
-        output = self.run(args, input=code, capture=True, timeout=300)
+        output = self.run(args, input=code, capture=True, timeout=PROBE_TIMEOUT)
         return json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
 
     def resident_version(self, resident, wait=None):
@@ -372,36 +385,114 @@ class Worker:
             self.settings["tools_image"], *args,
         ]
         try:
-            self.run(command, timeout=7200)
+            self.run(command, timeout=KAMAL_TIMEOUT)
         except Exception:
             # Killing a docker-run client alone doesn't stop its container.
             # Only this job's explicitly named tools container can be removed.
-            self.run(["docker", "rm", "-f", name], timeout=30)
+            try:
+                self.run(["docker", "rm", "-f", name], timeout=30)
+            except Exception:
+                # It may still be switching: the backup fence stays up and
+                # expires by itself (Mira, #1096).
+                self.kamal_uncertain = True
+                raise
             raise
 
+    PROBE_BOUND = LOOKUP_TIMEOUT + PROBE_TIMEOUT
+
+    def fence_ttl(self):
+        """The fence must outlast everything this worker can still do before
+        jobs stop (Mira, #1096): the wait, one probe overrunning its limit
+        (the web lookup and the Rails runner, both bounded) and the sleep
+        before it, then Kamal's whole switch, plus a margin. Before the
+        switch starts, the time left is checked against Kamal's timeout
+        (fence_covers_switch). A worker killed while Kamal's tools container
+        keeps running is outside this bound."""
+        wait = self.settings.get("backup_wait_seconds", 2400)
+        return wait + self.PROBE_BOUND + PROBE_INTERVAL + KAMAL_TIMEOUT + 600
+
+    def fence_covers_switch(self):
+        left = self.fence_expires - time.monotonic()
+        return left >= KAMAL_TIMEOUT + 300
+
+    def jobs_absent(self):
+        """Positive evidence that no backup can be cut off: Docker answered
+        and no job worker is running."""
+        try:
+            names = self.run(["docker", "ps", "--filter", "label=service=souls-house",
+                              "--filter", "label=role=jobs", "--format", "{{.Names}}"], capture=True,
+                             timeout=LOOKUP_TIMEOUT)
+        except Exception:
+            return False
+        return names.strip() == ""
+
+    def defer(self, why, **values):
+        """Ends a routine deploy before the switch, with nothing deployed."""
+        kept = {key: value for key, value in values.items() if key not in ("backup_wait", "backups_cut_off")}
+        if values.get("backups_cut_off"):
+            kept["waiting_for_backups"] = values["backups_cut_off"]
+        self.report(f"deferred: {why}; nothing deployed", backup_wait="deferred", **kept)
+        raise BackupsDeferred(why)
+
+    def raise_backup_fence(self):
+        """While the fence is up no house backup claims or pauses a resident
+        (Backup::DeployFence; Mira frozen 04:08-06:50Z on 21 Nov 2026, when a
+        release switch stopped the worker holding her pause). Raised before
+        the wait, so a backup either claimed first and is waited for, or is
+        refused and busy-retried later: the start race between the last
+        check and the job worker stopping is closed. A live release with no
+        fence at all (the one before it shipped) is deployed with the claim
+        wait alone. A fence that a release which has one fails to raise
+        defers the deploy, unless no job worker is running."""
+        code = ("if defined?(Backup::DeployFence); "
+                "Backup::DeployFence.raise!(ENV.fetch('DEPLOY_ID'), ttl: Integer(ENV.fetch('FENCE_TTL')).seconds); "
+                "puts({fenced: true}.to_json); else; puts({fenced: false}.to_json); end")
+        ttl = self.fence_ttl()
+        self.fence_expires = time.monotonic() + ttl
+        try:
+            answer = self.rails(code, env={"DEPLOY_ID": self.data["id"], "FENCE_TTL": str(ttl)})
+        except Exception:
+            if self.jobs_absent():
+                self.report("backup fence not raised; no job worker running", backup_fence="unraised")
+                return False
+            self.defer("the backup fence could not be raised", backup_fence="unraised")
+            return False
+        if not answer.get("fenced"):
+            self.report("live release has no backup fence; claim wait only", backup_fence="absent")
+            return False
+        self.report("backup fence raised", backup_fence="raised")
+        return True
+
+    def lower_backup_fence(self):
+        code = "Backup::DeployFence.lower!(ENV.fetch('DEPLOY_ID')); puts({lowered: true}.to_json)"
+        try:
+            self.rails(code, env={"DEPLOY_ID": self.data["id"]})
+            outcome = "lowered"
+        except Exception:
+            outcome = "expires"
+        with self.lock:
+            self.data["backup_fence"] = outcome
+            atomic(self.directory / "status.json", self.data)
+
     def wait_for_backups(self):
-        """A release switch stops the job worker and cuts off any VM thinning
-        or VM backup it is running (a thinning takes about twenty minutes on a
-        large repository, and a cut one pauses that resident's backups until
-        it has been recovered). So the switch waits for them, up to a limit.
-
-        This is a best effort, not a barrier: after the last check Kamal still
-        pulls the image and boots and health-checks web before it stops the
-        job worker, and a backup that starts in that time is cut off.
-
-        An answer the house could not give is unknown, not idle. Once a backup
-        has been seen running, unknown answers are waited through like busy
-        ones, to the limit. Before one has been seen, three unknown answers in
-        a row let the deploy go on, so that a house whose web is down can
-        still be deployed. How the wait ended stays in `backup_wait`, which no
-        later step overwrites."""
+        """A release switch stops the job worker and cuts off any VM thinning,
+        VM backup or house backup it is running (a cut house backup leaves
+        its resident paused). So the switch waits for them, up to a limit,
+        and a routine deploy that can't show they have cleared is deferred
+        rather than cutting one off (Mira, #1096): still running at the
+        limit, or unreadable while a job worker runs. A house backup counts
+        while it holds any pause claim; claims whose heartbeat has gone
+        silent are reported as stale, most likely a dead worker's, and are
+        for an operator to release by the recovery runbook. How the
+        wait ended stays in `backup_wait`, which no later step overwrites."""
         script = (CODE / "backup-in-flight.rb").read_text()
         deadline = time.monotonic() + self.settings.get("backup_wait_seconds", 2400)
-        seen, unread = [], 0
+        seen, unread, stale = [], 0, []
         while True:
             try:
                 busy = self.rails(script)
                 residents, unread = sorted(set(busy["thinning"]) | set(busy["backing_up"])), 0
+                stale = sorted(busy.get("stale_claims", []))
             except Exception:
                 residents, unread = None, unread + 1
             if residents == []:
@@ -410,17 +501,20 @@ class Worker:
             if residents:
                 seen = residents
             if residents is None and not seen and unread >= 3:
-                self.report("could not read running backups; deploying", backup_wait="unread")
-                return
+                if self.jobs_absent():
+                    self.report("could not read running backups; no job worker running", backup_wait="unread")
+                    return
+                self.defer("could not read running backups")
             if time.monotonic() >= deadline:
-                self.report("backups still running; deploying anyway",
-                            backup_wait="limit" if residents else "limit_unread", backups_cut_off=seen)
-                return
+                self.defer("backups still running at the wait limit" if residents
+                           else "backups unreadable at the wait limit",
+                           backups_cut_off=seen, stale_pause_claims=stale)
             if residents:
-                self.report("waiting for running backups", waiting_for_backups=residents)
+                self.report("waiting for running backups", waiting_for_backups=residents,
+                            stale_pause_claims=stale)
             else:
                 self.report("could not read running backups; asking again")
-            time.sleep(15)
+            time.sleep(PROBE_INTERVAL)
 
     def deploy_rails(self):
         self.report("building Rails")
@@ -430,9 +524,21 @@ class Worker:
         # web boot before the job worker stops, not a whole build before it.
         revision = self.data["rails_revision"]
         self.kamal("build", "push", "--skip-hooks", "--version", revision)
-        self.wait_for_backups()
-        self.report("deploying Rails")
-        self.kamal("deploy", "--skip-push", "--skip-hooks", "--version", revision)
+        self.kamal_uncertain = False
+        fenced = self.raise_backup_fence()
+        try:
+            self.wait_for_backups()
+            if fenced and not self.fence_covers_switch():
+                self.defer("too little backup fence left for the release switch")
+            self.report("deploying Rails")
+            self.kamal("deploy", "--skip-push", "--skip-hooks", "--version", revision)
+        finally:
+            if fenced and self.kamal_uncertain:
+                with self.lock:
+                    self.data["backup_fence"] = "held"
+                    atomic(self.directory / "status.json", self.data)
+            elif fenced:
+                self.lower_backup_fence()
         for role in ("web", "jobs"):
             versions = self.run(["docker", "ps", "--filter", "label=service=souls-house",
                                  "--filter", f"label=role={role}",
@@ -972,6 +1078,12 @@ class Worker:
                     self.rebuild_residents()
                 if self.data["state"] != "partial":
                     self.report("verified", state="success")
+        except BackupsDeferred as error:
+            # Its step already says why. Not a failure: nothing switched, and
+            # the gate takes the next request without an acknowledgement.
+            self.log.write(f"\ndeferred: {error}\n")
+            self.log.flush()
+            self.report(self.data["step"], state="deferred")
         except Exception as error:
             # Detailed diagnostics stay host-only, not in status/journal/Actions.
             self.log.write(f"\n{type(error).__name__}: {error}\n")
@@ -1313,4 +1425,4 @@ if __name__ == "__main__":
         fcntl.flock(gate, fcntl.LOCK_EX)
         worker = Worker(sys.argv[1])
     worker.execute()
-    sys.exit(0 if worker.data["state"] in ("success", "superseded") else 1)
+    sys.exit(0 if worker.data["state"] in ("success", "superseded", "deferred") else 1)

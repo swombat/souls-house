@@ -11,13 +11,15 @@ containers running" can't say who owns the pause, so recovery is manual and
 follows the checks below. If any check can't be established, stop and
 escalate instead of guessing.
 
-Once the host probe from #1095 is installed (`/opt/house-deploy/backup-in-flight.rb`,
-by `sudo ops/deploy/install`), a Rails deploy waits (up to its backup limit) while a house
-backup holds a pause claim younger than 30 minutes. That is a mitigation,
-not a guard. A backup can start after the deploy's last check and before
-the jobs worker stops. A claim older than 30 minutes isn't proof that its
-backup stopped. And a deploy that reaches the limit goes ahead anyway. A
-deploy can still strand a resident paused.
+Once the cutover barrier (#1096) is live on the host, a routine Rails deploy
+fences house backups out and defers rather than switch while any pause claim
+is held; `docs/operations/github-deployments.md` has the detail. A stale claim
+(`stale_pause_claims` in a deferred run; the probe's own key is `stale_claims`) means a resident is probably still
+paused under a dead worker's claim: follow this runbook, and release the
+claim only after the checks below; that is also what unblocks deploys. A
+release from before the fence, a direct `kamal deploy`, or a jobs container
+that dies for another reason (OOM, host reboot) can still leave a resident
+paused.
 
 ## How you hear about it
 
@@ -111,6 +113,100 @@ docker inspect --format '{{.State.Running}} {{.State.Paused}}' "$id"   # want: t
 Then the resident's health goes green within a few minutes and a new run
 succeeds. Record what you found and when you unpaused, where the problem was
 raised.
+
+## Releasing a stale pause claim
+
+A routine deploy defers while any `Backup::PauseClaim` exists (#1096). A claim
+listed in `stale_pause_claims` has stopped beating. Its backup is most likely
+dead. Release it only with evidence for that exact claim, never because the
+heartbeat has gone quiet:
+
+1. **Read the claim.**
+
+   ```ruby
+   c = Backup::PauseClaim.find_by!(agent_id: <id>)
+   [c.container_id, c.token, c.created_at, c.touched_at]
+   ```
+
+2. **Establish that its backup is gone.** Do checks 2 and 3 above for this
+   resident: no backup job in progress that could still reach them, no backup
+   container for them in the full `docker ps` listing, and an agreed no-start
+   window. If any check fails, leave the claim and escalate.
+
+3. **Look at the container the claim names**, by the claim's own id, not by
+   name:
+
+   ```sh
+   docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Paused}}' "<container_id>"
+   echo "docker exit: $?"
+   ```
+
+   - `true true`: that container is paused. The claim naming it doesn't prove
+     its backup took this pause. Treat it as any paused resident: every check
+     in "Before unpausing", then "Unpausing" and "Checking it worked", and only
+     then release.
+   - `true false`: running now. Release.
+   - No such container (exit non-zero with "No such object"; the resident was
+     rebuilt): look up the resident's current container and inspect it the
+     same way. Release only on `true false` and a green health check for the
+     resident. Not appearing in a paused-only listing isn't enough.
+   - Any other failure or output: Docker didn't answer clearly. Stop.
+
+4. **Release exactly that claim**, by its token, so a newer claim made in the
+   meantime survives:
+
+   ```ruby
+   Backup::PauseClaim.where(agent_id: <id>, token: "<token>").delete_all   # want: 1
+   Backup::PauseClaim.where(agent_id: <id>).pluck(:token)                 # want: []
+   ```
+
+   `0` means the claim had already gone or been replaced: stop and read the
+   claims again. Anything other than `[]` afterwards is a newer claim, made by
+   a backup that is running now. Leave it.
+
+5. **Check the deploy probe agrees.** Run the installed probe in the live web
+   container:
+
+   ```sh
+   c=$(docker ps --format '{{.Names}}' | grep '^souls-house-web-')
+   docker exec -i "$c" bin/rails runner - < /opt/house-deploy/backup-in-flight.rb
+   echo "probe exit: $?"
+   ```
+
+   It must exit 0 and print one JSON line with `thinning`, `backing_up` and
+   `stale_claims`, and the resident must be in neither `backing_up` nor
+   `stale_claims`. A non-zero exit or no JSON is no answer: stop. If the
+   resident is still listed, a new claim has been made or the release didn't
+   commit. Stop and look again.
+
+   Then rerun the deferred deploy (or let the next merge deploy). Record what
+   you found, where the problem was raised.
+
+## A deploy that reports a held fence
+
+`backup_fence: held` means a release switch failed and its Kamal tools
+container (`house-deploy-kamal-<run id>`) couldn't be removed, so the switch
+may still be running. The fence is left up on purpose and expires by itself
+(the wait limit plus Kamal's two-hour timeout and margins). House backups are
+busy-retried until then. The run itself ended failed, so the gate wants the
+usual acknowledgement before the next deploy.
+
+1. Check the tools container: `docker ps -a --filter name=house-deploy-kamal-<run id>`.
+   While it's running, leave everything alone. If it's still running two
+   hours after the run started (Kamal's own timeout), or Docker doesn't
+   answer: escalate.
+2. Once it has exited (or is gone), check what's live: exactly one
+   `souls-house-web-*` and one `souls-house-jobs-*`, both of the same
+   revision, and the health URL answering. If not, that's a failed deploy:
+   escalate, and leave the fence up.
+3. Then lower the fence early if backups need to run before it expires:
+
+   ```ruby
+   Backup::DeployFence.lower!("<run id>")
+   Backup::DeployFence.up?   # want: false
+   ```
+
+   Remove the exited tools container with `docker rm house-deploy-kamal-<run id>`.
 
 ## Escalating
 

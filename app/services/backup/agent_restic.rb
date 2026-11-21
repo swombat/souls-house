@@ -142,11 +142,15 @@ module Backup
       claim = PauseClaim.find_by(agent_id: agent.id)
       state = "#{running} #{paused}"
       token = nil
+      heartbeat = nil
       begin
         to_pause = nil
         if status.success? && state == "true false"
-          PauseClaim.release!(agent) if claim
+          # claim! replaces any older claim itself, on its own connection:
+          # deleting it here first, inside a caller's transaction, would
+          # make claim! wait on its own caller (Mira, #1096).
           to_pause = PauseClaim.claim!(agent, container_id)
+          heartbeat = PauseClaim::Heartbeat.start(to_pause)
         elsif status.success? && state == "true true"
           if claim&.container_id == container_id
             # Reported before the label probe, so a busy result or a Docker
@@ -178,29 +182,36 @@ module Backup
           yield
         end
       ensure
-        PauseClaim.release!(agent, to_pause) if to_pause && token.nil?
-        if token
-          original_error = $!
-          resumed = begin
-            Open3.capture3("docker", "unpause", container_id).last.success?
-          rescue StandardError
-            false
-          end
-          unless resumed
-            Rails.logger.error("Resident remains paused after backup")
-            # Until 19 Nov 2026 a failed unpause was never tried again, and
-            # the resident stayed frozen (Mira, 04:06-05:32Z). Now it is
-            # tried once more and checked;
-            # Docker not answering is never taken for unpaused. Reported
-            # either way (ContainerPause). The backup's own error, if any,
-            # is kept.
-            outcome = ContainerPause.retry_unpause!(agent, container: container_id)
-            resumed = outcome.in?(%i[unpaused not_paused])
-            if !resumed && !original_error
-              raise ArgumentError, "Resident remains paused after backup"
+        # The heartbeat beats until the unpause and its retry are over
+        # (Mira, #1096): a deploy must not read a pause still being undone
+        # as finished.
+        begin
+          PauseClaim.release!(agent, to_pause) if to_pause && token.nil?
+          if token
+            original_error = $!
+            resumed = begin
+              Open3.capture3("docker", "unpause", container_id).last.success?
+            rescue StandardError
+              false
             end
+            unless resumed
+              Rails.logger.error("Resident remains paused after backup")
+              # Until 19 Nov 2026 a failed unpause was never tried again, and
+              # the resident stayed frozen (Mira, 04:06-05:32Z). Now it is
+              # tried once more and checked;
+              # Docker not answering is never taken for unpaused. Reported
+              # either way (ContainerPause). The backup's own error, if any,
+              # is kept.
+              outcome = ContainerPause.retry_unpause!(agent, container: container_id)
+              resumed = outcome.in?(%i[unpaused not_paused])
+              if !resumed && !original_error
+                raise ArgumentError, "Resident remains paused after backup"
+              end
+            end
+            PauseClaim.release!(agent, token) if resumed
           end
-          PauseClaim.release!(agent, token) if resumed
+        ensure
+          heartbeat&.stop
         end
       end
     end

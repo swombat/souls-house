@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import call, patch
 
@@ -206,6 +207,18 @@ class WorkflowAuthorityTest(unittest.TestCase):
         self.assertNotIn("if: steps.request.outputs.outcome == 'superseded'\n", marker)
 
 
+    def test_deferred_is_a_red_job_with_nothing_deployed_and_no_rebuild(self):
+        transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
+        deferred = transport.split("deferred)")[1].split("\n              partial)")[0]
+        self.assertIn("outcome=deferred", deferred)
+        self.assertIn("exit 1", deferred)
+        self.assertNotIn("exit 0", deferred)
+        self.assertNotIn("runtime_rebuild_needed", deferred)
+        marker = next(block for block in transport.split("- name: ")
+                      if block.startswith("A backup held the switch, nothing deployed"))
+        self.assertIn("failure() && steps.request.outputs.outcome == 'deferred'", marker)
+
+
 class GateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -292,6 +305,12 @@ class GateTest(unittest.TestCase):
         self.job("superseded")
         with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
             self.assertEqual("superseded", gate.status("a" * 32)["state"])
+            self.assertEqual("starting", gate.request("rails")["state"])
+
+    def test_deferred_is_terminal_and_does_not_block_the_next_request(self):
+        self.job("deferred")
+        with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+            self.assertEqual("deferred", gate.status("a" * 32)["state"])
             self.assertEqual("starting", gate.request("rails")["state"])
 
     def test_status_projection_cannot_expose_private_fields(self):
@@ -633,6 +652,18 @@ class WorkerTest(unittest.TestCase):
                 self.assertTrue((self.w.directory / "private.log").exists())
                 self.w.log = (self.w.directory / "private.log").open("a")
 
+    def test_a_deferred_rails_deploy_ends_deferred_and_rebuilds_nothing(self):
+        def deferred():
+            self.w.report("deferred: backups still running at the wait limit; nothing deployed",
+                          backup_wait="deferred")
+            raise worker.BackupsDeferred("backups still running at the wait limit")
+        with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails", side_effect=deferred), \
+             patch.object(self.w, "update_chaos") as runtime:
+            self.w.execute()
+        runtime.assert_not_called()
+        self.assertEqual("deferred", self.w.data["state"])
+        self.assertTrue(self.w.data["step"].startswith("deferred: "))
+
     def test_a_superseded_run_loses_its_checkout(self):
         def superseded():
             self.clone()
@@ -845,13 +876,18 @@ class WorkerTest(unittest.TestCase):
         self.assertIn(name, run.call_args_list[0].args[0])
         self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
 
-    def backup_waiter(self, answers, **settings):
+    def backup_waiter(self, answers, fence="raised", **settings):
         (self.root / "backup-in-flight.rb").write_text("")
         self.w.settings.update(settings)
         self.w.data["rails_revision"] = "d" * 40
         calls = []
 
-        def rails(_code, env=None):
+        def rails(code, env=None):
+            if "DeployFence" in code:
+                calls.append("fence " + ("up" if "raise!" in code else "down"))
+                if fence == "fails":
+                    raise RuntimeError("could not raise")
+                return {"fenced": fence == "raised", "lowered": True}
             calls.append("ask")
             answer = answers.pop(0) if len(answers) > 1 else answers[0]
             if isinstance(answer, Exception):
@@ -860,32 +896,89 @@ class WorkerTest(unittest.TestCase):
 
         return calls, rails
 
+    def deploy_with(self, answers, kamal=None, jobs=True, **options):
+        calls, rails = self.backup_waiter(answers, **options)
+
+        def recorded(*args):
+            calls.append(args[:2])
+            if kamal:
+                kamal(*args)
+
+        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(self.w, "kamal", side_effect=recorded), \
+             patch.object(self.w, "jobs_absent", return_value=not jobs), \
+             patch.object(self.w, "run", return_value=""), patch.object(worker.time, "sleep"):
+            with self.assertRaises(RuntimeError):  # deferred, or no live containers to verify
+                self.w.deploy_rails()
+        return calls
+
     def test_release_switch_waits_for_a_running_thinning_after_the_build(self):
         busy = dict(thinning=[44], backing_up=[])
-        calls, rails = self.backup_waiter([busy, busy, dict(thinning=[], backing_up=[])])
-        with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
-             patch.object(self.w, "kamal", side_effect=lambda *args: calls.append(args[:2])), \
-             patch.object(self.w, "run", return_value=""), patch.object(worker.time, "sleep") as sleep:
-            with self.assertRaises(RuntimeError):  # the fixture has no live containers to verify
-                self.w.deploy_rails()
-        self.assertEqual([("build", "push"), "ask", "ask", "ask", ("deploy", "--skip-push")], calls)
-        self.assertEqual(2, sleep.call_count)
+        calls = self.deploy_with([busy, busy, dict(thinning=[], backing_up=[])])
+        self.assertEqual([("build", "push"), "fence up", "ask", "ask", "ask", ("deploy", "--skip-push"), "fence down"],
+                         calls)
         self.assertEqual([44], self.w.data["waiting_for_backups"])
+        self.assertEqual("waited", self.w.data["backup_wait"])
+        self.assertEqual("lowered", self.w.data["backup_fence"])
 
-    def wait_with(self, answers, **settings):
+    def test_the_backup_fence_is_lowered_even_when_the_release_switch_fails(self):
+        def switch(*args):
+            if args[0] == "deploy":
+                raise RuntimeError("kamal deploy failed")
+
+        calls = self.deploy_with([dict(thinning=[], backing_up=[])], kamal=switch)
+        self.assertEqual([("build", "push"), "fence up", "ask", ("deploy", "--skip-push"), "fence down"], calls)
+        self.assertEqual("lowered", self.w.data["backup_fence"])
+
+    def test_a_deferred_deploy_lowers_its_fence_and_never_switches(self):
+        calls = self.deploy_with([dict(thinning=[], backing_up=[45], stale_claims=[45])], backup_wait_seconds=0)
+        self.assertEqual([("build", "push"), "fence up", "ask", "fence down"], calls)
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+        self.assertEqual([45], self.w.data["waiting_for_backups"])
+        self.assertEqual([45], self.w.data["stale_pause_claims"])
+        self.assertNotIn("backups_cut_off", self.w.data)
+        self.assertTrue(self.w.data["step"].startswith("deferred: backups still running at the wait limit"))
+
+    def test_a_release_without_the_fence_is_deployed_with_the_claim_wait_alone(self):
+        calls = self.deploy_with([dict(thinning=[], backing_up=[])], fence="absent")
+        self.assertEqual([("build", "push"), "fence up", "ask", ("deploy", "--skip-push")], calls)
+        self.assertEqual("absent", self.w.data["backup_fence"])
+
+    def test_a_fence_that_fails_to_go_up_defers_while_a_job_worker_runs(self):
+        calls = self.deploy_with([dict(thinning=[], backing_up=[])], fence="fails")
+        self.assertEqual([("build", "push"), "fence up"], calls)
+        self.assertEqual("unraised", self.w.data["backup_fence"])
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+
+    def test_a_fence_that_fails_to_go_up_with_no_job_worker_deploys(self):
+        calls = self.deploy_with([dict(thinning=[], backing_up=[])], fence="fails", jobs=False)
+        self.assertEqual([("build", "push"), "fence up", "ask", ("deploy", "--skip-push")], calls)
+        self.assertEqual("unraised", self.w.data["backup_fence"])
+
+    def test_the_fence_outlasts_the_wait_a_probe_overrun_and_the_whole_switch(self):
+        self.w.settings["backup_wait_seconds"] = 600
+        envs = []
+        self.backup_waiter([dict(thinning=[], backing_up=[])])
+        with patch.object(self.w, "rails", side_effect=lambda code, env=None: envs.append(env) or {"fenced": True}):
+            self.assertTrue(self.w.raise_backup_fence())
+        ttl = int(envs[0]["FENCE_TTL"])
+        self.assertGreater(ttl, 600 + worker.LOOKUP_TIMEOUT + worker.PROBE_TIMEOUT + worker.PROBE_INTERVAL
+                           + worker.KAMAL_TIMEOUT)
+        self.assertEqual(self.w.data["id"], envs[0]["DEPLOY_ID"])
+
+    def wait_with(self, answers, jobs=True, **settings):
         calls, rails = self.backup_waiter(answers, **settings)
         with patch.object(worker, "CODE", self.root), patch.object(self.w, "rails", side_effect=rails), \
+             patch.object(self.w, "jobs_absent", return_value=not jobs), \
              patch.object(worker.time, "sleep") as sleep:
             self.w.wait_for_backups()
         return calls, sleep
 
-    def test_release_switch_goes_ahead_past_the_backup_wait_limit(self):
-        calls, sleep = self.wait_with([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
-        self.assertEqual(["ask"], calls)
-        sleep.assert_not_called()
-        self.assertEqual([45], self.w.data["backups_cut_off"])
-        self.assertEqual("limit", self.w.data["backup_wait"])
-        self.assertEqual("backups still running; deploying anyway", self.w.data["step"])
+    def test_at_the_wait_limit_a_routine_deploy_defers(self):
+        with self.assertRaises(worker.BackupsDeferred):
+            self.wait_with([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+        self.assertEqual([45], self.w.data["waiting_for_backups"])
 
     def test_an_unread_answer_after_a_running_backup_keeps_waiting(self):
         busy, idle = dict(thinning=[44], backing_up=[]), dict(thinning=[], backing_up=[])
@@ -896,21 +989,25 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("waited", self.w.data["backup_wait"])
         self.assertNotIn("backups_cut_off", self.w.data)
 
-    def test_unread_answers_after_a_running_backup_end_at_the_limit_and_say_who(self):
+    def test_unread_answers_after_a_running_backup_defer_at_the_limit_and_say_who(self):
         busy = dict(thinning=[44], backing_up=[])
         clock = iter([0, 0, 99999])
         with patch.object(worker.time, "monotonic", side_effect=lambda: next(clock)):
-            calls, sleep = self.wait_with([busy, RuntimeError("down")], backup_wait_seconds=60)
-        self.assertEqual(2, len(calls))
-        self.assertEqual("limit_unread", self.w.data["backup_wait"])
-        self.assertEqual([44], self.w.data["backups_cut_off"])
+            with self.assertRaises(worker.BackupsDeferred):
+                self.wait_with([busy, RuntimeError("down")], backup_wait_seconds=60)
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+        self.assertEqual([44], self.w.data["waiting_for_backups"])
 
-    def test_a_house_that_cannot_be_asked_at_all_is_deployed_after_three_tries(self):
-        calls, sleep = self.wait_with([RuntimeError("no web container")])
+    def test_a_house_that_cannot_be_asked_defers_while_a_job_worker_runs(self):
+        with self.assertRaises(worker.BackupsDeferred):
+            self.wait_with([RuntimeError("no web container")])
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+
+    def test_a_house_that_cannot_be_asked_and_runs_no_job_worker_is_deployed_after_three_tries(self):
+        calls, sleep = self.wait_with([RuntimeError("no web container")], jobs=False)
         self.assertEqual(3, len(calls))
         self.assertEqual(2, sleep.call_count)
         self.assertEqual("unread", self.w.data["backup_wait"])
-        self.assertEqual("could not read running backups; deploying", self.w.data["step"])
 
     def test_one_unread_answer_before_any_backup_is_asked_again(self):
         calls, sleep = self.wait_with([RuntimeError("blip"), dict(thinning=[], backing_up=[])])
@@ -918,14 +1015,45 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("idle", self.w.data["backup_wait"])
 
     def test_the_wait_outcome_survives_the_steps_that_follow(self):
-        self.wait_with([dict(thinning=[], backing_up=[45])], backup_wait_seconds=0)
+        self.wait_with([dict(thinning=[44], backing_up=[]), dict(thinning=[], backing_up=[])])
         self.w.report("deploying Rails")
         self.w.report("Rails healthy")
-        self.assertEqual("limit", self.w.data["backup_wait"])
-        self.assertEqual([45], self.w.data["backups_cut_off"])
+        self.assertEqual("waited", self.w.data["backup_wait"])
+
+    def test_too_little_fence_left_defers_before_the_switch(self):
+        clock = iter([0, 0] + [99999] * 20)  # fence raised, wait started, then a long stall
+        with patch.object(worker.time, "monotonic", side_effect=lambda: next(clock)):
+            calls = self.deploy_with([dict(thinning=[], backing_up=[])], backup_wait_seconds=60)
+        self.assertNotIn(("deploy", "--skip-push"), calls)
+        self.assertEqual("deferred", self.w.data["backup_wait"])
+        self.assertIn("too little backup fence left", self.w.data["step"])
+        self.assertEqual("lowered", self.w.data["backup_fence"])
+
+    def test_a_switch_whose_tools_container_could_not_be_removed_keeps_the_fence_up(self):
+        def switch(*args):
+            if args[0] == "deploy":
+                self.w.kamal_uncertain = True
+                raise RuntimeError("kamal deploy failed; tools container still there")
+
+        calls = self.deploy_with([dict(thinning=[], backing_up=[])], kamal=switch)
+        self.assertEqual([("build", "push"), "fence up", "ask", ("deploy", "--skip-push")], calls)
+        self.assertEqual("held", self.w.data["backup_fence"])
+
+    def test_kamal_marks_the_switch_uncertain_when_its_container_survives(self):
+        self.w.kamal_uncertain = False
+        self.w.settings["tools_image"] = "tools"
+        with patch.object(self.w, "run", side_effect=[RuntimeError("timeout"), RuntimeError("rm failed")]):
+            with self.assertRaises(RuntimeError):
+                self.w.kamal("deploy")
+        self.assertTrue(self.w.kamal_uncertain)
+
+    def test_the_web_lookup_inside_a_probe_is_bounded(self):
+        with patch.object(self.w, "run", return_value="souls-house-web-x") as run:
+            self.w.web()
+        self.assertEqual(worker.LOOKUP_TIMEOUT, run.call_args.kwargs["timeout"])
 
     def test_backup_wait_fields_reach_the_status_and_the_script_is_installed(self):
-        for field in ("waiting_for_backups", "backups_cut_off", "backup_wait"):
+        for field in ("waiting_for_backups", "backups_cut_off", "backup_wait", "backup_fence", "stale_pause_claims"):
             self.assertIn(field, gate.FIELDS)
         self.assertIn("backup-in-flight.rb", (OPS / "install").read_text())
 

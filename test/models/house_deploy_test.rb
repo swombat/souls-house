@@ -148,13 +148,17 @@ class HouseDeployTest < ActiveSupport::TestCase
               { "name" => "Master moved on, nothing deployed", "conclusion" => "success" } ],
       15 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "failure" },
               { "name" => "Deployment verified", "conclusion" => "skipped" },
-              { "name" => "Master moved on, nothing deployed", "conclusion" => "skipped" } ]
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "skipped" } ],
+      16 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "failure" },
+              { "name" => "Deployment verified", "conclusion" => "skipped" },
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "skipped" },
+              { "name" => "A backup held the switch, nothing deployed", "conclusion" => "success" } ]
     }
     HouseDeploy.transport = ->(_method, path, _body) {
       if (id = path[%r{/runs/(\d+)/attempts/1/jobs}, 1])
         [ 200, {}, { "jobs" => [ { "name" => "deploy / deploy", "steps" => steps.fetch(id.to_i) } ] } ]
       elsif path.include?("deploy-rails-on-green.yml/runs")
-        [ 200, {}, { "workflow_runs" => [ run.(14), run.(15) ] } ]
+        [ 200, {}, { "workflow_runs" => [ run.(14), run.(15), run.(16) ] } ]
       else
         [ 200, {}, { "workflow_runs" => [] } ]
       end
@@ -162,8 +166,9 @@ class HouseDeployTest < ActiveSupport::TestCase
 
     outcomes = HouseDeploy.status[:runs].to_h { |r| [ r[:id], r[:outcome] ] }
 
-    # 15 is a real failure: no outcome, its conclusion speaks.
-    assert_equal({ 14 => "superseded", 15 => nil }, outcomes)
+    # 15 is a real failure: no outcome, its conclusion speaks. 16 was
+    # deferred by a backup holding a resident paused (#1096).
+    assert_equal({ 14 => "superseded", 15 => nil, 16 => "deferred" }, outcomes)
   end
 
   test "a rerun's outcome comes from its own attempt, not the cached first attempt" do
