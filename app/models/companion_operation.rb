@@ -39,6 +39,7 @@ class CompanionOperation < ApplicationRecord
   has_one :input, class_name: "CompanionOperationInput", dependent: :destroy
 
   def self.start!(device:, agent:, kind:, arguments:)
+    raise Refused, "That device runs no operations" unless device.computer?
     raise Refused, "Unsupported operation" unless READ_KINDS.include?(kind) || ARGUMENT_KEYS.key?(kind) || kind == "desktop"
     limit = kind == "desktop" ? DESKTOP_MAX_ARGUMENTS : 8.kilobytes
     raise Refused, "Invalid arguments" unless arguments.is_a?(Hash) && arguments.to_json.bytesize <= limit

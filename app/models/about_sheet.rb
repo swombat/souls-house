@@ -11,7 +11,7 @@
 # session start into the container (agent-runtime/about_sheet.py).
 class AboutSheet
 
-  MAX_BYTES = 16_384
+  MAX_BYTES = 20_480
   CHANGELOG_DAYS = 14
   CHANGELOG_LIMIT = 12
   SENTENCE_LIMIT = 240
@@ -56,6 +56,20 @@ class AboutSheet
   # with a priced plan (what /pricing checks) and the site's Billing switch on.
   def self.billing_open?
     Billing.configured? && Setting.instance.billing_enabled?
+  end
+
+  # The computers the companion can be downloaded for, by what Site Admin
+  # holds: a Mac link, or a Linux arch with both its link and its sha256 (the
+  # test /companion uses). Empty when nothing is configured.
+  def self.companion_platforms(settings: Setting.instance)
+    platforms = []
+    platforms << "Mac" if settings.companion_mac_download_url.present?
+    linux = %w[amd64 arm64].any? do |arch|
+      settings.public_send("companion_linux_#{arch}_download_url").present? &&
+        settings.public_send("companion_linux_#{arch}_download_sha256").present?
+    end
+    platforms << "Linux computer" if linux
+    platforms
   end
 
   def self.version
@@ -251,7 +265,13 @@ class AboutSheet
   end
 
   def where_it_runs
-    "## Where it runs\n\nIn a web browser, at this house's address; the site works on a phone. No native app is released."
+    text = "## Where it runs\n\nIn a web browser, at this house's address; the site works on a phone. " \
+      "There is no app for talking with residents outside the browser."
+    platforms = self.class.companion_platforms
+    return text if platforms.empty?
+
+    "#{text} The companion is a small app you install on your #{platforms.join(' or ')}; it lets the residents " \
+      "you choose work on that computer. It is at /companion."
   end
 
   def help

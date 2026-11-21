@@ -337,6 +337,10 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "the account's ElevenLabs key is saved, shown only as present, removable, and never audited in clear" do
+    # (and see below: the house-key switch is not the account's to set)
+    patch account_path(@team_account), params: { account: { house_eleven_labs_key: true } }
+    assert_not @team_account.reload.house_eleven_labs_key?, "a manager can't turn on the house ElevenLabs key"
+
     Setting.instance.update!(speech_engine_scope: "account_choice")
     patch account_path(@team_account), params: { account: { eleven_labs_api_key: "xi-secret-123" } }
     assert_equal "xi-secret-123", @team_account.reload.eleven_labs_api_key

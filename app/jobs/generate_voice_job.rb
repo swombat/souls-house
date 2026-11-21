@@ -1,6 +1,9 @@
-# Listen's stored audio, made by ElevenLabs with the account's own key, only
+# Listen's stored audio, made by ElevenLabs on the key SpeechEngine resolves
+# now (the account's own, or the house's where a site admin allows it), only
 # while SpeechEngine still says this resident speaks through ElevenLabs (the
-# account may have switched to Phonon since the request).
+# account may have switched to Phonon, or lost the house key, since the
+# request). A pocket device waiting on this reply hears that it is ready
+# (CompanionDevice::Pocket#announce_pocket_audio).
 class GenerateVoiceJob < ApplicationJob
 
   queue_as :default
@@ -14,23 +17,30 @@ class GenerateVoiceJob < ApplicationJob
   # The voice and delivery are read once, here, and the audio is marked with
   # that snapshot's digest, so a change made while ElevenLabs works never
   # labels the older sound as current.
-  def perform(message)
+  # surface "pocket": the automatic render for a stone's reply, under
+  # SpeechEngine.for_pocket rather than the account's browser engine.
+  def perform(message, surface: "listen")
     return unless message.voice_available
 
     agent = message.agent
     voice_id = agent.voice_id
     delivery = agent.speech_delivery
     digest = delivery.digest(voice_id)
-    return if message.voice_audio_made_with?(digest)
+    return CompanionDevice.announce_pocket_audio(message) if message.voice_audio_made_with?(digest)
 
     account = message.chat.account
-    engine = SpeechEngine.for(account, message.agent)
+    engine = surface == "pocket" ? SpeechEngine.for_pocket(account, agent) : SpeechEngine.for(account, agent)
     return unless engine.elevenlabs? && engine.available
+
+    key = SpeechEngine.eleven_labs_key(account) or return
 
     text = message.content_for_speech
     return if text.blank?
 
-    audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: account.eleven_labs_api_key, delivery:)
+    audio_data = ElevenLabsTts.synthesize(text, voice_id:, api_key: key.value, delivery:)
+    # Counted once the provider has made the audio, before anything local
+    # that could still fail after it has billed (Carl, #1076).
+    SpeechCharge.record!(key:, account:, agent:, message:, surface:, text:)
     audio_data = AudioGain.apply(audio_data, delivery.gain_db, tempo: delivery.tempo)
 
     message.voice_audio.attach(
@@ -39,6 +49,7 @@ class GenerateVoiceJob < ApplicationJob
       content_type: "audio/mpeg",
       metadata: { "voice_digest" => digest }
     )
+    CompanionDevice.announce_pocket_audio(message)
   end
 
 end

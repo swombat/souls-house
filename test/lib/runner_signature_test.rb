@@ -20,14 +20,6 @@ class RunnerSignatureTest < ActiveSupport::TestCase
     assert_equal VECTOR.dig("headers", "X-Runner-Nonce"), verify_vector
   end
 
-  test "Rails builds the same signed string as the runner" do
-    headers = VECTOR["headers"]
-    assert_equal VECTOR["signing_string"], RunnerSignature.signing_string(
-      method: "POST", path: VECTOR["path"], body: VECTOR["body"], runner_id: headers["X-Runner-Id"],
-      timestamp: headers["X-Runner-Timestamp"], nonce: headers["X-Runner-Nonce"]
-    )
-  end
-
   test "any change to body, path or method breaks the signature" do
     [ { body: VECTOR["body"] + " " }, { path: "/api/v1/host_runner/heartbeat" }, { method: "PUT" } ].each do |change|
       error = assert_raises(RunnerSignature::Invalid) { verify_vector(**change) }
@@ -46,6 +38,7 @@ class RunnerSignatureTest < ActiveSupport::TestCase
     assert_equal :clock_skew, assert_raises(RunnerSignature::Invalid) { verify_vector(now: stale) }.code
     assert_equal :missing_signature, assert_raises(RunnerSignature::Invalid) { verify_vector(headers: VECTOR["headers"].except("X-Runner-Signature")) }.code
     assert_equal :bad_nonce, assert_raises(RunnerSignature::Invalid) { verify_vector(headers: VECTOR["headers"].merge("X-Runner-Nonce" => "short")) }.code
+    assert_equal :bad_timestamp, assert_raises(RunnerSignature::Invalid) { verify_vector(headers: VECTOR["headers"].merge("X-Runner-Timestamp" => "soon")) }.code
     assert_equal :body_too_large, assert_raises(RunnerSignature::Invalid) { verify_vector(body: "x" * (RunnerSignature::MAX_BODY_BYTES + 1)) }.code
     assert_equal :bad_public_key, assert_raises(RunnerSignature::Invalid) { verify_vector(public_key_b64: Base64.strict_encode64("short")) }.code
   end

@@ -7,6 +7,11 @@ class ExternalAgentResponseRequest
   def self.speaker_for(message, labels: nil)
     if message.agent
       message.agent.name
+    elsif message.companion_device
+      # A pocket device speaks as itself, not as the person who owns it
+      # (Mira, JpznZZ): what it sends was heard or seen by the device.
+      owner = message.user && (labels&.dig(message.user_id) || ResidentFacingName.for(message.user))
+      owner ? "#{message.companion_device.name} (#{owner}'s device)" : message.companion_device.name
     elsif message.user
       labels&.dig(message.user_id) || ResidentFacingName.for(message.user)
     elsif message.role == "system"

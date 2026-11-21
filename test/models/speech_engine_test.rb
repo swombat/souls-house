@@ -49,12 +49,51 @@ class SpeechEngineTest < ActiveSupport::TestCase
     scope("account_choice")
     @account.update!(speech_engine: "elevenlabs")
 
-    ElevenLabsTts.stub(:api_key, "house-key") do
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
       status = engine
       assert_predicate status, :elevenlabs?
       assert_not status.available
       assert_equal "no_eleven_labs_key", status.reason
       assert_match(/no ElevenLabs key of its own/, status.message)
+      assert_nil SpeechEngine.eleven_labs_key(@account)
+    end
+  end
+
+  test "with the site admin's house-key switch on and no key of its own, the account speaks on the house key" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      status = engine
+      assert status.available
+      assert_equal "house", status.key_source
+      key = SpeechEngine.eleven_labs_key(@account)
+      assert_equal [ "house-key", "house" ], [ key.value, key.source ]
+      assert_not_includes key.inspect, "house-key", "the key never shows in logs"
+    end
+  end
+
+  test "the account's own key comes before the house key" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true, eleven_labs_api_key: "acct-key")
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      key = SpeechEngine.eleven_labs_key(@account)
+      assert_equal [ "acct-key", "account" ], [ key.value, key.source ]
+      assert_equal "account", engine.key_source
+    end
+  end
+
+  test "the house-key switch changes neither the plan rule nor a missing house credential" do
+    scope("account_choice")
+    @account.update!(speech_engine: "elevenlabs", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, nil) do
+      assert_equal "no_eleven_labs_key", engine.reason, "no house credential: the same refusal"
+    end
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      @account.update!(granted_plan: "companions")
+      assert_predicate engine, :phonon?, "Companions still speaks with Phonon"
     end
   end
 
@@ -179,6 +218,28 @@ class SpeechEngineTest < ActiveSupport::TestCase
     PhononVoices.catalogue.each { |voice| assert_includes served, "voices/#{voice.id}.safetensors", voice.name }
     assert manifest.all? { |file| file["sha256"].match?(/\A\h{64}\z/) && file["revision"].match?(/\A\h{40}\z/) }
     assert manifest.none? { |file| file["repo"].include?("40m") }, "the 40M models are CC BY-NC: never served"
+  end
+
+
+  test "the stone speaks on ElevenLabs while the account's browsers stay on Phonon, unless the site has ElevenLabs off" do
+    scope("account_choice")
+    @account.update!(speech_engine: "phonon", house_eleven_labs_key: true)
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      assert_predicate engine, :phonon?, "the browsers are unchanged"
+      pocket = SpeechEngine.for_pocket(@account.reload, @agent.reload)
+      assert [ pocket.available, pocket.key_source ] == [ true, "house" ]
+
+      @account.update!(house_eleven_labs_key: false, eleven_labs_api_key: "acct-key")
+      assert_equal "not_opted_in", SpeechEngine.for_pocket(@account.reload, @agent).reason,
+        "a stored key alone is not consent to automatic renders"
+      @account.update!(speech_engine: "elevenlabs")
+      assert SpeechEngine.for_pocket(@account.reload, @agent).available, "an account already on ElevenLabs has opted in"
+      @account.update!(speech_engine: "phonon", eleven_labs_api_key: nil)
+      @account.update!(house_eleven_labs_key: true)
+      scope("disabled")
+      assert_not SpeechEngine.for_pocket(@account.reload, @agent).available
+    end
   end
 
 end

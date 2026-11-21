@@ -43,6 +43,30 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
     assert_equal "ID3raw", @reply.reload.voice_audio.download
     assert_equal "voice-123:default", @reply.voice_audio.blob.metadata["voice_digest"]
     assert @reply.voice_audio_current?
+    charge = SpeechCharge.sole
+    assert_equal [ @account.id, "account", "listen", "Hello there.".length ], [ charge.account_id, charge.key_source, charge.surface, charge.characters ]
+  end
+
+  test "an account switched onto the house key renders with it, and the use is charged to the account as house" do
+    @account.update!(eleven_labs_api_key: nil, house_eleven_labs_key: true)
+    stub_request(:post, URL).with(headers: { "xi-api-key" => "house-eleven-key" }).to_return(status: 200, body: "ID3house")
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-eleven-key") do
+      AudioGain.stub(:apply, ->(audio, *, **) { audio }) { GenerateVoiceJob.perform_now(@reply.reload) }
+    end
+
+    assert_equal "ID3house", @reply.reload.voice_audio.download
+    assert_equal [ "house" ], SpeechCharge.where(account: @account).pluck(:key_source)
+  end
+
+  test "the key is resolved when the job runs: switched off before it starts, nothing is sent" do
+    @account.update!(eleven_labs_api_key: nil, house_eleven_labs_key: false)
+
+    SpeechEngine.stub(:house_eleven_labs_key, "house-eleven-key") { GenerateVoiceJob.perform_now(@reply.reload) }
+
+    assert_not_requested :post, URL
+    assert_not @reply.reload.voice_audio.attached?
+    assert_equal 0, SpeechCharge.count
   end
 
   test "with take 03, Listen sends multilingual_v2 at 0.75 and stores the gained audio" do
@@ -123,6 +147,13 @@ class GenerateVoiceJobTest < ActiveJob::TestCase
     tempos = []
     render_with([], tempos)
     assert_equal [ nil ], tempos
+  end
+
+
+  test "a render the provider refuses is not counted as usage" do
+    stub_request(:post, URL).to_return(status: 401, body: "{}")
+    GenerateVoiceJob.perform_now(@reply.reload)
+    assert_equal 0, SpeechCharge.count
   end
 
 end

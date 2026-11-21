@@ -35,7 +35,7 @@ class Messages::PostFromHuman
   # reply will be read aloud. Refused before anything is written when the mode
   # is not available to the account (VoiceMode), so the switch is enforced here
   # and not only by the composer hiding its button.
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [], voice_mode: false)
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [], voice_mode: false, companion_device: nil)
     @chat = chat
     @draft = draft
     @draft_revision = draft_revision
@@ -46,6 +46,7 @@ class Messages::PostFromHuman
     @client_message_id = client_message_id
     @stone_revisions = stone_revisions
     @voice_mode = voice_mode
+    @companion_device = companion_device
   end
 
   # Acceptance is one primary transaction: the message, the caller's audit
@@ -65,6 +66,7 @@ class Messages::PostFromHuman
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     message.stone_revisions = @stone_revisions
+    message.companion_device = @companion_device if @companion_device
     if @voice_mode
       unless VoiceMode.available_for?(@chat.account)
         return Result.new(status: :voice_mode_unavailable, message: message, sole_resident: @chat.sole_resident.present?)

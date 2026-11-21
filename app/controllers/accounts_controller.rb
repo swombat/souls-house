@@ -65,7 +65,8 @@ class AccountsController < ApplicationController
       voice_mode_transcription_key: VoiceMode.transcription_key?(@account),
       speech_engine: @account.speech_engine,
       speech_engine_site_scope: Setting.instance.speech_engine_scope,
-      eleven_labs_key_present: @account.eleven_labs_api_key.present?
+      eleven_labs_key_present: @account.eleven_labs_api_key.present?,
+      eleven_labs_house_key: @account.house_eleven_labs_key?
     }
   end
 

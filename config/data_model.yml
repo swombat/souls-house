@@ -226,7 +226,9 @@ areas:
       Resident fallback policies are an owner's opt-in to answer on a paid
       fallback model when a subscription allowance runs out, with a spending
       cap; fallback turns and calls are the ledger of what that fallback was
-      admitted to spend, call by call, against the cap.
+      admitted to spend, call by call, against the cap. Speech charges are
+      the ElevenLabs renders a resident's voice was made with, per account
+      and per key (its own or the house's).
     tables:
       - billing_customers
       - billing_codes
@@ -244,6 +246,7 @@ areas:
       - resident_fallback_turns
       - resident_fallback_calls
       - metered_action_events
+      - speech_charges
       - stripe_events
 
   - id: hosting

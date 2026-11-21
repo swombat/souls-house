@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -111,6 +111,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
     t.boolean "field_tweets_house_key", default: false, null: false
+    t.boolean "house_eleven_labs_key", default: false, null: false
     t.boolean "stalled_sweep_enabled", default: false, null: false
     t.bigint "field_probe_generation", default: 0, null: false
     t.string "field_matched_cohort"
@@ -1156,10 +1157,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.datetime "ceiling_reported_at"
     t.string "ceiling_epoch"
     t.boolean "execute_lifecycle_accepted"
+    t.string "kind", limit: 16, default: "computer", null: false
+    t.bigint "chat_id"
+    t.jsonb "offered_capabilities", default: [], null: false
+    t.boolean "mic_enabled", default: false, null: false
+    t.boolean "camera_enabled", default: false, null: false
+    t.integer "consent_revision", default: 0, null: false
+    t.bigint "pocket_open_message_id"
+    t.datetime "pocket_opened_at"
+    t.bigint "pocket_reply_message_id"
+    t.bigint "pocket_reply_submission_id"
+    t.datetime "pocket_replied_at"
     t.index ["account_id"], name: "index_companion_devices_on_account_id"
     t.index ["companion_enrollment_grant_id"], name: "index_companion_devices_on_companion_enrollment_grant_id", unique: true
     t.index ["credential_digest"], name: "index_companion_devices_on_credential_digest", unique: true
     t.index ["previous_credential_digest"], name: "index_companion_devices_on_previous_credential_digest", unique: true
+    t.index ["chat_id"], name: "index_companion_devices_on_chat_id"
     t.check_constraint "grant_revision > 0", name: "companion_device_positive_revision"
   end
 
@@ -1177,10 +1190,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.text "enrollment_response"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "kind", limit: 16, default: "computer", null: false
+    t.bigint "chat_id"
+    t.jsonb "offered_capabilities"
     t.index ["account_id"], name: "index_companion_enrollment_grants_on_account_id"
     t.index ["created_by_user_id"], name: "index_companion_enrollment_grants_on_created_by_user_id"
     t.index ["minting_agent_id"], name: "index_companion_enrollment_grants_on_minting_agent_id"
     t.index ["token_digest"], name: "index_companion_enrollment_grants_on_token_digest", unique: true
+    t.index ["chat_id"], name: "index_companion_enrollment_grants_on_chat_id"
   end
 
   create_table "companion_pairings", force: :cascade do |t|
@@ -1194,9 +1211,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.text "enrollment_token"
     t.datetime "expires_at", null: false
     t.string "name", limit: 100, null: false
-    t.jsonb "offered_volumes", null: false
+    t.jsonb "offered_volumes"
     t.string "poll_secret_digest", limit: 64, null: false
     t.datetime "updated_at", null: false
+    t.string "kind", limit: 16, default: "computer", null: false
+    t.jsonb "offered_capabilities"
     t.index ["account_id"], name: "index_companion_pairings_on_account_id"
     t.index ["approved_by_user_id"], name: "index_companion_pairings_on_approved_by_user_id"
     t.index ["code_digest"], name: "index_companion_pairings_on_code_digest", unique: true
@@ -2203,6 +2222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.boolean "voice_mode", default: false, null: false
     t.jsonb "rich_ui"
     t.bigint "paid_fallback_interaction_id"
+    t.bigint "companion_device_id"
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
@@ -2218,6 +2238,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.index ["tool_call_id"], name: "index_messages_on_tool_call_id"
     t.index ["tools_used"], name: "index_messages_on_tools_used", using: :gin
     t.index ["user_id"], name: "index_messages_on_user_id"
+    t.index ["companion_device_id"], name: "index_messages_on_companion_device_id"
   end
 
   create_table "metered_action_events", force: :cascade do |t|
@@ -3113,6 +3134,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.integer "spare_cx43_target", default: 0, null: false
   end
 
+  create_table "speech_charges", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id"
+    t.bigint "message_id"
+    t.string "surface", limit: 16, null: false
+    t.string "key_source", limit: 16, null: false
+    t.integer "characters", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "key_source", "created_at"], name: "index_speech_charges_on_account_key_source_created"
+    t.index ["account_id"], name: "index_speech_charges_on_account_id"
+    t.index ["agent_id"], name: "index_speech_charges_on_agent_id"
+    t.index ["message_id"], name: "index_speech_charges_on_message_id"
+  end
+
   create_table "stalled_thread_sweeps", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "chat_id", null: false
@@ -3554,6 +3590,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 
+  add_foreign_key "companion_devices", "chats"
+  add_foreign_key "companion_enrollment_grants", "chats"
+  add_foreign_key "messages", "companion_devices"
   add_foreign_key "account_exports", "accounts"
   add_foreign_key "account_exports", "users"
   add_foreign_key "account_imports", "accounts"
@@ -3858,6 +3897,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_20_110000) do
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
   add_foreign_key "service_connections", "users", column: "connected_by_user_id"
   add_foreign_key "sessions", "users"
+  add_foreign_key "speech_charges", "accounts", on_delete: :cascade
+  add_foreign_key "speech_charges", "agents", on_delete: :nullify
+  add_foreign_key "speech_charges", "messages", on_delete: :nullify
   add_foreign_key "stalled_thread_sweeps", "accounts", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "chats", on_delete: :cascade
   add_foreign_key "stalled_thread_sweeps", "messages", on_delete: :cascade

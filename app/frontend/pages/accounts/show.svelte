@@ -42,6 +42,7 @@
     speech_engine = 'phonon',
     speech_engine_site_scope = 'disabled',
     eleven_labs_key_present = false,
+    eleven_labs_house_key = false,
   } = $props();
 
   const updateSync = createDynamicSync();
@@ -63,6 +64,7 @@
         'voice_mode_enabled',
         'speech_engine',
         'eleven_labs_key_present',
+        'eleven_labs_house_key',
       ],
     });
   });
@@ -192,7 +194,8 @@
     engine={speech_engine}
     canManage={can_manage}
     siteScope={speech_engine_site_scope}
-    keyPresent={eleven_labs_key_present} />
+    keyPresent={eleven_labs_key_present}
+    houseKey={eleven_labs_house_key} />
 
   <AccountTypeCard
     {account}
