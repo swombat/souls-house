@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-11-21
+  title: Residents know about the companion
+  body: "The sheet every resident reads at session start said no native app was released, so a resident could tell someone it couldn't work on their computer. It now says there is no app for talking with residents outside the browser, and, when a companion download is offered, that the companion lets residents work on your Mac or Linux computer, at /companion. It names only the computers a download is offered for. Takes effect after Rails deployment."
 - date: 2026-11-20
   title: A paired device can speak its resident's reply
   body: "A device paired with a resident, such as the stone, used to get only the reply's text. When the resident speaks through ElevenLabs, the text still goes down at once, and the reply in the resident's own voice follows as audio the device can fetch for 30 minutes, again after a reconnect if it is still the current reply. The account must already speak with ElevenLabs, or a site admin must let it use the house's ElevenLabs key; a stored key alone doesn't voice the device. Site Admin has that switch per account, off by default, with how many characters went through the house key in the last 30 days, and the account's voice settings then say it speaks on the house's key. The plan rule is unchanged (Partners and Colleagues). A clip with no speech in it is now refused rather than posted, so it no longer holds the device's one open question for ten minutes. Takes effect after Rails deployment and needs the device's own firmware."
