@@ -49,11 +49,13 @@ module Api
         assert_equal [second.to_param, third.to_param], transcript.map { |message| message["id"] }
       end
 
-      test "an unreadable cursor is refused rather than read as the whole thread" do
-        get api_v1_telegram_conversation_url(@subscription, after: "!!"),
-          headers: { "Authorization" => "Bearer #{@api_key.raw_token}" }
+      test "an unreadable or blank cursor is refused rather than read as the whole thread" do
+        [{ after: "!!" }, { after: "" }, { through: "" }].each do |bounds|
+          get api_v1_telegram_conversation_url(@subscription, **bounds),
+            headers: { "Authorization" => "Bearer #{@api_key.raw_token}" }
 
-        assert_response :unprocessable_entity
+          assert_response :unprocessable_entity, bounds.inspect
+        end
       end
 
       test "agent cannot read another agent's Telegram thread" do

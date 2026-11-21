@@ -63,7 +63,12 @@ def main() -> int:
         print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 2
 
-    query = {key: value for key, value in (("after", args.after), ("through", args.through)) if value}
+    for name in ("after", "through"):
+        value = getattr(args, name)
+        if value is not None and not value.strip():
+            print(f"--{name} was given but empty; refusing rather than saving the whole thread", file=sys.stderr)
+            return 2
+    query = {key: value for key, value in (("after", args.after), ("through", args.through)) if value is not None}
     url = f"{app_url.rstrip('/')}/api/v1/telegram_conversations/{urllib.parse.quote(args.thread_id, safe='')}"
     if query:
         url += "?" + urllib.parse.urlencode(query)

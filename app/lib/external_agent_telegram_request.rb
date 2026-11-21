@@ -281,14 +281,33 @@ class ExternalAgentTelegramRequest
   def backlog_note
     return "" unless omitted_count.positive?
 
-    after = message_cursor.positive? ? " --after #{TelegramMessage.encode_id(message_cursor)}" : ""
+    omitted_addressed = (telegram_messages - prompt_messages).count(&:addressed?)
+    shown_earlier = prompt_messages.size - [GROUP_CONTEXT_LIMIT, telegram_messages.size].min
+    shown = "Shown above are the latest #{[GROUP_CONTEXT_LIMIT, telegram_messages.size].min}"
+    shown += case shown_earlier
+    when 0 then "."
+    when 1 then " and the 1 earlier one addressed to you."
+    else " and the latest #{shown_earlier} earlier ones addressed to you."
+    end
+    addressed = if omitted_addressed.positive?
+      " #{omitted_addressed} of the ones left out were addressed to you too; this wake is the only time they are called out, because the cursor moves past them when this turn succeeds."
+    else
+      " None of the ones left out were addressed to you."
+    end
+    query = { after: (TelegramMessage.encode_id(message_cursor) if message_cursor.positive?), through: last_message.to_param }.compact
+    after = query[:after] ? " --after #{query[:after]}" : ""
+    path = "/tmp/telegram-#{subscription.to_param}"
     <<~TEXT
 
-      #{omitted_count} earlier messages since your last turn here are not in this wake. Shown above are the latest #{[GROUP_CONTEXT_LIMIT, telegram_messages.size].min} and any earlier ones addressed to you. If you need the rest, save the whole stretch to a file, one JSON object per line (id, sender, text, timestamp, addressed_to_you when false), and decide how much of it to read:
+      #{omitted_count} earlier messages since your last turn here are not in this wake. #{shown}#{addressed} If you need them, save the whole stretch to a file and decide how much of it to read:
 
-          soulshouse-telegram-history #{subscription.to_param}#{after} --through #{last_message.to_param} --out /tmp/telegram-#{subscription.to_param}.jsonl
+          soulshouse-telegram-history #{subscription.to_param}#{after} --through #{last_message.to_param} --out #{path}.jsonl
 
-      It prints the message count and size, not the messages. You can grep the file, read slices of it, or give it to a sub-agent to scan for what concerns you.
+      That writes one JSON object per line (id, sender, text, timestamp, and addressed_to_you: false on chatter nobody addressed to you) and prints only the count, size and path. If the command isn't installed in your image yet, this saves the same stretch as one JSON document:
+
+          curl -sf -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" "$SOULSHOUSE_APP_URL/api/v1/telegram_conversations/#{subscription.to_param}?#{query.to_query}" -o #{path}.json
+
+      You can grep the file, read slices of it, or give it to a sub-agent to scan for what concerns you.
 
     TEXT
   end

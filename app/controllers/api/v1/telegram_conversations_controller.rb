@@ -11,13 +11,13 @@ module Api
         messages = subscription.telegram_messages.chronological
         # A wake that leaves a long group backlog out names the cursor it
         # starts after, so a resident can fetch just that stretch.
-        if params[:after].present?
+        if params.key?(:after)
           after_id = decode_cursor(params[:after])
           return render json: { error: "Unknown cursor for after" }, status: :unprocessable_entity unless after_id.is_a?(Integer)
 
           messages = messages.where("telegram_messages.id > ?", after_id)
         end
-        if params[:through].present?
+        if params.key?(:through)
           through_id = decode_cursor(params[:through])
           return render json: { error: "Unknown cursor for through" }, status: :unprocessable_entity unless through_id.is_a?(Integer)
 
@@ -39,7 +39,11 @@ module Api
 
       private
 
+      # A supplied but blank or unreadable bound is refused, never widened to
+      # the whole thread.
       def decode_cursor(value)
+        return nil if value.blank?
+
         TelegramMessage.decode_id(value.to_s)
       rescue Hashids::InputError
         nil
