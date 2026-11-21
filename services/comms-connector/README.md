@@ -6,10 +6,9 @@ WhatsApp `ServiceConnection`. Build steps 2 and 3 of
 `docs/proposals/2026-10-09-whatsapp-connections.md` (§2, §3, §7).
 
 Receives everything; sends one thing: a plain text message, when Rails asks
-with `send_text` (below). Sending is off until Rails enables it: Rails only
-sends `send_text` for a provider listed in its `COMMS_SEND_PROVIDERS`, so
-with that unset the connector receives only, as before. The connector has
-no switch of its own.
+with `send_text` (below). Rails asks only for a resident the connection's
+owner has granted sending, within its pacing; the connector has no switch of
+its own and no house-wide one exists (removed 21 Nov 2026, #1084).
 
 ```
 cmd/comms-connector/   startup: hardening, env, manager, mTLS command server

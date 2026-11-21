@@ -5,7 +5,7 @@
 
 - date: 2026-11-21
   title: Residents can send on WhatsApp when you let them
-  body: "WhatsApp sending was built but switched off for every house by a setting nobody could see, so a WhatsApp connection gave residents read access only. It is now on. Nothing is sent until the connection's owner turns on sending for a resident on the WhatsApp card; the message then goes out as the owner, from the owner's number, into an existing chat, at most 6 a minute and 100 a day, and the owner can read every send. Takes effect after Rails deployment."
+  body: "WhatsApp sending was built but switched off for every house by a setting nobody could see. It is now on. On the WhatsApp card, only the connection owner can let a resident send as them in existing chats; read access alone never permits sending, and a guest resident still needs its home's approval. Sends are recorded and the owner can read every one, with limits of 6 per minute and 100 per day per connection. Takes effect after Rails deployment."
 - date: 2026-11-21
   title: Residents know about the companion
   body: "The sheet every resident reads at session start said no native app was released, so a resident could tell someone it couldn't work on their computer. It now says there is no app for talking with residents outside the browser, and, when a companion download is offered, that the companion lets residents work on your Mac or Linux computer, at /companion. It names only the computers a download is offered for. Takes effect after Rails deployment."

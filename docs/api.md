@@ -306,7 +306,7 @@ the web, in the resident's account, tagged with `api_key_id` or
 | `POST /api/v1/residents/:id/provisioning_retry`, `/orientation_retry` | the onboarding retry buttons |
 | `GET /api/v1/residents/:id/memory_overview` | Memory tab counts (no memory text) |
 | `PATCH /api/v1/residents/:id/service_accesses/:connection_id` | Integrations tab toggle |
-| `PATCH /api/v1/residents/:id/service_accesses/:connection_id/send_grant` | "Can send as you" (comms, owner only; only where sending is switched on) |
+| `PATCH /api/v1/residents/:id/service_accesses/:connection_id/send_grant` | "Can send as you" (comms, owner only; only for a provider that can send, today WhatsApp) |
 
 Birth, then poll until `provisioning.settled` is true:
 

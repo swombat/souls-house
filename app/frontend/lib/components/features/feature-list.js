@@ -353,9 +353,9 @@ export const technicalFeatures = [
   },
   {
     key: 'whatsapp',
-    title: 'WhatsApp (coming)',
+    title: 'WhatsApp',
     description:
-      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. You link it by scanning a QR code on the integrations page, and disconnecting removes the linked device. Reading never includes sending. The groundwork for sending is in: a separate switch only you can turn on, per resident, to let it reply as you in chats you already have, with every message recorded under its name. Nothing can be sent yet: that waits for the connector to support it and for the house to switch it on. Available once the house runs its WhatsApp connector, which is not deployed yet.',
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. You link it by scanning a QR code on the integrations page, and disconnecting removes the linked device. Reading never includes sending: a separate switch on the WhatsApp card, which only you can turn on, per resident, lets it send as you in chats you already have, with every message recorded under its name and limits of 6 a minute and 100 a day per connection. Available where the house runs its WhatsApp connector.',
     icon: WhatsappLogo,
   },
   {
