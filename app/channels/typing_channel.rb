@@ -54,7 +54,12 @@ class TypingChannel < ApplicationCable::Channel
 
   private
 
+  # Sending is checked against current access too (Mira, #1092): a connection
+  # that lost the conversation, by its being made private or otherwise, can't
+  # put a name or state into it, idle on disconnect included.
   def announce(state)
+    return unless Chat.find_by(id: @chat.id)&.accessible_by?(current_user)
+
     ActionCable.server.broadcast(self.class.stream_for_chat(@chat), {
       user_id: current_user.obfuscated_id,
       name: current_user.first_name.presence || current_user.display_name,

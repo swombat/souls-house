@@ -4,6 +4,16 @@ require "test_helper"
 # Mira #1089), not only at subscribe.
 class SyncChannelPrivateTest < ActionCable::Channel::TestCase
 
+  # The test stub records stream names and drops their callbacks; keep the
+  # callback the channel itself installs, so the test calls that one.
+  module KeepInstalledCallbacks
+    def stream_from(broadcasting, callback = nil, **options, &block)
+      (@installed_callbacks ||= {})[broadcasting] = callback || block
+      super
+    end
+  end
+  ActionCable::Channel::ChannelStub.prepend(KeepInstalledCallbacks)
+
   tests SyncChannel
 
   setup do
@@ -43,28 +53,39 @@ class SyncChannelPrivateTest < ActionCable::Channel::TestCase
   end
 
   # Made private while a member who only read it had it open (#1092, Mira):
-  # the conversation and message streams they already hold stop at once.
+  # the callback the live subscription installed stops delivering to them at
+  # once, and the same path still delivers to a participant who stays in.
   test "an open subscription stops delivering the moment the conversation is made private" do
     open = @account.chats.create_with_message!({ title: "Open", manual_responses: true },
       user: @creator, message_content: "hello", agent_ids: [ @agent.id ], automatic_response: false)
     message = open.messages.first
+
     stub_connection current_user: @admin, current_app_session: nil
     subscribe model: "Chat", id: open.obfuscated_id
-    assert subscription.confirmed?
-    chat_stream = subscription.send(:chat_delivery, open.id)
-    # A message's stream delivers through the same check, keyed by its chat.
-    subscription.send(:stream_guarded, "Message:#{message.obfuscated_id}", message)
-    assert_has_stream "Message:#{message.obfuscated_id}"
-    message_stream = subscription.send(:chat_delivery, message.chat_id)
+    reader_chat = installed_callback("Chat:#{open.obfuscated_id}")
+    subscribe model: "Chat", id: "#{open.obfuscated_id}:messages"
+    reader_message = installed_callback("Message:#{message.obfuscated_id}")
 
-    chat_stream.call({ "n" => 1 })
-    message_stream.call({ "n" => 2 })
-    assert_equal [ { "n" => 1 }, { "n" => 2 } ], transmissions
-
+    reader_chat.call({ "n" => 1 })
+    reader_message.call({ "n" => 2 })
     open.make_private!(by: @creator)
-    chat_stream.call({ "n" => 3 })
-    message_stream.call({ "n" => 4 })
-    assert_equal [ { "n" => 1 }, { "n" => 2 } ], transmissions
+    reader_chat.call({ "n" => 3 })
+    reader_message.call({ "n" => 4 })
+    assert_equal [ 1, 2 ], transmissions.map { |t| t["n"] }
+
+    stub_connection current_user: @creator, current_app_session: nil
+    subscribe model: "Chat", id: open.obfuscated_id
+    installed_callback("Chat:#{open.obfuscated_id}").call({ "n" => 5 })
+    assert_equal [ 5 ], transmissions.map { |t| t["n"] }
+  end
+
+  private
+
+  def installed_callback(stream)
+    assert subscription.confirmed?
+    callback = subscription.instance_variable_get(:@installed_callbacks)&.dig(stream)
+    assert callback, "no callback installed for #{stream}"
+    callback
   end
 
 end

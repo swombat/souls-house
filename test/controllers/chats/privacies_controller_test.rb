@@ -73,4 +73,17 @@ class Chats::PrivaciesControllerTest < ActionDispatch::IntegrationTest
     assert @chat.reload.private?
   end
 
+  # A publication carrying a stale, ordinary copy of the conversation across
+  # the conversion (#1092, Mira): it rechecks under the shared lock and fails.
+  test "a publication holding a stale ordinary copy can't land after the lock" do
+    stale = Chat.find(@chat.id)
+    @chat.make_private!(by: @member)
+    refute stale.private?
+
+    assert_raises(Stone::InvalidInput) do
+      Stone.publish!(chat: stale, title: "Leak", html: "<p>quince</p>", author: @member, public: true)
+    end
+    assert_equal 0, Stone.where(chat_id: @chat.id).count
+  end
+
 end

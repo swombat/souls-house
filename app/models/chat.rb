@@ -166,7 +166,9 @@ class Chat < ApplicationRecord
   # now: the residents seated, the person doing it, and every human who has
   # written in it. Everyone else loses it from list, search and link. One way.
   def make_private!(by:)
-    transaction do
+    # The account lock first, as Stone#revise! takes it, so a publication in
+    # flight and this conversion are serialized and each sees the other (#1092).
+    account.with_lock do
       lock!
       return false if private?
       # Every stone is a public page; a private conversation can't have one up.

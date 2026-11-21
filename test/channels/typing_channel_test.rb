@@ -82,4 +82,24 @@ class TypingChannelTest < ActionCable::Channel::TestCase
     end
   end
 
+  # Made private while open (#1092, Mira): someone left outside can't send a
+  # name or state into it, including the idle sent on disconnect.
+  test "a connection that lost the conversation can't announce, idle on disconnect included" do
+    account = accounts(:team_account)
+    owner = account.memberships.find_by!(role: "owner").user
+    member = account.memberships.find_by!(role: "member").user
+    agent = account.agents.create!(name: "Inside", runtime: "external", model_id: "openrouter/auto", system_prompt: "x")
+    chat = account.chats.create_with_message!({ title: "Open", manual_responses: true },
+      user: member, message_content: "hello", agent_ids: [ agent.id ], automatic_response: false)
+    stream = TypingChannel.stream_for_chat(chat)
+
+    stub_connection current_user: owner, current_app_session: nil, current_companion_device: nil
+    subscribe chat_id: chat.obfuscated_id
+    assert_broadcasts(stream, 1) { perform :typing, state: "typing" }
+
+    chat.make_private!(by: member)
+    assert_no_broadcasts(stream) { perform :typing, state: "dictating" }
+    assert_no_broadcasts(stream) { unsubscribe }
+  end
+
 end
