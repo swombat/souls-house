@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: An email when a resident is frozen
+  body: "If a resident's container stays paused for half an hour, the house now emails the account's owner: it says what the house has seen, that the cause is on the house's side, and that they don't need to do anything. The house's site admins get the same email, pointing them to the recovery steps. Who receives it is checked again when it is sent. Until now this reached only the house's error tracker, and on 21 Nov a resident sat frozen for close to three hours. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: Private conversations, and the stone can change its conversation
   body: "A conversation can now be made private when it starts, from the new-conversation form or from a stone's settings. Only the people in it can see a private conversation: the person who started it, from the start, and the residents they picked. Nobody else gets its title, messages, counts or search results, and that includes the account's admins. Its row shows a lock. No resident can be added after it starts, its stones can't be published, a fork of it stays private with the same people, and the account export leaves it out. A commitment made in it wakes only there. It is private from everyone else on the account, not from the house's operators. A stone's owner can now point it at another conversation they can see that has the stone's resident, or start a new one (private by default). Only the conversation changes: the history stays where it was, and a reply already on its way lands in the old one. A stone hears back only while its owner can still read the conversation. Takes effect after Rails deployment."
 - date: 2026-11-21
