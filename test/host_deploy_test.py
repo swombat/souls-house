@@ -17,6 +17,8 @@ sys.path.insert(0, str(OPS))
 import gate
 import worker
 
+REAL_MOUNTED_SOURCES = worker.mounted_sources
+
 
 class WorkflowAuthorityTest(unittest.TestCase):
     def test_owner_only_on_original_dispatch_and_rerun(self):
@@ -575,7 +577,11 @@ class WorkerTest(unittest.TestCase):
         initial = dict(id="a" * 32, operation="both", state="starting", step="accepted")
         gate.atomic(self.root / "current.json", initial)
         gate.atomic(self.root / "runs" / ("a" * 32) / "status.json", initial)
-        self.patches = [patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config)]
+        self.patches = [patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config),
+                        # No Docker or systemd here: no container mounts
+                        # anything, and every latched unit has exited.
+                        patch.object(worker, "mounted_sources", return_value=set()),
+                        patch.object(worker, "unit_exited", return_value=True)]
         for p in self.patches:
             p.start()
             self.addCleanup(p.stop)
@@ -598,6 +604,152 @@ class WorkerTest(unittest.TestCase):
                           side_effect=lambda: self.w.report("busy", state="partial", skipped=[7])):
             self.w.execute()
         self.assertEqual("partial", self.w.data["state"])
+
+    def make_run(self, run, state, repo=True):
+        directory = self.root / "runs" / run
+        directory.mkdir(exist_ok=True)
+        gate.atomic(directory / "status.json", dict(id=run, operation="rails", state=state, step="x"))
+        (directory / "private.log").write_text("log")
+        if repo:
+            (directory / "repo" / "app").mkdir(parents=True)
+            (directory / "repo" / "app" / "file.rb").write_text("source")
+        return directory
+
+    def clone(self):
+        (self.w.repo / ".git").mkdir(parents=True)
+
+    def test_a_finished_run_loses_its_checkout_and_keeps_its_receipt_and_log(self):
+        # Success and failure both: the cleanup is in the finally path (#1057).
+        for failure in (None, RuntimeError("SECRET")):
+            with self.subTest(failure=failure):
+                self.w.data.update(state="running")
+                with patch.object(self.w, "checkout", side_effect=self.clone), \
+                     patch.object(self.w, "deploy_rails", side_effect=failure), \
+                     patch.object(self.w, "update_chaos"):
+                    self.w.execute()
+                self.assertEqual("failed" if failure else "success", self.w.data["state"])
+                self.assertFalse(self.w.repo.exists())
+                self.assertTrue((self.w.directory / "status.json").exists())
+                self.assertTrue((self.w.directory / "private.log").exists())
+                self.w.log = (self.w.directory / "private.log").open("a")
+
+    def test_a_superseded_run_loses_its_checkout(self):
+        def superseded():
+            self.clone()
+            self.w.report("master moved on; nothing deployed", state="superseded")
+        with patch.object(self.w, "checkout", side_effect=superseded):
+            self.w.execute()
+        self.assertFalse(self.w.repo.exists())
+
+    def test_a_run_clears_finished_runs_and_leaves_a_running_one(self):
+        old = [self.make_run(c * 32, state) for c, state in
+               (("b", "success"), ("c", "failed"), ("d", "partial"), ("e", "interrupted"), ("f", "superseded"))]
+        running = self.make_run("9" * 32, "running")
+        starting = self.make_run("8" * 32, "starting")
+        with patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        for directory in old:
+            self.assertFalse((directory / "repo").exists(), directory.name)
+            self.assertEqual("log", (directory / "private.log").read_text())
+            self.assertTrue((directory / "status.json").exists())
+        self.assertTrue((running / "repo" / "app" / "file.rb").exists())
+        self.assertTrue((starting / "repo" / "app" / "file.rb").exists())
+
+    def test_prune_is_idempotent_and_skips_unreadable_receipts(self):
+        self.make_run("b" * 32, "success")
+        broken = self.make_run("c" * 32, "success")
+        (broken / "status.json").write_text("{not json")
+        self.make_run("d" * 32, "failed", repo=False)
+        self.assertEqual(["b" * 32], worker.prune_checkouts(set()))
+        self.assertEqual([], worker.prune_checkouts(set()))
+        self.assertTrue((broken / "repo").exists())
+
+    def test_a_checkout_a_container_still_mounts_is_kept(self):
+        # Kamal's client timed out and its container couldn't be removed:
+        # the run fails, and its clone stays while the container holds it.
+        held = self.make_run("b" * 32, "failed")
+        with patch.object(worker, "mounted_sources",
+                          return_value={str(self.w.repo), str(held / "repo" / "app")}), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails", side_effect=RuntimeError("timeout")):
+            self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((held / "repo").exists())
+        self.assertIn("checkout kept", (self.w.directory / "private.log").read_text())
+        # Once the container has gone, the next cleanup takes both.
+        self.assertEqual(sorted(["a" * 32, "b" * 32]), sorted(worker.prune_checkouts(set())))
+
+    def test_cleanup_is_skipped_while_another_holder_has_the_deployment_lock(self):
+        # Mira's reproduction: snapshot and deletion only under the lock. A
+        # sweep (or the prune CLI) holds it here for the whole run.
+        import fcntl
+        old = self.make_run("b" * 32, "success")
+        self.w.repo.mkdir()
+        self.w.settings["sweep_lock_wait_seconds"] = 0
+        with (self.root / "deployment.lock").open("a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(worker, "mounted_sources",
+                              side_effect=AssertionError("snapshot without the lock")):
+                self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((old / "repo").exists())
+        self.assertIn("deployment lock was held", (self.w.directory / "private.log").read_text())
+
+    def test_nothing_is_removed_when_docker_cannot_list_mounts(self):
+        old = self.make_run("b" * 32, "success")
+        with patch.object(worker, "mounted_sources", return_value=None), \
+             patch.object(self.w, "checkout", side_effect=self.clone), \
+             patch.object(self.w, "deploy_rails"), patch.object(self.w, "update_chaos"):
+            self.w.execute()
+            self.assertEqual([], worker.prune_checkouts())
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((old / "repo").exists())
+        self.assertIn("checkouts kept", (self.w.directory / "private.log").read_text())
+
+    def test_mounted_sources_reads_every_container_and_fails_closed(self):
+        listed = subprocess.CompletedProcess([], 0, "c1\nc2\n", "")
+        inspected = subprocess.CompletedProcess([], 0, "/var/lib/x/repo\n\n/etc/y\n", "")
+        failed = subprocess.CompletedProcess([], 1, "", "boom")
+        with patch.object(worker.subprocess, "run", side_effect=[listed, inspected]) as run:
+            self.assertEqual({"/var/lib/x/repo", "/etc/y"}, REAL_MOUNTED_SOURCES())
+        self.assertIn("-aq", run.call_args_list[0].args[0])
+        self.assertEqual(["c1", "c2"], run.call_args_list[1].args[0][-2:])
+        for answers in ([failed], [listed, failed], [subprocess.TimeoutExpired("docker", 60)],
+                        [FileNotFoundError()]):
+            with patch.object(worker.subprocess, "run", side_effect=answers):
+                self.assertIsNone(REAL_MOUNTED_SOURCES())
+        with patch.object(worker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+            self.assertEqual(set(), REAL_MOUNTED_SOURCES())
+
+    def test_in_use_matches_the_clone_and_below_but_not_a_sibling(self):
+        repo = Path("/r/runs/a/repo")
+        self.assertTrue(worker.in_use(repo, {"/r/runs/a/repo"}))
+        self.assertTrue(worker.in_use(repo, {"/r/runs/a/repo/agent-runtime"}))
+        self.assertFalse(worker.in_use(repo, {"/r/runs/a/repo2", "/r/runs/a"}))
+
+    def test_a_latched_run_whose_unit_has_not_exited_keeps_its_checkout(self):
+        # The gate writes interrupted for a deactivating worker too.
+        run = "b" * 32
+        directory = self.make_run(run, "interrupted")
+        gate.atomic(self.root / "runtime-latch.json", dict(id=run, operation="runtime", state="interrupted"))
+        with patch.object(worker, "unit_exited", return_value=False) as unit:
+            self.assertEqual([], worker.prune_checkouts(set()))
+        unit.assert_called_with("runtime")
+        self.assertTrue((directory / "repo").exists())
+        self.assertEqual([run], worker.prune_checkouts(set()))
+
+    def test_a_symlinked_checkout_is_unlinked_not_followed(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("x")
+        directory = self.make_run("b" * 32, "success", repo=False)
+        (directory / "repo").symlink_to(outside)
+        self.assertEqual(["b" * 32], worker.prune_checkouts(set()))
+        self.assertFalse((directory / "repo").is_symlink())
+        self.assertTrue((outside / "keep").exists())
 
     def test_worker_lock_rejects_overlap(self):
         import fcntl
