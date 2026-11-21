@@ -161,6 +161,25 @@ class Chat < ApplicationRecord
   # and forks); a private chat refuses any seat after that (ChatAgent).
   attr_accessor :opening_seats
 
+  # Made private after it started (eKmnrJ, Daniel: "you decide who's in and
+  # then you declare that no one else can see it"). Who's in is who is there
+  # now: the residents seated, the person doing it, and every human who has
+  # written in it. Everyone else loses it from list, search and link. One way.
+  def make_private!(by:)
+    transaction do
+      lock!
+      return false if private?
+
+      update!(private: true)
+      now = Time.current
+      writer_ids = Message.where(chat_id: id).where.not(user_id: nil).distinct.pluck(:user_id) - [ by.id ]
+      rows = [ { chat_id: id, user_id: by.id, source: "made_private", created_at: now } ] +
+        writer_ids.map { |user_id| { chat_id: id, user_id: user_id, source: "writer", created_at: now } }
+      ChatParticipant.insert_all(rows, unique_by: %i[chat_id user_id])
+      true
+    end
+  end
+
   def visible_to?(actor)
     return true unless private?
 

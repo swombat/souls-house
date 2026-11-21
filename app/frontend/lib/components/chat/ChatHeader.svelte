@@ -154,6 +154,18 @@
     }
   }
 
+  // Who's in is who is here now; everyone else stops seeing it (eKmnrJ).
+  function makePrivate() {
+    if (!chat || chat.private) return;
+    if (
+      !confirm(
+        "Make this conversation private? Only you, the residents in it and anyone who has written in it will see it. Everyone else, admins included, loses it from their list and search. Residents can't be added afterwards, and it can't be undone. The house's operators can still see it."
+      )
+    )
+      return;
+    router.post(`/accounts/${account.id}/chats/${chat.id}/privacy`, {}, { preserveScroll: true });
+  }
+
   function moveToRoom(key) {
     if (!chat) return;
     router.patch(
@@ -259,6 +271,7 @@
           onFork={forkConversation}
           onWhiteboardOpen={() => onwhiteboardopen?.()}
           onArchive={archiveChat}
+          onMakePrivate={makePrivate}
           rooms={$page.props?.rooms || []}
           onMoveToRoom={moveToRoom}
           onDelete={deleteChat}

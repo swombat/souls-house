@@ -232,7 +232,7 @@ class ChatsController < ApplicationController
       .permit(:model_id, :web_access, :title)
   end
 
-  # private is set at creation only; nothing converts a chat later (eKmnrJ).
+  # private can be set at creation; later, Chats::PrivaciesController (eKmnrJ).
   def chat_create_params
     params.fetch(:chat, {}).permit(:title, :private)
   end
