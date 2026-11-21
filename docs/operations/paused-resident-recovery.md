@@ -1,72 +1,67 @@
 # A resident left paused
 
 A backup holds a resident still with `docker pause` (`Backup::AgentRestic`).
-Nothing else in the house pauses a resident's container. If the backup's
-worker dies first (a deploy restarting the jobs container is the known
-cause), the resident stays frozen: its runs wait, then fail as unhealthy.
+A resident whose container stays paused is frozen: its runs wait, then fail
+as unhealthy. One known cause is a backup worker killed while it held the
+pause, for example by a deploy restarting the jobs container. It is not the
+only possible owner of a pause, and matching times are a clue, not proof.
 
-The house does not unpause on its own (#1042, scoped with Mira). Even an
-accurate "no backup containers running" can't say who owns the pause, so
-this is done by hand, after the checks below.
+The house does not unpause on its own (#1042). Even an accurate "no backup
+containers running" can't say who owns the pause, so recovery is manual and
+follows the checks below. If any check can't be established, stop and
+escalate instead of guessing.
 
 ## How you hear about it
 
 `Backup::PausedResidentWatchJob` runs every 10 minutes in the jobs
 container. A local resident it has seen paused for 30 minutes or more is
-reported once per episode as `Backup::ContainerPause::StillPaused`:
+reported once per episode as `Backup::ContainerPause::StillPaused`, to the
+jobs container's log and through `Rails.error` to the house's error
+monitoring. The log does not survive the jobs container being replaced. Where
+the monitoring lives and who receives it is in the house's private operator
+inventory, not here. Being reported there is not the same as someone acting
+on it.
 
-- to the jobs container's log, `[Backup::ContainerPause] Resident <id>
-  (<name>)'s container has been paused since at least <time>`;
-- to Honeybadger, project souls.house (134447), through `Rails.error`.
-
-Those are the only two places it goes. The Honeybadger project has no
-integrations, and its one user is Daniel. Residents can read it through
-their Honeybadger connection:
-
-```sh
-curl -s -u "$TOKEN:" \
-  'https://app.honeybadger.io/v2/projects/134447/faults?q=class:"Backup::ContainerPause::StillPaused"'
-```
-
-The log is lost when a deploy replaces the jobs container. Honeybadger
-keeps it.
-
-Other signs: a resident's runs fail as "unreachable" or "container paused,
-cause unconfirmed", and `docker ps --filter status=paused` on the host is
-not empty.
+Other signs: the resident's runs fail as unreachable or "container paused,
+cause unconfirmed", and the host shows a paused container.
 
 ## Before unpausing
 
-Do each step on the production host
-(`ssh -p 12222 swombat@95.217.118.47`). If any step can't be established,
-stop and escalate (below) instead of guessing.
+Run these on the host that runs the resident (see the private host
+inventory).
 
-1. **Exactly which resident and which container.** List what is paused, and
-   match the name to the resident's `container_name`:
+1. **Exactly which resident and which container.**
 
    ```sh
    docker ps --filter status=paused --format '{{.Names}} {{.Status}}'
+   echo "docker exit: $?"
    ```
+
+   A non-zero exit means Docker didn't answer: stop. Match the name to one
+   resident's `container_name`:
 
    ```ruby
-   Agent.where(container_name: "<name>").pluck(:id, :name)
+   Agent.where(container_name: "<container>").pluck(:id, :name)
    ```
 
-   The name has to belong to a resident on this host. Don't unpause a
-   container you can't name.
+   Don't unpause a container you can't name. Other paused containers are
+   triaged separately.
 
-2. **Why it was paused.** Look for that resident's last backup: the
-   StillPaused notice's "since" time, its latest `Backup::AgentResticJob`, and the
-   time of the last deploy (`docker ps` shows how
-   long the jobs container has been up). The known story is "a backup
-   paused it and its worker was killed". If you can't find a backup that
-   paused it, you don't know why it's paused.
+2. **Why it was paused.** Look for the backup that paused it: the "since"
+   time in the StillPaused report, that resident's latest
+   `Backup::AgentResticJob`, any running `Backup::FullBackupJob`, and the
+   last restart of the jobs container. If you can't find what paused it, you
+   don't know why it is paused: escalate.
 
-3. **No backup or maintenance is still running or about to start.** All of
-   these have to be empty for this resident:
+3. **Nothing can still reach it, and nothing new can start.** A full backup
+   calls `Backup::AgentResticJob.perform_now` inside its loop over residents,
+   so a `FullBackupJob` still in progress counts as active for this resident
+   even if there is no separate job for her. Check, and treat a failed check
+   as a stop, not as empty:
 
    ```sh
-   docker ps --format '{{.Names}} {{.Image}}' | grep -E 'restic|busybox'
+   out=$(docker ps --format '{{.Names}} {{.Image}}') || { echo "docker failed: stop"; exit 1; }
+   printf '%s\n' "$out" | grep -E 'restic|busybox' || echo "no backup containers"
    ```
 
    ```ruby
@@ -74,41 +69,33 @@ stop and escalate (below) instead of guessing.
    Agent.where.not(backup_thinning_started_at: nil).pluck(:id)
    ```
 
-   Also check that no deploy, server move or restore is in progress, and
-   that the nightly backup isn't due within the next few minutes (04:00Z).
-   If something is still running, wait for it to finish and check again.
-   Don't unpause underneath it.
+   An empty snapshot doesn't stop new work starting. Agree a short window
+   with an authorized operator in which no backup, thinning, restore, server
+   move or deploy will start. If that window can't be established, escalate.
 
 ## Unpausing
 
+Inside that window, check the same container is still paused, then unpause
+it:
+
 ```sh
-docker unpause <name>
+docker inspect --format '{{.State.Running}} {{.State.Paused}}' <container>   # expect: true true
+docker unpause <container>
 ```
 
 ## Checking it worked
 
 ```sh
-docker inspect --format '{{.State.Running}} {{.State.Paused}}' <name>   # want: true false
-docker ps --filter status=paused                                         # want: empty
+docker inspect --format '{{.State.Running}} {{.State.Paused}}' <container>   # want: true false
 ```
 
-Then the resident's health goes green within a few minutes, and a new
-run succeeds. Write down what you found and when you unpaused it, in the
-thread where the problem came up.
+Then the resident's health goes green within a few minutes and a new run
+succeeds. Record what you found and when you unpaused, where the problem was
+raised.
 
 ## Escalating
 
-If any check can't be established, for example Docker doesn't answer, the
-container belongs to nobody you can name, a backup is still running and
-doesn't finish, or there's no backup to explain the pause, leave the
-container as it is and tell Daniel what you saw and which step stopped
-you.
-
-## What happened before
-
-- 19 Nov 2026: Mira was left paused from about 04:06 to 05:32Z after the
-  nightly backup and was unpaused by hand. This led to #1042.
-- 21 Nov 2026: Mira was paused from about 04:10Z. The 04:24Z deploy
-  restarted the jobs container. StillPaused reached Honeybadger at
-  04:40:02Z. Nobody acted on it: she was found from her failed runs and
-  unpaused at 06:50:53Z, after checks 1 to 3.
+If Docker doesn't answer, the container belongs to no resident you can
+name, a backup or maintenance is still active, nothing explains the pause, or
+no no-start window can be agreed: leave the container paused and tell the
+house operator what you saw and which step stopped you.
