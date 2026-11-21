@@ -137,8 +137,15 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     parked = null;
   }
 
+  // A streamed reply that has finished rendering is still in the room for the
+  // output latency: heard() asks it until it says it is quiet.
+  let fading = null;
+
   function streamEnded(job) {
-    if (current?.job === job) return finish(current);
+    if (current?.job === job) {
+      fading = job.stream;
+      return finish(current);
+    }
     if (parked?.job === job) parked = null;
   }
 
@@ -262,6 +269,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     const started = Boolean(current?.started);
     const now = current?.job?.stream ? current.job.stream.position : audio.currentTime;
     const position = started && Number.isFinite(now) ? now : 0;
+    fading = null;
     const dropped = [
       ...(current ? [{ id: current.id, at: position, playing: started }] : []),
       ...queue.map((item) => ({ id: item.id, at: 0, playing: false })),
@@ -313,7 +321,11 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     // energy alone).
     heard() {
       const silent = { playing: false, level: null };
-      if (closed || !current?.started) return silent;
+      if (closed) return silent;
+      const tail = fading?.heard?.() ?? silent;
+      if (!tail.playing) fading = null;
+      if (!current?.started) return tail;
+      if (tail.playing && !current.job?.stream?.heard?.().playing) return tail;
       if (current.job?.stream) return current.job.stream.heard?.() ?? silent;
       const playing = !audio.paused && !audio.ended && !waiting && (audio.readyState ?? 4) >= 3;
       return playing ? { playing: true, level: null } : silent;

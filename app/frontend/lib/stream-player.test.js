@@ -154,3 +154,25 @@ test('heard() gives the level of the samples being rendered, after the output la
   ctx.state = 'suspended';
   expect(player.heard().playing).toBe(false);
 });
+
+test('heard() keeps a chunk audible past its onended while the delayed clock is inside it, and a late push does not move its samples (#1081 review)', () => {
+  const c = fakeContext();
+  c.outputLatency = 0.05;
+  const p = createStreamPlayer({ context: () => c, keepContext: true }); // as voice mode plays it
+  p.push(new Float32Array(120).fill(0.4), 1000); // scheduled LEAD (.08) to .20
+  c.currentTime = 0.18;
+  p.push(new Float32Array(120).fill(0.1), 1000); // the next chunk, late: put at .26 to .38
+  c.currentTime = 0.205; // in the room: .155, inside the first chunk
+  c.nodes[0].onended(); // rendered
+  expect(p.heard()).toEqual({ playing: true, level: expect.closeTo(0.4, 5) });
+  c.currentTime = 0.3; // in the room: .25, the gap the late push left
+  expect(p.heard().playing).toBe(false);
+  c.currentTime = 0.35; // in the room: .30, the second chunk's own samples
+  expect(p.heard().level).toBeCloseTo(0.1, 5);
+  p.finish();
+  c.currentTime = 0.4;
+  c.nodes[1].onended(); // the reply has rendered and ended; .35 is still in the room
+  expect(p.heard()).toEqual({ playing: true, level: expect.closeTo(0.1, 5) });
+  c.currentTime = 0.44; // .39: over
+  expect(p.heard().playing).toBe(false);
+});

@@ -40,6 +40,7 @@ export function createStreamPlayer({
   let ended = false;
   let stopped = false;
   let generation = 0;
+  let heardChunks = []; // { from, until, samples, generation } per scheduled chunk
 
   const seconds = () => made / rate;
   const position = () => {
@@ -86,28 +87,12 @@ export function createStreamPlayer({
       sources.delete(node);
       if (mine === generation) finishIfHeard();
     };
-    node.from = at;
-    node.until = at + buffer.duration;
+    // When this chunk is in the room and which samples it holds, kept past its
+    // onended (the room hears it for the output latency after it is rendered).
+    heardChunks.push({ from: at, until: at + buffer.duration, samples, generation: mine });
     sources.add(node);
     node.start(at);
     scheduledEnd = at + buffer.duration;
-  }
-
-  // RMS of the made samples within half a `window` of `second`.
-  function levelAt(second, window = 0.02) {
-    const from = Math.max(0, Math.floor((second - window / 2) * rate));
-    const to = Math.min(made, Math.ceil((second + window / 2) * rate));
-    let sum = 0;
-    let offset = 0;
-    for (const chunk of chunks) {
-      const end = offset + chunk.length;
-      if (end > from && offset < to) {
-        for (let i = Math.max(from, offset); i < Math.min(to, end); i += 1) sum += chunk[i - offset] * chunk[i - offset];
-      }
-      if (end >= to) break;
-      offset = end;
-    }
-    return to > from ? Math.sqrt(sum / (to - from)) : 0;
   }
 
   function close() {
@@ -215,12 +200,18 @@ export function createStreamPlayer({
     // the page can know it, not the sound being queued.
     heard() {
       const silent = { playing: false, level: null };
-      if (stopped || ended || paused || anchor === null || ctx.state !== 'running') return silent;
+      if (stopped || paused || ctx.state !== 'running') return silent;
       const now = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
-      let rendering = false;
-      for (const node of sources) if (node.from <= now && now < node.until) rendering = true;
-      if (!rendering) return silent;
-      return { playing: true, level: levelAt(now - anchor) };
+      heardChunks = heardChunks.filter((c) => c.generation === generation && c.until > now - 1);
+      const chunk = heardChunks.find((c) => c.from <= now && now < c.until);
+      if (!chunk) return silent;
+      // RMS of this chunk's own samples within 10 ms of now.
+      const at = (now - chunk.from) * rate;
+      const from = Math.max(0, Math.floor(at - rate * 0.01));
+      const to = Math.min(chunk.samples.length, Math.ceil(at + rate * 0.01));
+      let sum = 0;
+      for (let i = from; i < to; i += 1) sum += chunk.samples[i] * chunk.samples[i];
+      return { playing: true, level: to > from ? Math.sqrt(sum / (to - from)) : 0 };
     },
   };
 }

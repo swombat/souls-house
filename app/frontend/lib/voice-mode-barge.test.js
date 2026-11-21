@@ -120,7 +120,8 @@ describe('barge-in while a reply is heard', () => {
     const d = detector();
     run(d, scene({ frames: 100, replyFrom: 0, leak: LEAK.x2_2 }));
     expect(d.coupling).toBeGreaterThan(0);
-    d.feed(tone(0, 0.001, 50), { playing: false, level: null }); // buffering
+    // Buffering: the echo gate stays on through the lag window, then forgets.
+    for (let t = 0; t < 6; t += 1) d.feed(tone(t, 0.001, 50), { playing: false, level: null });
     expect(d.coupling).toBe(0);
   });
 
@@ -186,4 +187,79 @@ describe('pre-roll with marked frames', () => {
       });
     }
   }
+});
+
+// As the panel does it: once a turn starts the reply pauses, so the mic hears
+// no more of it and the player says nothing plays.
+function runCutting(d, frames) {
+  const events = [];
+  let cut = false;
+  frames.forEach(({ mic, person, sound }, t) => {
+    const heard = cut ? { playing: false, level: null } : sound;
+    for (const event of d.feed(cut ? person : mic, heard)) {
+      events.push({ ...event, frame: t });
+      if (event.type === 'start') cut = true;
+    }
+  });
+  return events;
+}
+
+// The same scene, also keeping what the mic hears without the reply.
+function sceneWithPerson(options) {
+  const withReply = scene(options);
+  const alone = scene({ ...options, leak: 0 });
+  return withReply.map((f, t) => ({ ...f, person: alone[t].mic }));
+}
+
+describe('a barge-in that is a person reaches a turn, with its first word (#1081 review)', () => {
+  for (const [name, leak] of Object.entries(LEAK)) {
+    for (const [where, from, replyFrom] of [['at onset', 50, 50], ['mid-reply', 150, 0]]) {
+      test(`a 360 ms soft "wait" ${where} is an accepted turn, not a discard (${name})`, () => {
+        const frames = sceneWithPerson({ frames: from + 18 + 200, replyFrom, leak, person: [{ from, to: from + 18, level: 0.04 }] });
+        const events = runCutting(detector(), frames);
+        expect(events.map((e) => e.type)).toEqual(['start', ...Array(events.length - 1).fill('audio').slice(0, events.length - 2), 'end']);
+        const start = events[0];
+        // The turn holds every frame of the word from its first.
+        expect(start.samples.length / FRAME).toBeGreaterThanOrEqual(start.frame - from + 1);
+      });
+    }
+
+    test(`a 60 ms cough in a gap between the reply's words is still discarded (${name})`, () => {
+      // Word gaps are 240–400 ms into each 400 ms; the cough at 3.10–3.16 s, in one.
+      const frames = sceneWithPerson({ frames: 400, replyFrom: 0, leak, person: [{ from: 155, to: 158, level: 0.1 }] });
+      const events = runCutting(detector(), frames);
+      expect(events.some((e) => e.type === 'end')).toBe(false);
+    });
+  }
+});
+
+describe('the echo tail when the sound stops (#1081 review)', () => {
+  // One second of mic leakage at .077 against a reply at .2, all at once.
+  const leaking = (t) => ({ mic: tone(t, 0.077 * Math.SQRT2, 220), sound: { playing: true, level: 0.2 } });
+  const quiet = (t, extra = 0) => ({ mic: tone(t, 0.077 * Math.SQRT2, 220), sound: { playing: false, level: null }, extra });
+
+  test('the reply\'s last frames in the mic after it stops are not a person', () => {
+    const frames = [...Array.from({ length: 50 }, (_, t) => leaking(t)), ...Array.from({ length: 3 }, (_, t) => quiet(50 + t))];
+    // then the room is quiet
+    for (let t = 53; t < 200; t += 1) frames.push({ mic: tone(t, 0.001, 50), sound: { playing: false, level: null } });
+    expect(run(detector(), frames).some((e) => e.type === 'start')).toBe(false);
+  });
+
+  test('a real word at that boundary still starts a turn and keeps its beginning', () => {
+    const frames = [...Array.from({ length: 50 }, (_, t) => leaking(t))];
+    for (let t = 50; t < 70; t += 1) {
+      const mic = tone(t, 0.06 * Math.SQRT2, 330);
+      if (t < 53) {
+        const echo = tone(t, 0.077 * Math.SQRT2, 220);
+        for (let i = 0; i < FRAME; i += 1) mic[i] += echo[i];
+      }
+      frames.push({ mic, sound: { playing: false, level: null } });
+    }
+    for (let t = 70; t < 250; t += 1) frames.push({ mic: tone(t, 0.001, 50), sound: { playing: false, level: null } });
+    const events = run(detector(), frames);
+    const start = events.find((e) => e.type === 'start');
+    expect(start).toBeTruthy();
+    expect(start.samples.length / FRAME).toBeGreaterThanOrEqual(start.frame - 50 + 1);
+    expect(events.some((e) => e.type === 'end')).toBe(true);
+  });
 });

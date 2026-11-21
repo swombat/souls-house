@@ -97,6 +97,7 @@ export function createTurnDetector({
   // Frames heard before a turn, newest last. Only the `preRollFrames` before
   // the frames that prove a start are kept with it.
   let history = [];
+  const energyOf = new WeakMap(); // each frame's RMS, for counting a turn's speech
   let speaking = false;
   let loudRun = 0;
   let loudSum = 0;
@@ -112,6 +113,9 @@ export function createTurnDetector({
   let echo = 0;
   let echoFrames = 0;
   let candidate = null;
+  // Frames left of the echo tail after the sound stops (the lag window): the
+  // room still holds the reply's last syllable for that long.
+  let tail = 0;
 
   const startBar = () => Math.max(floor, noise * noiseRatio);
 
@@ -154,9 +158,15 @@ export function createTurnDetector({
     loudRun = 0;
     loudSum = 0;
     candidate = null;
-    turn = [...last(before, preRollFrames), ...proof];
+    const kept = last(before, preRollFrames);
+    turn = [...kept, ...proof];
     history = [];
-    turnFrames = counted;
+    // Speech just before the proof, unbroken up to it, is part of the turn's
+    // speech too: a "wait" whose first syllables were under the reply's
+    // predicted echo, or a word that began in the echo tail.
+    let lead = 0;
+    for (let i = kept.length - 1; i >= 0 && (energyOf.get(kept[i]) ?? 0) > startBar(); i -= 1) lead += 1;
+    turnFrames = counted + lead;
     const start = { type: 'start', level: proofLevel, threshold, barge };
     if (streamFrames) start.samples = concat(turn);
     events.push(start);
@@ -169,6 +179,7 @@ export function createTurnDetector({
 
   function resetPlayback(next) {
     playing = next;
+    tail = 0;
     recent = [];
     coupling = 0;
     couplingFrames = 0;
@@ -195,7 +206,10 @@ export function createTurnDetector({
     if (reference === null) return learnEcho(energy);
     if (reference <= 0 || energy <= 0) return;
     const ratio = energy / reference;
-    coupling = ratio > coupling ? ratio : coupling * (1 - echoFall) + ratio * echoFall;
+    // Rising at echoRise, not in one jump, so the frames of a person who
+    // stayed under the bar can't ratchet it up on their own.
+    if (couplingFrames === 0) coupling = ratio;
+    else coupling = coupling * (1 - (ratio > coupling ? echoRise : echoFall)) + ratio * (ratio > coupling ? echoRise : echoFall);
     couplingFrames += 1;
   }
 
@@ -264,7 +278,15 @@ export function createTurnDetector({
       }
     });
     if (proofs >= (reference === null ? blindProofFrames : proofFrames)) {
-      begin(c.before, c.frames, events, { level: sum / proofs, threshold, barge: true, counted: proofs });
+      // What counts toward minSpeechMs: the candidate's frames over the start
+      // bar from the start of the unbroken run that holds its first proof. A
+      // "wait" over a word is all of its frames; a cough in a gap between the
+      // reply's words is only itself, so it is still discarded.
+      const bars = c.energies.map((e, i) => (c.references[i] < 0 ? barFor(null) : barFor(c.references[i], k)));
+      let first = c.energies.findIndex((e, i) => e > bars[i]);
+      while (first > 0 && c.energies[first - 1] > startBar()) first -= 1;
+      const counted = c.energies.slice(first).filter((e) => e > startBar()).length;
+      begin(c.before, c.frames, events, { level: sum / proofs, threshold, barge: true, counted });
       return;
     }
     if (c.quiet >= gapFrames || c.frames.length >= windowFrames) {
@@ -288,7 +310,13 @@ export function createTurnDetector({
 
     if (!speaking) {
       const nowPlaying = Boolean(sound?.playing);
-      if (nowPlaying !== playing) resetPlayback(nowPlaying);
+      if (nowPlaying && (!playing || tail > 0)) resetPlayback(true); // a new start, even mid-tail
+      else if (!nowPlaying && playing && tail === 0) tail = lagFrames + 1; // the sound just stopped
+      if (playing && tail > 0) {
+        tail -= 1;
+        if (tail === 0) resetPlayback(false);
+        else return playbackFrame(frame, energy, 0, events);
+      }
       if (playing) return playbackFrame(frame, energy, sound.level, events);
 
       const threshold = startBar();
@@ -329,7 +357,9 @@ export function createTurnDetector({
       let offset = 0;
       while (buffer.length - offset >= frameSamples) {
         const frame = buffer.subarray(offset, offset + frameSamples);
-        frameIn(frame, rms(frame), sound, events);
+        const energy = rms(frame);
+        energyOf.set(frame, energy);
+        frameIn(frame, energy, sound, events);
         offset += frameSamples;
       }
       pending = buffer.subarray(offset).slice();
