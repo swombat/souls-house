@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -763,11 +763,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_120000) do
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
   end
 
+  create_table "backup_deploy_fences", force: :cascade do |t|
+    t.string "deploy_id", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "raised_at", null: false
+    t.index ["deploy_id"], name: "index_backup_deploy_fences_on_deploy_id", unique: true
+  end
+
   create_table "backup_pause_claims", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.string "container_id", null: false
-    t.string "token", null: false
     t.datetime "created_at", null: false
+    t.string "token", null: false
+    t.datetime "touched_at"
     t.index ["agent_id"], name: "index_backup_pause_claims_on_agent_id", unique: true
   end
 

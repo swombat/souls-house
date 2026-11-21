@@ -196,13 +196,15 @@ class DeployAlarm
     # Superseded is red in Actions (#313) but the gate isn't latched: the
     # newer commit's run deploys it, and if it never does, the GRACE check
     # below says production is behind.
-    return false if run[:outcome].to_s == "superseded"
+    # Deferred likewise (#1096): a backup held the switch and nothing
+    # shipped; the next run deploys, and GRACE says so if none does.
+    return false if %w[superseded deferred].include?(run[:outcome].to_s)
     return false if same_commit?(run[:head_sha], deployed_sha)
 
     failed_at = parse_time(run[:updated_at]) || parse_time(run[:created_at])
     runs.none? { |later|
       RAILS_WORKFLOWS.include?(later[:workflow]) && later[:status] == "completed" && later[:conclusion] == "success" &&
-        !%w[superseded not_deployed].include?(later[:outcome].to_s) && failed_at && (finished = parse_time(later[:updated_at])) && finished > failed_at
+        !%w[superseded deferred not_deployed].include?(later[:outcome].to_s) && failed_at && (finished = parse_time(later[:updated_at])) && finished > failed_at
     }
   end
 

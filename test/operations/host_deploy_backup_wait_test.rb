@@ -9,8 +9,8 @@ class HostDeployBackupWaitTest < ActiveSupport::TestCase
     JSON.parse(output.lines.last)
   end
 
-  test "nothing running answers two empty lists" do
-    assert_equal({ "thinning" => [], "backing_up" => [] }, answer)
+  test "nothing running answers empty lists" do
+    assert_equal({ "thinning" => [], "backing_up" => [], "stale_claims" => [] }, answer)
   end
 
   test "a fresh thinning mark is listed and an abandoned one is not" do
@@ -31,16 +31,20 @@ class HostDeployBackupWaitTest < ActiveSupport::TestCase
     assert_equal [], answer.fetch("thinning")
   end
 
-  test "a house backup holding a fresh pause claim is listed; a claim older than the 30-minute heuristic is not" do
-    pausing, older = agents(:research_assistant), agents(:code_reviewer)
-    Backup::PauseClaim.claim!(pausing, "c" * 64)
-    Backup::PauseClaim.claim!(older, "d" * 64)
-    Backup::PauseClaim.where(agent_id: older.id).update_all(created_at: 31.minutes.ago)
+  test "a house backup is listed while it holds any claim, however old; a silent heartbeat is flagged, not dropped" do
+    live, silent = agents(:research_assistant), agents(:code_reviewer)
+    Backup::PauseClaim.claim!(live, "c" * 64)
+    Backup::PauseClaim.claim!(silent, "d" * 64)
+    Backup::PauseClaim.where(agent_id: live.id).update_all(created_at: 50.minutes.ago, touched_at: 1.minute.ago)
+    Backup::PauseClaim.where(agent_id: silent.id).update_all(created_at: 2.hours.ago, touched_at: 4.minutes.ago)
 
-    assert_equal [ pausing.id ], answer.fetch("backing_up")
+    assert_equal [ live.id, silent.id ].sort, answer.fetch("backing_up")
+    assert_equal [ silent.id ], answer.fetch("stale_claims")
 
-    Backup::PauseClaim.release!(pausing)
+    Backup::PauseClaim.release!(live)
+    Backup::PauseClaim.release!(silent)
     assert_equal [], answer.fetch("backing_up")
+    assert_equal [], answer.fetch("stale_claims")
   end
 
   private

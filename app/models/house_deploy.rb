@@ -214,6 +214,7 @@ class HouseDeploy
 
   DEPLOYED_STEP = "Deployment verified"
   SUPERSEDED_STEP = "Master moved on, nothing deployed"
+  DEFERRED_STEP = "A backup held the switch, nothing deployed"
 
   # The automatic workflow is triggered by workflow_run, so the
   # workflow_dispatch listing never includes it. Returns [runs, error].
@@ -253,7 +254,10 @@ class HouseDeploy
 
       ran = Array(body["jobs"]).flat_map { |job| Array(job["steps"]) }
         .select { |step| step["conclusion"] == "success" }.map { |step| step["name"] }
-      if run[:conclusion] == "failure" then ("superseded" if ran.include?(SUPERSEDED_STEP))
+      if run[:conclusion] == "failure"
+        if ran.include?(SUPERSEDED_STEP) then "superseded"
+        elsif ran.include?(DEFERRED_STEP) then "deferred"
+        end
       elsif ran.include?(DEPLOYED_STEP) then "deployed"
       elsif ran.include?(SUPERSEDED_STEP) then "superseded"
       else "not_deployed"

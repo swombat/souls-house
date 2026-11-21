@@ -11,6 +11,8 @@ export function runLabel(run) {
   }
   // Superseded fails the GitHub job (#313) but isn't a crash: say what it was.
   if (run.workflow === 'rails_auto' && run.outcome === 'superseded') return '– master moved on, nothing deployed';
+  // Deferred (#1096): a backup held a resident paused, so nothing switched.
+  if (run.workflow === 'rails_auto' && run.outcome === 'deferred') return '– a backup held the switch, nothing deployed';
   // Automatic runs say what actually shipped; a successful run alone doesn't.
   if (run.conclusion === 'success' && run.workflow === 'rails_auto') {
     if (run.outcome === 'deployed') return '✓ deployed';
