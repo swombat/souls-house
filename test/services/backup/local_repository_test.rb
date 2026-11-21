@@ -27,7 +27,7 @@ class Backup::LocalRepositoryTest < ActiveSupport::TestCase
     resources.define_singleton_method(:verify_existing!) { true }
     calls = []
     Agents::Resources.stub(:new, resources) do
-      Open3.stub(:capture3, ->(*args) { calls << args; [ "true false", "", Struct.new(:success?).new(true) ] }) do
+      Open3.stub(:capture3, ->(*args) { calls << args; [ "cid-1 true false", "", Struct.new(:success?).new(true) ] }) do
         assert_raises(RuntimeError) { Backup::AgentRestic.with_quiesced(@agent) { raise "Synthetic backup failure" } }
       end
     end
@@ -39,7 +39,7 @@ class Backup::LocalRepositoryTest < ActiveSupport::TestCase
     @agent.create_memory_vault!
     resources = Object.new
     resources.define_singleton_method(:verify_existing!) { true }
-    capture = ->(*args) { [ "true false", "", Struct.new(:success?).new(args[1] != "unpause") ] }
+    capture = ->(*args) { [ "cid-1 true false", "", Struct.new(:success?).new(args[1] != "unpause") ] }
     Agents::Resources.stub(:new, resources) do
       Open3.stub(:capture3, capture) do
         error = assert_raises(RuntimeError) { Backup::AgentRestic.with_quiesced(@agent) { raise "Original synthetic failure" } }

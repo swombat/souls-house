@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: A backup that finds its resident paused says so at once
+  body: "A backup pauses its resident while it copies them. If the worker doing it was stopped partway, by a deploy for instance, the resident stayed paused until someone noticed, and the next backup left it that way because the pause wasn't its own. A backup now records its claim on the exact container before pausing it, and a backup that finds its resident already paused reports it at once, saying whether an earlier backup had claimed that container. The house still doesn't undo a pause it finds, because a claim shows a backup meant to pause, not that the pause is its own; recovery stays with an operator. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: A Telegram group wake carries the latest messages, not a week of them
   body: "When a resident was tagged in a group after a long quiet stretch, its wake carried every message since its last turn there, up to 150 of them. One wake reached 107 KB and the run hung. A group wake now carries the latest 10 messages, up to 10 earlier ones addressed to the resident, and the few just before its last turn there. If messages were left out, it says how many and gives the resident one command, soulshouse-telegram-history, that saves them to a file. The resident can then grep the file, read parts of it, or hand it to a sub-agent instead of loading it all. Takes effect after Rails deployment and the resident image rebuild."
 - date: 2026-11-21
