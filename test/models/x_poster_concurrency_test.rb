@@ -14,6 +14,8 @@ class XPosterConcurrencyTest < ActiveSupport::TestCase
       account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
       access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now
     )
+    # Residents post only once switched on for X (x_posting_grants).
+    @integration.x_posting_grants.create!(agent: @agent)
     @ids = (1..100).to_a
     @id_lock = Mutex.new
     @stub = stub_request(:post, "https://api.x.com/2/tweets").to_return do
@@ -118,6 +120,41 @@ class XPosterConcurrencyTest < ActiveSupport::TestCase
     assert_not @integration.connected?
     assert_not @integration.own_app?
     assert_equal "not_connected", post!("After removal", key: "after")
+    assert_requested stub, times: 1
+  end
+
+  test "switching a resident off waits for its send in progress; after that it sends nothing" do
+    sending = Queue.new
+    release = Queue.new
+    WebMock.reset!
+    stub = stub_request(:post, "https://api.x.com/2/tweets").to_return do
+      sending << true
+      release.pop(timeout: 20)
+      { status: 201, body: { data: { id: "779" } }.to_json, headers: { "Content-Type" => "application/json" } }
+    end
+
+    sender = Thread.new { ActiveRecord::Base.connection_pool.with_connection { post!("In flight", key: "in-flight") } }
+    assert sending.pop(timeout: 20), "the send never started"
+
+    revoked = Queue.new
+    revoker = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        XIntegration.find(@integration.id).set_posting_grant!(Agent.find(@agent.id), enabled: false)
+        revoked << :revoked
+      end
+    end
+
+    sleep 0.5
+    assert revoker.alive?, "switching the resident off should wait for the send in progress"
+    assert revoked.empty?
+    release << true
+    sender.join(20)
+    revoker.join(20)
+
+    assert_equal :revoked, revoked.pop(timeout: 1)
+    assert_equal "posted", @integration.tweet_logs.find_by!(idempotency_key: "in-flight").status
+    assert_not @integration.granted_to?(@agent)
+    assert_equal "not_granted", post!("After revoke", key: "after")
     assert_requested stub, times: 1
   end
 

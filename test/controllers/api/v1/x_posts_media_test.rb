@@ -30,6 +30,8 @@ module Api
           account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
           access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now, granted_scopes: SCOPES
         )
+        # Residents post only once switched on for X (x_posting_grants).
+        @integration.x_posting_grants.create!(agent: @agent)
         @waits = []
         @on_wait = nil
         waits = @waits
@@ -247,6 +249,7 @@ module Api
 
       {
         "switching posting off" => [ ->(integration) { integration.update!(enabled: false) }, "posting_disabled" ],
+        "switching this resident off for X" => [ ->(integration) { integration.x_posting_grants.delete_all }, "not_granted" ],
         "disconnecting" => [ ->(integration) { integration.disconnect! }, "disconnected" ],
         "reconnecting (possibly as another X account)" => [ ->(integration) { integration.update!(app_generation: integration.app_generation + 1) }, "reconnected" ]
       }.each do |change, (act, reason)|

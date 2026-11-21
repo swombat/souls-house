@@ -15,6 +15,21 @@ module Api
           account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
           access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now
         )
+        # Residents post only once switched on for X (x_posting_grants).
+        @integration.x_posting_grants.create!(agent: @agent)
+      end
+
+      test "a resident not switched on for X is refused and nothing reaches X" do
+        create = stub_request(:post, TWEETS_URL).to_return(status: 201, body: { data: { id: "777" } }.to_json)
+        @integration.x_posting_grants.where(agent: @agent).delete_all
+
+        assert_no_difference -> { TweetLog.count } do
+          post_x(text: "Hello", key: "k-ungranted")
+        end
+
+        assert_response :forbidden
+        assert_equal "not_granted", JSON.parse(response.body)["code"]
+        assert_not_requested create
       end
 
       test "posts and returns the tweet id and URL" do

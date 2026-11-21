@@ -3,7 +3,7 @@
 # The account comes only from the resident (agent.account), never from a
 # request parameter. Every post needs an idempotency key: a repeated key
 # returns the stored outcome and never posts again. The enabled switch and the
-# account's X app are checked under a row lock on the integration, and the
+# account's X app, and the resident's own X posting grant, are checked under a row lock on the integration, and the
 # pending row is written inside that lock, so switching posting off stops
 # every post that has not reserved yet. There is no house ceiling on posts:
 # the house app is only for accounts with a site admin in them, and every
@@ -150,6 +150,9 @@ class XPoster
 
       raise Refused.new("not_connected", "This account has no connected X handle", :forbidden) unless integration.connected?
       raise Refused.new("posting_disabled", "Posting to X is turned off for this account", :forbidden) unless integration.enabled?
+      unless integration.granted_to?(agent)
+        raise Refused.new("not_granted", "You have not been given X posting; an account admin switches it on for you under Integrations", :forbidden)
+      end
       unless integration.app_available?
         raise Refused.new("no_x_app", "This account has no X app to post through; an account admin adds one on the X posting page", :forbidden)
       end
@@ -303,6 +306,7 @@ class XPoster
   def unsendable_reason(integration, log)
     return "disconnected" unless integration.connected? && integration.access_token.present?
     return "posting_disabled" unless integration.enabled?
+    return "not_granted" unless integration.granted_to?(log.agent)
     return "no_x_app" unless integration.app_available?
     # Posts reserved before this column existed carry no generation.
     return "reconnected" if log.x_app_generation && integration.app_generation != log.x_app_generation

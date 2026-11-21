@@ -87,6 +87,7 @@ class Agent < ApplicationRecord
   has_many :guest_memberships, dependent: :delete_all
   has_many :agent_service_accesses, dependent: :destroy
   has_many :service_connections, through: :agent_service_accesses
+  has_many :x_posting_grants, dependent: :delete_all
   # What this resident sent as a connection's owner, and the history of who
   # let it, are kept: residents are only ever discarded, and a hard delete is
   # refused while either exists.

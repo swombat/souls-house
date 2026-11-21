@@ -191,9 +191,15 @@
       <IntegrationSettingsCard
         enabled={integration.enabled}
         label="Allow residents to post"
-        description="Off by default. When on, every resident of this account can post to @{integration.x_username ||
+        description="Off by default. When on, the residents switched on for X under Integrations can post to @{integration.x_username ||
           'this handle'}. Turning it off stops new posts immediately without disconnecting."
         onToggle={toggleEnabled} />
+      {#if account_id}
+        <p class="mt-2 text-sm">
+          <a class="underline underline-offset-4" href={`/accounts/${encodeURIComponent(account_id)}/integrations`}
+            >Choose which residents can post, under Integrations</a>
+        </p>
+      {/if}
     {:else}
       <p class="mt-4 text-sm text-muted-foreground">
         Posting is {integration.enabled ? 'on' : 'off'}.

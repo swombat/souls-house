@@ -66,6 +66,18 @@ class XIntegrationController < ApplicationController
     redirect_to x_page_path, alert: "Failed to connect: #{e.message}"
   end
 
+  # The per-resident switch on the Integrations page's X row. Only the
+  # account's own residents: a post goes out under the account's handle.
+  def grant
+    back = account_integrations_path(current_account)
+    return redirect_to(back, alert: "Connect X first") unless @integration
+
+    agent = current_account.agents.find(params.require(:agent_id))
+    enabled = ActiveModel::Type::Boolean.new.cast(params[:enabled])
+    @integration.set_posting_grant!(agent, enabled:)
+    redirect_back fallback_location: back, notice: enabled ? "#{agent.name} can post to X" : "#{agent.name} can no longer post to X"
+  end
+
   def update
     redirect_to x_page_path and return unless @integration
 
@@ -120,7 +132,8 @@ class XIntegrationController < ApplicationController
   def require_manager
     return if current_account.service_credentials_manageable_by?(Current.user)
 
-    redirect_to x_page_path, alert: "Only account admins can change the X connection"
+    back = action_name == "grant" ? account_integrations_path(current_account) : x_page_path
+    redirect_to back, alert: "Only account admins can change the X connection"
   end
 
   def x_redirect_uri

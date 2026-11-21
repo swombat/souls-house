@@ -316,6 +316,7 @@ areas:
       - github_integrations
       - oura_integrations
       - x_integrations
+      - x_posting_grants
       - tweet_logs
       - linkedin_posts
 
