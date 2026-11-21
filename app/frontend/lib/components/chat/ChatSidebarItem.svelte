@@ -4,7 +4,6 @@
   import {
     commitmentMarkLabel,
     handoffStuckLabel,
-    hookWarningLabel,
     runErrorLabel,
     shortDate,
   } from '$lib/chat-display';
@@ -24,7 +23,6 @@
   const commitmentLabel = $derived(commitmentMarkLabel(chat.next_commitment));
   const stuckLabel = $derived(handoffStuckLabel(chat.handoff_stuck));
   const errorLabel = $derived(runErrorLabel(chat.run_error_residents));
-  const hookLabel = $derived(hookWarningLabel(chat.hook_warning_residents));
 </script>
 
 <div class="relative group/card">
@@ -83,7 +81,7 @@
       </div>
     </Link>
     <div class="absolute left-2 top-1.5">
-      <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} {hookLabel} />
+      <VisualTagPicker {chat} {accountId} tags={visualTags} {commitmentLabel} {stuckLabel} {errorLabel} />
     </div>
     <div class="absolute right-2 top-2 flex items-center gap-1">
       <!-- Desktop only, on hover or keyboard focus; on a phone the conversation menu does this. -->

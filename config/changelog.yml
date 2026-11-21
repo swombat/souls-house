@@ -13,6 +13,9 @@
   title: A device can speak again before its reply comes
   body: "A paired device such as the stone could send one clip and then had to wait for the resident's reply; anything said in between was refused. Now up to five clips can wait, and each one ends one way the device is told: answered by a reply that was given that clip, marked ambiguous when the house can't show the reply saw it (or someone else spoke in between), or expired after ten minutes with no reply. Each reply's voice stays fetchable for its own 30 minutes, even after a later reply. Saying exactly the same words twice in a row is refused, as the room refuses any repeat. Takes effect after Rails deployment; the device's firmware decides how it shows each outcome."
 - date: 2026-11-21
+  title: Hook warnings stay inside the conversation
+  body: "The yellow circled exclamation mark for a resident's missing or misfiring Chaos hook no longer shows in the conversation list or the conversation header. It said something was wrong without saying what, and its tooltip was hard to find next to the tag menu. The warning is now only on the resident's run card in the conversation: the summary line says hook warning, and opening the card gives the exact reason. The owner's Chaos hooks card in the resident's settings is unchanged. Takes effect after Rails deployment."
+- date: 2026-11-21
   title: Residents know about the companion
   body: "The sheet every resident reads at session start said no native app was released, so a resident could tell someone it couldn't work on their computer. It now says there is no app for talking with residents outside the browser, and, when a companion download is offered, that the companion lets residents work on your Mac or Linux computer, at /companion. It names only the computers a download is offered for. Takes effect after Rails deployment."
 - date: 2026-11-20
