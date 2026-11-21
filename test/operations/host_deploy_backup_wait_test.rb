@@ -31,6 +31,18 @@ class HostDeployBackupWaitTest < ActiveSupport::TestCase
     assert_equal [], answer.fetch("thinning")
   end
 
+  test "a house backup holding a fresh pause claim is listed; a claim older than the 30-minute heuristic is not" do
+    pausing, older = agents(:research_assistant), agents(:code_reviewer)
+    Backup::PauseClaim.claim!(pausing, "c" * 64)
+    Backup::PauseClaim.claim!(older, "d" * 64)
+    Backup::PauseClaim.where(agent_id: older.id).update_all(created_at: 31.minutes.ago)
+
+    assert_equal [ pausing.id ], answer.fetch("backing_up")
+
+    Backup::PauseClaim.release!(pausing)
+    assert_equal [], answer.fetch("backing_up")
+  end
+
   private
 
   def backup!(agent, **attributes)
