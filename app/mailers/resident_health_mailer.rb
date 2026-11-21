@@ -106,7 +106,7 @@ class ResidentHealthMailer < ApplicationMailer
     @account = agent.account
     @owner = recipient
     @operator = recipient.site_admin
-    return unless @operator || @account.owner == recipient
+    return unless @operator || @account.memberships.confirmed.owners.exists?(user: recipient)
 
     @since = format_time(since)
     @runs_url = edit_account_agent_url(@account, @agent, tab: "interactions")

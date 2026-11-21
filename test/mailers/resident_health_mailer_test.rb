@@ -39,6 +39,11 @@ class ResidentHealthMailerTest < ActionMailer::TestCase
     operator.update!(is_site_admin: false)
     assert_nil ResidentHealthMailer.resident_frozen(@agent, "2026-11-21T04:08:00Z", operator).message.to,
       "a site admin demoted before delivery gets nothing"
+
+    refute @owner.site_admin, "the owner must not pass as an operator here"
+    @agent.account.memberships.owners.find_by!(user: @owner).update_columns(confirmed_at: nil)
+    assert_nil ResidentHealthMailer.resident_frozen(@agent, "2026-11-21T04:08:00Z", @owner).message.to,
+      "an owner whose confirmation is gone before delivery gets nothing"
   end
 
   test "a house fault asks nothing of the owner and says the fix is ours" do

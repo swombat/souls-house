@@ -2,7 +2,7 @@ Hello,
 
 The house has seen <%= @agent.name %>'s container paused since at least <%= @since %>. While it is paused, <%= @agent.name %> can't answer in conversations or run their wakes.
 
-We are looking into it. This is on the house's side, and there is nothing you need to do. This notice doesn't delete or change anything of theirs.
+The house is responsible for investigating it. This is on the house's side, and there is nothing you need to do. This notice doesn't delete or change anything of theirs.
 <% if @operator %>
 You are getting this as a site admin. Before anything is unpaused, follow the paused-resident recovery runbook (docs/operations/paused-resident-recovery.md): it establishes whose pause this is and that no backup still holds it.
 <% end %>

@@ -75,6 +75,24 @@ module Backup
       assert_enqueued_email_with ResidentHealthMailer, :resident_frozen, args: [ @agent, @start.iso8601, owner ]
     end
 
+    test "an owner whose membership is still a pending invitation isn't emailed" do
+      owner = @agent.account.owner
+      refute owner.site_admin, "the owner must not pass as an operator here"
+      @agent.account.memberships.owners.find_by!(user: owner).update_columns(confirmed_at: nil)
+      paused = "resident-watch-test\n"
+
+      watch(paused, at: @start)
+      asked = []
+      real = ResidentHealthMailer.method(:resident_frozen)
+      recording = lambda do |agent, since, user|
+        asked << user
+        real.call(agent, since, user)
+      end
+      ResidentHealthMailer.stub(:resident_frozen, recording) { watch(paused, at: @start + 30.minutes) }
+      assert_includes asked, users(:site_admin_user)
+      refute_includes asked, owner
+    end
+
     test "leaving the paused list sends nothing: a stopped or removed container leaves it too" do
       watch("resident-watch-test\n", at: @start)
       watch("resident-watch-test\n", at: @start + 30.minutes)

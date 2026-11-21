@@ -56,12 +56,18 @@ module Backup
     # The ids emailed so far this episode, with any newly sent. Each
     # recipient on its own: a failure is logged and left for the next tick.
     def email_frozen(agent, since, emailed)
-      recipients = ([ agent.account.owner ] + site_admins).compact.uniq.reject { |user| emailed.include?(user.id) }
+      recipients = (confirmed_owners(agent.account) + site_admins).compact.uniq.reject { |user| emailed.include?(user.id) }
       recipients.each_with_object(emailed.dup) do |user, sent|
         sent << user.id if ResidentHealthMailer.resident_frozen(agent, since, user).deliver_later
       rescue StandardError => error
         Rails.logger.error("[Backup::PausedResidentWatchJob] emailing user #{user.id} about resident #{agent.id} failed: #{error.class}")
       end
+    end
+
+    # Account#owner is any owner-role membership, including a pending
+    # invitation (Mira, #1094); only a confirmed owner is told.
+    def confirmed_owners(account)
+      User.where(id: account.memberships.confirmed.owners.select(:user_id)).to_a
     end
 
     # The same people User#site_admin answers true for: the flag on the
