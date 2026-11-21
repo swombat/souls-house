@@ -8,6 +8,21 @@ module Api
         subscription = current_api_agent.telegram_threads
           .includes(:user)
           .find(params[:id])
+        messages = subscription.telegram_messages.chronological
+        # A wake that leaves a long group backlog out names the cursor it
+        # starts after, so a resident can fetch just that stretch.
+        if params[:after].present?
+          after_id = decode_cursor(params[:after])
+          return render json: { error: "Unknown cursor for after" }, status: :unprocessable_entity unless after_id.is_a?(Integer)
+
+          messages = messages.where("telegram_messages.id > ?", after_id)
+        end
+        if params[:through].present?
+          through_id = decode_cursor(params[:through])
+          return render json: { error: "Unknown cursor for through" }, status: :unprocessable_entity unless through_id.is_a?(Integer)
+
+          messages = messages.where("telegram_messages.id <= ?", through_id)
+        end
 
         render json: {
           conversation: {
@@ -17,12 +32,18 @@ module Api
             subscriber: subscriber_json(subscription),
             created_at: subscription.created_at.iso8601,
             updated_at: subscription.updated_at.iso8601,
-            transcript: subscription.telegram_messages.chronological.map(&:transcript_json)
+            transcript: messages.map(&:transcript_json)
           }
         }
       end
 
       private
+
+      def decode_cursor(value)
+        TelegramMessage.decode_id(value.to_s)
+      rescue Hashids::InputError
+        nil
+      end
 
       def render_agent_key_required
         render json: { error: "Telegram conversations are only available to resident API keys" }, status: :forbidden

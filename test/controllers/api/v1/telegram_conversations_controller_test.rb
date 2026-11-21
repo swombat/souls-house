@@ -35,6 +35,27 @@ module Api
         assert_equal "Did I actually say this?", conversation.dig("transcript", 0, "text")
       end
 
+      test "after and through narrow the history to a stretch between two cursors" do
+        first = @subscription.telegram_messages.first
+        second = @subscription.telegram_messages.create!(role: "user", text: "second", sender_name: "Daniel", sent_at: Time.zone.parse("2026-07-17 09:01:00"))
+        third = @subscription.telegram_messages.create!(role: "user", text: "third", sender_name: "Daniel", sent_at: Time.zone.parse("2026-07-17 09:02:00"))
+        @subscription.telegram_messages.create!(role: "user", text: "fourth", sender_name: "Daniel", sent_at: Time.zone.parse("2026-07-17 09:03:00"))
+
+        get api_v1_telegram_conversation_url(@subscription, after: first.to_param, through: third.to_param),
+          headers: { "Authorization" => "Bearer #{@api_key.raw_token}" }
+
+        assert_response :ok
+        transcript = JSON.parse(response.body).dig("conversation", "transcript")
+        assert_equal [second.to_param, third.to_param], transcript.map { |message| message["id"] }
+      end
+
+      test "an unreadable cursor is refused rather than read as the whole thread" do
+        get api_v1_telegram_conversation_url(@subscription, after: "!!"),
+          headers: { "Authorization" => "Bearer #{@api_key.raw_token}" }
+
+        assert_response :unprocessable_entity
+      end
+
       test "agent cannot read another agent's Telegram thread" do
         other_agent = agents(:code_reviewer)
         other_subscription = other_agent.telegram_subscriptions.create!(user: users(:user_1), telegram_chat_id: 222)
