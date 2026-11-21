@@ -109,6 +109,8 @@ export function createVoiceModeSession(props) {
   // The handlers the microphone feeds; kept so a reopened mic gets the same.
   const captureHandlers = {
     outputRate: TURN_RATE,
+    // What the player is sending to the speaker now (YXDkBY).
+    sound: () => reader.heard?.() ?? null,
     onlevel: (rms, limit) => {
       level = rms;
       threshold = limit;

@@ -137,8 +137,15 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     parked = null;
   }
 
+  // A streamed reply that has finished rendering is still in the room for the
+  // output latency: heard() asks it until it says it is quiet.
+  let fading = null;
+
   function streamEnded(job) {
-    if (current?.job === job) return finish(current);
+    if (current?.job === job) {
+      fading = job.stream;
+      return finish(current);
+    }
     if (parked?.job === job) parked = null;
   }
 
@@ -184,6 +191,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     if (closed || item !== current || item.generation !== generation) return;
     if (!url) return failed(item, new Error('No audio for this reply.'));
     item.started = true;
+    waiting = true; // not heard until the element says it is playing
     audio.src = url;
     play(item, audio.play());
   }
@@ -210,6 +218,7 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
       item.resumed = true;
       item.started = true;
       parked = null;
+      waiting = true;
       return play(item, audio.play());
     }
     dropParked();
@@ -245,14 +254,22 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
     if (current?.started && !current.job?.stream) return failed(current);
     if (!current && !parked?.job) parked = null;
   };
+  // The element is waiting for data (buffering): no sound leaves it, even
+  // though it is not paused.
+  let waiting = false;
+  const onwaiting = () => (waiting = true);
+  const onplaying = () => (waiting = false);
   audio.addEventListener('ended', onended);
   audio.addEventListener('error', onerrorEvent);
+  audio.addEventListener('waiting', onwaiting);
+  audio.addEventListener('playing', onplaying);
 
   function stop() {
     generation += 1;
     const started = Boolean(current?.started);
     const now = current?.job?.stream ? current.job.stream.position : audio.currentTime;
     const position = started && Number.isFinite(now) ? now : 0;
+    fading = null;
     const dropped = [
       ...(current ? [{ id: current.id, at: position, playing: started }] : []),
       ...queue.map((item) => ({ id: item.id, at: 0, playing: false })),
@@ -294,6 +311,24 @@ export function createPlayer({ audio = sharedAudio(), urlFor, onchange, onerror,
       audio.load?.();
       audio.removeEventListener('ended', onended);
       audio.removeEventListener('error', onerrorEvent);
+      audio.removeEventListener('waiting', onwaiting);
+      audio.removeEventListener('playing', onplaying);
+    },
+    // What is leaving the speaker now, for barge-in (YXDkBY): { playing,
+    // level }. A reply being made, queued, buffering or paused is not
+    // playing. A streamed reply gives the level of its own samples; the
+    // element can't, so its level is null (createTurnDetector then gates on
+    // energy alone).
+    heard() {
+      const silent = { playing: false, level: null };
+      if (closed) return silent;
+      const tail = fading?.heard?.() ?? silent;
+      if (!tail.playing) fading = null;
+      if (!current?.started) return tail;
+      if (tail.playing && !current.job?.stream?.heard?.().playing) return tail;
+      if (current.job?.stream) return current.job.stream.heard?.() ?? silent;
+      const playing = !audio.paused && !audio.ended && !waiting && (audio.readyState ?? 4) >= 3;
+      return playing ? { playing: true, level: null } : silent;
     },
     get speaking() {
       return current !== null;

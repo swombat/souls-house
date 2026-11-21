@@ -138,3 +138,41 @@ test('a player on a shared context (keepContext) never closes it', () => {
   player.stop();
   expect(ctx.close).not.toHaveBeenCalled();
 });
+
+test('heard() gives the level of the samples being rendered, after the output latency', () => {
+  ctx.outputLatency = 0.1;
+  player.push(new Float32Array([...Array(10).fill(0.5), ...Array(10).fill(0)]), RATE);
+  // Scheduled at LEAD; with 0.1 s of output latency the first sound is in the
+  // room at LEAD + 0.1.
+  ctx.currentTime = LEAD + 0.05;
+  expect(player.heard().playing).toBe(false);
+  ctx.currentTime = LEAD + 0.1 + 0.45;
+  expect(player.heard()).toEqual({ playing: true, level: 0.5 });
+  ctx.currentTime = LEAD + 0.1 + 1.5;
+  expect(player.heard()).toEqual({ playing: true, level: 0 });
+  player.pause();
+  ctx.state = 'suspended';
+  expect(player.heard().playing).toBe(false);
+});
+
+test('heard() keeps a chunk audible past its onended while the delayed clock is inside it, and a late push does not move its samples (#1081 review)', () => {
+  const c = fakeContext();
+  c.outputLatency = 0.05;
+  const p = createStreamPlayer({ context: () => c, keepContext: true }); // as voice mode plays it
+  p.push(new Float32Array(120).fill(0.4), 1000); // scheduled LEAD (.08) to .20
+  c.currentTime = 0.18;
+  p.push(new Float32Array(120).fill(0.1), 1000); // the next chunk, late: put at .26 to .38
+  c.currentTime = 0.205; // in the room: .155, inside the first chunk
+  c.nodes[0].onended(); // rendered
+  expect(p.heard()).toEqual({ playing: true, level: expect.closeTo(0.4, 5) });
+  c.currentTime = 0.3; // in the room: .25, the gap the late push left
+  expect(p.heard().playing).toBe(false);
+  c.currentTime = 0.35; // in the room: .30, the second chunk's own samples
+  expect(p.heard().level).toBeCloseTo(0.1, 5);
+  p.finish();
+  c.currentTime = 0.4;
+  c.nodes[1].onended(); // the reply has rendered and ended; .35 is still in the room
+  expect(p.heard()).toEqual({ playing: true, level: expect.closeTo(0.1, 5) });
+  c.currentTime = 0.44; // .39: over
+  expect(p.heard().playing).toBe(false);
+});

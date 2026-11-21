@@ -35,10 +35,11 @@ describe('createTurnDetector', () => {
 
     const [end] = detector.feed(frames(1, 0.002));
     expect(end.type).toBe('end');
-    // The 300 ms pre-roll (15 frames) ends with the 3 attack frames that proved
-    // speech, then the remaining 37 frames of speech, then 1000 ms of silence.
-    expect(end.samples.length).toBe((15 + 37 + 50) * FRAME);
-    expect(end.durationMs).toBe(2040);
+    // The 300 ms pre-roll (15 frames) before the 3 attack frames that proved
+    // speech (YXDkBY: before them, as documented, not including them), then
+    // the 40 frames of speech, then 1000 ms of silence.
+    expect(end.samples.length).toBe((15 + 40 + 50) * FRAME);
+    expect(end.durationMs).toBe(2100);
     expect(detector.speaking).toBe(false);
   });
 
@@ -128,8 +129,8 @@ describe('streaming frames for the realtime transcriber', () => {
     const events = feedAll(detector, [frames(10, 0.002), frames(20, 0.2), frames(10, 0.002)]);
     const [start, ...rest] = events;
     expect(start.type).toBe('start');
-    // 100 ms of pre-roll is 5 frames, ending with the 3 attack frames.
-    expect(start.samples.length).toBe(5 * FRAME);
+    // 100 ms of pre-roll is 5 frames, before the 3 attack frames.
+    expect(start.samples.length).toBe((5 + 3) * FRAME);
     const audio = rest.filter((e) => e.type === 'audio');
     // 17 more frames of speech, then 10 of silence (the turn ends on the 10th).
     expect(audio).toHaveLength(17 + 10);

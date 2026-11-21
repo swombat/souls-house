@@ -40,6 +40,7 @@ export function createStreamPlayer({
   let ended = false;
   let stopped = false;
   let generation = 0;
+  let heardChunks = []; // { from, until, samples, generation } per scheduled chunk
 
   const seconds = () => made / rate;
   const position = () => {
@@ -86,6 +87,9 @@ export function createStreamPlayer({
       sources.delete(node);
       if (mine === generation) finishIfHeard();
     };
+    // When this chunk is in the room and which samples it holds, kept past its
+    // onended (the room hears it for the output latency after it is rendered).
+    heardChunks.push({ from: at, until: at + buffer.duration, samples, generation: mine });
     sources.add(node);
     node.start(at);
     scheduledEnd = at + buffer.duration;
@@ -187,6 +191,27 @@ export function createStreamPlayer({
     },
     get stopped() {
       return stopped;
+    },
+    // What is leaving the speaker now, for barge-in (YXDkBY): playing only
+    // while a scheduled chunk is being rendered on a running context (not
+    // before the first sound, in an underrun, paused, or after the end), and
+    // level the RMS of this reply's own samples there. The browser's output
+    // latency is taken off the clock, so it is the sound in the room, as best
+    // the page can know it, not the sound being queued.
+    heard() {
+      const silent = { playing: false, level: null };
+      if (stopped || paused || ctx.state !== 'running') return silent;
+      const now = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
+      heardChunks = heardChunks.filter((c) => c.generation === generation && c.until > now - 1);
+      const chunk = heardChunks.find((c) => c.from <= now && now < c.until);
+      if (!chunk) return silent;
+      // RMS of this chunk's own samples within 10 ms of now.
+      const at = (now - chunk.from) * rate;
+      const from = Math.max(0, Math.floor(at - rate * 0.01));
+      const to = Math.min(chunk.samples.length, Math.ceil(at + rate * 0.01));
+      let sum = 0;
+      for (let i = from; i < to; i += 1) sum += chunk.samples[i] * chunk.samples[i];
+      return { playing: true, level: to > from ? Math.sqrt(sum / (to - from)) : 0 };
     },
   };
 }
