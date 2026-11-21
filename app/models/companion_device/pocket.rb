@@ -13,9 +13,10 @@
 # down only when it is the bound resident's, written by a run of a dispatch
 # that one of the run's own clips woke, with no other human or device
 # message in between. It covers the waking clip and only those other clips
-# whose ids the run's own request carries, never one it can't be shown to
-# have read (Mira, YrBOKp, #1083). Older unread clips end as ambiguous;
-# newer ones stay open for the wake they are holding. Every clip ends one way: covered by a
+# among the transcript rows the run was certainly shown, never one it can't
+# be shown to have read (Mira, YrBOKp, #1083). Older unread clips end as
+# ambiguous; newer ones are covered only in an unbroken run, and the rest
+# stay open, a contiguous tail, for the wake they are holding. Every clip ends one way: covered by a
 # reply, ambiguous, or expired OPEN_WINDOW after it was sent (the deadline
 # is the oldest outstanding clip's own, never refreshed by a later one).
 #
@@ -258,17 +259,20 @@ module CompanionDevice::Pocket
         .where("companion_device_id IS DISTINCT FROM ?", id).exists?
       return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless submission && !interleaved
 
-      # A clip counts as read only when the run's own request carries its id
-      # (Mira, #1083): a transcript's highest id doesn't prove the window
-      # held every clip below it. The clip that woke the run is always read.
-      # Older clips the run can't be shown to have read had their wake
-      # folded into this one, so they end as ambiguous, never as answered.
-      shown = interaction.request_text.to_s
-      covered = clips.select { |clip| clip.id == submission.id || shown.include?("[#{clip.obfuscated_id}]") }
-      unread_older = clips.select { |clip| clip.id < submission.id && !covered.include?(clip) }
-      # Newer clips the run didn't read are still waiting on their own wake,
-      # under the deadline of the oldest of them.
-      waiting = pocket_open_clips.where("messages.id > ?", submission.id).where.not(id: covered.map(&:id)).first
+      # A clip counts as read only when it is one of the transcript rows the
+      # run was certainly shown (shown_message_ids; Mira, #1083), never by
+      # inference from a cursor or a search of the text. The clip that woke
+      # the run is always read. Older clips not shown had their wake folded
+      # into this one, so they end as ambiguous, never as answered. Newer
+      # clips are covered only in an unbroken run after the waking clip, so
+      # what stays waiting is a contiguous tail.
+      shown = interaction.shown_message_ids.to_a
+      older = clips.select { |clip| clip.id < submission.id }
+      newer = pocket_open_clips.where("messages.id > ?", submission.id).to_a
+      covered_newer = newer.take_while { |clip| shown.include?(clip.id) }
+      covered = older.select { |clip| shown.include?(clip.id) } + [ submission ] + covered_newer
+      unread_older = older - covered
+      waiting = newer[covered_newer.length]
       update!(pocket_open_message_id: waiting&.id, pocket_opened_at: waiting&.created_at)
       record_pocket_reply!(reply, submission)
       announce_pocket_outcome(:ambiguous, unread_older) if unread_older.any?

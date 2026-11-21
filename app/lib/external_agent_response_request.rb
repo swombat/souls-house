@@ -117,6 +117,7 @@ class ExternalAgentResponseRequest
       endpoint_url: endpoint_url,
       request_text: request,
       last_included_message_id: computed_last_included_message_id,
+      shown_message_ids: shown_message_ids(delta),
       provider_auth_mode: auth_mode,
       provider: provider,
       model: dispatch_model
@@ -718,6 +719,14 @@ class ExternalAgentResponseRequest
     else
       []
     end
+  end
+
+  # The transcript rows this run is certainly shown, whichever form the
+  # runtime sends: the full window, and when a delta may be sent instead,
+  # only the rows in both (Mira, #1083). Read by CompanionDevice::Pocket.
+  def shown_message_ids(delta)
+    ids = full_window_messages.map(&:id)
+    delta ? ids & delta_messages.map(&:id) : ids
   end
 
   def computed_last_included_message_id

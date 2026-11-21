@@ -35,7 +35,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
       MessageDispatch.accept!(message: message, target_agent_ids: [ agent.id ], kind: "automatic")
     interaction = AgentRuntimeInteraction.create!(agent: agent, chat: message.chat, trigger_kind: "wake",
       message_dispatch: dispatch, started_at: Time.current, last_included_message_id: shown.map(&:id).max,
-      request_text: shown.map { |m| "The stone [#{m.obfuscated_id}]: #{m.content}" }.join("\n"))
+      shown_message_ids: shown.map(&:id))
     message.chat.messages.create!(role: "assistant", agent: agent, content: text, runtime_interaction: interaction)
   end
 
@@ -183,6 +183,49 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
       "epoch" => "epoch-1" }, ambiguous)
     assert_equal [ "reply", [ c.to_param ], reply_c.to_param ], reply.values_at("type", "submission_ids", "message_id")
     assert_nil @device.reload.pocket_open_message_id, "no clip is left without an outcome"
+  end
+
+  # Mira, #1083: covering A and C but leaving B pending would bring C back
+  # into the queue behind B's anchor. The waiting tail stays contiguous.
+  test "a gap in what the run was shown stops coverage; the waiting tail stays contiguous" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    c = submit("c").message
+    reply_to(a, shown: [ a, c ])
+    assert_equal [ a.to_param ], payloads.last["submission_ids"]
+    assert_equal b.id, @device.reload.pocket_open_message_id
+    assert_equal [ b, c ], @device.pocket_open_clips.to_a
+  end
+
+  test "a clip quoted in the request text but not one of its rows isn't counted as read" do
+    enable_mic
+    b = submit("b").message
+    c = submit("c").message
+    dispatch = MessageDispatch.find_by(message_id: c.id) ||
+      MessageDispatch.accept!(message: c, target_agent_ids: [ @agent.id ], kind: "automatic")
+    interaction = AgentRuntimeInteraction.create!(agent: @agent, chat: c.chat, trigger_kind: "wake", message_dispatch: dispatch,
+      started_at: Time.current, shown_message_ids: [ c.id ], request_text: "Someone quoted [#{b.obfuscated_id}] here")
+    c.chat.messages.create!(role: "assistant", agent: @agent, content: "for c", runtime_interaction: interaction)
+    assert_equal [ [ "ambiguous", [ b.to_param ] ], [ "reply", [ c.to_param ] ] ],
+      payloads.last(2).map { |p| p.values_at("type", "submission_ids") }
+  end
+
+  # Mira, #1083: the last reply from before the deploy keeps its window.
+  test "the migration carries the last pre-deploy reply into the list with its own time" do
+    enable_mic
+    message = submit.message
+    reply = unrelated_run_reply("old reply")
+    replied_at = 5.minutes.ago
+    @device.update_columns(pocket_reply_message_id: reply.id, pocket_reply_submission_id: message.id,
+      pocket_replied_at: replied_at, pocket_replies: [])
+    sql = File.read(Dir[Rails.root.join("db/migrate/20261121103000_*.rb")].first)[/UPDATE companion_devices.*?(?=\n\s*SQL)/m]
+    ActiveRecord::Base.connection.execute(sql)
+    assert_equal reply, @device.reload.pocket_reply(reply.to_param)
+    assert_in_delta replied_at.to_f, Time.zone.parse(@device.pocket_replies.first["at"]).to_f, 0.001
+    travel CompanionDevice::Pocket::AUDIO_WINDOW - 4.minutes do
+      assert_nil @device.pocket_reply(reply.to_param), "the window runs from the old reply, not the deploy"
+    end
   end
 
   test "two replies in a row both keep their voice; the later doesn't supersede the earlier" do

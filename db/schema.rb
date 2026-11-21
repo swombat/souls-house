@@ -457,6 +457,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
     t.datetime "response_requested_at"
     t.bigint "provider_retry_of_id"
     t.text "hook_warning"
+    t.jsonb "shown_message_ids", default: [], null: false
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"

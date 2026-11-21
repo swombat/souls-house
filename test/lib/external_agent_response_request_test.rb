@@ -439,6 +439,24 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_equal messages.last.id, request.send(:computed_last_included_message_id)
   end
 
+  # Pocket coverage (#1083) reads these: rows the run is certainly shown.
+  test "shown message ids are the window rows, or only those also in the delta when one may be sent" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Shown rows")
+    messages = 6.times.map { |index| chat.messages.create!(role: "user", content: "message-#{index}-#{"x" * 20_000}") }
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    window = request.send(:full_window_messages).map(&:id)
+    assert_not_includes window, messages.first.id
+    assert_equal window, request.send(:shown_message_ids, nil)
+
+    request.stub(:delta_messages, messages.first(5)) do
+      shown = request.send(:shown_message_ids, "a delta")
+      assert_equal window & messages.first(5).map(&:id), shown
+      assert_not_includes shown, messages.last.id, "a row only in the full window isn't certainly shown"
+      assert_not_includes shown, messages.first.id, "a row only in the delta isn't either"
+    end
+  end
+
   test "oversized latest message is truncated without breaking unicode" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Oversized message")
