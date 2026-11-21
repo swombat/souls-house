@@ -14,9 +14,12 @@
 # restart. It does pick the backup up, but a restart between pause and
 # unpause leaves the resident paused: deploy d11e730b at 04:12:30Z stopped
 # the worker holding Mira's pause, and she stayed frozen until 06:50.
-# A claim older than pause_claim_fresh is not listed. A house backup
-# pauses for minutes, so an old claim belongs to a worker that is already
-# gone, and waiting for it would only hold the deploy up.
+# A claim older than pause_claim_fresh is not listed: a house backup
+# pauses for minutes, and waiting on an old claim would hold every deploy
+# up to its limit. An old claim isn't proof its backup stopped, though.
+# This is a mitigation (Mira, #1095): a backup can still start between the
+# deploy's last check and the jobs worker stopping. The cutover guard that
+# closes that race is separate work.
 require "json"
 
 pause_claim_fresh = 30 * 60 # seconds

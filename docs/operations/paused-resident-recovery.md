@@ -11,6 +11,13 @@ containers running" can't say who owns the pause, so recovery is manual and
 follows the checks below. If any check can't be established, stop and
 escalate instead of guessing.
 
+Since #1095 a Rails deploy waits (up to its backup limit) while a house
+backup holds a pause claim younger than 30 minutes. That is a mitigation,
+not a guard. A backup can start after the deploy's last check and before
+the jobs worker stops. A claim older than 30 minutes isn't proof that its
+backup stopped. And a deploy that reaches the limit goes ahead anyway. A
+deploy can still strand a resident paused.
+
 ## How you hear about it
 
 `Backup::PausedResidentWatchJob` runs every 10 minutes in the jobs
