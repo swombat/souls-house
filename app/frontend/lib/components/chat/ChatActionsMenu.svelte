@@ -155,7 +155,7 @@
           </DropdownMenu.Item>
         {/if}
 
-        {#if !chat.private}
+        {#if chat.can_make_private}
           <DropdownMenu.Item onclick={onMakePrivate} data-testid="make-private">
             <Lock size={16} class="mr-2" weight="duotone" />
             Make private

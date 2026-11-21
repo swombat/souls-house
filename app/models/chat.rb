@@ -165,12 +165,20 @@ class Chat < ApplicationRecord
   # then you declare that no one else can see it"). Who's in is who is there
   # now: the residents seated, the person doing it, and every human who has
   # written in it. Everyone else loses it from list, search and link. One way.
+  # Only someone who has written in it can close it (#1092): a reader who never
+  # wrote can't shut the other readers out. (A starter isn't recorded, and a
+  # conversation a resident started has none.)
+  def can_make_private?(user)
+    !private? && user.present? && Message.where(chat_id: id, user_id: user.id).exists?
+  end
+
   def make_private!(by:)
     # The account lock first, as Stone#revise! takes it, so a publication in
     # flight and this conversion are serialized and each sees the other (#1092).
     account.with_lock do
       lock!
       return false if private?
+      raise NotAWriter, "Only someone who has written in this conversation can make it private" unless can_make_private?(by)
       # Every stone is a public page; a private conversation can't have one up.
       raise PublishedStones, "Withdraw this conversation's published stones first" if stones.available.exists?
 
@@ -198,6 +206,7 @@ class Chat < ApplicationRecord
   # answer as if it didn't exist (404), never with a 403 that confirms it.
   class NotVisible < StandardError; end
   class PublishedStones < StandardError; end
+  class NotAWriter < StandardError; end
 
   def ensure_visible_to!(actor)
     raise NotVisible unless visible_to?(actor)

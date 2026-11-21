@@ -86,4 +86,21 @@ class Chats::PrivaciesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, Stone.where(chat_id: @chat.id).count
   end
 
+  # Who may press it (#1092): only someone who has written in it. A member who
+  # has only read it isn't offered it and is refused, and nothing changes.
+  test "a member who has only read it can't make it private" do
+    sign_in @reader
+    get account_chat_path(@account, @chat), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_equal false, JSON.parse(response.body).dig("props", "chat", "can_make_private")
+
+    post account_chat_privacy_path(@account, @chat)
+    assert_equal "Only someone who has written in this conversation can make it private", flash[:alert]
+    refute @chat.reload.private?
+    assert_empty @chat.chat_participants
+
+    sign_in @owner
+    get account_chat_path(@account, @chat), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_equal true, JSON.parse(response.body).dig("props", "chat", "can_make_private")
+  end
+
 end
