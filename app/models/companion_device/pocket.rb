@@ -261,12 +261,15 @@ module CompanionDevice::Pocket
 
       # A clip counts as read only when it is one of the transcript rows the
       # run was certainly shown (shown_message_ids; Mira, #1083), never by
-      # inference from a cursor or a search of the text. The clip that woke
-      # the run is always read. Older clips not shown had their wake folded
+      # inference from a cursor or a search of the text. That holds for the
+      # clip that woke the run too: a bounded transcript can leave it out, and
+      # then nothing can be called answered. Older clips not shown had their wake folded
       # into this one, so they end as ambiguous, never as answered. Newer
       # clips are covered only in an unbroken run after the waking clip, so
       # what stays waiting is a contiguous tail.
       shown = interaction.shown_message_ids.to_a
+      return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless shown.include?(submission.id)
+
       older = clips.select { |clip| clip.id < submission.id }
       newer = pocket_open_clips.where("messages.id > ?", submission.id).to_a
       covered_newer = newer.take_while { |clip| shown.include?(clip.id) }
@@ -321,8 +324,15 @@ module CompanionDevice::Pocket
     end
   end
 
+  # The single "latest" columns count too when the list lacks them: a worker
+  # still on the old code during a deploy writes only those, after the
+  # migration's backfill has already run (Mira, #1083).
   def current_pocket_reply_entries(now = Time.current)
-    pocket_replies.select { |e| Time.zone.parse(e["at"].to_s)&.after?(now - AUDIO_WINDOW) }
+    entries = pocket_replies.to_a
+    if pocket_reply_message_id && pocket_replied_at && entries.none? { |e| e["reply_id"] == pocket_reply_message_id }
+      entries += [ { "reply_id" => pocket_reply_message_id, "submission_id" => pocket_reply_submission_id, "at" => pocket_replied_at.iso8601(6) } ]
+    end
+    entries.select { |e| Time.zone.parse(e["at"].to_s)&.after?(now - AUDIO_WINDOW) }
   end
 
   # The latest reply also stays in the single columns, which older readers

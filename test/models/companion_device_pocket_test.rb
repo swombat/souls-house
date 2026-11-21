@@ -164,7 +164,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     enable_mic
     a = submit("a").message
     b = submit("b").message
-    reply_to(a, shown: [])
+    reply_to(a, shown: [ a ])
     assert_equal [ a.to_param ], payloads.last["submission_ids"]
     assert_equal b.id, @device.reload.pocket_open_message_id
   end
@@ -209,6 +209,30 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     c.chat.messages.create!(role: "assistant", agent: @agent, content: "for c", runtime_interaction: interaction)
     assert_equal [ [ "ambiguous", [ b.to_param ] ], [ "reply", [ c.to_param ] ] ],
       payloads.last(2).map { |p| p.values_at("type", "submission_ids") }
+  end
+
+  # Mira, #1083: a bounded transcript can leave out the waking clip itself.
+  test "a run that wasn't shown its own waking clip ends the clips ambiguous, with no reply or voice" do
+    enable_mic
+    b = submit("b").message
+    c = submit("c").message
+    reply = reply_to(c, "for c", shown: [ b ])
+    assert_equal [ "ambiguous", [ b.to_param, c.to_param ] ], payloads.last.values_at("type", "submission_ids")
+    assert_not_includes payloads.map { |p| p["type"] }, "reply"
+    assert_nil @device.reload.pocket_open_message_id
+    assert_nil @device.pocket_reply(reply.to_param)
+  end
+
+  # Mira, #1083: deploy order; an old worker writes only the single columns.
+  test "a reply an old-code worker wrote after the backfill is still fetchable" do
+    enable_mic
+    message = submit.message
+    listed = unrelated_run_reply("listed")
+    late = unrelated_run_reply("written by old code")
+    @device.update_columns(pocket_replies: [ { "reply_id" => listed.id, "submission_id" => message.id, "at" => 2.minutes.ago.iso8601(6) } ],
+      pocket_reply_message_id: late.id, pocket_reply_submission_id: message.id, pocket_replied_at: 1.minute.ago)
+    assert_equal listed, @device.reload.pocket_reply(listed.to_param)
+    assert_equal late, @device.pocket_reply(late.to_param)
   end
 
   # Mira, #1083: the last reply from before the deploy keeps its window.
