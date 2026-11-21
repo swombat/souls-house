@@ -83,9 +83,11 @@ module CompanionDevice::Pocket
     end
 
     # The reply's voice is ready: tell each pocket device it was the reply
-    # for. Cheap when none was.
+    # for. Cheap when none was. The single column counts too, for a reply an
+    # old-code worker wrote across the deploy (Mira, #1083).
     def announce_pocket_audio(message)
-      where(kind: "pocket", revoked_at: nil).where("pocket_replies @> ?", [ { reply_id: message.id } ].to_json)
+      where(kind: "pocket", revoked_at: nil)
+        .where("pocket_replies @> ? OR pocket_reply_message_id = ?", [ { reply_id: message.id } ].to_json, message.id)
         .find_each { |device| device.announce_pocket_audio!(message) }
     end
 

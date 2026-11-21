@@ -233,6 +233,10 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
       pocket_reply_message_id: late.id, pocket_reply_submission_id: message.id, pocket_replied_at: 1.minute.ago)
     assert_equal listed, @device.reload.pocket_reply(listed.to_param)
     assert_equal late, @device.pocket_reply(late.to_param)
+
+    attach_voice(late)
+    CompanionDevice.announce_pocket_audio(late.reload)
+    assert_equal [ "audio", late.to_param ], payloads.last.values_at("type", "message_id"), "the live announcer finds it too"
   end
 
   # Mira, #1083: the last reply from before the deploy keeps its window.
