@@ -31,6 +31,18 @@ class HostDeployBackupWaitTest < ActiveSupport::TestCase
     assert_equal [], answer.fetch("thinning")
   end
 
+  test "a house backup holding a fresh pause claim is listed; an abandoned claim is not" do
+    pausing, abandoned = agents(:research_assistant), agents(:code_reviewer)
+    Backup::PauseClaim.claim!(pausing, "c" * 64)
+    Backup::PauseClaim.claim!(abandoned, "d" * 64)
+    Backup::PauseClaim.where(agent_id: abandoned.id).update_all(created_at: 31.minutes.ago)
+
+    assert_equal [ pausing.id ], answer.fetch("backing_up")
+
+    Backup::PauseClaim.release!(pausing)
+    assert_equal [], answer.fetch("backing_up")
+  end
+
   private
 
   def backup!(agent, **attributes)
