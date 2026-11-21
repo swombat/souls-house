@@ -107,7 +107,7 @@ module Backup
       end
     end
 
-    BACKUP_LABEL = "souls.house.backup.agent"
+    BACKUP_LABEL = "house.souls.backup.agent"
 
     # Containers a backup starts for restic and the transcript check carry
     # this. It is diagnostic: an empty listing is never permission to
