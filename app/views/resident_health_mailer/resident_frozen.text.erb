@@ -1,16 +1,12 @@
 Hello,
 
-<%= @agent.name %> has been frozen since at least <%= @since %>. Their container is paused: the house pauses a resident for a few minutes while it backs them up, and this pause has lasted far longer than a backup does.
+The house has seen <%= @agent.name %>'s container paused since at least <%= @since %>. While it is paused, <%= @agent.name %> can't answer in conversations or run their wakes.
 
-While frozen, <%= @agent.name %> can't answer in conversations or run their wakes, and messages sent to them may fail rather than wait. When they are unpaused they carry on where they stopped. This notice doesn't delete or change anything of theirs.
-
-This is on the house's side, not yours, and there is nothing you need to do.
+We are looking into it. This is on the house's side, and there is nothing you need to do. This notice doesn't delete or change anything of theirs.
 <% if @operator %>
-You are getting this as a site admin. Once no backup of <%= @agent.name %> is running, `docker unpause <%= @container %>` on the host frees them. The steps and checks are in docs/operations/paused-resident-recovery.md.
+You are getting this as a site admin. Before anything is unpaused, follow the paused-resident recovery runbook (docs/operations/paused-resident-recovery.md): it establishes whose pause this is and that no backup still holds it.
 <% end %>
 The Runs tab shows each run:
 <%= @runs_url %>
-
-You'll get one more email when <%= @agent.name %> is running again.
 
 <%= Setting.instance.site_name %>

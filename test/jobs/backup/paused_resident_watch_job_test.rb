@@ -34,43 +34,53 @@ module Backup
       assert_no_enqueued_emails
     end
 
-    test "a frozen resident's account admins and the site admins are emailed once, and told again when it runs" do
-      admins = @agent.account.memberships.confirmed.admins.filter_map(&:user)
+    test "a frozen resident's owner and the site admins are emailed once each; nobody else" do
+      owner = @agent.account.owner
       operator = users(:site_admin_user)
-      assert admins.any?
+      by_account = site_admin_by_account!
+      clear_enqueued_jobs
       paused = "resident-watch-test\n"
 
       watch(paused, at: @start)
       assert_no_enqueued_emails
       watch(paused, at: @start + 30.minutes)
-      recipients = (admins + [ operator ]).uniq
-      assert_enqueued_emails recipients.size
-      recipients.each do |user|
-        assert_enqueued_email_with ResidentHealthMailer, :resident_frozen,
-          args: [ @agent, @start.iso8601, user, { operator: user == operator } ]
+      expected = [ owner, operator, by_account ].uniq
+      assert_enqueued_emails expected.size
+      expected.each do |user|
+        assert_enqueued_email_with ResidentHealthMailer, :resident_frozen, args: [ @agent, @start.iso8601, user ]
       end
 
       clear_enqueued_jobs
       watch(paused, at: @start + 40.minutes)
       assert_no_enqueued_emails
-
-      watch(nil, at: @start + 45.minutes)
-      assert_no_enqueued_emails # Docker not answering is not a recovery
-
-      watch("", at: @start + 50.minutes)
-      assert_enqueued_emails recipients.size
-      recipients.each do |user|
-        assert_enqueued_email_with ResidentHealthMailer, :resident_unfrozen, args: [ @agent, @start.iso8601, user ]
-      end
-
-      clear_enqueued_jobs
-      watch("", at: @start + 60.minutes)
-      assert_no_enqueued_emails
     end
 
-    test "a pause that never lasted long enough to report sends no recovery email" do
+    test "one recipient's failed send doesn't stop the others, and is tried again while the pause holds" do
+      owner = @agent.account.owner
+      operator = users(:site_admin_user)
+      paused = "resident-watch-test\n"
+      watch(paused, at: @start)
+
+      real = ResidentHealthMailer.method(:resident_frozen)
+      failing = lambda do |agent, since, user|
+        raise IOError, "queue down" if user == owner
+        real.call(agent, since, user)
+      end
+      ResidentHealthMailer.stub(:resident_frozen, failing) { watch(paused, at: @start + 30.minutes) }
+      assert_enqueued_email_with ResidentHealthMailer, :resident_frozen, args: [ @agent, @start.iso8601, operator ]
+
+      clear_enqueued_jobs
+      watch(paused, at: @start + 35.minutes)
+      assert_enqueued_emails 1
+      assert_enqueued_email_with ResidentHealthMailer, :resident_frozen, args: [ @agent, @start.iso8601, owner ]
+    end
+
+    test "leaving the paused list sends nothing: a stopped or removed container leaves it too" do
       watch("resident-watch-test\n", at: @start)
-      watch("", at: @start + 10.minutes)
+      watch("resident-watch-test\n", at: @start + 30.minutes)
+      clear_enqueued_jobs
+      watch("", at: @start + 40.minutes)
+      watch(nil, at: @start + 45.minutes)
       assert_no_enqueued_emails
     end
 
@@ -107,6 +117,18 @@ module Backup
           end
         end
       end
+    end
+
+    # A confirmed member of an enabled site-admin account, without the flag
+    # on the user; a member of a disabled one must not count.
+    def site_admin_by_account!
+      user = User.create!(email_address: "operator-by-account@example.com", password: "password123456")
+      enabled = Account.create!(name: "Operators", account_type: :team, is_site_admin: true)
+      enabled.memberships.create!(user:, role: "member", confirmed_at: Time.current)
+      disabled_user = User.create!(email_address: "operator-disabled@example.com", password: "password123456")
+      disabled = Account.create!(name: "Old operators", account_type: :team, is_site_admin: true, disabled_at: Time.current)
+      disabled.memberships.create!(user: disabled_user, role: "member", confirmed_at: Time.current)
+      user
     end
 
     def ok = Struct.new(:success?).new(true)

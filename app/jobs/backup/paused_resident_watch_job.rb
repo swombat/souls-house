@@ -10,9 +10,12 @@ module Backup
   # the middle of its checkpoint. That recovery is its own piece of work.
   #
   # The report also goes by email (ResidentHealthMailer#resident_frozen) to
-  # the resident's account admins and the house's site admins, and a second
-  # email goes to the same people once the resident is seen running again.
-  # Until 21 Nov 2026 it reached only the error tracker, which nobody reads.
+  # the resident's account owner and the house's site admins. Until 21 Nov
+  # 2026 it reached only the error tracker, which nobody reads. Each
+  # recipient is tracked on its own: one failed send doesn't stop the
+  # others, and it is tried again on the next tick while the pause holds.
+  # No "running again" email: leaving the paused list doesn't show that a
+  # resident is running (a stopped or removed container leaves it too).
   class PausedResidentWatchJob < ApplicationJob
 
     queue_as :default
@@ -34,46 +37,31 @@ module Backup
 
         entry = seen[agent.id.to_s] || { "since" => now.iso8601, "reported" => false }
         since = Time.zone.parse(entry["since"])
-        if !entry["reported"] && since <= now - PAUSED_FOR
-          ContainerPause.report(ContainerPause::StillPaused, agent,
-            "has been paused since at least #{since.utc.iso8601}. It was not unpaused automatically; " \
-            "once no backup of it is running, `docker unpause #{agent.container_name}` frees it")
-          entry = entry.merge("reported" => true, "emailed" => email_frozen(agent, entry["since"]))
+        if since <= now - PAUSED_FOR
+          unless entry["reported"]
+            ContainerPause.report(ContainerPause::StillPaused, agent,
+              "has been paused since at least #{since.utc.iso8601}. It was not unpaused automatically; " \
+              "once no backup of it is running, `docker unpause #{agent.container_name}` frees it")
+            entry = entry.merge("reported" => true)
+          end
+          entry = entry.merge("emailed" => email_frozen(agent, entry["since"], Array(entry["emailed"])))
         end
         still[agent.id.to_s] = entry
       end
-      email_unfrozen(seen.except(*still.keys))
       Rails.cache.write(CACHE_KEY, still)
     end
 
     private
 
-    # Ids of the users emailed. Account admins hear that the cause is the
-    # house's; site admins get the same email with the recovery steps.
-    def email_frozen(agent, since)
-      operators = site_admins
-      admins = agent.account.memberships.confirmed.admins.includes(:user).filter_map(&:user)
-      (admins + operators).uniq.map do |user|
-        ResidentHealthMailer.resident_frozen(agent, since, user, operator: operators.include?(user)).deliver_later
-        user.id
+    # The ids emailed so far this episode, with any newly sent. Each
+    # recipient on its own: a failure is logged and left for the next tick.
+    def email_frozen(agent, since, emailed)
+      recipients = ([ agent.account.owner ] + site_admins).compact.uniq.reject { |user| emailed.include?(user.id) }
+      recipients.each_with_object(emailed.dup) do |user, sent|
+        sent << user.id if ResidentHealthMailer.resident_frozen(agent, since, user).deliver_later
+      rescue StandardError => error
+        Rails.logger.error("[Backup::PausedResidentWatchJob] emailing user #{user.id} about resident #{agent.id} failed: #{error.class}")
       end
-    rescue StandardError => error
-      Rails.logger.error("[Backup::PausedResidentWatchJob] emailing about resident #{agent.id} failed: #{error.class}")
-      []
-    end
-
-    # Residents reported frozen that Docker now lists as not paused.
-    def email_unfrozen(gone)
-      gone.each do |agent_id, entry|
-        next if Array(entry["emailed"]).empty?
-        next unless (agent = Agent.find_by(id: agent_id))
-
-        User.where(id: entry["emailed"]).find_each do |user|
-          ResidentHealthMailer.resident_unfrozen(agent, entry["since"], user).deliver_later
-        end
-      end
-    rescue StandardError => error
-      Rails.logger.error("[Backup::PausedResidentWatchJob] emailing a recovery failed: #{error.class}")
     end
 
     # The same people User#site_admin answers true for: the flag on the
@@ -81,6 +69,9 @@ module Backup
     def site_admins
       by_account = Membership.confirmed.joins(:account).merge(Account.enabled).where(accounts: { is_site_admin: true }).select(:user_id)
       User.where(is_site_admin: true).or(User.where(id: by_account)).to_a
+    rescue StandardError => error
+      Rails.logger.error("[Backup::PausedResidentWatchJob] listing site admins failed: #{error.class}")
+      []
     end
 
     # nil when Docker didn't answer: the record of what was seen is kept.
