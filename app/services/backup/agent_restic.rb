@@ -75,54 +75,114 @@ module Backup
     # without one is paused all the same: the transcript paths are checked for
     # links inside this block, and that check means nothing while the
     # resident can still change them (Mira, #1004).
+    #
+    # The resident's lock is taken and the pause claimed (PauseClaim) before
+    # the vault's lock, outside its transaction, so the claim is committed
+    # before `docker pause` and a killed worker cannot roll it back.
     def with_quiesced(agent, &block)
       Agents::Resources.new(agent).verify_existing!
-      vault = agent.memory_vault
-      return paused(agent, &block) unless vault
+      paused(agent, vault: agent.memory_vault, &block)
+    end
+
+    def under_vault(vault)
+      return yield unless vault
 
       vault.with_lock do
         raise ArgumentError, "Erasure is pending" if vault.erasure_requested_at?
-        paused(agent, &block)
+        yield
       end
     end
 
     # Session-level, not per transaction: a backup outlasts any transaction
-    # it should hold open (a resident with a vault is already inside one).
-    def paused(agent, &block)
+    # it should hold open (a resident with a vault is inside one).
+    def paused(agent, vault: nil, &block)
       connection = ActiveRecord::Base.connection
       unless connection.select_value(quiesce_lock_sql("pg_try_advisory_lock", agent))
         raise ResidentBusy, "The resident's runtime is being rolled"
       end
       begin
-        paused_holding_lock(agent, &block)
+        paused_holding_lock(agent, vault:, &block)
       ensure
         connection.select_value(quiesce_lock_sql("pg_advisory_unlock", agent))
       end
     end
 
-    def paused_holding_lock(agent)
+    BACKUP_LABEL = "souls.house.backup.agent"
+
+    # Containers a backup starts for restic and the transcript check carry
+    # this. It is diagnostic: an empty listing is never permission to
+    # unpause.
+    def backup_label(agent)
+      [ "--label", "#{BACKUP_LABEL}=#{Integer(agent.id)}" ]
+    end
+
+    # A backup pauses only a running container, and claims the pause first
+    # (PauseClaim, bound to the container id). Afterwards it unpauses that
+    # same container and releases the claim; a claim whose unpause failed
+    # is kept.
+    #
+    # Found paused (21 Nov 2026: a deploy killed the worker holding Mira's
+    # pause, the retry backed her up paused and left her frozen for two and
+    # a half hours), the pause is reported at once and never unpaused here.
+    # A claim records intent, not custody: it is the same row whether the
+    # earlier worker died before or after `docker pause`, so it cannot tell
+    # a backup's pause from a later pause of the same container by someone
+    # else, and the advisory lock does not fence a worker that lost its
+    # database session (Mira, #1088). Recovery is manual
+    # (docs/operations/paused-resident-recovery.md).
+    # - under a claim for this very container, the claim is kept as evidence
+    #   (ClaimedPause); with a labelled container still running the backup
+    #   refuses as busy, otherwise it backs up as it is;
+    # - with no claim for this container, the pause is not known to be a
+    #   backup's (UnclaimedPause); any stale claim is dropped.
+    def paused_holding_lock(agent, vault: nil)
       raise ResidentBusy, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
-      output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
-      paused_here = false
+      output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.Id}} {{.State.Running}} {{.State.Paused}}", agent.container_name)
+      container_id, running, paused = output.to_s.split
+      claim = PauseClaim.find_by(agent_id: agent.id)
+      state = "#{running} #{paused}"
+      token = nil
       begin
-        if status.success? && output.strip == "true false"
-          _, _, paused = Open3.capture3("docker", "pause", agent.container_name)
-          raise ArgumentError, "Could not quiesce resident filesystem" unless paused.success?
-          paused_here = true
-        elsif status.success? && !%w[false].include?(output.split.first) && output.strip != "true true"
+        to_pause = nil
+        if status.success? && state == "true false"
+          PauseClaim.release!(agent) if claim
+          to_pause = PauseClaim.claim!(agent, container_id)
+        elsif status.success? && state == "true true"
+          if claim&.container_id == container_id
+            # Reported before the label probe, so a busy result or a Docker
+            # error can't swallow the alert (Mira, #1088).
+            ContainerPause.report(ContainerPause::ClaimedPause, agent,
+              "is paused under an earlier backup's claim (#{claim.created_at.utc.iso8601}). A claim does not prove that backup took this pause, so the house does not unpause it")
+            raise ResidentBusy, "An earlier backup's Docker work is still running" unless backup_work_finished?(agent)
+          else
+            PauseClaim.release!(agent) if claim
+            ContainerPause.report(ContainerPause::UnclaimedPause, agent,
+              "is paused and no backup claims that pause. It is not unpaused by the house")
+          end
+        elsif status.success? && running != "false"
           raise ArgumentError, "Cannot establish resident filesystem state"
-        elsif !status.success?
+        elsif status.success?
+          PauseClaim.release!(agent) if claim
+        else
           # Offline residents can have volumes but no container. Distinguish
           # absence from daemon errors through the ownership verifier above.
           raise ArgumentError, "Missing hosted runtime" if agent.external?
         end
-        raise ResidentBusy, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
-        yield
+        under_vault(vault) do
+          if to_pause
+            _, _, paused_ok = Open3.capture3("docker", "pause", container_id)
+            raise ArgumentError, "Could not quiesce resident filesystem" unless paused_ok.success?
+            token = to_pause
+          end
+          raise ResidentBusy, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
+          yield
+        end
       ensure
-        if paused_here
+        PauseClaim.release!(agent, to_pause) if to_pause && token.nil?
+        if token
           original_error = $!
           resumed = begin
-            Open3.capture3("docker", "unpause", agent.container_name).last.success?
+            Open3.capture3("docker", "unpause", container_id).last.success?
           rescue StandardError
             false
           end
@@ -134,13 +194,24 @@ module Backup
             # Docker not answering is never taken for unpaused. Reported
             # either way (ContainerPause). The backup's own error, if any,
             # is kept.
-            outcome = ContainerPause.retry_unpause!(agent)
-            if outcome.in?(%i[still_paused unknown]) && !original_error
+            outcome = ContainerPause.retry_unpause!(agent, container: container_id)
+            resumed = outcome.in?(%i[unpaused not_paused])
+            if !resumed && !original_error
               raise ArgumentError, "Resident remains paused after backup"
             end
           end
+          PauseClaim.release!(agent, token) if resumed
         end
       end
+    end
+
+    # True only when Docker answered and no container labelled for this
+    # resident's backups is running.
+    def backup_work_finished?(agent)
+      out, _, status = Open3.capture3("docker", "ps", "--filter", "label=#{BACKUP_LABEL}=#{Integer(agent.id)}", "--format", "{{.ID}}")
+      raise ArgumentError, "Cannot establish whether backup work is still running" unless status.success?
+
+      out.to_s.strip.empty?
     end
 
     def repository_url(agent)
@@ -188,13 +259,13 @@ module Backup
         raise TranscriptRefused, "Cannot inspect the state volume for transcripts"
       end
 
-      present_transcript_paths(volume).flat_map do |path|
+      present_transcript_paths(agent, volume).flat_map do |path|
         [ "--mount", "type=volume,src=#{volume},dst=/data/state/#{path},readonly,volume-subpath=#{path}" ]
       end
     end
 
-    def present_transcript_paths(volume)
-      out, _, status = Open3.capture3("docker", "run", "--rm", "--network", "none",
+    def present_transcript_paths(agent, volume)
+      out, _, status = Open3.capture3("docker", "run", "--rm", *backup_label(agent), "--network", "none",
         "--mount", "type=volume,src=#{volume},dst=/state,readonly",
         INSPECT_IMAGE, "sh", "-c", TRANSCRIPT_CHECK, "transcript-check", *TRANSCRIPT_PATHS)
       raise TranscriptRefused, "Cannot inspect the state volume for transcripts" unless status.success?

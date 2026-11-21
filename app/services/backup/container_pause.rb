@@ -21,14 +21,21 @@ module Backup
     class StillPaused < StandardError; end
     # Reported when a backup's first unpause failed and the second worked.
     class UnpauseRetried < StandardError; end
+    # Reported when a resident is found paused and no backup claims that
+    # pause (Backup::PauseClaim). Never a reason to unpause it.
+    class UnclaimedPause < StandardError; end
+    # Reported when a backup finds the resident paused under an earlier
+    # backup's claim for the same container. Report only: a claim records
+    # intent, not that the pause is the backup's.
+    class ClaimedPause < StandardError; end
 
     DOCKER_TIMEOUT = 30 # seconds
 
     module_function
 
     # :running, :paused, :stopped or :unknown (no answer, or no container).
-    def state(agent)
-      out, _, status = capture("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
+    def state(agent, container: agent.container_name)
+      out, _, status = capture("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", container)
       return :unknown unless status&.success?
 
       case out.to_s.strip
@@ -46,16 +53,16 @@ module Backup
     # :still_paused, or :unknown when Docker can't say, which is never taken
     # for unpaused (Mira, #1042). Reports every outcome but :not_paused.
     # Never raises.
-    def retry_unpause!(agent)
-      case state(agent)
+    def retry_unpause!(agent, container: agent.container_name)
+      case state(agent, container:)
       when :running, :stopped then return :not_paused
       when :unknown
         report(StillPaused, agent, "may still be paused: its backup's unpause failed and Docker couldn't say after")
         return :unknown
       end
 
-      _, _, status = capture("docker", "unpause", agent.container_name)
-      after = state(agent)
+      _, _, status = capture("docker", "unpause", container)
+      after = state(agent, container:)
       if status&.success? && after == :running
         report(UnpauseRetried, agent, "stayed paused when its backup's unpause failed; a second unpause worked")
         :unpaused

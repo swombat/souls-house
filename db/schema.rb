@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -809,6 +809,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
     t.index ["billing_code_redemption_id"], name: "index_billing_checkout_attempts_on_billing_code_redemption_id"
     t.index ["idempotency_key"], name: "index_billing_checkout_attempts_on_idempotency_key", unique: true
     t.index ["stripe_session_id"], name: "index_billing_checkout_attempts_on_stripe_session_id", unique: true
+  end
+
+  create_table "backup_pause_claims", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "container_id", null: false
+    t.datetime "created_at", null: false
+    t.string "token", null: false
+    t.index ["agent_id"], name: "index_backup_pause_claims_on_agent_id", unique: true
   end
 
   create_table "billing_code_redemptions", force: :cascade do |t|
@@ -3663,6 +3671,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
   add_foreign_key "billing_code_redemptions", "users", column: "redeemed_by_id"
   add_foreign_key "billing_code_redemptions", "users", column: "withdrawn_by_id"
   add_foreign_key "billing_codes", "users", column: "created_by_id"
+  add_foreign_key "backup_pause_claims", "agents", on_delete: :cascade
   add_foreign_key "billing_customers", "accounts"
   add_foreign_key "boat_procurement_operations", "agent_placements"
   add_foreign_key "boat_procurement_operations", "users", column: "requested_by_id"
