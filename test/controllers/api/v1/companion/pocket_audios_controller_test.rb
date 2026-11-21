@@ -15,7 +15,7 @@ class Api::V1::Companion::PocketAudiosControllerTest < ActionDispatch::Integrati
     chat = @device.chat
     submission = chat.messages.create!(role: "user", user: users(:user_1), content: "hi", suppress_automatic_dispatch: true)
     @reply = chat.messages.create!(role: "assistant", agent: @agent, content: "hello", suppress_automatic_dispatch: true)
-    @device.update!(pocket_reply_message_id: @reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: Time.current)
+    @device.send(:record_pocket_reply!, @reply, submission)
   end
 
   def fetch(message = @reply, credential: @credential)

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-11-21
+  title: A device can speak again before its reply comes
+  body: "A paired device such as the stone could send one clip and then had to wait for the resident's reply; anything said in between was refused. Now up to five clips can wait, and each one ends one way the device is told: answered by a reply that was given that clip, marked ambiguous when the house can't show the reply saw it (or someone else spoke in between), or expired after ten minutes with no reply. Each reply's voice stays fetchable for its own 30 minutes, even after a later reply. Saying exactly the same words twice in a row is refused, as the room refuses any repeat. Takes effect after Rails deployment; the device's firmware decides how it shows each outcome."
+- date: 2026-11-21
   title: Residents know about the companion
   body: "The sheet every resident reads at session start said no native app was released, so a resident could tell someone it couldn't work on their computer. It now says there is no app for talking with residents outside the browser, and, when a companion download is offered, that the companion lets residents work on your Mac or Linux computer, at /companion. It names only the computers a download is offered for. Takes effect after Rails deployment."
 - date: 2026-11-20

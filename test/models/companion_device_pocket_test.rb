@@ -29,11 +29,13 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
   end
 
   # The run the submission's message woke, and a reply written by it.
-  def reply_to(message, text = "hello back", agent: @agent, read_through: nil)
+  # shown: the messages whose ids the run's request carried.
+  def reply_to(message, text = "hello back", agent: @agent, shown: [ message ])
     dispatch = MessageDispatch.find_by(message_id: message.id) ||
       MessageDispatch.accept!(message: message, target_agent_ids: [ agent.id ], kind: "automatic")
     interaction = AgentRuntimeInteraction.create!(agent: agent, chat: message.chat, trigger_kind: "wake",
-      message_dispatch: dispatch, started_at: Time.current, last_included_message_id: read_through&.id)
+      message_dispatch: dispatch, started_at: Time.current, last_included_message_id: shown.map(&:id).max,
+      request_text: shown.map { |m| "The stone [#{m.obfuscated_id}]: #{m.content}" }.join("\n"))
     message.chat.messages.create!(role: "assistant", agent: agent, content: text, runtime_interaction: interaction)
   end
 
@@ -142,14 +144,14 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     a = submit("a").message
     b = submit("b").message
     c = submit("c").message
-    reply_a = reply_to(a, "for a", read_through: a)
+    reply_a = reply_to(a, "for a")
     down = payloads.select { |p| p["type"] == "reply" }
     assert_equal [ [ a.to_param ] ], down.map { |p| p["submission_ids"] }
     assert_equal b.id, @device.reload.pocket_open_message_id, "b and c are still waiting"
     assert_equal b.created_at.to_i, @device.pocket_opened_at.to_i, "under b's own deadline"
 
-    # The held wake, carried on c's dispatch, was shown everything up to c.
-    reply_bc = reply_to(c, "for b and c", read_through: c)
+    # The held wake, carried on c's dispatch, was shown both b and c.
+    reply_bc = reply_to(c, "for b and c", shown: [ b, c ])
     last = payloads.last
     assert_equal({ "type" => "reply", "submission_id" => c.to_param, "submission_ids" => [ b.to_param, c.to_param ],
       "message_id" => reply_bc.to_param, "text" => "for b and c", "epoch" => "epoch-1" }, last)
@@ -158,13 +160,54 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_not_equal reply_a.id, @device.pocket_reply_message_id
   end
 
-  test "a run with no recorded window covers only the clip that woke it" do
+  test "a run whose request doesn't carry a later clip covers only the clip that woke it" do
     enable_mic
     a = submit("a").message
     b = submit("b").message
-    reply_to(a)
+    reply_to(a, shown: [])
     assert_equal [ a.to_param ], payloads.last["submission_ids"]
     assert_equal b.id, @device.reload.pocket_open_message_id
+  end
+
+  # Mira, #1083: a wake on C, with an older outstanding B that wasn't in the
+  # run's input, must not mark B answered, even when the cursor is past B.
+  test "an older clip the run wasn't shown ends ambiguous, never answered" do
+    enable_mic
+    a = submit("a").message
+    reply_to(a)
+    b = submit("b").message
+    c = submit("c").message
+    reply_c = reply_to(c, "for c", shown: [ c ])
+    ambiguous, reply = payloads.last(2)
+    assert_equal({ "type" => "ambiguous", "submission_id" => b.to_param, "submission_ids" => [ b.to_param ],
+      "epoch" => "epoch-1" }, ambiguous)
+    assert_equal [ "reply", [ c.to_param ], reply_c.to_param ], reply.values_at("type", "submission_ids", "message_id")
+    assert_nil @device.reload.pocket_open_message_id, "no clip is left without an outcome"
+  end
+
+  test "two replies in a row both keep their voice; the later doesn't supersede the earlier" do
+    speak_with_eleven_labs
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    reply_a, reply_b = SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      [ reply_to(a, "for a"), reply_to(b, "for b") ]
+    end
+    # A's voice finishes only after B's text went down.
+    attach_voice(reply_a)
+    CompanionDevice.announce_pocket_audio(reply_a.reload)
+    audio = payloads.last
+    assert_equal [ "audio", a.to_param, reply_a.to_param ], audio.values_at("type", "submission_id", "message_id")
+    assert_equal reply_a, @device.reload.pocket_reply(reply_a.to_param)
+    assert_equal reply_b, @device.pocket_reply(reply_b.to_param)
+
+    attach_voice(reply_b)
+    @device.update!(connection_epoch: "epoch-2")
+    assert_equal [ reply_a.to_param, reply_b.to_param ], @device.pocket_audio_payloads.map { |p| p["message_id"] || p[:message_id] },
+      "a reconnect gets every voice still in its window"
+    travel CompanionDevice::Pocket::AUDIO_WINDOW + 1.minute do
+      assert_nil @device.pocket_reply(reply_a.to_param)
+    end
   end
 
   test "an unrelated human message in a queued run makes every outstanding clip ambiguous" do
@@ -173,7 +216,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     b = submit("b").message
     @device.chat.messages.create!(role: "user", user: @owner, content: "and also this")
     c = submit("c").message
-    reply_to(c, read_through: c)
+    reply_to(c, shown: [ a, b, c ])
     assert_not payloads.any? { |p| p["type"] == "reply" }
     assert_equal({ "type" => "ambiguous", "submission_id" => a.to_param,
       "submission_ids" => [ a, b, c ].map(&:to_param), "epoch" => "epoch-1" }, payloads.last)
@@ -197,7 +240,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     enable_mic
     a = submit("a").message
     travel CompanionDevice::Pocket::OPEN_WINDOW + 1.minute do
-      reply_to(a, read_through: a)
+      reply_to(a)
       assert_equal "expired", payloads.last["type"]
       assert_not payloads.any? { |p| p["type"] == "reply" }
     end
@@ -306,7 +349,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     count = payloads.size
     CompanionDevice.announce_pocket_audio(reply.reload)
     assert_equal count, payloads.size
-    assert_nil @device.reload.pocket_reply
+    assert_empty @device.reload.pocket_recent_replies
   end
 
   test "the same resident replying from an unrelated run is not delivered" do

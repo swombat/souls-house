@@ -137,7 +137,7 @@ class CompanionChannelTest < ActionCable::Channel::TestCase
     reply = chat.messages.create!(role: "assistant", agent: agent, content: "hello", suppress_automatic_dispatch: true)
     reply.voice_audio.attach(io: StringIO.new("ID3"), filename: "v.mp3", content_type: "audio/mpeg",
       metadata: { "voice_digest" => reply.current_voice_digest })
-    stone.update!(pocket_reply_message_id: reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: Time.current)
+    stone.send(:record_pocket_reply!, reply, submission)
 
     stub_connection current_user: nil, current_app_session: nil, current_companion_device: stone
     subscribe
