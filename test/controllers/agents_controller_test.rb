@@ -537,6 +537,25 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal before, inertia_shared_props.values_at("interactions", "interactions_pagination")
   end
 
+  test "a private run in a house the viewer has lost stays off the edit page, participant row or not" do
+    get edit_account_agent_path(@account, @agent)
+    before = inertia_shared_props.values_at("interactions", "interactions_pagination")
+
+    house = Account.team.where.not(id: Membership.where(user: @user).select(:account_id)).first!
+    secret = house.chats.create!(title: "Guest secret", model_id: "openrouter/auto", private: true)
+    ChatParticipant.record!(chat: secret, user: @user, source: "creator")
+    run = @agent.agent_runtime_interactions.create!(chat: secret, trigger_kind: "conversation", started_at: Time.current)
+    refute house.memberships.exists?(user: @user)
+
+    get edit_account_agent_path(@account, @agent)
+    assert_equal before, inertia_shared_props.values_at("interactions", "interactions_pagination")
+
+    # The same participant, still a confirmed member of the house, sees it.
+    house.memberships.create!(user: @user, role: "member", confirmed_at: Time.current)
+    get edit_account_agent_path(@account, @agent)
+    assert_includes inertia_shared_props["interactions"].map { |i| i["id"] }, run.to_param
+  end
+
   test "edit says whether the account's plan includes sub-agents" do
     get edit_account_agent_path(@account, @agent)
     assert_equal false, inertia_shared_props["subagents_available"], "Companions has none"
