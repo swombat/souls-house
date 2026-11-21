@@ -29,7 +29,7 @@ module Api
 
         # Including deleted conversations, as ChatsController#show finds them.
         def conversation
-          chat = Chat.with_discarded.where(account: administrable_accounts).find(params[:conversation_id])
+          chat = Chat.with_discarded.where(account: administrable_accounts).visible_to(current_api_user).find(params[:conversation_id])
           administer!(chat.account)
           render json: {
             conversation: { id: chat.to_param, title: chat.title },
