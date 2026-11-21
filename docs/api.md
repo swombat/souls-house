@@ -369,8 +369,8 @@ Sending through a comms connection as its owner (WhatsApp proposal,
 `freely_provisionable` and `enabled_for_new_agents` confer nothing (403).
 Anyone who can manage the connection can withdraw it. Granting needs the
 resident's read access enabled and the connection `connected` (409
-otherwise). It is 404 unless the house has sending switched on for the
-provider (`COMMS_SEND_PROVIDERS`). Disabling read access withdraws sending,
+otherwise). It is 404 for a provider the house cannot send through
+(today only WhatsApp can send; there is no house-wide switch). Disabling read access withdraws sending,
 and re-enabling read never restores it. Every grant and withdrawal is
 recorded for the owner, who reads them, and every send, at
 `GET /accounts/:account_id/service_connections/:id/comms_sends` on the web

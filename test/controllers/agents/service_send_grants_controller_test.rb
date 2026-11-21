@@ -30,9 +30,9 @@ class Agents::ServiceSendGrantsControllerTest < ActionDispatch::IntegrationTest
                  @connection.comms_send_grant_events.order(:id).pluck(:action, :actor_user_id, :agent_id)
   end
 
-  test "with sending not switched on, the grant endpoints are 404 and nothing changes" do
+  test "with sending unavailable, the grant endpoints are 404 and nothing changes" do
     sign_in @owner
-    with_send_providers("") do
+    without_sending do
       patch_grant(true, format: :json)
       assert_response :not_found
       patch service_send_grant_api_v1_resident_path(@agent, connection_id: @connection.public_id),
@@ -84,7 +84,7 @@ class Agents::ServiceSendGrantsControllerTest < ActionDispatch::IntegrationTest
     assert resident["can_send"]
     assert resident["send_grant_url"]
 
-    with_send_providers("") do
+    without_sending do
       get account_integrations_path(@account)
       connection = inertia_connection
       assert_not connection.key?("can_grant_send")
@@ -95,8 +95,8 @@ class Agents::ServiceSendGrantsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "with sending never switched on, the integrations page is unchanged" do
-    with_send_providers(nil) do
+  test "with sending unavailable, the integrations page offers no sending" do
+    without_sending do
       sign_in @owner
       get account_integrations_path(@account)
       connection = inertia_connection

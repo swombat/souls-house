@@ -51,22 +51,18 @@ class CommsSendGrantTest < ActiveSupport::TestCase
     end
   end
 
-  test "sending must be switched on for the provider before anyone can grant" do
-    with_send_providers("") do
+  test "sending must be available for the provider before anyone can grant" do
+    without_sending do
       error = assert_raises(AgentServiceAccess::SendGrantRefused) { @access.change_send_grant!(true, actor: @owner) }
       assert_match "not available", error.message
-    end
-    with_send_providers("telegram") do
-      assert_raises(AgentServiceAccess::SendGrantRefused) { @access.reload.change_send_grant!(true, actor: @owner) }
     end
     assert_not @access.reload.can_send?
     assert_equal 0, @connection.comms_send_grant_events.count
   end
 
-  test "a provider listed without a dispatcher stays off (Telegram has none yet)" do
-    with_send_providers("whatsapp, telegram") do
-      assert_equal %w[whatsapp], CommsSending.enabled_providers
-    end
+  test "WhatsApp sending is on with no house switch; a provider without a dispatcher stays off (Telegram has none yet)" do
+    assert_equal %w[whatsapp], CommsSending.enabled_providers
+    assert CommsSending.available_for?(@connection)
   end
 
   test "a non-owner admin can withdraw the grant, and it is recorded" do
@@ -245,7 +241,7 @@ class CommsSendGrantTest < ActiveSupport::TestCase
     assert_not_includes notes, "no way to send"
     assert_not credentials.key?("callback_secret")
 
-    with_send_providers("") { assert_nil @connection.runtime_credentials(agent: @agent)["send_endpoint"] }
+    without_sending { assert_nil @connection.runtime_credentials(agent: @agent)["send_endpoint"] }
     other = @account.agents.create!(name: "Reader Only", model_id: "openrouter/auto", runtime: "external")
     other.agent_service_accesses.create!(service_connection: @connection, enabled: true)
     assert_nil @connection.runtime_credentials(agent: other)["send_endpoint"]

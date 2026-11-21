@@ -78,38 +78,34 @@ class GuestIntegrationGrantRaceTest < ActiveSupport::TestCase
   end
 
   test "a pending guest send grant cannot be claimed" do
-    with_send_providers("whatsapp") do
-      @whatsapp = build_whatsapp_connection(@sharing, @anna)
-      access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
-      access.change_send_grant!(true, actor: @anna)
-      assert_equal "pending", access.reload.home_approval
-      chat = @whatsapp.comms_chats.create!(provider_chat_id: "review@example.test", kind: "direct")
-      refusal = assert_raises(CommsSending::Refused) do
-        CommsSending.claim!(connection: @whatsapp, agent: @lume, chat: chat, text: "synthetic", client_request_id: "review-706")
-      end
-      assert_equal :send_not_granted, refusal.code
-      assert_equal 0, CommsSend.where(service_connection_id: @whatsapp.id).count
+    @whatsapp = build_whatsapp_connection(@sharing, @anna)
+    access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
+    access.change_send_grant!(true, actor: @anna)
+    assert_equal "pending", access.reload.home_approval
+    chat = @whatsapp.comms_chats.create!(provider_chat_id: "review@example.test", kind: "direct")
+    refusal = assert_raises(CommsSending::Refused) do
+      CommsSending.claim!(connection: @whatsapp, agent: @lume, chat: chat, text: "synthetic", client_request_id: "review-706")
     end
+    assert_equal :send_not_granted, refusal.code
+    assert_equal 0, CommsSend.where(service_connection_id: @whatsapp.id).count
   end
 
   test "a send claimed while approved is refused at dispatch once the approval is re-asked" do
-    with_send_providers("whatsapp") do
-      @whatsapp = build_whatsapp_connection(@sharing, @anna)
-      access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
-      access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
-      access.change_send_grant!(true, actor: @anna)
-      access.reload.approve_home!(actor: @daniel, generation: access.home_approval_generation)
-      assert access.reload.effective?
-      chat = @whatsapp.comms_chats.create!(provider_chat_id: "review@example.test", kind: "direct")
-      send, = CommsSending.claim!(connection: @whatsapp, agent: @lume, chat: chat, text: "synthetic", client_request_id: "review-706-dispatch")
-      assert_equal "pending", send.status
+    @whatsapp = build_whatsapp_connection(@sharing, @anna)
+    access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
+    access.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    access.change_send_grant!(true, actor: @anna)
+    access.reload.approve_home!(actor: @daniel, generation: access.home_approval_generation)
+    assert access.reload.effective?
+    chat = @whatsapp.comms_chats.create!(provider_chat_id: "review@example.test", kind: "direct")
+    send, = CommsSending.claim!(connection: @whatsapp, agent: @lume, chat: chat, text: "synthetic", client_request_id: "review-706-dispatch")
+    assert_equal "pending", send.status
 
-      @whatsapp.reload.update!(credential_metadata: @whatsapp.credential_metadata.merge("granted_scopes" => [ "widened" ]))
-      assert_equal "pending", access.reload.home_approval
+    @whatsapp.reload.update!(credential_metadata: @whatsapp.credential_metadata.merge("granted_scopes" => [ "widened" ]))
+    assert_equal "pending", access.reload.home_approval
 
-      assert_not CommsSending.dispatch!(send.reload)
-      assert_equal [ "failed", "refused_at_dispatch_send_not_granted" ], send.reload.values_at(:status, :error_code)
-    end
+    assert_not CommsSending.dispatch!(send.reload)
+    assert_equal [ "failed", "refused_at_dispatch_send_not_granted" ], send.reload.values_at(:status, :error_code)
   end
 
   test "the sweeper's selected old request does not expire a renewed one" do
@@ -152,12 +148,10 @@ class GuestIntegrationGrantRaceTest < ActiveSupport::TestCase
   end
 
   test "departure and a send grant do not deadlock" do
-    with_send_providers("whatsapp") do
-      @whatsapp = build_whatsapp_connection(@sharing, @anna)
-      access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
+    @whatsapp = build_whatsapp_connection(@sharing, @anna)
+    access = @lume.set_service_access!(@whatsapp, enabled: true, actor: @anna)
 
-      assert_departure_completes_beside(access) { AgentServiceAccess.find(access.id).change_send_grant!(true, actor: @anna) }
-    end
+    assert_departure_completes_beside(access) { AgentServiceAccess.find(access.id).change_send_grant!(true, actor: @anna) }
   end
 
   test "a connection's row lock no longer blocks a child row's foreign key" do

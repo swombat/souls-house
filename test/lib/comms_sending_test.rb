@@ -47,7 +47,7 @@ class CommsSendingTest < ActiveSupport::TestCase
     @agent.set_service_access!(@connection, enabled: true, actor: @owner)
     grant_send!(@access.reload)
     send, = claim("b")
-    with_send_providers("") do
+    without_sending do
       assert_empty with_fake_connector { CommsSending.deliver!(send) }
     end
     assert_equal [ "failed", "refused_at_dispatch_not_available" ], [ send.reload.status, send.error_code ]
