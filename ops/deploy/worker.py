@@ -937,6 +937,19 @@ class Worker:
                 self.report("waiting for resident sweep to finish")
                 time.sleep(5)
 
+    def clean_checkouts(self):
+        """Under the deployment lock: this run's clone, then other finished
+        runs'. Returns nothing; what was kept is in the private log."""
+        mounted = mounted_sources()
+        if mounted is None:
+            self.log.write("\ncheckouts kept: Docker could not list mounts\n")
+            return
+        if not remove_checkout(self.directory, mounted) and self.repo.exists():
+            self.log.write("\ncheckout kept: a container still mounts it\n")
+        pruned = prune_checkouts(mounted)
+        if pruned:
+            self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
+
     def execute(self):
         try:
             # Same lock for manual runtime operations, as documented.
@@ -966,18 +979,18 @@ class Worker:
             self.report("failed; host operator inspection required", state="failed")
         finally:
             # This run is over whatever its state (#1057): its clone goes,
-            # then any other finished run's that is still on disk.
-            # A container this run started and couldn't confirm gone keeps it.
+            # then any other finished run's that is still on disk, unless a
+            # container still mounts it. Snapshot and deletion happen under the deployment lock, like the
+            # prune CLI; if a sweep or the CLI has it, this cleanup is skipped
+            # and the next one takes it (Mira, #1080).
             try:
-                mounted = mounted_sources()
-                if mounted is None:
-                    self.log.write("\ncheckouts kept: Docker could not list mounts\n")
-                else:
-                    if not remove_checkout(self.directory, mounted) and self.repo.exists():
-                        self.log.write("\ncheckout kept: a container still mounts it\n")
-                    pruned = prune_checkouts(mounted)
-                    if pruned:
-                        self.log.write(f"\nremoved the checkouts of {len(pruned)} finished runs\n")
+                with (ROOT / "deployment.lock").open("a") as lock:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        self.log.write("\ncheckouts kept: the deployment lock was held\n")
+                    else:
+                        self.clean_checkouts()
             except OSError as error:
                 self.log.write(f"\ncheckout cleanup incomplete: {type(error).__name__}\n")
             self.log.close()

@@ -681,6 +681,23 @@ class WorkerTest(unittest.TestCase):
         # Once the container has gone, the next cleanup takes both.
         self.assertEqual(sorted(["a" * 32, "b" * 32]), sorted(worker.prune_checkouts(set())))
 
+    def test_cleanup_is_skipped_while_another_holder_has_the_deployment_lock(self):
+        # Mira's reproduction: snapshot and deletion only under the lock. A
+        # sweep (or the prune CLI) holds it here for the whole run.
+        import fcntl
+        old = self.make_run("b" * 32, "success")
+        self.w.repo.mkdir()
+        self.w.settings["sweep_lock_wait_seconds"] = 0
+        with (self.root / "deployment.lock").open("a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.object(worker, "mounted_sources",
+                              side_effect=AssertionError("snapshot without the lock")):
+                self.w.execute()
+        self.assertEqual("failed", self.w.data["state"])
+        self.assertTrue(self.w.repo.exists())
+        self.assertTrue((old / "repo").exists())
+        self.assertIn("deployment lock was held", (self.w.directory / "private.log").read_text())
+
     def test_nothing_is_removed_when_docker_cannot_list_mounts(self):
         old = self.make_run("b" * 32, "success")
         with patch.object(worker, "mounted_sources", return_value=None), \
