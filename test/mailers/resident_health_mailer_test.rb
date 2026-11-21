@@ -8,6 +8,31 @@ class ResidentHealthMailerTest < ActionMailer::TestCase
     (@owner.profile || @owner.build_profile).update!(timezone: "Madrid")
   end
 
+  test "a frozen resident: the owner is asked for nothing; only the operator copy carries the unpause" do
+    @agent.update!(container_name: "resident-frozen-test")
+    mail = ResidentHealthMailer.resident_frozen(@agent, "2026-11-21T04:08:00Z", @owner)
+    text = mail.text_part.body.to_s
+    assert_equal [ @owner.email_address ], mail.to
+    assert_equal "#{@agent.name} is frozen", mail.subject
+    assert_includes text, "frozen since at least 21 November 2026, 05:08 CET"
+    assert_includes text, "on the house's side, not yours"
+    assert_includes text, "tab=interactions"
+    assert_not_includes text, "docker unpause"
+    assert_not_includes mail.html_part.body.to_s, "docker unpause"
+
+    operator = ResidentHealthMailer.resident_frozen(@agent, "2026-11-21T04:08:00Z", @owner, operator: true)
+    assert_includes operator.text_part.body.to_s, "docker unpause resident-frozen-test"
+    assert_includes operator.html_part.body.to_s, "paused-resident-recovery.md"
+  end
+
+  test "a resident running again says so, and doesn't promise that waiting messages were answered" do
+    mail = ResidentHealthMailer.resident_unfrozen(@agent, "2026-11-21T04:08:00Z", @owner)
+    text = mail.text_part.body.to_s
+    assert_equal "#{@agent.name} is running again", mail.subject
+    assert_includes text, "frozen since at least 21 November 2026, 05:08 CET"
+    assert_includes text, "send it again"
+  end
+
   test "a house fault asks nothing of the owner and says the fix is ours" do
     mail = ResidentHealthMailer.scheduled_runs_failing(streak("house_provider_refused"))
     text = mail.text_part.body.to_s

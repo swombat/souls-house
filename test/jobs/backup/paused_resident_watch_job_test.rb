@@ -3,6 +3,8 @@ require "test_helper"
 module Backup
   class PausedResidentWatchJobTest < ActiveJob::TestCase
 
+    include ActionMailer::TestHelper
+
     setup do
       @agent = agents(:research_assistant)
       @agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7, container_name: "resident-watch-test")
@@ -29,6 +31,47 @@ module Backup
         watch("", at: @start + 10.minutes)
         watch("resident-watch-test\n", at: @start + 40.minutes)
       end
+      assert_no_enqueued_emails
+    end
+
+    test "a frozen resident's account admins and the site admins are emailed once, and told again when it runs" do
+      admins = @agent.account.memberships.confirmed.admins.filter_map(&:user)
+      operator = users(:site_admin_user)
+      assert admins.any?
+      paused = "resident-watch-test\n"
+
+      watch(paused, at: @start)
+      assert_no_enqueued_emails
+      watch(paused, at: @start + 30.minutes)
+      recipients = (admins + [ operator ]).uniq
+      assert_enqueued_emails recipients.size
+      recipients.each do |user|
+        assert_enqueued_email_with ResidentHealthMailer, :resident_frozen,
+          args: [ @agent, @start.iso8601, user, { operator: user == operator } ]
+      end
+
+      clear_enqueued_jobs
+      watch(paused, at: @start + 40.minutes)
+      assert_no_enqueued_emails
+
+      watch(nil, at: @start + 45.minutes)
+      assert_no_enqueued_emails # Docker not answering is not a recovery
+
+      watch("", at: @start + 50.minutes)
+      assert_enqueued_emails recipients.size
+      recipients.each do |user|
+        assert_enqueued_email_with ResidentHealthMailer, :resident_unfrozen, args: [ @agent, @start.iso8601, user ]
+      end
+
+      clear_enqueued_jobs
+      watch("", at: @start + 60.minutes)
+      assert_no_enqueued_emails
+    end
+
+    test "a pause that never lasted long enough to report sends no recovery email" do
+      watch("resident-watch-test\n", at: @start)
+      watch("", at: @start + 10.minutes)
+      assert_no_enqueued_emails
     end
 
     test "Docker not answering keeps what was seen" do

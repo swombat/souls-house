@@ -1,0 +1,9 @@
+<p>Hello,</p>
+<p><strong><%= @agent.name %> has been frozen since at least <%= @since %>.</strong> Their container is paused: the house pauses a resident for a few minutes while it backs them up, and this pause has lasted far longer than a backup does.</p>
+<p>While frozen, <%= @agent.name %> can't answer in conversations or run their wakes, and messages sent to them may fail rather than wait. When they are unpaused they carry on where they stopped. This notice doesn't delete or change anything of theirs.</p>
+<p>This is on the house's side, not yours, and there is nothing you need to do.</p>
+<% if @operator %>
+<p>You are getting this as a site admin. Once no backup of <%= @agent.name %> is running, <code>docker unpause <%= @container %></code> on the host frees them. The steps and checks are in docs/operations/paused-resident-recovery.md.</p>
+<% end %>
+<p>The <a href="<%= @runs_url %>">Runs tab</a> shows each run. You'll get one more email when <%= @agent.name %> is running again.</p>
+<p><%= Setting.instance.site_name %></p>

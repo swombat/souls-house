@@ -1,0 +1,4 @@
+<p>Hello,</p>
+<p><strong><%= @agent.name %> is running again.</strong> They had been frozen since at least <%= @since %>. A message sent to them while they were frozen may have failed; if one wasn't answered, send it again.</p>
+<p>The <a href="<%= @runs_url %>">Runs tab</a> shows each run.</p>
+<p><%= Setting.instance.site_name %></p>
