@@ -29,11 +29,11 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
   end
 
   # The run the submission's message woke, and a reply written by it.
-  def reply_to(message, text = "hello back", agent: @agent)
+  def reply_to(message, text = "hello back", agent: @agent, read_through: nil)
     dispatch = MessageDispatch.find_by(message_id: message.id) ||
       MessageDispatch.accept!(message: message, target_agent_ids: [ agent.id ], kind: "automatic")
     interaction = AgentRuntimeInteraction.create!(agent: agent, chat: message.chat, trigger_kind: "wake",
-      message_dispatch: dispatch, started_at: Time.current)
+      message_dispatch: dispatch, started_at: Time.current, last_included_message_id: read_through&.id)
     message.chat.messages.create!(role: "assistant", agent: agent, content: text, runtime_interaction: interaction)
   end
 
@@ -122,11 +122,85 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_equal message.id, @device.reload.pocket_open_message_id
   end
 
-  test "a second clip while one is open is refused" do
+  test "clips while one is open join the run, up to the cap" do
     enable_mic
-    submit
-    error = assert_raises(CompanionDevice::Pocket::Refused) { submit("again") }
-    assert_equal "awaiting_reply", error.code
+    first = submit.message
+    opened_at = @device.reload.pocket_opened_at
+    travel 1.minute do
+      (CompanionDevice::Pocket::MAX_QUEUED_CLIPS - 1).times { |i| assert submit("more #{i}").created? }
+      assert_equal [ first.id, opened_at ], [ @device.reload.pocket_open_message_id, @device.pocket_opened_at ],
+        "a later clip moves neither the anchor nor the deadline"
+      error = assert_raises(CompanionDevice::Pocket::Refused) { submit("one too many") }
+      assert_equal "awaiting_reply", error.code
+    end
+  end
+
+  # Mira, YrBOKp: A's run is going, B and C arrive, one held wake answers
+  # them. Each reply covers only the clips its run was shown.
+  test "a reply covers what its run read; later clips wait for their own wake" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    c = submit("c").message
+    reply_a = reply_to(a, "for a", read_through: a)
+    down = payloads.select { |p| p["type"] == "reply" }
+    assert_equal [ [ a.to_param ] ], down.map { |p| p["submission_ids"] }
+    assert_equal b.id, @device.reload.pocket_open_message_id, "b and c are still waiting"
+    assert_equal b.created_at.to_i, @device.pocket_opened_at.to_i, "under b's own deadline"
+
+    # The held wake, carried on c's dispatch, was shown everything up to c.
+    reply_bc = reply_to(c, "for b and c", read_through: c)
+    last = payloads.last
+    assert_equal({ "type" => "reply", "submission_id" => c.to_param, "submission_ids" => [ b.to_param, c.to_param ],
+      "message_id" => reply_bc.to_param, "text" => "for b and c", "epoch" => "epoch-1" }, last)
+    assert_nil @device.reload.pocket_open_message_id
+    assert_equal [ reply_bc.id, c.id ], [ @device.pocket_reply_message_id, @device.pocket_reply_submission_id ]
+    assert_not_equal reply_a.id, @device.pocket_reply_message_id
+  end
+
+  test "a run with no recorded window covers only the clip that woke it" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    reply_to(a)
+    assert_equal [ a.to_param ], payloads.last["submission_ids"]
+    assert_equal b.id, @device.reload.pocket_open_message_id
+  end
+
+  test "an unrelated human message in a queued run makes every outstanding clip ambiguous" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    @device.chat.messages.create!(role: "user", user: @owner, content: "and also this")
+    c = submit("c").message
+    reply_to(c, read_through: c)
+    assert_not payloads.any? { |p| p["type"] == "reply" }
+    assert_equal({ "type" => "ambiguous", "submission_id" => a.to_param,
+      "submission_ids" => [ a, b, c ].map(&:to_param), "epoch" => "epoch-1" }, payloads.last)
+    assert_nil @device.reload.pocket_open_message_id
+  end
+
+  test "clips nobody answered end as expired before the next clip opens a new run" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    travel CompanionDevice::Pocket::OPEN_WINDOW + 1.minute do
+      fresh = submit("later").message
+      expired = payloads.find { |p| p["type"] == "expired" }
+      assert_equal [ a.to_param, b.to_param ], expired["submission_ids"]
+      assert_equal fresh.id, @device.reload.pocket_open_message_id
+      assert_equal %w[expired thinking], payloads.last(2).map { |p| p["type"] }
+    end
+  end
+
+  test "a late reply after the deadline expires the clips instead of answering them" do
+    enable_mic
+    a = submit("a").message
+    travel CompanionDevice::Pocket::OPEN_WINDOW + 1.minute do
+      reply_to(a, read_through: a)
+      assert_equal "expired", payloads.last["type"]
+      assert_not payloads.any? { |p| p["type"] == "reply" }
+    end
   end
 
   test "a retry with the same request id makes no second message" do
@@ -144,8 +218,8 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_broadcasts(CompanionChannel.broadcasting_for(@device), 1) { reply = reply_to(message) }
     assert_nil @device.reload.pocket_open_message_id
     payload = broadcasts(CompanionChannel.broadcasting_for(@device)).map { |b| JSON.parse(b) }.last
-    assert_equal({ "type" => "reply", "submission_id" => message.to_param, "message_id" => reply.to_param,
-      "text" => "hello back", "epoch" => "epoch-1" }, payload)
+    assert_equal({ "type" => "reply", "submission_id" => message.to_param, "submission_ids" => [ message.to_param ],
+      "message_id" => reply.to_param, "text" => "hello back", "epoch" => "epoch-1" }, payload)
   end
 
   # The stone may speak through ElevenLabs on the house key here
