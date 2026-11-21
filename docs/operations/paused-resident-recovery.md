@@ -49,13 +49,13 @@ inventory).
 
 2. **Why it was paused.** Look for the backup that paused it: the "since"
    time in the StillPaused report, that resident's latest
-   `Backup::AgentResticJob`, any running `Backup::FullBackupJob`, and the
+   `Backup::AgentResticJob`, any running `FullBackupJob` or `Mnemodyne::FirstCheckpointJob`, and the
    last restart of the jobs container. If you can't find what paused it, you
    don't know why it is paused: escalate.
 
 3. **Nothing can still reach it, and nothing new can start.** A full backup
    calls `Backup::AgentResticJob.perform_now` inside its loop over residents,
-   so a `FullBackupJob` still in progress counts as active for this resident
+   (and `Mnemodyne::FirstCheckpointJob` calls it directly), so a `FullBackupJob` still in progress counts as active for this resident
    even if there is no separate job for her. Check, and treat a failed check
    as a stop, not as empty:
 
