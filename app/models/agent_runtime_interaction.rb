@@ -134,7 +134,7 @@ class AgentRuntimeInteraction < ApplicationRecord
     active.where("agent_runtime_interactions.execution_state IS NULL OR agent_runtime_interactions.execution_state NOT IN (?)", TERMINAL_STATES)
   }
 
-  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil, wake_source_kinds: [], requested_at: nil)
+  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, shown_message_ids: [], provider_auth_mode: "api_key", provider: nil, model: nil, wake_source_kinds: [], requested_at: nil)
     interaction = transaction do
       # Legacy conversation transport still admits under the same room lock as
       # live reservations and seat removal; never hold it across the network.
@@ -161,6 +161,7 @@ class AgentRuntimeInteraction < ApplicationRecord
           endpoint_url: endpoint_url,
           request_text: request_text,
           last_included_message_id: last_included_message_id,
+          shown_message_ids: shown_message_ids,
           run_id: (SecureRandom.uuid if trigger_kind == "telegram"),
           provider_auth_mode: provider_auth_mode,
           provider: provider,

@@ -7,11 +7,18 @@
 # device's owner (the member who approved its pairing) can turn either on;
 # the owner or an account admin can turn either off, pause or revoke.
 #
-# Provenance: one submission is open at a time. A reply goes down only when
-# it is the bound resident's, written by a run of the dispatch that the
-# submission's own message woke, with no other human or device message in
-# between. Anything else closes the submission as ambiguous and sends
-# nothing but that word.
+# Provenance: one run of clips is open at a time. A clip sent while the run
+# is open joins it, up to MAX_QUEUED_CLIPS outstanding, so nobody has to wait
+# for the resident's turn to speak (Paulina, YEDPGJ; JkRXoj). A reply goes
+# down only when it is the bound resident's, written by a run of a dispatch
+# that one of the run's own clips woke, with no other human or device
+# message in between. It covers the waking clip and only those other clips
+# among the transcript rows the run was certainly shown, never one it can't
+# be shown to have read (Mira, YrBOKp, #1083). Older unread clips end as
+# ambiguous; newer ones are covered only in an unbroken run, and the rest
+# stay open, a contiguous tail, for the wake they are holding. Every clip ends one way: covered by a
+# reply, ambiguous, or expired OPEN_WINDOW after it was sent (the deadline
+# is the oldest outstanding clip's own, never refreshed by a later one).
 #
 # Voice: the "reply" goes down at once, never held for audio. If the
 # resident speaks through ElevenLabs here (SpeechEngine), its voice is
@@ -19,15 +26,18 @@
 # submission and reply ids and an authenticated, device-scoped URL
 # (Api::V1::Companion::PocketAudiosController) that redirects to a
 # short-lived storage link. The message is a notification, not the only way
-# to the clip: after a reconnect "ready" is followed by the same "audio" if
-# it is still current, so the firmware keys clips by submission and reply
-# id and plays each once (Mira, JkRXoj).
+# to the clip: after a reconnect "ready" is followed by an "audio" for every
+# reply still in its window, so the firmware keys clips by submission and
+# reply id and plays each once (Mira, JkRXoj). Each delivered reply keeps
+# its own window; a later reply never makes an earlier voice unfetchable.
 module CompanionDevice::Pocket
 
   extend ActiveSupport::Concern
 
   KINDS = %w[computer pocket].freeze
   OPEN_WINDOW = 10.minutes
+  # Clips one open run may hold before the stone has to wait for a reply.
+  MAX_QUEUED_CLIPS = 5
   # How long after its reply the voice stays fetchable by the device.
   AUDIO_WINDOW = 30.minutes
   REPLY_TEXT_LIMIT = 4_000
@@ -35,7 +45,7 @@ module CompanionDevice::Pocket
   # Down-cable messages about a clip. Each carries the epoch it was sent
   # under, and CompanionChannel drops it at the socket unless that is still
   # the live, active connection.
-  GUARDED_TYPES = %w[thinking reply audio ambiguous consent].freeze
+  GUARDED_TYPES = %w[thinking reply audio ambiguous expired consent].freeze
   MEDIA = {
     "voice" => { types: %w[audio/wav audio/x-wav audio/wave audio/vnd.wave audio/webm], max: 2.megabytes, capability: "mic" },
     "photo" => { types: %w[image/jpeg], max: 1.megabyte, capability: "camera" }
@@ -73,10 +83,12 @@ module CompanionDevice::Pocket
     end
 
     # The reply's voice is ready: tell each pocket device it was the reply
-    # for. Cheap when none was.
+    # for. Cheap when none was. The single column counts too, for a reply an
+    # old-code worker wrote across the deploy (Mira, #1083).
     def announce_pocket_audio(message)
-      where(kind: "pocket", pocket_reply_message_id: message.id, revoked_at: nil)
-        .find_each(&:announce_pocket_audio!)
+      where(kind: "pocket", revoked_at: nil)
+        .where("pocket_replies @> ? OR pocket_reply_message_id = ?", [ { reply_id: message.id } ].to_json, message.id)
+        .find_each { |device| device.announce_pocket_audio!(message) }
     end
 
     # The house's own address, for URLs sent down the cable from a job.
@@ -104,35 +116,47 @@ module CompanionDevice::Pocket
     pocket_open_message_id.present? && pocket_opened_at.present? && pocket_opened_at > now - OPEN_WINDOW
   end
 
-  # The last reply this device was sent, while its voice may still follow.
-  def pocket_reply(now = Time.current)
-    return nil unless pocket? && pocket_reply_message_id && pocket_replied_at && pocket_replied_at > now - AUDIO_WINDOW
-
-    chat.messages.find_by(id: pocket_reply_message_id)
+  # This device's clips in the open run, oldest first.
+  def pocket_open_clips
+    chat.messages.where(companion_device_id: id, role: "user").where(id: pocket_open_message_id..).order(:id)
   end
 
-  # The reply's audio, only when it is current for the resident's voice now.
-  def pocket_reply_audio(now = Time.current)
-    reply = pocket_reply(now)
-    reply if reply&.voice_audio_current?
+  # The replies this device was sent within AUDIO_WINDOW, oldest first, as
+  # [reply message, submission message] pairs. Each keeps its voice
+  # fetchable for its own window; a later reply supersedes nothing.
+  def pocket_recent_replies(now = Time.current)
+    return [] unless pocket?
+
+    entries = current_pocket_reply_entries(now)
+    messages = chat.messages.where(id: entries.flat_map { |e| [ e["reply_id"], e["submission_id"] ] }).index_by(&:id)
+    entries.filter_map { |e| (reply = messages[e["reply_id"]]) && [ reply, messages[e["submission_id"]] ] }
   end
 
-  # The "audio" message for the current reply, or nil when there is none yet.
-  def pocket_audio_payload(epoch = connection_epoch)
-    reply = pocket_reply_audio
-    return nil unless reply && epoch
+  # One of those replies, by its public id; nil if it isn't one.
+  def pocket_reply(message_param, now = Time.current)
+    pocket_recent_replies(now).find { |reply, _| reply.to_param == message_param.to_s }&.first
+  end
 
-    submission = chat.messages.find_by(id: pocket_reply_submission_id)
+  # The "audio" message for one reply, or nil when its voice isn't current.
+  def pocket_audio_payload(reply, submission, epoch = connection_epoch)
+    return nil unless epoch && reply.voice_audio_current?
+
     { type: "audio", submission_id: submission&.to_param, message_id: reply.to_param,
       url: Rails.application.routes.url_helpers.api_v1_companion_pocket_audio_url(reply.to_param, **self.class.public_url_options),
       epoch: epoch }
   end
 
-  def announce_pocket_audio!
+  # Every current voice, for after "ready"; the firmware plays each once.
+  def pocket_audio_payloads(epoch = connection_epoch)
+    pocket_recent_replies.filter_map { |reply, submission| pocket_audio_payload(reply, submission, epoch) }
+  end
+
+  def announce_pocket_audio!(message)
     device = self
     with_lock do
       return :inactive unless active?
-      payload = pocket_audio_payload
+      reply, submission = pocket_recent_replies.find { |r, _| r.id == message.id }
+      payload = reply && pocket_audio_payload(reply, submission)
       return :none unless payload
 
       ActiveRecord.after_all_transactions_commit { CompanionChannel.broadcast_to(device, payload) if device.reload.active? }
@@ -176,7 +200,7 @@ module CompanionDevice::Pocket
     raise Refused.new("paused", :locked) if paused?
     raise Refused.new("unauthorized", :unauthorized) unless active? && owner_still_member?
     raise Refused.new("consent_off", :forbidden) unless self["#{spec[:capability]}_enabled"]
-    raise Refused.new("awaiting_reply", :conflict) if pocket_submission_open?
+    raise Refused.new("awaiting_reply", :conflict) if pocket_submission_open? && pocket_open_clips.count >= MAX_QUEUED_CLIPS
     spec
   end
 
@@ -192,6 +216,7 @@ module CompanionDevice::Pocket
       if (existing = chat.messages.find_by(client_message_id: client_message_id, companion_device_id: id))
         return Messages::PostFromHuman::Result.new(status: :duplicate, message: existing, sole_resident: true)
       end
+      expire_lapsed_pocket_clips!
       pocket_precheck!(media_kind)
 
       result = Messages::PostFromHuman.new(chat: chat, user: companion_enrollment_grant.created_by_user,
@@ -199,7 +224,9 @@ module CompanionDevice::Pocket
         companion_device: self).call
       if result.created?
         message = result.message
-        update!(pocket_open_message_id: message.id, pocket_opened_at: Time.current)
+        # The first clip anchors the run and its deadline; a later one joins
+        # it without moving either, so a run can't be kept alive forever.
+        update!(pocket_open_message_id: message.id, pocket_opened_at: Time.current) unless pocket_submission_open?
         payload = { type: "thinking", submission_id: message.to_param, epoch: connection_epoch }
         ActiveRecord.after_all_transactions_commit do
           CompanionChannel.broadcast_to(device, payload)
@@ -213,24 +240,49 @@ module CompanionDevice::Pocket
   def deliver_pocket_reply!(reply)
     device = self
     with_lock do
-      return :none unless pocket? && pocket_submission_open?
+      return :none unless pocket?
+      expire_lapsed_pocket_clips!
+      return :none unless pocket_submission_open?
       return :inactive unless active?
 
-      submission = chat.messages.find_by(id: pocket_open_message_id)
-      return close_pocket_submission!(:ambiguous, submission) unless submission
-      return :earlier unless reply.chat_id == chat_id && reply.id > submission.id
+      first = chat.messages.find_by(id: pocket_open_message_id)
+      return close_pocket_submission!(:ambiguous, []) unless first
+      return :earlier unless reply.chat_id == chat_id && reply.id > first.id
       # Another resident's message in this room says nothing about our clip.
       return :other_resident unless reply.agent&.to_param == bound_resident_id
 
+      clips = pocket_open_clips.where(id: ...reply.id).to_a
       interaction = reply.runtime_interaction
-      woken_by_submission = interaction&.message_dispatch_id.present? &&
-        MessageDispatch.where(message_id: submission.id, id: interaction.message_dispatch_id).exists?
-      interleaved = chat.messages.where(id: (submission.id + 1)...reply.id, role: "user").exists?
-      return close_pocket_submission!(:ambiguous, submission) unless woken_by_submission && !interleaved
+      woke_id = interaction&.message_dispatch_id &&
+        MessageDispatch.where(id: interaction.message_dispatch_id, message_id: clips.map(&:id)).pick(:message_id)
+      submission = clips.find { |clip| clip.id == woke_id }
+      # This device's own later clips are part of the run, not an interruption.
+      interleaved = chat.messages.where(id: (first.id + 1)...reply.id, role: "user")
+        .where("companion_device_id IS DISTINCT FROM ?", id).exists?
+      return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless submission && !interleaved
 
-      update!(pocket_open_message_id: nil, pocket_opened_at: nil)
-      update!(pocket_reply_message_id: reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: Time.current)
-      payload = { type: "reply", submission_id: submission.to_param, message_id: reply.to_param,
+      # A clip counts as read only when it is one of the transcript rows the
+      # run was certainly shown (shown_message_ids; Mira, #1083), never by
+      # inference from a cursor or a search of the text. That holds for the
+      # clip that woke the run too: a bounded transcript can leave it out, and
+      # then nothing can be called answered. Older clips not shown had their wake folded
+      # into this one, so they end as ambiguous, never as answered. Newer
+      # clips are covered only in an unbroken run after the waking clip, so
+      # what stays waiting is a contiguous tail.
+      shown = interaction.shown_message_ids.to_a
+      return close_pocket_submission!(:ambiguous, pocket_open_clips.to_a) unless shown.include?(submission.id)
+
+      older = clips.select { |clip| clip.id < submission.id }
+      newer = pocket_open_clips.where("messages.id > ?", submission.id).to_a
+      covered_newer = newer.take_while { |clip| shown.include?(clip.id) }
+      covered = older.select { |clip| shown.include?(clip.id) } + [ submission ] + covered_newer
+      unread_older = older - covered
+      waiting = newer[covered_newer.length]
+      update!(pocket_open_message_id: waiting&.id, pocket_opened_at: waiting&.created_at)
+      record_pocket_reply!(reply, submission)
+      announce_pocket_outcome(:ambiguous, unread_older) if unread_older.any?
+      payload = { type: "reply", submission_id: submission.to_param, submission_ids: covered.map(&:to_param),
+        message_id: reply.to_param,
         text: reply.content.to_s.truncate(REPLY_TEXT_LIMIT), epoch: connection_epoch }
       if connection_epoch
         # Registered before the voice, so the text always goes down first
@@ -249,9 +301,9 @@ module CompanionDevice::Pocket
   # A pause or revoke ends the clip in flight: nothing for it goes down later,
   # even after a resume, and that includes the last reply's voice.
   def end_pocket_submission!
-    return unless pocket? && (pocket_open_message_id || pocket_reply_message_id)
+    return unless pocket? && (pocket_open_message_id || pocket_reply_message_id || pocket_replies.any?)
 
-    update!(pocket_open_message_id: nil, pocket_opened_at: nil,
+    update!(pocket_open_message_id: nil, pocket_opened_at: nil, pocket_replies: [],
       pocket_reply_message_id: nil, pocket_reply_submission_id: nil, pocket_replied_at: nil)
   end
 
@@ -274,14 +326,48 @@ module CompanionDevice::Pocket
     end
   end
 
-  def close_pocket_submission!(reason, submission)
+  # The single "latest" columns count too when the list lacks them: a worker
+  # still on the old code during a deploy writes only those, after the
+  # migration's backfill has already run (Mira, #1083).
+  def current_pocket_reply_entries(now = Time.current)
+    entries = pocket_replies.to_a
+    if pocket_reply_message_id && pocket_replied_at && entries.none? { |e| e["reply_id"] == pocket_reply_message_id }
+      entries += [ { "reply_id" => pocket_reply_message_id, "submission_id" => pocket_reply_submission_id, "at" => pocket_replied_at.iso8601(6) } ]
+    end
+    entries.select { |e| Time.zone.parse(e["at"].to_s)&.after?(now - AUDIO_WINDOW) }
+  end
+
+  # The latest reply also stays in the single columns, which older readers
+  # (and the audit trail) use.
+  def record_pocket_reply!(reply, submission)
+    now = Time.current
+    entries = current_pocket_reply_entries(now) + [ { "reply_id" => reply.id, "submission_id" => submission.id, "at" => now.iso8601(6) } ]
+    update!(pocket_replies: entries, pocket_reply_message_id: reply.id, pocket_reply_submission_id: submission.id, pocket_replied_at: now)
+  end
+
+  # Ends every outstanding clip with one word: ambiguous or expired. The
+  # first clip stays as submission_id for firmware that reads only that.
+  def close_pocket_submission!(reason, clips)
     update!(pocket_open_message_id: nil, pocket_opened_at: nil)
+    announce_pocket_outcome(reason, clips)
+  end
+
+  def announce_pocket_outcome(reason, clips)
     return reason unless connection_epoch
 
     device = self
-    payload = { type: reason.to_s, submission_id: submission&.to_param, epoch: connection_epoch }
+    payload = { type: reason.to_s, submission_id: clips.first&.to_param, submission_ids: clips.map(&:to_param),
+      epoch: connection_epoch }
     ActiveRecord.after_all_transactions_commit { CompanionChannel.broadcast_to(device, payload) if device.reload.active? }
     reason
+  end
+
+  # Clips whose deadline passed with no reply end as expired, so none is left
+  # showing "thinking" for ever. Runs before any new clip or reply is read.
+  def expire_lapsed_pocket_clips!
+    return unless pocket_open_message_id && !pocket_submission_open?
+
+    close_pocket_submission!(:expired, pocket_open_clips.to_a)
   end
 
   def owner_still_member?

@@ -27,8 +27,8 @@ class Api::V1::Companion::PocketSubmissionsControllerTest < ActionDispatch::Inte
   end
 
   def post_clip(credential: @credential, request_id: "r1", kind: "voice",
-    file: fixture_file_upload("test_audio.webm", "audio/webm"))
-    ElevenLabsStt.stub(:transcribe, "is it raining in Geneva") do
+    file: fixture_file_upload("test_audio.webm", "audio/webm"), heard: "is it raining in Geneva")
+    ElevenLabsStt.stub(:transcribe, heard) do
       TranscriptionCharge.stub(:admit!, true) do
         post "/api/v1/companion/pocket/submissions", params: { request_id: request_id, kind: kind, file: file },
           headers: { "Authorization" => "Bearer #{credential}" }
@@ -74,12 +74,29 @@ class Api::V1::Companion::PocketSubmissionsControllerTest < ActionDispatch::Inte
     assert_equal message.to_param, response.parsed_body["submission_id"]
   end
 
-  test "a second clip while the first awaits its reply is refused" do
+  test "a second clip while the first awaits its reply is posted; past the cap it is refused" do
     @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
-    post_clip(request_id: "r1")
-    post_clip(request_id: "r2")
+    cap = CompanionDevice::Pocket::MAX_QUEUED_CLIPS
+    assert_difference -> { @device.chat.messages.count }, cap do
+      cap.times do |i|
+        post_clip(request_id: "r#{i}", heard: "clip #{i}")
+        assert_response :created
+      end
+    end
+    post_clip(request_id: "one-too-many", heard: "and another")
     assert_response :conflict
     assert_equal "awaiting_reply", response.parsed_body["code"]
+  end
+
+  test "the same words twice in a row are refused, not posted, and leave no stored clip" do
+    @device.change_capture!(capability: "mic", enabled: true, actor: @owner)
+    post_clip(request_id: "r1", heard: "hello?")
+    assert_response :created
+    assert_no_difference [ "Message.count", "ActiveStorage::Blob.count" ] do
+      post_clip(request_id: "r2", heard: "hello?")
+    end
+    assert_response :conflict
+    assert_equal "same_as_last", response.parsed_body["code"]
   end
 
   test "a photo needs the camera switch and JPEG bytes, whatever the label says" do

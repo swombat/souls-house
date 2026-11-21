@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_103000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -457,6 +457,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_090000) do
     t.datetime "response_requested_at"
     t.bigint "provider_retry_of_id"
     t.text "hook_warning"
+    t.jsonb "shown_message_ids", default: [], null: false
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -1168,6 +1169,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_090000) do
     t.bigint "pocket_reply_message_id"
     t.bigint "pocket_reply_submission_id"
     t.datetime "pocket_replied_at"
+    t.jsonb "pocket_replies", default: [], null: false
     t.index ["account_id"], name: "index_companion_devices_on_account_id"
     t.index ["companion_enrollment_grant_id"], name: "index_companion_devices_on_companion_enrollment_grant_id", unique: true
     t.index ["credential_digest"], name: "index_companion_devices_on_credential_digest", unique: true

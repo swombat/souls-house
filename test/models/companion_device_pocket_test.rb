@@ -29,11 +29,13 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
   end
 
   # The run the submission's message woke, and a reply written by it.
-  def reply_to(message, text = "hello back", agent: @agent)
+  # shown: the messages whose ids the run's request carried.
+  def reply_to(message, text = "hello back", agent: @agent, shown: [ message ])
     dispatch = MessageDispatch.find_by(message_id: message.id) ||
       MessageDispatch.accept!(message: message, target_agent_ids: [ agent.id ], kind: "automatic")
     interaction = AgentRuntimeInteraction.create!(agent: agent, chat: message.chat, trigger_kind: "wake",
-      message_dispatch: dispatch, started_at: Time.current)
+      message_dispatch: dispatch, started_at: Time.current, last_included_message_id: shown.map(&:id).max,
+      shown_message_ids: shown.map(&:id))
     message.chat.messages.create!(role: "assistant", agent: agent, content: text, runtime_interaction: interaction)
   end
 
@@ -122,11 +124,197 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_equal message.id, @device.reload.pocket_open_message_id
   end
 
-  test "a second clip while one is open is refused" do
+  test "clips while one is open join the run, up to the cap" do
     enable_mic
-    submit
-    error = assert_raises(CompanionDevice::Pocket::Refused) { submit("again") }
-    assert_equal "awaiting_reply", error.code
+    first = submit.message
+    opened_at = @device.reload.pocket_opened_at
+    travel 1.minute do
+      (CompanionDevice::Pocket::MAX_QUEUED_CLIPS - 1).times { |i| assert submit("more #{i}").created? }
+      assert_equal [ first.id, opened_at ], [ @device.reload.pocket_open_message_id, @device.pocket_opened_at ],
+        "a later clip moves neither the anchor nor the deadline"
+      error = assert_raises(CompanionDevice::Pocket::Refused) { submit("one too many") }
+      assert_equal "awaiting_reply", error.code
+    end
+  end
+
+  # Mira, YrBOKp: A's run is going, B and C arrive, one held wake answers
+  # them. Each reply covers only the clips its run was shown.
+  test "a reply covers what its run read; later clips wait for their own wake" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    c = submit("c").message
+    reply_a = reply_to(a, "for a")
+    down = payloads.select { |p| p["type"] == "reply" }
+    assert_equal [ [ a.to_param ] ], down.map { |p| p["submission_ids"] }
+    assert_equal b.id, @device.reload.pocket_open_message_id, "b and c are still waiting"
+    assert_equal b.created_at.to_i, @device.pocket_opened_at.to_i, "under b's own deadline"
+
+    # The held wake, carried on c's dispatch, was shown both b and c.
+    reply_bc = reply_to(c, "for b and c", shown: [ b, c ])
+    last = payloads.last
+    assert_equal({ "type" => "reply", "submission_id" => c.to_param, "submission_ids" => [ b.to_param, c.to_param ],
+      "message_id" => reply_bc.to_param, "text" => "for b and c", "epoch" => "epoch-1" }, last)
+    assert_nil @device.reload.pocket_open_message_id
+    assert_equal [ reply_bc.id, c.id ], [ @device.pocket_reply_message_id, @device.pocket_reply_submission_id ]
+    assert_not_equal reply_a.id, @device.pocket_reply_message_id
+  end
+
+  test "a run whose request doesn't carry a later clip covers only the clip that woke it" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    reply_to(a, shown: [ a ])
+    assert_equal [ a.to_param ], payloads.last["submission_ids"]
+    assert_equal b.id, @device.reload.pocket_open_message_id
+  end
+
+  # Mira, #1083: a wake on C, with an older outstanding B that wasn't in the
+  # run's input, must not mark B answered, even when the cursor is past B.
+  test "an older clip the run wasn't shown ends ambiguous, never answered" do
+    enable_mic
+    a = submit("a").message
+    reply_to(a)
+    b = submit("b").message
+    c = submit("c").message
+    reply_c = reply_to(c, "for c", shown: [ c ])
+    ambiguous, reply = payloads.last(2)
+    assert_equal({ "type" => "ambiguous", "submission_id" => b.to_param, "submission_ids" => [ b.to_param ],
+      "epoch" => "epoch-1" }, ambiguous)
+    assert_equal [ "reply", [ c.to_param ], reply_c.to_param ], reply.values_at("type", "submission_ids", "message_id")
+    assert_nil @device.reload.pocket_open_message_id, "no clip is left without an outcome"
+  end
+
+  # Mira, #1083: covering A and C but leaving B pending would bring C back
+  # into the queue behind B's anchor. The waiting tail stays contiguous.
+  test "a gap in what the run was shown stops coverage; the waiting tail stays contiguous" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    c = submit("c").message
+    reply_to(a, shown: [ a, c ])
+    assert_equal [ a.to_param ], payloads.last["submission_ids"]
+    assert_equal b.id, @device.reload.pocket_open_message_id
+    assert_equal [ b, c ], @device.pocket_open_clips.to_a
+  end
+
+  test "a clip quoted in the request text but not one of its rows isn't counted as read" do
+    enable_mic
+    b = submit("b").message
+    c = submit("c").message
+    dispatch = MessageDispatch.find_by(message_id: c.id) ||
+      MessageDispatch.accept!(message: c, target_agent_ids: [ @agent.id ], kind: "automatic")
+    interaction = AgentRuntimeInteraction.create!(agent: @agent, chat: c.chat, trigger_kind: "wake", message_dispatch: dispatch,
+      started_at: Time.current, shown_message_ids: [ c.id ], request_text: "Someone quoted [#{b.obfuscated_id}] here")
+    c.chat.messages.create!(role: "assistant", agent: @agent, content: "for c", runtime_interaction: interaction)
+    assert_equal [ [ "ambiguous", [ b.to_param ] ], [ "reply", [ c.to_param ] ] ],
+      payloads.last(2).map { |p| p.values_at("type", "submission_ids") }
+  end
+
+  # Mira, #1083: a bounded transcript can leave out the waking clip itself.
+  test "a run that wasn't shown its own waking clip ends the clips ambiguous, with no reply or voice" do
+    enable_mic
+    b = submit("b").message
+    c = submit("c").message
+    reply = reply_to(c, "for c", shown: [ b ])
+    assert_equal [ "ambiguous", [ b.to_param, c.to_param ] ], payloads.last.values_at("type", "submission_ids")
+    assert_not_includes payloads.map { |p| p["type"] }, "reply"
+    assert_nil @device.reload.pocket_open_message_id
+    assert_nil @device.pocket_reply(reply.to_param)
+  end
+
+  # Mira, #1083: deploy order; an old worker writes only the single columns.
+  test "a reply an old-code worker wrote after the backfill is still fetchable" do
+    enable_mic
+    message = submit.message
+    listed = unrelated_run_reply("listed")
+    late = unrelated_run_reply("written by old code")
+    @device.update_columns(pocket_replies: [ { "reply_id" => listed.id, "submission_id" => message.id, "at" => 2.minutes.ago.iso8601(6) } ],
+      pocket_reply_message_id: late.id, pocket_reply_submission_id: message.id, pocket_replied_at: 1.minute.ago)
+    assert_equal listed, @device.reload.pocket_reply(listed.to_param)
+    assert_equal late, @device.pocket_reply(late.to_param)
+
+    attach_voice(late)
+    CompanionDevice.announce_pocket_audio(late.reload)
+    assert_equal [ "audio", late.to_param ], payloads.last.values_at("type", "message_id"), "the live announcer finds it too"
+  end
+
+  # Mira, #1083: the last reply from before the deploy keeps its window.
+  test "the migration carries the last pre-deploy reply into the list with its own time" do
+    enable_mic
+    message = submit.message
+    reply = unrelated_run_reply("old reply")
+    replied_at = 5.minutes.ago
+    @device.update_columns(pocket_reply_message_id: reply.id, pocket_reply_submission_id: message.id,
+      pocket_replied_at: replied_at, pocket_replies: [])
+    sql = File.read(Dir[Rails.root.join("db/migrate/20261121103000_*.rb")].first)[/UPDATE companion_devices.*?(?=\n\s*SQL)/m]
+    ActiveRecord::Base.connection.execute(sql)
+    assert_equal reply, @device.reload.pocket_reply(reply.to_param)
+    assert_in_delta replied_at.to_f, Time.zone.parse(@device.pocket_replies.first["at"]).to_f, 0.001
+    travel CompanionDevice::Pocket::AUDIO_WINDOW - 4.minutes do
+      assert_nil @device.pocket_reply(reply.to_param), "the window runs from the old reply, not the deploy"
+    end
+  end
+
+  test "two replies in a row both keep their voice; the later doesn't supersede the earlier" do
+    speak_with_eleven_labs
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    reply_a, reply_b = SpeechEngine.stub(:house_eleven_labs_key, "house-key") do
+      [ reply_to(a, "for a"), reply_to(b, "for b") ]
+    end
+    # A's voice finishes only after B's text went down.
+    attach_voice(reply_a)
+    CompanionDevice.announce_pocket_audio(reply_a.reload)
+    audio = payloads.last
+    assert_equal [ "audio", a.to_param, reply_a.to_param ], audio.values_at("type", "submission_id", "message_id")
+    assert_equal reply_a, @device.reload.pocket_reply(reply_a.to_param)
+    assert_equal reply_b, @device.pocket_reply(reply_b.to_param)
+
+    attach_voice(reply_b)
+    @device.update!(connection_epoch: "epoch-2")
+    assert_equal [ reply_a.to_param, reply_b.to_param ], @device.pocket_audio_payloads.map { |p| p["message_id"] || p[:message_id] },
+      "a reconnect gets every voice still in its window"
+    travel CompanionDevice::Pocket::AUDIO_WINDOW + 1.minute do
+      assert_nil @device.pocket_reply(reply_a.to_param)
+    end
+  end
+
+  test "an unrelated human message in a queued run makes every outstanding clip ambiguous" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    @device.chat.messages.create!(role: "user", user: @owner, content: "and also this")
+    c = submit("c").message
+    reply_to(c, shown: [ a, b, c ])
+    assert_not payloads.any? { |p| p["type"] == "reply" }
+    assert_equal({ "type" => "ambiguous", "submission_id" => a.to_param,
+      "submission_ids" => [ a, b, c ].map(&:to_param), "epoch" => "epoch-1" }, payloads.last)
+    assert_nil @device.reload.pocket_open_message_id
+  end
+
+  test "clips nobody answered end as expired before the next clip opens a new run" do
+    enable_mic
+    a = submit("a").message
+    b = submit("b").message
+    travel CompanionDevice::Pocket::OPEN_WINDOW + 1.minute do
+      fresh = submit("later").message
+      expired = payloads.find { |p| p["type"] == "expired" }
+      assert_equal [ a.to_param, b.to_param ], expired["submission_ids"]
+      assert_equal fresh.id, @device.reload.pocket_open_message_id
+      assert_equal %w[expired thinking], payloads.last(2).map { |p| p["type"] }
+    end
+  end
+
+  test "a late reply after the deadline expires the clips instead of answering them" do
+    enable_mic
+    a = submit("a").message
+    travel CompanionDevice::Pocket::OPEN_WINDOW + 1.minute do
+      reply_to(a)
+      assert_equal "expired", payloads.last["type"]
+      assert_not payloads.any? { |p| p["type"] == "reply" }
+    end
   end
 
   test "a retry with the same request id makes no second message" do
@@ -144,8 +332,8 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     assert_broadcasts(CompanionChannel.broadcasting_for(@device), 1) { reply = reply_to(message) }
     assert_nil @device.reload.pocket_open_message_id
     payload = broadcasts(CompanionChannel.broadcasting_for(@device)).map { |b| JSON.parse(b) }.last
-    assert_equal({ "type" => "reply", "submission_id" => message.to_param, "message_id" => reply.to_param,
-      "text" => "hello back", "epoch" => "epoch-1" }, payload)
+    assert_equal({ "type" => "reply", "submission_id" => message.to_param, "submission_ids" => [ message.to_param ],
+      "message_id" => reply.to_param, "text" => "hello back", "epoch" => "epoch-1" }, payload)
   end
 
   # The stone may speak through ElevenLabs on the house key here
@@ -232,7 +420,7 @@ class CompanionDevicePocketTest < ActiveSupport::TestCase
     count = payloads.size
     CompanionDevice.announce_pocket_audio(reply.reload)
     assert_equal count, payloads.size
-    assert_nil @device.reload.pocket_reply
+    assert_empty @device.reload.pocket_recent_replies
   end
 
   test "the same resident replying from an unrelated run is not delivered" do

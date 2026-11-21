@@ -42,8 +42,12 @@ module Api
 
           if result.created?
             render json: { submission_id: result.message.to_param }, status: :created
-          elsif result.duplicate?
+          elsif result.duplicate? && result.message.persisted?
             render json: { submission_id: result.message.to_param, duplicate: true }, status: :ok
+          elsif result.duplicate?
+            # The same words as the room's last message: the room refuses a
+            # repeat, so nothing is posted and the clip is discarded.
+            refuse("same_as_last", :conflict)
           else
             refuse("not_accepted", :service_unavailable)
           end
